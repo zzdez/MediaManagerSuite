@@ -1,0 +1,29 @@
+MediaManagerSuite/
+├── app/                     # Package principal de l'application Flask
+│   ├── __init__.py          # Crée l'app Flask, enregistre les Blueprints
+│   ├── static/              # Fichiers statiques partagés (CSS, JS global)
+│   ├── templates/           # Templates HTML de base partagés (ex: layout.html)
+│   │
+│   ├── plex_editor/         # Blueprint pour Plex Web Editor
+│   │   ├── __init__.py      # Définit le Blueprint plex_editor_bp
+│   │   ├── routes.py        # Routes spécifiques à Plex Editor (celles de votre routes.py actuel)
+│   │   ├── utils.py         # Fonctions utilitaires spécifiques à Plex Editor (votre utils.py actuel)
+│   │   └── templates/       # Sous-dossier pour les templates de Plex Editor
+│   │       └── plex_editor/ # (pour éviter les conflits de noms, ex: plex_editor/index.html)
+│   │           ├── index.html
+│   │           ├── library.html
+│   │           └── select_user.html
+│   │
+│   └── seedbox_ui/          # Blueprint pour SeedboxWebUI
+│       ├── __init__.py      # Définit le Blueprint seedbox_ui_bp
+│       ├── routes.py        # Routes pour Seedbox UI (votre app.py de SeedboxWebUI adapté)
+│       ├── utils.py         # Fonctions utilitaires pour Seedbox UI (si différentes)
+│       └── templates/
+│           └── seedbox_ui/  # (pour éviter les conflits, ex: seedbox_ui/index.html)
+│               └── index.html
+│
+├── venv/                    # Environnement virtuel (commun aux deux logiques)
+├── .env                     # Fichier d'environnement unique (contiendra les configs Plex ET Sonarr/Radarr)
+├── config.py                # Fichier de configuration unique (lira toutes les variables de .env)
+├── requirements.txt         # Dépendances combinées
+└── run.py                   # Point d'entrée pour lancer l'application Flask globale
