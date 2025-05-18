@@ -1,0 +1,104 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+# Usually these files are written by a python script from a template
+# before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Environments
+.env
+.venv
+env/
+venv/  # <<<--- LA LIGNE IMPORTANTE POUR VOUS
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# VS Code Status Bar Timeout Settings
+.vscode*/
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# profiling data
+*.prof
+
+# Cache / Temp files
+*.log
+local_settings.py # Example user-specific settings
+# .idea/ # Uncomment if you use PyCharm/IntelliJ
+# *.swp # Vim swap files
+
+# Logs directory (si vous ne voulez pas le versionner)
+# logs/ # Décommentez si vous ne voulez PAS inclure les logs dans git
+
+# Config files potentially containing secrets
+# config/users.json # Peut-être à ignorer si vous ne voulez pas versionner les users/passwords
+# config/parametres_college.json # Idem si contient des clés API sensibles

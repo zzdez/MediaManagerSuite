@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Erreur 500 - Erreur Interne du Serveur</title>
+     <style>
+        body { font-family: sans-serif; margin: 20px; text-align: center; padding-top: 50px; }
+        h1 { color: #dc3545; }
+        p { color: #6c757d; }
+        a { text-decoration: none; color: #007bff; }
+        a:hover { text-decoration: underline; }
+     </style>
+</head>
+<body>
+    <h1>Oops! Erreur interne du serveur (500)</h1>
+    <p>Une erreur inattendue s'est produite sur le serveur.</p>
+    <p>Nous avons été notifiés et allons examiner le problème.</p>
+    <p><a href="{{ url_for('index') }}">Retour à l'accueil</a></p>
+    <!-- En mode DEBUG, vous pourriez afficher plus d'infos, mais JAMAIS en production -->
+    <!-- {% if error %} <pre>{{ error }}</pre> {% endif %} -->
+</body>
+</html>

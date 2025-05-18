@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    {# Titre de la page incluant le nom de la bibliothèque et l'utilisateur #}
+    <title>{{ title }} - Editeur Plex</title>
+    <style>
+        /* Styles généraux (similaires à index.html) */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f8f9fa;
+            color: #343a40;
+            line-height: 1.6;
+        }
+        .container {
+             max-width: 1100px; /* Plus large pour potentiellement plus d'infos */
+             margin: 20px auto;
+             background-color: #fff;
+             padding: 25px 30px;
+             border-radius: 8px;
+             box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        }
+
+        /* Messages Flash (idem index.html) */
+        .alert { padding: 1rem; margin-bottom: 1.5rem; border: 1px solid transparent; border-radius: .375rem; font-size: 0.95rem; display: flex; align-items: center; gap: 0.75rem; }
+        .alert::before { content: "ℹ️"; font-size: 1.2em; }
+        .alert-success { color: #0f5132; background-color: #d1e7dd; border-color: #badbcc; }
+        .alert-success::before { content: "✅"; }
+        .alert-danger { color: #842029; background-color: #f8d7da; border-color: #f5c2c7; }
+        .alert-danger::before { content: "❌"; }
+        .alert-info { color: #055160; background-color: #cff4fc; border-color: #b6effb; }
+        .alert-info::before { content: "ℹ️"; }
+        .alert-warning { color: #664d03; background-color: #fff3cd; border-color: #ffecb5; }
+        .alert-warning::before { content: "⚠️"; }
+
+
+        /* Liens et Titres */
+        .back-link {
+            margin-bottom: 1.5rem;
+            display: inline-block;
+            font-size: 0.9em;
+            color: #007bff;
+            text-decoration: none;
+        }
+        .back-link:hover { text-decoration: underline; }
+        h1 { color: #212529; margin-bottom: 0.5rem; font-weight: 500; font-size: 2rem; }
+        .user-context { font-size: 1rem; color: #6c757d; margin-bottom: 1.5rem; }
+        h2 { color: #495057; margin-top: 2.5rem; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 2px solid #dee2e6; font-weight: 500; font-size: 1.5rem; }
+
+        /* Formulaire de Filtres */
+        .filter-form {
+            background-color: #f1f3f5; /* Léger fond */
+            padding: 20px 25px;
+            border-radius: 6px;
+            margin-bottom: 2.5rem;
+            border: 1px solid #dee2e6;
+        }
+        .filter-form .form-row {
+            display: flex;
+            flex-wrap: wrap; /* Permet aux éléments de passer à la ligne */
+            align-items: center;
+            gap: 15px; /* Espace entre les éléments d'une ligne */
+            margin-bottom: 15px;
+        }
+        .filter-form .form-row:last-of-type { margin-bottom: 0; } /* Pas de marge en bas pour la dernière ligne de champs */
+
+        .filter-form .filter-group { /* Grouper label + input */
+             display: flex;
+             align-items: center;
+             gap: 8px;
+             flex-grow: 1; /* Permet aux groupes de prendre l'espace */
+             min-width: 200px; /* Empêche d'être trop petit */
+        }
+
+        .filter-form label {
+            font-weight: 500; /* Moins gras que bold */
+            color: #495057;
+            font-size: 0.9em;
+            width: auto; /* Ajustement auto */
+            text-align: left;
+            margin-bottom: 0; /* Enlevé car aligné avec flex */
+        }
+        .filter-form input[type=number], .filter-form input[type=date], .filter-form select, .filter-form input[type=text] {
+            padding: 8px 10px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 0.95rem;
+            flex-grow: 1; /* Prend l'espace dans le groupe */
+            background-color: #fff;
+        }
+         /* Style spécifique pour select pour l'icône flèche */
+        .filter-form select {
+            -webkit-appearance: none; appearance: none;
+             background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%236c757d%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E');
+             background-repeat: no-repeat; background-position: right .7em top 50%; background-size: .65em auto; padding-right: 2em;
+        }
+
+        /* Ligne des boutons */
+        .filter-form .button-row {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #dee2e6;
+            display: flex;
+            justify-content: flex-end; /* Boutons à droite */
+            gap: 10px; /* Espace entre boutons */
+        }
+        .filter-form button, .filter-form a.button {
+            padding: 8px 18px;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.95em;
+            text-decoration: none; /* Pour le lien reset */
+            display: inline-block; /* Pour le lien reset */
+             transition: background-color 0.2s ease, opacity 0.2s ease;
+        }
+        .filter-form button[type=submit] { background-color: #007bff; }
+        .filter-form button[type=submit]:hover { background-color: #0056b3; }
+        .filter-form a.reset-button { background-color: #6c757d; }
+        .filter-form a.reset-button:hover { background-color: #5a6268; color: white; }
+
+
+        /* Liste des éléments */
+        ul#item-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        ul#item-list li {
+            margin-bottom: 8px;
+            padding: 12px 18px;
+            border: 1px solid #e0e0e0;
+            border-radius: 5px;
+            background-color: #fff;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background-color 0.2s;
+        }
+        ul#item-list li:nth-child(odd) { background-color: #f9f9f9; } /* Alternance couleurs */
+        ul#item-list li:hover { background-color: #e9ecef; }
+
+        .item-title { font-weight: 500; color: #343a40; flex-grow: 1; margin-right: 20px;}
+        .item-details {
+            font-size: 0.85em;
+            color: #6c757d;
+            text-align: right;
+            flex-shrink: 0; /* Empêche de rétrécir */
+            white-space: nowrap; /* Empêche le retour à la ligne des détails */
+        }
+        .item-details strong { color: #343a40; font-weight: 500; }
+        .item-details .watched-yes { color: #198754; /* Vert Bootstrap */ }
+        .item-details .watched-no { color: #dc3545; /* Rouge Bootstrap */ }
+        .item-details span { margin-left: 12px; } /* Espace entre détails */
+        .item-details span:first-child { margin-left: 0; }
+
+        /* Message si liste vide */
+        #item-list li.no-results {
+             justify-content: center;
+             color: #6c757d;
+             font-style: italic;
+             background-color: transparent;
+             border: 1px dashed #ced4da;
+             padding: 15px;
+        }
+        .item-actions {
+            margin-left: 20px;
+            flex-shrink: 0; /* Pour qu'il ne soit pas compressé */
+        }
+
+        .delete-button {
+            background-color: #dc3545; /* Rouge danger Bootstrap */
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+            transition: background-color 0.2s ease;
+        }
+        .delete-button:hover {
+            background-color: #c82333; /* Rouge plus foncé */
+        }
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <p class="back-link"><a href="{{ url_for('plex_editor.index') }}">← Retour à la liste des bibliothèques</a></p>
+
+        <h1>{{ library_name }}</h1>
+        {% if user_title %}
+            <p class="user-context">Affichage pour l'utilisateur : <strong>{{ user_title }}</strong></p>
+        {% endif %}
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        {# --- Formulaire de Filtres (votre code existant) --- #}
+        <form method="GET" action="{{ url_for('plex_editor.show_library', library_name=library_name) }}" class="filter-form">
+            <div class="form-row">
+                <div class="filter-group">
+                    <label for="vu">Statut Vu:</label>
+                    <select name="vu" id="vu">
+                        <option value="tous" {% if current_filters.vu == 'tous' %}selected{% endif %}>Indifférent</option>
+                        <option value="vu" {% if current_filters.vu == 'vu' %}selected{% endif %}>Vus Uniquement</option>
+                        <option value="nonvu" {% if current_filters.vu == 'nonvu' %}selected{% endif %}>Non Vus Uniquement</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="note_filter_type">Filtre Note:</label>
+                    <select name="note_filter_type" id="note_filter_type">
+                        <option value="toutes" {% if current_filters.note_filter_type == 'toutes' or not current_filters.note_filter_type %}selected{% endif %}>Toutes les notes</option>
+                        <option value="non_notes" {% if current_filters.note_filter_type == 'non_notes' %}selected{% endif %}>Non Notés Uniquement</option>
+                        <option value="note_exacte" {% if current_filters.note_filter_type == 'note_exacte' %}selected{% endif %}>Note Exacte Égale à</option>
+                        <option value="note_min" {% if current_filters.note_filter_type == 'note_min' %}selected{% endif %}>Note Supérieure ou Égale à</option>
+                        <option value="note_max" {% if current_filters.note_filter_type == 'note_max' %}selected{% endif %}>Note Inférieure ou Égale à</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="note_filter_value">Valeur Note (0-10):</label>
+                    <input type="number" name="note_filter_value" id="note_filter_value" min="0" max="10" step="0.5"
+                           value="{{ current_filters.note_filter_value if current_filters.note_filter_value is not none else '' }}"
+                           placeholder="Pour Exacte/Min/Max">
+                </div>
+            </div>
+            <div class="form-row"> {# Nouvelle ligne pour les filtres de date pour une meilleure organisation #}
+                <div class="filter-group">
+                    <label for="date_filter_type">Date:</label>
+                    <select name="date_filter_type" id="date_filter_type">
+                        <option value="aucun" {% if current_filters.date_filter_type == 'aucun' or not current_filters.date_filter_type %}selected{% endif %}>-- Date (Non Spécifié) --</option>
+                        <option value="ajout_recent_jours" {% if current_filters.date_filter_type == 'ajout_recent_jours' %}selected{% endif %}>Ajouté dans les X derniers jours</option>
+                        <option value="ajout_apres_date" {% if current_filters.date_filter_type == 'ajout_apres_date' %}selected{% endif %}>Ajouté après le (YYYY-MM-DD)</option>
+                        <option value="ajout_avant_date" {% if current_filters.date_filter_type == 'ajout_avant_date' %}selected{% endif %}>Ajouté avant le (YYYY-MM-DD)</option>
+                        <option value="sortie_annee" {% if current_filters.date_filter_type == 'sortie_annee' %}selected{% endif %}>Sorti en (YYYY)</option>
+                        <option value="sortie_apres_annee" {% if current_filters.date_filter_type == 'sortie_apres_annee' %}selected{% endif %}>Sorti après (YYYY)</option>
+                        <option value="sortie_avant_annee" {% if current_filters.date_filter_type == 'sortie_avant_annee' %}selected{% endif %}>Sorti avant (YYYY)</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="date_filter_value">Valeur Date:</label>
+                    <input type="text" name="date_filter_value" id="date_filter_value"
+                           value="{{ current_filters.date_filter_value or '' }}" placeholder="Ex: 30, 2023-10-25, 2022">
+                </div>
+            </div>
+            <div class="button-row">
+                <a href="{{ url_for('plex_editor.show_library', library_name=library_name) }}" class="button reset-button">Réinitialiser</a>
+                <button type="submit">Appliquer les Filtres</button>
+            </div>
+        </form>
+        {# --- Fin du Formulaire de Filtres --- #}
+
+        {# --- Début Bloc principal pour affichage des résultats ou erreurs --- #}
+        {% if plex_error %}
+            <p class="alert alert-danger">Impossible de charger les éléments. Erreur : {{ plex_error }}</p>
+        {% elif items is not none %}
+
+            {# --- DÉBUT DU FORMULAIRE POUR LA SUPPRESSION GROUPÉE --- #}
+            <form id="bulk-delete-form" method="POST" action="{{ url_for('plex_editor.bulk_delete_items') }}">
+                <input type="hidden" name="current_library_name" value="{{ library_name }}">
+                {# Optionnel: <input type="hidden" name="query_string" value="{{ request.query_string.decode() }}"> #}
+
+                {% if items %} {# Afficher la barre d'actions groupées seulement s'il y a des items #}
+                <div class="bulk-actions-header">
+                    <div>
+                        <input type="checkbox" id="select-all-checkbox" style="margin-right: 10px; vertical-align: middle;">
+                        <label for="select-all-checkbox" style="font-weight: 500; cursor: pointer; vertical-align: middle;">Sélectionner Tout / Rien</label>
+                    </div>
+                    <button type="submit" id="bulk-delete-button" class="delete-button" style="background-color: #007bff; padding: 8px 15px;">
+                        Supprimer la Sélection (<span id="selected-count">0</span>)
+                    </button>
+                </div>
+                {% endif %} {# Fin du if items pour bulk-actions-header #}
+
+                <h2>Résultats ({{ items|length }}) :</h2>
+                <ul id="item-list">
+                    {% for item in items %}
+                        <li style="display: flex; align-items: center; gap: 10px; padding-left: 10px; padding-right: 10px;">
+                            <input type="checkbox" name="selected_item_keys" value="{{ item.ratingKey }}" class="item-checkbox" style="flex-shrink: 0;">
+
+                            <div class="item-content" style="flex-grow: 1; display: flex; justify-content: space-between; align-items: center;">
+                                <span class="item-title" style="margin-right: 15px;">{{ item.title }} {% if item.year %}({{ item.year }}){% endif %}</span>
+                                <span class="item-details">
+                                    <span>Vu: <strong class="{{ 'watched-yes' if item.isWatched else 'watched-no' }}">{{ 'Oui' if item.isWatched else 'Non' }}</strong></span>
+                                    <span>Note: <strong>{{ item.userRating if item.userRating is not none else 'N/A' }}</strong></span>
+                                    <span>Ajouté: <strong>{{ item.addedAt.strftime('%d/%m/%Y') if item.addedAt else 'N/A' }}</strong></span>
+                                </span>
+                            </div>
+
+                            <span class="item-actions" style="flex-shrink: 0;">
+                                <form method="POST" action="{{ url_for('plex_editor.delete_item', rating_key=item.ratingKey) }}"
+                                      onsubmit="return confirm('Êtes-vous sûr de vouloir supprimer définitivement : « {{ item.title }} » ?');"
+                                      style="display: inline;">
+                                    <input type="hidden" name="current_library_name" value="{{ library_name }}">
+                                    <button type="submit" class="delete-button">Suppr. Indiv.</button>
+                                </form>
+                            </span>
+                        </li>
+                    {% else %}
+                        <li class="no-results">Aucun élément ne correspond aux filtres sélectionnés dans cette bibliothèque pour l'utilisateur <strong>{{ user_title }}</strong>.</li>
+                    {% endfor %}
+                </ul>
+
+                {% if items %} {# Afficher le bouton footer seulement s'il y a des items #}
+                <div class="bulk-actions-footer">
+                    <button type="submit" id="bulk-delete-button-footer" class="delete-button" style="background-color: #007bff; padding: 8px 15px;">
+                       Supprimer la Sélection (<span id="selected-count-footer">0</span>)
+                   </button>
+                </div>
+                {% endif %} {# Fin du if items pour bulk-actions-footer #}
+
+            </form> {# --- FIN DU FORMULAIRE POUR LA SUPPRESSION GROUPÉE --- #}
+
+        {% else %} {# Cas où items is None (erreur de chargement) et pas plex_error #}
+             <p class="alert alert-warning">Aucun élément à afficher ou une erreur est survenue lors de la récupération des données.</p>
+        {% endif %} {# --- FIN DU BLOC {% if plex_error %} / {% elif items is not none %} / {% else %} --- #}
+
+    </div> {# Fin .container #}
+
+    {# --- SCRIPT JAVASCRIPT --- #}
+    {% if items is not none and items %} {# Conditionner le script sur items existant ET non vide #}
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const selectAllCheckbox = document.getElementById('select-all-checkbox');
+            const itemCheckboxes = document.querySelectorAll('.item-checkbox');
+            const bulkDeleteForm = document.getElementById('bulk-delete-form');
+            const bulkDeleteButton = document.getElementById('bulk-delete-button');
+            const bulkDeleteButtonFooter = document.getElementById('bulk-delete-button-footer');
+            const selectedCountSpan = document.getElementById('selected-count');
+            const selectedCountSpanFooter = document.getElementById('selected-count-footer');
+
+            function updateSelectedCount() {
+                let checkedCount = document.querySelectorAll('.item-checkbox:checked').length;
+                if (selectedCountSpan) selectedCountSpan.textContent = checkedCount;
+                if (selectedCountSpanFooter) selectedCountSpanFooter.textContent = checkedCount;
+            }
+
+            if (selectAllCheckbox) {
+                selectAllCheckbox.addEventListener('change', function(event) {
+                    itemCheckboxes.forEach(function(checkbox) {
+                        checkbox.checked = event.target.checked;
+                    });
+                    updateSelectedCount();
+                });
+            }
+
+            itemCheckboxes.forEach(function(checkbox) {
+                checkbox.addEventListener('change', function() {
+                    updateSelectedCount();
+                    if (selectAllCheckbox) {
+                        if (!this.checked) {
+                            selectAllCheckbox.checked = false;
+                        } else {
+                            let allChecked = true;
+                            itemCheckboxes.forEach(function(cb) {
+                                if (!cb.checked) allChecked = false;
+                            });
+                            selectAllCheckbox.checked = allChecked;
+                        }
+                    }
+                });
+            });
+
+            updateSelectedCount(); // Appel initial
+
+            if (bulkDeleteForm) {
+                bulkDeleteForm.addEventListener('submit', function(event) {
+                    let checkedCount = document.querySelectorAll('.item-checkbox:checked').length;
+                    if (checkedCount === 0) {
+                        alert("Veuillez sélectionner au moins un élément à supprimer.");
+                        event.preventDefault();
+                        return false;
+                    }
+                    if (!confirm('Êtes-vous sûr de vouloir supprimer définitivement les ' + checkedCount + ' éléments sélectionnés ? Cette action est irréversible.')) {
+                        event.preventDefault();
+                        return false;
+                    }
+                    // Gestion du texte des boutons
+                    function updateButtonText(buttonElement) {
+                        if (buttonElement) {
+                            buttonElement.disabled = true;
+                            // Trouve le texte avant le span et le remplace
+                            let textNode = Array.from(buttonElement.childNodes).find(node => node.nodeType === Node.TEXT_NODE && node.textContent.includes('Supprimer la Sélection'));
+                            if (textNode) {
+                                textNode.textContent = 'Suppression en cours... (';
+                            } else { // Fallback si la structure du texte change
+                                buttonElement.innerHTML = 'Suppression en cours... (<span id="'+ (buttonElement.id.includes('footer') ? 'selected-count-footer' : 'selected-count') +'">'+checkedCount+'</span>)';
+                            }
+                        }
+                    }
+                    updateButtonText(bulkDeleteButton);
+                    updateButtonText(bulkDeleteButtonFooter);
+                });
+            }
+        });
+    </script>
+    {% endif %} {# Fin du if items pour le script #}
+
+</body>
+</html>
