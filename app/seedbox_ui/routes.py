@@ -1,10 +1,11 @@
+# app/seedbox_ui/routes.py
 import os
 import shutil
 import logging
+import time # Pour le délai
 from datetime import datetime
 import requests # Pour les appels API
 from requests.exceptions import RequestException # Pour gérer les erreurs de connexion
-
 from flask import Blueprint, render_template, current_app, request, flash, redirect, url_for, jsonify
 
 # Définition du Blueprint pour seedbox_ui
@@ -307,77 +308,285 @@ def search_radarr_api():
 @seedbox_ui_bp.route('/trigger-sonarr-import', methods=['POST'])
 def trigger_sonarr_import():
     data = request.get_json()
-    item_name = data.get('item_name')
-    series_id = data.get('series_id') # ID Sonarr de la série (pas TVDB ID directement ici)
+    item_name_from_frontend = data.get('item_name') # Nom du fichier/dossier cliqué dans l'UI
+    series_id_from_frontend = data.get('series_id') # ID Sonarr de la série cible choisie par l'utilisateur
 
     sonarr_url = current_app.config.get('SONARR_URL')
     sonarr_api_key = current_app.config.get('SONARR_API_KEY')
     staging_dir = current_app.config.get('STAGING_DIR')
 
-    if not all([item_name, series_id, sonarr_url, sonarr_api_key, staging_dir]):
+    # Vérifications initiales
+    if not all([item_name_from_frontend, series_id_from_frontend, sonarr_url, sonarr_api_key, staging_dir]):
+        logger.error("trigger_sonarr_import: Données manquantes ou Sonarr non configuré.")
         return jsonify({"success": False, "error": "Données manquantes ou Sonarr non configuré."}), 400
 
-    item_path = os.path.join(staging_dir, item_name)
-    if not os.path.exists(item_path):
-         return jsonify({"success": False, "error": f"L'item '{item_name}' n'existe pas."}), 404
+    path_of_item_clicked_in_ui = os.path.join(staging_dir, item_name_from_frontend)
+    if not os.path.exists(path_of_item_clicked_in_ui):
+        logger.error(f"trigger_sonarr_import: L'item '{item_name_from_frontend}' (chemin: {path_of_item_clicked_in_ui}) n'existe pas.")
+        return jsonify({"success": False, "error": f"L'item '{item_name_from_frontend}' n'existe pas."}), 404
 
-    # TODO: Implémentation de l'import manuel vers une série spécifique.
-    # Approche 1 (simple mais moins ciblée) : Déclencher un scan sur le path.
-    # Sonarr doit être assez intelligent pour l'associer si la série `series_id` est monitorée.
-    # Cette approche ne garantit pas l'association à `series_id` si d'autres séries matchent.
-    # success, message = send_arr_command(sonarr_url, sonarr_api_key, "DownloadedEpisodesScan", item_path)
-    # if success:
-    #    return jsonify({"success": True, "message": f"Scan Sonarr initié pour {item_name}. Message: {message}"})
-    # else:
-    #    return jsonify({"success": False, "error": f"Erreur scan Sonarr: {message}"}), 500
-
-    # Approche 2 (plus complexe, workflow ManualImport API):
-    # 1. GET /api/v3/manualimport?folder={item_path}&seriesId={series_id} (facultatif, mais peut aider à filtrer)
-    #    Ceci liste les fichiers importables.
-    # 2. L'utilisateur (ou le code) sélectionne les fichiers à importer depuis cette liste.
-    # 3. POST /api/v3/command avec name: "ManualImport", et un body contenant les `files` avec `seriesId`, `episodeIds`, etc.
-
-    # Pour l'instant, utilisons la première approche (scan du path), qui est plus simple.
-    # L'utilisateur a "mappé" visuellement, maintenant on demande à Sonarr de vérifier ce path.
-    logger.info(f"Tentative d'import Sonarr pour l'item '{item_name}' (path: {item_path}) en lien avec la série ID: {series_id} (non utilisé directement par DownloadedEpisodesScan).")
-
-    success, cmd_message = send_arr_command(sonarr_url, sonarr_api_key, "DownloadedEpisodesScan", item_path_to_scan=item_path)
-
-    if success:
-        # Il n'y a pas de confirmation directe que l'item a été importé pour CETTE série.
-        # Le message est juste que la commande de scan a été acceptée.
-        message = f"Scan Sonarr pour '{item_name}' initié. Sonarr va tenter de l'importer. Vérifiez l'activité Sonarr."
-        flash(message, 'info') # Ou succès, mais info est plus précis
-        return jsonify({"success": True, "message": message})
+    # Déterminer le chemin à passer à Sonarr pour le paramètre 'folder' de manualimport (GET)
+    # D'après nos tests Insomnia, passer le dossier parent du fichier .mkv a fonctionné.
+    path_to_scan_for_sonarr_get_step = ""
+    if os.path.isfile(path_of_item_clicked_in_ui):
+        # Si l'utilisateur a cliqué sur un fichier, on utilise son dossier parent pour le scan
+        path_to_scan_for_sonarr_get_step = os.path.dirname(path_of_item_clicked_in_ui)
+        logger.info(f"Item cliqué est un fichier. Sonarr (GET manualimport) scannera son dossier parent: {path_to_scan_for_sonarr_get_step}")
+    elif os.path.isdir(path_of_item_clicked_in_ui):
+        # Si l'utilisateur a cliqué sur un dossier, on utilise ce dossier pour le scan
+        path_to_scan_for_sonarr_get_step = path_of_item_clicked_in_ui
+        logger.info(f"Item cliqué est un dossier. Sonarr (GET manualimport) scannera ce dossier: {path_to_scan_for_sonarr_get_step}")
     else:
-        return jsonify({"success": False, "error": cmd_message}), 500
+        logger.error(f"L'item '{path_of_item_clicked_in_ui}' n'est ni un fichier ni un dossier valide.")
+        return jsonify({"success": False, "error": "L'item sélectionné n'est pas valide."}), 400
 
+    # Convertir en chemin Windows avec backslashes pour Sonarr
+    path_for_sonarr_api = path_to_scan_for_sonarr_get_step.replace('/', '\\')
+    logger.info(f"Chemin pour API Sonarr (GET manualimport folder): {path_for_sonarr_api}")
+
+    # --- Étape 1: GET /api/v3/manualimport (sans seriesId) ---
+    manual_import_get_url = f"{sonarr_url.rstrip('/')}/api/v3/manualimport"
+    get_params = {
+        'folder': path_for_sonarr_api,
+        'filterExistingFiles': 'false'
+        # Note: seriesId n'est PAS inclus ici pour le GET
+    }
+
+    logger.debug(f"Appel GET à Sonarr ManualImport: URL={manual_import_get_url}, Params={get_params}")
+    manual_import_candidates, error_msg_get = _make_arr_request('GET', manual_import_get_url, sonarr_api_key, params=get_params)
+
+    if error_msg_get:
+        logger.error(f"Erreur lors de l'appel GET à manualimport (Sonarr): {error_msg_get}")
+        return jsonify({"success": False, "error": f"Sonarr (manualimport GET): {error_msg_get}"}), 500
+
+    if not manual_import_candidates or not isinstance(manual_import_candidates, list):
+        logger.warning(f"Aucun candidat à l'import trouvé par Sonarr pour le scan du dossier '{path_for_sonarr_api}'. Réponse: {manual_import_candidates}")
+        return jsonify({"success": False, "error": "Aucun fichier importable trouvé par Sonarr dans le dossier spécifié."}), 404
+
+    # --- Filtrage des candidats et préparation du payload pour le POST ---
+    files_to_submit_for_post = []
+    for candidate in manual_import_candidates:
+        candidate_file_path = candidate.get('path') # Chemin du fichier .mkv DANS LE STAGING
+        candidate_series_info = candidate.get('series')
+        candidate_episodes_info = candidate.get('episodes')
+
+        if not candidate_file_path:
+            logger.warning(f"Candidat sans 'path' ignoré: {candidate}")
+            continue
+
+        # Validation 1: Le fichier candidat doit être DANS le dossier de staging qu'on a scanné
+        # (pour éviter d'importer des fichiers de F:\Series\... que Sonarr pourrait lister par erreur)
+        # os.path.normcase pour comparaison insensible à la casse
+        normalized_scan_path = os.path.normcase(os.path.abspath(path_to_scan_for_sonarr_get_step))
+        normalized_candidate_path = os.path.normcase(os.path.abspath(os.path.dirname(candidate_file_path)))
+
+        if normalized_candidate_path != normalized_scan_path:
+             # Si le dossier parent du candidat n'est pas celui qu'on a demandé de scanner, on l'ignore.
+             # Ceci est une sécurité supplémentaire si Sonarr retourne des fichiers hors du 'folder' demandé.
+             # D'après les tests Insomnia, cela ne devrait pas arriver si on ne passe pas seriesId.
+            logger.warning(f"Candidat ignoré '{candidate_file_path}' car il n'est pas dans le dossier de scan attendu '{normalized_scan_path}'. Son dossier parent est '{normalized_candidate_path}'.")
+            continue
+
+        # Validation 2: La série détectée par Sonarr pour ce candidat correspond-elle à celle choisie par l'utilisateur ?
+        if not candidate_series_info or candidate_series_info.get('id') != series_id_from_frontend:
+            logger.warning(f"Candidat '{candidate_file_path}' ignoré: Série détectée ID "
+                           f"{candidate_series_info.get('id') if candidate_series_info else 'N/A'} "
+                           f"ne correspond pas à la série cible ID {series_id_from_frontend}.")
+            continue
+
+        # Validation 3: Y a-t-il des IDs d'épisodes valides ?
+        if not candidate_episodes_info or not all(isinstance(ep, dict) and ep.get('id') for ep in candidate_episodes_info):
+            logger.warning(f"Candidat '{candidate_file_path}' ignoré: Aucun episodeId valide trouvé. Episodes: {candidate_episodes_info}")
+            continue
+        episode_ids_for_post = [ep.get('id') for ep in candidate_episodes_info if ep.get('id')]
+        if not episode_ids_for_post: # Double vérification
+            logger.warning(f"Candidat '{candidate_file_path}' ignoré: Aucun episodeId après filtrage.")
+            continue
+
+        # Validation 4: Infos de qualité présentes ?
+        quality_info_for_post = candidate.get('quality')
+        if not quality_info_for_post or not quality_info_for_post.get('quality') or \
+           not isinstance(quality_info_for_post.get('quality'), dict) or quality_info_for_post['quality'].get('id') is None:
+            logger.warning(f"Candidat '{candidate_file_path}' ignoré: Information de qualité manquante ou invalide. Qualité: {quality_info_for_post}")
+            continue
+
+        # Gestion de la langue
+        detected_languages_list = candidate.get('languages') # C'est une LISTE d'objets langue
+        language_obj_for_post = None
+        if detected_languages_list and isinstance(detected_languages_list, list) and len(detected_languages_list) > 0:
+            # On prend la première langue détectée par Sonarr pour ce fichier
+            if detected_languages_list[0].get('id') is not None and detected_languages_list[0].get('name'):
+                language_obj_for_post = detected_languages_list[0]
+            else:
+                logger.warning(f"Candidat '{candidate_file_path}': Premier objet langue invalide dans la liste: {detected_languages_list[0]}")
+
+        if not language_obj_for_post:
+             logger.warning(f"Candidat '{candidate_file_path}': Aucune langue valide détectée ({detected_languages_list}). L'import se fera sans spécifier la langue (Sonarr utilisera le profil de la série).")
+
+        # Construction du payload pour CE fichier
+        single_file_payload = {
+            "path": candidate_file_path,       # Chemin complet du fichier source .mkv dans le staging
+            "seriesId": series_id_from_frontend, # ID de la série cible
+            "episodeIds": episode_ids_for_post,  # Liste des IDs d'épisodes Sonarr
+            "quality": quality_info_for_post,    # Objet qualité complet
+            "releaseGroup": candidate.get('releaseGroup') # Peut être None
+        }
+        if language_obj_for_post:
+            single_file_payload["language"] = language_obj_for_post # Objet langue {id, name}
+
+        files_to_submit_for_post.append(single_file_payload)
+        logger.info(f"Fichier '{candidate_file_path}' préparé pour POST ManualImport vers série ID {series_id_from_frontend}, épisode(s) ID(s) {episode_ids_for_post}.")
+
+    if not files_to_submit_for_post:
+        logger.warning(f"Aucun fichier du staging n'a pu être préparé pour l'import après filtrage des candidats. Scan de '{path_for_sonarr_api}', série cible ID {series_id_from_frontend}.")
+        return jsonify({"success": False, "error": "Sonarr n'a pas trouvé de fichier correspondant à vos critères dans le dossier de staging, ou n'a pas pu l'associer à la série/épisodes cibles."}), 400
+
+    # --- Étape 2: POST /api/v3/command avec name: "ManualImport" ---
+    post_command_payload = {
+        "name": "ManualImport",
+        "files": files_to_submit_for_post, # 'files' est une liste d'objets
+        "importMode": "Move"               # Déplace le fichier du staging si import réussi
+    }
+
+    command_post_url = f"{sonarr_url.rstrip('/')}/api/v3/command"
+    logger.debug(f"Appel POST à Sonarr Command (ManualImport): URL={command_post_url}, Payload={post_command_payload}")
+
+    response_data_post, error_msg_post = _make_arr_request('POST', command_post_url, sonarr_api_key, json_data=post_command_payload)
+
+    if error_msg_post:
+        logger.error(f"Erreur lors de l'envoi de la commande ManualImport (Sonarr POST): {error_msg_post}. Payload: {post_command_payload}")
+        return jsonify({"success": False, "error": f"Sonarr (ManualImport POST): {error_msg_post}"}), 500
+
+    if response_data_post and isinstance(response_data_post, dict) and response_data_post.get('name') == "ManualImport":
+        sonarr_message = response_data_post.get('message', "Commande d'import manuel acceptée par Sonarr.")
+        logger.info(f"Commande ManualImport acceptée par Sonarr pour {len(files_to_submit_for_post)} fichier(s). Message Sonarr: {sonarr_message}. Réponse complète: {response_data_post}")
+        return jsonify({
+            "success": True,
+            "message": f"{len(files_to_submit_for_post)} fichier(s) soumis pour import manuel. {sonarr_message}. Vérifiez l'activité Sonarr."
+        })
+    else:
+        logger.warning(f"Réponse inattendue après la commande ManualImport à Sonarr: {response_data_post}. Payload envoyé: {post_command_payload}")
+        return jsonify({"success": False, "error": "Réponse inattendue de Sonarr après la commande d'import manuel."}), 500
 
 @seedbox_ui_bp.route('/trigger-radarr-import', methods=['POST'])
 def trigger_radarr_import():
     data = request.get_json()
-    item_name = data.get('item_name')
-    movie_id = data.get('movie_id') # ID Radarr du film
+    item_name_from_frontend = data.get('item_name')
+    movie_id_from_frontend = data.get('movie_id') # L'ID Radarr du film cible
 
     radarr_url = current_app.config.get('RADARR_URL')
     radarr_api_key = current_app.config.get('RADARR_API_KEY')
     staging_dir = current_app.config.get('STAGING_DIR')
 
-    if not all([item_name, movie_id, radarr_url, radarr_api_key, staging_dir]):
+    if not all([item_name_from_frontend, movie_id_from_frontend, radarr_url, radarr_api_key, staging_dir]):
+        logger.error("trigger_radarr_import: Données manquantes ou Radarr non configuré.")
         return jsonify({"success": False, "error": "Données manquantes ou Radarr non configuré."}), 400
 
-    item_path = os.path.join(staging_dir, item_name)
-    if not os.path.exists(item_path):
-         return jsonify({"success": False, "error": f"L'item '{item_name}' n'existe pas."}), 404
+    item_full_path = os.path.join(staging_dir, item_name_from_frontend)
+    if not os.path.exists(item_full_path):
+        logger.error(f"trigger_radarr_import: L'item '{item_name_from_frontend}' (chemin: {item_full_path}) n'existe pas.")
+        return jsonify({"success": False, "error": f"L'item '{item_name_from_frontend}' n'existe pas."}), 404
 
-    # Similaire à Sonarr, pour l'instant, on déclenche un scan du path.
-    logger.info(f"Tentative d'import Radarr pour l'item '{item_name}' (path: {item_path}) en lien avec le film ID: {movie_id} (non utilisé directement par DownloadedMoviesScan).")
+    logger.info(f"Début de l'import manuel Radarr pour '{item_name_from_frontend}' vers le film ID {movie_id_from_frontend}.")
 
-    success, cmd_message = send_arr_command(radarr_url, radarr_api_key, "DownloadedMoviesScan", item_path_to_scan=item_path)
+    # --- Étape 1: GET /api/v3/manualimport (Radarr) ---
+    manual_import_url = f"{radarr_url.rstrip('/')}/api/v3/manualimport"
+    params = {
+        'folder': item_full_path,
+        'movieId': movie_id_from_frontend, # Pour aider Radarr à identifier le film
+        'filterExistingFiles': 'false'
+    }
 
-    if success:
-        message = f"Scan Radarr pour '{item_name}' initié. Radarr va tenter de l'importer. Vérifiez l'activité Radarr."
-        flash(message, 'info')
-        return jsonify({"success": True, "message": message})
+    logger.debug(f"Appel GET à Radarr ManualImport: URL={manual_import_url}, Params={params}")
+    manual_import_candidates, error_msg = _make_arr_request('GET', manual_import_url, radarr_api_key, params=params)
+
+    if error_msg:
+        logger.error(f"Erreur lors de l'appel GET à manualimport (Radarr): {error_msg}")
+        return jsonify({"success": False, "error": f"Radarr (manualimport GET): {error_msg}"}), 500
+
+    if not manual_import_candidates or not isinstance(manual_import_candidates, list):
+        logger.warning(f"Aucun candidat à l'import trouvé par Radarr pour le chemin '{item_full_path}' et le film ID {movie_id_from_frontend}. Réponse: {manual_import_candidates}")
+        return jsonify({"success": False, "error": "Aucun fichier importable trouvé par Radarr pour ce film et ce chemin."}), 404
+
+    # Pour Radarr, chaque candidat est un film potentiel.
+    # On s'attend à ce qu'il y ait typiquement UN candidat si item_full_path est un seul fichier film.
+    # Si item_full_path est un dossier avec plusieurs films, il pourrait y en avoir plusieurs.
+    # On va essayer d'importer le premier candidat qui correspond au movieId.
+
+    file_to_import_payload = None
+
+    for candidate in manual_import_candidates:
+        candidate_path = candidate.get('path')
+        candidate_movie = candidate.get('movie') # Objet Movie de Radarr
+
+        if not candidate_path:
+            logger.warning(f"Candidat Radarr sans chemin ignoré: {candidate}")
+            continue
+
+        if not candidate_movie or candidate_movie.get('id') != movie_id_from_frontend:
+            logger.warning(f"Candidat Radarr ignoré: le movie ID {candidate_movie.get('id') if candidate_movie else 'N/A'} ne correspond pas à {movie_id_from_frontend}. Fichier: {candidate_path}")
+            continue
+
+        quality_info = candidate.get('quality')
+        if not quality_info or not quality_info.get('quality') or not isinstance(quality_info.get('quality'), dict) or quality_info['quality'].get('id') is None:
+            logger.warning(f"Candidat Radarr ignoré: information de qualité manquante pour {candidate_path}. Qualité: {quality_info}")
+            continue
+
+        # Radarr `manualimport` ne retourne pas directement la langue dans l'objet principal du candidat
+        # mais dans `candidate.movie.originalLanguage`. On peut la réutiliser.
+        # Pour la commande `ManualImport`, Radarr s'attend à un objet langue.
+        # Si nous n'avons pas d'objet langue, nous pourrions avoir besoin de le récupérer ou de le construire.
+        # Pour l'instant, on essaie sans spécifier la langue explicitement dans le payload de la commande,
+        # Radarr devrait pouvoir s'en sortir ou utiliser des défauts.
+        # Alternativement, si `candidate.movie.originalLanguage` est disponible:
+        # language_obj_for_payload = candidate.movie.originalLanguage # Si c'est déjà le bon format {id, name}
+        # Ou, si on doit le chercher: GET /language, trouver l'ID pour la langue de `candidate.movie.originalLanguage.name`
+
+        # Si le `candidate` a un `id` (différent du `movieId`), c'est un "release id" pour l'import.
+        # Le payload de la commande ManualImport pour Radarr est un peu différent:
+        # Il prend un `movieId`, `path`, `quality`, et optionnellement `downloadId`.
+
+        file_to_import_payload = { # Radarr ManualImport prend UN seul fichier à la fois dans sa commande POST (contrairement à Sonarr qui prend une liste `files`)
+            "path": candidate_path,
+            "movieId": movie_id_from_frontend,
+            "quality": quality_info, # Objet qualité complet
+            # "language": language_obj_for_payload, # Optionnel, si on l'a
+            "releaseGroup": candidate.get('releaseGroup'),
+            # "downloadId": "MANUAL_RADARR_IMPORT_XYZ" # Optionnel
+        }
+        logger.info(f"Fichier '{candidate_path}' préparé pour l'import manuel Radarr vers film ID {movie_id_from_frontend}.")
+        break # On prend le premier candidat correspondant pour un film
+
+    if not file_to_import_payload:
+        logger.warning(f"Aucun fichier n'a pu être préparé pour l'import Radarr après filtrage pour '{item_name_from_frontend}'.")
+        return jsonify({"success": False, "error": "Radarr n'a pas pu associer le fichier au film sélectionné ou les informations de qualité sont manquantes."}), 400
+
+    # --- Étape 2: POST /api/v3/command avec name: "ManualImport" (Radarr) ---
+    # Radarr s'attend à ce que le payload de la commande ManualImport soit directement l'objet file, pas une liste.
+    # Le name de la commande reste "ManualImport".
+    # { "name": "ManualImport", "movieId": ..., "path": ..., ... }
+    manual_import_command_payload = {
+        "name": "ManualImport",
+        **file_to_import_payload, # Fusionne les clés de file_to_import_payload ici
+        "importMode": "Move"
+    }
+
+    command_url = f"{radarr_url.rstrip('/')}/api/v3/command"
+    logger.debug(f"Appel POST à Radarr Command (ManualImport): URL={command_url}, Payload={manual_import_command_payload}")
+
+    response_data, error_msg = _make_arr_request('POST', command_url, radarr_api_key, json_data=manual_import_command_payload)
+
+    if error_msg:
+        logger.error(f"Erreur lors de l'envoi de la commande ManualImport (Radarr): {error_msg}. Payload: {manual_import_command_payload}")
+        return jsonify({"success": False, "error": f"Radarr (ManualImport POST): {error_msg}"}), 500
+
+    if response_data and isinstance(response_data, dict) and response_data.get('name') == "ManualImport":
+        status_message = response_data.get('message', "Commande d'import manuel acceptée par Radarr.")
+        logger.info(f"Commande ManualImport acceptée par Radarr pour '{file_to_import_payload['path']}'. Message Radarr: {status_message}. Réponse complète: {response_data}")
+        return jsonify({
+            "success": True,
+            "message": f"Fichier '{os.path.basename(file_to_import_payload['path'])}' soumis pour import manuel. {status_message}. Vérifiez l'activité Radarr."
+        })
     else:
-        return jsonify({"success": False, "error": cmd_message}), 500
+        logger.warning(f"Réponse inattendue après la commande ManualImport à Radarr: {response_data}. Payload envoyé: {manual_import_command_payload}")
+        return jsonify({"success": False, "error": "Réponse inattendue de Radarr après la commande d'import manuel."}), 500
