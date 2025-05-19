@@ -23,8 +23,9 @@ from flask import Blueprint, render_template, current_app, request, flash, redir
 # Configuration du logger pour ce module
 logger = logging.getLogger(__name__)
 
+# ------------------------------------------------------------------------------
 # --- Fonctions Utilitaires pour les API Sonarr/Radarr ---
-
+# ------------------------------------------------------------------------------
 def _make_arr_request(method, url, api_key, params=None, json_data=None, timeout=30):
     """Fonction helper pour faire des requêtes génériques aux API *Arr."""
     headers = {
@@ -62,6 +63,75 @@ def _make_arr_request(method, url, api_key, params=None, json_data=None, timeout
     except Exception as e:
         logger.error(f"Erreur inattendue lors de l'appel API vers {url}: {e}")
         return None, f"Erreur inattendue : {e}"
+# ------------------------------------------------------------------------------
+# FONCTION DE NETTOYAGE DU STAGING
+# ------------------------------------------------------------------------------
+def cleanup_staging_subfolder(folder_path_in_staging, staging_root_dir, orphan_extensions):
+    """
+    Nettoie un sous-dossier spécifique dans le répertoire de staging.
+    Le supprime s'il est vide ou ne contient que des fichiers orphelins.
+    """
+    logger.info(f"Tentative de nettoyage du dossier de staging: {folder_path_in_staging}")
+
+    # Garde-fou : ne pas supprimer le dossier racine du staging lui-même
+    norm_folder_path = os.path.normpath(os.path.abspath(folder_path_in_staging))
+    norm_staging_root = os.path.normpath(os.path.abspath(staging_root_dir))
+
+    if norm_folder_path == norm_staging_root:
+        logger.warning(f"Nettoyage annulé : tentative de suppression du dossier racine du staging ({folder_path_in_staging}).")
+        return False
+
+    if not os.path.exists(folder_path_in_staging):
+        logger.info(f"Dossier {folder_path_in_staging} n'existe déjà plus. Pas de nettoyage nécessaire.")
+        return True
+
+    if not os.path.isdir(folder_path_in_staging):
+        logger.warning(f"Chemin {folder_path_in_staging} n'est pas un dossier. Nettoyage annulé.")
+        return False
+
+    all_files_are_orphans = True
+    has_any_files = False
+    has_subfolders = False # Pour vérifier s'il y a des sous-dossiers non vides
+
+    for item_name in os.listdir(folder_path_in_staging):
+        item_path = os.path.join(folder_path_in_staging, item_name)
+        if os.path.isfile(item_path):
+            has_any_files = True
+            _, ext = os.path.splitext(item_name)
+            if ext.lower() not in orphan_extensions:
+                all_files_are_orphans = False
+                logger.info(f"Nettoyage de {folder_path_in_staging} annulé: contient un fichier non-orphelin: {item_name}")
+                break
+        elif os.path.isdir(item_path):
+            # Si on trouve un sous-dossier, on ne supprime pas le dossier parent pour l'instant
+            # (on pourrait rendre cela récursif, mais pour le staging c'est peut-être trop)
+            has_subfolders = True
+            all_files_are_orphans = False # Considérez un sous-dossier comme non orphelin pour cette logique simple
+            logger.info(f"Nettoyage de {folder_path_in_staging} annulé: contient un sous-dossier: {item_name}")
+            break
+
+    if not has_any_files and not has_subfolders: # Le dossier est complètement vide
+        logger.info(f"Le dossier {folder_path_in_staging} est vide.")
+        # all_files_are_orphans reste True par défaut si pas de fichiers ou sous-dossiers
+
+    if all_files_are_orphans and not has_subfolders: # On supprime seulement si vide ou seulement orphelins, et pas de sous-dossiers
+        try:
+            logger.info(f"Suppression du dossier de staging (vide ou seulement orphelins): {folder_path_in_staging}")
+            shutil.rmtree(folder_path_in_staging)
+            logger.info(f"Dossier {folder_path_in_staging} supprimé avec succès.")
+            return True
+        except Exception as e:
+            logger.error(f"Erreur lors de la suppression du dossier {folder_path_in_staging}: {e}")
+            return False
+    elif has_subfolders:
+        logger.info(f"Nettoyage de {folder_path_in_staging} non effectué car il contient des sous-dossiers.")
+    elif not all_files_are_orphans:
+         logger.info(f"Nettoyage de {folder_path_in_staging} non effectué car il contient des fichiers non-orphelins.")
+
+    return False
+# ------------------------------------------------------------------------------
+# FIN DE LA FONCTION DE NETTOYAGE
+# ------------------------------------------------------------------------------
 
 def send_arr_command(base_url, api_key, command_name, item_path_to_scan=None):
     """Appelle l'API Sonarr/Radarr pour déclencher une commande (ex: scan)."""
@@ -117,22 +187,13 @@ def index():
         item_path = os.path.join(staging_dir, item_name)
         try:
             is_dir = os.path.isdir(item_path)
-            size_bytes_raw = 0 # Pour le tri
+            size_bytes_raw = 0
 
             if is_dir:
-                # Pour la taille des dossiers, une estimation rapide ou N/A pour éviter la lenteur
-                # Ici, je vais mettre N/A pour les dossiers pour l'instant, optimisation possible plus tard
                 size_readable = "N/A (dossier)"
-                # Si tu veux calculer la taille (peut être lent):
-                # for dirpath, dirnames, filenames in os.walk(item_path):
-                #     for f in filenames:
-                #         fp = os.path.join(dirpath, f)
-                #         if not os.path.islink(fp):
-                #             size_bytes_raw += os.path.getsize(fp)
             else:
                 size_bytes_raw = os.path.getsize(item_path)
 
-            # Conversion taille lisible pour fichiers
             if not is_dir:
                 if size_bytes_raw == 0:
                     size_readable = "0 B"
@@ -152,7 +213,7 @@ def index():
                 'name': item_name,
                 'path': item_path,
                 'is_dir': is_dir,
-                'size_bytes_raw': size_bytes_raw, # Pour un tri potentiel
+                'size_bytes_raw': size_bytes_raw,
                 'size_readable': size_readable,
                 'last_modified': last_modified
             })
@@ -305,17 +366,19 @@ def search_radarr_api():
     return jsonify(results if results else [])
 
 
+# ------------------------------------------------------------------------------
+# FONCTION trigger_sonarr_import
+# ------------------------------------------------------------------------------
 @seedbox_ui_bp.route('/trigger-sonarr-import', methods=['POST'])
 def trigger_sonarr_import():
     data = request.get_json()
-    item_name_from_frontend = data.get('item_name') # Nom du fichier/dossier cliqué dans l'UI
-    series_id_from_frontend = data.get('series_id') # ID Sonarr de la série cible choisie par l'utilisateur
+    item_name_from_frontend = data.get('item_name')
+    series_id_from_frontend = data.get('series_id')
 
     sonarr_url = current_app.config.get('SONARR_URL')
     sonarr_api_key = current_app.config.get('SONARR_API_KEY')
     staging_dir = current_app.config.get('STAGING_DIR')
 
-    # Vérifications initiales
     if not all([item_name_from_frontend, series_id_from_frontend, sonarr_url, sonarr_api_key, staging_dir]):
         logger.error("trigger_sonarr_import: Données manquantes ou Sonarr non configuré.")
         return jsonify({"success": False, "error": "Données manquantes ou Sonarr non configuré."}), 400
@@ -325,31 +388,24 @@ def trigger_sonarr_import():
         logger.error(f"trigger_sonarr_import: L'item '{item_name_from_frontend}' (chemin: {path_of_item_clicked_in_ui}) n'existe pas.")
         return jsonify({"success": False, "error": f"L'item '{item_name_from_frontend}' n'existe pas."}), 404
 
-    # Déterminer le chemin à passer à Sonarr pour le paramètre 'folder' de manualimport (GET)
-    # D'après nos tests Insomnia, passer le dossier parent du fichier .mkv a fonctionné.
     path_to_scan_for_sonarr_get_step = ""
     if os.path.isfile(path_of_item_clicked_in_ui):
-        # Si l'utilisateur a cliqué sur un fichier, on utilise son dossier parent pour le scan
         path_to_scan_for_sonarr_get_step = os.path.dirname(path_of_item_clicked_in_ui)
         logger.info(f"Item cliqué est un fichier. Sonarr (GET manualimport) scannera son dossier parent: {path_to_scan_for_sonarr_get_step}")
     elif os.path.isdir(path_of_item_clicked_in_ui):
-        # Si l'utilisateur a cliqué sur un dossier, on utilise ce dossier pour le scan
         path_to_scan_for_sonarr_get_step = path_of_item_clicked_in_ui
         logger.info(f"Item cliqué est un dossier. Sonarr (GET manualimport) scannera ce dossier: {path_to_scan_for_sonarr_get_step}")
     else:
         logger.error(f"L'item '{path_of_item_clicked_in_ui}' n'est ni un fichier ni un dossier valide.")
         return jsonify({"success": False, "error": "L'item sélectionné n'est pas valide."}), 400
 
-    # Convertir en chemin Windows avec backslashes pour Sonarr
     path_for_sonarr_api = path_to_scan_for_sonarr_get_step.replace('/', '\\')
     logger.info(f"Chemin pour API Sonarr (GET manualimport folder): {path_for_sonarr_api}")
 
-    # --- Étape 1: GET /api/v3/manualimport (sans seriesId) ---
     manual_import_get_url = f"{sonarr_url.rstrip('/')}/api/v3/manualimport"
     get_params = {
         'folder': path_for_sonarr_api,
         'filterExistingFiles': 'false'
-        # Note: seriesId n'est PAS inclus ici pour le GET
     }
 
     logger.debug(f"Appel GET à Sonarr ManualImport: URL={manual_import_get_url}, Params={get_params}")
@@ -363,10 +419,12 @@ def trigger_sonarr_import():
         logger.warning(f"Aucun candidat à l'import trouvé par Sonarr pour le scan du dossier '{path_for_sonarr_api}'. Réponse: {manual_import_candidates}")
         return jsonify({"success": False, "error": "Aucun fichier importable trouvé par Sonarr dans le dossier spécifié."}), 404
 
-    # --- Filtrage des candidats et préparation du payload pour le POST ---
     files_to_submit_for_post = []
+    # Pour stocker le chemin du fichier qui sera effectivement importé pour le nettoyage
+    path_of_file_being_imported_from_staging = None
+
     for candidate in manual_import_candidates:
-        candidate_file_path = candidate.get('path') # Chemin du fichier .mkv DANS LE STAGING
+        candidate_file_path = candidate.get('path')
         candidate_series_info = candidate.get('series')
         candidate_episodes_info = candidate.get('episodes')
 
@@ -374,78 +432,82 @@ def trigger_sonarr_import():
             logger.warning(f"Candidat sans 'path' ignoré: {candidate}")
             continue
 
-        # Validation 1: Le fichier candidat doit être DANS le dossier de staging qu'on a scanné
-        # (pour éviter d'importer des fichiers de F:\Series\... que Sonarr pourrait lister par erreur)
-        # os.path.normcase pour comparaison insensible à la casse
-        normalized_scan_path = os.path.normcase(os.path.abspath(path_to_scan_for_sonarr_get_step))
-        normalized_candidate_path = os.path.normcase(os.path.abspath(os.path.dirname(candidate_file_path)))
+        # Vérifier que le chemin du candidat est bien dans le STAGING_DIR et pas ailleurs
+        # Ceci est une sécurité pour ne pas traiter des fichiers de F:\Series... si Sonarr les remontait
+        # os.path.normcase pour comparaison insensible à la casse sous Windows
+        # os.path.abspath pour s'assurer qu'on compare des chemins absolus normalisés
+        norm_staging_dir_abs = os.path.normcase(os.path.abspath(staging_dir))
+        norm_candidate_path_abs = os.path.normcase(os.path.abspath(candidate_file_path))
 
-        if normalized_candidate_path != normalized_scan_path:
-             # Si le dossier parent du candidat n'est pas celui qu'on a demandé de scanner, on l'ignore.
-             # Ceci est une sécurité supplémentaire si Sonarr retourne des fichiers hors du 'folder' demandé.
-             # D'après les tests Insomnia, cela ne devrait pas arriver si on ne passe pas seriesId.
-            logger.warning(f"Candidat ignoré '{candidate_file_path}' car il n'est pas dans le dossier de scan attendu '{normalized_scan_path}'. Son dossier parent est '{normalized_candidate_path}'.")
+        if not norm_candidate_path_abs.startswith(norm_staging_dir_abs):
+            logger.warning(f"Candidat '{candidate_file_path}' ignoré car il n'est pas dans le STAGING_DIR ('{staging_dir}').")
             continue
 
-        # Validation 2: La série détectée par Sonarr pour ce candidat correspond-elle à celle choisie par l'utilisateur ?
+        # Si on est ici, le candidate_file_path est bien un fichier du staging
+        # On le stocke pour le nettoyage plus tard (on prendra le premier trouvé et validé)
+        if path_of_file_being_imported_from_staging is None: # On ne le fait qu'une fois
+            path_of_file_being_imported_from_staging = candidate_file_path
+
+
         if not candidate_series_info or candidate_series_info.get('id') != series_id_from_frontend:
             logger.warning(f"Candidat '{candidate_file_path}' ignoré: Série détectée ID "
                            f"{candidate_series_info.get('id') if candidate_series_info else 'N/A'} "
                            f"ne correspond pas à la série cible ID {series_id_from_frontend}.")
+            path_of_file_being_imported_from_staging = None # Invalider si la série ne correspond pas
             continue
 
-        # Validation 3: Y a-t-il des IDs d'épisodes valides ?
         if not candidate_episodes_info or not all(isinstance(ep, dict) and ep.get('id') for ep in candidate_episodes_info):
             logger.warning(f"Candidat '{candidate_file_path}' ignoré: Aucun episodeId valide trouvé. Episodes: {candidate_episodes_info}")
+            path_of_file_being_imported_from_staging = None
             continue
         episode_ids_for_post = [ep.get('id') for ep in candidate_episodes_info if ep.get('id')]
-        if not episode_ids_for_post: # Double vérification
+        if not episode_ids_for_post:
             logger.warning(f"Candidat '{candidate_file_path}' ignoré: Aucun episodeId après filtrage.")
+            path_of_file_being_imported_from_staging = None
             continue
 
-        # Validation 4: Infos de qualité présentes ?
         quality_info_for_post = candidate.get('quality')
         if not quality_info_for_post or not quality_info_for_post.get('quality') or \
            not isinstance(quality_info_for_post.get('quality'), dict) or quality_info_for_post['quality'].get('id') is None:
             logger.warning(f"Candidat '{candidate_file_path}' ignoré: Information de qualité manquante ou invalide. Qualité: {quality_info_for_post}")
+            path_of_file_being_imported_from_staging = None
             continue
 
-        # Gestion de la langue
-        detected_languages_list = candidate.get('languages') # C'est une LISTE d'objets langue
+        detected_languages_list = candidate.get('languages')
         language_obj_for_post = None
         if detected_languages_list and isinstance(detected_languages_list, list) and len(detected_languages_list) > 0:
-            # On prend la première langue détectée par Sonarr pour ce fichier
             if detected_languages_list[0].get('id') is not None and detected_languages_list[0].get('name'):
                 language_obj_for_post = detected_languages_list[0]
             else:
                 logger.warning(f"Candidat '{candidate_file_path}': Premier objet langue invalide dans la liste: {detected_languages_list[0]}")
 
         if not language_obj_for_post:
-             logger.warning(f"Candidat '{candidate_file_path}': Aucune langue valide détectée ({detected_languages_list}). L'import se fera sans spécifier la langue (Sonarr utilisera le profil de la série).")
+             logger.warning(f"Candidat '{candidate_file_path}': Aucune langue valide détectée ({detected_languages_list}). L'import se fera sans spécifier la langue.")
 
-        # Construction du payload pour CE fichier
         single_file_payload = {
-            "path": candidate_file_path,       # Chemin complet du fichier source .mkv dans le staging
-            "seriesId": series_id_from_frontend, # ID de la série cible
-            "episodeIds": episode_ids_for_post,  # Liste des IDs d'épisodes Sonarr
-            "quality": quality_info_for_post,    # Objet qualité complet
-            "releaseGroup": candidate.get('releaseGroup') # Peut être None
+            "path": candidate_file_path,
+            "seriesId": series_id_from_frontend,
+            "episodeIds": episode_ids_for_post,
+            "quality": quality_info_for_post,
+            "releaseGroup": candidate.get('releaseGroup')
         }
         if language_obj_for_post:
-            single_file_payload["language"] = language_obj_for_post # Objet langue {id, name}
+            single_file_payload["language"] = language_obj_for_post
 
         files_to_submit_for_post.append(single_file_payload)
         logger.info(f"Fichier '{candidate_file_path}' préparé pour POST ManualImport vers série ID {series_id_from_frontend}, épisode(s) ID(s) {episode_ids_for_post}.")
+        # On a trouvé au moins un fichier valide du staging, on arrête de chercher d'autres candidats pour ce `path_of_file_being_imported_from_staging`
+        # Si `path_to_scan_for_sonarr_get_step` contenait plusieurs fichiers vidéos pour la même série (ex: CD1, CD2),
+        # cette boucle continuerait pour les ajouter à `files_to_submit_for_post`. C'est correct.
 
-    if not files_to_submit_for_post:
+    if not files_to_submit_for_post: # Si aucun fichier du staging n'a passé toutes les validations
         logger.warning(f"Aucun fichier du staging n'a pu être préparé pour l'import après filtrage des candidats. Scan de '{path_for_sonarr_api}', série cible ID {series_id_from_frontend}.")
         return jsonify({"success": False, "error": "Sonarr n'a pas trouvé de fichier correspondant à vos critères dans le dossier de staging, ou n'a pas pu l'associer à la série/épisodes cibles."}), 400
 
-    # --- Étape 2: POST /api/v3/command avec name: "ManualImport" ---
     post_command_payload = {
         "name": "ManualImport",
-        "files": files_to_submit_for_post, # 'files' est une liste d'objets
-        "importMode": "Move"               # Déplace le fichier du staging si import réussi
+        "files": files_to_submit_for_post,
+        "importMode": "Move"
     }
 
     command_post_url = f"{sonarr_url.rstrip('/')}/api/v3/command"
@@ -459,7 +521,31 @@ def trigger_sonarr_import():
 
     if response_data_post and isinstance(response_data_post, dict) and response_data_post.get('name') == "ManualImport":
         sonarr_message = response_data_post.get('message', "Commande d'import manuel acceptée par Sonarr.")
-        logger.info(f"Commande ManualImport acceptée par Sonarr pour {len(files_to_submit_for_post)} fichier(s). Message Sonarr: {sonarr_message}. Réponse complète: {response_data_post}")
+        logger.info(f"Commande ManualImport acceptée par Sonarr pour {len(files_to_submit_for_post)} fichier(s). Message Sonarr: {sonarr_message}.")
+
+        # --- Logique de nettoyage après import ---
+        # path_of_file_being_imported_from_staging contient le chemin du premier fichier .mkv
+        # que nous avons décidé d'importer depuis le staging.
+        # actual_release_folder_in_staging est le dossier qui contenait ce .mkv (ou le dossier cliqué si c'était déjà un dossier).
+
+        actual_release_folder_in_staging = path_to_scan_for_sonarr_get_step # C'est le dossier qu'on a scanné
+
+        if path_of_file_being_imported_from_staging: # S'assurer qu'on a bien un fichier de référence du staging
+            logger.info(f"Attente de 10 secondes avant de vérifier le nettoyage pour le dossier '{actual_release_folder_in_staging}' suite à l'import de '{path_of_file_being_imported_from_staging}'...")
+            time.sleep(10)
+
+            if not os.path.exists(path_of_file_being_imported_from_staging):
+                logger.info(f"Le fichier source '{path_of_file_being_imported_from_staging}' a été déplacé par Sonarr.")
+                orphan_exts = current_app.config.get('ORPHAN_EXTENSIONS', [])
+                if cleanup_staging_subfolder(actual_release_folder_in_staging, staging_dir, orphan_exts):
+                    logger.info(f"Nettoyage du dossier de staging '{actual_release_folder_in_staging}' réussi.")
+                else:
+                    logger.warning(f"Échec du nettoyage automatique du dossier de staging '{actual_release_folder_in_staging}'. Il peut contenir des fichiers non-orphelins ou des sous-dossiers.")
+            else:
+                logger.warning(f"Le fichier source '{path_of_file_being_imported_from_staging}' est toujours présent dans le staging. Nettoyage du dossier annulé.")
+        else:
+            logger.warning("Aucun chemin de fichier de staging de référence pour le nettoyage (path_of_file_being_imported_from_staging est None).")
+
         return jsonify({
             "success": True,
             "message": f"{len(files_to_submit_for_post)} fichier(s) soumis pour import manuel. {sonarr_message}. Vérifiez l'activité Sonarr."
@@ -467,6 +553,10 @@ def trigger_sonarr_import():
     else:
         logger.warning(f"Réponse inattendue après la commande ManualImport à Sonarr: {response_data_post}. Payload envoyé: {post_command_payload}")
         return jsonify({"success": False, "error": "Réponse inattendue de Sonarr après la commande d'import manuel."}), 500
+# ------------------------------------------------------------------------------
+# FIN DE trigger_sonarr_import
+# ------------------------------------------------------------------------------
+
 
 @seedbox_ui_bp.route('/trigger-radarr-import', methods=['POST'])
 def trigger_radarr_import():
