@@ -1,163 +1,383 @@
 import os
 import shutil
 import logging
-import requests # Ajouté pour les appels API
-from flask import Flask, render_template, request, redirect, url_for, flash
+from datetime import datetime
+import requests # Pour les appels API
 from requests.exceptions import RequestException # Pour gérer les erreurs de connexion
 
-# Configuration du logging simple
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+from flask import Blueprint, render_template, current_app, request, flash, redirect, url_for, jsonify
 
-# Crée une instance de l'application Flask
-app = Flask(__name__)
+# Définition du Blueprint pour seedbox_ui
+# Le Blueprint lui-même est défini dans app/seedbox_ui/__init__.py
+# from . import seedbox_ui_bp # Ceci serait pour importer le bp si on en avait besoin ici, mais on l'utilise pour décorer les routes.
+# Pour l'instant, on va supposer que les routes sont décorées avec un bp défini ailleurs (dans __init__.py)
 
-# --- Configuration Obligatoire ---
-app.config['SECRET_KEY'] = '[REDACTED_FLASK_SECRET_KEY]' # !!! CHANGEZ CECI !!!
-STAGING_DIR = r"X:\seedbox_staging"
+# Création du Blueprint (normalement fait dans __init__.py, mais pour le contexte si ce fichier était autonome)
+# Si tu as bien from . import seedbox_ui_bp dans routes.py et que seedbox_ui_bp = Blueprint(...) est dans __init__.py, c'est bon.
+# Sinon, il faut s'assurer que seedbox_ui_bp est accessible ici.
+# En regardant ton GitHub, __init__.py définit bien seedbox_ui_bp et routes.py l'importe avec:
+# from app.seedbox_ui import seedbox_ui_bp
+# C'est parfait.
 
-# --- Configuration API Sonarr/Radarr ---
-SONARR_URL = "http://192.168.10.15:8989"
-SONARR_API_KEY = "[REDACTED_SONARR_KEY]"
+# Configuration du logger pour ce module
+logger = logging.getLogger(__name__)
 
-RADARR_URL = "http://192.168.10.15:7878"
-RADARR_API_KEY = "[REDACTED_RADARR_KEY]"
-# ---------------------------------------------------------------------
+# --- Fonctions Utilitaires pour les API Sonarr/Radarr ---
 
-# --- Nouvelle fonction pour appeler les API *Arr ---
-def call_arr_api(base_url, api_key, command_name, item_path):
-    """Appelle l'API Sonarr/Radarr pour déclencher un scan."""
-    # Détermine l'endpoint de l'API (v3 est courant pour les versions récentes)
-    api_endpoint = f"{base_url.rstrip('/')}/api/v3/command"
-    # Certains utilisent encore /api/ ; on pourrait ajouter une logique de test si v3 échoue
-
+def _make_arr_request(method, url, api_key, params=None, json_data=None, timeout=30):
+    """Fonction helper pour faire des requêtes génériques aux API *Arr."""
     headers = {
         'X-Api-Key': api_key,
         'Content-Type': 'application/json'
     }
-    payload = {
-        "name": command_name, # "DownloadedEpisodesScan" ou "DownloadedMoviesScan"
-        "path": item_path,
-        "importMode": "Move", # Tente de déplacer/supprimer après import
-        "downloadClientId": "" # Peut généralement être laissé vide
-        # D'autres paramètres pourraient être ajoutés si nécessaire (ex: tvdbId, tmdbId)
-    }
-
-    logging.info(f"Appel API vers {api_endpoint} - Commande: {command_name} - Chemin: {item_path}")
-
     try:
-        response = requests.post(api_endpoint, headers=headers, json=payload, timeout=30) # Timeout de 30s
-        response.raise_for_status() # Lève une exception pour les codes d'erreur HTTP (4xx ou 5xx)
+        response = requests.request(method, url, headers=headers, params=params, json=json_data, timeout=timeout)
+        response.raise_for_status() # Lève une exception pour les codes 4xx/5xx
 
-        # L'API *Arr retourne souvent 201 Created pour une commande acceptée
-        if response.status_code == 201:
-            logging.info(f"Commande '{command_name}' acceptée par {base_url} pour '{os.path.basename(item_path)}'.")
-            return True, f"Commande '{command_name}' envoyée avec succès pour '{os.path.basename(item_path)}'."
+        # Pour les commandes POST qui retournent 201 ou 202, ou GET qui retourne 200
+        if response.status_code in [200, 201, 202]:
+            # Si la réponse est JSON, la retourner, sinon True pour succès
+            try:
+                return response.json(), None
+            except requests.exceptions.JSONDecodeError:
+                return True, None # Succès sans corps JSON (ex: 201 Created)
         else:
-            # Cas où raise_for_status ne lèverait pas d'erreur mais le code n'est pas 201
-            logging.warning(f"Réponse inattendue de {base_url} (Code: {response.status_code}): {response.text}")
-            return False, f"Réponse inattendue de l'API (Code: {response.status_code}). Vérifiez les logs de l'application *Arr."
+            logger.warning(f"Réponse inattendue de {url} (Code: {response.status_code}): {response.text}")
+            return None, f"Réponse inattendue de l'API (Code: {response.status_code})."
 
     except RequestException as e:
-        logging.error(f"Erreur de communication avec l'API {base_url}: {e}")
-        # Essayer de donner une erreur plus spécifique si possible
+        logger.error(f"Erreur de communication avec l'API {url}: {e}")
         error_details = str(e)
         if "Failed to establish a new connection" in error_details:
-            return False, f"Erreur : Impossible de se connecter à {base_url}. L'URL est-elle correcte et l'application *Arr est-elle lancée ?"
-        elif "401 Client Error: Unauthorized" in error_details:
-             return False, f"Erreur 401 : Non autorisé. La clé API est-elle correcte pour {base_url} ?"
-        elif "404 Client Error: Not Found" in error_details:
-             return False, f"Erreur 404 : Non trouvé. L'URL de l'API ({api_endpoint}) est-elle correcte ?"
+            return None, f"Erreur : Impossible de se connecter. L'URL est-elle correcte et l'application *Arr est-elle lancée ?"
+        elif "401" in error_details: # Unauthorized
+             return None, f"Erreur 401 : Non autorisé. La clé API est-elle correcte ?"
+        elif "403" in error_details: # Forbidden (souvent pour IP Whitelisting ou mauvais base URL)
+            return None, f"Erreur 403 : Interdit. Vérifiez la configuration de l'API (ex: IP whitelist, base URL)."
+        elif "404" in error_details: # Not Found
+             return None, f"Erreur 404 : Non trouvé. L'URL de l'API ({url}) est-elle correcte ?"
         else:
-            return False, f"Erreur de communication avec l'API : {error_details}"
+            return None, f"Erreur de communication avec l'API : {error_details}"
     except Exception as e:
-        # Autre erreur inattendue
-        logging.error(f"Erreur inattendue lors de l'appel API vers {base_url}: {e}")
-        return False, f"Erreur inattendue : {e}"
+        logger.error(f"Erreur inattendue lors de l'appel API vers {url}: {e}")
+        return None, f"Erreur inattendue : {e}"
 
+def send_arr_command(base_url, api_key, command_name, item_path_to_scan=None):
+    """Appelle l'API Sonarr/Radarr pour déclencher une commande (ex: scan)."""
+    api_endpoint = f"{base_url.rstrip('/')}/api/v3/command"
+    payload = {"name": command_name}
 
-@app.route('/')
-def index():
-    items = []
-    if not os.path.isdir(STAGING_DIR):
-        flash(f"Erreur : Le dossier de staging '{STAGING_DIR}' n'a pas été trouvé.", 'danger')
+    if command_name in ["DownloadedEpisodesScan", "DownloadedMoviesScan"] and item_path_to_scan:
+        payload["path"] = item_path_to_scan
+        payload["importMode"] = "Move" # Tente de déplacer/supprimer après import
+        # downloadClientId peut souvent être omis ou vide
+        # payload["downloadClientId"] = ""
+
+    # Pour d'autres commandes, des paramètres spécifiques peuvent être nécessaires
+    # Par exemple, pour ManualImport, le payload serait différent.
+
+    logger.info(f"Envoi de la commande '{command_name}' à {api_endpoint} avec le payload: {payload}")
+
+    response_data, error_msg = _make_arr_request('POST', api_endpoint, api_key, json_data=payload)
+
+    if error_msg:
+        return False, error_msg
+
+    # Un POST à /command retourne généralement un corps JSON avec les détails de la commande
+    if response_data and isinstance(response_data, dict) and response_data.get('name') == command_name:
+        logger.info(f"Commande '{command_name}' acceptée par {base_url} pour le chemin '{item_path_to_scan if item_path_to_scan else 'global'}'.")
+        return True, f"Commande '{command_name}' envoyée avec succès."
     else:
+        logger.warning(f"Réponse inattendue après la commande {command_name} à {base_url}: {response_data}")
+        return False, f"Réponse inattendue de l'API après la commande. Vérifiez les logs de l'application *Arr."
+
+
+# --- Routes du Blueprint seedbox_ui ---
+# Assurez-vous que `seedbox_ui_bp` est importé depuis `app.seedbox_ui.__init__.py`
+# Exemple d'import si `__init__.py` contient `seedbox_ui_bp = Blueprint(...)`:
+from . import seedbox_ui_bp # Ou from app.seedbox_ui import seedbox_ui_bp si la structure l'exige
+
+@seedbox_ui_bp.route('/')
+def index():
+    staging_dir = current_app.config.get('STAGING_DIR')
+    if not staging_dir or not os.path.exists(staging_dir):
+        flash(f"Le dossier de staging '{staging_dir}' n'est pas configuré ou n'existe pas.", 'danger')
+        return render_template('seedbox_ui/index.html', items_details=[])
+
+    items_in_staging = []
+    try:
+        items_in_staging = os.listdir(staging_dir)
+    except OSError as e:
+        flash(f"Erreur lors de la lecture du dossier '{staging_dir}': {e}", 'danger')
+        return render_template('seedbox_ui/index.html', items_details=[])
+
+    items_details = []
+    for item_name in items_in_staging:
+        item_path = os.path.join(staging_dir, item_name)
         try:
-            items = os.listdir(STAGING_DIR)
-            items.sort()
-        except OSError as e:
-            flash(f"Erreur lors de la lecture du dossier '{STAGING_DIR}': {e}", 'danger')
+            is_dir = os.path.isdir(item_path)
+            size_bytes_raw = 0 # Pour le tri
 
-    return render_template('index.html',
-                           items=items,
-                           staging_dir=STAGING_DIR) # Plus besoin de passer les URLs ici
+            if is_dir:
+                # Pour la taille des dossiers, une estimation rapide ou N/A pour éviter la lenteur
+                # Ici, je vais mettre N/A pour les dossiers pour l'instant, optimisation possible plus tard
+                size_readable = "N/A (dossier)"
+                # Si tu veux calculer la taille (peut être lent):
+                # for dirpath, dirnames, filenames in os.walk(item_path):
+                #     for f in filenames:
+                #         fp = os.path.join(dirpath, f)
+                #         if not os.path.islink(fp):
+                #             size_bytes_raw += os.path.getsize(fp)
+            else:
+                size_bytes_raw = os.path.getsize(item_path)
 
-# Route pour gérer les actions (POST uniquement)
-@app.route('/action', methods=['POST'])
-def handle_action():
-    action = request.form.get('action')
-    item_name = request.form.get('item_name')
+            # Conversion taille lisible pour fichiers
+            if not is_dir:
+                if size_bytes_raw == 0:
+                    size_readable = "0 B"
+                else:
+                    size_name = ("B", "KB", "MB", "GB", "TB")
+                    i = 0
+                    temp_size = float(size_bytes_raw)
+                    while temp_size >= 1024 and i < len(size_name)-1 :
+                        temp_size /= 1024.0
+                        i += 1
+                    size_readable = f"{temp_size:.2f} {size_name[i]}"
 
-    if not item_name or not action:
-        flash("Action ou nom d'item manquant.", 'warning')
-        return redirect(url_for('index'))
+            mtime_timestamp = os.path.getmtime(item_path)
+            last_modified = datetime.fromtimestamp(mtime_timestamp).strftime('%Y-%m-%d %H:%M:%S')
 
-    item_path = os.path.join(STAGING_DIR, item_name)
-    logging.info(f"Action demandée : '{action}' pour l'item : '{item_path}'")
+            items_details.append({
+                'name': item_name,
+                'path': item_path,
+                'is_dir': is_dir,
+                'size_bytes_raw': size_bytes_raw, # Pour un tri potentiel
+                'size_readable': size_readable,
+                'last_modified': last_modified
+            })
+        except Exception as e:
+            logger.error(f"Erreur lors du traitement de {item_path}: {e}")
+            items_details.append({
+                'name': item_name + " (Erreur de lecture)",
+                'path': item_path,
+                'is_dir': False,
+                'size_readable': "N/A",
+                'last_modified': "N/A"
+            })
+
+    items_details.sort(key=lambda x: (not x['is_dir'], x['name'].lower()))
+
+    sonarr_configured = bool(current_app.config.get('SONARR_URL') and current_app.config.get('SONARR_API_KEY'))
+    radarr_configured = bool(current_app.config.get('RADARR_URL') and current_app.config.get('RADARR_API_KEY'))
+
+    return render_template('seedbox_ui/index.html',
+                           items_details=items_details,
+                           can_scan_sonarr=sonarr_configured,
+                           can_scan_radarr=radarr_configured)
+
+@seedbox_ui_bp.route('/delete/<path:item_name>', methods=['POST'])
+def delete_item(item_name):
+    staging_dir = current_app.config.get('STAGING_DIR')
+    item_path = os.path.join(staging_dir, item_name) # item_name peut contenir des sous-dossiers, d'où <path:>
+
+    # Sécurité : Vérifier que item_path est bien dans staging_dir
+    if not os.path.abspath(item_path).startswith(os.path.abspath(staging_dir)):
+        flash("Tentative de suppression d'un chemin invalide.", 'danger')
+        logger.warning(f"Tentative de suppression de chemin invalide : {item_path}")
+        return redirect(url_for('seedbox_ui.index'))
 
     if not os.path.exists(item_path):
-        flash(f"L'item '{item_name}' n'existe plus dans le staging.", 'warning')
-        return redirect(url_for('index'))
+        flash(f"L'item '{item_name}' n'existe plus.", 'warning')
+        return redirect(url_for('seedbox_ui.index'))
 
-    # --- Logique pour chaque action ---
-    if action == 'delete':
-        try:
-            if os.path.isfile(item_path):
-                os.remove(item_path)
-                logging.info(f"Fichier supprimé : {item_path}")
-                flash(f"Fichier '{item_name}' supprimé avec succès.", 'success')
-            elif os.path.isdir(item_path):
-                shutil.rmtree(item_path)
-                logging.info(f"Dossier supprimé : {item_path}")
-                flash(f"Dossier '{item_name}' supprimé avec succès.", 'success')
-            else:
-                logging.warning(f"Tentative de suppression d'un item non reconnu : {item_path}")
-                flash(f"Impossible de déterminer le type de '{item_name}' pour le supprimer.", 'danger')
-        except OSError as e:
-            logging.error(f"Erreur lors de la suppression de '{item_path}': {e}")
-            flash(f"Erreur lors de la suppression de '{item_name}': {e}", 'danger')
-
-    elif action == 'sonarr':
-        if not SONARR_URL or not SONARR_API_KEY or 'VOTRE_CLE_API' in SONARR_API_KEY:
-             flash("L'URL ou la clé API de Sonarr ne sont pas configurées dans app.py.", 'danger')
+    try:
+        if os.path.isfile(item_path):
+            os.remove(item_path)
+            msg = f"Fichier '{item_name}' supprimé."
+        elif os.path.isdir(item_path):
+            shutil.rmtree(item_path)
+            msg = f"Dossier '{item_name}' supprimé."
         else:
-            success, message = call_arr_api(SONARR_URL, SONARR_API_KEY, "DownloadedEpisodesScan", item_path)
-            flash(message, 'success' if success else 'danger')
+            msg = f"Impossible de déterminer le type de '{item_name}' pour le supprimer."
+            flash(msg, 'danger')
+            return redirect(url_for('seedbox_ui.index'))
 
-    elif action == 'radarr':
-        if not RADARR_URL or not RADARR_API_KEY or 'VOTRE_CLE_API' in RADARR_API_KEY:
-             flash("L'URL ou la clé API de Radarr ne sont pas configurées dans app.py.", 'danger')
-        else:
-            success, message = call_arr_api(RADARR_URL, RADARR_API_KEY, "DownloadedMoviesScan", item_path)
-            flash(message, 'success' if success else 'danger')
+        flash(msg, 'success')
+        logger.info(msg + f" (Chemin: {item_path})")
+    except OSError as e:
+        flash(f"Erreur lors de la suppression de '{item_name}': {e}", 'danger')
+        logger.error(f"Erreur suppression {item_path}: {e}")
 
+    return redirect(url_for('seedbox_ui.index'))
+
+@seedbox_ui_bp.route('/scan-sonarr/<path:item_name>', methods=['POST'])
+def scan_sonarr(item_name):
+    sonarr_url = current_app.config.get('SONARR_URL')
+    sonarr_api_key = current_app.config.get('SONARR_API_KEY')
+    staging_dir = current_app.config.get('STAGING_DIR')
+
+    if not sonarr_url or not sonarr_api_key:
+        flash("Sonarr n'est pas configuré.", 'danger')
+        return redirect(url_for('seedbox_ui.index'))
+
+    item_path = os.path.join(staging_dir, item_name)
+    if not os.path.exists(item_path): # Vérifier si l'item existe toujours
+        flash(f"L'item '{item_name}' n'existe pas dans le staging.", 'warning')
+        return redirect(url_for('seedbox_ui.index'))
+
+    success, message = send_arr_command(sonarr_url, sonarr_api_key, "DownloadedEpisodesScan", item_path)
+    flash(message, 'success' if success else 'danger')
+    return redirect(url_for('seedbox_ui.index'))
+
+@seedbox_ui_bp.route('/scan-radarr/<path:item_name>', methods=['POST'])
+def scan_radarr(item_name):
+    radarr_url = current_app.config.get('RADARR_URL')
+    radarr_api_key = current_app.config.get('RADARR_API_KEY')
+    staging_dir = current_app.config.get('STAGING_DIR')
+
+    if not radarr_url or not radarr_api_key:
+        flash("Radarr n'est pas configuré.", 'danger')
+        return redirect(url_for('seedbox_ui.index'))
+
+    item_path = os.path.join(staging_dir, item_name)
+    if not os.path.exists(item_path):
+        flash(f"L'item '{item_name}' n'existe pas dans le staging.", 'warning')
+        return redirect(url_for('seedbox_ui.index'))
+
+    success, message = send_arr_command(radarr_url, radarr_api_key, "DownloadedMoviesScan", item_path)
+    flash(message, 'success' if success else 'danger')
+    return redirect(url_for('seedbox_ui.index'))
+
+
+# --- Routes pour la recherche et le mapping (Priorité 1) ---
+
+@seedbox_ui_bp.route('/search-sonarr-api') # GET request
+def search_sonarr_api():
+    query = request.args.get('query')
+    # original_item_name = request.args.get('original_item_name') # Peut être utile pour le contexte
+
+    sonarr_url = current_app.config.get('SONARR_URL')
+    sonarr_api_key = current_app.config.get('SONARR_API_KEY')
+
+    if not sonarr_url or not sonarr_api_key:
+        return jsonify({"error": "Sonarr non configuré"}), 500
+    if not query:
+        return jsonify({"error": "Terme de recherche manquant"}), 400
+
+    # API Sonarr pour rechercher des séries: /api/v3/series/lookup?term={query} ou /api/v3/series?term={query}
+    # series/lookup est généralement pour rechercher sur TheTVDB par nom/ID.
+    # series?term= recherche dans les séries déjà ajoutées à Sonarr.
+    # Pour une nouvelle association, 'lookup' est plus pertinent.
+    search_api_url = f"{sonarr_url.rstrip('/')}/api/v3/series/lookup"
+    params = {'term': query}
+
+    results, error_msg = _make_arr_request('GET', search_api_url, sonarr_api_key, params=params)
+
+    if error_msg:
+        return jsonify({"error": error_msg}), 500
+
+    # results est une liste de séries trouvées. On peut les filtrer ou les formater si besoin.
+    # Exemple: logger.info(f"Résultats recherche Sonarr pour '{query}': {results}")
+    return jsonify(results if results else [])
+
+
+@seedbox_ui_bp.route('/search-radarr-api') # GET request
+def search_radarr_api():
+    query = request.args.get('query')
+    radarr_url = current_app.config.get('RADARR_URL')
+    radarr_api_key = current_app.config.get('RADARR_API_KEY')
+
+    if not radarr_url or not radarr_api_key:
+        return jsonify({"error": "Radarr non configuré"}), 500
+    if not query:
+        return jsonify({"error": "Terme de recherche manquant"}), 400
+
+    # API Radarr pour rechercher des films: /api/v3/movie/lookup?term={query}
+    search_api_url = f"{radarr_url.rstrip('/')}/api/v3/movie/lookup"
+    params = {'term': query}
+
+    results, error_msg = _make_arr_request('GET', search_api_url, radarr_api_key, params=params)
+
+    if error_msg:
+        return jsonify({"error": error_msg}), 500
+
+    return jsonify(results if results else [])
+
+
+@seedbox_ui_bp.route('/trigger-sonarr-import', methods=['POST'])
+def trigger_sonarr_import():
+    data = request.get_json()
+    item_name = data.get('item_name')
+    series_id = data.get('series_id') # ID Sonarr de la série (pas TVDB ID directement ici)
+
+    sonarr_url = current_app.config.get('SONARR_URL')
+    sonarr_api_key = current_app.config.get('SONARR_API_KEY')
+    staging_dir = current_app.config.get('STAGING_DIR')
+
+    if not all([item_name, series_id, sonarr_url, sonarr_api_key, staging_dir]):
+        return jsonify({"success": False, "error": "Données manquantes ou Sonarr non configuré."}), 400
+
+    item_path = os.path.join(staging_dir, item_name)
+    if not os.path.exists(item_path):
+         return jsonify({"success": False, "error": f"L'item '{item_name}' n'existe pas."}), 404
+
+    # TODO: Implémentation de l'import manuel vers une série spécifique.
+    # Approche 1 (simple mais moins ciblée) : Déclencher un scan sur le path.
+    # Sonarr doit être assez intelligent pour l'associer si la série `series_id` est monitorée.
+    # Cette approche ne garantit pas l'association à `series_id` si d'autres séries matchent.
+    # success, message = send_arr_command(sonarr_url, sonarr_api_key, "DownloadedEpisodesScan", item_path)
+    # if success:
+    #    return jsonify({"success": True, "message": f"Scan Sonarr initié pour {item_name}. Message: {message}"})
+    # else:
+    #    return jsonify({"success": False, "error": f"Erreur scan Sonarr: {message}"}), 500
+
+    # Approche 2 (plus complexe, workflow ManualImport API):
+    # 1. GET /api/v3/manualimport?folder={item_path}&seriesId={series_id} (facultatif, mais peut aider à filtrer)
+    #    Ceci liste les fichiers importables.
+    # 2. L'utilisateur (ou le code) sélectionne les fichiers à importer depuis cette liste.
+    # 3. POST /api/v3/command avec name: "ManualImport", et un body contenant les `files` avec `seriesId`, `episodeIds`, etc.
+
+    # Pour l'instant, utilisons la première approche (scan du path), qui est plus simple.
+    # L'utilisateur a "mappé" visuellement, maintenant on demande à Sonarr de vérifier ce path.
+    logger.info(f"Tentative d'import Sonarr pour l'item '{item_name}' (path: {item_path}) en lien avec la série ID: {series_id} (non utilisé directement par DownloadedEpisodesScan).")
+
+    success, cmd_message = send_arr_command(sonarr_url, sonarr_api_key, "DownloadedEpisodesScan", item_path_to_scan=item_path)
+
+    if success:
+        # Il n'y a pas de confirmation directe que l'item a été importé pour CETTE série.
+        # Le message est juste que la commande de scan a été acceptée.
+        message = f"Scan Sonarr pour '{item_name}' initié. Sonarr va tenter de l'importer. Vérifiez l'activité Sonarr."
+        flash(message, 'info') # Ou succès, mais info est plus précis
+        return jsonify({"success": True, "message": message})
     else:
-        flash(f"Action inconnue : '{action}'", 'warning')
-        logging.warning(f"Action inconnue reçue : {action} pour {item_path}")
-
-    return redirect(url_for('index'))
+        return jsonify({"success": False, "error": cmd_message}), 500
 
 
-if __name__ == '__main__':
-    # ... (les vérifications au démarrage restent les mêmes) ...
-     if 'VOTRE_CLE_API' in SONARR_API_KEY or 'VOTRE_CLE_API' in RADARR_API_KEY:
-        logging.warning("**************************************************************")
-        logging.warning("ATTENTION : Les URLs ou clés API Sonarr/Radarr ne semblent pas")
-        logging.warning("            avoir été configurées dans app.py !")
-        logging.warning("**************************************************************")
-     if 'votre_super_cle_secrete_ici_a_changer' in app.config['SECRET_KEY']:
-        logging.warning("**************************************************************")
-        logging.warning("ATTENTION : La SECRET_KEY n'a pas été changée de sa valeur")
-        logging.warning("            par défaut dans app.py ! Changez-la.")
-        logging.warning("**************************************************************")
+@seedbox_ui_bp.route('/trigger-radarr-import', methods=['POST'])
+def trigger_radarr_import():
+    data = request.get_json()
+    item_name = data.get('item_name')
+    movie_id = data.get('movie_id') # ID Radarr du film
 
-     app.run(host='0.0.0.0', port=5011, debug=True)
+    radarr_url = current_app.config.get('RADARR_URL')
+    radarr_api_key = current_app.config.get('RADARR_API_KEY')
+    staging_dir = current_app.config.get('STAGING_DIR')
+
+    if not all([item_name, movie_id, radarr_url, radarr_api_key, staging_dir]):
+        return jsonify({"success": False, "error": "Données manquantes ou Radarr non configuré."}), 400
+
+    item_path = os.path.join(staging_dir, item_name)
+    if not os.path.exists(item_path):
+         return jsonify({"success": False, "error": f"L'item '{item_name}' n'existe pas."}), 404
+
+    # Similaire à Sonarr, pour l'instant, on déclenche un scan du path.
+    logger.info(f"Tentative d'import Radarr pour l'item '{item_name}' (path: {item_path}) en lien avec le film ID: {movie_id} (non utilisé directement par DownloadedMoviesScan).")
+
+    success, cmd_message = send_arr_command(radarr_url, radarr_api_key, "DownloadedMoviesScan", item_path_to_scan=item_path)
+
+    if success:
+        message = f"Scan Radarr pour '{item_name}' initié. Radarr va tenter de l'importer. Vérifiez l'activité Radarr."
+        flash(message, 'info')
+        return jsonify({"success": True, "message": message})
+    else:
+        return jsonify({"success": False, "error": cmd_message}), 500
