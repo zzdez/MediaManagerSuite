@@ -3,6 +3,7 @@ import os
 import shutil
 import logging
 import time # Pour le délai
+import re
 from datetime import datetime
 import requests # Pour les appels API
 from requests.exceptions import RequestException # Pour gérer les erreurs de connexion
@@ -470,21 +471,18 @@ def trigger_sonarr_import():
         logger.error("trigger_sonarr_import: Données manquantes ou Sonarr non configuré.")
         return jsonify({"success": False, "error": "Données manquantes ou Sonarr non configuré."}), 400
 
-    source_item_path_in_staging_ui_selection = os.path.join(staging_dir, item_name_from_frontend)
-    if not os.path.exists(source_item_path_in_staging_ui_selection):
-        logger.error(f"trigger_sonarr_import: L'item UI '{item_name_from_frontend}' (chemin: {source_item_path_in_staging_ui_selection}) n'existe pas.")
+    path_of_item_clicked_in_ui = os.path.join(staging_dir, item_name_from_frontend)
+    if not os.path.exists(path_of_item_clicked_in_ui):
+        logger.error(f"trigger_sonarr_import: L'item UI '{item_name_from_frontend}' (chemin: {path_of_item_clicked_in_ui}) n'existe pas.")
         return jsonify({"success": False, "error": f"L'item '{item_name_from_frontend}' n'existe pas."}), 404
 
-    # --- Étape 1: Identifier le fichier vidéo principal et obtenir les métadonnées du candidat ---
-    # On a besoin du chemin du fichier vidéo, du numéro de saison, et des IDs d'épisode du candidat.
-
     path_to_scan_for_sonarr_get_step = ""
-    if os.path.isfile(source_item_path_in_staging_ui_selection):
-        path_to_scan_for_sonarr_get_step = os.path.dirname(source_item_path_in_staging_ui_selection)
-    elif os.path.isdir(source_item_path_in_staging_ui_selection):
-        path_to_scan_for_sonarr_get_step = source_item_path_in_staging_ui_selection
-    else: # Ne devrait pas arriver si l'UI est cohérente
-        logger.error(f"L'item '{source_item_path_in_staging_ui_selection}' n'est ni un fichier ni un dossier valide pour le scan.")
+    if os.path.isfile(path_of_item_clicked_in_ui):
+        path_to_scan_for_sonarr_get_step = os.path.dirname(path_of_item_clicked_in_ui)
+    elif os.path.isdir(path_of_item_clicked_in_ui):
+        path_to_scan_for_sonarr_get_step = path_of_item_clicked_in_ui
+    else:
+        logger.error(f"L'item '{path_of_item_clicked_in_ui}' n'est ni un fichier ni un dossier valide pour le scan.")
         return jsonify({"success": False, "error": "L'item sélectionné pour le scan n'est pas valide."}), 400
 
     path_for_sonarr_api_get = path_to_scan_for_sonarr_get_step.replace('/', '\\')
@@ -498,24 +496,11 @@ def trigger_sonarr_import():
         logger.error(f"Erreur ou aucun candidat de Sonarr GET manualimport: {error_msg_get or 'Pas de candidats'}. Dossier scanné: {path_for_sonarr_api_get}")
         return jsonify({"success": False, "error": f"Sonarr n'a pas pu analyser le contenu du staging: {error_msg_get or 'Aucun candidat trouvé'}."}), 500
 
-    # Filtrer pour trouver LE candidat pertinent pour notre série et extraire les infos
-    main_video_file_source_path = None
-    original_release_folder_in_staging = path_to_scan_for_sonarr_get_step # Le dossier qu'on a effectivement scanné
-
-    target_season_number = None
-    # target_episode_ids = [] # Si un fichier couvre plusieurs épisodes
-    # target_episode_numbers = [] # Pour le nommage
-
-    # Pour Sonarr, un `item_name_from_frontend` (dossier de release) peut contenir plusieurs fichiers épisodes (Cas 2).
-    # Ou un seul fichier pack (Cas 4).
-    # Notre logique doit gérer cela. On va prendre le premier candidat valide qui correspond à la série.
-    # Si une release contient plusieurs épisodes de la même série, on les traitera tous.
-
-    valid_candidates_for_series = []
+    valid_candidates_for_processing = [] # Renommé pour plus de clarté
     for candidate in manual_import_candidates:
         candidate_file_path_in_staging = candidate.get('path')
         candidate_series_info = candidate.get('series')
-        candidate_episodes_info = candidate.get('episodes') # Liste d'objets épisode
+        candidate_episodes_info = candidate.get('episodes')
 
         if not candidate_file_path_in_staging: continue
 
@@ -529,136 +514,169 @@ def trigger_sonarr_import():
             logger.info(f"Candidat Sonarr '{candidate_file_path_in_staging}' ignoré (série ID {candidate_series_info.get('id') if candidate_series_info else 'N/A'} != cible {series_id_from_frontend}).")
             continue
 
-        if not candidate_episodes_info or not any(ep.get('id') for ep in candidate_episodes_info):
-            logger.warning(f"Candidat Sonarr '{candidate_file_path_in_staging}' ignoré (pas d'episodeIds valides).")
+        if not candidate_episodes_info or not isinstance(candidate_episodes_info, list) or not candidate_episodes_info:
+            logger.warning(f"Candidat Sonarr '{candidate_file_path_in_staging}' ignoré (pas d'informations d'épisodes).")
             continue
 
-        # Ce candidat est valide pour la série cible.
-        # On prend le numéro de saison du premier épisode (devrait être le même pour tous dans un fichier)
-        current_candidate_season_number = candidate_episodes_info[0].get('seasonNumber')
+        # On s'attend à ce que chaque fichier vidéo soit mappé par Sonarr à un ou plusieurs épisodes.
+        # On prend les infos du premier épisode pour la validation SxxExx et le nommage de dossier saison.
+        first_episode_obj_from_sonarr = candidate_episodes_info[0]
+        if not first_episode_obj_from_sonarr.get('id') or first_episode_obj_from_sonarr.get('seasonNumber') is None or first_episode_obj_from_sonarr.get('episodeNumber') is None:
+            logger.warning(f"Candidat Sonarr '{candidate_file_path_in_staging}' ignoré (infos du premier épisode incomplètes: {first_episode_obj_from_sonarr}).")
+            continue
 
-        # On stocke le chemin du fichier source et son numéro de saison
-        valid_candidates_for_series.append({
-            "source_path": candidate_file_path_in_staging,
-            "season_number": current_candidate_season_number,
-            "original_filename": os.path.basename(candidate_file_path_in_staging) # Pour le nom de destination
+        # Qualité est aussi importante
+        quality_info = candidate.get('quality')
+        if not quality_info or not quality_info.get('quality') or not isinstance(quality_info.get('quality'), dict) or quality_info['quality'].get('id') is None:
+            logger.warning(f"Candidat Sonarr '{candidate_file_path_in_staging}' ignoré (Information de qualité manquante ou invalide. Qualité: {quality_info})")
+            continue
+
+        valid_candidates_for_processing.append({
+            "source_path_in_staging": candidate_file_path_in_staging,
+            "sonarr_series_id": candidate_series_info.get('id'), # Devrait être series_id_from_frontend
+            "sonarr_episode_list": candidate_episodes_info, # Liste complète des objets épisodes pour ce fichier
+            "sonarr_quality_obj": quality_info,
+            "sonarr_language_list": candidate.get('languages', []), # Liste d'objets langue
+            "original_filename": os.path.basename(candidate_file_path_in_staging)
         })
-        logger.info(f"Candidat Sonarr valide trouvé pour import: {candidate_file_path_in_staging} (Saison {current_candidate_season_number})")
+        logger.info(f"Candidat Sonarr valide ajouté pour traitement: {candidate_file_path_in_staging}")
 
-    if not valid_candidates_for_series:
+    if not valid_candidates_for_processing:
         logger.error(f"Aucun fichier vidéo valide trouvé dans '{path_for_sonarr_api_get}' pour la série ID {series_id_from_frontend} après filtrage.")
         return jsonify({"success": False, "error": "Aucun fichier vidéo valide pour cette série n'a été trouvé dans le dossier de staging."}), 400
 
-    # --- Étape 2: Récupérer les informations de la série depuis Sonarr (pour le chemin racine) ---
     series_details_url = f"{sonarr_url.rstrip('/')}/api/v3/series/{series_id_from_frontend}"
     logger.debug(f"Appel GET à Sonarr pour les détails de la série {series_id_from_frontend}: URL={series_details_url}")
     series_data, error_msg_series_get = _make_arr_request('GET', series_details_url, sonarr_api_key)
 
     if error_msg_series_get or not series_data or not isinstance(series_data, dict):
-        logger.error(f"Impossible de récupérer les détails de la série ID {series_id_from_frontend} depuis Sonarr: {error_msg_series_get or 'Pas de données valides'}")
+        logger.error(f"Impossible de récupérer les détails de la série ID {series_id_from_frontend} de Sonarr: {error_msg_series_get or 'Pas de données'}")
         return jsonify({"success": False, "error": "Impossible de récupérer les détails de la série depuis Sonarr."}), 500
 
-    series_root_folder_path = series_data.get('path') # Ex: F:\Series\NomDeLaSerie
+    series_root_folder_path = series_data.get('path')
     if not series_root_folder_path:
-        logger.error(f"Le chemin racine de la série (series.path) n'est pas disponible pour la série ID {series_id_from_frontend}.")
+        logger.error(f"Chemin racine de la série (series.path) non dispo pour série ID {series_id_from_frontend}.")
         return jsonify({"success": False, "error": "Chemin racine de la série non trouvé dans Sonarr."}), 500
 
-    series_title_from_sonarr = series_data.get('title') # Pour les messages utilisateur
-    logger.info(f"Chemin racine pour la série '{series_title_from_sonarr}': {series_root_folder_path}")
+    series_title_from_sonarr = series_data.get('title')
+    logger.info(f"Chemin racine pour série '{series_title_from_sonarr}': {series_root_folder_path}")
 
-    # --- Boucle d'importation pour chaque fichier candidat valide ---
     imported_files_count = 0
-    any_error_during_move = False
+    any_error_during_process = False
+    # `original_release_folder_in_staging` est le dossier de plus haut niveau dans le staging qu'on a scanné
+    # et qu'on essaiera de nettoyer à la fin.
+    original_release_folder_in_staging = path_to_scan_for_sonarr_get_step
 
-    for file_to_import_info in valid_candidates_for_series:
-        main_video_file_source_path = file_to_import_info["source_path"]
-        target_season_number = file_to_import_info["season_number"]
-        original_filename_for_dest = file_to_import_info["original_filename"]
+    # Path du premier fichier traité, pour la vérification avant nettoyage du dossier global
+    # (si plusieurs fichiers sont importés d'un coup, on ne vérifie que le premier)
+    first_processed_staging_filepath = None
 
-        # --- Étape 3 (par fichier): Construire le chemin de destination et créer les dossiers ---
-        # Le nom du dossier saison est typiquement "Season XX" (XX avec deux chiffres)
-        season_folder_name = f"Season {str(target_season_number).zfill(2)}"
+    for file_info in valid_candidates_for_processing:
+        main_video_file_source_path = file_info["source_path_in_staging"]
+        sonarr_episode_list = file_info["sonarr_episode_list"]
+        original_filename = file_info["original_filename"]
+
+        # Utiliser les infos du premier épisode pour la saison et la validation
+        first_sonarr_episode_obj = sonarr_episode_list[0]
+        sonarr_season_num = first_sonarr_episode_obj.get('seasonNumber')
+        sonarr_episode_num_start = first_sonarr_episode_obj.get('episodeNumber') # Numéro du 1er épisode si pack
+
+        # --- Validation Saison/Épisode ---
+        filename_season_num = None
+        filename_episode_num = None
+        # Regex améliorée pour SxxExx, Sxx.Exx, Sxx_Exx, Sxx Exx, etc.
+        s_e_match = re.search(r'[._\s\[\(-]S(\d{1,3})[E._\s-]?(\d{1,3})', original_filename, re.IGNORECASE)
+        if s_e_match:
+            try:
+                filename_season_num = int(s_e_match.group(1))
+                filename_episode_num = int(s_e_match.group(2))
+                logger.info(f"Nom '{original_filename}' semble indiquer S{str(filename_season_num).zfill(2)}E{str(filename_episode_num).zfill(2)}")
+
+                if filename_season_num != sonarr_season_num: # On compare au moins la saison
+                    logger.error(f"DISCORDANCE DE SAISON! Fichier: '{original_filename}' (semble S{filename_season_num}), "
+                                   f"Sonarr l'identifie comme S{sonarr_season_num} pour série ID {series_id_from_frontend}. "
+                                   f"Import annulé pour ce fichier : {main_video_file_source_path}")
+                    #flash(f"Discordance de saison pour {original_filename} (Fichier: S{filename_season_num} vs Sonarr: S{sonarr_season_num}). Import annulé.", "danger")
+                    return jsonify({"success": False, "error": f"Discordance Saison/Épisode: Le nom de fichier indique S{filename_season_num} mais Sonarr l'identifie comme S{sonarr_season_num}."}), 409
+                    any_error_during_process = True
+                    continue # Passer au fichier suivant dans valid_candidates_for_processing
+                # On pourrait aussi comparer filename_episode_num avec sonarr_episode_num_start si besoin de plus de rigueur
+            except ValueError:
+                 logger.warning(f"Erreur de conversion S/E pour '{original_filename}'. On se fie à Sonarr.")
+        else:
+            logger.warning(f"Impossible d'extraire SxxExx du nom '{original_filename}' pour validation. On se fie aux données de Sonarr.")
+
+        # Si on arrive ici, la validation de saison est OK ou on se fie à Sonarr
+        if first_processed_staging_filepath is None:
+            first_processed_staging_filepath = main_video_file_source_path
+
+        season_folder_name = f"Season {str(sonarr_season_num).zfill(2)}"
         destination_season_folder_path = os.path.join(series_root_folder_path, season_folder_name)
+        destination_video_file_path = os.path.join(destination_season_folder_path, original_filename) # Garde le nom original
 
-        # Pour le nom de fichier final, on garde l'original pour l'instant (plus simple)
-        # Radarr/Sonarr le renommeront si "Rename Episodes" est activé pour la série lors du Rescan.
-        destination_video_file_path = os.path.join(destination_season_folder_path, original_filename_for_dest)
-
-        logger.info(f"Préparation du déplacement pour: {main_video_file_source_path}")
-        logger.info(f"    Vers dossier saison: {destination_season_folder_path}")
-        logger.info(f"    Avec nom de fichier: {original_filename_for_dest}")
+        logger.info(f"Déplacement pour: {main_video_file_source_path} -> {destination_video_file_path}")
 
         try:
             if not os.path.exists(destination_season_folder_path):
-                logger.info(f"Création du dossier de saison de destination: {destination_season_folder_path}")
+                logger.info(f"Création du dossier de saison: {destination_season_folder_path}")
                 os.makedirs(destination_season_folder_path, exist_ok=True)
-            else:
-                logger.info(f"Le dossier de saison de destination {destination_season_folder_path} existe déjà.")
-        except Exception as e:
-            logger.error(f"Erreur lors de la création du dossier de saison {destination_season_folder_path}: {e}")
-            any_error_during_move = True
-            continue # Passer au fichier suivant si erreur de création de dossier
 
-        # --- Étape 4 (par fichier): Déplacer le fichier vidéo ---
-        if os.path.normcase(os.path.abspath(main_video_file_source_path)) == os.path.normcase(os.path.abspath(destination_video_file_path)):
-            logger.warning(f"La source et la destination sont identiques ({main_video_file_source_path}). Pas de déplacement nécessaire. Lancement du rescan.")
-            imported_files_count +=1 # On le compte comme importé
-        else:
-            try:
-                logger.info(f"Déplacement de '{main_video_file_source_path}' vers '{destination_video_file_path}'")
-                shutil.move(main_video_file_source_path, destination_video_file_path)
-                logger.info(f"Déplacement du fichier {original_filename_for_dest} réussi.")
+            if os.path.normcase(os.path.abspath(main_video_file_source_path)) == os.path.normcase(os.path.abspath(destination_video_file_path)):
+                logger.warning(f"Source et destination identiques ({main_video_file_source_path}). Pas de déplacement.")
                 imported_files_count +=1
-            except Exception as e_move:
-                logger.error(f"Erreur shutil.move pour '{original_filename_for_dest}': {e_move}. Tentative copie/suppr.")
-                try:
-                    shutil.copy2(main_video_file_source_path, destination_video_file_path)
-                    logger.info(f"Copie de '{original_filename_for_dest}' réussie. Suppression source.")
-                    os.remove(main_video_file_source_path)
-                    logger.info(f"Source '{original_filename_for_dest}' supprimée après copie.")
-                    imported_files_count +=1
-                except Exception as e_copy:
-                    logger.error(f"Erreur copie/suppression fallback pour '{original_filename_for_dest}': {e_copy}")
-                    any_error_during_move = True
-                    # On ne break pas, on continue avec les autres fichiers s'il y en a.
+            else:
+                shutil.move(main_video_file_source_path, destination_video_file_path)
+                logger.info(f"Déplacement de '{original_filename}' réussi.")
+                imported_files_count +=1
+        except Exception as e_move:
+            logger.error(f"Erreur shutil.move pour '{original_filename}': {e_move}. Tentative copie/suppr.")
+            try:
+                shutil.copy2(main_video_file_source_path, destination_video_file_path)
+                os.remove(main_video_file_source_path)
+                logger.info(f"Copie/suppression de '{original_filename}' réussie.")
+                imported_files_count +=1
+            except Exception as e_copy:
+                logger.error(f"Erreur copie/suppression fallback pour '{original_filename}': {e_copy}")
+                any_error_during_process = True
 
-    if imported_files_count == 0 and any_error_during_move:
-        return jsonify({"success": False, "error": "Échec du déplacement de tous les fichiers. Vérifiez les logs."}), 500
-    if imported_files_count == 0 and not any_error_during_move: # Ne devrait pas arriver si valid_candidates_for_series n'est pas vide
-        return jsonify({"success": False, "error": "Aucun fichier n'a été déplacé (raison inconnue)."}), 500
+    # --- Fin de la boucle d'importation ---
+
+    if imported_files_count == 0:
+        if any_error_during_process:
+             return jsonify({"success": False, "error": "Échec du déplacement de tous les fichiers. Vérifiez les logs et les discordances de S/E."}), 500
+        else: # Aucun fichier n'a été traité (peut-être tous filtrés par discordance S/E avant même une tentative de move)
+            # Ce cas est couvert par le flash déjà envoyé si discordance, ou par le "aucun candidat valide" plus haut.
+            # Si on arrive ici, c'est que valid_candidates_for_processing n'était pas vide, mais tous ont été skippés.
+            logger.warning(f"Aucun fichier n'a été effectivement déplacé pour la série {series_id_from_frontend}.")
+            return jsonify({"success": False, "error": "Aucun fichier n'a été déplacé (probablement à cause de discordances Saison/Épisode ou autres filtres)."}), 400
 
 
-    # --- Étape 5 (globale): Nettoyer le dossier de staging d'origine ---
-    # original_release_folder_in_staging est le dossier qui a été scanné par le GET manualimport
     if original_release_folder_in_staging and os.path.exists(original_release_folder_in_staging):
-        logger.info(f"Tentative de nettoyage du dossier de staging d'origine: {original_release_folder_in_staging} après import de {imported_files_count} fichier(s).")
-        time.sleep(2)
+        logger.info(f"Nettoyage du dossier de staging: {original_release_folder_in_staging} après import de {imported_files_count} fichier(s).")
+        time.sleep(2) # Attente réduite car on a fait le move nous-mêmes
         if cleanup_staging_subfolder_recursively(original_release_folder_in_staging, staging_dir, orphan_exts):
-            logger.info(f"Nettoyage du dossier de staging '{original_release_folder_in_staging}' réussi.")
+            logger.info("Nettoyage du dossier de staging réussi.")
         else:
-            logger.warning(f"Échec du nettoyage du dossier de staging '{original_release_folder_in_staging}'.")
-    # ... (autres logs si besoin) ...
+            logger.warning("Échec du nettoyage du dossier de staging.")
 
-    # --- Étape 6 (globale): Déclencher un "Rescan Series" dans Sonarr ---
     rescan_command_payload = {"name": "RescanSeries", "seriesId": series_id_from_frontend}
     command_url = f"{sonarr_url.rstrip('/')}/api/v3/command"
-    logger.debug(f"Envoi de la commande RescanSeries à Sonarr: URL={command_url}, Payload={rescan_command_payload}")
+    logger.debug(f"Envoi RescanSeries à Sonarr: Payload={rescan_command_payload}")
     response_data_rescan, error_msg_rescan = _make_arr_request('POST', command_url, sonarr_api_key, json_data=rescan_command_payload)
 
     final_user_message = ""
     if error_msg_rescan:
-        logger.error(f"Erreur lors de l'envoi de la commande RescanSeries (Sonarr): {error_msg_rescan}")
-        final_user_message = f"{imported_files_count} fichier(s) déplacé(s) pour '{series_title_from_sonarr}'. Le rescan Sonarr a échoué: {error_msg_rescan}."
-        # On retourne quand même succès car les fichiers ont été déplacés.
-        return jsonify({"success": True, "message": final_user_message, "status_code_override": 207 }) # 207 Multi-Status
+        logger.error(f"Erreur RescanSeries Sonarr: {error_msg_rescan}")
+        final_user_message = f"{imported_files_count} fichier(s) déplacé(s) pour '{series_title_from_sonarr}'. Rescan Sonarr a échoué: {error_msg_rescan}."
+        return jsonify({"success": True, "message": final_user_message, "status_code_override": 207 })
 
     if response_data_rescan and isinstance(response_data_rescan, dict) and response_data_rescan.get('name') == "RescanSeries":
-        logger.info(f"Commande RescanSeries acceptée par Sonarr pour la série ID {series_id_from_frontend}.")
+        logger.info(f"Commande RescanSeries acceptée par Sonarr pour série ID {series_id_from_frontend}.")
         final_user_message = f"{imported_files_count} fichier(s) déplacé(s) pour '{series_title_from_sonarr}'. Rescan Sonarr initié."
         return jsonify({"success": True, "message": final_user_message})
     else:
-        logger.warning(f"Réponse inattendue après RescanSeries (Sonarr): {response_data_rescan}")
-        final_user_message = f"{imported_files_count} fichier(s) déplacé(s) pour '{series_title_from_sonarr}'. Réponse inattendue au rescan Sonarr."
+        logger.warning(f"Réponse inattendue RescanSeries Sonarr: {response_data_rescan}")
+        final_user_message = f"{imported_files_count} fichier(s) déplacé(s) pour '{series_title_from_sonarr}'. Réponse inattendue au rescan."
         return jsonify({"success": True, "message": final_user_message, "status_code_override": 207 })
 # ------------------------------------------------------------------------------
 # FIN DE trigger_sonarr_import
@@ -666,19 +684,6 @@ def trigger_sonarr_import():
 # ------------------------------------------------------------------------------
 # trigger_rdarr_import
 # ------------------------------------------------------------------------------
-
-# Dans app/seedbox_ui/routes.py
-
-# Assure-toi que ces imports sont présents en haut de ton fichier :
-# import os
-# import shutil
-# import time
-# from flask import current_app, jsonify, request, flash # flash peut être enlevé si pas utilisé ici
-# import logging
-# logger = logging.getLogger(__name__)
-# from . import seedbox_ui_bp
-# def _make_arr_request(...): # Doit être défini
-# def cleanup_staging_subfolder_recursively(...): # Doit être défini
 
 @seedbox_ui_bp.route('/trigger-radarr-import', methods=['POST'])
 def trigger_radarr_import():
@@ -695,131 +700,138 @@ def trigger_radarr_import():
         logger.error("trigger_radarr_import: Données manquantes ou Radarr non configuré.")
         return jsonify({"success": False, "error": "Données manquantes ou Radarr non configuré."}), 400
 
-    source_item_path_in_staging_ui_selection = os.path.join(staging_dir, item_name_from_frontend)
-    if not os.path.exists(source_item_path_in_staging_ui_selection):
-        logger.error(f"trigger_radarr_import: L'item UI '{item_name_from_frontend}' (chemin: {source_item_path_in_staging_ui_selection}) n'existe pas.")
+    path_of_item_clicked_in_ui = os.path.join(staging_dir, item_name_from_frontend)
+    if not os.path.exists(path_of_item_clicked_in_ui):
+        logger.error(f"trigger_radarr_import: L'item UI '{item_name_from_frontend}' (chemin: {path_of_item_clicked_in_ui}) n'existe pas.")
         return jsonify({"success": False, "error": f"L'item '{item_name_from_frontend}' n'existe pas."}), 404
 
-    # --- Étape 1: Identifier le fichier vidéo principal dans l'item de staging sélectionné ---
+    # --- Étape 1: Identifier le fichier vidéo principal via GET manualimport à Radarr ---
+    path_to_scan_for_radarr_get_step = ""
+    if os.path.isfile(path_of_item_clicked_in_ui):
+        path_to_scan_for_radarr_get_step = os.path.dirname(path_of_item_clicked_in_ui)
+    elif os.path.isdir(path_of_item_clicked_in_ui):
+        path_to_scan_for_radarr_get_step = path_of_item_clicked_in_ui
+    else:
+        logger.error(f"L'item '{path_of_item_clicked_in_ui}' n'est ni un fichier ni un dossier valide pour le scan.")
+        return jsonify({"success": False, "error": "L'item sélectionné pour le scan n'est pas valide."}), 400
+
+    path_for_radarr_api_get = path_to_scan_for_radarr_get_step.replace('/', '\\')
+
+    manual_import_get_url = f"{radarr_url.rstrip('/')}/api/v3/manualimport"
+    get_params = {'folder': path_for_radarr_api_get, 'filterExistingFiles': 'false'}
+    logger.debug(f"Appel GET à Radarr ManualImport (pour identification): URL={manual_import_get_url}, Params={get_params}")
+    manual_import_candidates, error_msg_get = _make_arr_request('GET', manual_import_get_url, radarr_api_key, params=get_params)
+
+    if error_msg_get or not manual_import_candidates or not isinstance(manual_import_candidates, list):
+        logger.error(f"Erreur ou aucun candidat de Radarr GET manualimport: {error_msg_get or 'Pas de candidats'}. Dossier scanné: {path_for_radarr_api_get}")
+        return jsonify({"success": False, "error": f"Radarr n'a pas pu analyser le contenu du staging: {error_msg_get or 'Aucun candidat trouvé'}."}), 500
+
+    # Filtrer pour trouver LE candidat pertinent et ses infos
     main_video_file_source_path = None
-    # original_release_folder_in_staging est le dossier de plus haut niveau dans le staging pour cet item
-    # Ex: X:/seedbox_staging/MonFilm.Release ou X:/seedbox_staging si le fichier est à la racine du staging
-    original_release_folder_in_staging = None
+    original_filename_for_dest = None
+    # original_release_folder_in_staging est le dossier qu'on a scanné (et qu'on nettoiera)
+    original_release_folder_in_staging = path_to_scan_for_radarr_get_step
 
-    if os.path.isfile(source_item_path_in_staging_ui_selection):
-        # L'utilisateur a cliqué sur un fichier directement
-        video_extensions = ['.mkv', '.mp4', '.avi', '.mov'] # Adapter si besoin
-        if any(source_item_path_in_staging_ui_selection.lower().endswith(ext) for ext in video_extensions):
-            main_video_file_source_path = source_item_path_in_staging_ui_selection
-            original_release_folder_in_staging = os.path.dirname(main_video_file_source_path)
-        else:
-            logger.error(f"L'item cliqué '{source_item_path_in_staging_ui_selection}' est un fichier mais pas un type vidéo reconnu.")
-            return jsonify({"success": False, "error": "Le fichier sélectionné n'est pas un type vidéo reconnu."}), 400
-    elif os.path.isdir(source_item_path_in_staging_ui_selection):
-        # L'utilisateur a cliqué sur un dossier
-        original_release_folder_in_staging = source_item_path_in_staging_ui_selection
-        video_extensions = ['.mkv', '.mp4', '.avi', '.mov']
-        # On cherche un fichier vidéo à la racine de ce dossier, ou un niveau plus bas (pour les structures DossierRelease/fichier.mkv)
-        # Pour une logique plus simple ici, on ne cherche qu'à la racine du dossier cliqué pour l'instant.
-        # Si tes structures sont DossierRelease/SousDossierEpisode/fichier.mkv, il faudra un os.walk plus complexe ici.
-        # Basé sur ton test "Personne N...", le fichier était DossierRelease/fichier.mp4
-        found_in_dir = False
-        for f_name in os.listdir(original_release_folder_in_staging):
-            if any(f_name.lower().endswith(ext) for ext in video_extensions):
-                # S'assurer que ce n'est pas un sous-dossier avec une extension .mkv (peu probable mais sécurité)
-                temp_path = os.path.join(original_release_folder_in_staging, f_name)
-                if os.path.isfile(temp_path):
-                    main_video_file_source_path = temp_path
-                    found_in_dir = True
-                    break
-        if not found_in_dir:
-             # Si pas trouvé à la racine, on pourrait ajouter un os.walk ici pour chercher plus profond.
-             # Pour l'instant, on garde simple.
-            logger.error(f"Aucun fichier vidéo principal trouvé directement dans le dossier '{original_release_folder_in_staging}'.")
-            return jsonify({"success": False, "error": "Aucun fichier vidéo principal trouvé dans le dossier de staging sélectionné."}), 400
+    for candidate in manual_import_candidates:
+        candidate_file_path_in_staging = candidate.get('path')
+        candidate_movie_info = candidate.get('movie')
 
-    if not main_video_file_source_path: # Double check
-        logger.error(f"Logique d'identification du fichier vidéo source a échoué pour '{source_item_path_in_staging_ui_selection}'.")
-        return jsonify({"success": False, "error": "Impossible d'identifier le fichier vidéo source."}), 500
+        if not candidate_file_path_in_staging: continue
 
-    logger.info(f"Fichier vidéo source identifié dans le staging: {main_video_file_source_path}")
-    logger.info(f"Dossier de release d'origine dans le staging (pour nettoyage futur): {original_release_folder_in_staging}")
+        norm_staging_dir_abs = os.path.normcase(os.path.abspath(staging_dir))
+        norm_candidate_path_abs = os.path.normcase(os.path.abspath(candidate_file_path_in_staging))
+        if not norm_candidate_path_abs.startswith(norm_staging_dir_abs):
+            logger.warning(f"Candidat Radarr '{candidate_file_path_in_staging}' ignoré (hors STAGING_DIR).")
+            continue
 
+        radarr_detected_movie_id = None
+        if candidate_movie_info and candidate_movie_info.get('id') is not None:
+            radarr_detected_movie_id = candidate_movie_info.get('id')
 
-    # --- Étape 2: Récupérer les informations du film depuis Radarr (pour le chemin final) ---
+        if radarr_detected_movie_id is not None and radarr_detected_movie_id != movie_id_from_frontend:
+            logger.warning(f"Candidat Radarr '{candidate_file_path_in_staging}' ignoré: Radarr l'associe au Movie ID "
+                           f"{radarr_detected_movie_id}, mais l'utilisateur cible le Movie ID {movie_id_from_frontend}.")
+            continue
+
+        # On a un candidat du staging qui soit n'est pas associé par Radarr, soit est associé au bon film.
+        main_video_file_source_path = candidate_file_path_in_staging
+        original_filename_for_dest = os.path.basename(main_video_file_source_path)
+        logger.info(f"Fichier vidéo du staging identifié pour import Radarr: {main_video_file_source_path}")
+        logger.info(f"Movie détecté par Radarr: ID {radarr_detected_movie_id if radarr_detected_movie_id else 'Aucun'}. Cible utilisateur: ID {movie_id_from_frontend}.")
+        break # Pour Radarr, on prend le premier fichier vidéo pertinent du dossier de release
+
+    if not main_video_file_source_path:
+        logger.error(f"Aucun fichier vidéo valide trouvé dans '{path_for_radarr_api_get}' pour le film ID {movie_id_from_frontend} après filtrage.")
+        return jsonify({"success": False, "error": "Aucun fichier vidéo valide pour ce film n'a été trouvé dans le dossier de staging."}), 400
+
+    # --- Étape 2: Récupérer les informations du film cible depuis Radarr (pour le chemin final) ---
     movie_details_url = f"{radarr_url.rstrip('/')}/api/v3/movie/{movie_id_from_frontend}"
     logger.debug(f"Appel GET à Radarr pour les détails du film {movie_id_from_frontend}: URL={movie_details_url}")
     movie_data, error_msg_movie_get = _make_arr_request('GET', movie_details_url, radarr_api_key)
 
     if error_msg_movie_get or not movie_data or not isinstance(movie_data, dict):
-        logger.error(f"Impossible de récupérer les détails du film ID {movie_id_from_frontend} depuis Radarr: {error_msg_movie_get or 'Pas de données valides'}")
+        logger.error(f"Impossible de récupérer les détails du film ID {movie_id_from_frontend} de Radarr: {error_msg_movie_get or 'Pas de données'}")
         return jsonify({"success": False, "error": "Impossible de récupérer les détails du film depuis Radarr."}), 500
 
-    expected_movie_folder_path = movie_data.get('path') # C'est le chemin du dossier du film configuré dans Radarr
-    if not expected_movie_folder_path:
-        logger.error(f"Le chemin du film (movie.path) n'est pas disponible dans les données Radarr pour le film ID {movie_id_from_frontend}.")
-        return jsonify({"success": False, "error": "Chemin final du film non trouvé dans Radarr."}), 500
+    # 'path' dans la réponse de /api/v3/movie/{id} est le chemin complet où Radarr s'attend à ce que le dossier du film soit.
+    # Ex: F:\Plex\Films\Nom du Film (Année)
+    expected_movie_folder_path_from_radarr_api = movie_data.get('path')
+    movie_title_from_radarr = movie_data.get('title', 'Titre Inconnu')
 
-    logger.info(f"Chemin du dossier final attendu par Radarr: {expected_movie_folder_path}")
+    if not expected_movie_folder_path_from_radarr_api:
+        logger.error(f"Le film ID {movie_id_from_frontend} n'a pas de 'path' (chemin de destination) défini dans Radarr. Assurez-vous qu'il est bien configuré avec un Root Folder et que le chemin peut être déterminé.")
+        return jsonify({"success": False, "error": f"Le film '{movie_title_from_radarr}' n'a pas de chemin de destination configuré dans Radarr."}), 500
+
+    logger.info(f"Chemin du dossier final attendu par Radarr pour '{movie_title_from_radarr}': {expected_movie_folder_path_from_radarr_api}")
 
     # --- Étape 3: Créer le dossier de destination s'il n'existe pas ---
-    # S'assurer que le chemin est absolu et nettoyé
-    expected_movie_folder_path = os.path.abspath(os.path.normpath(expected_movie_folder_path))
+    # expected_movie_folder_path_from_radarr_api est déjà le chemin du dossier du film.
+    destination_folder_for_movie = os.path.abspath(os.path.normpath(expected_movie_folder_path_from_radarr_api))
     try:
-        if not os.path.exists(expected_movie_folder_path):
-            logger.info(f"Création du dossier de destination: {expected_movie_folder_path}")
-            os.makedirs(expected_movie_folder_path, exist_ok=True)
+        if not os.path.exists(destination_folder_for_movie):
+            logger.info(f"Création du dossier de destination: {destination_folder_for_movie}")
+            os.makedirs(destination_folder_for_movie, exist_ok=True)
         else:
-            logger.info(f"Le dossier de destination {expected_movie_folder_path} existe déjà.")
+            logger.info(f"Le dossier de destination {destination_folder_for_movie} existe déjà.")
     except Exception as e:
-        logger.error(f"Erreur lors de la création du dossier de destination {expected_movie_folder_path}: {e}")
+        logger.error(f"Erreur lors de la création du dossier de destination {destination_folder_for_movie}: {e}")
         return jsonify({"success": False, "error": f"Erreur création dossier destination: {e}"}), 500
 
     # --- Étape 4: Déplacer le fichier vidéo ---
-    # On garde le nom de fichier d'origine du staging pour le déplacer
-    destination_video_file_path = os.path.join(expected_movie_folder_path, os.path.basename(main_video_file_source_path))
+    # On garde le nom de fichier original du staging pour la destination.
+    # Radarr le renommera si "Rename Movies" est activé lors du Rescan.
+    destination_video_file_path = os.path.join(destination_folder_for_movie, original_filename_for_dest)
 
-    # S'assurer que la source et la destination ne sont pas identiques (au cas où)
     if os.path.normcase(os.path.abspath(main_video_file_source_path)) == os.path.normcase(os.path.abspath(destination_video_file_path)):
-        logger.warning(f"La source et la destination sont identiques ({main_video_file_source_path}). Pas de déplacement nécessaire. Lancement du rescan.")
+        logger.warning(f"La source et la destination sont identiques ({main_video_file_source_path}). Pas de déplacement. Lancement rescan.")
     else:
         try:
             logger.info(f"Déplacement de '{main_video_file_source_path}' vers '{destination_video_file_path}'")
             shutil.move(main_video_file_source_path, destination_video_file_path)
-            logger.info("Déplacement du fichier réussi.")
-        except Exception as e_move: # Attraper spécifiquement shutil.Error pourrait être mieux pour les erreurs de déplacement entre lecteurs
-            logger.error(f"Erreur lors du déplacement (shutil.move) de '{main_video_file_source_path}' vers '{destination_video_file_path}': {e_move}")
-            logger.info("Tentative de copie puis suppression comme fallback.")
+            logger.info(f"Déplacement du fichier '{original_filename_for_dest}' réussi.")
+        except Exception as e_move:
+            logger.error(f"Erreur shutil.move pour '{original_filename_for_dest}': {e_move}. Tentative copie/suppr.")
             try:
                 shutil.copy2(main_video_file_source_path, destination_video_file_path)
-                logger.info(f"Copie vers '{destination_video_file_path}' réussie. Suppression de la source '{main_video_file_source_path}'.")
+                logger.info(f"Copie de '{original_filename_for_dest}' vers '{destination_video_file_path}' réussie.")
                 os.remove(main_video_file_source_path)
-                logger.info("Fichier source supprimé après copie.")
+                logger.info(f"Source '{main_video_file_source_path}' supprimée après copie.")
             except Exception as e_copy:
-                logger.error(f"Erreur lors de la copie/suppression fallback: {e_copy}")
-                return jsonify({"success": False, "error": f"Erreur déplacement/copie fichier: {e_copy}. Le fichier peut être partiellement copié ou toujours dans le staging."}), 500
+                logger.error(f"Erreur copie/suppression fallback pour '{original_filename_for_dest}': {e_copy}")
+                return jsonify({"success": False, "error": f"Erreur déplacement/copie fichier: {e_copy}"}), 500
 
     # --- Étape 5: Nettoyer le dossier de staging d'origine ---
-    # S'assurer que original_release_folder_in_staging est défini
     if original_release_folder_in_staging and os.path.exists(original_release_folder_in_staging):
         logger.info(f"Tentative de nettoyage du dossier de staging d'origine: {original_release_folder_in_staging}")
-        # On attend un peu pour que le système de fichiers se mette à jour après le move/delete
         time.sleep(2)
         if cleanup_staging_subfolder_recursively(original_release_folder_in_staging, staging_dir, orphan_exts):
             logger.info(f"Nettoyage du dossier de staging '{original_release_folder_in_staging}' réussi.")
         else:
-            logger.warning(f"Échec du nettoyage du dossier de staging '{original_release_folder_in_staging}'. Il peut contenir des fichiers non-orphelins ou des erreurs de suppression.")
-    elif not original_release_folder_in_staging:
-         logger.warning("Impossible de déterminer le dossier de release d'origine pour le nettoyage.")
-    else: # n'existe plus
-         logger.info(f"Le dossier de release d'origine '{original_release_folder_in_staging}' n'existe plus, pas de nettoyage nécessaire.")
-
+            logger.warning(f"Échec du nettoyage du dossier de staging '{original_release_folder_in_staging}'.")
+    # ... (autres logs si besoin) ...
 
     # --- Étape 6: Déclencher un "Rescan Movie" dans Radarr ---
-    rescan_command_payload = {
-        "name": "RescanMovie",
-        "movieId": movie_id_from_frontend
-    }
+    rescan_command_payload = {"name": "RescanMovie", "movieId": movie_id_from_frontend}
     command_url = f"{radarr_url.rstrip('/')}/api/v3/command"
     logger.debug(f"Envoi de la commande RescanMovie à Radarr: URL={command_url}, Payload={rescan_command_payload}")
     response_data_rescan, error_msg_rescan = _make_arr_request('POST', command_url, radarr_api_key, json_data=rescan_command_payload)
@@ -827,8 +839,8 @@ def trigger_radarr_import():
     final_user_message = ""
     if error_msg_rescan:
         logger.error(f"Erreur lors de l'envoi de la commande RescanMovie (Radarr): {error_msg_rescan}")
-        final_user_message = f"Fichier déplacé vers '{destination_video_file_path}'. Le rescan Radarr a échoué: {error_msg_rescan}. Veuillez vérifier et rafraîchir manuellement dans Radarr."
-        return jsonify({"success": True, "message": final_user_message}) # Succès partiel car le fichier est déplacé
+        final_user_message = f"Fichier déplacé vers '{destination_video_file_path}'. Le rescan Radarr a échoué: {error_msg_rescan}. Vérifiez et rafraîchissez manuellement dans Radarr."
+        return jsonify({"success": True, "message": final_user_message, "status_code_override": 207 }) # 207 Multi-Status
 
     if response_data_rescan and isinstance(response_data_rescan, dict) and response_data_rescan.get('name') == "RescanMovie":
         logger.info(f"Commande RescanMovie acceptée par Radarr pour le film ID {movie_id_from_frontend}.")
@@ -836,8 +848,8 @@ def trigger_radarr_import():
         return jsonify({"success": True, "message": final_user_message})
     else:
         logger.warning(f"Réponse inattendue après RescanMovie (Radarr): {response_data_rescan}")
-        final_user_message = f"Fichier déplacé vers '{destination_video_file_path}'. Réponse inattendue au rescan Radarr. Veuillez vérifier et rafraîchir manuellement."
-        return jsonify({"success": True, "message": final_user_message}) # Succès partiel
+        final_user_message = f"Fichier déplacé vers '{destination_video_file_path}'. Réponse inattendue au rescan Radarr. Vérifiez et rafraîchissez manuellement."
+        return jsonify({"success": True, "message": final_user_message, "status_code_override": 207 })
 # ------------------------------------------------------------------------------
 # FIN DE trigger_rdarr_import
 # ------------------------------------------------------------------------------
