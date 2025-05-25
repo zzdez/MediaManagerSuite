@@ -199,24 +199,34 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
 
     <script>
-    // CSRF Token (si tu utilises Flask-WTF ou une protection CSRF similaire pour les appels AJAX POST)
-    // Pour l'instant, nos appels sont GET pour la recherche, et POST pour l'import mais ils sont simples.
-    // Si tu ajoutes Flask-WTF, tu devras inclure un token CSRF dans les requêtes AJAX POST.
     {# // const csrfToken = "{{ csrf_token() }}"; // Nécessite que le formulaire de la page principale contienne un champ csrf_token() #}
 
+    // Fonction helper pour échapper les chaînes pour JavaScript
+    function escapeJsString(str) {
+        if (str === null || typeof str === 'undefined') {
+            return '';
+        }
+        return String(str)
+            .replace(/\\/g, '\\\\')
+            .replace(/'/g, "\\'")
+            .replace(/"/g, '\\"')
+            .replace(/\n/g, '\\n')
+            .replace(/\r/g, '\\r')
+            .replace(/\t/g, '\\t')
+            .replace(/</g, '\\u003C')
+            .replace(/>/g, '\\u003E')
+            .replace(/&/g, '\\u0026');
+    }
+
     function getCleanedSearchTerm(itemName) {
-        // Tenter d'extraire un nom de série/film plus propre
         let cleanedName = itemName;
-        // Enlever les extensions de fichiers communes
         cleanedName = cleanedName.replace(/\.(mkv|mp4|avi|srt|nfo|jpg)$/i, '');
-        // Enlever les informations de qualité, release group, etc. (expressions régulières basiques)
-        cleanedName = cleanedName.replace(/[\.\[\(]?\d{3,4}p[\.\]\)]?/i, ''); // 720p, 1080p
+        cleanedName = cleanedName.replace(/[\.\[\(]?\d{3,4}p[\.\]\)]?/i, '');
         cleanedName = cleanedName.replace(/[\.\[\(]?(hdtv|web-dl|webrip|bluray|x264|x265|hevc|ac3|dts)[\.\]\)]?/gi, '');
-        cleanedName = cleanedName.replace(/[\.\[\(]?S\d{1,2}(E\d{1,2}(-E?\d{1,2})?)?[\.\]\)]?/i, ''); // S01, S01E01, S01E01-E02
-        cleanedName = cleanedName.replace(/[\.\[\(]?\d{4}[\.\]\)]?$/, ''); // Année à la fin
-        // Remplacer les points/underscores par des espaces, puis nettoyer les espaces multiples
+        cleanedName = cleanedName.replace(/[\.\[\(]?S\d{1,2}(E\d{1,2}(-E?\d{1,2})?)?[\.\]\)]?/i, '');
+        cleanedName = cleanedName.replace(/[\.\[\(]?\d{4}[\.\]\)]?$/, '');
         cleanedName = cleanedName.replace(/[\._]+/g, ' ').replace(/\s+/g, ' ').trim();
-        return cleanedName || itemName.split('.')[0]; // Si tout est enlevé, retourne la première partie du nom original
+        return cleanedName || itemName.split('.')[0];
     }
 
     function openSonarrSearchModal(itemName, itemType) {
@@ -251,8 +261,6 @@
         resultsDiv.innerHTML = `<div class="d-flex align-items-center"><strong role="status">Recherche en cours...</strong><div class="spinner-border ms-auto" aria-hidden="true"></div></div>`;
 
         try {
-            // Les routes Flask sont configurées sans le préfixe du blueprint dans url_for si elles sont dans le même blueprint
-            // mais c'est plus sûr de le mettre : 'seedbox_ui.search_sonarr_api'
             const response = await fetch(`{{ url_for('seedbox_ui.search_sonarr_api') }}?query=${encodeURIComponent(query)}`);
             if (!response.ok) {
                 let errorData;
@@ -268,26 +276,19 @@
 
             let html = '<ul class="list-group mt-3">';
             results.forEach(series => {
-                // Les champs de l'API Sonarr v3 pour 'series/lookup' sont typiquement :
-                // title, year, tvdbId, status, overview, images (array, chercher coverType: 'poster')
-                // L'ID de la série DANS SONARR est `id` (s'il est déjà ajouté) ou `series.id` après ajout.
-                // Pour `series/lookup`, l'ID retourné (`id`) est celui de Sonarr s'il est déjà dans la base, sinon 0.
-                // `tvdbId` est l'ID TheTVDB. L'important pour mapper est l'ID de la série DANS Sonarr.
-                // Si la série n'est pas encore dans Sonarr, il faudrait l'ajouter d'abord.
-                // Ici, on va supposer que `series.id` est l'ID interne de Sonarr si la série existe, ou qu'on utilise tvdbId pour une action future d'ajout+import.
-                // Pour l'instant, le trigger_sonarr_import utilise `series_id` qui est l'ID Sonarr.
-
                 let posterUrl = 'https://via.placeholder.com/60x90?text=N/A';
                 if (series.images && series.images.length > 0) {
                     const posterObj = series.images.find(img => img.coverType === 'poster');
-                    if (posterObj) posterUrl = posterObj.remoteUrl || posterObj.url; // remoteUrl est préféré
+                    if (posterObj) posterUrl = posterObj.remoteUrl || posterObj.url;
                 }
+
+                const escapedSeriesTitle = escapeJsString(series.title); // UTILISATION DE L'ÉCHAPPEMENT
 
                 html += `
                     <li class="list-group-item">
                         <div class="row align-items-center">
                             <div class="col-auto">
-                                <img src="${posterUrl}" alt="Poster de ${series.title}" class="img-fluid rounded" style="max-height: 90px;">
+                                <img src="${posterUrl}" alt="Poster de ${escapedSeriesTitle}" class="img-fluid rounded" style="max-height: 90px;">
                             </div>
                             <div class="col">
                                 <strong>${series.title}</strong> (${series.year || 'N/A'})
@@ -295,7 +296,7 @@
                                 <p class="mb-0 small">${(series.overview || '').substring(0, 150)}${(series.overview || '').length > 150 ? '...' : ''}</p>
                             </div>
                             <div class="col-auto">
-                                <button class="btn btn-success btn-sm" onclick="triggerSonarrManualImport(${series.id || 0}, '${series.title}')" ${series.id ? '' : 'disabled title="Cette série n\'est pas encore dans Sonarr. Ajout non implémenté."'} >
+                                <button class="btn btn-success btn-sm" onclick="triggerSonarrManualImport(${series.id || 0}, '${escapedSeriesTitle}')" ${series.id ? '' : 'disabled title="Cette série n\'est pas encore dans Sonarr. Ajout non implémenté."'} >
                                     <i class="fas fa-link"></i> Mapper
                                 </button>
                             </div>
@@ -336,20 +337,19 @@
 
             let html = '<ul class="list-group mt-3">';
             results.forEach(movie => {
-                // API Radarr v3 pour 'movie/lookup' :
-                // title, year, tmdbId, status, overview, images (poster)
-                // `movie.id` est l'ID Radarr si le film est déjà dans la base, sinon 0.
                 let posterUrl = 'https://via.placeholder.com/60x90?text=N/A';
                 if (movie.images && movie.images.length > 0) {
                     const posterObj = movie.images.find(img => img.coverType === 'poster');
                     if (posterObj) posterUrl = posterObj.remoteUrl || posterObj.url;
                 }
 
+                const escapedMovieTitle = escapeJsString(movie.title); // UTILISATION DE L'ÉCHAPPEMENT
+
                 html += `
                     <li class="list-group-item">
                         <div class="row align-items-center">
                             <div class="col-auto">
-                                <img src="${posterUrl}" alt="Poster de ${movie.title}" class="img-fluid rounded" style="max-height: 90px;">
+                                <img src="${posterUrl}" alt="Poster de ${escapedMovieTitle}" class="img-fluid rounded" style="max-height: 90px;">
                             </div>
                             <div class="col">
                                 <strong>${movie.title}</strong> (${movie.year || 'N/A'})
@@ -357,7 +357,7 @@
                                 <p class="mb-0 small">${(movie.overview || '').substring(0, 150)}${(movie.overview || '').length > 150 ? '...' : ''}</p>
                             </div>
                             <div class="col-auto">
-                                 <button class="btn btn-success btn-sm" onclick="triggerRadarrManualImport(${movie.id || 0}, '${movie.title}')" ${movie.id ? '' : 'disabled title="Ce film n\'est pas encore dans Radarr. Ajout non implémenté."'} >
+                                 <button class="btn btn-success btn-sm" onclick="triggerRadarrManualImport(${movie.id || 0}, '${escapedMovieTitle}')" ${movie.id ? '' : 'disabled title="Ce film n\'est pas encore dans Radarr. Ajout non implémenté."'} >
                                     <i class="fas fa-link"></i> Mapper
                                 </button>
                             </div>
@@ -373,39 +373,34 @@
         }
     }
 
-    // Modifié pour prendre seriesId/movieId et le titre pour le message
     async function triggerSonarrManualImport(sonarrSeriesId, seriesTitle) {
         const originalItemName = document.getElementById('sonarrOriginalItemName').value;
         const resultsDiv = document.getElementById('sonarrSearchResults');
 
         if (sonarrSeriesId === 0) {
-            alert("Cette série doit d'abord être ajoutée à Sonarr. Cette fonctionnalité n'est pas encore implémentée.");
+            resultsDiv.innerHTML = `<div class="alert alert-warning">Cette série doit d'abord être ajoutée à Sonarr. Ajout non implémenté.</div>`;
             return;
         }
 
-        resultsDiv.innerHTML = `<div class="alert alert-info">Tentative d'import de '${originalItemName}' pour la série '${seriesTitle}' (ID: ${sonarrSeriesId})...</div>`;
+        resultsDiv.innerHTML = `<div class="alert alert-info">Tentative d'import de '${escapeJsString(originalItemName)}' pour la série '${seriesTitle}' (ID: ${sonarrSeriesId})...</div>`; // J'échappe aussi originalItemName ici pour l'affichage
 
         try {
             const response = await fetch(`{{ url_for('seedbox_ui.trigger_sonarr_import') }}`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    // 'X-CSRFToken': csrfToken // Si CSRF est activé globalement pour AJAX POST
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     item_name: originalItemName,
-                    series_id: sonarrSeriesId // C'est l'ID Sonarr de la série
+                    series_id: sonarrSeriesId
                 })
             });
-            const result = await response.json(); // Toujours essayer de parser en JSON
+            const result = await response.json();
 
             if (response.ok && result.success) {
-                resultsDiv.innerHTML = `<div class="alert alert-success">Importation pour '${originalItemName}' vers '${seriesTitle}' initiée. Message: ${result.message || ''}</div>`;
-                flashMessageGlobally(`Scan pour '${originalItemName}' (série: ${seriesTitle}) envoyé à Sonarr.`, 'success');
+                resultsDiv.innerHTML = `<div class="alert alert-success">Importation pour '${escapeJsString(originalItemName)}' vers '${seriesTitle}' initiée. Message: ${result.message || ''}</div>`;
+                flashMessageGlobally(`Scan pour '${escapeJsString(originalItemName)}' (série: ${seriesTitle}) envoyé à Sonarr.`, 'success');
                 setTimeout(() => {
                     var modalInstance = bootstrap.Modal.getInstance(document.getElementById('sonarrSearchModal'));
                     if (modalInstance) modalInstance.hide();
-                    // Optionnel: recharger la page pour voir si l'item a disparu
                     // window.location.reload();
                 }, 3000);
             } else {
@@ -422,29 +417,26 @@
         const resultsDiv = document.getElementById('radarrSearchResults');
 
         if (radarrMovieId === 0) {
-            alert("Ce film doit d'abord être ajouté à Radarr. Cette fonctionnalité n'est pas encore implémentée.");
+            resultsDiv.innerHTML = `<div class="alert alert-warning">Ce film doit d'abord être ajouté à Radarr. Ajout non implémenté.</div>`;
             return;
         }
 
-        resultsDiv.innerHTML = `<div class="alert alert-info">Tentative d'import de '${originalItemName}' pour le film '${movieTitle}' (ID: ${radarrMovieId})...</div>`;
+        resultsDiv.innerHTML = `<div class="alert alert-info">Tentative d'import de '${escapeJsString(originalItemName)}' pour le film '${movieTitle}' (ID: ${radarrMovieId})...</div>`; // J'échappe aussi originalItemName
 
         try {
             const response = await fetch(`{{ url_for('seedbox_ui.trigger_radarr_import') }}`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    // 'X-CSRFToken': csrfToken
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     item_name: originalItemName,
-                    movie_id: radarrMovieId // C'est l'ID Radarr du film
+                    movie_id: radarrMovieId
                 })
             });
             const result = await response.json();
 
             if (response.ok && result.success) {
-                resultsDiv.innerHTML = `<div class="alert alert-success">Importation pour '${originalItemName}' vers '${movieTitle}' initiée. Message: ${result.message || ''}</div>`;
-                flashMessageGlobally(`Scan pour '${originalItemName}' (film: ${movieTitle}) envoyé à Radarr.`, 'success');
+                resultsDiv.innerHTML = `<div class="alert alert-success">Importation pour '${escapeJsString(originalItemName)}' vers '${movieTitle}' initiée. Message: ${result.message || ''}</div>`;
+                flashMessageGlobally(`Scan pour '${escapeJsString(originalItemName)}' (film: ${movieTitle}) envoyé à Radarr.`, 'success');
                 setTimeout(() => {
                     var modalInstance = bootstrap.Modal.getInstance(document.getElementById('radarrSearchModal'));
                     if (modalInstance) modalInstance.hide();
@@ -459,39 +451,30 @@
         }
     }
 
-    // Helper pour afficher un message flash en haut de la page principale
-    // (car les messages flash Flask ne se mettent pas à jour dynamiquement après un appel AJAX)
     function flashMessageGlobally(message, category) {
-        const container = document.querySelector('.container'); // Le conteneur principal
+        const container = document.querySelector('.container');
         const alertHtml = `
             <div class="alert alert-${category} alert-dismissible fade show" role="alert">
                 ${message}
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
         `;
-        // Insérer avant la première H1 ou le premier élément enfant du conteneur
         const firstHeader = container.querySelector('h1');
         if (firstHeader) {
             firstHeader.insertAdjacentHTML('beforebegin', alertHtml);
         } else {
             container.insertAdjacentHTML('afterbegin', alertHtml);
         }
-        // S'assurer que l'alerte est visible si elle est hors écran
-        const newAlert = container.querySelector('.alert');
-        if (newAlert) newAlert.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const newAlert = container.querySelector('.alert:not(.show)'); // Select a newly added alert
+        if (newAlert) {
+            new bootstrap.Alert(newAlert); // Initialize it if not already
+            newAlert.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
     }
 
-    // S'assurer que les modales sont bien initialisées si elles sont ajoutées dynamiquement ou cachées initialement
-    // Normalement, Bootstrap 5 les gère automatiquement via les attributs data-bs-toggle.
-    // Mais si on a des soucis, on peut forcer l'initialisation.
     document.addEventListener('DOMContentLoaded', function () {
-        var sonarrModalEl = document.getElementById('sonarrSearchModal');
-        if (sonarrModalEl) {
-            // var sonarrModal = new bootstrap.Modal(sonarrModalEl); // Pas besoin si data-bs-toggle est utilisé pour ouvrir
-        }
-        // Idem pour radarrSearchModal
+        // Pas besoin d'initialiser explicitement les modales si elles sont déclenchées par data-bs-toggle
     });
-
     </script>
 </body>
 </html>
