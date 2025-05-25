@@ -850,6 +850,57 @@ def trigger_radarr_import():
         logger.warning(f"Réponse inattendue après RescanMovie (Radarr): {response_data_rescan}")
         final_user_message = f"Fichier déplacé vers '{destination_video_file_path}'. Réponse inattendue au rescan Radarr. Vérifiez et rafraîchissez manuellement."
         return jsonify({"success": True, "message": final_user_message, "status_code_override": 207 })
+
+
+@seedbox_ui_bp.route('/cleanup-staging-item/<path:item_name>', methods=['POST'])
+def cleanup_staging_item_action(item_name):
+    staging_dir = current_app.config.get('STAGING_DIR')
+    orphan_exts = current_app.config.get('ORPHAN_EXTENSIONS', [])
+
+    # item_name est le nom de l'item tel qu'affiché dans l'UI (peut être un dossier ou un fichier à la racine du staging)
+    item_to_cleanup_path = os.path.join(staging_dir, item_name)
+    item_to_cleanup_path = os.path.normpath(os.path.abspath(item_to_cleanup_path)) # Sécurisation
+
+    logger.info(f"Action de nettoyage manuel demandée pour l'item de staging: {item_to_cleanup_path}")
+
+    # Sécurité : Vérifier que item_to_cleanup_path est bien dans staging_dir
+    if not item_to_cleanup_path.startswith(os.path.normpath(os.path.abspath(staging_dir))):
+        flash("Tentative de nettoyage d'un chemin invalide.", 'danger')
+        logger.warning(f"Tentative de nettoyage de chemin invalide : {item_to_cleanup_path}")
+        return redirect(url_for('seedbox_ui.index'))
+
+    # On ne nettoie que les dossiers avec cette action pour l'instant
+    if not os.path.isdir(item_to_cleanup_path):
+        flash(f"L'action de nettoyage ne s'applique qu'aux dossiers. '{item_name}' n'est pas un dossier.", 'warning')
+        logger.warning(f"Tentative de nettoyage sur un non-dossier : {item_to_cleanup_path}")
+        return redirect(url_for('seedbox_ui.index'))
+
+    # Si le dossier est le staging_dir lui-même, on ne fait rien (la fonction de cleanup a aussi ce garde-fou)
+    if item_to_cleanup_path == os.path.normpath(os.path.abspath(staging_dir)):
+        flash("Impossible de nettoyer le dossier de staging racine directement.", "danger")
+        logger.warning("Tentative de nettoyage du dossier de staging racine via l'UI.")
+        return redirect(url_for('seedbox_ui.index'))
+
+    if os.path.exists(item_to_cleanup_path):
+        # Le is_top_level_call=True est important ici car c'est le dossier de base qu'on veut nettoyer.
+        # La fonction récursive passera False pour ses appels internes.
+        success = cleanup_staging_subfolder_recursively(item_to_cleanup_path, staging_dir, orphan_exts, is_top_level_call=True)
+        if success:
+            # Vérifier si le dossier lui-même a été supprimé ou juste son contenu orphelin
+            if not os.path.exists(item_to_cleanup_path):
+                flash(f"Le dossier '{item_name}' et/ou son contenu orphelin ont été nettoyés avec succès.", 'success')
+                logger.info(f"Nettoyage manuel de '{item_to_cleanup_path}' réussi, dossier supprimé.")
+            else:
+                flash(f"Les fichiers orphelins dans '{item_name}' ont été nettoyés. Le dossier lui-même reste (il contient des fichiers/dossiers non-orphelins).", 'info')
+                logger.info(f"Nettoyage manuel de '{item_to_cleanup_path}' effectué, fichiers orphelins supprimés, dossier conservé.")
+        else:
+            flash(f"Échec du nettoyage du dossier '{item_name}'. Vérifiez les logs.", 'danger')
+            logger.warning(f"Échec du nettoyage manuel de '{item_to_cleanup_path}'.")
+    else:
+        flash(f"Le dossier '{item_name}' n'existe plus. Pas de nettoyage nécessaire.", 'info')
+        logger.info(f"Nettoyage manuel : Le dossier '{item_to_cleanup_path}' n'existe déjà plus.")
+
+    return redirect(url_for('seedbox_ui.index'))
 # ------------------------------------------------------------------------------
 # FIN DE trigger_rdarr_import
 # ------------------------------------------------------------------------------

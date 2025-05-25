@@ -77,17 +77,20 @@
                         <tr>
                             <td>
                                 {% if item.is_dir %}
-                                    <i class="fas fa-folder text-warning"></i> <!-- Icône dossier -->
+                                    <i class="fas fa-folder text-warning"></i>
                                 {% else %}
-                                    <i class="fas fa-file text-info"></i> <!-- Icône fichier -->
+                                    <i class="fas fa-file text-info"></i>
                                 {% endif %}
                                 {{ item.name }}
+                                {# LIGNE DE DÉBOGAGE AJOUTÉE CI-DESSOUS #}
+                                <span style="color: red; font-weight: bold; font-size: 0.8em; margin-left: 10px;">(is_dir: {{ item.is_dir }})</span>
                             </td>
                             <td>{{ "Dossier" if item.is_dir else "Fichier" }}</td>
                             <td>{{ item.size_readable }}</td>
                             <td>{{ item.last_modified }}</td>
                             <td class="action-buttons">
                                 {% if not item.name.endswith("(Erreur de lecture)") %}
+                                    {# Boutons Sonarr et Radarr (scan direct) #}
                                     {% if can_scan_sonarr %}
                                     <form action="{{ url_for('seedbox_ui.scan_sonarr', item_name=item.name) }}" method="POST" style="display: inline-block;">
                                         <button type="submit" class="btn btn-sm btn-info" title="Scanner avec Sonarr (Import Automatique)">
@@ -102,8 +105,9 @@
                                         </button>
                                     </form>
                                     {% endif %}
-
-                                    <div class="mt-1"> <!-- Pour séparer un peu les boutons de mapping -->
+                                    
+                                    {# Div pour les boutons de mapping #}
+                                    <div class="mt-1"> 
                                         {% if can_scan_sonarr %}
                                         <button class="btn btn-sm btn-outline-primary" onclick="openSonarrSearchModal('{{ item.name | e }}', '{{ 'directory' if item.is_dir else 'file' }}')" title="Rechercher et mapper manuellement avec Sonarr">
                                             <i class="fas fa-search"></i> Mapper Sonarr
@@ -116,11 +120,25 @@
                                         {% endif %}
                                     </div>
 
-                                    <form action="{{ url_for('seedbox_ui.delete_item', item_name=item.name) }}" method="POST" style="display: inline-block;" onsubmit="return confirm('Êtes-vous sûr de vouloir supprimer \'{{ item.name | e }}\' ?');">
-                                        <button type="submit" class="btn btn-sm btn-danger mt-1" title="Supprimer l'item du staging">
-                                            <i class="fas fa-trash-alt"></i> Supprimer
-                                        </button>
-                                    </form>
+                                    {# Div pour les actions de gestion de fichiers (Supprimer, Nettoyer) #}
+                                    <div class="mt-1">
+                                        <form action="{{ url_for('seedbox_ui.delete_item', item_name=item.name) }}" method="POST" style="display: inline-block;" onsubmit="return confirm('Êtes-vous sûr de vouloir supprimer \'{{ item.name | e }}\' ? Cette action est irréversible et supprimera tout le contenu du dossier/fichier.');">
+                                            <button type="submit" class="btn btn-sm btn-danger" title="Supprimer l'item et son contenu du staging">
+                                                <i class="fas fa-trash-alt"></i> Supprimer
+                                            </button>
+                                        </form>
+
+                                        {# NOUVEAU BOUTON NETTOYER - AJOUTÉ ICI #}
+                                        {% if item.is_dir %} {# S'affiche seulement pour les dossiers #}
+                                        <form action="{{ url_for('seedbox_ui.cleanup_staging_item_action', item_name=item.name) }}" method="POST" style="display: inline-block;" onsubmit="return confirm('Nettoyer le dossier \'{{ item.name | e }}\' ?\n\nCeci va :\n1. Supprimer les fichiers orphelins (ex: .nfo, .txt) à l\'intérieur.\n2. Supprimer les sous-dossiers qui deviendraient vides.\n3. Supprimer le dossier principal \'{{ item.name | e }}\' lui-même s\'il devient vide ou ne contient plus que des orphelins (maintenant supprimés).\n\nLes fichiers vidéo ou autres fichiers non-orphelins ne seront PAS supprimés par cette action.');">
+                                            <button type="submit" class="btn btn-sm btn-warning" title="Nettoyer le dossier (supprime orphelins et dossiers vides récursivement)">
+                                                <i class="fas fa-broom"></i> Nettoyer dossier
+                                            </button>
+                                        </form>
+                                        {% endif %}
+                                        {# FIN DU NOUVEAU BOUTON NETTOYER #}
+                                    </div>
+
                                 {% else %}
                                     <span class="text-muted">Actions non disponibles (erreur)</span>
                                 {% endif %}
