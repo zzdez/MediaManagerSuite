@@ -105,9 +105,9 @@
                                         </button>
                                     </form>
                                     {% endif %}
-                                    
+
                                     {# Div pour les boutons de mapping #}
-                                    <div class="mt-1"> 
+                                    <div class="mt-1">
                                         {% if can_scan_sonarr %}
                                         <button class="btn btn-sm btn-outline-primary" onclick="openSonarrSearchModal('{{ item.name | e }}', '{{ 'directory' if item.is_dir else 'file' }}')" title="Rechercher et mapper manuellement avec Sonarr">
                                             <i class="fas fa-search"></i> Mapper Sonarr
@@ -392,15 +392,15 @@
     }
 
     async function triggerSonarrManualImport(sonarrSeriesId, seriesTitle) {
-        const originalItemName = document.getElementById('sonarrOriginalItemName').value;
+        const originalItemName = document.getElementById('sonarrOriginalItemName').value; // Nom de l'item UI (dossier ou fichier)
         const resultsDiv = document.getElementById('sonarrSearchResults');
 
         if (sonarrSeriesId === 0) {
-            resultsDiv.innerHTML = `<div class="alert alert-warning">Cette série doit d'abord être ajoutée à Sonarr. Ajout non implémenté.</div>`;
+            resultsDiv.innerHTML = `<div class="alert alert-warning">Cette série doit d'abord être ajoutée à Sonarr. Cette fonctionnalité n'est pas encore implémentée.</div>`;
             return;
         }
 
-        resultsDiv.innerHTML = `<div class="alert alert-info">Tentative d'import de '${escapeJsString(originalItemName)}' pour la série '${seriesTitle}' (ID: ${sonarrSeriesId})...</div>`; // J'échappe aussi originalItemName ici pour l'affichage
+        resultsDiv.innerHTML = `<div class="alert alert-info">Analyse pour '${escapeJsString(originalItemName)}' avec la série '${seriesTitle}' (ID: ${sonarrSeriesId})...</div>`;
 
         try {
             const response = await fetch(`{{ url_for('seedbox_ui.trigger_sonarr_import') }}`, {
@@ -411,22 +411,121 @@
                     series_id: sonarrSeriesId
                 })
             });
+
             const result = await response.json();
 
-            if (response.ok && result.success) {
-                resultsDiv.innerHTML = `<div class="alert alert-success">Importation pour '${escapeJsString(originalItemName)}' vers '${seriesTitle}' initiée. Message: ${result.message || ''}</div>`;
-                flashMessageGlobally(`Scan pour '${escapeJsString(originalItemName)}' (série: ${seriesTitle}) envoyé à Sonarr.`, 'success');
+            if (!response.ok && response.status !== 200) {
+                // Gérer les erreurs HTTP générales (500, 400, etc. SAUF si c'est un 200 avec action_required)
+                // Le backend retourne 200 si action_required est présent.
+                throw new Error(result.error || `Erreur HTTP: ${response.status}`);
+            }
+
+            if (result.success === true) {
+                // Import direct réussi (pas de discordance, ou discordance non bloquante)
+                resultsDiv.innerHTML = `<div class="alert alert-success">${escapeJsString(result.message) || 'Importation initiée avec succès.'}</div>`;
+                flashMessageGlobally(result.message || `Import pour '${escapeJsString(originalItemName)}' (série: ${seriesTitle}) initié.`, 'success');
                 setTimeout(() => {
                     var modalInstance = bootstrap.Modal.getInstance(document.getElementById('sonarrSearchModal'));
                     if (modalInstance) modalInstance.hide();
-                    // window.location.reload();
+                    // window.location.reload(); // Optionnel
+                }, 3000);
+            } else if (result.action_required === "resolve_season_episode_mismatch") {
+                // Cas de discordance Saison/Épisode à gérer par l'utilisateur
+                const details = result.details;
+                let mismatchHtml = `
+                    <div class="alert alert-warning">
+                        <h5><i class="fas fa-exclamation-triangle"></i> Discordance Saison/Épisode Détectée</h5>
+                        <p>${escapeJsString(result.message)}</p>
+                        <hr>
+                        <p><strong>Informations du nom de fichier :</strong><br>
+                           Saison: ${details.filename_season}, Épisode: ${details.filename_episode}
+                        </p>
+                        <p><strong>Informations identifiées par Sonarr :</strong><br>
+                           Saison: ${details.sonarr_season}, Épisode: ${details.sonarr_episode}
+                        </p>
+                        <hr>
+                        <p>Comment voulez-vous procéder pour le fichier <strong>${escapeJsString(details.source_video_file_path_in_staging.split(/[\\/]/).pop())}</strong> ?</p>
+
+                        {# Note: staging_item_name est le nom du dossier/fichier cliqué initialement dans la liste du staging #}
+                        {# source_video_file_path_in_staging est le chemin complet du .mkv dans le staging #}
+                        {# Pour l'appel à forceSonarrImport, on a besoin du staging_item_name pour que le backend puisse retrouver le contexte #}
+                        {# ou alors on passe directement le source_video_file_path_in_staging si la route force_... l'utilise #}
+                        {# Pour l'instant, passons staging_item_name (qui est originalItemName ici) et les target S/E #}
+
+                        <button class="btn btn-primary btn-sm me-2 mb-2"
+                                onclick="forceSonarrImport(
+                                    '${escapeJsString(details.staging_item_name)}',
+                                    ${details.series_id},
+                                    'use_sonarr_info',
+                                    ${details.sonarr_season},
+                                    ${details.sonarr_episode},
+                                    '${escapeJsString(seriesTitle)}'
+                                )">
+                            Importer comme S${details.sonarr_season}E${details.sonarr_episode} (Info Sonarr)
+                        </button>
+                        <button class="btn btn-info btn-sm me-2 mb-2"
+                                onclick="forceSonarrImport(
+                                    '${escapeJsString(details.staging_item_name)}',
+                                    ${details.series_id},
+                                    'use_filename_info',
+                                    ${details.filename_season},
+                                    ${details.filename_episode},
+                                    '${escapeJsString(seriesTitle)}'
+                                )">
+                            Importer comme S${details.filename_season}E${details.filename_episode} (Info Fichier)
+                        </button>
+                        <button type="button" class="btn btn-secondary btn-sm mb-2" data-bs-dismiss="modal">
+                            Annuler
+                        </button>
+                    </div>`;
+                resultsDiv.innerHTML = mismatchHtml;
+            } else {
+                // Autre type d'échec (result.success est false mais pas action_required)
+                throw new Error(result.error || "Erreur inconnue lors de la tentative d'importation.");
+            }
+
+        } catch (error) {
+            resultsDiv.innerHTML = `<div class="alert alert-danger">Erreur: ${escapeJsString(error.message)}</div>`;
+            console.error("Erreur dans triggerSonarrManualImport:", error);
+        }
+    }
+
+    // NOUVELLE FONCTION JS pour gérer l'import forcé (à ajouter après triggerSonarrManualImport)
+    async function forceSonarrImport(stagingItemName, seriesId, strategy, targetSeason, targetEpisode, seriesTitleForDisplay) {
+        const resultsDiv = document.getElementById('sonarrSearchResults'); // On continue d'utiliser la même div pour le feedback
+        resultsDiv.innerHTML = `<div class="alert alert-info">Tentative d'import forcé pour '${escapeJsString(stagingItemName)}' vers '${seriesTitleForDisplay}' (S${targetSeason}E${targetEpisode}) avec stratégie '${strategy}'...</div>`;
+
+        try {
+            const response = await fetch(`{{ url_for('seedbox_ui.force_sonarr_import_action') }}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    // item_name est le nom de l'item UI (dossier ou fichier) sur lequel l'utilisateur a cliqué initialement
+                    item_name: stagingItemName,
+                    series_id: seriesId,
+                    target_season: targetSeason,
+                    target_episode: targetEpisode, // Le backend utilisera target_season pour le dossier,
+                                                  // et target_episode pourrait être utilisé pour un renommage plus précis si on l'implémente
+                    // Le backend 'force_sonarr_import_action' devra retrouver le chemin exact du fichier vidéo
+                    // en se basant sur 'item_name'.
+                })
+            });
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                resultsDiv.innerHTML = `<div class="alert alert-success">Importation forcée : ${escapeJsString(result.message) || 'Opération réussie.'}</div>`;
+                flashMessageGlobally(result.message || "Importation forcée réussie.", 'success');
+                setTimeout(() => {
+                    var modalInstance = bootstrap.Modal.getInstance(document.getElementById('sonarrSearchModal'));
+                    if (modalInstance) modalInstance.hide();
+                    window.location.reload(); // Recharger pour voir les changements dans la liste du staging
                 }, 3000);
             } else {
-                throw new Error(result.error || "Erreur inconnue lors de l'initiation de l'importation.");
+                throw new Error(result.error || "Erreur inconnue lors de l'importation forcée.");
             }
         } catch (error) {
-            resultsDiv.innerHTML = `<div class="alert alert-danger">Erreur lors de l'importation Sonarr: ${error.message}</div>`;
-            console.error("Erreur import Sonarr:", error);
+            resultsDiv.innerHTML = `<div class="alert alert-danger">Erreur importation forcée: ${escapeJsString(error.message)}</div>`;
+            console.error("Erreur forceSonarrImport:", error);
         }
     }
 
