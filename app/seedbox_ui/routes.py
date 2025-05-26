@@ -219,6 +219,71 @@ def cleanup_staging_subfolder(folder_path_in_staging, staging_root_dir, orphan_e
 # FIN DE LA FONCTION DE NETTOYAGE
 # ------------------------------------------------------------------------------
 
+# NOUVELLE FONCTION HELPER POUR CONSTRUIRE L'ARBORESCENCE
+def build_file_tree(directory_path, staging_root_for_relative_path):
+    """
+    Construit récursivement une structure arborescente pour un dossier donné.
+    Chaque nœud contient : name, type ('file' ou 'directory'), path_id (chemin relatif encodé ou simple),
+                          size_readable, last_modified, et 'children' pour les dossiers.
+    """
+    tree = []
+    try:
+        for item_name in sorted(os.listdir(directory_path), key=lambda x: (not os.path.isdir(os.path.join(directory_path, x)), x.lower())):
+            item_path = os.path.join(directory_path, item_name)
+            # path_id est le chemin relatif au staging_root_for_relative_path, utilisé pour les actions
+            # Cela évite de passer des chemins absolus au frontend pour les actions
+            # On le garde simple pour l'instant : juste item_name si c'est un item de premier niveau,
+            # ou un chemin relatif plus complet si on veut gérer des actions sur des sous-niveaux.
+            # Pour les actions actuelles (Mapper, Supprimer, Nettoyer dossier) qui opèrent sur
+            # les items de premier niveau du staging, item_name est suffisant.
+            # Si on voulait des actions sur des sous-fichiers/sous-dossiers, il faudrait un path_id plus complet.
+
+            # Pour le path_id qui sera passé à url_for, il faut le chemin relatif au STAGING_DIR
+            # pour que nos routes <path:item_name> fonctionnent.
+            # Example: si staging_root_for_relative_path = X:\staging et item_path = X:\staging\DossierA\fichier.txt
+            # alors relative_item_path = DossierA\fichier.txt
+            relative_item_path = os.path.relpath(item_path, staging_root_for_relative_path)
+            # Remplacer les backslashes par des slashes pour la cohérence dans les URLs (Flask s'en accommode)
+            path_id_for_url = relative_item_path.replace('\\', '/')
+
+
+            node = {
+                'name': item_name,
+                'path_for_actions': path_id_for_url, # Chemin relatif pour les url_for
+                'is_dir': os.path.isdir(item_path)
+            }
+            try:
+                stat_info = os.stat(item_path)
+                node['size_bytes_raw'] = stat_info.st_size
+                node['last_modified_timestamp'] = stat_info.st_mtime
+                node['last_modified'] = datetime.fromtimestamp(stat_info.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+
+                if node['is_dir']:
+                    node['size_readable'] = "N/A (dossier)" # Ou calculer la taille récursivement si souhaité (peut être lent)
+                    node['children'] = build_file_tree(item_path, staging_root_for_relative_path) # Appel récursif
+                else:
+                    if stat_info.st_size == 0:
+                        node['size_readable'] = "0 B"
+                    else:
+                        size_name = ("B", "KB", "MB", "GB", "TB")
+                        i = 0
+                        temp_size = float(stat_info.st_size)
+                        while temp_size >= 1024 and i < len(size_name) - 1:
+                            temp_size /= 1024.0
+                            i += 1
+                        node['size_readable'] = f"{temp_size:.2f} {size_name[i]}"
+            except Exception as e_stat:
+                logger.error(f"Erreur stat pour {item_path}: {e_stat}")
+                node['size_readable'] = "Erreur"
+                node['last_modified'] = "Erreur"
+                if node['is_dir']: node['children'] = [] # S'assurer que children existe
+
+            tree.append(node)
+    except OSError as e:
+        logger.error(f"Erreur lors de la lecture du dossier {directory_path} pour l'arbre: {e}")
+    return tree
+# FIN DE LA FONCTION HELPER build_file_tree
+
 def send_arr_command(base_url, api_key, command_name, item_path_to_scan=None):
     """Appelle l'API Sonarr/Radarr pour déclencher une commande (ex: scan)."""
     api_endpoint = f"{base_url.rstrip('/')}/api/v3/command"
@@ -257,71 +322,23 @@ from . import seedbox_ui_bp # Ou from app.seedbox_ui import seedbox_ui_bp si la 
 @seedbox_ui_bp.route('/')
 def index():
     staging_dir = current_app.config.get('STAGING_DIR')
-    if not staging_dir or not os.path.exists(staging_dir):
-        flash(f"Le dossier de staging '{staging_dir}' n'est pas configuré ou n'existe pas.", 'danger')
-        return render_template('seedbox_ui/index.html', items_details=[])
+    if not staging_dir or not os.path.isdir(staging_dir): # Vérifier isdir aussi
+        flash(f"Le dossier de staging '{staging_dir}' n'est pas configuré ou n'existe pas/n'est pas un dossier.", 'danger')
+        return render_template('seedbox_ui/index.html', items_tree=[]) # Passer items_tree au lieu de items_details
 
-    items_in_staging = []
-    try:
-        items_in_staging = os.listdir(staging_dir)
-    except OSError as e:
-        flash(f"Erreur lors de la lecture du dossier '{staging_dir}': {e}", 'danger')
-        return render_template('seedbox_ui/index.html', items_details=[])
-
-    items_details = []
-    for item_name in items_in_staging:
-        item_path = os.path.join(staging_dir, item_name)
-        try:
-            is_dir = os.path.isdir(item_path)
-            size_bytes_raw = 0
-
-            if is_dir:
-                size_readable = "N/A (dossier)"
-            else:
-                size_bytes_raw = os.path.getsize(item_path)
-
-            if not is_dir:
-                if size_bytes_raw == 0:
-                    size_readable = "0 B"
-                else:
-                    size_name = ("B", "KB", "MB", "GB", "TB")
-                    i = 0
-                    temp_size = float(size_bytes_raw)
-                    while temp_size >= 1024 and i < len(size_name)-1 :
-                        temp_size /= 1024.0
-                        i += 1
-                    size_readable = f"{temp_size:.2f} {size_name[i]}"
-
-            mtime_timestamp = os.path.getmtime(item_path)
-            last_modified = datetime.fromtimestamp(mtime_timestamp).strftime('%Y-%m-%d %H:%M:%S')
-
-            items_details.append({
-                'name': item_name,
-                'path': item_path,
-                'is_dir': is_dir,
-                'size_bytes_raw': size_bytes_raw,
-                'size_readable': size_readable,
-                'last_modified': last_modified
-            })
-        except Exception as e:
-            logger.error(f"Erreur lors du traitement de {item_path}: {e}")
-            items_details.append({
-                'name': item_name + " (Erreur de lecture)",
-                'path': item_path,
-                'is_dir': False,
-                'size_readable': "N/A",
-                'last_modified': "N/A"
-            })
-
-    items_details.sort(key=lambda x: (not x['is_dir'], x['name'].lower()))
+    logger.info(f"Construction de l'arborescence pour le dossier de staging: {staging_dir}")
+    # La fonction build_file_tree est appelée avec staging_dir comme base pour les chemins relatifs
+    items_tree_data = build_file_tree(staging_dir, staging_dir)
+    # items_tree_data sera une liste d'objets pour les items à la racine du staging_dir
 
     sonarr_configured = bool(current_app.config.get('SONARR_URL') and current_app.config.get('SONARR_API_KEY'))
     radarr_configured = bool(current_app.config.get('RADARR_URL') and current_app.config.get('RADARR_API_KEY'))
 
     return render_template('seedbox_ui/index.html',
-                           items_details=items_details,
+                           items_tree=items_tree_data, # Nouvelle variable pour le template
                            can_scan_sonarr=sonarr_configured,
-                           can_scan_radarr=radarr_configured)
+                           can_scan_radarr=radarr_configured,
+                           staging_dir_display=staging_dir) # Pour afficher le chemin du staging si besoin
 
 @seedbox_ui_bp.route('/delete/<path:item_name>', methods=['POST'])
 def delete_item(item_name):
