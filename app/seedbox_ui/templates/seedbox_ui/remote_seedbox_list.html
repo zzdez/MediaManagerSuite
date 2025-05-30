@@ -175,19 +175,7 @@
 
         function escapeJsString(str) {
             if (str === null || typeof str === 'undefined') { return ''; }
-            return String(str)
-                .replace(/\\/g, '\\\\')  // Échapper les backslashes en premier
-                .replace(/'/g, "\\'")   // Échapper les apostrophes simples
-                .replace(/"/g, '\\"')   // Échapper les guillemets doubles
-                .replace(/`/g, '\\`')   // Échapper les backticks (accent grave)
-                .replace(/\n/g, '\\n')  // Échapper les nouvelles lignes
-                .replace(/\r/g, '\\r')  // Échapper les retours chariot
-                .replace(/\t/g, '\\t')  // Échapper les tabulations
-                .replace(/</g, '\\u003C') // Échapper < (pour éviter XSS dans certains contextes HTML)
-                .replace(/>/g, '\\u003E') // Échapper > (pour éviter XSS dans certains contextes HTML)
-                .replace(/&/g, '\\u0026') // Échapper & (pour éviter XSS dans certains contextes HTML)
-                .replace(/\u2028/g, '\\u2028') // Séparateur de ligne Unicode
-                .replace(/\u2029/g, '\\u2029'); // Séparateur de paragraphe Unicode
+            return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t').replace(/</g, '\\u003C').replace(/>/g, '\\u003E').replace(/&/g, '\\u0026');
         }
 
         function getCleanedSearchTerm(itemName) {
@@ -198,7 +186,7 @@
             cleanedName = cleanedName.replace(/[\.\[\(]?S\d{1,2}(E\d{1,2}(-E?\d{1,2})?)?[\.\]\)]?/i, '');
             cleanedName = cleanedName.replace(/[\.\[\(]?\d{4}[\.\]\)]?$/, '');
             cleanedName = cleanedName.replace(/[\._]+/g, ' ').replace(/\s+/g, ' ').trim();
-            const parts = itemName.split(/[\/]/);
+            const parts = itemName.split(/[\\/]/);
             const baseName = parts.pop() || parts.pop() || itemName;
             return cleanedName || baseName.split('.')[0];
         }
@@ -209,22 +197,22 @@
             const appType = buttonElement.getAttribute('data-app-type');
             const itemName = remotePath.split('/').pop();
 
-            if (!confirm(\`Rapatrier '\${itemName}' vers le staging local ?\n\nChemin distant: \${remotePath}\nL'import final se fera depuis la vue du Staging Local.\`)) {
+            if (!confirm(`Rapatrier '${itemName}' vers le staging local ?\n\nChemin distant: ${remotePath}\nL'import final se fera depuis la vue du Staging Local.`)) {
                 return;
             }
             buttonElement.disabled = true;
             buttonElement.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Rapatriement...';
             let feedbackDiv = document.getElementById('sftpActionFeedback');
-            feedbackDiv.innerHTML = \`<div class="alert alert-info alert-dismissible fade show" role="alert">Tentative de rapatriement de '\${escapeJsString(itemName)}'...<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>\`;
+            feedbackDiv.innerHTML = `<div class="alert alert-info alert-dismissible fade show" role="alert">Tentative de rapatriement de '${escapeJsString(itemName)}'...<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
             try {
-                const response = await fetch(\`{{ url_for('seedbox_ui.manual_sftp_download_action') }}\`, {
+                const response = await fetch(`{{ url_for('seedbox_ui.manual_sftp_download_action') }}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ remote_path: remotePath, app_type: appType })
                 });
                 const result = await response.json();
                 if (response.ok && result.success) {
-                    feedbackDiv.innerHTML = \`<div class="alert alert-success alert-dismissible fade show" role="alert"><strong>Succès !</strong> \${escapeJsString(result.message)}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>\`;
+                    feedbackDiv.innerHTML = `<div class="alert alert-success alert-dismissible fade show" role="alert"><strong>Succès !</strong> ${escapeJsString(result.message)}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
                     buttonElement.closest('div.tree-node-item').parentNode.classList.add('table-secondary', 'text-muted');
                     buttonElement.disabled = true;
                     const mapButton = buttonElement.nextElementSibling;
@@ -232,10 +220,10 @@
                         mapButton.disabled = true;
                     }
                 } else {
-                    throw new Error(result.error || \`Erreur HTTP \${response.status} lors du rapatriement.\`);
+                    throw new Error(result.error || `Erreur HTTP ${response.status} lors du rapatriement.`);
                 }
             } catch (error) {
-                feedbackDiv.innerHTML = \`<div class="alert alert-danger alert-dismissible fade show" role="alert"><strong>Erreur Rapatriement :</strong> \${escapeJsString(error.message)}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>\`;
+                feedbackDiv.innerHTML = `<div class="alert alert-danger alert-dismissible fade show" role="alert"><strong>Erreur Rapatriement :</strong> ${escapeJsString(error.message)}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
                 console.error("Erreur triggerManualSftpDownload:", error);
                 buttonElement.disabled = false;
                 buttonElement.innerHTML = '<i class="fas fa-download"></i> Rapatrier';
@@ -266,12 +254,12 @@
             const targetArrTypeForModal = sftpItemForDirectMap.appType;
             const modalId = (targetArrTypeForModal === 'sonarr') ? 'sonarrSearchModal' : 'radarrSearchModal';
 
-            document.getElementById(\`\${targetArrTypeForModal}ItemToMap\`).textContent = sftpItemForDirectMap.itemNameForDisplay;
-            document.getElementById(\`\${targetArrTypeForModal}OriginalItemName\`).value = "SFTP_CONTEXT_ACTIVE"; // Indicateur pour les fonctions de recherche
-            document.getElementById(\`\${targetArrTypeForModal}ItemType\`).textContent = sftpItemForDirectMap.itemTypeForDisplay === 'directory' ? 'Dossier (Distant)' : 'Fichier (Distant)';
-            document.getElementById(\`\${targetArrTypeForModal}SearchQuery\`).value = getCleanedSearchTerm(sftpItemForDirectMap.itemNameForDisplay);
-            document.getElementById(\`\${targetArrTypeForModal}SearchResults\`).innerHTML = '';
-            document.getElementById(\`\${targetArrTypeForModal}SearchModalLabel\`).textContent = \`Rapatrier & Mapper: \${sftpItemForDirectMap.itemNameForDisplay} (\${targetArrTypeForModal.charAt(0).toUpperCase() + targetArrTypeForModal.slice(1)})\`;
+            document.getElementById(`${targetArrTypeForModal}ItemToMap`).textContent = sftpItemForDirectMap.itemNameForDisplay;
+            document.getElementById(`${targetArrTypeForModal}OriginalItemName`).value = "SFTP_CONTEXT_ACTIVE"; // Indicateur pour les fonctions de recherche
+            document.getElementById(`${targetArrTypeForModal}ItemType`).textContent = sftpItemForDirectMap.itemTypeForDisplay === 'directory' ? 'Dossier (Distant)' : 'Fichier (Distant)';
+            document.getElementById(`${targetArrTypeForModal}SearchQuery`).value = getCleanedSearchTerm(sftpItemForDirectMap.itemNameForDisplay);
+            document.getElementById(`${targetArrTypeForModal}SearchResults`).innerHTML = '';
+            document.getElementById(`${targetArrTypeForModal}SearchModalLabel`).textContent = `Rapatrier & Mapper: ${sftpItemForDirectMap.itemNameForDisplay} (${targetArrTypeForModal.charAt(0).toUpperCase() + targetArrTypeForModal.slice(1)})`;
 
             var modalInstance = new bootstrap.Modal(document.getElementById(modalId));
             modalInstance.show();
@@ -286,15 +274,12 @@
             const resultsDiv = document.getElementById(resultsDivId);
 
             if (!sftpItemForDirectMap.remotePath) {
-                resultsDiv.innerHTML = \`<div class="alert alert-danger">Erreur: Contexte SFTP pour "Rapatrier & Mapper" perdu. Veuillez fermer cette fenêtre et réessayer.</div>\`;
+                resultsDiv.innerHTML = `<div class="alert alert-danger">Erreur: Contexte SFTP pour "Rapatrier & Mapper" perdu. Veuillez fermer cette fenêtre et réessayer.</div>`;
                 console.error("SFTP Context Error: remotePath is null in sftpItemForDirectMap during executeSftpRetrieveAndProcess");
                 return;
             }
 
-            // targetMediaTitleForDisplay est déjà JS-escaped (car il vient de data-media-title).
-            // sftpItemForDirectMap.itemNameForDisplay est HTML-escaped (par exemple, via l'attribut data-item-name-for-modal).
-            // Pour l'affichage dans du HTML où il fait partie d'une chaîne JS-like, escapeJsString est plus sûr pour itemNameForDisplay.
-            resultsDiv.innerHTML = `<div class="alert alert-info">Rapatriement et mappage pour '${escapeJsString(sftpItemForDirectMap.itemNameForDisplay)}' vers '${targetMediaTitleForDisplay}' en cours...</div>`;
+            resultsDiv.innerHTML = `<div class="alert alert-info">Rapatriement et mappage pour '${escapeJsString(sftpItemForDirectMap.itemNameForDisplay)}' vers '${escapeJsString(targetMediaTitleForDisplay)}' en cours...</div>`;
 
             try {
                 const payload = {
@@ -309,7 +294,7 @@
 
                 console.log("Payload pour /sftp-retrieve-and-process:", payload);
 
-                const response = await fetch(\`{{ url_for('seedbox_ui.sftp_retrieve_and_process_action') }}\`, {
+                const response = await fetch(`{{ url_for('seedbox_ui.sftp_retrieve_and_process_action') }}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -318,10 +303,8 @@
                 console.log("Réponse du backend pour sftp_retrieve_and_process_action:", result);
 
                 if (response.ok && result.success) {
-                    // result.message vient du backend, il faut l'échapper pour l'affichage HTML sécurisé.
-                    const safeResultMessage = escapeJsString(result.message || "Rapatriement et mappage réussis.");
-                    resultsDiv.innerHTML = \`<div class="alert alert-success alert-dismissible fade show" role="alert">\${safeResultMessage}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>\`;
-                    flashMessageGlobally(safeResultMessage, 'success');
+                    resultsDiv.innerHTML = `<div class="alert alert-success alert-dismissible fade show" role="alert">${escapeJsString(result.message)}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
+                    flashMessageGlobally(result.message || "Rapatriement et mappage réussis.", 'success');
                     setTimeout(() => {
                         const modalIdToHide = (arrType === 'sonarr') ? 'sonarrSearchModal' : 'radarrSearchModal';
                         var modalInstance = bootstrap.Modal.getInstance(document.getElementById(modalIdToHide));
@@ -329,22 +312,19 @@
                         window.location.reload();
                     }, 4000);
                 } else {
-                    let errorDetail = result.error || \`Erreur HTTP \${response.status}\`;
+                    let errorDetail = result.error || `Erreur HTTP ${response.status}`;
                     if (result.details) { // Pour les discordances S/E
-                        errorDetail += \` (Fichier: S\${result.details.filename_season}E\${result.details.filename_episode} vs Sonarr: S\${result.details.sonarr_season}E\${result.details.sonarr_episode})\`;
+                        errorDetail += ` (Fichier: S${result.details.filename_season}E${result.details.filename_episode} vs Sonarr: S${result.details.sonarr_season}E${result.details.sonarr_episode})`;
                     }
-                    // errorDetail est construit à partir de sources multiples, l'échapper pour l'affichage.
-                    resultsDiv.innerHTML = \`<div class="alert alert-danger alert-dismissible fade show" role="alert"><strong>Échec:</strong> \${escapeJsString(errorDetail)}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>\`;
-                    throw new Error(errorDetail); // Pour le console.error, le message brut est ok.
+                    resultsDiv.innerHTML = `<div class="alert alert-danger alert-dismissible fade show" role="alert"><strong>Échec:</strong> ${escapeJsString(errorDetail)}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
+                    throw new Error(errorDetail); // Pour le console.error
                 }
             } catch (error) {
-                // error.message vient de l'objet Error, l'échapper pour l'affichage HTML.
-                // Le throw new Error ci-dessus aura déjà affiché un message (utilisant errorDetail, qui est échappé pour l'affichage).
-                // Ce bloc catch est pour d'autres erreurs potentielles ou si le throw n'a pas mis à jour resultsDiv.
-                if (!resultsDiv.querySelector('.alert-danger')) {
-                    resultsDiv.innerHTML = \`<div class="alert alert-danger alert-dismissible fade show" role="alert"><strong>Erreur Rapatriement & Map:</strong> \${escapeJsString(error.message)}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>\`;
+                // Message déjà affiché si l'erreur vient du throw new Error ci-dessus
+                if (!resultsDiv.querySelector('.alert-danger')) { // Évite double message d'erreur si déjà affiché
+                    resultsDiv.innerHTML = `<div class="alert alert-danger alert-dismissible fade show" role="alert"><strong>Erreur Rapatriement & Map:</strong> ${escapeJsString(error.message)}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
                 }
-                console.error(\`Erreur executeSftpRetrieveAndProcess (\${arrType}):\`, error);
+                console.error(`Erreur executeSftpRetrieveAndProcess (${arrType}):`, error);
             }
         }
 
@@ -352,98 +332,66 @@
             const query = document.getElementById('sonarrSearchQuery').value;
             if (!query.trim()) {document.getElementById('sonarrSearchResults').innerHTML = '<p class="text-warning">Terme de recherche manquant.</p>'; return;}
             const resultsDiv = document.getElementById('sonarrSearchResults');
-            resultsDiv.innerHTML = \`<div class="d-flex align-items-center"><strong role="status">Recherche Sonarr...</strong><div class="spinner-border ms-auto"></div></div>\`;
+            resultsDiv.innerHTML = `<div class="d-flex align-items-center"><strong role="status">Recherche Sonarr...</strong><div class="spinner-border ms-auto"></div></div>`;
             try {
-                const response = await fetch(\`{{ url_for('seedbox_ui.search_sonarr_api') }}?query=\${encodeURIComponent(query)}\`);
-                if (!response.ok) { let eD; try{eD=await response.json()}catch(e){eD={error:"Erreur serveur."}} throw new Error(eD.error||\`HTTP \${response.status}\`); }
+                const response = await fetch(`{{ url_for('seedbox_ui.search_sonarr_api') }}?query=${encodeURIComponent(query)}`);
+                if (!response.ok) { let eD; try{eD=await response.json()}catch(e){eD={error:"Erreur serveur."}} throw new Error(eD.error||`HTTP ${response.status}`); }
                 const results = await response.json();
                 if (results.length === 0) { resultsDiv.innerHTML = '<p class="text-muted">Aucune série trouvée.</p>'; return; }
                 let html = '<ul class="list-group mt-3">';
                 results.forEach(series => {
                     let posterUrl = series.remotePoster || (series.images && series.images.length > 0 ? series.images.find(img => img.coverType === 'poster')?.remoteUrl : 'https://via.placeholder.com/60x90?text=N/A');
-                    const escapedSeriesTitle = escapeJsString(series.title); // Pour data-media-title
+                    const escapedSeriesTitle = escapeJsString(series.title);
+                    // L'action onclick appelle TOUJOURS executeSftpRetrieveAndProcess si on est dans ce template
+                    // Car ce template est UNIQUEMENT pour la vue distante SFTP.
+                    // Le `sftpItemForDirectMap.remotePath` sera vérifié dans executeSftpRetrieveAndProcess.
+                    let onclickAction = `executeSftpRetrieveAndProcess(${series.id || 0}, '${escapedSeriesTitle}', 'sonarr')`;
 
-                    html += \`
+                    html += `
                         <li class="list-group-item"><div class="row align-items-center">
-                            <div class="col-auto"><img src="\${posterUrl}" alt="Poster" class="img-fluid rounded" style="max-height: 90px;"></div>
-                            <div class="col"><strong>\${series.title}</strong> (\${series.year||'N/A'})<br><small class="text-muted">Statut: \${series.status||'N/A'} | TVDB ID: \${series.tvdbId||'N/A'}</small></div>
-                            <div class="col-auto">
-                                <button class="btn btn-success btn-sm map-button"
-                                        data-media-id="\${series.id || 0}"
-                                        data-media-title="\${escapedSeriesTitle}"
-                                        data-app-type="sonarr"
-                                        \${series.id ? '' : 'disabled title="Série non gérée par Sonarr."'} >
-                                    <i class="fas fa-link"></i> Mapper
-                                </button>
-                            </div>
-                        </div></li>\`;
+                            <div class="col-auto"><img src="${posterUrl}" alt="Poster" class="img-fluid rounded" style="max-height: 90px;"></div>
+                            <div class="col"><strong>${series.title}</strong> (${series.year||'N/A'})<br><small class="text-muted">Statut: ${series.status||'N/A'} | TVDB ID: ${series.tvdbId||'N/A'}</small></div>
+                            <div class="col-auto"><button class="btn btn-success btn-sm" onclick="${onclickAction}" ${series.id?'':'disabled title="Série non gérée par Sonarr."'}><i class="fas fa-link"></i> Mapper</button></div>
+                        </div></li>`;
                 });
                 html += '</ul>';
                 resultsDiv.innerHTML = html;
-
-                resultsDiv.querySelectorAll('.map-button[data-app-type="sonarr"]').forEach(button => {
-                    button.addEventListener('click', function(event) {
-                        const currentButton = event.currentTarget;
-                        const mediaId = currentButton.dataset.mediaId;
-                        const mediaTitle = currentButton.dataset.mediaTitle; // Déjà échappé par escapeJsString pour être une chaîne JS sûre
-                        const appType = currentButton.dataset.appType;
-                        executeSftpRetrieveAndProcess(mediaId, mediaTitle, appType);
-                    });
-                });
-
-            } catch (error) { resultsDiv.innerHTML = \`<p class="text-danger">Erreur recherche Sonarr: \${escapeJsString(error.message)}</p>\`; console.error("Erreur executeSonarrSearch:", error); }
+            } catch (error) { resultsDiv.innerHTML = `<p class="text-danger">Erreur recherche Sonarr: ${error.message}</p>`; console.error("Erreur executeSonarrSearch:", error); }
         }
 
         async function executeRadarrSearch() {
             const query = document.getElementById('radarrSearchQuery').value;
             if (!query.trim()) {document.getElementById('radarrSearchResults').innerHTML = '<p class="text-warning">Terme de recherche manquant.</p>'; return;}
             const resultsDiv = document.getElementById('radarrSearchResults');
-            resultsDiv.innerHTML = \`<div class="d-flex align-items-center"><strong role="status">Recherche Radarr...</strong><div class="spinner-border ms-auto"></div></div>\`;
+            resultsDiv.innerHTML = `<div class="d-flex align-items-center"><strong role="status">Recherche Radarr...</strong><div class="spinner-border ms-auto"></div></div>`;
             try {
-                const response = await fetch(\`{{ url_for('seedbox_ui.search_radarr_api') }}?query=\${encodeURIComponent(query)}\`);
-                if (!response.ok) { let eD; try{eD=await response.json()}catch(e){eD={error:"Erreur serveur."}} throw new Error(eD.error||\`HTTP \${response.status}\`); }
+                const response = await fetch(`{{ url_for('seedbox_ui.search_radarr_api') }}?query=${encodeURIComponent(query)}`);
+                if (!response.ok) { let eD; try{eD=await response.json()}catch(e){eD={error:"Erreur serveur."}} throw new Error(eD.error||`HTTP ${response.status}`); }
                 const results = await response.json();
                 if (results.length === 0) { resultsDiv.innerHTML = '<p class="text-muted">Aucun film trouvé.</p>'; return; }
                 let html = '<ul class="list-group mt-3">';
                 results.forEach(movie => {
                     let posterUrl = movie.remotePoster || (movie.images && movie.images.length > 0 ? movie.images.find(img => img.coverType === 'poster')?.remoteUrl : 'https://via.placeholder.com/60x90?text=N/A');
-                    const escapedMovieTitle = escapeJsString(movie.title); // Pour data-media-title
+                    const escapedMovieTitle = escapeJsString(movie.title);
+                     // L'action onclick appelle TOUJOURS executeSftpRetrieveAndProcess si on est dans ce template
+                    let onclickAction = `executeSftpRetrieveAndProcess(${movie.id || 0}, '${escapedMovieTitle}', 'radarr')`;
 
-                    html += \`
+                    html += `
                         <li class="list-group-item"><div class="row align-items-center">
-                            <div class="col-auto"><img src="\${posterUrl}" alt="Poster" class="img-fluid rounded" style="max-height: 90px;"></div>
-                            <div class="col"><strong>\${movie.title}</strong> (\${movie.year||'N/A'})<br><small class="text-muted">Statut: \${movie.status||'N/A'} | TMDB ID: \${movie.tmdbId||'N/A'}</small></div>
-                            <div class="col-auto">
-                                <button class="btn btn-success btn-sm map-button"
-                                        data-media-id="\${movie.id || 0}"
-                                        data-media-title="\${escapedMovieTitle}"
-                                        data-app-type="radarr"
-                                        \${movie.id ? '' : 'disabled title="Film non géré par Radarr."'} >
-                                    <i class="fas fa-link"></i> Mapper
-                                </button>
-                            </div>
-                        </div></li>\`;
+                            <div class="col-auto"><img src="${posterUrl}" alt="Poster" class="img-fluid rounded" style="max-height: 90px;"></div>
+                            <div class="col"><strong>${movie.title}</strong> (${movie.year||'N/A'})<br><small class="text-muted">Statut: ${movie.status||'N/A'} | TMDB ID: ${movie.tmdbId||'N/A'}</small></div>
+                            <div class="col-auto"><button class="btn btn-success btn-sm" onclick="${onclickAction}" ${movie.id?'':'disabled title="Film non géré par Radarr."'}><i class="fas fa-link"></i> Mapper</button></div>
+                        </div></li>`;
                 });
                 html += '</ul>';
                 resultsDiv.innerHTML = html;
-
-                resultsDiv.querySelectorAll('.map-button[data-app-type="radarr"]').forEach(button => {
-                    button.addEventListener('click', function(event) {
-                        const currentButton = event.currentTarget;
-                        const mediaId = currentButton.dataset.mediaId;
-                        const mediaTitle = currentButton.dataset.mediaTitle; // Déjà échappé par escapeJsString
-                        const appType = currentButton.dataset.appType;
-                        executeSftpRetrieveAndProcess(mediaId, mediaTitle, appType);
-                    });
-                });
-
-            } catch (error) { resultsDiv.innerHTML = \`<p class="text-danger">Erreur recherche Radarr: \${escapeJsString(error.message)}</p>\`; console.error("Erreur executeRadarrSearch:", error); }
+            } catch (error) { resultsDiv.innerHTML = `<p class="text-danger">Erreur recherche Radarr: ${error.message}</p>`; console.error("Erreur executeRadarrSearch:", error); }
         }
 
         function flashMessageGlobally(message, category) {
             const container=document.querySelector('div.container.mt-4');
             if(!container)return;
-            const alertHtml=\`<div class="alert alert-\${category} alert-dismissible fade show" role="alert" style="margin-top: 1rem;">\${message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>\`;
+            const alertHtml=`<div class="alert alert-${category} alert-dismissible fade show" role="alert" style="margin-top: 1rem;">${message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
             const firstMajorElement=container.querySelector('header.border-bottom + h1, header.border-bottom + p.text-muted, header.border-bottom + div.mb-3, #sftpActionFeedback + p.text-muted') || container.querySelector('h1') || container.querySelector('p.text-muted') || container.querySelector('div.mb-3');
             if(firstMajorElement){firstMajorElement.insertAdjacentHTML('afterend',alertHtml)}else{container.insertAdjacentHTML('afterbegin',alertHtml)}
             const newAlert=container.querySelector('.alert.alert-dismissible.show:not([data-bs-dismiss="alert"] ~ .alert)'); // Essayer de cibler la dernière alerte

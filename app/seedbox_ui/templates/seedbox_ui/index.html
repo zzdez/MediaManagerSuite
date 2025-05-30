@@ -3,15 +3,162 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Test Rendu Minimal - Seedbox UI</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <title>Seedbox Staging UI - MediaManagerSuite</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+
+    <!-- Font Awesome (pour les icônes) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" integrity="sha512-Fo3rlrZj/k7ujTnHg4CGR2D7kSs0v4LLanw2qksYuRlEzO+tcaEPQogQ0KaoGN26/zrn20ImR1DfuLWnOo7aBA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+    <style>
+        body {
+            padding-top: 20px;
+            padding-bottom: 60px;
+        }
+        .action-buttons form, .action-buttons button {
+            margin-right: 3px; /* Réduit un peu l'espace pour l'arbre */
+            margin-bottom: 3px;
+        }
+        /* Styles pour l'arborescence */
+        ul.file-tree, ul.children-list {
+            list-style-type: none;
+            padding-left: 0; /* Enlever le padding par défaut des ul */
+        }
+        ul.children-list {
+             /* padding-left: 20px; /* Indentation pour les enfants, gérée par le margin-left du li maintenant */
+        }
+        .file-tree li > div { /* Le div qui contient l'icône, le nom et les boutons */
+            display: flex;
+            align-items: center;
+            padding: 0.25rem 0.5rem; /* padding plus petit */
+            border-bottom: 1px solid #eee;
+        }
+        .file-tree li > div:hover {
+            background-color: #f8f9fa;
+        }
+        .file-tree .toggle-children {
+            cursor: pointer;
+            color: #0d6efd; /* Couleur du lien Bootstrap */
+            text-decoration: none;
+        }
+        .file-tree .toggle-children i {
+            transition: transform 0.2s ease-in-out;
+        }
+        .file-tree .icon-container { /* Conteneur pour l'icône de pliage/dépliage */
+            width: 25px;
+            text-align: center;
+            flex-shrink: 0; /* Empêche de rétrécir */
+        }
+        .file-tree .item-name-details { /* Pour le nom et les détails taille/date */
+            flex-grow: 1; /* Prend l'espace restant */
+            margin-left: 5px;
+            overflow: hidden; /* Pour les noms de fichiers longs */
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .file-tree .item-actions { /* Conteneur pour les boutons d'action */
+            margin-left: auto; /* Pousse les actions à droite */
+            flex-shrink: 0;
+            min-width: 280px; /* Ajuster si besoin pour que les boutons ne wrappent pas trop */
+        }
+         /* Ajuster la taille des boutons pour l'arbre */
+        .file-tree .btn-sm {
+            padding: 0.15rem 0.3rem;
+            font-size: 0.75rem;
+        }
+        .modal-lg { max-width: 800px; }
+    </style>
 </head>
 <body>
-    <div class="container mt-4">
-        <h1>Test Rendu Minimal</h1>
-        <p>Si vous voyez les boutons ci-dessous, le problème vient d'ailleurs dans le template original.</p>
 
+{# ========================================================================== #}
+{# MACRO JINJA2 POUR RENDRE L'ARBORESCENCE (PLACÉ EN HAUT DU BODY) #}
+{# ========================================================================== #}
+{% macro render_tree_node(node, can_scan_sonarr, can_scan_radarr, level=0) %}
+  <li style="margin-left: {{ level * 20 }}px;"> {# Indentation basée sur le niveau #}
+    <div class="tree-node-item"> {# Wrapper pour chaque ligne d'item #}
+      {# Icône et nom, avec gestion du pliage/dépliage pour les dossiers #}
+      <span class="icon-container">
+        {% if node.is_dir and node.children %}
+          <a href="#" class="toggle-children me-1" data-bs-toggle="tooltip" title="Déplier/Replier"><i class="fas fa-plus-square"></i></a>
+        {% elif node.is_dir %}
+          <i class="fas fa-folder text-warning me-1"></i> {# Dossier vide #}
+        {% else %}
+          <i class="fas fa-file text-info me-1"></i> {# Fichier #}
+        {% endif %}
+      </span>
+
+      <span class="item-name-details" title="{{ node.name }}"> {# title pour voir le nom complet au survol #}
+         {{ node.name }}
+         <small class="text-muted" style="font-size: 0.8em;">
+             ({{ node.size_readable if node.size_readable else 'N/A' }}, {{ node.last_modified if node.last_modified else 'N/A' }})
+         </small>
+      </span>
+
+      {# Colonne des Actions #}
+      <div class="action-buttons item-actions">
+         {% if not node.name.endswith("(Erreur de lecture)") %}
+             {% if level == 0 %} {# On affiche Mapper/Supprimer/Nettoyer que pour le niveau racine du staging pour l'instant #}
+                {% if can_scan_sonarr %}
+                {# Bouton Mapper Sonarr #}
+                <button class="btn btn-sm btn-outline-primary mb-1"
+                        onclick='openSonarrSearchModal({{ node.path_for_actions | tojson | safe }}, "{{ 'directory' if node.is_dir else 'file' }}")'  {# Guillemets simples pour onclick, guillemets simples pour le 2e arg JS #}
+                        title="Rechercher et mapper manuellement avec Sonarr">
+                    <i class="fas fa-search"></i> <span class="d-none d-md-inline">Mapper Sonarr</span>
+                </button>
+
+                {# Bouton Mapper Radarr #}
+                <button class="btn btn-sm btn-outline-secondary mb-1"
+                        onclick='openRadarrSearchModal({{ node.path_for_actions | tojson | safe }}, "{{ 'directory' if node.is_dir else 'file' }}")' {# Guillemets simples pour onclick, guillemets simples pour le 2e arg JS #}
+                        title="Rechercher et mapper manuellement avec Radarr">
+                    <i class="fas fa-search"></i> <span class="d-none d-md-inline">Mapper Radarr</span>
+                </button>
+                                {% endif %}
+
+                {# Bouton Supprimer (formulaire) #}
+                <form action="{{ url_for('seedbox_ui.delete_item', item_name=node.path_for_actions) }}" method="POST" style="display: inline-block;" onsubmit="return confirm('Supprimer \'{{ node.name | e }}\' ? Cette action est irréversible et supprimera tout le contenu.');">
+                    <button type="submit" class="btn btn-sm btn-danger mb-1" title="Supprimer l'item et son contenu du staging">
+                        <i class="fas fa-trash-alt"></i> <span class="d-none d-md-inline">Suppr.</span>
+                    </button>
+                </form>
+
+                {# Bouton Nettoyer dossier (formulaire) #}
+                {% if node.is_dir %}
+                <form action="{{ url_for('seedbox_ui.cleanup_staging_item_action', item_name=node.path_for_actions) }}" method="POST" style="display: inline-block;" onsubmit="return confirm('Nettoyer le dossier \'{{ node.name | e }}\' ?\n\nCeci va :\n1. Supprimer les fichiers orphelins (ex: .nfo, .txt) à l\'intérieur.\n2. Supprimer les sous-dossiers qui deviendraient vides.\n3. Supprimer le dossier principal \'{{ node.name | e }}\' lui-même s\'il devient vide ou ne contient plus que des orphelins (maintenant supprimés).\n\nLes fichiers vidéo ou autres fichiers non-orphelins ne seront PAS supprimés par cette action.');">
+                    <button type="submit" class="btn btn-sm btn-warning mb-1" title="Nettoyer le dossier (supprime orphelins et dossiers vides récursivement)">
+                        <i class="fas fa-broom"></i> <span class="d-none d-md-inline">Nettoyer</span>
+                    </button>
+                </form>
+                {% endif %}
+             {% endif %} {# Fin de if level == 0 #}
+         {% endif %} {# Fin de if not node.name.endswith(...) #}
+      </div>
+    </div>
+
+    {% if node.is_dir and node.children %}
+      <ul class="children-list" style="display: none;">
+        {% for child_node in node.children %}
+          {{ render_tree_node(child_node, can_scan_sonarr, can_scan_radarr, level + 1) }}
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </li>
+{% endmacro %}
+{# ========================================================================== #}
+{# FIN DU MACRO JINJA2 #}
+{# ========================================================================== #}
+
+    <div class="container mt-4">
+        <header class="pb-3 mb-4 border-bottom">
+            <a href="{{ url_for('seedbox_ui.index') }}" class="d-flex align-items-center text-dark text-decoration-none">
+                <span class="fs-4">MediaManagerSuite - Gestion Staging</span> {# Titre légèrement modifié pour clarté #}
+            </a>
+        </header>
+
+        {# ========================================================================== #}
+        {# AJOUT DES LIENS VERS LES VUES DISTANTES DE LA SEEDBOX - INSÉRER ICI #}
+        {# ========================================================================== #}
         <div class="mb-3">
             <a href="{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='sonarr') }}" class="btn btn-outline-info btn-sm">
                 <i class="fas fa-server"></i> Voir Seedbox Sonarr (Terminés)
@@ -27,10 +174,315 @@
                 <i class="fas fa-cogs"></i> Voir Seedbox Radarr (Travail)
             </a>
         </div>
+        {# ========================================================================== #}
+        {# FIN DE L'AJOUT DES LIENS #}
+        {# ========================================================================== #}
 
-        <hr>
-        <p>Fin du test.</p>
+        <h1>Contenu du Staging Local</h1> {# Titre modifié pour distinguer #}
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        {# AFFICHAGE EN ARBORESCENCE (déjà mis en place) #}
+        {% if items_tree %}
+            {% if staging_dir_display %}
+            <p class="text-muted mb-2">Dossier du Staging Local : <code>{{ staging_dir_display }}</code></p>
+            {% endif %}
+            <ul class="file-tree">
+                {% for root_node in items_tree %}
+                    {{ render_tree_node(root_node, can_scan_sonarr, can_scan_radarr, 0) }}
+                {% endfor %}
+            </ul>
+        {% elif not get_flashed_messages(category_filter=['danger']) %}
+            <div class="alert alert-info mt-3" role="alert">
+                Le dossier de staging local est vide ou non accessible.
+            </div>
+        {% endif %}
+        {# FIN DE L'AFFICHAGE EN ARBORESCENCE #}
+
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- Modales Sonarr et Radarr (inchangées) -->
+    <div class="modal fade" id="sonarrSearchModal" tabindex="-1" aria-labelledby="sonarrSearchModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="sonarrSearchModalLabel">Rechercher et Mapper avec Sonarr</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Mapping pour : <strong id="sonarrItemToMap"></strong> (<span id="sonarrItemType"></span>)</p>
+                    <input type="hidden" id="sonarrOriginalItemName" value="">
+                    <input type="hidden" id="sonarrOriginalItemType" value="">
+                    <div class="input-group mb-3">
+                        <input type="text" class="form-control" id="sonarrSearchQuery" placeholder="Nom de la série...">
+                        <button class="btn btn-outline-primary" type="button" onclick="executeSonarrSearch()">
+                            <i class="fas fa-search"></i> Rechercher
+                        </button>
+                    </div>
+                    <div id="sonarrSearchResults" style="max-height: 400px; overflow-y: auto;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="radarrSearchModal" tabindex="-1" aria-labelledby="radarrSearchModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="radarrSearchModalLabel">Rechercher et Mapper avec Radarr</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Mapping pour : <strong id="radarrItemToMap"></strong> (<span id="radarrItemType"></span>)</p>
+                    <input type="hidden" id="radarrOriginalItemName" value="">
+                    <input type="hidden" id="radarrOriginalItemType" value="">
+                     <div class="input-group mb-3">
+                        <input type="text" class="form-control" id="radarrSearchQuery" placeholder="Titre du film...">
+                        <button class="btn btn-outline-primary" type="button" onclick="executeRadarrSearch()">
+                            <i class="fas fa-search"></i> Rechercher
+                        </button>
+                    </div>
+                    <div id="radarrSearchResults" style="max-height: 400px; overflow-y: auto;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Fin des Modales -->
+
+    <!-- Bootstrap Bundle JS (Popper.js included) -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+
+    <script>
+        {# // const csrfToken = "{{ csrf_token() }}"; #}
+
+        function escapeJsString(str) {
+            if (str === null || typeof str === 'undefined') { return ''; }
+            return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t').replace(/</g, '\\u003C').replace(/>/g, '\\u003E').replace(/&/g, '\\u0026');
+        }
+
+        function getCleanedSearchTerm(itemName) { // itemName est le path_for_actions ici
+            const baseNameForSearch = itemName.split(/[\\/]/).pop();
+            let cleanedName = baseNameForSearch;
+
+            cleanedName = cleanedName.replace(/\.(mkv|mp4|avi|srt|nfo|jpg|png)$/i, '');
+            cleanedName = cleanedName.replace(/[\.\[\(]?\d{3,4}p[\.\]\)]?/i, '');
+            cleanedName = cleanedName.replace(/[\.\[\(]?(hdtv|web-dl|webrip|bluray|x264|x265|h264|h265|hevc|ac3|dts|multi|vf|vof|french|truefrench|fanart|pack)[\.\]\)]?/gi, ''); // Ajout de pack
+            cleanedName = cleanedName.replace(/[\.\[\(]?S\d{1,3}(E\d{1,3}(-E?\d{1,3}(\s?-\s?E?\d{1,3})?)?)?[\.\]\)]?/i, ''); // Amélioré pour S01E01-E05
+            cleanedName = cleanedName.replace(/[\.\[\(]?\d{4}[\.\]\)]?$/, '');
+            cleanedName = cleanedName.replace(/[\._-]+/g, ' ').replace(/\s+/g, ' ').trim();
+            return cleanedName || baseNameForSearch.split('.')[0];
+        }
+
+        function openSonarrSearchModal(itemPathForAction, itemType) {
+            const itemNameForDisplay = itemPathForAction.split(/[\\/]/).pop();
+            document.getElementById('sonarrItemToMap').textContent = itemNameForDisplay;
+            document.getElementById('sonarrOriginalItemName').value = itemPathForAction;
+            document.getElementById('sonarrOriginalItemType').value = itemType;
+            document.getElementById('sonarrItemType').textContent = itemType === 'directory' ? 'Dossier (Staging)' : 'Fichier (Staging)';
+            document.getElementById('sonarrSearchQuery').value = getCleanedSearchTerm(itemPathForAction);
+            document.getElementById('sonarrSearchResults').innerHTML = '';
+            document.getElementById('sonarrSearchModalLabel').textContent = "Rechercher et Mapper avec Sonarr";
+            var sonarrModal = new bootstrap.Modal(document.getElementById('sonarrSearchModal'));
+            sonarrModal.show();
+        }
+
+        function openRadarrSearchModal(itemPathForAction, itemType) {
+            const itemNameForDisplay = itemPathForAction.split(/[\\/]/).pop();
+            document.getElementById('radarrItemToMap').textContent = itemNameForDisplay;
+            document.getElementById('radarrOriginalItemName').value = itemPathForAction;
+            document.getElementById('radarrOriginalItemType').value = itemType;
+            document.getElementById('radarrItemType').textContent = itemType === 'directory' ? 'Dossier (Staging)' : 'Fichier (Staging)';
+            document.getElementById('radarrSearchQuery').value = getCleanedSearchTerm(itemPathForAction);
+            document.getElementById('radarrSearchResults').innerHTML = '';
+            document.getElementById('radarrSearchModalLabel').textContent = "Rechercher et Mapper avec Radarr";
+            var radarrModal = new bootstrap.Modal(document.getElementById('radarrSearchModal'));
+            radarrModal.show();
+        }
+
+        async function executeSonarrSearch() {
+            const query = document.getElementById('sonarrSearchQuery').value;
+            if (!query.trim()) {document.getElementById('sonarrSearchResults').innerHTML = '<p class="text-warning">Terme de recherche manquant.</p>'; return;}
+            const resultsDiv = document.getElementById('sonarrSearchResults');
+            resultsDiv.innerHTML = `<div class="d-flex align-items-center"><strong role="status">Recherche Sonarr...</strong><div class="spinner-border ms-auto"></div></div>`;
+            try {
+                const response = await fetch(`{{ url_for('seedbox_ui.search_sonarr_api') }}?query=${encodeURIComponent(query)}`);
+                if (!response.ok) { let eD; try{eD=await response.json()}catch(e){eD={error:"Erreur serveur."}} throw new Error(eD.error||`HTTP ${response.status}`); }
+                const results = await response.json();
+                if (results.length === 0) { resultsDiv.innerHTML = '<p class="text-muted">Aucune série trouvée.</p>'; return; }
+                let html = '<ul class="list-group mt-3">';
+                results.forEach(series => {
+                    let posterUrl = series.remotePoster || (series.images && series.images.length > 0 ? series.images.find(img => img.coverType === 'poster')?.remoteUrl : 'https://via.placeholder.com/60x90?text=N/A');
+                    const escapedSeriesTitle = escapeJsString(series.title); // Échappé une fois ici
+                    let onclickAction = `triggerSonarrManualImport(${series.id || 0}, '${escapedSeriesTitle}')`; // On utilise escapedSeriesTitle
+                    html += `
+                        <li class="list-group-item"><div class="row align-items-center">
+                            <div class="col-auto"><img src="${posterUrl}" alt="${escapedSeriesTitle}" class="img-fluid rounded" style="max-height: 90px;"></div>
+                            <div class="col"><strong>${series.title}</strong> (${series.year||'N/A'})<br><small class="text-muted">Statut: ${series.status||'N/A'} | TVDB ID: ${series.tvdbId||'N/A'}</small><p class="mb-0 small">${(series.overview||'').substring(0,120)}${(series.overview||'').length>120?'...':''}</p></div>
+                            <div class="col-auto"><button class="btn btn-success btn-sm" onclick="${onclickAction}" ${series.id?'':'disabled title="Série non gérée par Sonarr."'}><i class="fas fa-link"></i> Mapper</button></div>
+                        </div></li>`;
+                });
+                html += '</ul>';
+                resultsDiv.innerHTML = html;
+            } catch (error) { resultsDiv.innerHTML = `<p class="text-danger">Erreur recherche Sonarr: ${error.message}</p>`; console.error("Erreur executeSonarrSearch:", error); }
+        }
+
+        async function executeRadarrSearch() {
+            const query = document.getElementById('radarrSearchQuery').value;
+            if (!query.trim()) {document.getElementById('radarrSearchResults').innerHTML = '<p class="text-warning">Terme de recherche manquant.</p>'; return;}
+            const resultsDiv = document.getElementById('radarrSearchResults');
+            resultsDiv.innerHTML = `<div class="d-flex align-items-center"><strong role="status">Recherche Radarr...</strong><div class="spinner-border ms-auto"></div></div>`;
+            try {
+                const response = await fetch(`{{ url_for('seedbox_ui.search_radarr_api') }}?query=${encodeURIComponent(query)}`);
+                if (!response.ok) { let eD; try{eD=await response.json()}catch(e){eD={error:"Erreur serveur."}} throw new Error(eD.error||`HTTP ${response.status}`); }
+                const results = await response.json();
+                if (results.length === 0) { resultsDiv.innerHTML = '<p class="text-muted">Aucun film trouvé.</p>'; return; }
+                let html = '<ul class="list-group mt-3">';
+                results.forEach(movie => {
+                    let posterUrl = movie.remotePoster || (movie.images && movie.images.length > 0 ? movie.images.find(img => img.coverType === 'poster')?.remoteUrl : 'https://via.placeholder.com/60x90?text=N/A');
+                    const escapedMovieTitle = escapeJsString(movie.title); // Échappé une fois ici
+                    let onclickAction = `triggerRadarrManualImport(${movie.id || 0}, '${escapedMovieTitle}')`; // On utilise escapedMovieTitle
+                    html += `
+                        <li class="list-group-item"><div class="row align-items-center">
+                            <div class="col-auto"><img src="${posterUrl}" alt="${escapedMovieTitle}" class="img-fluid rounded" style="max-height: 90px;"></div>
+                            <div class="col"><strong>${movie.title}</strong> (${movie.year||'N/A'})<br><small class="text-muted">Statut: ${movie.status||'N/A'} | TMDB ID: ${movie.tmdbId||'N/A'}</small><p class="mb-0 small">${(movie.overview||'').substring(0,120)}${(movie.overview||'').length>120?'...':''}</p></div>
+                            <div class="col-auto"><button class="btn btn-success btn-sm" onclick="${onclickAction}" ${movie.id?'':'disabled title="Film non géré par Radarr."'}><i class="fas fa-link"></i> Mapper</button></div>
+                        </div></li>`;
+                });
+                html += '</ul>';
+                resultsDiv.innerHTML = html;
+            } catch (error) { resultsDiv.innerHTML = `<p class="text-danger">Erreur recherche Radarr: ${error.message}</p>`; console.error("Erreur executeRadarrSearch:", error); }
+        }
+
+        async function triggerSonarrManualImport(sonarrSeriesId, seriesTitle) { // seriesTitle ici est déjà échappé (vient de escapedSeriesTitle)
+            const originalItemName = document.getElementById('sonarrOriginalItemName').value;
+            const resultsDiv = document.getElementById('sonarrSearchResults');
+            if (sonarrSeriesId === 0) { /* ... */ return; }
+            resultsDiv.innerHTML = `<div class="alert alert-info">Analyse pour '${escapeJsString(originalItemName.split(/[\\/]/).pop())}' avec la série '${seriesTitle}' (ID: ${sonarrSeriesId})...</div>`; // seriesTitle est déjà échappé, pas besoin de re-escapeJsString(seriesTitle)
+            try {
+                const response = await fetch(`{{ url_for('seedbox_ui.trigger_sonarr_import') }}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ item_name: originalItemName, series_id: sonarrSeriesId })
+                });
+                const result = await response.json();
+                if (!response.ok && response.status !== 200) { throw new Error(result.error || `Erreur HTTP: ${response.status}`); }
+
+                if (result.success === true) {
+                    resultsDiv.innerHTML = `<div class="alert alert-success alert-dismissible fade show" role="alert">${escapeJsString(result.message) || 'Importation initiée.'}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
+                    flashMessageGlobally(result.message || `Import pour '${escapeJsString(originalItemName.split(/[\\/]/).pop())}' (série: ${seriesTitle}) initié.`, 'success');
+                    setTimeout(() => { bootstrap.Modal.getInstance(document.getElementById('sonarrSearchModal'))?.hide(); window.location.reload(); }, 3000);
+                } else if (result.action_required === "resolve_season_episode_mismatch") {
+                    const d = result.details;
+                    const stagingItemNameForForce = escapeJsString(d.staging_item_name);
+                    // seriesTitle est déjà échappé, on le passe tel quel
+                    let html = `<div class="alert alert-warning"><h5><i class="fas fa-exclamation-triangle"></i> Discordance S/E</h5>
+                        <p>${escapeJsString(result.message)}</p><hr>
+                        <p>Fichier <strong>${escapeJsString(d.source_video_file_path_in_staging.split(/[\\/]/).pop())}</strong> :<br>
+                           Suggère: <strong>Saison ${d.filename_season}, Épisode ${d.filename_episode}</strong><br>
+                           Sonarr identifie: <strong>Saison ${d.sonarr_season}, Épisode ${d.sonarr_episode}</strong></p><hr>
+                        <p>Comment voulez-vous procéder ?</p>
+                        <button class="btn btn-primary btn-sm me-2 mb-2" onclick="forceSonarrImport('${stagingItemNameForForce}', ${d.series_id}, 'use_sonarr_info', ${d.sonarr_season}, ${d.sonarr_episode}, '${seriesTitle}')">Utiliser S${d.sonarr_season}E${d.sonarr_episode} (Info Sonarr)</button>
+                        <button class="btn btn-info btn-sm me-2 mb-2" onclick="forceSonarrImport('${stagingItemNameForForce}', ${d.series_id}, 'use_filename_info', ${d.filename_season}, ${d.filename_episode}, '${seriesTitle}')">Utiliser S${d.filename_season}E${d.filename_episode} (Info Fichier)</button>
+                        <button type="button" class="btn btn-secondary btn-sm mb-2" data-bs-dismiss="modal">Annuler</button></div>`;
+                    resultsDiv.innerHTML = html;
+                } else { throw new Error(result.error || "Erreur inconnue (import)."); }
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="alert alert-danger alert-dismissible fade show" role="alert">Erreur: ${escapeJsString(error.message)}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
+                console.error("Erreur triggerSonarrManualImport:", error);
+            }
+        }
+
+        async function forceSonarrImport(stagingItemName, seriesId, strategy, targetSeason, targetEpisode, seriesTitleForDisplay) { // seriesTitleForDisplay est déjà échappé
+            const resultsDiv = document.getElementById('sonarrSearchResults');
+            resultsDiv.innerHTML = `<div class="alert alert-info">Import forcé pour '${escapeJsString(stagingItemName.split(/[\\/]/).pop())}' vers '${seriesTitleForDisplay}' (S${targetSeason}E${targetEpisode}) stratégie '${strategy}'...</div>`;
+            try {
+                const response = await fetch(`{{ url_for('seedbox_ui.force_sonarr_import_action') }}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ item_name: stagingItemName, series_id: seriesId, target_season: targetSeason, target_episode: targetEpisode })
+                });
+                const result = await response.json();
+                if (response.ok && result.success) {
+                    resultsDiv.innerHTML = `<div class="alert alert-success alert-dismissible fade show" role="alert">Import forcé: ${escapeJsString(result.message) || 'Réussi.'}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
+                    flashMessageGlobally(result.message || "Importation forcée réussie.", 'success');
+                    setTimeout(() => { bootstrap.Modal.getInstance(document.getElementById('sonarrSearchModal'))?.hide(); window.location.reload(); }, 3000);
+                } else { throw new Error(result.error || "Erreur inconnue (import forcé)."); }
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="alert alert-danger alert-dismissible fade show" role="alert">Erreur import forcé: ${escapeJsString(error.message)}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
+                console.error("Erreur forceSonarrImport:", error);
+            }
+        }
+
+        async function triggerRadarrManualImport(radarrMovieId, movieTitle) { // movieTitle ici est déjà échappé
+            const originalItemPathForAction = document.getElementById('radarrOriginalItemName').value;
+            const resultsDiv = document.getElementById('radarrSearchResults');
+            if (radarrMovieId === 0) { /* ... */ return; }
+            resultsDiv.innerHTML = `<div class="alert alert-info">Tentative d'import de '${escapeJsString(originalItemPathForAction.split(/[\\/]/).pop())}' pour le film '${movieTitle}' (ID: ${radarrMovieId})...</div>`;
+            try {
+                const response = await fetch(`{{ url_for('seedbox_ui.trigger_radarr_import') }}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ item_name: originalItemPathForAction, movie_id: radarrMovieId })
+                });
+                const result = await response.json();
+                if (response.ok && result.success) {
+                    resultsDiv.innerHTML = `<div class="alert alert-success alert-dismissible fade show" role="alert">Importation pour '${escapeJsString(originalItemPathForAction.split(/[\\/]/).pop())}' vers '${movieTitle}' initiée. Message: ${result.message || ''}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
+                    flashMessageGlobally(result.message || `Import pour '${escapeJsString(originalItemPathForAction.split(/[\\/]/).pop())}' (film: ${movieTitle}) initié.`, 'success');
+                    setTimeout(() => { bootstrap.Modal.getInstance(document.getElementById('radarrSearchModal'))?.hide(); window.location.reload(); }, 3000);
+                } else { throw new Error(result.error || "Erreur inconnue (import Radarr)."); }
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="alert alert-danger alert-dismissible fade show" role="alert">Erreur importation Radarr: ${escapeJsString(error.message)}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
+                console.error("Erreur import Radarr:", error);
+            }
+        }
+
+        function flashMessageGlobally(message, category) {
+            const container=document.querySelector('div.container.mt-4');
+            if(!container)return;
+            const alertHtml=`<div class="alert alert-${category} alert-dismissible fade show" role="alert" style="margin-top: 1rem;">${message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
+            const firstMajorElement = container.querySelector('header.border-bottom + h1, header.border-bottom + div.mb-3, header.border-bottom + p.text-muted');
+            if(firstMajorElement){firstMajorElement.insertAdjacentHTML('afterend',alertHtml)}else{container.insertAdjacentHTML('afterbegin',alertHtml)}
+            const newAlert = container.querySelector('.alert.alert-dismissible.show');
+            if(newAlert)newAlert.scrollIntoView({behavior:'smooth',block:'center'});
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.file-tree .toggle-children').forEach(toggler => {
+                toggler.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    const childrenList = this.closest('li').querySelector('.children-list');
+                    const icon = this.querySelector('i');
+                    if (childrenList) {
+                        if (childrenList.style.display === 'none' || childrenList.style.display === '') {
+                            childrenList.style.display = 'block';
+                            icon.classList.remove('fa-plus-square');
+                            icon.classList.add('fa-minus-square');
+                        } else {
+                            childrenList.style.display = 'none';
+                            icon.classList.remove('fa-minus-square');
+                            icon.classList.add('fa-plus-square');
+                        }
+                    }
+                });
+            });
+            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            tooltipTriggerList.map(function (tooltipTriggerEl) { return new bootstrap.Tooltip(tooltipTriggerEl); });
+        });
+    </script>
 </body>
 </html>
