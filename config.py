@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 import os
 from dotenv import load_dotenv
-
 # S'assurer que basedir pointe vers la racine du projet MediaManagerSuite
 # Si config.py est dans MediaManagerSuite/config.py (et non MediaManagerSuite/app/config.py)
 # alors c'est correct.
@@ -31,6 +30,9 @@ class Config:
     default_orphan_extensions_str = ".nfo,.jpg,.jpeg,.png,.txt,.srt,.sub,.idx,.lnk,.exe,.vsmeta,.edl"
     orphan_extensions_str = os.environ.get('ORPHAN_EXTENSIONS', default_orphan_extensions_str)
     ORPHAN_EXTENSIONS = [ext.strip().lower() for ext in orphan_extensions_str.split(',') if ext.strip()]
+
+    #Configuration du chemin JSON du script seedbox
+    PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT = os.environ.get('PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT')
 
     # PLEX_LIBRARY_ROOTS et PLEX_BASE_PATH_GUARD sont déterminés dynamiquement dans les routes de Plex Web Editor.
 
@@ -87,3 +89,25 @@ class Config:
 
     # Vous pouvez ajouter d'autres configurations globales ici si nécessaire
     # Par exemple : ITEMS_PER_PAGE = 50
+    SEEDBOX_SFTP_HOST = os.environ.get('SEEDBOX_SFTP_HOST')
+    SEEDBOX_SFTP_PORT = int(os.environ.get('SEEDBOX_SFTP_PORT') or 22) # Mettre un port par défaut
+    SEEDBOX_SFTP_USER = os.environ.get('SEEDBOX_SFTP_USER')
+    SEEDBOX_SFTP_PASSWORD = os.environ.get('SEEDBOX_SFTP_PASSWORD')
+    SEEDBOX_SONARR_FINISHED_PATH = os.environ.get('SEEDBOX_SONARR_FINISHED_PATH')
+    SEEDBOX_RADARR_FINISHED_PATH = os.environ.get('SEEDBOX_RADARR_FINISHED_PATH')
+    SEEDBOX_SONARR_WORKING_PATH = os.environ.get('SEEDBOX_SONARR_WORKING_PATH')
+    SEEDBOX_RADARR_WORKING_PATH = os.environ.get('SEEDBOX_RADARR_WORKING_PATH')
+
+# --- DEBUGGING SFTP CONFIGS ---
+# Affiche les valeurs telles que lues depuis os.environ après load_dotenv()
+# Ces prints s'exécuteront au moment de l'import de config.py
+print("--- DEBUGGING SFTP CONFIG VALUES (from config.py, after load_dotenv) ---")
+print(f"SEEDBOX_SFTP_HOST (os.environ): {os.environ.get('SEEDBOX_SFTP_HOST')}")
+print(f"SEEDBOX_SFTP_PORT (os.environ): {os.environ.get('SEEDBOX_SFTP_PORT')}")
+print(f"SEEDBOX_SFTP_USER (os.environ): {os.environ.get('SEEDBOX_SFTP_USER')}")
+print(f"SEEDBOX_SFTP_PASSWORD (os.environ): {'********' if os.environ.get('SEEDBOX_SFTP_PASSWORD') else None}")
+print(f"SEEDBOX_SONARR_FINISHED_PATH (os.environ): {os.environ.get('SEEDBOX_SONARR_FINISHED_PATH')}")
+print(f"SEEDBOX_RADARR_FINISHED_PATH (os.environ): {os.environ.get('SEEDBOX_RADARR_FINISHED_PATH')}")
+print(f"SEEDBOX_SONARR_WORKING_PATH (os.environ): {os.environ.get('SEEDBOX_SONARR_WORKING_PATH')}")
+print(f"SEEDBOX_RADARR_WORKING_PATH (os.environ): {os.environ.get('SEEDBOX_RADARR_WORKING_PATH')}")
+print("--- END DEBUGGING SFTP CONFIG VALUES ---")
