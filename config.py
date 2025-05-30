@@ -42,6 +42,11 @@ class Config:
     SONARR_API_KEY = os.environ.get('SONARR_API_KEY')
     RADARR_URL = os.environ.get('RADARR_URL')
     RADARR_API_KEY = os.environ.get('RADARR_API_KEY')
+    RTORRENT_RPC_URL = os.getenv('RTORRENT_RPC_URL')
+    PENDING_TORRENTS_MAP_FILE = os.getenv('PENDING_TORRENTS_MAP_FILE', 'pending_torrents_map.json')
+    RTORRENT_SONARR_WATCH_PATH = os.getenv('RTORRENT_SONARR_WATCH_PATH')
+    RTORRENT_RADARR_WATCH_PATH = os.getenv('RTORRENT_RADARR_WATCH_PATH')
+    RTORRENT_GENERAL_WATCH_PATH = os.getenv('RTORRENT_GENERAL_WATCH_PATH', '/srv/rtorrent/watch/') # Example default
 
     # --- Configuration Globale Flask ---
     # Le mode DEBUG est souvent activé par FLASK_DEBUG=1 dans .env,

@@ -12,6 +12,10 @@ from requests.exceptions import RequestException # Pour gérer les erreurs de co
 from flask import Blueprint, render_template, current_app, request, flash, redirect, url_for, jsonify
 import stat
 import json
+from app.utils.rtorrent_client import add_torrent_url, add_torrent_file, list_torrents as rtorrent_list_torrents_api
+from app.utils.mapping_manager import add_pending_association, get_pending_association, remove_pending_association, get_all_pending_associations
+# import base64 # If handling base64 decoding here, otherwise it's in rtorrent_client
+
 # Définition du Blueprint pour seedbox_ui
 # Le Blueprint lui-même est défini dans app/seedbox_ui/__init__.py
 # from . import seedbox_ui_bp # Ceci serait pour importer le bp si on en avait besoin ici, mais on l'utilise pour décorer les routes.
@@ -1408,104 +1412,222 @@ def manual_sftp_download_action():
 def sftp_retrieve_and_process_action():
     data = request.get_json()
     remote_path_posix = data.get('remote_path')
-    app_type_of_remote_folder = data.get('app_type_of_remote_folder') # sonarr/radarr pour le type de dossier source
-    target_series_id = data.get('target_series_id') # Si c'est pour Sonarr
-    target_movie_id = data.get('target_movie_id')   # Si c'est pour Radarr
+    # app_type_of_remote_folder is the type of folder on seedbox (sonarr/radarr finished)
+    # This helps determine which _handle function to call if no specific target_id is found
+    # from pre-association but is provided in the direct POST data.
+    app_type_of_remote_folder = data.get('app_type_of_remote_folder')
 
-    # Récupérer la saison/épisode choisi par l'utilisateur s'il y a eu résolution de discordance
-    # Ces paramètres sont envoyés par la fonction JS forceSonarrImport
-    user_forced_season = data.get('target_season')
-    user_forced_episode = data.get('target_episode') # Non utilisé par _handle_staged_sonarr_item pour le moment
+    # These are IDs provided if user selected a target *during* the "Rapatrier & Mapper" action,
+    # not from a pre-existing association made during torrent addition.
+    direct_target_series_id = data.get('target_series_id')
+    direct_target_movie_id = data.get('target_movie_id')
+    user_forced_season = data.get('target_season') # For Sonarr season mismatch resolution
 
-    logger.info(f"SFTP Retrieve & Process: Remote='{remote_path_posix}', AppType='{app_type_of_remote_folder}', "
-                f"SeriesID='{target_series_id}', MovieID='{target_movie_id}', "
-                f"ForcedSeason='{user_forced_season}', ForcedEpisode='{user_forced_episode}'")
+    current_app.logger.info(
+        f"SFTP Retrieve & Process: Remote='{remote_path_posix}', "
+        f"AppTypeRemoteFolder='{app_type_of_remote_folder}', "
+        f"DirectSeriesID='{direct_target_series_id}', DirectMovieID='{direct_target_movie_id}', "
+        f"ForcedSeason='{user_forced_season}'"
+    )
 
+    # --- Configuration Checks (SFTP, Staging Dir, etc.) ---
     sftp_host = current_app.config.get('SEEDBOX_SFTP_HOST')
-    sftp_port = current_app.config.get('SEEDBOX_SFTP_PORT') # Récupération
-    sftp_user = current_app.config.get('SEEDBOX_SFTP_USER') # Récupération
-    sftp_password = current_app.config.get('SEEDBOX_SFTP_PASSWORD') # Récupération
+    sftp_port = current_app.config.get('SEEDBOX_SFTP_PORT')
+    sftp_user = current_app.config.get('SEEDBOX_SFTP_USER')
+    sftp_password = current_app.config.get('SEEDBOX_SFTP_PASSWORD')
     local_staging_dir_pathobj = Path(current_app.config.get('STAGING_DIR'))
-    processed_log_file_str = current_app.config.get('PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT')
+    # processed_log_file_str = current_app.config.get('PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT') # For marking items for external script
 
-    if not all([sftp_host, sftp_port, sftp_user, sftp_password, local_staging_dir_pathobj, processed_log_file_str]):
-        logger.error("sftp_retrieve_and_process_action: Configuration SFTP, staging_dir ou log_file manquante.")
+    if not all([sftp_host, sftp_port, sftp_user, sftp_password, local_staging_dir_pathobj]):
+        current_app.logger.error("sftp_retrieve_and_process_action: Configuration SFTP or staging_dir manquante.")
         return jsonify({"success": False, "error": "Configuration serveur incomplète pour cette action."}), 500
 
-    if not remote_path_posix or not app_type_of_remote_folder or not (target_series_id or target_movie_id):
-        return jsonify({"success": False, "error": "Données POST manquantes (chemin distant, type d'app ou ID cible)."}), 400
+    if not remote_path_posix or not app_type_of_remote_folder:
+        return jsonify({"success": False, "error": "Données POST manquantes (chemin distant ou type d'app du dossier distant)."}), 400
+
+    # If neither direct IDs nor a remote path (for pre-association lookup) is present, it's an issue.
+    # However, remote_path_posix is checked above. The logic will try pre-association first.
 
     item_basename_on_seedbox = Path(remote_path_posix).name
     local_staged_item_path_obj = local_staging_dir_pathobj / item_basename_on_seedbox
 
-    # --- Étape 1: Rapatriement SFTP ---
+    # --- Étape 1: Rapatriement SFTP (unchanged from existing logic) ---
     sftp_client = None; transport = None; success_download = False
     try:
-        logger.debug(f"SFTP R&P: Connexion à {sftp_host}:{sftp_port} avec utilisateur {sftp_user}")
-        transport = paramiko.Transport((sftp_host, int(sftp_port))) # Utilisation de sftp_port converti en int
-        transport.set_keepalive(60) # Ajout keepalive
+        current_app.logger.debug(f"SFTP R&P: Connexion à {sftp_host}:{sftp_port} avec utilisateur {sftp_user}")
+        transport = paramiko.Transport((sftp_host, int(sftp_port)))
+        transport.set_keepalive(60)
         transport.connect(username=sftp_user, password=sftp_password)
         sftp_client = paramiko.SFTPClient.from_transport(transport)
-        logger.info(f"SFTP R&P: Connecté à {sftp_host}. Téléchargement de '{remote_path_posix}'.")
+        current_app.logger.info(f"SFTP R&P: Connecté à {sftp_host}. Téléchargement de '{remote_path_posix}'.")
 
-        success_download = _download_sftp_item_recursive_local(sftp_client, remote_path_posix, local_staged_item_path_obj, logger)
+        success_download = _download_sftp_item_recursive_local(sftp_client, remote_path_posix, local_staged_item_path_obj, current_app.logger) # Pass logger
 
         if success_download:
-            logger.info(f"SFTP R&P: Download de '{item_basename_on_seedbox}' réussi vers '{local_staged_item_path_obj}'.")
+            current_app.logger.info(f"SFTP R&P: Download de '{item_basename_on_seedbox}' réussi vers '{local_staged_item_path_obj}'.")
+            # Update processed_sftp_items.json (logic copied & adapted from manual_sftp_download_action)
+            processed_log_file_str = current_app.config.get('PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT')
             if processed_log_file_str:
-                # TODO: Ajouter la logique de mise à jour de processed_sftp_items.json ici si nécessaire
-                # Pour l'instant, on logue seulement que le DL a réussi.
-                # La logique de log est dans manual_sftp_download_action, pourrait être factorisée.
-                logger.debug("SFTP R&P: La mise à jour du log des items traités n'est pas implémentée ici, mais le DL a réussi.")
-                pass
+                try:
+                    # Determine base_scan_folder_name_on_seedbox based on app_type_of_remote_folder
+                    # This assumes app_type_of_remote_folder correctly reflects the *source* folder type (e.g., 'sonarr' for SEEDBOX_SONARR_FINISHED_PATH)
+                    path_config_key_map = {
+                        'sonarr': 'SEEDBOX_SONARR_FINISHED_PATH',
+                        'radarr': 'SEEDBOX_RADARR_FINISHED_PATH',
+                        'sonarr_working': 'SEEDBOX_SONARR_WORKING_PATH', # Though R&P usually from finished
+                        'radarr_working': 'SEEDBOX_RADARR_WORKING_PATH'  # Though R&P usually from finished
+                    }
+                    base_folder_config_key = path_config_key_map.get(app_type_of_remote_folder)
+                    base_scan_folder_name_on_seedbox = None
+                    if base_folder_config_key:
+                        config_path_str = current_app.config.get(base_folder_config_key)
+                        if config_path_str:
+                            base_scan_folder_name_on_seedbox = Path(config_path_str).name
+
+                    if base_scan_folder_name_on_seedbox:
+                        processed_item_identifier_for_log = f"{base_scan_folder_name_on_seedbox}/{item_basename_on_seedbox}"
+                        # (The rest of the JSON update logic from manual_sftp_download_action)
+                        # For brevity, this part is assumed to be correctly implemented here.
+                        # It involves reading the JSON, adding the new item, and writing back.
+                        current_app.logger.info(f"SFTP R&P: Item '{processed_item_identifier_for_log}' will be marked in processed log.")
+                        # Actual log update logic should be here
+                        processed_log_file = Path(processed_log_file_str)
+                        current_processed_set = set()
+                        if processed_log_file.exists() and processed_log_file.stat().st_size > 0:
+                            try:
+                                with open(processed_log_file, 'r', encoding='utf-8') as f_log_read:
+                                    data_log = json.load(f_log_read)
+                                    if isinstance(data_log, list):
+                                        current_processed_set = set(data_log)
+                                    else:
+                                        current_app.logger.warning(f"Le fichier {processed_log_file} ne contient pas une liste. Il sera écrasé.")
+                            except json.JSONDecodeError:
+                                current_app.logger.error(f"Erreur de décodage JSON dans {processed_log_file}. Le fichier sera écrasé.")
+                            except Exception as e_read_log:
+                                current_app.logger.error(f"Erreur lecture de {processed_log_file} pour mise à jour: {e_read_log}. Tentative d'écrasement.")
+
+                        if processed_item_identifier_for_log not in current_processed_set:
+                            current_processed_set.add(processed_item_identifier_for_log)
+                            try:
+                                processed_log_file.parent.mkdir(parents=True, exist_ok=True)
+                                with open(processed_log_file, 'w', encoding='utf-8') as f_log_write:
+                                    json.dump(sorted(list(current_processed_set)), f_log_write, indent=4)
+                                current_app.logger.info(f"'{processed_item_identifier_for_log}' ajouté au fichier des items traités: {processed_log_file}.")
+                            except Exception as e_write_log:
+                                current_app.logger.error(f"Erreur lors de l'écriture dans {processed_log_file} après ajout de '{processed_item_identifier_for_log}': {e_write_log}")
+                        else:
+                            current_app.logger.info(f"'{processed_item_identifier_for_log}' était déjà présent dans {processed_log_file}.")
+                    else:
+                        current_app.logger.warning(f"SFTP R&P: Could not determine base folder for processed log for app_type '{app_type_of_remote_folder}'.")
+                except Exception as e_proc_log:
+                    current_app.logger.error(f"SFTP R&P: Error managing processed items log: {e_proc_log}", exc_info=True)
         else:
-            logger.error(f"SFTP R&P: Échec du téléchargement de '{remote_path_posix}'.")
+            current_app.logger.error(f"SFTP R&P: Échec du téléchargement de '{remote_path_posix}'.")
+            # Clean up partially downloaded file/folder if empty
+            if local_staged_item_path_obj.exists():
+                if local_staged_item_path_obj.is_dir() and not any(local_staged_item_path_obj.iterdir()):
+                    shutil.rmtree(local_staged_item_path_obj)
+                elif local_staged_item_path_obj.is_file() and local_staged_item_path_obj.stat().st_size == 0:
+                    local_staged_item_path_obj.unlink()
             return jsonify({"success": False, "error": f"Échec du téléchargement SFTP de '{item_basename_on_seedbox}'."}), 500
     except paramiko.ssh_exception.AuthenticationException as e_auth:
-        logger.error(f"SFTP R&P: Erreur d'authentification SFTP: {e_auth}")
+        # ... (error handling as before) ...
+        current_app.logger.error(f"SFTP R&P: Erreur d'authentification SFTP: {e_auth}")
         return jsonify({"success": False, "error": "Erreur d'authentification SFTP."}), 401
     except Exception as e_sftp_outer:
-        logger.error(f"SFTP R&P: Erreur SFTP ('{remote_path_posix}'): {e_sftp_outer}", exc_info=True)
+        # ... (error handling as before) ...
+        current_app.logger.error(f"SFTP R&P: Erreur SFTP ('{remote_path_posix}'): {e_sftp_outer}", exc_info=True)
         return jsonify({"success": False, "error": f"Erreur SFTP lors du téléchargement: {e_sftp_outer}"}), 500
     finally:
         if sftp_client: sftp_client.close()
         if transport: transport.close()
-        logger.debug("SFTP R&P: Connexion SFTP fermée.")
+        current_app.logger.debug("SFTP R&P: Connexion SFTP fermée.")
 
-    # --- Étape 2: Appel au handler approprié si le téléchargement a réussi ---
+    # --- Étape 2: Traitement de l'item téléchargé ---
     if success_download:
-        logger.info(f"SFTP R&P: Rapatriement terminé. Traitement de '{item_basename_on_seedbox}' (localisé à '{local_staged_item_path_obj}')...")
+        current_app.logger.info(f"SFTP R&P: Rapatriement terminé. Traitement de '{item_basename_on_seedbox}'...")
 
         final_result_dict = None
-        path_to_cleanup_after_success_abs = str(local_staged_item_path_obj) # Correction ici
+        path_to_cleanup_after_success_abs = str(local_staged_item_path_obj)
 
-        if app_type_of_remote_folder == 'sonarr' and target_series_id:
+        # **NEW: Check for pre-association**
+        pending_assoc = get_pending_association(item_basename_on_seedbox) # Match based on the downloaded item's name
+
+        target_app_type_for_handler = None
+        target_id_for_handler = None
+        association_source = "None" # For logging
+
+        if pending_assoc:
+            current_app.logger.info(f"SFTP R&P: Pré-association trouvée pour '{item_basename_on_seedbox}': {pending_assoc}")
+            target_app_type_for_handler = pending_assoc.get('app_type')
+            target_id_for_handler = pending_assoc.get('target_id')
+            association_source = f"Pre-association (Torrent ID: {pending_assoc.get('torrent_identifier')})"
+        elif direct_target_series_id and app_type_of_remote_folder == 'sonarr': # Check app_type_of_remote_folder for sanity
+            target_app_type_for_handler = 'sonarr'
+            target_id_for_handler = direct_target_series_id
+            association_source = "Direct POST data (Sonarr)"
+        elif direct_target_movie_id and app_type_of_remote_folder == 'radarr': # Check app_type_of_remote_folder for sanity
+            target_app_type_for_handler = 'radarr'
+            target_id_for_handler = direct_target_movie_id
+            association_source = "Direct POST data (Radarr)"
+        else:
+            # This case should ideally not be hit if the frontend ensures target_id is sent
+            # for "Rapatrier & Mapper" when no pre-association is intended to be used.
+            # Or, if this route is *only* for pre-associated items, then this is an error.
+            # Given the existing functionality, we assume direct IDs might be provided.
+             current_app.logger.warning(f"SFTP R&P: Aucune pré-association trouvée pour '{item_basename_on_seedbox}' et aucun ID cible direct fourni dans la requête pour le type de dossier '{app_type_of_remote_folder}'.")
+             return jsonify({"success": False, "error": f"Aucune pré-association trouvée pour '{item_basename_on_seedbox}' et aucun ID cible direct fourni pour mapper."}), 400
+
+
+        current_app.logger.info(f"SFTP R&P: Handler Target: App='{target_app_type_for_handler}', ID='{target_id_for_handler}', Source='{association_source}'")
+
+        if target_app_type_for_handler == 'sonarr' and target_id_for_handler:
             final_result_dict = _handle_staged_sonarr_item(
-                item_name_in_staging=item_basename_on_seedbox,
-                series_id_target=target_series_id,
+                item_name_in_staging=item_basename_on_seedbox, # Name of the item in local staging
+                series_id_target=target_id_for_handler,
                 path_to_cleanup_in_staging_after_success=path_to_cleanup_after_success_abs,
-                user_chosen_season=data.get('target_season') # Vient du JS si discordance S/E a été résolue
+                user_chosen_season=user_forced_season
             )
-        elif app_type_of_remote_folder == 'radarr' and target_movie_id:
-            final_result_dict = _handle_staged_radarr_item( # APPEL AU NOUVEAU HELPER RADARR
+        elif target_app_type_for_handler == 'radarr' and target_id_for_handler:
+            final_result_dict = _handle_staged_radarr_item(
                 item_name_in_staging=item_basename_on_seedbox,
-                movie_id_target=target_movie_id,
+                movie_id_target=target_id_for_handler,
                 path_to_cleanup_in_staging_after_success=path_to_cleanup_after_success_abs
             )
         else:
-            return jsonify({"success": False, "error": "Type d'app ou ID cible invalide pour traitement final."}), 400
+            error_msg_handler = f"Type d'application ('{target_app_type_for_handler}') ou ID cible ('{target_id_for_handler}') invalide pour le traitement final après rapatriement de '{item_basename_on_seedbox}'."
+            current_app.logger.error(f"SFTP R&P: {error_msg_handler}")
+            return jsonify({"success": False, "error": error_msg_handler}), 400
 
-        # Gérer la réponse du helper (qui peut inclure action_required pour Sonarr)
-        if final_result_dict.get("action_required") == "resolve_season_episode_mismatch":
-             logger.info(f"SFTP R&P: Discordance S/E détectée par le handler Sonarr, retour au frontend.")
-             return jsonify(final_result_dict), 200
-        elif final_result_dict.get("success"):
-            flash(final_result_dict.get("message"), "success")
-            return jsonify(final_result_dict), final_result_dict.get("status_code_override", 200)
-        else: # Echec du handler
-            flash(final_result_dict.get("error", "Erreur traitement final."), "danger")
-            return jsonify(final_result_dict), final_result_dict.get("status_code_override", 500)
-    else:
+        # --- Gérer la réponse du handler ---
+        if final_result_dict: # Ensure dict is not None
+            if final_result_dict.get("action_required") == "resolve_season_episode_mismatch":
+                current_app.logger.info(f"SFTP R&P: Discordance S/E détectée par handler Sonarr pour '{item_basename_on_seedbox}', retour au frontend.")
+                # Note: If this was from a pre-association, the frontend might not expect this.
+                # This specific action_required is usually for interactive mapping.
+                # For now, we pass it through. The JS for R&P doesn't handle this currently.
+                return jsonify(final_result_dict), 200 # Or a more specific status code
+            elif final_result_dict.get("success"):
+                flash_msg = final_result_dict.get("message", f"'{item_basename_on_seedbox}' traité avec succès.")
+                current_app.logger.info(f"SFTP R&P: Traitement réussi pour '{item_basename_on_seedbox}'. Message: {flash_msg}")
+                flash(flash_msg, "success")
+                # If processing was successful and it came from a pre-association, remove it
+                if pending_assoc and pending_assoc.get('torrent_identifier'):
+                    if remove_pending_association(pending_assoc['torrent_identifier']):
+                        current_app.logger.info(f"SFTP R&P: Pré-association pour '{pending_assoc['torrent_identifier']}' (item: {item_basename_on_seedbox}) supprimée.")
+                    else:
+                        current_app.logger.warning(f"SFTP R&P: Échec de la suppression de la pré-association pour '{pending_assoc['torrent_identifier']}'.")
+                return jsonify(final_result_dict), final_result_dict.get("status_code_override", 200)
+            else: # Echec du handler
+                error_msg_handler_fail = final_result_dict.get("error", f"Erreur lors du traitement final de '{item_basename_on_seedbox}'.")
+                current_app.logger.error(f"SFTP R&P: Échec du handler pour '{item_basename_on_seedbox}'. Erreur: {error_msg_handler_fail}")
+                flash(error_msg_handler_fail, "danger")
+                return jsonify(final_result_dict), final_result_dict.get("status_code_override", 500)
+        else: # Should not happen if previous logic is correct
+            current_app.logger.error(f"SFTP R&P: final_result_dict was None for {item_basename_on_seedbox}, indicates logic error.")
+            return jsonify({"success": False, "error": "Erreur interne du serveur lors du traitement post-rapatriement."}), 500
+    else: # success_download is False (already handled and returned)
+        # This part of the code should not be reached if download failed, as returns are made earlier.
         return jsonify({"success": False, "error": "Échec du téléchargement SFTP, donc pas de traitement."}), 500
 
 # FIN de sftp_retrieve_and_process_action
@@ -1876,3 +1998,131 @@ def cleanup_staging_item_action(item_name):
 # ------------------------------------------------------------------------------
 # FIN DE trigger_rdarr_import
 # ------------------------------------------------------------------------------
+
+@seedbox_ui_bp.route('/interaction/rtorrent/add', methods=['POST'])
+def rtorrent_add_torrent_action():
+    data = request.get_json()
+    if not data:
+        return jsonify({"success": False, "error": "No JSON data received."}), 400
+
+    magnet_link = data.get('magnet_link')
+    torrent_file_b64 = data.get('torrent_file_b64') # Base64 encoded .torrent file content
+    app_type = data.get('app_type') # 'sonarr' or 'radarr'
+    target_id = data.get('target_id') # seriesId or movieId
+    original_name = data.get('original_name') # Original torrent name for matching later
+
+    current_app.logger.info(f"Action rTorrent Add: Type={app_type}, TargetID={target_id}, OriginalName='{original_name}', HasMagnet={bool(magnet_link)}, HasFile={bool(torrent_file_b64)}")
+
+    if not (magnet_link or torrent_file_b64):
+        return jsonify({"success": False, "error": "Missing magnet link or torrent file content."}), 400
+    if not app_type or not target_id or not original_name:
+        return jsonify({"success": False, "error": "Missing app_type, target_id, or original_name."}), 400
+    if app_type not in ['sonarr', 'radarr']:
+        return jsonify({"success": False, "error": "Invalid app_type. Must be 'sonarr' or 'radarr'."}), 400
+
+    # Determine rTorrent label and download path (these might come from config later)
+    # For now, let's assume label is same as app_type
+    # And download_path is a general "watch" or "incoming" folder for rTorrent
+    # that autotools will then process based on the label.
+    rtorrent_label = app_type
+
+    # This path should be the "working" or "watch" directory rTorrent monitors,
+    # NOT the final Sonarr/Radarr library path.
+    # Example: /torrents/watch/ (rTorrent will pick it up)
+    # Or, if adding directly, a path rTorrent has write access to for initial download.
+    # This needs to be configured based on the user's rTorrent setup.
+    # Let's make it configurable via Flask app config.
+    rtorrent_download_path = current_app.config.get(f"RTORRENT_{app_type.upper()}_WATCH_PATH")
+    if not rtorrent_download_path:
+        # Fallback to a general watch path if specific one not set
+        rtorrent_download_path = current_app.config.get("RTORRENT_GENERAL_WATCH_PATH")
+
+    if not rtorrent_download_path:
+        current_app.logger.error(f"rTorrent watch/download path for {app_type} or general is not configured (RTORRENT_{app_type.upper()}_WATCH_PATH or RTORRENT_GENERAL_WATCH_PATH).")
+        return jsonify({"success": False, "error": f"rTorrent download path for {app_type} not configured on server."}), 500
+
+    torrent_hash = None
+    error_msg = None
+
+    if magnet_link:
+        current_app.logger.info(f"Adding magnet to rTorrent: Label='{rtorrent_label}', Path='{rtorrent_download_path}'")
+        torrent_hash, error_msg = add_torrent_url(magnet_link, rtorrent_download_path, rtorrent_label)
+    elif torrent_file_b64:
+        current_app.logger.info(f"Adding torrent file to rTorrent: Label='{rtorrent_label}', Path='{rtorrent_download_path}'")
+        # The add_torrent_file function in rtorrent_client handles base64 decoding
+        torrent_hash, error_msg = add_torrent_file(torrent_file_b64, rtorrent_download_path, rtorrent_label)
+
+    if error_msg or not torrent_hash:
+        current_app.logger.error(f"Failed to add torrent to rTorrent: {error_msg}")
+        return jsonify({"success": False, "error": f"rTorrent error: {error_msg or 'Failed to get torrent hash.'}"}), 500
+
+    current_app.logger.info(f"Torrent added to rTorrent successfully. Hash: {torrent_hash}")
+
+    # Save association
+    # The torrent_identifier here is the hash returned by rTorrent.
+    if add_pending_association(torrent_hash, app_type, target_id, rtorrent_label, original_name):
+        current_app.logger.info(f"Pending association saved for hash {torrent_hash} -> {original_name}")
+        return jsonify({
+            "success": True,
+            "message": f"Torrent '{original_name}' added to rTorrent and pre-associated.",
+            "torrent_hash": torrent_hash
+        }), 200
+    else:
+        current_app.logger.error(f"Torrent {torrent_hash} added to rTorrent, but failed to save pending association for '{original_name}'. This requires manual cleanup/retry of association.")
+        # This is a partial success/failure state. The torrent is in rTorrent.
+        # Consider if we should try to remove it from rTorrent, or just warn heavily.
+        return jsonify({
+            "success": False, # Or True with a warning
+            "error": "Torrent added to rTorrent, but failed to save pre-association metadata. Please check logs.",
+            "torrent_hash": torrent_hash,
+            "warning": "Pre-association failed to save."
+        }), 500 # Or 207 Multi-Status
+
+@seedbox_ui_bp.route('/rtorrent/list-view')
+def rtorrent_list_view():
+    current_app.logger.info("Accessing rTorrent list view page.")
+
+    # Fetch all torrents from rTorrent (using the default 'main' view for now)
+    torrents_data, error_msg_rtorrent = rtorrent_list_torrents_api()
+
+    if error_msg_rtorrent:
+        current_app.logger.error(f"Error fetching torrents from rTorrent: {error_msg_rtorrent}")
+        flash(f"Impossible de lister les torrents de rTorrent: {error_msg_rtorrent}", "danger")
+        # Render the template with an empty list or an error message specific to this
+        return render_template('seedbox_ui/rtorrent_list.html',
+                               torrents_with_assoc=[],
+                               page_title="Liste des Torrents rTorrent (Erreur)",
+                               error_message=error_msg_rtorrent)
+
+    if torrents_data is None: # Should be caught by error_msg_rtorrent, but as a safeguard
+        current_app.logger.warning("rtorrent_list_torrents_api returned None for data without an error message.")
+        flash("Aucune donnée reçue de rTorrent.", "warning")
+        torrents_data = [] # Ensure it's an iterable
+
+    # Fetch all pending associations
+    pending_associations = get_all_pending_associations() # This returns a dict {torrent_id: assoc_data}
+
+    torrents_with_assoc = []
+    if isinstance(torrents_data, list): # Ensure torrents_data is a list before iterating
+        for torrent in torrents_data:
+            torrent_hash = torrent.get('hash') # d.hash is the key in rtorrent_client.list_torrents
+            association_info = None
+            if torrent_hash and torrent_hash in pending_associations:
+                association_info = pending_associations[torrent_hash]
+
+            torrents_with_assoc.append({
+                "details": torrent, # Contains all info from rtorrent_list_torrents_api
+                "association": association_info # None or the association dict
+            })
+    else:
+        current_app.logger.error(f"rtorrent_list_torrents_api did not return a list as expected. Got: {type(torrents_data)}")
+        flash("Format de données inattendu reçu de rTorrent.", "danger")
+        # Fallback to empty list for template
+        # return render_template('seedbox_ui/rtorrent_list.html', torrents_with_assoc=[], page_title="Liste des Torrents rTorrent (Erreur Format)", error_message="Format de données rTorrent invalide.")
+
+
+    current_app.logger.info(f"Affichage de {len(torrents_with_assoc)} torrent(s) avec leurs informations d'association.")
+    return render_template('seedbox_ui/rtorrent_list.html',
+                           torrents_with_assoc=torrents_with_assoc,
+                           page_title="Liste des Torrents rTorrent",
+                           error_message=None) # Pass None if no specific error for the page itself
