@@ -97,17 +97,3 @@ class Config:
     SEEDBOX_RADARR_FINISHED_PATH = os.environ.get('SEEDBOX_RADARR_FINISHED_PATH')
     SEEDBOX_SONARR_WORKING_PATH = os.environ.get('SEEDBOX_SONARR_WORKING_PATH')
     SEEDBOX_RADARR_WORKING_PATH = os.environ.get('SEEDBOX_RADARR_WORKING_PATH')
-
-# --- DEBUGGING SFTP CONFIGS ---
-# Affiche les valeurs telles que lues depuis os.environ après load_dotenv()
-# Ces prints s'exécuteront au moment de l'import de config.py
-print("--- DEBUGGING SFTP CONFIG VALUES (from config.py, after load_dotenv) ---")
-print(f"SEEDBOX_SFTP_HOST (os.environ): {os.environ.get('SEEDBOX_SFTP_HOST')}")
-print(f"SEEDBOX_SFTP_PORT (os.environ): {os.environ.get('SEEDBOX_SFTP_PORT')}")
-print(f"SEEDBOX_SFTP_USER (os.environ): {os.environ.get('SEEDBOX_SFTP_USER')}")
-print(f"SEEDBOX_SFTP_PASSWORD (os.environ): {'********' if os.environ.get('SEEDBOX_SFTP_PASSWORD') else None}")
-print(f"SEEDBOX_SONARR_FINISHED_PATH (os.environ): {os.environ.get('SEEDBOX_SONARR_FINISHED_PATH')}")
-print(f"SEEDBOX_RADARR_FINISHED_PATH (os.environ): {os.environ.get('SEEDBOX_RADARR_FINISHED_PATH')}")
-print(f"SEEDBOX_SONARR_WORKING_PATH (os.environ): {os.environ.get('SEEDBOX_SONARR_WORKING_PATH')}")
-print(f"SEEDBOX_RADARR_WORKING_PATH (os.environ): {os.environ.get('SEEDBOX_RADARR_WORKING_PATH')}")
-print("--- END DEBUGGING SFTP CONFIG VALUES ---")

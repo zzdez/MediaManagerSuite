@@ -1167,7 +1167,6 @@ def search_radarr_api():
 @seedbox_ui_bp.route('/remote-view/<app_type_target>')
 def remote_seedbox_view(app_type_target):
     logger.info(f"Demande d'affichage (arbre) du contenu distant seedbox pour: {app_type_target}")
-    logger.info("--- DEBUG remote_seedbox_view (début de fonction) ---")
 
     sftp_host = current_app.config.get('SEEDBOX_SFTP_HOST')
     sftp_port = current_app.config.get('SEEDBOX_SFTP_PORT')
@@ -1203,14 +1202,6 @@ def remote_seedbox_view(app_type_target):
     else:
         flash(f"Type de vue distante inconnu: {app_type_target}", "danger")
         return redirect(url_for('seedbox_ui.index'))
-
-    logger.info(f"SFTP Host from app.config: '{sftp_host}' (type: {type(sftp_host).__name__})")
-    logger.info(f"SFTP Port from app.config: '{sftp_port}' (type: {type(sftp_port).__name__})")
-    logger.info(f"SFTP User from app.config: '{sftp_user}' (type: {type(sftp_user).__name__})")
-    logger.info(f"SFTP Password from app.config: {'********' if sftp_password else None} (type: {type(sftp_password).__name__})") # Ne pas logger le mot de passe en clair
-    logger.info(f"Remote Path for {app_type_target} from app.config: '{remote_path_to_list_root}' (type: {type(remote_path_to_list_root).__name__})")
-    logger.info(f"Local Staging Dir for check from app.config: '{local_staging_dir_str}' (type: {type(local_staging_dir_str).__name__})")
-    logger.info("--- FIN DEBUG remote_seedbox_view (avant vérification 'not all') ---")
 
     if not all([sftp_host, sftp_port, sftp_user, sftp_password, remote_path_to_list_root]):
         error_msg = f"Config SFTP ou chemin distant pour '{app_type_target}' manquante. Vérifiez les logs de démarrage et les variables d'environnement."
