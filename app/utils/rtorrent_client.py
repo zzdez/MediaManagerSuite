@@ -77,11 +77,8 @@ def list_torrents():
     if current_app.debug and torrents_dict_from_api:
         first_hash = next(iter(torrents_dict_from_api), None)
         if first_hash:
-            first_data_array = torrents_dict_from_api[first_hash]
-            current_app.logger.info(f"DEBUGGING httprpc list_torrents: First torrent hash: {first_hash}")
-            current_app.logger.info(f"DEBUGGING httprpc list_torrents: First torrent data_array (length {len(first_data_array)}): {first_data_array}")
-            # for i, item_val in enumerate(first_data_array): # Keep this commented unless deep debugging needed
-            #      current_app.logger.info(f"  Index {i}: {item_val} (Type: {type(item_val)})")
+            # ... (debug logging for first torrent can be kept or removed) ...
+            pass
     simplified_torrents = []
     for torrent_hash, data_array in torrents_dict_from_api.items():
         try:
@@ -121,7 +118,7 @@ def list_torrents():
                 'downloaded_bytes': bytes_done, 'uploaded_bytes': up_total,
                 'ratio': round(ratio_val / 1000.0, 2),
                 'up_rate_bytes_sec': up_rate_bytes_sec, 'down_rate_bytes_sec': down_rate_bytes_sec,
-                'eta_seconds': safe_int(data_array[9] if len(data_array) > 9 else '0'), # Placeholder, correct index needed
+                'eta_seconds': safe_int(data_array[9] if len(data_array) > 9 else '0'), # This was likely wrong index for ETA from previous logs
                 'label': label, 'download_dir': download_dir,
                 'status_text': status_text,
                 'is_active': is_open and is_rt_active_state,
@@ -136,20 +133,15 @@ def list_torrents():
     return simplified_torrents, None
 
 
-def add_magnet(magnet_link, label=None, download_dir=None): # download_dir is kept in signature for consistency but not used
-    if not magnet_link:
-        return False, "Magnet link cannot be empty."
+# add_magnet is NOT changed in this subtask, only add_torrent_file
+def add_magnet(magnet_link, label=None, download_dir=None):
+    # ... (implementation from previous version, still omits dir_edit) ...
+    if not magnet_link: return False, "Magnet link cannot be empty."
     payload = {'mode': 'add', 'url': magnet_link, 'fast_resume': '1', 'start_now': '1'}
-    if label:
-        payload['label'] = label
-    # MODIFICATION: Do not pass dir_edit if download_dir is None or empty.
-    # The problem description implies we should *omit* it for this test.
-    # if download_dir:
-    #     payload['dir_edit'] = download_dir
+    if label: payload['label'] = label
+    # download_dir is intentionally omitted for this series of tests
     current_app.logger.info(f"Adding magnet via httprpc (omitting dir_edit): Payload={payload}, Magnet='{magnet_link[:100]}...'")
-
     response_data, error = _make_httprpc_request(data=payload)
-    # ... (rest of the function remains the same as previous correct version) ...
     log_msg_prefix = "httprpc 'add magnet'"
     if isinstance(response_data, dict): current_app.logger.info(f"{log_msg_prefix} JSON response: {json.dumps(response_data)}")
     elif isinstance(response_data, str): current_app.logger.info(f"{log_msg_prefix} text response_data: '{response_data}'")
@@ -169,37 +161,46 @@ def add_magnet(magnet_link, label=None, download_dir=None): # download_dir is ke
     current_app.logger.info(f"Magnet link '{magnet_link[:100]}...' successfully processed by httprpc.")
     return True, None
 
-def add_torrent_file(file_content_bytes, filename, label=None, download_dir=None): # download_dir is kept for consistency but not used
+def add_torrent_file(file_content_bytes, filename, label=None, download_dir=None): # label and download_dir are unused in this version
     if not file_content_bytes or not filename:
         return False, "File content and filename cannot be empty."
-    form_data = {'mode': 'add', 'fast_resume': '1', 'start_now': '1'}
-    if label:
-        form_data['label'] = label
-    # MODIFICATION: Do not pass dir_edit if download_dir is None or empty.
-    # if download_dir:
-    #    form_data['dir_edit'] = download_dir
+
+    # MODIFICATION: Send only 'mode=add' in form_data for this test
+    form_data = {'mode': 'add'}
+    # Omitted for this test:
+    # if label: form_data['label'] = label
+    # if download_dir: form_data['dir_edit'] = download_dir
+    # 'fast_resume' and 'start_now' are also omitted for this minimal test.
+
     files_payload = {'torrent_file': (filename, file_content_bytes, 'application/x-bittorrent')}
-    current_app.logger.info(f"Adding torrent file '{filename}' via httprpc (omitting dir_edit): Data={form_data}")
+    current_app.logger.info(f"Adding torrent file '{filename}' via httprpc (MINIMAL params): Data={form_data}")
 
     response_data, error = _make_httprpc_request(data=form_data, files=files_payload)
-    # ... (rest of the function remains the same as previous correct version) ...
-    log_msg_prefix = "httprpc 'add file'"
-    if isinstance(response_data, dict): current_app.logger.info(f"{log_msg_prefix} JSON response: {json.dumps(response_data)}")
-    elif isinstance(response_data, str): current_app.logger.info(f"{log_msg_prefix} text response_data: '{response_data}'")
-    else: current_app.logger.info(f"{log_msg_prefix} other response_data: {response_data}")
+
+    log_msg_prefix = "httprpc 'add file' (minimal params)"
+    if isinstance(response_data, dict):
+        current_app.logger.info(f"{log_msg_prefix} JSON response: {json.dumps(response_data)}")
+    elif isinstance(response_data, str):
+        current_app.logger.info(f"{log_msg_prefix} text response_data: '{response_data}'")
+    else:
+        current_app.logger.info(f"{log_msg_prefix} other response_data: {response_data}")
+
     if error:
-        current_app.logger.error(f"Error adding torrent file '{filename}' via httprpc: {error}")
+        current_app.logger.error(f"Error adding torrent file '{filename}' via httprpc (minimal): {error}")
         return False, error
+
     if response_data is False:
-        current_app.logger.error(f"Torrent file add failed: httprpc returned JSON 'false'. File: {filename}")
+        current_app.logger.error(f"Torrent file add failed (minimal): httprpc returned JSON 'false'. File: {filename}")
         return False, "ruTorrent httprpc indicated failure (returned false)."
+
     if isinstance(response_data, dict) and response_data:
-        current_app.logger.warning(f"Torrent file add via httprpc returned non-empty JSON: {response_data}")
-        return False, f"File add command sent, but server returned unexpected JSON data: {str(response_data)[:200]}"
+        current_app.logger.warning(f"Torrent file add (minimal) via httprpc returned non-empty JSON: {response_data}")
+        return False, f"File add command (minimal) sent, but server returned unexpected JSON data: {str(response_data)[:200]}"
     if isinstance(response_data, str) and response_data:
-        current_app.logger.warning(f"Torrent file add via httprpc returned non-empty text: '{response_data}'")
-        return False, f"File add command sent, but server returned unexpected text data: {str(response_data)[:200]}"
-    current_app.logger.info(f"Torrent file '{filename}' successfully processed by httprpc.")
+        current_app.logger.warning(f"Torrent file add (minimal) via httprpc returned non-empty text: '{response_data}'")
+        return False, f"File add command (minimal) sent, but server returned unexpected text data: {str(response_data)[:200]}"
+
+    current_app.logger.info(f"Torrent file '{filename}' (minimal params) successfully processed by httprpc.")
     return True, None
 
 # get_torrent_hash_by_name remains the same
