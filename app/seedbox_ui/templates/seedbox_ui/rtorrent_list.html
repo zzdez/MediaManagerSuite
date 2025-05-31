@@ -105,7 +105,7 @@
                                 </td>
                                 <td>
                                     {% if torrent.label %}
-                                        <span class="badge {% if torrent.label == current_app.config.get('RTORRENT_LABEL_SONARR', 'sonarr') %}badge-sonarr{% elif torrent.label == current_app.config.get('RTORRENT_LABEL_RADARR', 'radarr') %}badge-radarr{% else %}bg-secondary text-white{% endif %}">
+                                        <span class="badge {% if torrent.label == config_label_sonarr %}badge-sonarr{% elif torrent.label == config_label_radarr %}badge-radarr{% else %}bg-secondary text-white{% endif %}">
                                             {{ torrent.label }}
                                         </span>
                                     {% else %}

@@ -2141,7 +2141,14 @@ def rtorrent_list_view():
 
 
     current_app.logger.info(f"Affichage de {len(torrents_with_assoc)} torrent(s) avec leurs informations d'association (httprpc).")
+
+    # Pass configured labels to the template
+    config_label_sonarr = current_app.config.get('RTORRENT_LABEL_SONARR', 'sonarr')
+    config_label_radarr = current_app.config.get('RTORRENT_LABEL_RADARR', 'radarr')
+
     return render_template('seedbox_ui/rtorrent_list.html',
                            torrents_with_assoc=torrents_with_assoc,
                            page_title="Liste des Torrents rTorrent",
-                           error_message=None)
+                           error_message=None,
+                           config_label_sonarr=config_label_sonarr,
+                           config_label_radarr=config_label_radarr)
