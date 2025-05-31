@@ -12,9 +12,15 @@ from requests.exceptions import RequestException # Pour gérer les erreurs de co
 from flask import Blueprint, render_template, current_app, request, flash, redirect, url_for, jsonify
 import stat
 import json
-from app.utils.rtorrent_client import add_torrent_url, add_torrent_file, list_torrents as rtorrent_list_torrents_api
+# Updated rtorrent_client imports for httprpc
+from app.utils.rtorrent_client import (
+    list_torrents as rtorrent_list_torrents_api,
+    add_magnet as rtorrent_add_magnet_httprpc,
+    add_torrent_file as rtorrent_add_torrent_file_httprpc,
+    get_torrent_hash_by_name as rtorrent_get_hash_by_name
+)
 from app.utils.mapping_manager import add_pending_association, get_pending_association, remove_pending_association, get_all_pending_associations
-# import base64 # If handling base64 decoding here, otherwise it's in rtorrent_client
+import base64 # Now needed for decoding torrent file content from JS
 
 # Définition du Blueprint pour seedbox_ui
 # Le Blueprint lui-même est défini dans app/seedbox_ui/__init__.py
@@ -2020,109 +2026,122 @@ def rtorrent_add_torrent_action():
     if app_type not in ['sonarr', 'radarr']:
         return jsonify({"success": False, "error": "Invalid app_type. Must be 'sonarr' or 'radarr'."}), 400
 
-    # Determine rTorrent label and download path (these might come from config later)
-    # For now, let's assume label is same as app_type
-    # And download_path is a general "watch" or "incoming" folder for rTorrent
-    # that autotools will then process based on the label.
-    rtorrent_label = app_type
+    # Get label and download directory from config
+    if app_type == 'sonarr':
+        rtorrent_label = current_app.config.get('RTORRENT_LABEL_SONARR')
+        rtorrent_download_dir = current_app.config.get('RTORRENT_DOWNLOAD_DIR_SONARR')
+    else: # radarr
+        rtorrent_label = current_app.config.get('RTORRENT_LABEL_RADARR')
+        rtorrent_download_dir = current_app.config.get('RTORRENT_DOWNLOAD_DIR_RADARR')
 
-    # This path should be the "working" or "watch" directory rTorrent monitors,
-    # NOT the final Sonarr/Radarr library path.
-    # Example: /torrents/watch/ (rTorrent will pick it up)
-    # Or, if adding directly, a path rTorrent has write access to for initial download.
-    # This needs to be configured based on the user's rTorrent setup.
-    # Let's make it configurable via Flask app config.
-    rtorrent_download_path = current_app.config.get(f"RTORRENT_{app_type.upper()}_WATCH_PATH")
-    if not rtorrent_download_path:
-        # Fallback to a general watch path if specific one not set
-        rtorrent_download_path = current_app.config.get("RTORRENT_GENERAL_WATCH_PATH")
+    if not rtorrent_label or not rtorrent_download_dir:
+        msg = f"Label or download directory for {app_type} not configured in MediaManagerSuite."
+        current_app.logger.error(msg)
+        return jsonify({"success": False, "error": msg}), 500
 
-    if not rtorrent_download_path:
-        current_app.logger.error(f"rTorrent watch/download path for {app_type} or general is not configured (RTORRENT_{app_type.upper()}_WATCH_PATH or RTORRENT_GENERAL_WATCH_PATH).")
-        return jsonify({"success": False, "error": f"rTorrent download path for {app_type} not configured on server."}), 500
-
-    torrent_hash = None
-    error_msg = None
+    success_add = False
+    error_msg_add = "No action taken."
 
     if magnet_link:
-        current_app.logger.info(f"Adding magnet to rTorrent: Label='{rtorrent_label}', Path='{rtorrent_download_path}'")
-        torrent_hash, error_msg = add_torrent_url(magnet_link, rtorrent_download_path, rtorrent_label)
+        current_app.logger.info(f"Adding magnet to rTorrent via httprpc: Label='{rtorrent_label}', Dir='{rtorrent_download_dir}'")
+        success_add, error_msg_add = rtorrent_add_magnet_httprpc(magnet_link, rtorrent_label, rtorrent_download_dir)
     elif torrent_file_b64:
-        current_app.logger.info(f"Adding torrent file to rTorrent: Label='{rtorrent_label}', Path='{rtorrent_download_path}'")
-        # The add_torrent_file function in rtorrent_client handles base64 decoding
-        torrent_hash, error_msg = add_torrent_file(torrent_file_b64, rtorrent_download_path, rtorrent_label)
+        try:
+            # The client's add_torrent_file expects bytes, JS sends base64 string. Decode it.
+            # import base64 # Ensure import is at the top of the file
+            torrent_content_bytes = base64.b64decode(torrent_file_b64)
+            # original_name here is the filename of the .torrent file, needed by the client function
+            current_app.logger.info(f"Adding torrent file '{original_name}' to rTorrent via httprpc: Label='{rtorrent_label}', Dir='{rtorrent_download_dir}'")
+            success_add, error_msg_add = rtorrent_add_torrent_file_httprpc(torrent_content_bytes, original_name, rtorrent_label, rtorrent_download_dir)
+        except base64.binascii.Error as e_b64:
+            current_app.logger.error(f"Error decoding base64 torrent file content: {e_b64}")
+            return jsonify({"success": False, "error": "Invalid base64 torrent file content."}), 400
+        except Exception as e_file_prep: # Catch any other errors during file prep
+            current_app.logger.error(f"Error preparing torrent file for upload: {e_file_prep}", exc_info=True)
+            return jsonify({"success": False, "error": f"Error preparing torrent file: {str(e_file_prep)}"}), 500
 
-    if error_msg or not torrent_hash:
-        current_app.logger.error(f"Failed to add torrent to rTorrent: {error_msg}")
-        return jsonify({"success": False, "error": f"rTorrent error: {error_msg or 'Failed to get torrent hash.'}"}), 500
 
-    current_app.logger.info(f"Torrent added to rTorrent successfully. Hash: {torrent_hash}")
+    if not success_add:
+        current_app.logger.error(f"Failed to add torrent to rTorrent (httprpc): {error_msg_add}")
+        return jsonify({"success": False, "error": f"rTorrent error: {error_msg_add or 'Failed to send to rTorrent.'}"}), 500
 
-    # Save association
-    # The torrent_identifier here is the hash returned by rTorrent.
+    current_app.logger.info(f"Torrent '{original_name}' successfully sent to rTorrent via httprpc. Attempting to get its hash by matching name.")
+
+    torrent_hash = rtorrent_get_hash_by_name(original_name)
+
+    if not torrent_hash:
+        current_app.logger.warning(f"Could not retrieve hash for torrent '{original_name}' immediately after adding. Association will use original_name as identifier for now.")
+        msg = f"Torrent '{original_name}' added to rTorrent, but its hash could not be immediately verified for pre-association. It may need manual mapping later."
+        current_app.logger.error(msg)
+        return jsonify({
+            "success": True, # Torrent was added
+            "message": msg,
+            "warning": "Could not verify torrent hash for pre-association. Manual mapping may be required.",
+            "torrent_hash": None
+        }), 202 # Accepted, but with a warning or caveat
+
+    current_app.logger.info(f"Found hash '{torrent_hash}' for '{original_name}'. Saving association.")
     if add_pending_association(torrent_hash, app_type, target_id, rtorrent_label, original_name):
         current_app.logger.info(f"Pending association saved for hash {torrent_hash} -> {original_name}")
         return jsonify({
             "success": True,
-            "message": f"Torrent '{original_name}' added to rTorrent and pre-associated.",
+            "message": f"Torrent '{original_name}' (Hash: {torrent_hash}) added to rTorrent and pre-associated.",
             "torrent_hash": torrent_hash
         }), 200
     else:
-        current_app.logger.error(f"Torrent {torrent_hash} added to rTorrent, but failed to save pending association for '{original_name}'. This requires manual cleanup/retry of association.")
-        # This is a partial success/failure state. The torrent is in rTorrent.
-        # Consider if we should try to remove it from rTorrent, or just warn heavily.
+        current_app.logger.error(f"Torrent {torrent_hash} added to rTorrent, but failed to save pending association for '{original_name}'.")
         return jsonify({
-            "success": False, # Or True with a warning
+            "success": True, # Torrent was added
             "error": "Torrent added to rTorrent, but failed to save pre-association metadata. Please check logs.",
             "torrent_hash": torrent_hash,
             "warning": "Pre-association failed to save."
-        }), 500 # Or 207 Multi-Status
+        }), 207 # Multi-Status
 
 @seedbox_ui_bp.route('/rtorrent/list-view')
 def rtorrent_list_view():
-    current_app.logger.info("Accessing rTorrent list view page.")
+    current_app.logger.info("Accessing rTorrent list view page (using httprpc client).")
 
-    # Fetch all torrents from rTorrent (using the default 'main' view for now)
-    torrents_data, error_msg_rtorrent = rtorrent_list_torrents_api()
+    torrents_data, error_msg_rtorrent = rtorrent_list_torrents_api() # This now calls the httprpc version
 
     if error_msg_rtorrent:
-        current_app.logger.error(f"Error fetching torrents from rTorrent: {error_msg_rtorrent}")
+        current_app.logger.error(f"Error fetching torrents from rTorrent (httprpc): {error_msg_rtorrent}")
         flash(f"Impossible de lister les torrents de rTorrent: {error_msg_rtorrent}", "danger")
-        # Render the template with an empty list or an error message specific to this
         return render_template('seedbox_ui/rtorrent_list.html',
                                torrents_with_assoc=[],
                                page_title="Liste des Torrents rTorrent (Erreur)",
                                error_message=error_msg_rtorrent)
 
-    if torrents_data is None: # Should be caught by error_msg_rtorrent, but as a safeguard
-        current_app.logger.warning("rtorrent_list_torrents_api returned None for data without an error message.")
+    if torrents_data is None: # Should be caught by error_msg_rtorrent
+        current_app.logger.warning("rtorrent_list_torrents_api (httprpc) returned None for data without an error message.")
         flash("Aucune donnée reçue de rTorrent.", "warning")
-        torrents_data = [] # Ensure it's an iterable
+        torrents_data = []
 
-    # Fetch all pending associations
-    pending_associations = get_all_pending_associations() # This returns a dict {torrent_id: assoc_data}
+    pending_associations = get_all_pending_associations()
 
     torrents_with_assoc = []
-    if isinstance(torrents_data, list): # Ensure torrents_data is a list before iterating
-        for torrent in torrents_data:
-            torrent_hash = torrent.get('hash') # d.hash is the key in rtorrent_client.list_torrents
+    if isinstance(torrents_data, list):
+        for torrent in torrents_data: # Each 'torrent' is a dict from the new list_torrents()
+            torrent_hash = torrent.get('hash')
             association_info = None
             if torrent_hash and torrent_hash in pending_associations:
                 association_info = pending_associations[torrent_hash]
+            elif torrent.get('name') in pending_associations: # Fallback if hash wasn't found and name was used as key
+                current_app.logger.warning(f"Found association for torrent '{torrent.get('name')}' using name as key. Hash might have been missed earlier.")
+                association_info = pending_associations[torrent.get('name')]
 
             torrents_with_assoc.append({
-                "details": torrent, # Contains all info from rtorrent_list_torrents_api
-                "association": association_info # None or the association dict
+                "details": torrent,
+                "association": association_info
             })
     else:
-        current_app.logger.error(f"rtorrent_list_torrents_api did not return a list as expected. Got: {type(torrents_data)}")
+        current_app.logger.error(f"rtorrent_list_torrents_api (httprpc) did not return a list. Got: {type(torrents_data)}")
         flash("Format de données inattendu reçu de rTorrent.", "danger")
-        # Fallback to empty list for template
-        # return render_template('seedbox_ui/rtorrent_list.html', torrents_with_assoc=[], page_title="Liste des Torrents rTorrent (Erreur Format)", error_message="Format de données rTorrent invalide.")
+        # Render with empty list
+        return render_template('seedbox_ui/rtorrent_list.html', torrents_with_assoc=[], page_title="Liste des Torrents rTorrent (Erreur Format)", error_message="Format de données rTorrent invalide.")
 
 
-    current_app.logger.info(f"Affichage de {len(torrents_with_assoc)} torrent(s) avec leurs informations d'association.")
+    current_app.logger.info(f"Affichage de {len(torrents_with_assoc)} torrent(s) avec leurs informations d'association (httprpc).")
     return render_template('seedbox_ui/rtorrent_list.html',
                            torrents_with_assoc=torrents_with_assoc,
                            page_title="Liste des Torrents rTorrent",
-                           error_message=None) # Pass None if no specific error for the page itself
+                           error_message=None)

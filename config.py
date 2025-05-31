@@ -42,11 +42,24 @@ class Config:
     SONARR_API_KEY = os.environ.get('SONARR_API_KEY')
     RADARR_URL = os.environ.get('RADARR_URL')
     RADARR_API_KEY = os.environ.get('RADARR_API_KEY')
-    RTORRENT_RPC_URL = os.getenv('RTORRENT_RPC_URL')
     PENDING_TORRENTS_MAP_FILE = os.getenv('PENDING_TORRENTS_MAP_FILE', 'pending_torrents_map.json')
-    RTORRENT_SONARR_WATCH_PATH = os.getenv('RTORRENT_SONARR_WATCH_PATH')
-    RTORRENT_RADARR_WATCH_PATH = os.getenv('RTORRENT_RADARR_WATCH_PATH')
-    RTORRENT_GENERAL_WATCH_PATH = os.getenv('RTORRENT_GENERAL_WATCH_PATH', '/srv/rtorrent/watch/') # Example default
+
+    # --- rTorrent/ruTorrent httprpc API Configuration ---
+    RUTORRENT_API_URL = os.getenv('RUTORRENT_API_URL') # Full URL to action.php
+    RUTORRENT_USER = os.getenv('RUTORRENT_USER')
+    RUTORRENT_PASSWORD = os.getenv('RUTORRENT_PASSWORD')
+    # Convert string 'False' or 'True' to boolean for SEEDBOX_SSL_VERIFY
+    _raw_ssl_verify = os.getenv('SEEDBOX_SSL_VERIFY', 'False') # Default to 'False' as string
+    SEEDBOX_SSL_VERIFY = _raw_ssl_verify.lower() in ['true', '1', 't', 'yes']
+
+    RTORRENT_LABEL_SONARR = os.getenv('RTORRENT_LABEL_SONARR', 'sonarr') # Default label
+    RTORRENT_LABEL_RADARR = os.getenv('RTORRENT_LABEL_RADARR', 'radarr') # Default label
+
+    # These are the initial download directories rTorrent will be instructed to use
+    # Ensure your rTorrent user has write permissions to these paths on the seedbox
+    # And that your rTorrent setup (e.g. autotools) might monitor these or use labels for further sorting.
+    RTORRENT_DOWNLOAD_DIR_SONARR = os.getenv('RTORRENT_DOWNLOAD_DIR_SONARR', '/downloads/incomplete/sonarr_temp/') # Example
+    RTORRENT_DOWNLOAD_DIR_RADARR = os.getenv('RTORRENT_DOWNLOAD_DIR_RADARR', '/downloads/incomplete/radarr_temp/') # Example
 
     # --- Configuration Globale Flask ---
     # Le mode DEBUG est souvent activé par FLASK_DEBUG=1 dans .env,

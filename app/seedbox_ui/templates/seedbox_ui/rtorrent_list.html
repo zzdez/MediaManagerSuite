@@ -14,13 +14,21 @@
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+            display: inline-block; /* Needed for ellipsis to work well with hover/tooltip */
         }
-        .status-active { color: green; }
-        .status-paused { color: orange; }
-        .status-stopped { color: red; }
-        .status-complete { color: blue; }
-        .badge-sonarr { background-color: #007bff; color: white; }
-        .badge-radarr { background-color: #ffc107; color: black; }
+        .status-downloading { color: #007bff; /* Blue */ }
+        .status-seeding { color: #28a745; /* Green */ }
+        .status-paused { color: #ffc107; /* Orange */ }
+        .status-stopped { color: #dc3545; /* Red */ }
+        .status-checking { color: #17a2b8; /* Teal */ }
+        .status-error { color: #dc3545; font-weight: bold; }
+        .status-unknown { color: #6c757d; /* Grey */ }
+
+        .badge-sonarr { background-color: #0d6efd; color: white; } /* Bootstrap Primary Blue */
+        .badge-radarr { background-color: #ffc107; color: black; } /* Bootstrap Warning Yellow */
+        .table-hover tbody tr:hover {
+            background-color: #f1f1f1;
+        }
     </style>
 </head>
 <body>
@@ -64,14 +72,15 @@
 
         {% if torrents_with_assoc is defined and torrents_with_assoc %}
             <div class="table-responsive">
-                <table class="table table-striped table-hover table-sm">
+                <table class="table table-striped table-hover table-sm caption-top">
+                    <caption>Liste des torrents actifs et pré-associations. Les vitesses sont en Ko/s.</caption>
                     <thead class="table-dark">
                         <tr>
                             <th>Nom</th>
-                            <th>Taille</th>
-                            <th>Complété</th>
+                            <th>Taille (Go)</th>
+                            <th>Progrès (%)</th>
                             <th>Ratio</th>
-                            <th>DL/UL (KB/s)</th>
+                            <th>DL / UL</th>
                             <th>Statut rTorrent</th>
                             <th>Label rTorrent</th>
                             <th>Pré-association MMS</th>
@@ -83,31 +92,21 @@
                             {% set torrent = item.details %}
                             {% set association = item.association %}
                             <tr>
-                                <td class="torrent-name" title="{{ torrent.name }}">{{ torrent.name }}</td>
-                                <td>{{ (torrent.size_bytes / (1024*1024*1024)) | round(2) }} Go</td>
-                                <td>{{ (torrent.completed_bytes / (1024*1024*1024)) | round(2) }} Go ({{ (torrent.completed_bytes / torrent.size_bytes * 100) | round(1) if torrent.size_bytes > 0 else 0 }}%)</td>
+                                <td><span class="torrent-name" title="{{ torrent.name }}">{{ torrent.name }}</span></td>
+                                <td>{{ (torrent.size_bytes / (1024*1024*1024)) | round(2) if torrent.size_bytes else '0.00' }}</td>
+                                <td>{{ torrent.progress_percent | round(1) if torrent.progress_percent is not none else 'N/A' }}%</td>
                                 <td>{{ torrent.ratio | round(2) if torrent.ratio is not none else 'N/A' }}</td>
                                 <td>
-                                    <span class="text-success">{{ (torrent.down_rate / 1024) | round(1) if torrent.down_rate is not none else '0.0' }}</span> /
-                                    <span class="text-primary">{{ (torrent.up_rate / 1024) | round(1) if torrent.up_rate is not none else '0.0' }}</span>
+                                    <span class="text-success">{{ (torrent.down_rate_bytes_sec / 1024) | round(1) if torrent.down_rate_bytes_sec is not none else '0.0' }}</span> /
+                                    <span class="text-primary">{{ (torrent.up_rate_bytes_sec / 1024) | round(1) if torrent.up_rate_bytes_sec is not none else '0.0' }}</span>
+                                </td>
+                                <td class="status-{{ torrent.status_text | lower | replace(' ', '-') if torrent.status_text else 'unknown' }}">
+                                    {{ torrent.status_text if torrent.status_text else 'Inconnu' }}
                                 </td>
                                 <td>
-                                    {% if torrent.is_active and torrent.is_open %}
-                                        <span class="status-active">Actif</span>
-                                        {% if torrent.is_complete %} (Seeding) {% else %} (Leeching) {% endif %}
-                                    {% elif torrent.is_open and not torrent.is_active %}
-                                        <span class="status-paused">En Pause</span>
-                                    {% elif not torrent.is_open %}
-                                        <span class="status-stopped">Arrêté</span>
-                                    {% else %}
-                                        Inconnu
-                                    {% endif %}
-                                    <!-- rTorrent state: {{ torrent.state }} -->
-                                </td>
-                                <td>
-                                    {% if torrent.custom1 %}
-                                        <span class="badge {% if torrent.custom1 == 'sonarr' %}badge-sonarr{% elif torrent.custom1 == 'radarr' %}badge-radarr{% else %}bg-secondary{% endif %}">
-                                            {{ torrent.custom1 }}
+                                    {% if torrent.label %}
+                                        <span class="badge {% if torrent.label == current_app.config.get('RTORRENT_LABEL_SONARR', 'sonarr') %}badge-sonarr{% elif torrent.label == current_app.config.get('RTORRENT_LABEL_RADARR', 'radarr') %}badge-radarr{% else %}bg-secondary text-white{% endif %}">
+                                            {{ torrent.label }}
                                         </span>
                                     {% else %}
                                         <span class="text-muted">Aucun</span>
@@ -116,22 +115,22 @@
                                 <td>
                                     {% if association %}
                                         <span class="badge {% if association.app_type == 'sonarr' %}badge-sonarr{% elif association.app_type == 'radarr' %}badge-radarr{% endif %}">
-                                            {{ association.app_type | capitalize }}: {{ association.original_name | truncate(30) }} (ID: {{ association.target_id }})
+                                            {{ association.app_type | capitalize }}: {{ association.original_name | truncate(30) }}
+                                            <small>(ID: {{ association.target_id }})</small>
                                         </span>
                                     {% else %}
                                         <span class="text-muted">Aucune</span>
                                     {% endif %}
                                 </td>
-                                <!-- Future actions could go here, e.g., pause, resume, delete, re-associate -->
-                                <!-- <td><button class="btn btn-xs btn-warning">Pause</button></td> -->
+                                <!-- Future actions could go here -->
                             </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
         {% elif not error_message %}
-            <div class="alert alert-info" role="alert">
-                Aucun torrent actif ou trouvé dans rTorrent, ou la connexion a échoué et aucun message d'erreur spécifique n'a été fourni.
+            <div class="alert alert-info mt-3" role="alert">
+                Aucun torrent trouvé dans rTorrent ou la liste n'a pas pu être chargée.
             </div>
         {% endif %}
     </div>

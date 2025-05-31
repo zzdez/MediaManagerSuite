@@ -1,207 +1,236 @@
 # app/utils/rtorrent_client.py
-import xmlrpc.client
-from flask import current_app, jsonify
-import base64 # For handling .torrent file content
+import requests
+from requests.auth import HTTPBasicAuth
+from flask import current_app
+import json
+import time # For get_torrent_hash_by_name retry logic
 
-# KEEP THE EXISTING get_rtorrent_client() FUNCTION HERE
-def get_rtorrent_client():
-    """
-    Initializes and returns an XML-RPC client for rTorrent.
-    Retrieves RTORRENT_RPC_URL from Flask app config.
-    """
-    rtorrent_rpc_url = current_app.config.get('RTORRENT_RPC_URL')
+# --- Keep the previously defined _make_httprpc_request() and list_torrents() ---
 
-    if not rtorrent_rpc_url:
-        current_app.logger.error("RTORRENT_RPC_URL is not configured.")
+def _make_httprpc_request(method='POST', params=None, data=None, files=None, timeout=30):
+    # ... (Implementation from Part 1 - unchanged) ...
+    api_url = current_app.config.get('RUTORRENT_API_URL')
+    user = current_app.config.get('RUTORRENT_USER')
+    password = current_app.config.get('RUTORRENT_PASSWORD')
+    ssl_verify = current_app.config.get('SEEDBOX_SSL_VERIFY', False)
+
+    if not api_url:
+        current_app.logger.error("RUTORRENT_API_URL is not configured.")
+        return None, "ruTorrent API URL not configured."
+    auth = HTTPBasicAuth(user, password) if user and password else None
+    headers = {'Accept': 'application/json'}
+    if not ssl_verify:
+        requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
+    try:
+        current_app.logger.debug(f"Making httprpc request to {api_url}: Method={method}, SSLVerify={ssl_verify}, Params={params}, Data={data}, Files={bool(files)}")
+        response = requests.request(method, api_url, params=params, data=data, files=files, auth=auth, verify=ssl_verify, timeout=timeout, headers=headers)
+        current_app.logger.debug(f"httprpc response status: {response.status_code}, content type: {response.headers.get('Content-Type')}")
+        if response.status_code == 401:
+            current_app.logger.error(f"httprpc authentication failed (401) for URL: {api_url}")
+            return None, "Authentication failed with ruTorrent httprpc. Check user/password."
+        if response.status_code == 404:
+            current_app.logger.error(f"httprpc API endpoint not found (404): {api_url}")
+            return None, "ruTorrent httprpc API endpoint not found. Check RUTORRENT_API_URL."
+        response.raise_for_status()
+        if response.content and 'application/json' in response.headers.get('Content-Type', ''):
+            try:
+                json_response = response.json()
+                return json_response, None
+            except ValueError as e_json:
+                current_app.logger.error(f"Failed to decode JSON response from httprpc: {e_json}. Response text: {response.text[:500]}")
+                return None, f"Failed to decode JSON response: {response.text[:200]}"
+        elif response.status_code in [200, 201, 202, 204]:
+             current_app.logger.info(f"httprpc request successful (status {response.status_code}) but no JSON content or non-JSON content type.")
+             return True, None
+        else:
+            current_app.logger.warning(f"httprpc request returned status {response.status_code} with non-JSON content: {response.text[:200]}")
+            return None, f"Unexpected response from httprpc (status {response.status_code})."
+    except requests.exceptions.SSLError as e_ssl:
+        current_app.logger.error(f"SSL Error connecting to httprpc at {api_url}: {e_ssl}. Try SEEDBOX_SSL_VERIFY=False in .env if using a self-signed cert.")
+        return None, f"SSL Error: {e_ssl}. Check SEEDBOX_SSL_VERIFY."
+    except requests.exceptions.ConnectionError as e_conn:
+        current_app.logger.error(f"Connection Error for httprpc at {api_url}: {e_conn}")
+        return None, f"Connection Error: {e_conn}."
+    except requests.exceptions.Timeout as e_timeout:
+        current_app.logger.error(f"Timeout connecting to httprpc at {api_url}: {e_timeout}")
+        return None, f"Timeout connecting to ruTorrent."
+    except requests.exceptions.RequestException as e_req:
+        current_app.logger.error(f"Generic RequestException for httprpc at {api_url}: {e_req}")
+        return None, f"Request Error: {e_req}."
+    except Exception as e_generic:
+        current_app.logger.error(f"Unexpected error in _make_httprpc_request for {api_url}: {e_generic}", exc_info=True)
+        return None, f"An unexpected error occurred: {str(e_generic)}"
+
+
+def list_torrents():
+    # ... (Implementation from Part 1 - unchanged) ...
+    payload = {'mode': 'list'}
+    json_response, error = _make_httprpc_request(data=payload)
+    if error: return None, error
+    if not isinstance(json_response, dict) or 't' not in json_response:
+        current_app.logger.error(f"httprpc list_torrents: Unexpected JSON structure. 't' key missing. Response: {str(json_response)[:500]}")
+        return None, "Unexpected JSON structure from ruTorrent for torrent list."
+    torrents_dict_from_api = json_response.get('t', {})
+    simplified_torrents = []
+    for torrent_hash, data_array in torrents_dict_from_api.items():
+        try:
+            status_code = int(data_array[0])
+            is_active = bool(status_code & 1) and not bool(status_code & 32)
+            is_complete = (int(data_array[3]) == 1000)
+            is_paused = bool(status_code & 32)
+            status_str = "Unknown"
+            if is_paused: status_str = "Paused"
+            elif not (status_code & 1): status_str = "Stopped"
+            elif is_active and is_complete: status_str = "Seeding"
+            elif is_active and not is_complete: status_str = "Downloading"
+            elif bool(status_code & 16): status_str = "Error"
+            elif bool(status_code & 2): status_str = "Checking"
+            torrent_info = {
+                'hash': torrent_hash, 'name': str(data_array[1]), 'size_bytes': int(data_array[2]),
+                'progress_permille': int(data_array[3]), 'progress_percent': int(data_array[3]) / 10.0,
+                'downloaded_bytes': int(data_array[4]), 'uploaded_bytes': int(data_array[5]),
+                'ratio': int(data_array[6]) / 1000.0 if data_array[6] else 0.0,
+                'up_rate_bytes_sec': int(data_array[7]), 'down_rate_bytes_sec': int(data_array[8]),
+                'eta_seconds': int(data_array[9]),
+                'label': str(data_array[10]) if len(data_array) > 10 and data_array[10] else "",
+                'status_text': status_str, 'rtorrent_status_code': status_code,
+                'is_active': is_active, 'is_complete': is_complete, 'is_paused': is_paused
+            }
+            if len(data_array) > 14 and data_array[14]: torrent_info['download_dir'] = str(data_array[14])
+            simplified_torrents.append(torrent_info)
+        except (IndexError, ValueError) as e:
+            current_app.logger.error(f"Error parsing data_array for torrent {torrent_hash}: {data_array}. Error: {e}")
+            continue
+    current_app.logger.info(f"Successfully listed and parsed {len(simplified_torrents)} torrents from httprpc.")
+    return simplified_torrents, None
+
+# --- NEW FUNCTIONS for Part 2 ---
+
+def add_magnet(magnet_link, label=None, download_dir=None):
+    """
+    Adds a torrent via magnet link using httprpc.
+    Args:
+        magnet_link (str): The magnet URI.
+        label (str, optional): Label to assign to the torrent in rTorrent.
+        download_dir (str, optional): Specific download directory on the seedbox.
+    Returns:
+        tuple: (True, None) if successful (httprpc 'add' often returns no body or non-JSON on success).
+               (False, error_message_string) if an error occurred.
+               Note: httprpc mode=add does not directly return the torrent hash.
+    """
+    if not magnet_link:
+        return False, "Magnet link cannot be empty."
+
+    payload = {
+        'mode': 'add',
+        'url': magnet_link,
+        'fast_resume': '1', # Try to use fast resume data
+        'start_now': '1'    # Attempt to start the torrent immediately
+    }
+    if label:
+        payload['label'] = label
+    if download_dir:
+        payload['dir_edit'] = download_dir # dir_edit is common for setting download directory
+
+    current_app.logger.info(f"Adding magnet via httprpc: Label='{label}', Dir='{download_dir}', Magnet='{magnet_link[:100]}...'")
+
+    response_data, error = _make_httprpc_request(data=payload)
+
+    if error:
+        current_app.logger.error(f"Error adding magnet via httprpc: {error}")
+        return False, error
+
+    # httprpc 'add' mode might return an empty success or non-JSON.
+    # _make_httprpc_request returns True for such cases if status code is OK.
+    if response_data is True: # Success, but no specific data returned from httprpc
+        current_app.logger.info(f"Magnet link '{magnet_link[:100]}...' successfully sent to httprpc.")
+        return True, None
+    else: # Should ideally be True or an error.
+        current_app.logger.warning(f"Magnet add via httprpc returned unexpected data: {response_data}")
+        # Assuming success if no error, but this is a bit ambiguous from httprpc.
+        # If an error occurred, 'error' would be set.
+        return True, "Torrent sent, but unexpected response from server."
+
+
+def add_torrent_file(file_content_bytes, filename, label=None, download_dir=None):
+    """
+    Adds a torrent from its file content (bytes) using httprpc.
+    Args:
+        file_content_bytes (bytes): Raw byte content of the .torrent file.
+        filename (str): The original filename of the .torrent file.
+        label (str, optional): Label to assign to the torrent in rTorrent.
+        download_dir (str, optional): Specific download directory on the seedbox.
+    Returns:
+        tuple: (True, None) if successful.
+               (False, error_message_string) if an error occurred.
+               Note: httprpc mode=add does not directly return the torrent hash.
+    """
+    if not file_content_bytes or not filename:
+        return False, "File content and filename cannot be empty."
+
+    form_data = {
+        'mode': 'add',
+        'fast_resume': '1',
+        'start_now': '1'
+    }
+    if label:
+        form_data['label'] = label
+    if download_dir:
+        form_data['dir_edit'] = download_dir
+
+    # Files dict for requests: {'field_name': (filename, file_bytes, content_type)}
+    # Assuming 'torrent_file' is the field name httprpc expects.
+    files_payload = {
+        'torrent_file': (filename, file_content_bytes, 'application/x-bittorrent')
+    }
+
+    current_app.logger.info(f"Adding torrent file '{filename}' via httprpc: Label='{label}', Dir='{download_dir}'")
+    response_data, error = _make_httprpc_request(data=form_data, files=files_payload)
+
+    if error:
+        current_app.logger.error(f"Error adding torrent file '{filename}' via httprpc: {error}")
+        return False, error
+
+    if response_data is True:
+        current_app.logger.info(f"Torrent file '{filename}' successfully sent to httprpc.")
+        return True, None
+    else:
+        current_app.logger.warning(f"Torrent file add via httprpc returned unexpected data: {response_data}")
+        return True, "Torrent file sent, but unexpected response from server."
+
+
+def get_torrent_hash_by_name(torrent_name, max_retries=3, delay_seconds=2):
+    """
+    Attempts to find a torrent's hash by its name.
+    This is useful because httprpc 'add' mode doesn't return the hash directly.
+    It might take a few seconds for a newly added torrent to appear in the list.
+    Args:
+        torrent_name (str): The name of the torrent to search for.
+        max_retries (int): How many times to retry listing torrents.
+        delay_seconds (int): Seconds to wait between retries.
+    Returns:
+        str: The torrent hash if found, otherwise None.
+    """
+    if not torrent_name:
         return None
 
-    try:
-        client = xmlrpc.client.ServerProxy(rtorrent_rpc_url)
-        return client
-    except Exception as e:
-        current_app.logger.error(f"Failed to create rTorrent XML-RPC client: {e}")
-        return None
+    current_app.logger.info(f"Attempting to find hash for torrent name: '{torrent_name}'")
+    for attempt in range(max_retries):
+        torrents, error = list_torrents()
+        if error:
+            current_app.logger.warning(f"get_torrent_hash_by_name: Error listing torrents on attempt {attempt + 1}: {error}")
+            # Don't return immediately on list error, give it a chance to recover if transient
 
-# --- NEW FUNCTIONS ---
+        if torrents: # Ensure torrents is not None
+            for torrent in torrents:
+                if torrent.get('name') == torrent_name:
+                    current_app.logger.info(f"Found hash '{torrent.get('hash')}' for torrent name '{torrent_name}' on attempt {attempt + 1}.")
+                    return torrent.get('hash')
 
-def add_torrent_url(magnet_link, download_path=None, label=None):
-    """
-    Adds a torrent to rTorrent using a magnet link.
-    Optionally sets the download path and a label.
-    Returns the torrent hash if successful, and an error message if not.
-    Example usage: hash, err = add_torrent_url(...)
-    """
-    client = get_rtorrent_client()
-    if not client:
-        return None, "rTorrent client not available (not configured or connection failed)."
+        if attempt < max_retries - 1:
+            current_app.logger.debug(f"Hash for '{torrent_name}' not found yet. Retrying in {delay_seconds}s...")
+            time.sleep(delay_seconds)
+        else:
+            current_app.logger.warning(f"Could not find hash for torrent name '{torrent_name}' after {max_retries} attempts.")
 
-    try:
-        current_app.logger.info(f"Attempting to add magnet link: {magnet_link[:100]}... with path='{download_path}' and label='{label}'")
-
-        # Add the torrent first
-        torrent_hash = client.load.raw_start_verbose("", magnet_link) # Use verbose to allow immediate info like hash
-
-        if not torrent_hash: # Check if hash is valid (non-empty string)
-            current_app.logger.error("Failed to add magnet link (load.raw_start_verbose returned empty or no hash).")
-            return None, "Failed to add magnet link (rTorrent did not return a hash)."
-
-        current_app.logger.info(f"Magnet link added, received hash: {torrent_hash}")
-
-        # Set properties if provided
-        if download_path:
-            client.d.directory.set(torrent_hash, download_path)
-            current_app.logger.info(f"Set directory for {torrent_hash} to {download_path}")
-        if label:
-            client.d.custom1.set(torrent_hash, label) # custom1 is commonly used for labels
-            current_app.logger.info(f"Set label for {torrent_hash} to {label}")
-
-        # Optionally, start the torrent if it wasn't started automatically (depends on rTorrent config)
-        # client.d.start(torrent_hash)
-
-        return torrent_hash, None
-    except xmlrpc.client.Fault as err:
-        current_app.logger.error(f"rTorrent XML-RPC Fault (add_torrent_url for {magnet_link[:50]}...): {err.faultCode} {err.faultString}")
-        return None, f"rTorrent Error: {err.faultString}"
-    except Exception as e:
-        current_app.logger.error(f"Error adding torrent URL to rTorrent ({magnet_link[:50]}...): {e}", exc_info=True)
-        return None, f"General error adding torrent URL: {str(e)}"
-
-def add_torrent_file(file_content_base64, download_path=None, label=None):
-    """
-    Adds a torrent to rTorrent using the base64 encoded content of a .torrent file.
-    Optionally sets the download path and a label.
-    Returns the torrent hash if successful, and an error message if not.
-    """
-    client = get_rtorrent_client()
-    if not client:
-        return None, "rTorrent client not available."
-
-    try:
-        current_app.logger.info(f"Attempting to add torrent file (base64 content) with path='{download_path}' and label='{label}'")
-        torrent_content_bytes = base64.b64decode(file_content_base64)
-
-        # Add the torrent file content. load_raw takes raw file bytes.
-        # Some clients/rTorrent versions might expect load.normal or load_verbose
-        torrent_hash = client.load.raw_start_verbose("", xmlrpc.client.Binary(torrent_content_bytes))
-
-        if not torrent_hash:
-            current_app.logger.error("Failed to add torrent file (load.raw_start_verbose returned empty or no hash).")
-            return None, "Failed to add torrent file (rTorrent did not return a hash)."
-
-        current_app.logger.info(f"Torrent file added, received hash: {torrent_hash}")
-
-        if download_path:
-            client.d.directory.set(torrent_hash, download_path)
-            current_app.logger.info(f"Set directory for {torrent_hash} to {download_path}")
-        if label:
-            client.d.custom1.set(torrent_hash, label)
-            current_app.logger.info(f"Set label for {torrent_hash} to {label}")
-
-        # client.d.start(torrent_hash)
-
-        return torrent_hash, None
-    except xmlrpc.client.Fault as err:
-        current_app.logger.error(f"rTorrent XML-RPC Fault (add_torrent_file): {err.faultCode} {err.faultString}")
-        return None, f"rTorrent Error: {err.faultString}"
-    except Exception as e:
-        current_app.logger.error(f"Error adding torrent file to rTorrent: {e}", exc_info=True)
-        return None, f"General error adding torrent file: {str(e)}"
-
-def list_torrents(view="main"):
-    """
-    Lists torrents from rTorrent.
-    'view' can be 'main', 'seeding', 'leeching', etc.
-    Returns a list of torrent details (dicts) and an error message if any.
-    """
-    client = get_rtorrent_client()
-    if not client:
-        return None, "rTorrent client not available."
-
-    fields = [
-        "d.hash=", "d.name=", "d.size_bytes=", "d.completed_bytes=", "d.ratio=",
-        "d.up.rate=", "d.down.rate=", "d.message=", "d.is_active=", "d.is_open=",
-        "d.is_complete=", "d.custom1=", "d.directory=", "d.creation_date=", "d.state=",
-        "d.peers_connected=", "d.state_changed=", "d.priority_str="
-    ]
-
-    try:
-        current_app.logger.debug(f"Listing torrents for view: {view}")
-        # The first argument to d.multicall2 is the target, which is empty for system-wide/view-based calls.
-        results = client.d.multicall2("", view, *fields)
-
-        torrents_list = []
-        for res_item in results:
-            torrent_details = {}
-            for i, field_name_cmd in enumerate(fields):
-                key_name = field_name_cmd.replace("d.", "").replace("=", "").replace(".rate", "_rate").replace(".str","_str") # Adjust key names
-                torrent_details[key_name] = res_item[i]
-
-            if 'ratio' in torrent_details and isinstance(torrent_details['ratio'], int):
-                torrent_details['ratio'] = torrent_details['ratio'] / 1000.0
-            torrents_list.append(torrent_details)
-
-        current_app.logger.info(f"Successfully listed {len(torrents_list)} torrents for view '{view}'.")
-        return torrents_list, None
-    except xmlrpc.client.Fault as err:
-        current_app.logger.error(f"rTorrent XML-RPC Fault (list_torrents for view {view}): {err.faultCode} {err.faultString}")
-        return None, f"rTorrent Error: {err.faultString}"
-    except Exception as e:
-        current_app.logger.error(f"Error listing torrents from rTorrent (view {view}): {e}", exc_info=True)
-        return None, f"General error listing torrents: {str(e)}"
-
-def get_torrent_details(torrent_hash):
-    """
-    Retrieves details for a specific torrent by its hash.
-    Returns a dict of details and an error message if any.
-    """
-    client = get_rtorrent_client()
-    if not client:
-        return None, "rTorrent client not available."
-
-    # Define which details to fetch. d.multicall is efficient for this.
-    # These are commands that will be executed against the specific torrent_hash.
-    commands = [
-        "d.name=", "d.size_bytes=", "d.completed_bytes=", "d.ratio=", "d.up.rate=", "d.down.rate=",
-        "d.message=", "d.is_active=", "d.is_open=", "d.is_complete=", "d.custom1=", "d.directory=",
-        "d.creation_date=", "d.state=", "d.peers_connected=", "d.state_changed=", "d.priority_str="
-        # To get individual file details (more complex):
-        # "f.multicall", <hash>, "", "f.path=", "f.size_bytes=", "f.completed_chunks="
-    ]
-
-    try:
-        current_app.logger.debug(f"Getting details for torrent hash: {torrent_hash}")
-        # d.multicall takes the torrent hash as the first argument, then the list of commands.
-        raw_results = client.d.multicall(torrent_hash, *commands)
-
-        if not raw_results or len(raw_results) != len(commands):
-             current_app.logger.warning(f"No details returned or unexpected result length for torrent {torrent_hash}.")
-             # Check if torrent exists with a simple call
-             try:
-                 name_check = client.d.name(torrent_hash)
-                 if name_check is not None: # Torrent exists but multicall failed for some reason
-                    return None, f"Torrent {torrent_hash} exists, but failed to retrieve full details with multicall."
-             except xmlrpc.client.Fault: # Torrent likely doesn't exist
-                return None, f"Torrent with hash {torrent_hash} not found."
-             return None, f"No details returned for torrent {torrent_hash} or result mismatch."
-
-
-        details = {'hash': torrent_hash} # Start with the hash we know
-        for i, command in enumerate(commands):
-            key_name = command.replace("d.", "").replace("=", "").replace(".rate", "_rate").replace(".str","_str")
-            details[key_name] = raw_results[i]
-
-        if 'ratio' in details and isinstance(details['ratio'], int):
-            details['ratio'] = details['ratio'] / 1000.0
-
-        current_app.logger.info(f"Successfully retrieved details for torrent {torrent_hash}.")
-        return details, None
-    except xmlrpc.client.Fault as err:
-        # Check if it's a "torrent not found" type of error
-        if "not found" in err.faultString.lower() or "unregistered" in err.faultString.lower():
-             current_app.logger.warning(f"Torrent with hash {torrent_hash} not found in rTorrent.")
-             return None, f"Torrent with hash {torrent_hash} not found."
-        current_app.logger.error(f"rTorrent XML-RPC Fault (get_torrent_details for {torrent_hash}): {err.faultCode} {err.faultString}")
-        return None, f"rTorrent Error: {err.faultString}"
-    except Exception as e:
-        current_app.logger.error(f"Error getting torrent details from rTorrent for {torrent_hash}: {e}", exc_info=True)
-        return None, f"General error getting details for {torrent_hash}: {str(e)}"
+    return None
