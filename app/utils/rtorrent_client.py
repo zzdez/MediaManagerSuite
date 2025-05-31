@@ -32,14 +32,9 @@ def _make_httprpc_request(method='POST', params=None, data=None, files=None, tim
         if response.status_code == 404:
             current_app.logger.error(f"httprpc API endpoint not found (404): {api_url}")
             return None, "ruTorrent httprpc API endpoint not found. Check RUTORRENT_API_URL."
-
-        # Do not call raise_for_status() here if we want to inspect the body of 200 OK responses that might indicate app-level errors
-        # We will check the content for application-level success/failure.
-
         if response.content and 'application/json' in response.headers.get('Content-Type', ''):
             try:
                 json_response = response.json()
-                # If status is not 2xx even with JSON, it's an HTTP error reported in JSON.
                 if not (200 <= response.status_code < 300):
                      current_app.logger.error(f"httprpc returned HTTP {response.status_code} with JSON error: {json_response}")
                      error_detail = str(json_response.get('error', json_response)) if isinstance(json_response, dict) else str(json_response)
@@ -47,90 +42,59 @@ def _make_httprpc_request(method='POST', params=None, data=None, files=None, tim
                 return json_response, None
             except ValueError as e_json:
                 current_app.logger.error(f"Failed to decode JSON response from httprpc (status {response.status_code}): {e_json}. Response text: {response.text[:500]}")
-                # If it was supposed to be JSON but failed, and status was 2xx, it's a problem.
                 if 200 <= response.status_code < 300:
                     return None, f"Received HTTP {response.status_code} but failed to decode expected JSON response: {response.text[:200]}"
-                else: # HTTP error that wasn't JSON
+                else:
                     return None, f"HTTP {response.status_code}: {response.text[:200]}"
-        elif 200 <= response.status_code < 300: # Success with non-JSON or no content
+        elif 200 <= response.status_code < 300:
              current_app.logger.info(f"httprpc request successful (status {response.status_code}) but no JSON content or non-JSON content type. Response text: {response.text[:200]}")
-             return response.text.strip() if response.content else True, None # Return stripped text or True
-        else: # Non-2xx and not JSON, this is a clear HTTP error
+             return response.text.strip() if response.content else True, None
+        else:
             current_app.logger.error(f"httprpc request failed with HTTP status {response.status_code}. Response: {response.text[:200]}")
-            response.raise_for_status() # Let requests raise the HTTPError to be caught below
-            return None, f"HTTP Error {response.status_code}: {response.text[:200]}" # Fallback, should be caught by raise_for_status
-
-    except requests.exceptions.HTTPError as e_http: # Raised by response.raise_for_status()
+            response.raise_for_status()
+            return None, f"HTTP Error {response.status_code}: {response.text[:200]}"
+    except requests.exceptions.HTTPError as e_http:
         current_app.logger.error(f"HTTP Error for httprpc at {api_url}: {e_http}")
         return None, f"HTTP Error: {e_http}."
-    except requests.exceptions.SSLError as e_ssl:
-        current_app.logger.error(f"SSL Error connecting to httprpc at {api_url}: {e_ssl}. Try SEEDBOX_SSL_VERIFY=False in .env if using a self-signed cert.")
-        return None, f"SSL Error: {e_ssl}. Check SEEDBOX_SSL_VERIFY."
-    except requests.exceptions.ConnectionError as e_conn:
-        current_app.logger.error(f"Connection Error for httprpc at {api_url}: {e_conn}")
-        return None, f"Connection Error: {e_conn}."
-    except requests.exceptions.Timeout as e_timeout:
-        current_app.logger.error(f"Timeout connecting to httprpc at {api_url}: {e_timeout}")
-        return None, f"Timeout connecting to ruTorrent."
-    except requests.exceptions.RequestException as e_req:
-        current_app.logger.error(f"Generic RequestException for httprpc at {api_url}: {e_req}")
-        return None, f"Request Error: {e_req}."
+    except requests.exceptions.SSLError as e_ssl: return None, f"SSL Error: {e_ssl}. Check SEEDBOX_SSL_VERIFY."
+    except requests.exceptions.ConnectionError as e_conn: return None, f"Connection Error: {e_conn}."
+    except requests.exceptions.Timeout as e_timeout: return None, f"Timeout connecting to ruTorrent."
+    except requests.exceptions.RequestException as e_req: return None, f"Request Error: {e_req}."
     except Exception as e_generic:
         current_app.logger.error(f"Unexpected error in _make_httprpc_request for {api_url}: {e_generic}", exc_info=True)
         return None, f"An unexpected error occurred: {str(e_generic)}"
 
+# list_torrents remains the same (with corrected parsing)
 def list_torrents():
+    # ... (implementation from previous corrected version) ...
     payload = {'mode': 'list'}
     json_response, error = _make_httprpc_request(data=payload)
-
-    if error:
-        return None, error
-
+    if error: return None, error
     if not isinstance(json_response, dict) or 't' not in json_response:
         current_app.logger.error(f"httprpc list_torrents: Unexpected JSON structure. 't' key missing. Response: {str(json_response)[:1000]}")
         return None, "Unexpected JSON structure from ruTorrent for torrent list."
-
     torrents_dict_from_api = json_response.get('t', {})
-    if current_app.debug and torrents_dict_from_api: # Log only in debug
+    if current_app.debug and torrents_dict_from_api:
         first_hash = next(iter(torrents_dict_from_api), None)
         if first_hash:
-            # ... (debug logging for first torrent can be kept or removed if no longer needed) ...
-            pass
-
+            first_data_array = torrents_dict_from_api[first_hash]
+            current_app.logger.info(f"DEBUGGING httprpc list_torrents: First torrent hash: {first_hash}")
+            current_app.logger.info(f"DEBUGGING httprpc list_torrents: First torrent data_array (length {len(first_data_array)}): {first_data_array}")
+            # for i, item_val in enumerate(first_data_array): # Keep this commented unless deep debugging needed
+            #      current_app.logger.info(f"  Index {i}: {item_val} (Type: {type(item_val)})")
     simplified_torrents = []
-    # Corrected indices based on user log for httprpc data_array (length 34)
-    # Index 0: d.is_open (str '1' or '0')
-    # Index 1: d.is_hash_checking (str '1' or '0')
-    # Index 3: d.get_state (str '1' or '0' for active/throttled/etc)
-    # Index 4: d.get_name (str)
-    # Index 5: d.get_size_bytes (str)
-    # Index 6: d.get_completed_chunks (str)
-    # Index 7: d.get_size_chunks (str)
-    # Index 8: d.get_bytes_done (str)
-    # Index 9: d.get_up_total (str, total uploaded bytes)
-    # Index 10: d.get_ratio (str, ratio * 1000)
-    # Index 11: d.get_up_rate (str, bytes/sec)
-    # Index 12: d.get_down_rate (str, bytes/sec)
-    # Index 14: d.get_custom1 (Label, str)
-    # Index 25: d.get_base_path (Download directory, str)
-
     for torrent_hash, data_array in torrents_dict_from_api.items():
         try:
-            if len(data_array) < 26: # Need at least index 25
+            if len(data_array) < 26:
                 current_app.logger.warning(f"Skipping torrent {torrent_hash} due to insufficient data_array length: {len(data_array)} (expected at least 26)")
                 continue
-
-            # Safely convert string values to int, defaulting to 0 if conversion fails or string is empty
             def safe_int(s, default=0):
-                if not s or not str(s).strip().isdigit(): return default # Ensure s is string before strip
+                if not s or not str(s).strip().isdigit(): return default # Check if string is digit before int conversion
                 try: return int(s)
                 except ValueError: return default
-
             is_open = (str(data_array[0]) == '1')
             is_hash_checking = (str(data_array[1]) == '1')
-            # is_hash_checked = (data_array[2] == '1') # Not directly used yet
-            is_rt_active_state = (str(data_array[3]) == '1') # rTorrent's d.get_state()
-
+            is_rt_active_state = (str(data_array[3]) == '1')
             name = str(data_array[4])
             size_bytes = safe_int(data_array[5])
             completed_chunks = safe_int(data_array[6])
@@ -142,38 +106,22 @@ def list_torrents():
             down_rate_bytes_sec = safe_int(data_array[12])
             label = str(data_array[14])
             download_dir = str(data_array[25])
-
             progress_permille = 0
-            if total_chunks > 0:
-                progress_permille = int((completed_chunks / total_chunks) * 1000)
-            elif size_bytes > 0:
-                progress_permille = int((bytes_done / size_bytes) * 1000)
-
+            if total_chunks > 0: progress_permille = int((completed_chunks / total_chunks) * 1000)
+            elif size_bytes > 0: progress_permille = int((bytes_done / size_bytes) * 1000)
             is_complete = (bytes_done >= size_bytes) if size_bytes > 0 else (total_chunks > 0 and completed_chunks >= total_chunks)
-
             status_text = "Unknown"
             if is_hash_checking: status_text = "Checking"
             elif not is_open: status_text = "Stopped"
-            elif not is_rt_active_state: status_text = "Paused" # Open but not d.get_state=1
-            elif is_rt_active_state:
-                status_text = "Seeding" if is_complete else "Downloading"
-
-            # Example: d.get_message() might be at index 29 if present and non-empty
-            # if len(data_array) > 29 and data_array[29]:
-            #    torrent_message = str(data_array[29])
-            #    if "Tracker:" in torrent_message or "Error:" in torrent_message: # Common error indicators
-            #        status_text = "Error"
-
+            elif not is_rt_active_state: status_text = "Paused"
+            elif is_rt_active_state: status_text = "Seeding" if is_complete else "Downloading"
             torrent_info = {
                 'hash': torrent_hash, 'name': name, 'size_bytes': size_bytes,
                 'progress_permille': progress_permille, 'progress_percent': round(progress_permille / 10.0, 1),
                 'downloaded_bytes': bytes_done, 'uploaded_bytes': up_total,
                 'ratio': round(ratio_val / 1000.0, 2),
                 'up_rate_bytes_sec': up_rate_bytes_sec, 'down_rate_bytes_sec': down_rate_bytes_sec,
-                'eta_seconds': safe_int(data_array[9] if len(data_array) > 9 else '0'), # Assuming index 9 is ETA (this was up_total, likely incorrect for ETA)
-                                                                                      # ETA is often at a different index or not reliably present in basic list.
-                                                                                      # For now, using up_total (index 9) as placeholder if nothing better.
-                                                                                      # Correct ETA index from logs if available (e.g. index 15 often mentioned)
+                'eta_seconds': safe_int(data_array[9] if len(data_array) > 9 else '0'), # Placeholder, correct index needed
                 'label': label, 'download_dir': download_dir,
                 'status_text': status_text,
                 'is_active': is_open and is_rt_active_state,
@@ -184,19 +132,24 @@ def list_torrents():
         except (IndexError, ValueError, TypeError) as e:
             current_app.logger.error(f"Error parsing data_array for torrent {torrent_hash}. Data: {data_array}. Error: {e}", exc_info=True)
             continue
-
     current_app.logger.info(f"Successfully parsed {len(simplified_torrents)} out of {len(torrents_dict_from_api)} torrent entries from httprpc.")
     return simplified_torrents, None
 
-# add_magnet, add_torrent_file, get_torrent_hash_by_name remain the same as the previous version
-# that correctly logs the 'add' responses and handles the 'false' boolean.
-def add_magnet(magnet_link, label=None, download_dir=None):
-    if not magnet_link: return False, "Magnet link cannot be empty."
+
+def add_magnet(magnet_link, label=None, download_dir=None): # download_dir is kept in signature for consistency but not used
+    if not magnet_link:
+        return False, "Magnet link cannot be empty."
     payload = {'mode': 'add', 'url': magnet_link, 'fast_resume': '1', 'start_now': '1'}
-    if label: payload['label'] = label
-    if download_dir: payload['dir_edit'] = download_dir
-    current_app.logger.info(f"Adding magnet via httprpc: Payload={payload}, Magnet='{magnet_link[:100]}...'")
+    if label:
+        payload['label'] = label
+    # MODIFICATION: Do not pass dir_edit if download_dir is None or empty.
+    # The problem description implies we should *omit* it for this test.
+    # if download_dir:
+    #     payload['dir_edit'] = download_dir
+    current_app.logger.info(f"Adding magnet via httprpc (omitting dir_edit): Payload={payload}, Magnet='{magnet_link[:100]}...'")
+
     response_data, error = _make_httprpc_request(data=payload)
+    # ... (rest of the function remains the same as previous correct version) ...
     log_msg_prefix = "httprpc 'add magnet'"
     if isinstance(response_data, dict): current_app.logger.info(f"{log_msg_prefix} JSON response: {json.dumps(response_data)}")
     elif isinstance(response_data, str): current_app.logger.info(f"{log_msg_prefix} text response_data: '{response_data}'")
@@ -208,7 +161,7 @@ def add_magnet(magnet_link, label=None, download_dir=None):
         current_app.logger.error(f"Magnet add failed: httprpc returned JSON 'false'. Magnet: {magnet_link[:100]}")
         return False, "ruTorrent httprpc indicated failure (returned false)."
     if isinstance(response_data, dict) and response_data:
-        current_app.logger.warning(f"Magnet add via httprpc returned non-empty JSON, potentially indicating an issue: {response_data}")
+        current_app.logger.warning(f"Magnet add via httprpc returned non-empty JSON: {response_data}")
         return False, f"Torrent add command sent, but server returned unexpected JSON data: {str(response_data)[:200]}"
     if isinstance(response_data, str) and response_data:
         current_app.logger.warning(f"Magnet add via httprpc returned non-empty text: '{response_data}'")
@@ -216,14 +169,20 @@ def add_magnet(magnet_link, label=None, download_dir=None):
     current_app.logger.info(f"Magnet link '{magnet_link[:100]}...' successfully processed by httprpc.")
     return True, None
 
-def add_torrent_file(file_content_bytes, filename, label=None, download_dir=None):
-    if not file_content_bytes or not filename: return False, "File content and filename cannot be empty."
+def add_torrent_file(file_content_bytes, filename, label=None, download_dir=None): # download_dir is kept for consistency but not used
+    if not file_content_bytes or not filename:
+        return False, "File content and filename cannot be empty."
     form_data = {'mode': 'add', 'fast_resume': '1', 'start_now': '1'}
-    if label: form_data['label'] = label
-    if download_dir: form_data['dir_edit'] = download_dir
+    if label:
+        form_data['label'] = label
+    # MODIFICATION: Do not pass dir_edit if download_dir is None or empty.
+    # if download_dir:
+    #    form_data['dir_edit'] = download_dir
     files_payload = {'torrent_file': (filename, file_content_bytes, 'application/x-bittorrent')}
-    current_app.logger.info(f"Adding torrent file '{filename}' via httprpc: Data={form_data}")
+    current_app.logger.info(f"Adding torrent file '{filename}' via httprpc (omitting dir_edit): Data={form_data}")
+
     response_data, error = _make_httprpc_request(data=form_data, files=files_payload)
+    # ... (rest of the function remains the same as previous correct version) ...
     log_msg_prefix = "httprpc 'add file'"
     if isinstance(response_data, dict): current_app.logger.info(f"{log_msg_prefix} JSON response: {json.dumps(response_data)}")
     elif isinstance(response_data, str): current_app.logger.info(f"{log_msg_prefix} text response_data: '{response_data}'")
@@ -235,7 +194,7 @@ def add_torrent_file(file_content_bytes, filename, label=None, download_dir=None
         current_app.logger.error(f"Torrent file add failed: httprpc returned JSON 'false'. File: {filename}")
         return False, "ruTorrent httprpc indicated failure (returned false)."
     if isinstance(response_data, dict) and response_data:
-        current_app.logger.warning(f"Torrent file add via httprpc returned non-empty JSON, potentially indicating an issue: {response_data}")
+        current_app.logger.warning(f"Torrent file add via httprpc returned non-empty JSON: {response_data}")
         return False, f"File add command sent, but server returned unexpected JSON data: {str(response_data)[:200]}"
     if isinstance(response_data, str) and response_data:
         current_app.logger.warning(f"Torrent file add via httprpc returned non-empty text: '{response_data}'")
@@ -243,6 +202,7 @@ def add_torrent_file(file_content_bytes, filename, label=None, download_dir=None
     current_app.logger.info(f"Torrent file '{filename}' successfully processed by httprpc.")
     return True, None
 
+# get_torrent_hash_by_name remains the same
 def get_torrent_hash_by_name(torrent_name, max_retries=3, delay_seconds=2):
     # ... (implementation unchanged) ...
     if not torrent_name: return None
