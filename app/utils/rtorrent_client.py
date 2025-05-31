@@ -1,11 +1,11 @@
 # app/utils/rtorrent_client.py
 import requests
-from requests.auth import HTTPBasicAuth
+# MODIFICATION: Import HTTPDigestAuth instead of HTTPBasicAuth
+from requests.auth import HTTPDigestAuth
 from flask import current_app
 import json
-import time # For get_torrent_hash_by_name retry logic
+import time
 
-# --- Keep the previously defined _make_httprpc_request() with this change ---
 def _make_httprpc_request(method='POST', params=None, data=None, files=None, timeout=30):
     api_url = current_app.config.get('RUTORRENT_API_URL')
     user = current_app.config.get('RUTORRENT_USER')
@@ -15,28 +15,36 @@ def _make_httprpc_request(method='POST', params=None, data=None, files=None, tim
     if not api_url:
         current_app.logger.error("RUTORRENT_API_URL is not configured.")
         return None, "ruTorrent API URL not configured."
-    auth = HTTPBasicAuth(user, password) if user and password else None
 
-    # MODIFIED PART HERE
+    # MODIFICATION: Use HTTPDigestAuth
+    auth = HTTPDigestAuth(user, password) if user and password else None
+
     headers = {
         'Accept': 'application/json',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.71 Safari/537.36'
     }
-    # END OF MODIFIED PART
 
     if not ssl_verify:
         requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
     try:
-        current_app.logger.debug(f"Making httprpc request to {api_url}: Method={method}, SSLVerify={ssl_verify}, UserAgent='{headers['User-Agent']}', Params={params}, Data={data}, Files={bool(files)}")
+        current_app.logger.debug(f"Making httprpc request to {api_url}: Method={method}, Auth=Digest, SSLVerify={ssl_verify}, UserAgent='{headers['User-Agent']}', Params={params}, Data={data}, Files={bool(files)}")
         response = requests.request(method, api_url, params=params, data=data, files=files, auth=auth, verify=ssl_verify, timeout=timeout, headers=headers)
         current_app.logger.debug(f"httprpc response status: {response.status_code}, content type: {response.headers.get('Content-Type')}")
+
+        # With Digest Auth, the first request might be a 401 to get the nonce,
+        # then requests handles the second request automatically with the correct Digest headers.
+        # So, a 401 here, if not automatically handled by requests's DigestAuth, would still be an error.
+        # The `requests` library's DigestAuth implementation should handle the challenge-response mechanism.
+
         if response.status_code == 401:
-            current_app.logger.error(f"httprpc authentication failed (401) for URL: {api_url}")
-            return None, "Authentication failed with ruTorrent httprpc. Check user/password."
+            current_app.logger.error(f"httprpc authentication failed (401) even with Digest Auth for URL: {api_url}. Credentials may still be incorrect or Digest auth not fully supported by server for this exact request type.")
+            return None, "Authentication failed with ruTorrent httprpc (Digest). Check user/password or server Digest settings."
         if response.status_code == 404:
             current_app.logger.error(f"httprpc API endpoint not found (404): {api_url}")
             return None, "ruTorrent httprpc API endpoint not found. Check RUTORRENT_API_URL."
-        response.raise_for_status()
+
+        response.raise_for_status() # Check for other 4xx/5xx errors
+
         if response.content and 'application/json' in response.headers.get('Content-Type', ''):
             try:
                 json_response = response.json()
@@ -66,6 +74,8 @@ def _make_httprpc_request(method='POST', params=None, data=None, files=None, tim
         current_app.logger.error(f"Unexpected error in _make_httprpc_request for {api_url}: {e_generic}", exc_info=True)
         return None, f"An unexpected error occurred: {str(e_generic)}"
 
+# --- list_torrents, add_magnet, add_torrent_file, get_torrent_hash_by_name ---
+# remain unchanged as their logic relies on _make_httprpc_request which is now modified.
 
 def list_torrents():
     # ... (Implementation from Part 1 - unchanged) ...
