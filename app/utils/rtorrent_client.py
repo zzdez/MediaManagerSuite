@@ -176,8 +176,8 @@ def add_torrent_file(file_content_bytes, filename, label=None, download_dir=None
         current_app.logger.debug(f"Torrent file '{filename}' will be added to directory: '{download_dir}'")
 
     # Parameters like 'fast_resume' and 'start_now' could also be added here if desired.
-    # form_data['start_now'] = '1'
-    # form_data['fast_resume'] = '1'
+    form_data['start_now'] = '1'
+    form_data['fast_resume'] = '1'
 
     files_payload = {'torrent_file': (filename, file_content_bytes, 'application/x-bittorrent')}
     current_app.logger.info(f"Adding torrent file '{filename}' via httprpc: Data={form_data}, File attached.")
