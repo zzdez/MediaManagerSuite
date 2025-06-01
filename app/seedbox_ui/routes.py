@@ -37,6 +37,147 @@ import base64 # Now needed for decoding torrent file content from JS
 # Configuration du logger pour ce module
 logger = logging.getLogger(__name__)
 
+def add_torrent_to_rutorrent(logger, torrent_url_or_magnet, download_dir, label, rutorrent_api_url, username, password, ssl_verify_str):
+    """
+    Ajoute un torrent (via URL de fichier .torrent ou magnet link) à ruTorrent.
+
+    :param logger: Instance de logger pour enregistrer les messages.
+    :param torrent_url_or_magnet: URL du fichier .torrent ou magnet link.
+    :param download_dir: Répertoire de téléchargement cible dans ruTorrent.
+    :param label: Label à assigner au torrent dans ruTorrent.
+    :param rutorrent_api_url: URL de l'API httprpc de ruTorrent (ex: https://host.dom/rutorrent/plugins/httprpc/action.php).
+    :param username: Nom d'utilisateur pour l'authentification HTTP Basic (si nécessaire).
+    :param password: Mot de passe pour l'authentification HTTP Basic (si nécessaire).
+    :param ssl_verify_str: Chaîne "False" pour désactiver la vérification SSL, sinon True.
+    :return: Tuple (bool_success, message_str).
+    """
+    logger.info(f"Tentative d'ajout de torrent à ruTorrent: '{torrent_url_or_magnet[:100]}...'")
+
+    ssl_verify = False if ssl_verify_str == "False" else True
+    if not ssl_verify:
+        logger.warning("La vérification SSL est désactivée pour les requêtes vers ruTorrent.")
+        # Supprimer les avertissements d'insecure request si la vérification SSL est désactivée
+        requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
+
+
+    session = requests.Session()
+    if username and password:
+        session.auth = (username, password)
+        logger.debug("Authentification HTTP Basic configurée pour la session ruTorrent.")
+
+    try:
+        if torrent_url_or_magnet.startswith("magnet:"):
+            logger.info("Détection d'un magnet link.")
+            data = {
+                'mode': 'add', # Mode pour httprpc, action est implicite par le endpoint
+                'url': torrent_url_or_magnet,
+                'dir_edit': download_dir,
+                'label': label
+            }
+            # Pour httprpc, l'action est souvent déterminée par le endpoint ou des params spécifiques
+            # L'URL de base pour httprpc est généralement /plugins/httprpc/action.php
+            # et on POST les données dessus. 'action=addtorrent' n'est pas un standard httprpc.
+            # On va supposer que le plugin httprpc est assez intelligent pour gérer 'url' comme un magnet.
+            # Alternativement, certains plugins httprpc utilisent des params comme 'load_url' pour les magnets.
+            # On va utiliser une approche générique.
+            # Le plugin rutorrent "addtorrent" classique utilise 'action=add-url' pour les magnets.
+            # Si c'est bien httprpc, le mode 'add' et 'url' devraient suffire.
+            # Le endpoint pour httprpc est souvent action.php, qui prend 'mode=add'
+            # et d'autres paramètres comme 'url', 'dir_edit', 'label'.
+
+            # La requête POST doit être envoyée à l'URL de base de httprpc.
+            # Exemple: https://myrutorrent.com/rutorrent/plugins/httprpc/action.php
+            # Les 'data' sont les paramètres POST.
+            logger.debug(f"Préparation de la requête POST pour magnet link vers {rutorrent_api_url} avec data: {data}")
+            response = session.post(rutorrent_api_url, data=data, verify=ssl_verify, timeout=30)
+            logger.debug(f"Réponse brute de ruTorrent (magnet): {response.status_code} - {response.text[:500]}")
+
+        else: # URL vers un fichier .torrent
+            logger.info(f"Détection d'une URL de fichier .torrent: {torrent_url_or_magnet}")
+            # 1. Télécharger le fichier .torrent
+            logger.debug(f"Téléchargement du fichier .torrent depuis {torrent_url_or_magnet}")
+            torrent_file_response = requests.get(torrent_url_or_magnet, verify=ssl_verify, timeout=60, stream=True)
+            torrent_file_response.raise_for_status() # Lève une exception pour les codes 4xx/5xx
+
+            torrent_content = torrent_file_response.content # Lire le contenu
+            filename = os.path.basename(torrent_url_or_magnet.split('?')[0]) # Essayer d'extraire un nom de fichier
+            if not filename.lower().endswith(".torrent"):
+                filename = "file.torrent" # Nom générique si non extractible ou invalide
+            logger.debug(f"Fichier .torrent téléchargé, nom: '{filename}', taille: {len(torrent_content)} bytes.")
+
+            # 2. Préparer la requête multipart/form-data pour httprpc
+            # Pour httprpc, l'upload de fichier se fait typiquement avec 'mode=addtorrent' (ou similaire)
+            # et le fichier est envoyé en multipart.
+            files = {'torrent_file': (filename, torrent_content, 'application/x-bittorrent')}
+            # Les paramètres 'dir_edit' et 'label' sont envoyés dans 'data'
+            data_payload = {
+                'mode': 'addtorrent', # Mode spécifique pour l'upload de fichier via httprpc
+                'dir_edit': download_dir,
+                'label': label
+            }
+            logger.debug(f"Préparation de la requête POST (multipart) pour fichier .torrent vers {rutorrent_api_url} avec data: {data_payload} et fichier: {filename}")
+            response = session.post(rutorrent_api_url, files=files, data=data_payload, verify=ssl_verify, timeout=60)
+            logger.debug(f"Réponse brute de ruTorrent (fichier): {response.status_code} - {response.text[:500]}")
+
+        response.raise_for_status() # Vérifier le statut HTTP après l'envoi à ruTorrent
+
+        # Le plugin httprpc retourne généralement un code 200 et un corps JSON vide ou minimal en cas de succès.
+        # Il n'y a pas de "page HTML de succès" comme avec l'interface web.
+        # On se fie au code 200 et à l'absence d'exception.
+        if response.status_code == 200:
+            # Certaines implémentations de httprpc peuvent retourner un JSON, d'autres non.
+            # Par exemple, le plugin "addtorrent" via httprpc peut ne rien retourner ou un simple {"success": true}
+            # On va considérer 200 comme un succès si pas d'exception.
+            # Si la réponse contient du texte, on peut le logger.
+            # Si c'est du JSON et qu'il contient "error", c'est un échec.
+            try:
+                json_response = response.json()
+                if isinstance(json_response, dict) and json_response.get("error"):
+                    error_msg = f"ruTorrent a retourné une erreur: {json_response.get('error_details', json_response['error'])}"
+                    logger.error(error_msg)
+                    return False, error_msg
+                # Si c'est un JSON mais pas d'erreur explicite, on loggue et on continue.
+                logger.info(f"Torrent ajouté avec succès (réponse JSON de ruTorrent: {json_response})")
+            except ValueError: # Pas de JSON dans la réponse, mais statut 200
+                logger.info(f"Torrent ajouté avec succès (réponse non-JSON de ruTorrent, statut {response.status_code}, texte: {response.text[:200]})")
+
+            # Si on arrive ici, c'est un succès.
+            return True, "Torrent ajouté avec succès à ruTorrent."
+        else:
+            # Ce cas ne devrait pas être atteint si raise_for_status() est utilisé,
+            # mais par sécurité, on le garde.
+            error_msg = f"Échec de l'ajout du torrent, statut HTTP inattendu: {response.status_code}. Réponse: {response.text[:500]}"
+            logger.error(error_msg)
+            return False, error_msg
+
+    except requests.exceptions.HTTPError as e_http:
+        # Erreur HTTP lors du téléchargement du .torrent ou de la communication avec ruTorrent
+        error_msg = f"Erreur HTTP: {e_http}. URL: {e_http.request.url}. Réponse: {e_http.response.text[:500] if e_http.response else 'N/A'}"
+        logger.error(error_msg)
+        return False, error_msg
+    except requests.exceptions.ConnectionError as e_conn:
+        error_msg = f"Erreur de connexion vers ruTorrent ({rutorrent_api_url}): {e_conn}"
+        logger.error(error_msg)
+        return False, error_msg
+    except requests.exceptions.Timeout as e_timeout:
+        error_msg = f"Timeout lors de la communication avec ruTorrent ({rutorrent_api_url}): {e_timeout}"
+        logger.error(error_msg)
+        return False, error_msg
+    except requests.exceptions.RequestException as e_req:
+        # Autres erreurs requests (ex: URL malformée, etc.)
+        error_msg = f"Erreur générale de requête lors de la communication avec ruTorrent: {e_req}"
+        logger.error(error_msg)
+        return False, error_msg
+    except Exception as e_general:
+        # Autres exceptions imprévues
+        error_msg = f"Erreur inattendue lors de l'ajout du torrent à ruTorrent: {e_general}"
+        logger.error(error_msg, exc_info=True)
+        return False, error_msg
+    finally:
+        if 'requests' in locals() and not ssl_verify: # Rétablir les avertissements si on les avait désactivés
+            requests.packages.urllib3.enable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
+
+
 # ------------------------------------------------------------------------------
 # --- Fonctions Utilitaires pour les API Sonarr/Radarr ---
 # ------------------------------------------------------------------------------
@@ -2152,3 +2293,106 @@ def rtorrent_list_view():
                            error_message=None,
                            config_label_sonarr=config_label_sonarr,
                            config_label_radarr=config_label_radarr)
+
+@seedbox_ui_bp.route('/add-torrent-and-map', methods=['POST'])
+def add_torrent_and_map():
+    """
+    Route pour ajouter un torrent à rTorrent/ruTorrent et potentiellement préparer un mapping.
+    """
+    current_app.logger.info("Début de la route add_torrent_and_map.")
+
+    # 1. Récupérer les données du formulaire
+    torrent_url_or_magnet = request.form.get('torrent_url_or_magnet')
+    media_type = request.form.get('media_type') # 'series' ou 'movie'
+    media_id = request.form.get('media_id') # ID Sonarr/Radarr
+    media_name = request.form.get('media_name') # Nom du film ou de la série pour le sous-dossier
+    # episode_mapping_info = request.form.get('episode_mapping_info') # Non utilisé pour l'instant
+    # season_folder_name = request.form.get('season_folder_name') # Non utilisé pour l'instant
+    # episode_number_full = request.form.get('episode_number_full') # Non utilisé pour l'instant
+
+    current_app.logger.debug(f"Données du formulaire reçues: URL/Magnet='{torrent_url_or_magnet}', Type='{media_type}', ID='{media_id}', Nom='{media_name}'")
+
+    if not all([torrent_url_or_magnet, media_type, media_id]):
+        flash("Données manquantes (URL/Magnet, type de média ou ID média requis).", 'danger')
+        current_app.logger.error("add_torrent_and_map: Données de formulaire manquantes.")
+        return redirect(url_for('seedbox_ui.rtorrent_list')) # Rediriger vers une page pertinente
+
+    # 2. Récupérer les configurations de l'application
+    rutorrent_api_url = current_app.config.get('RUTORRENT_API_URL')
+    rutorrent_user = current_app.config.get('RUTORRENT_USER')
+    rutorrent_password = current_app.config.get('RUTORRENT_PASSWORD')
+    ssl_verify_str = current_app.config.get('SEEDBOX_SSL_VERIFY', "True") # Default à "True" si non défini
+
+    if not rutorrent_api_url:
+        flash("L'URL de l'API ruTorrent n'est pas configurée.", 'danger')
+        current_app.logger.error("add_torrent_and_map: RUTORRENT_API_URL non configuré.")
+        return redirect(url_for('seedbox_ui.rtorrent_list'))
+
+    # 3. Construire le download_dir
+    base_download_dir = ""
+    if media_type == 'series':
+        base_download_dir = current_app.config.get('RTORRENT_DOWNLOAD_DIR_SONARR')
+    elif media_type == 'movie':
+        base_download_dir = current_app.config.get('RTORRENT_DOWNLOAD_DIR_RADARR')
+    else:
+        flash(f"Type de média inconnu: {media_type}.", 'danger')
+        current_app.logger.error(f"add_torrent_and_map: Type de média inconnu '{media_type}'.")
+        return redirect(url_for('seedbox_ui.rtorrent_list'))
+
+    if not base_download_dir:
+        flash(f"Dossier de téléchargement de base pour '{media_type}' non configuré.", 'danger')
+        current_app.logger.error(f"add_torrent_and_map: Dossier de téléchargement de base pour '{media_type}' non configuré.")
+        return redirect(url_for('seedbox_ui.rtorrent_list'))
+
+    final_download_dir = base_download_dir
+    if media_name:
+        # Assurer la propreté du nom pour un chemin de dossier et la compatibilité POSIX pour rTorrent
+        sane_media_name = "".join(c if c.isalnum() or c in [' ', '.', '-'] else '_' for c in media_name).strip()
+        sane_media_name = sane_media_name.replace(' ', '_') # Remplacer les espaces par des underscores
+        if sane_media_name: # S'assurer que le nom n'est pas vide après nettoyage
+            final_download_dir = os.path.join(base_download_dir, sane_media_name).replace('\\', '/')
+            current_app.logger.info(f"Construction du chemin de téléchargement avec sous-dossier: {final_download_dir}")
+        else:
+            current_app.logger.warning(f"Le nom du média '{media_name}' est devenu vide après nettoyage. Utilisation du dossier de base '{base_download_dir}'.")
+    else:
+        current_app.logger.info(f"Utilisation du chemin de téléchargement de base: {final_download_dir}")
+
+
+    # 4. Construire le label
+    final_label = ""
+    if media_type == 'series':
+        final_label = current_app.config.get('RTORRENT_LABEL_SONARR')
+    elif media_type == 'movie':
+        final_label = current_app.config.get('RTORRENT_LABEL_RADARR')
+
+    if not final_label: # Peut être une chaîne vide intentionnellement, mais on logue si c'est le cas
+        current_app.logger.warning(f"Aucun label rTorrent/ruTorrent configuré pour le type de média '{media_type}'. Le torrent sera ajouté sans label spécifique de l'application.")
+        final_label = "" # Assurer que c'est une chaîne
+
+    current_app.logger.info(f"Paramètres pour add_torrent_to_rutorrent: URL/Magnet='{torrent_url_or_magnet}', Dir='{final_download_dir}', Label='{final_label}'")
+
+    # 5. Appeler la fonction add_torrent_to_rutorrent
+    success, message = add_torrent_to_rutorrent(
+        logger=current_app.logger,
+        torrent_url_or_magnet=torrent_url_or_magnet,
+        download_dir=final_download_dir,
+        label=final_label,
+        rutorrent_api_url=rutorrent_api_url,
+        username=rutorrent_user,
+        password=rutorrent_password,
+        ssl_verify_str=ssl_verify_str
+    )
+
+    # 6. Gérer le résultat
+    if success:
+        flash(f"Torrent en cours d'ajout à ruTorrent: {message}", 'success')
+        current_app.logger.info(f"add_torrent_and_map: Ajout réussi à ruTorrent - {message}")
+        # Ici, on pourrait ajouter la logique de pré-association si nécessaire dans le futur.
+        # Par exemple, appeler add_pending_association(torrent_hash_ou_nom, media_type, media_id, final_label, media_name_ou_nom_torrent)
+        # Pour l'instant, cette partie est omise comme demandé.
+    else:
+        flash(f"Échec de l'ajout du torrent à ruTorrent: {message}", 'danger')
+        current_app.logger.error(f"add_torrent_and_map: Échec de l'ajout à ruTorrent - {message}")
+
+    # 7. Rediriger
+    return redirect(url_for('seedbox_ui.rtorrent_list_view')) # Redirection vers la liste des torrents

@@ -165,19 +165,26 @@ def add_torrent_file(file_content_bytes, filename, label=None, download_dir=None
     if not file_content_bytes or not filename:
         return False, "File content and filename cannot be empty."
 
-    # MODIFICATION: Send only 'mode=add' in form_data for this test
-    form_data = {'mode': 'add'}
-    # Omitted for this test:
-    # if label: form_data['label'] = label
-    # if download_dir: form_data['dir_edit'] = download_dir
-    # 'fast_resume' and 'start_now' are also omitted for this minimal test.
+    # For httprpc, when uploading a torrent file, the mode is typically 'addtorrent'
+    # and other parameters like label and directory are sent as form data fields.
+    form_data = {'mode': 'addtorrent'}
+    if label:
+        form_data['label'] = label
+        current_app.logger.debug(f"Torrent file '{filename}' will be added with label: '{label}'")
+    if download_dir:
+        form_data['dir_edit'] = download_dir
+        current_app.logger.debug(f"Torrent file '{filename}' will be added to directory: '{download_dir}'")
+
+    # Parameters like 'fast_resume' and 'start_now' could also be added here if desired.
+    # form_data['start_now'] = '1'
+    # form_data['fast_resume'] = '1'
 
     files_payload = {'torrent_file': (filename, file_content_bytes, 'application/x-bittorrent')}
-    current_app.logger.info(f"Adding torrent file '{filename}' via httprpc (MINIMAL params): Data={form_data}")
+    current_app.logger.info(f"Adding torrent file '{filename}' via httprpc: Data={form_data}, File attached.")
 
     response_data, error = _make_httprpc_request(data=form_data, files=files_payload)
 
-    log_msg_prefix = "httprpc 'add file' (minimal params)"
+    log_msg_prefix = "httprpc 'add file'"
     if isinstance(response_data, dict):
         current_app.logger.info(f"{log_msg_prefix} JSON response: {json.dumps(response_data)}")
     elif isinstance(response_data, str):
