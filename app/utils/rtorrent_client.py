@@ -139,8 +139,8 @@ def add_magnet(magnet_link, label=None, download_dir=None):
     if not magnet_link: return False, "Magnet link cannot be empty."
     payload = {'mode': 'add', 'url': magnet_link, 'fast_resume': '1', 'start_now': '1'}
     if label: payload['label'] = label
-    # download_dir is intentionally omitted for this series of tests
-    current_app.logger.info(f"Adding magnet via httprpc (omitting dir_edit): Payload={payload}, Magnet='{magnet_link[:100]}...'")
+    if download_dir: payload['dir_edit'] = download_dir
+    current_app.logger.info(f"Adding magnet via httprpc: Payload={payload}, Magnet='{magnet_link[:100]}...'")
     response_data, error = _make_httprpc_request(data=payload)
     log_msg_prefix = "httprpc 'add magnet'"
     if isinstance(response_data, dict): current_app.logger.info(f"{log_msg_prefix} JSON response: {json.dumps(response_data)}")
