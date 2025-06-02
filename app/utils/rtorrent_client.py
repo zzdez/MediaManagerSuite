@@ -201,7 +201,7 @@ def list_torrents():
         "d.up.total=",          # Remplace d.get_up_total=
         "d.down.rate=",         # Remplace d.get_down_rate=
         "d.up.rate=",           # Remplace d.get_up_rate=
-        "d.get_ratio=",
+        "d.ratio=", 
         "d.is_open=",
         "d.is_active=",
         "d.complete=",          # Remplace d.get_complete=
