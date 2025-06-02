@@ -2214,8 +2214,17 @@ def rtorrent_add_torrent_action():
     current_app.logger.debug(f"Waiting {delay_seconds}s before attempting to get hash for '{original_name}'.")
     time.sleep(delay_seconds)
 
-    current_app.logger.info(f"Attempting to get hash for '{original_name}' from rTorrent.")
-    torrent_hash = rtorrent_get_hash_by_name(original_name) # Max retries are within this function
+    current_app.logger.info(f"Original torrent name for hash lookup: '{original_name}'")
+    # Remove bracketed prefixes (e.g., [Xthor])
+    cleaned_name = re.sub(r'^\[[^\]]*\]\s*', '', original_name)
+    # Remove .torrent extension case-insensitively
+    cleaned_name = re.sub(r'\.torrent$', '', cleaned_name, flags=re.IGNORECASE)
+    # Trim whitespace
+    cleaned_name = cleaned_name.strip()
+    current_app.logger.info(f"Cleaned torrent name for hash lookup: '{cleaned_name}'")
+
+    current_app.logger.info(f"Attempting to get hash for '{cleaned_name}' from rTorrent.")
+    torrent_hash = rtorrent_get_hash_by_name(cleaned_name) # Max retries are within this function
 
     if not torrent_hash:
         warn_msg = f"Torrent '{original_name}' added to rTorrent, but its verification for pre-association failed (hash not found after delay)."
@@ -2230,15 +2239,16 @@ def rtorrent_add_torrent_action():
     current_app.logger.info(f"Found hash '{torrent_hash}' for '{original_name}'. Saving association.")
     # Verify arguments for add_pending_association:
     # torrent_identifier (hash), app_type, target_id, label, original_name (for display/fallback)
+    # Use original_name for display purposes in association, but cleaned_name was used for lookup.
     if add_pending_association(torrent_hash, app_type, target_id, rtorrent_label, original_name):
-        current_app.logger.info(f"Pending association saved for hash {torrent_hash} ({original_name}) -> App: {app_type}, TargetID: {target_id}, Label: {rtorrent_label}")
+        current_app.logger.info(f"Pending association saved for hash {torrent_hash} (Original Name: '{original_name}') -> App: {app_type}, TargetID: {target_id}, Label: {rtorrent_label}")
         return jsonify({
             "success": True,
             "message": f"Torrent '{original_name}' (Hash: {torrent_hash}) added to rTorrent and pre-associated.",
             "torrent_hash": torrent_hash
         }), 200
     else:
-        current_app.logger.error(f"Torrent {torrent_hash} added to rTorrent, but failed to save pending association for '{original_name}'.")
+        current_app.logger.error(f"Torrent {torrent_hash} added to rTorrent, but failed to save pending association for Original Name: '{original_name}'.")
         return jsonify({
             "success": True, # Torrent was added
             "error": "Torrent added to rTorrent, but failed to save pre-association metadata. Please check logs.",
