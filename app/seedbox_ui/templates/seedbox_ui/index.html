@@ -174,6 +174,13 @@
                 <i class="fas fa-cogs"></i> Voir Seedbox Radarr (Travail)
             </a>
         </div>
+
+        <!-- Bouton Ajouter Torrent -->
+        <div class="mb-3 mt-3">
+            <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addTorrentModal">
+                <i class="fas fa-plus"></i> Ajouter un Torrent à rTorrent et Pré-associer
+            </button>
+        </div>
         {# ========================================================================== #}
         {# FIN DE L'AJOUT DES LIENS #}
         {# ========================================================================== #}
@@ -208,6 +215,62 @@
         {% endif %}
         {# FIN DE L'AFFICHAGE EN ARBORESCENCE #}
 
+    </div>
+
+    <!-- Add Torrent Modal -->
+    <div class="modal fade" id="addTorrentModal" tabindex="-1" aria-labelledby="addTorrentModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addTorrentModalLabel">Ajouter un Torrent à rTorrent et Pré-associer</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="addTorrentForm">
+                        <div class="mb-3">
+                            <label for="torrentMagnetLink" class="form-label">Lien Magnet</label>
+                            <input type="text" class="form-control" id="torrentMagnetLink" placeholder="coller le lien magnet ici...">
+                        </div>
+                        <div class="mb-3">
+                            <label for="torrentFileUpload" class="form-label">Ou Fichier .torrent</label>
+                            <input type="file" class="form-control" id="torrentFileUpload" accept=".torrent">
+                        </div>
+                        <hr>
+                        <div class="mb-3">
+                            <label class="form-label">Type de Média (pour pré-association) :</label>
+                            <div>
+                                <input type="radio" class="btn-check" name="addTorrentAppType" id="addTorrentSonarr" value="sonarr" autocomplete="off">
+                                <label class="btn btn-outline-primary btn-sm" for="addTorrentSonarr">Sonarr (Série)</label>
+
+                                <input type="radio" class="btn-check" name="addTorrentAppType" id="addTorrentRadarr" value="radarr" autocomplete="off">
+                                <label class="btn btn-outline-secondary btn-sm" for="addTorrentRadarr">Radarr (Film)</label>
+                            </div>
+                        </div>
+
+                        <input type="hidden" id="addTorrentTargetId">
+                        <input type="hidden" id="addTorrentOriginalName">
+
+                        <div id="addTorrentArrSearchSection" class="mt-3" style="display: none;">
+                            <p>Pré-associer avec : <strong id="selectedMediaDisplay">Aucun</strong></p>
+                            <div class="input-group mb-3">
+                                <input type="text" class="form-control" id="addTorrentArrSearchQuery" placeholder="Rechercher...">
+                                <button class="btn btn-outline-info" type="button" id="addTorrentExecuteArrSearchBtn">
+                                    <i class="fas fa-search"></i> Rechercher
+                                </button>
+                            </div>
+                            <div id="addTorrentArrSearchResults" style="max-height: 300px; overflow-y: auto;">
+                                <!-- Search results will be populated here -->
+                            </div>
+                        </div>
+                        <div id="addTorrentFeedback" class="mt-3"></div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="button" class="btn btn-primary" id="submitAddTorrentBtn">Lancer et Pré-associer</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Modales Sonarr et Radarr (inchangées) -->
@@ -482,7 +545,257 @@
             });
             var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
             tooltipTriggerList.map(function (tooltipTriggerEl) { return new bootstrap.Tooltip(tooltipTriggerEl); });
+
+            // Add Torrent Modal specific listeners
+            const addTorrentModalEl = document.getElementById('addTorrentModal');
+            if (addTorrentModalEl) {
+                addTorrentModalEl.addEventListener('show.bs.modal', initializeAddTorrentModal);
+            }
         });
+
+        // --- Add Torrent Modal Logic ---
+        let currentAddTorrentAppType = null; // 'sonarr' or 'radarr'
+
+        function initializeAddTorrentModal() {
+            document.getElementById('addTorrentForm').reset();
+            document.getElementById('addTorrentArrSearchSection').style.display = 'none';
+            document.getElementById('addTorrentArrSearchResults').innerHTML = '';
+            document.getElementById('addTorrentFeedback').innerHTML = '';
+            document.getElementById('selectedMediaDisplay').textContent = 'Aucun';
+            document.getElementById('addTorrentTargetId').value = '';
+            document.getElementById('addTorrentOriginalName').value = '';
+            currentAddTorrentAppType = null;
+
+            const fileInput = document.getElementById('torrentFileUpload');
+            fileInput.value = '';
+            const magnetInput = document.getElementById('torrentMagnetLink');
+            magnetInput.value = '';
+
+            // Ensure event listeners are not duplicated if modal is shown multiple times
+            // For simplicity, re-adding them here, but a more robust solution might detach old ones.
+            document.querySelectorAll('input[name="addTorrentAppType"]').forEach(radio => {
+                radio.addEventListener('change', handleAddTorrentAppTypeChange);
+            });
+
+            document.getElementById('addTorrentExecuteArrSearchBtn').addEventListener('click', executeArrSearchForAddTorrentModal);
+
+            document.getElementById('torrentFileUpload').addEventListener('change', handleTorrentFileChangeForAddTorrent);
+            document.getElementById('torrentMagnetLink').addEventListener('input', handleMagnetLinkInputForAddTorrent);
+
+            document.getElementById('submitAddTorrentBtn').addEventListener('click', handleSubmitAddTorrent);
+        }
+
+        function handleAddTorrentAppTypeChange() {
+            currentAddTorrentAppType = this.value;
+            document.getElementById('addTorrentArrSearchSection').style.display = 'block';
+            document.getElementById('addTorrentArrSearchResults').innerHTML = '';
+            document.getElementById('addTorrentArrSearchQuery').value = '';
+            document.getElementById('selectedMediaDisplay').textContent = 'Aucun';
+            document.getElementById('addTorrentTargetId').value = '';
+            const queryPlaceholder = (currentAddTorrentAppType === 'sonarr') ? 'Nom de la série...' : 'Titre du film...';
+            document.getElementById('addTorrentArrSearchQuery').placeholder = queryPlaceholder;
+
+            const torrentFile = document.getElementById('torrentFileUpload').files[0];
+            if (torrentFile) {
+                document.getElementById('addTorrentArrSearchQuery').value = getCleanedSearchTerm(torrentFile.name);
+            }
+        }
+
+        async function executeArrSearchForAddTorrentModal() {
+            const query = document.getElementById('addTorrentArrSearchQuery').value;
+            const resultsDiv = document.getElementById('addTorrentArrSearchResults');
+            if (!currentAddTorrentAppType) {
+                resultsDiv.innerHTML = '<p class="text-warning">Veuillez d\'abord sélectionner Sonarr ou Radarr.</p>';
+                return;
+            }
+            if (!query.trim()) {
+                resultsDiv.innerHTML = '<p class="text-warning">Terme de recherche manquant.</p>';
+                return;
+            }
+
+            resultsDiv.innerHTML = `<div class="d-flex align-items-center"><strong role="status">Recherche ${currentAddTorrentAppType}...</strong><div class="spinner-border ms-auto"></div></div>`;
+
+            const searchUrl = (currentAddTorrentAppType === 'sonarr') ?
+                              `{{ url_for('seedbox_ui.search_sonarr_api') }}?query=${encodeURIComponent(query)}` :
+                              `{{ url_for('seedbox_ui.search_radarr_api') }}?query=${encodeURIComponent(query)}`;
+            try {
+                const response = await fetch(searchUrl);
+                if (!response.ok) {
+                    let errorDetail = "Erreur de l'API de recherche.";
+                    try { const errData = await response.json(); errorDetail = errData.error || errorDetail; } catch(e){}
+                    throw new Error(errorDetail);
+                }
+                const results = await response.json();
+                renderArrSearchResultsForAddTorrent(results, currentAddTorrentAppType, resultsDiv);
+            } catch (error) {
+                resultsDiv.innerHTML = `<p class="text-danger">Erreur recherche: ${escapeJsString(error.message)}</p>`;
+                console.error("Erreur recherche *Arr pour AddTorrentModal:", error);
+            }
+        }
+
+        function handleTorrentFileChangeForAddTorrent(event) {
+            if (event.target.files.length > 0) {
+                 if(currentAddTorrentAppType) { // Only prefill if app type is already selected
+                    document.getElementById('addTorrentArrSearchQuery').value = getCleanedSearchTerm(event.target.files[0].name);
+                 }
+                 document.getElementById('addTorrentOriginalName').value = event.target.files[0].name;
+            } else {
+                 document.getElementById('addTorrentOriginalName').value = '';
+            }
+        }
+
+        function handleMagnetLinkInputForAddTorrent(event) {
+            const magnetLink = event.target.value;
+            const dnMatch = magnetLink.match(/&dn=([^&]+)/);
+            if (dnMatch && dnMatch[1]) {
+                 document.getElementById('addTorrentOriginalName').value = decodeURIComponent(dnMatch[1]).replace(/\+/g, ' ');
+            } else {
+                // Create a more unique fallback for originalName if magnet has no dn
+                const timestamp = Date.now().toString().slice(-6); // last 6 digits of timestamp
+                document.getElementById('addTorrentOriginalName').value = 'magnet_' + timestamp;
+            }
+        }
+
+        async function handleSubmitAddTorrent() {
+            const magnetLink = document.getElementById('torrentMagnetLink').value.trim();
+            const torrentFile = document.getElementById('torrentFileUpload').files[0];
+            const appType = currentAddTorrentAppType;
+            const targetId = document.getElementById('addTorrentTargetId').value;
+            let originalName = document.getElementById('addTorrentOriginalName').value.trim();
+            const feedbackDiv = document.getElementById('addTorrentFeedback');
+            feedbackDiv.innerHTML = '';
+
+            if (!magnetLink && !torrentFile) {
+                feedbackDiv.innerHTML = '<p class="text-danger">Veuillez fournir un lien magnet ou un fichier .torrent.</p>'; return;
+            }
+            if (magnetLink && torrentFile) {
+                feedbackDiv.innerHTML = '<p class="text-danger">Veuillez fournir SOIT un lien magnet OU un fichier .torrent, pas les deux.</p>'; return;
+            }
+            if (!appType) {
+                feedbackDiv.innerHTML = '<p class="text-danger">Veuillez sélectionner le type de média (Sonarr ou Radarr).</p>'; return;
+            }
+            if (!targetId) {
+                feedbackDiv.innerHTML = '<p class="text-danger">Veuillez rechercher et sélectionner une série ou un film cible.</p>'; return;
+            }
+            if (!originalName) { // Ensure originalName is set, especially if magnet parsing failed or file was deselected
+                if (torrentFile) originalName = torrentFile.name;
+                else if (magnetLink) {
+                    const dnMatch = magnetLink.match(/&dn=([^&]+)/);
+                    if (dnMatch && dnMatch[1]) originalName = decodeURIComponent(dnMatch[1]).replace(/\+/g, ' ');
+                    else originalName = 'magnet_download_' + Date.now().toString().slice(-6);
+                } else { // Should not happen if first check passed
+                     feedbackDiv.innerHTML = '<p class="text-danger">Erreur interne: Nom original non déterminé.</p>'; return;
+                }
+                 document.getElementById('addTorrentOriginalName').value = originalName; // Update hidden input if it was empty
+            }
+
+            let torrentFileB64 = null;
+            if (torrentFile) {
+                try {
+                    torrentFileB64 = await readFileAsBase64(torrentFile);
+                } catch (e) {
+                    feedbackDiv.innerHTML = '<p class="text-danger">Erreur lors de la lecture du fichier .torrent.</p>'; return;
+                }
+            }
+
+            const payload = {
+                magnet_link: magnetLink || null,
+                torrent_file_b64: torrentFileB64,
+                app_type: appType,
+                target_id: parseInt(targetId),
+                original_name: originalName
+            };
+
+            this.disabled = true;
+            feedbackDiv.innerHTML = '<p class="text-info">Ajout du torrent en cours...</p>';
+
+            try {
+                const response = await fetch(`{{ url_for('seedbox_ui.rtorrent_add_torrent_action') }}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json(); // Attempt to parse JSON regardless of response.ok
+                if (response.ok && result.success) {
+                    feedbackDiv.innerHTML = `<p class="alert alert-success">${escapeJsString(result.message)} (Hash: ${escapeJsString(result.torrent_hash || 'N/A')})</p>`;
+                    setTimeout(() => {
+                        const modalInstance = bootstrap.Modal.getInstance(document.getElementById('addTorrentModal'));
+                        if (modalInstance) modalInstance.hide();
+                        flashMessageGlobally(result.message || "Torrent ajouté avec succès.", 'success');
+                    }, 2500);
+                } else {
+                    throw new Error(result.error || `Erreur HTTP ${response.status}`);
+                }
+            } catch (error) {
+                feedbackDiv.innerHTML = `<p class="alert alert-danger">Erreur: ${escapeJsString(error.message)}</p>`;
+            } finally {
+                this.disabled = false;
+            }
+        }
+
+        function readFileAsBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result.split(',')[1]);
+                reader.onerror = error => reject(error);
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function renderArrSearchResultsForAddTorrent(results, appType, resultsDiv) {
+            if (!results || results.length === 0) {
+                resultsDiv.innerHTML = `<p class="text-muted">Aucun ${appType === 'sonarr' ? 'série' : 'film'} trouvé.</p>`;
+                return;
+            }
+            let html = '<ul class="list-group mt-3">';
+            results.forEach(item => {
+                const title = escapeJsString(item.title);
+                const year = item.year || 'N/A';
+                // Handle cases where images might be null or empty
+                let posterUrl = 'https://via.placeholder.com/40x60?text=N/A';
+                if (item.remotePoster) {
+                    posterUrl = item.remotePoster;
+                } else if (item.images && item.images.length > 0) {
+                    const posterImage = item.images.find(img => img.coverType === 'poster');
+                    if (posterImage && posterImage.remoteUrl) {
+                        posterUrl = posterImage.remoteUrl;
+                    }
+                }
+
+                const id = item.id || 0;
+                const status = item.status || 'N/A';
+                const id_type = appType === 'sonarr' ? 'TVDB ID' : 'TMDB ID';
+                const external_id_val = appType === 'sonarr' ? item.tvdbId : item.tmdbId;
+
+                html += `
+                    <li class="list-group-item">
+                        <div class="row align-items-center">
+                            <div class="col-auto" style="width:50px;">
+                                <img src="${posterUrl}" alt="Poster" class="img-fluid rounded" style="max-height: 60px;">
+                            </div>
+                            <div class="col">
+                                <strong>${title}</strong> (${year})<br>
+                                <small class="text-muted">Statut: ${status} | ${id_type}: ${external_id_val || 'N/A'}</small>
+                            </div>
+                            <div class="col-auto">
+                                <button class="btn btn-sm btn-success"
+                                        onclick="selectArrItemForAddTorrent(${id}, '${title}', '${appType}')"
+                                        ${id ? '' : 'disabled title="Média non gérable ou ID manquant"'} >
+                                    <i class="fas fa-check"></i> Choisir
+                                </button>
+                            </div>
+                        </div>
+                    </li>`;
+            });
+            html += '</ul>';
+            resultsDiv.innerHTML = html;
+        }
+
+        function selectArrItemForAddTorrent(itemId, itemTitle, appType) { // itemTitle is already escaped
+            document.getElementById('addTorrentTargetId').value = itemId;
+            document.getElementById('selectedMediaDisplay').innerHTML = `${appType === 'sonarr' ? 'Série' : 'Film'}: <strong>${itemTitle}</strong> (ID: ${itemId})`;
+            document.getElementById('addTorrentArrSearchResults').innerHTML = `<p class="alert alert-info">Sélectionné : <strong>${itemTitle}</strong>. Vous pouvez maintenant lancer le téléchargement.</p>`;
+        }
     </script>
 </body>
 </html>
