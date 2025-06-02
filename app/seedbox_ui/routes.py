@@ -2183,6 +2183,7 @@ def rtorrent_add_torrent_action():
     success_add = False
     error_msg_add = "No action taken."
 
+    current_app.logger.info(f"Preparing to add torrent via XML-RPC. App Type: {app_type}, Target ID: {target_id}, Original Name: '{original_name}', Calculated Label: '{rtorrent_label}', Calculated Download Dir: '{rtorrent_download_dir}', Magnet: {bool(magnet_link)}, File (b64 provided): {bool(torrent_file_b64)}")
     if magnet_link:
         current_app.logger.info(f"Adding magnet to rTorrent via httprpc: Label='{rtorrent_label}', Dir='{rtorrent_download_dir}'")
         success_add, error_msg_add = rtorrent_add_magnet_httprpc(magnet_link, rtorrent_label, rtorrent_download_dir)
