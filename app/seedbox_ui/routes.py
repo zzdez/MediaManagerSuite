@@ -1875,4 +1875,277 @@ def cleanup_staging_item_action(item_name):
     return redirect(url_for('seedbox_ui.index'))
 # ------------------------------------------------------------------------------
 # FIN DE trigger_rdarr_import
+<<<<<<< Updated upstream
 # ------------------------------------------------------------------------------
+=======
+# ------------------------------------------------------------------------------
+
+@seedbox_ui_bp.route('/interaction/rtorrent/add', methods=['POST'])
+def rtorrent_add_torrent_action():
+    data = request.get_json()
+    if not data:
+        return jsonify({"success": False, "error": "No JSON data received."}), 400
+
+    magnet_link = data.get('magnet_link')
+    torrent_file_b64 = data.get('torrent_file_b64') # Base64 encoded .torrent file content
+    app_type = data.get('app_type') # 'sonarr' or 'radarr'
+    target_id = data.get('target_id') # seriesId or movieId
+    original_name = data.get('original_name') # Original torrent name for matching later
+
+    current_app.logger.info(f"Action rTorrent Add: Type={app_type}, TargetID={target_id}, OriginalName='{original_name}', HasMagnet={bool(magnet_link)}, HasFile={bool(torrent_file_b64)}")
+
+    if not (magnet_link or torrent_file_b64):
+        return jsonify({"success": False, "error": "Missing magnet link or torrent file content."}), 400
+    if not app_type or not target_id or not original_name:
+        return jsonify({"success": False, "error": "Missing app_type, target_id, or original_name."}), 400
+    if app_type not in ['sonarr', 'radarr']:
+        return jsonify({"success": False, "error": "Invalid app_type. Must be 'sonarr' or 'radarr'."}), 400
+
+    # Get label and download directory from config
+    if app_type == 'sonarr':
+        rtorrent_label = current_app.config.get('RTORRENT_LABEL_SONARR')
+        rtorrent_download_dir = current_app.config.get('RTORRENT_DOWNLOAD_DIR_SONARR')
+    else: # radarr
+        rtorrent_label = current_app.config.get('RTORRENT_LABEL_RADARR')
+        rtorrent_download_dir = current_app.config.get('RTORRENT_DOWNLOAD_DIR_RADARR')
+
+    if not rtorrent_label or not rtorrent_download_dir:
+        msg = f"Label or download directory for {app_type} not configured in MediaManagerSuite."
+        current_app.logger.error(msg)
+        return jsonify({"success": False, "error": msg}), 500
+
+    success_add = False
+    error_msg_add = "No action taken."
+
+    current_app.logger.info(f"Preparing to add torrent via XML-RPC. App Type: {app_type}, Target ID: {target_id}, Original Name: '{original_name}', Calculated Label: '{rtorrent_label}', Calculated Download Dir: '{rtorrent_download_dir}', Magnet: {bool(magnet_link)}, File (b64 provided): {bool(torrent_file_b64)}")
+    if magnet_link:
+        current_app.logger.info(f"Adding magnet to rTorrent via httprpc: Label='{rtorrent_label}', Dir='{rtorrent_download_dir}'")
+        success_add, error_msg_add = rtorrent_add_magnet_httprpc(magnet_link, rtorrent_label, rtorrent_download_dir)
+    elif torrent_file_b64:
+        try:
+            # The client's add_torrent_file expects bytes, JS sends base64 string. Decode it.
+            # import base64 # Ensure import is at the top of the file
+            torrent_content_bytes = base64.b64decode(torrent_file_b64)
+            # original_name here is the filename of the .torrent file, needed by the client function
+            current_app.logger.info(f"Adding torrent file '{original_name}' to rTorrent via httprpc: Label='{rtorrent_label}', Dir='{rtorrent_download_dir}'")
+            success_add, error_msg_add = rtorrent_add_torrent_file_httprpc(torrent_content_bytes, original_name, rtorrent_label, rtorrent_download_dir)
+        except base64.binascii.Error as e_b64:
+            current_app.logger.error(f"Error decoding base64 torrent file content: {e_b64}")
+            return jsonify({"success": False, "error": "Invalid base64 torrent file content."}), 400
+        except Exception as e_file_prep: # Catch any other errors during file prep
+            current_app.logger.error(f"Error preparing torrent file for upload: {e_file_prep}", exc_info=True)
+            return jsonify({"success": False, "error": f"Error preparing torrent file: {str(e_file_prep)}"}), 500
+
+
+    if not success_add:
+        current_app.logger.error(f"Failed to add torrent to rTorrent (httprpc): {error_msg_add}")
+        return jsonify({"success": False, "error": f"rTorrent error: {error_msg_add or 'Failed to send to rTorrent.'}"}), 500
+
+    current_app.logger.info(f"Torrent '{original_name}' successfully sent to rTorrent. Introducing delay before hash retrieval.")
+
+    # Introduce delay
+    delay_seconds = current_app.config.get('RTORRENT_POST_ADD_DELAY_SECONDS', 3)
+    current_app.logger.debug(f"Waiting {delay_seconds}s before attempting to get hash for '{original_name}'.")
+    time.sleep(delay_seconds)
+
+    current_app.logger.info(f"Original torrent name for hash lookup: '{original_name}'")
+    # Remove bracketed prefixes (e.g., [Xthor])
+    cleaned_name = re.sub(r'^\[[^\]]*\]\s*', '', original_name)
+    # Remove .torrent extension case-insensitively
+    cleaned_name = re.sub(r'\.torrent$', '', cleaned_name, flags=re.IGNORECASE)
+    # Trim whitespace
+    cleaned_name = cleaned_name.strip()
+    current_app.logger.info(f"Cleaned torrent name for hash lookup: '{cleaned_name}'")
+
+    current_app.logger.info(f"Attempting to get hash for '{cleaned_name}' from rTorrent.")
+    torrent_hash = rtorrent_get_hash_by_name(cleaned_name) # Max retries are within this function
+
+    if not torrent_hash:
+        warn_msg = f"Torrent '{original_name}' added to rTorrent, but its verification for pre-association failed (hash not found after delay)."
+        current_app.logger.warning(warn_msg)
+        return jsonify({
+            "success": True, # Torrent was added successfully
+            "message": warn_msg,
+            "warning": "The hash of the torrent could not be retrieved immediately. Pre-association failed. The torrent should be downloading.",
+            "torrent_hash": None
+        }), 202 # HTTP 202 Accepted: Request accepted, processing not complete or with caveats
+
+    current_app.logger.info(f"Found hash '{torrent_hash}' for '{original_name}'. Saving association.")
+    # Verify arguments for add_pending_association:
+    # torrent_identifier (hash), app_type, target_id, label, original_name (for display/fallback)
+    # Use original_name for display purposes in association, but cleaned_name was used for lookup.
+    if add_pending_association(torrent_hash, app_type, target_id, rtorrent_label, original_name):
+        current_app.logger.info(f"Pending association saved for hash {torrent_hash} (Original Name: '{original_name}') -> App: {app_type}, TargetID: {target_id}, Label: {rtorrent_label}")
+        return jsonify({
+            "success": True,
+            "message": f"Torrent '{original_name}' (Hash: {torrent_hash}) added to rTorrent and pre-associated.",
+            "torrent_hash": torrent_hash
+        }), 200
+    else:
+        current_app.logger.error(f"Torrent {torrent_hash} added to rTorrent, but failed to save pending association for Original Name: '{original_name}'.")
+        return jsonify({
+            "success": True, # Torrent was added
+            "error": "Torrent added to rTorrent, but failed to save pre-association metadata. Please check logs.",
+            "torrent_hash": torrent_hash,
+            "warning": "Pre-association failed to save."
+        }), 207 # Multi-Status
+
+@seedbox_ui_bp.route('/rtorrent/list-view')
+def rtorrent_list_view():
+    current_app.logger.info("Accessing rTorrent list view page (using httprpc client).")
+
+    torrents_data, error_msg_rtorrent = rtorrent_list_torrents_api() # This now calls the httprpc version
+
+    if error_msg_rtorrent:
+        current_app.logger.error(f"Error fetching torrents from rTorrent (httprpc): {error_msg_rtorrent}")
+        flash(f"Impossible de lister les torrents de rTorrent: {error_msg_rtorrent}", "danger")
+        return render_template('seedbox_ui/rtorrent_list.html',
+                               torrents_with_assoc=[],
+                               page_title="Liste des Torrents rTorrent (Erreur)",
+                               error_message=error_msg_rtorrent)
+
+    if torrents_data is None: # Should be caught by error_msg_rtorrent
+        current_app.logger.warning("rtorrent_list_torrents_api (httprpc) returned None for data without an error message.")
+        flash("Aucune donnée reçue de rTorrent.", "warning")
+        torrents_data = []
+
+    pending_associations = get_all_pending_associations()
+
+    torrents_with_assoc = []
+    if isinstance(torrents_data, list):
+        for torrent in torrents_data: # Each 'torrent' is a dict from the new list_torrents()
+            torrent_hash = torrent.get('hash')
+            association_info = None
+            if torrent_hash and torrent_hash in pending_associations:
+                association_info = pending_associations[torrent_hash]
+            elif torrent.get('name') in pending_associations: # Fallback if hash wasn't found and name was used as key
+                current_app.logger.warning(f"Found association for torrent '{torrent.get('name')}' using name as key. Hash might have been missed earlier.")
+                association_info = pending_associations[torrent.get('name')]
+
+            torrents_with_assoc.append({
+                "details": torrent,
+                "association": association_info
+            })
+    else:
+        current_app.logger.error(f"rtorrent_list_torrents_api (httprpc) did not return a list. Got: {type(torrents_data)}")
+        flash("Format de données inattendu reçu de rTorrent.", "danger")
+        # Render with empty list
+        return render_template('seedbox_ui/rtorrent_list.html', torrents_with_assoc=[], page_title="Liste des Torrents rTorrent (Erreur Format)", error_message="Format de données rTorrent invalide.")
+
+
+    current_app.logger.info(f"Affichage de {len(torrents_with_assoc)} torrent(s) avec leurs informations d'association (httprpc).")
+
+    # Pass configured labels to the template
+    config_label_sonarr = current_app.config.get('RTORRENT_LABEL_SONARR', 'sonarr')
+    config_label_radarr = current_app.config.get('RTORRENT_LABEL_RADARR', 'radarr')
+
+    return render_template('seedbox_ui/rtorrent_list.html',
+                           torrents_with_assoc=torrents_with_assoc,
+                           page_title="Liste des Torrents rTorrent",
+                           error_message=None,
+                           config_label_sonarr=config_label_sonarr,
+                           config_label_radarr=config_label_radarr)
+
+@seedbox_ui_bp.route('/add-torrent-and-map', methods=['POST'])
+def add_torrent_and_map():
+    """
+    Route pour ajouter un torrent à rTorrent/ruTorrent et potentiellement préparer un mapping.
+    """
+    current_app.logger.info("Début de la route add_torrent_and_map.")
+
+    # 1. Récupérer les données du formulaire
+    torrent_url_or_magnet = request.form.get('torrent_url_or_magnet')
+    media_type = request.form.get('media_type') # 'series' ou 'movie'
+    media_id = request.form.get('media_id') # ID Sonarr/Radarr
+    media_name = request.form.get('media_name') # Nom du film ou de la série pour le sous-dossier
+    # episode_mapping_info = request.form.get('episode_mapping_info') # Non utilisé pour l'instant
+    # season_folder_name = request.form.get('season_folder_name') # Non utilisé pour l'instant
+    # episode_number_full = request.form.get('episode_number_full') # Non utilisé pour l'instant
+
+    current_app.logger.debug(f"Données du formulaire reçues: URL/Magnet='{torrent_url_or_magnet}', Type='{media_type}', ID='{media_id}', Nom='{media_name}'")
+
+    if not all([torrent_url_or_magnet, media_type, media_id]):
+        flash("Données manquantes (URL/Magnet, type de média ou ID média requis).", 'danger')
+        current_app.logger.error("add_torrent_and_map: Données de formulaire manquantes.")
+        return redirect(url_for('seedbox_ui.rtorrent_list')) # Rediriger vers une page pertinente
+
+    # 2. Récupérer les configurations de l'application
+    rutorrent_api_url = current_app.config.get('RUTORRENT_API_URL')
+    rutorrent_user = current_app.config.get('RUTORRENT_USER')
+    rutorrent_password = current_app.config.get('RUTORRENT_PASSWORD')
+    ssl_verify_str = current_app.config.get('SEEDBOX_SSL_VERIFY', "True") # Default à "True" si non défini
+
+    if not rutorrent_api_url:
+        flash("L'URL de l'API ruTorrent n'est pas configurée.", 'danger')
+        current_app.logger.error("add_torrent_and_map: RUTORRENT_API_URL non configuré.")
+        return redirect(url_for('seedbox_ui.rtorrent_list'))
+
+    # 3. Construire le download_dir
+    base_download_dir = ""
+    if media_type == 'series':
+        base_download_dir = current_app.config.get('RTORRENT_DOWNLOAD_DIR_SONARR')
+    elif media_type == 'movie':
+        base_download_dir = current_app.config.get('RTORRENT_DOWNLOAD_DIR_RADARR')
+    else:
+        flash(f"Type de média inconnu: {media_type}.", 'danger')
+        current_app.logger.error(f"add_torrent_and_map: Type de média inconnu '{media_type}'.")
+        return redirect(url_for('seedbox_ui.rtorrent_list'))
+
+    if not base_download_dir:
+        flash(f"Dossier de téléchargement de base pour '{media_type}' non configuré.", 'danger')
+        current_app.logger.error(f"add_torrent_and_map: Dossier de téléchargement de base pour '{media_type}' non configuré.")
+        return redirect(url_for('seedbox_ui.rtorrent_list'))
+
+    final_download_dir = base_download_dir
+    if media_name:
+        # Assurer la propreté du nom pour un chemin de dossier et la compatibilité POSIX pour rTorrent
+        sane_media_name = "".join(c if c.isalnum() or c in [' ', '.', '-'] else '_' for c in media_name).strip()
+        sane_media_name = sane_media_name.replace(' ', '_') # Remplacer les espaces par des underscores
+        if sane_media_name: # S'assurer que le nom n'est pas vide après nettoyage
+            final_download_dir = os.path.join(base_download_dir, sane_media_name).replace('\\', '/')
+            current_app.logger.info(f"Construction du chemin de téléchargement avec sous-dossier: {final_download_dir}")
+        else:
+            current_app.logger.warning(f"Le nom du média '{media_name}' est devenu vide après nettoyage. Utilisation du dossier de base '{base_download_dir}'.")
+    else:
+        current_app.logger.info(f"Utilisation du chemin de téléchargement de base: {final_download_dir}")
+
+
+    # 4. Construire le label
+    final_label = ""
+    if media_type == 'series':
+        final_label = current_app.config.get('RTORRENT_LABEL_SONARR')
+    elif media_type == 'movie':
+        final_label = current_app.config.get('RTORRENT_LABEL_RADARR')
+
+    if not final_label: # Peut être une chaîne vide intentionnellement, mais on logue si c'est le cas
+        current_app.logger.warning(f"Aucun label rTorrent/ruTorrent configuré pour le type de média '{media_type}'. Le torrent sera ajouté sans label spécifique de l'application.")
+        final_label = "" # Assurer que c'est une chaîne
+
+    current_app.logger.info(f"Paramètres pour add_torrent_to_rutorrent: URL/Magnet='{torrent_url_or_magnet}', Dir='{final_download_dir}', Label='{final_label}'")
+
+    # 5. Appeler la fonction add_torrent_to_rutorrent
+    success, message = add_torrent_to_rutorrent(
+        logger=current_app.logger,
+        torrent_url_or_magnet=torrent_url_or_magnet,
+        download_dir=final_download_dir,
+        label=final_label,
+        rutorrent_api_url=rutorrent_api_url,
+        username=rutorrent_user,
+        password=rutorrent_password,
+        ssl_verify_str=ssl_verify_str
+    )
+
+    # 6. Gérer le résultat
+    if success:
+        flash(f"Torrent en cours d'ajout à ruTorrent: {message}", 'success')
+        current_app.logger.info(f"add_torrent_and_map: Ajout réussi à ruTorrent - {message}")
+        # Ici, on pourrait ajouter la logique de pré-association si nécessaire dans le futur.
+        # Par exemple, appeler add_pending_association(torrent_hash_ou_nom, media_type, media_id, final_label, media_name_ou_nom_torrent)
+        # Pour l'instant, cette partie est omise comme demandé.
+    else:
+        flash(f"Échec de l'ajout du torrent à ruTorrent: {message}", 'danger')
+        current_app.logger.error(f"add_torrent_and_map: Échec de l'ajout à ruTorrent - {message}")
+
+    # 7. Rediriger
+    return redirect(url_for('seedbox_ui.rtorrent_list_view')) # Redirection vers la liste des torrents
+>>>>>>> Stashed changes
