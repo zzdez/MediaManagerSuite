@@ -61,22 +61,33 @@ def _send_xmlrpc_request(method_name, params):
         # Parser la réponse XML-RPC
         parsed_data, _ = xmlrpc.client.loads(response.content, use_builtin_types=True)
 
-        current_app.logger.debug(f"XML-RPC call to {method_name} successful. Parsed response data: {parsed_data}")
+        # parsed_data is the 'params' part of xmlrpc.client.loads() output tuple.
+        # For load.start, this is typically (0,).
+        # For d.multicall2, this is typically ( [[torrent1_fields], [torrent2_fields]], )
+        current_app.logger.debug(f"XML-RPC call to {method_name} successful. Parsed params from loads: {parsed_data!r}")
 
-        # For d.multicall2, parsed_data is the list of lists itself.
         if method_name == "d.multicall2":
-            return parsed_data, None
-
-        # For other methods (typically single value returns or specific structures):
-        # Most rTorrent single-call methods return a list/tuple of results, often with one item (e.g. [0] for success).
-        if isinstance(parsed_data, list):
-            if len(parsed_data) > 0:
-                return parsed_data[0], None # Return the first element
+            # parsed_data should be a tuple containing one element: the list of lists. e.g. ( [[fields1], [fields2]], )
+            # We want to return the list of lists: [[fields1], [fields2]]
+            if isinstance(parsed_data, tuple) and len(parsed_data) == 1 and isinstance(parsed_data[0], list):
+                return parsed_data[0], None
+            # Additional check: if parsed_data is already a list (e.g. if loads() behaves differently or for an empty multicall response from some servers like ([],) )
+            # or if parsed_data is an empty list itself (from a response like ([],) which parsed_data[0] would yield [])
+            elif isinstance(parsed_data, list):
+                 return parsed_data, None
             else:
-                return None, None # Empty list indicates success with no specific data (e.g. some 'set' operations)
-        else:
-             # Fallback for unexpected structure if not a list (should be rare for XML-RPC)
-             return parsed_data, None
+                current_app.logger.error(f"Unexpected structure for d.multicall2 response: {parsed_data!r}")
+                return [], f"Unexpected structure for d.multicall2 response." # Return empty list and error
+        else: # For other methods like load.start, load.raw_start
+              # parsed_data should be a tuple containing one element, e.g. (0,) or ("string_result",)
+            if isinstance(parsed_data, tuple):
+                if len(parsed_data) > 0:
+                    return parsed_data[0], None # Extract the actual value, e.g., 0 from (0,)
+                else: # Empty tuple from loads e.g. ()
+                    return None, None
+            else: # Should not be reached if xmlrpc.client.loads consistently returns a tuple for params
+                current_app.logger.warning(f"XML-RPC response params for {method_name} was not a tuple: {parsed_data!r}. Returning as is.")
+                return parsed_data, None
 
     except xmlrpc.client.Fault as f:
         current_app.logger.error(f"XML-RPC Fault for {method_name}: Code {f.faultCode} - {f.faultString}", exc_info=True)
@@ -316,9 +327,9 @@ def add_magnet(magnet_link, label=None, download_dir=None):
         current_app.logger.error(f"Error adding magnet via XML-RPC ('{method_name}'): {error}. Magnet: {magnet_link[:100]}")
         return False, f"XML-RPC Error: {error}"
 
+    current_app.logger.debug(f"XML-RPC result for {method_name} (magnet): {result!r} (type: {type(result)})")
+
     # For load.start, rTorrent typically returns 0 on success.
-    # _send_xmlrpc_request returns the first element of the parsed_data list.
-    # If result is 0 (integer), it's a success.
     if result == 0:
         current_app.logger.info(f"Magnet link '{magnet_link[:100]}...' successfully added via XML-RPC method '{method_name}'. Result: {result}")
         return True, "Magnet link added successfully via XML-RPC."
@@ -360,6 +371,8 @@ def add_torrent_file(file_content_bytes, filename, label=None, download_dir=None
     if error:
         current_app.logger.error(f"Error adding torrent file '{filename}' via XML-RPC ('{method_name}'): {error}")
         return False, f"XML-RPC Error: {error}"
+
+    current_app.logger.debug(f"XML-RPC result for {method_name} (file '{filename}'): {result!r} (type: {type(result)})")
 
     # For load.raw_start, rTorrent also typically returns 0 on success.
     if result == 0:
