@@ -205,8 +205,8 @@ def list_torrents():
         "d.is_open=",
         "d.is_active=",
         "d.complete=",          # Remplace d.get_complete=
-        "d.get_left_bytes=",
-        "d.get_message="
+        "d.left_bytes=",
+        "d.message="
     ]
     params_for_xmlrpc = ["", ""] + fields
 
