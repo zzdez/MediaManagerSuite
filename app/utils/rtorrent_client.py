@@ -4,6 +4,114 @@ from requests.auth import HTTPDigestAuth
 from flask import current_app
 import json
 import time
+import xmlrpc.client
+# import base64 # For xmlrpc.client.Binary later
+
+def _send_xmlrpc_request(method_name, params):
+    api_url = current_app.config.get('RUTORRENT_API_URL')
+    user = current_app.config.get('RUTORRENT_USER')
+    password = current_app.config.get('RUTORRENT_PASSWORD')
+    # Read as string to handle "True"/"False" from config, default to "True"
+    ssl_verify_str = str(current_app.config.get('SEEDBOX_SSL_VERIFY', "True"))
+    ssl_verify = False if ssl_verify_str.lower() == "false" else True
+
+    if not api_url:
+        current_app.logger.error("RUTORRENT_API_URL is not configured for XML-RPC.")
+        return None, "ruTorrent API URL not configured."
+
+    auth = HTTPDigestAuth(user, password) if user and password else None
+
+    try:
+        # Ensure params is a tuple for dumps.
+        # If params is a single list/tuple argument for a method expecting one list: (params,)
+        # If params is a list of arguments for a method: tuple(params)
+        # The prompt example `params = ("", magnet_uri, "d.custom1.set=label")` suggests params will be a list of arguments.
+        xml_body = xmlrpc.client.dumps(tuple(params), methodname=method_name, encoding='UTF-8', allow_none=False)
+    except Exception as e_dumps:
+        current_app.logger.error(f"XML-RPC Dumps Error for {method_name}: {e_dumps}", exc_info=True)
+        return None, f"Error creating XML-RPC request: {e_dumps}"
+
+    headers = {
+        'Content-Type': 'text/xml',
+        'User-Agent': 'MediaManagerSuite/1.0 XML-RPC'
+    }
+
+    # Store original state of warnings
+    warnings_disabled = False
+    if not ssl_verify:
+        # Check if warnings are already disabled by looking at the warnings module filters
+        # This is a bit more involved than typical, but let's assume for now that repeated calls are fine
+        # or that flask/app handles this. Simpler: just call disable_warnings.
+        requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
+        warnings_disabled = True # Track that we disabled them
+
+    current_app.logger.debug(f"Sending XML-RPC request to {api_url}: Method='{method_name}', Params={params}")
+    # Using debug for XML body log, as trace might not be configured. Truncate to avoid overly long logs.
+    current_app.logger.debug(f"XML-RPC Request Body for {method_name} (first 500 bytes): {xml_body[:500]}")
+
+    try:
+        response = requests.post(api_url, data=xml_body.encode('UTF-8'), headers=headers, auth=auth, verify=ssl_verify, timeout=30)
+
+        current_app.logger.debug(f"XML-RPC Response Status for {method_name}: {response.status_code}")
+        current_app.logger.debug(f"XML-RPC Response Headers for {method_name}: {response.headers}")
+        current_app.logger.debug(f"XML-RPC Response Body for {method_name} (raw, first 500 bytes): {response.content[:500]}")
+
+        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+
+        # Parser la réponse XML-RPC
+        parsed_data, _ = xmlrpc.client.loads(response.content, use_builtin_types=True)
+
+        current_app.logger.debug(f"XML-RPC call to {method_name} successful. Parsed response data: {parsed_data}")
+
+        # For d.multicall2, parsed_data is the list of lists itself.
+        if method_name == "d.multicall2":
+            return parsed_data, None
+
+        # For other methods (typically single value returns or specific structures):
+        # Most rTorrent single-call methods return a list/tuple of results, often with one item (e.g. [0] for success).
+        if isinstance(parsed_data, list):
+            if len(parsed_data) > 0:
+                return parsed_data[0], None # Return the first element
+            else:
+                return None, None # Empty list indicates success with no specific data (e.g. some 'set' operations)
+        else:
+             # Fallback for unexpected structure if not a list (should be rare for XML-RPC)
+             return parsed_data, None
+
+    except xmlrpc.client.Fault as f:
+        current_app.logger.error(f"XML-RPC Fault for {method_name}: Code {f.faultCode} - {f.faultString}", exc_info=True)
+        return None, f"XML-RPC Fault {f.faultCode}: {f.faultString}"
+    except requests.exceptions.HTTPError as e_http:
+        # Log more details from response if available
+        error_response_text = ""
+        if e_http.response is not None:
+            error_response_text = e_http.response.text[:500]
+        current_app.logger.error(f"HTTP Error for XML-RPC {method_name} at {api_url}: {e_http}. Response: {error_response_text}", exc_info=True)
+        return None, f"HTTP Error: {e_http}."
+    except requests.exceptions.SSLError as e_ssl:
+        current_app.logger.error(f"SSL Error for XML-RPC {method_name} at {api_url}: {e_ssl}", exc_info=True)
+        return None, f"SSL Error: {e_ssl}. Check SEEDBOX_SSL_VERIFY (current: {ssl_verify})."
+    except requests.exceptions.ConnectionError as e_conn:
+        current_app.logger.error(f"Connection Error for XML-RPC {method_name} at {api_url}: {e_conn}", exc_info=True)
+        return None, f"Connection Error: {e_conn}."
+    except requests.exceptions.Timeout as e_timeout:
+        current_app.logger.error(f"Timeout for XML-RPC {method_name} at {api_url}: {e_timeout}", exc_info=True)
+        return None, f"Timeout connecting to ruTorrent for XML-RPC."
+    except requests.exceptions.RequestException as e_req: # Catch other request-related exceptions
+        current_app.logger.error(f"Request Exception for XML-RPC {method_name} at {api_url}: {e_req}", exc_info=True)
+        return None, f"Request Exception: {e_req}."
+    except Exception as e:
+        current_app.logger.error(f"Unexpected error in _send_xmlrpc_request for {method_name} at {api_url}: {e}", exc_info=True)
+        # Log the type of exception as well
+        return None, f"Unexpected error ({type(e).__name__}) during XML-RPC request: {e}"
+    finally:
+        # Re-enable warnings only if we were the ones to disable them and they were not already disabled.
+        # This basic check might not be perfectly robust if other parts of app also toggle warnings.
+        if warnings_disabled:
+            # This re-enables all warnings of this type. If they were specifically filtered before, this is not ideal.
+            # A more robust solution would involve saving and restoring the exact warning filter state.
+            # requests.packages.urllib3.enable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning) # This line causes AttributeError
+            pass # Warnings are left as they were (potentially disabled for this session if SSL verify is False)
 
 # _make_httprpc_request remains the same
 def _make_httprpc_request(method='POST', params=None, data=None, files=None, timeout=30):
@@ -64,151 +172,202 @@ def _make_httprpc_request(method='POST', params=None, data=None, files=None, tim
         current_app.logger.error(f"Unexpected error in _make_httprpc_request for {api_url}: {e_generic}", exc_info=True)
         return None, f"An unexpected error occurred: {str(e_generic)}"
 
-# list_torrents remains the same (with corrected parsing)
+# list_torrents is now reimplemented using XML-RPC
 def list_torrents():
-    # ... (implementation from previous corrected version) ...
-    payload = {'mode': 'list'}
-    json_response, error = _make_httprpc_request(data=payload)
-    if error: return None, error
-    if not isinstance(json_response, dict) or 't' not in json_response:
-        current_app.logger.error(f"httprpc list_torrents: Unexpected JSON structure. 't' key missing. Response: {str(json_response)[:1000]}")
-        return None, "Unexpected JSON structure from ruTorrent for torrent list."
-    torrents_dict_from_api = json_response.get('t', {})
-    if current_app.debug and torrents_dict_from_api:
-        first_hash = next(iter(torrents_dict_from_api), None)
-        if first_hash:
-            # ... (debug logging for first torrent can be kept or removed) ...
-            pass
+    current_app.logger.info("Listing torrents via XML-RPC d.multicall2.")
+    fields = [
+        "d.hash=", "d.name=", "d.base_path=", "d.custom1=", "d.size_bytes=",
+        "d.get_bytes_done=", "d.get_up_total=", "d.get_down_rate=", "d.get_up_rate=",
+        "d.get_ratio=", "d.is_open=", "d.is_active=", "d.get_complete=", # Using d.get_complete=
+        "d.get_left_bytes=", "d.get_message="
+    ]
+    # Using ["", ""] as first two params, similar to Sonarr's multicall for downloads.
+    # This typically means "all torrents" and "default view".
+    params_for_xmlrpc = ["", ""] + fields
+
+    # Note: _send_xmlrpc_request for d.multicall2 is expected to return the direct list of lists.
+    # The previous _send_xmlrpc_request logic was:
+    #   if isinstance(parsed_data, list) and len(parsed_data) > 0: return parsed_data[0], None
+    #   This needs to be adjusted for d.multicall2, which returns a list of lists, so parsed_data itself is the result.
+    # For now, let's assume _send_xmlrpc_request is modified or handles this.
+    # For the purpose of this function, we expect `raw_torrents_data` to be the list of lists.
+    # We need to ensure _send_xmlrpc_request returns the full list for d.multicall2, not just parsed_data[0]
+    # This will require a slight modification in _send_xmlrpc_request or a new specific xmlrpc caller for multicall.
+    # Let's assume _send_xmlrpc_request is generic and returns `parsed_data` directly.
+    # If `_send_xmlrpc_request` returns `parsed_data[0]`, and `parsed_data` is `[[torrent1_fields], [torrent2_fields]]`
+    # then `raw_torrents_data` would incorrectly be `[torrent1_fields]`.
+    # Let's modify the expectation for _send_xmlrpc_request: it should return the *full* `parsed_data` if the method is 'd.multicall2'.
+    # For now, this implementation will assume `_send_xmlrpc_request` correctly returns the list of lists for d.multicall2.
+    # This is a critical assumption. If _send_xmlrpc_request always returns `parsed_data[0]`, this will break.
+    # A quick fix for _send_xmlrpc_request would be:
+    # if method_name == "d.multicall2": return parsed_data, None else: return parsed_data[0] if ... else ...
+
+    raw_torrents_data, error = _send_xmlrpc_request(method_name="d.multicall2", params=params_for_xmlrpc)
+
+    if error:
+        current_app.logger.error(f"XML-RPC error calling d.multicall2 for list_torrents: {error}")
+        return None, error
+
+    if not isinstance(raw_torrents_data, list):
+        # This will also catch the case where _send_xmlrpc_request returns parsed_data[0] if raw_torrents_data was [[fields_t1], [fields_t2]]
+        # because then raw_torrents_data would be [fields_t1], which is a list, but its elements are not lists.
+        # Or if it was a single torrent, raw_torrents_data would be [field1, field2...], not a list of lists.
+        current_app.logger.error(f"XML-RPC d.multicall2 for list_torrents: Expected a list of lists, got {type(raw_torrents_data)}. Data: {str(raw_torrents_data)[:500]}")
+        return None, "Unexpected data structure from rTorrent for torrent list (XML-RPC)."
+
     simplified_torrents = []
-    for torrent_hash, data_array in torrents_dict_from_api.items():
+    field_keys = [
+        'hash', 'name', 'download_dir', 'label', 'size_bytes', 'downloaded_bytes',
+        'uploaded_bytes', 'down_rate_bytes_sec', 'up_rate_bytes_sec', 'ratio',
+        'is_open', 'is_active', 'is_complete_rt', 'left_bytes', 'rtorrent_message' # is_complete_rt from d.get_complete
+    ]
+
+    for torrent_data_list in raw_torrents_data:
+        if not isinstance(torrent_data_list, list) or len(torrent_data_list) != len(fields):
+            current_app.logger.warning(f"Skipping torrent entry due to mismatched data length. Expected {len(fields)}, got {len(torrent_data_list)}. Data: {torrent_data_list}")
+            continue
+
         try:
-            if len(data_array) < 26:
-                current_app.logger.warning(f"Skipping torrent {torrent_hash} due to insufficient data_array length: {len(data_array)} (expected at least 26)")
-                continue
-            def safe_int(s, default=0):
-                if not s or not str(s).strip().isdigit(): return default # Check if string is digit before int conversion
-                try: return int(s)
-                except ValueError: return default
-            is_open = (str(data_array[0]) == '1')
-            is_hash_checking = (str(data_array[1]) == '1')
-            is_rt_active_state = (str(data_array[3]) == '1')
-            name = str(data_array[4])
-            size_bytes = safe_int(data_array[5])
-            completed_chunks = safe_int(data_array[6])
-            total_chunks = safe_int(data_array[7])
-            bytes_done = safe_int(data_array[8])
-            up_total = safe_int(data_array[9])
-            ratio_val = safe_int(data_array[10])
-            up_rate_bytes_sec = safe_int(data_array[11])
-            down_rate_bytes_sec = safe_int(data_array[12])
-            label = str(data_array[14])
-            download_dir = str(data_array[25])
-            progress_permille = 0
-            if total_chunks > 0: progress_permille = int((completed_chunks / total_chunks) * 1000)
-            elif size_bytes > 0: progress_permille = int((bytes_done / size_bytes) * 1000)
-            is_complete = (bytes_done >= size_bytes) if size_bytes > 0 else (total_chunks > 0 and completed_chunks >= total_chunks)
+            data = dict(zip(field_keys, torrent_data_list))
+
+            # Type conversions and calculations
+            size_b = int(data.get('size_bytes', 0))
+            done_b = int(data.get('downloaded_bytes', 0))
+
+            # Progress
+            progress_percent = 0
+            if size_b > 0:
+                progress_percent = round((done_b / size_b) * 100, 2)
+            elif int(data.get('is_complete_rt', 0)) == 1 : # if size is 0 but marked complete (e.g. empty torrent)
+                progress_percent = 100.0
+
+            # Status determination
             status_text = "Unknown"
-            if is_hash_checking: status_text = "Checking"
-            elif not is_open: status_text = "Stopped"
-            elif not is_rt_active_state: status_text = "Paused"
-            elif is_rt_active_state: status_text = "Seeding" if is_complete else "Downloading"
+            rt_message = data.get('rtorrent_message', '')
+            is_open_val = int(data.get('is_open', 0))
+            is_active_val = int(data.get('is_active', 0))
+            # is_complete_val from d.get_complete() is already 0 or 1
+            is_complete_val = int(data.get('is_complete_rt', 0))
+            # Alternative completeness check using left_bytes (more reliable with some rTorrent versions)
+            left_bytes_val = int(data.get('left_bytes', -1)) # Use -1 to distinguish from 0 if key missing
+            if left_bytes_val == 0 and size_b > 0 : # if left_bytes is 0 and size > 0, it's complete
+                is_complete_val = 1
+
+
+            if rt_message and rt_message.strip():
+                status_text = "Error"
+            elif is_open_val == 0:
+                status_text = "Stopped"
+            elif is_active_val == 0: # and is_open_val == 1
+                status_text = "Paused"
+            elif is_complete_val == 1: # and is_open_val == 1 and is_active_val == 1
+                status_text = "Seeding"
+            else: # is_open_val == 1 and is_active_val == 1 and is_complete_val == 0
+                status_text = "Downloading"
+
             torrent_info = {
-                'hash': torrent_hash, 'name': name, 'size_bytes': size_bytes,
-                'progress_permille': progress_permille, 'progress_percent': round(progress_permille / 10.0, 1),
-                'downloaded_bytes': bytes_done, 'uploaded_bytes': up_total,
-                'ratio': round(ratio_val / 1000.0, 2),
-                'up_rate_bytes_sec': up_rate_bytes_sec, 'down_rate_bytes_sec': down_rate_bytes_sec,
-                'eta_seconds': safe_int(data_array[9] if len(data_array) > 9 else '0'), # This was likely wrong index for ETA from previous logs
-                'label': label, 'download_dir': download_dir,
+                'hash': str(data.get('hash', '')),
+                'name': str(data.get('name', '')),
+                'size_bytes': size_b,
+                'progress_percent': progress_percent,
+                'downloaded_bytes': done_b,
+                'uploaded_bytes': int(data.get('uploaded_bytes', 0)),
+                'ratio': round(int(data.get('ratio', 0)) / 1000.0, 3),
+                'up_rate_bytes_sec': int(data.get('up_rate_bytes_sec', 0)),
+                'down_rate_bytes_sec': int(data.get('down_rate_bytes_sec', 0)),
+                'label': str(data.get('label', '')),
+                'download_dir': str(data.get('download_dir', '')),
                 'status_text': status_text,
-                'is_active': is_open and is_rt_active_state,
-                'is_complete': is_complete,
-                'is_paused': is_open and not is_rt_active_state
+                'is_active': bool(is_active_val and is_open_val), # Active means it's running (not paused, not stopped)
+                'is_complete': bool(is_complete_val),
+                'is_paused': bool(is_open_val and not is_active_val), # Paused means open but not active
+                'rtorrent_message': rt_message
             }
             simplified_torrents.append(torrent_info)
-        except (IndexError, ValueError, TypeError) as e:
-            current_app.logger.error(f"Error parsing data_array for torrent {torrent_hash}. Data: {data_array}. Error: {e}", exc_info=True)
+        except Exception as e:
+            current_app.logger.error(f"Error parsing torrent data entry: {torrent_data_list}. Error: {e}", exc_info=True)
             continue
-    current_app.logger.info(f"Successfully parsed {len(simplified_torrents)} out of {len(torrents_dict_from_api)} torrent entries from httprpc.")
+
+    current_app.logger.info(f"Successfully parsed {len(simplified_torrents)} torrent(s) via XML-RPC d.multicall2.")
     return simplified_torrents, None
 
-
-# add_magnet is NOT changed in this subtask, only add_torrent_file
+# add_magnet is refactored to use XML-RPC
 def add_magnet(magnet_link, label=None, download_dir=None):
-    # ... (implementation from previous version, still omits dir_edit) ...
-    if not magnet_link: return False, "Magnet link cannot be empty."
-    payload = {'mode': 'add', 'url': magnet_link, 'fast_resume': '1', 'start_now': '1'}
-    if label: payload['label'] = label
-    if download_dir: payload['dir_edit'] = download_dir
-    current_app.logger.info(f"Adding magnet via httprpc: Payload={payload}, Magnet='{magnet_link[:100]}...'")
-    response_data, error = _make_httprpc_request(data=payload)
-    log_msg_prefix = "httprpc 'add magnet'"
-    if isinstance(response_data, dict): current_app.logger.info(f"{log_msg_prefix} JSON response: {json.dumps(response_data)}")
-    elif isinstance(response_data, str): current_app.logger.info(f"{log_msg_prefix} text response_data: '{response_data}'")
-    else: current_app.logger.info(f"{log_msg_prefix} other response_data: {response_data}")
+    if not magnet_link:
+        current_app.logger.error("Magnet link cannot be empty.")
+        return False, "Magnet link cannot be empty."
+
+    params_for_xmlrpc = ["", magnet_link] # First param is for view (always ""), second is URI
+
+    if label and isinstance(label, str) and label.strip():
+        params_for_xmlrpc.append(f"d.custom1.set={label.strip()}")
+        current_app.logger.debug(f"XML-RPC: Setting label for magnet: {label.strip()}")
+
+    if download_dir and isinstance(download_dir, str) and download_dir.strip():
+        params_for_xmlrpc.append(f"d.directory.set={download_dir.strip()}")
+        current_app.logger.debug(f"XML-RPC: Setting download directory for magnet: {download_dir.strip()}")
+
+    method_name = "load.start" # Use load.start to load and start the torrent
+    current_app.logger.info(f"Adding magnet via XML-RPC: Method='{method_name}', Magnet='{magnet_link[:100]}...', Params (excluding magnet link itself for brevity): {params_for_xmlrpc[2:] if len(params_for_xmlrpc) > 2 else 'None'}")
+
+    result, error = _send_xmlrpc_request(method_name=method_name, params=params_for_xmlrpc)
+
     if error:
-        current_app.logger.error(f"Error adding magnet via httprpc: {error}")
-        return False, error
-    if response_data is False:
-        current_app.logger.error(f"Magnet add failed: httprpc returned JSON 'false'. Magnet: {magnet_link[:100]}")
-        return False, "ruTorrent httprpc indicated failure (returned false)."
-    if isinstance(response_data, dict) and response_data:
-        current_app.logger.warning(f"Magnet add via httprpc returned non-empty JSON: {response_data}")
-        return False, f"Torrent add command sent, but server returned unexpected JSON data: {str(response_data)[:200]}"
-    if isinstance(response_data, str) and response_data:
-        current_app.logger.warning(f"Magnet add via httprpc returned non-empty text: '{response_data}'")
-        return False, f"Torrent add command sent, but server returned unexpected text data: {str(response_data)[:200]}"
-    current_app.logger.info(f"Magnet link '{magnet_link[:100]}...' successfully processed by httprpc.")
-    return True, None
+        current_app.logger.error(f"Error adding magnet via XML-RPC ('{method_name}'): {error}. Magnet: {magnet_link[:100]}")
+        return False, f"XML-RPC Error: {error}"
 
-def add_torrent_file(file_content_bytes, filename, label=None, download_dir=None): # label and download_dir are unused in this version
-    if not file_content_bytes or not filename:
-        return False, "File content and filename cannot be empty."
-
-    # For httprpc, when uploading a torrent file, the mode is typically 'addtorrent'
-    # and other parameters like label and directory are sent as form data fields.
-    form_data = {'mode': 'addtorrent'}
-    if label:
-        form_data['label'] = label
-        current_app.logger.debug(f"Torrent file '{filename}' will be added with label: '{label}'")
-    if download_dir:
-        form_data['dir_edit'] = download_dir
-        current_app.logger.debug(f"Torrent file '{filename}' will be added to directory: '{download_dir}'")
-
-    # Parameters like 'fast_resume' and 'start_now' could also be added here if desired.
-    form_data['start_now'] = '1'
-    form_data['fast_resume'] = '1'
-
-    files_payload = {'torrent_file': (filename, file_content_bytes, 'application/x-bittorrent')}
-    current_app.logger.info(f"Adding torrent file '{filename}' via httprpc: Data={form_data}, File attached.")
-
-    response_data, error = _make_httprpc_request(data=form_data, files=files_payload)
-
-    log_msg_prefix = "httprpc 'add file'"
-    if isinstance(response_data, dict):
-        current_app.logger.info(f"{log_msg_prefix} JSON response: {json.dumps(response_data)}")
-    elif isinstance(response_data, str):
-        current_app.logger.info(f"{log_msg_prefix} text response_data: '{response_data}'")
+    # For load.start, rTorrent typically returns 0 on success.
+    # _send_xmlrpc_request returns the first element of the parsed_data list.
+    # If result is 0 (integer), it's a success.
+    if result == 0:
+        current_app.logger.info(f"Magnet link '{magnet_link[:100]}...' successfully added via XML-RPC method '{method_name}'. Result: {result}")
+        return True, "Magnet link added successfully via XML-RPC."
     else:
-        current_app.logger.info(f"{log_msg_prefix} other response_data: {response_data}")
+        # This case might indicate an issue if rTorrent's load.start doesn't behave as expected (e.g. returns non-zero on success)
+        # or if _send_xmlrpc_request has an issue in its result parsing for this specific method.
+        current_app.logger.warning(f"Magnet add via XML-RPC ('{method_name}') returned an unexpected result: {result}. Magnet: {magnet_link[:100]}. Considered as failure.")
+        return False, f"Magnet add via XML-RPC returned an unexpected result: {result}. Expected 0 for success."
+
+def add_torrent_file(file_content_bytes, filename, label=None, download_dir=None):
+    if not file_content_bytes: # filename is only for logging, not strictly required for the call itself
+        current_app.logger.error("Torrent file content (bytes) cannot be empty.")
+        return False, "File content cannot be empty."
+    if not filename: # Still good to have for logging
+        current_app.logger.warning("Torrent filename was not provided for add_torrent_file (used for logging).")
+        filename = "Unknown.torrent" # Default filename for logging if not provided
+
+    # The first parameter for load.raw_start is an empty string (target/view, not used for raw loads)
+    # The second is the torrent data itself, wrapped in xmlrpc.client.Binary
+    params_for_xmlrpc = ["", xmlrpc.client.Binary(file_content_bytes)]
+
+    if label and isinstance(label, str) and label.strip():
+        params_for_xmlrpc.append(f"d.custom1.set={label.strip()}")
+        current_app.logger.debug(f"XML-RPC: Setting label for torrent file '{filename}': {label.strip()}")
+
+    if download_dir and isinstance(download_dir, str) and download_dir.strip():
+        params_for_xmlrpc.append(f"d.directory.set={download_dir.strip()}")
+        current_app.logger.debug(f"XML-RPC: Setting download directory for torrent file '{filename}': {download_dir.strip()}")
+
+    # Potentially add other commands like "d.start_now.set=1" if desired, similar to load.start
+    # For now, sticking to the direct translation of load.raw_start with label and dir.
+    # rTorrent's load.raw_start implies starting the torrent.
+
+    method_name = "load.raw_start"
+    current_app.logger.info(f"Adding torrent file '{filename}' via XML-RPC: Method='{method_name}', Params (excluding torrent data for brevity): {params_for_xmlrpc[2:] if len(params_for_xmlrpc) > 2 else 'None'}")
+
+    result, error = _send_xmlrpc_request(method_name=method_name, params=params_for_xmlrpc)
 
     if error:
-        current_app.logger.error(f"Error adding torrent file '{filename}' via httprpc (minimal): {error}")
-        return False, error
+        current_app.logger.error(f"Error adding torrent file '{filename}' via XML-RPC ('{method_name}'): {error}")
+        return False, f"XML-RPC Error: {error}"
 
-    if response_data is False:
-        current_app.logger.error(f"Torrent file add failed (minimal): httprpc returned JSON 'false'. File: {filename}")
-        return False, "ruTorrent httprpc indicated failure (returned false)."
-
-    if isinstance(response_data, dict) and response_data:
-        current_app.logger.warning(f"Torrent file add (minimal) via httprpc returned non-empty JSON: {response_data}")
-        return False, f"File add command (minimal) sent, but server returned unexpected JSON data: {str(response_data)[:200]}"
-    if isinstance(response_data, str) and response_data:
-        current_app.logger.warning(f"Torrent file add (minimal) via httprpc returned non-empty text: '{response_data}'")
-        return False, f"File add command (minimal) sent, but server returned unexpected text data: {str(response_data)[:200]}"
-
-    current_app.logger.info(f"Torrent file '{filename}' (minimal params) successfully processed by httprpc.")
-    return True, None
+    # For load.raw_start, rTorrent also typically returns 0 on success.
+    if result == 0:
+        current_app.logger.info(f"Torrent file '{filename}' successfully added via XML-RPC method '{method_name}'. Result: {result}")
+        return True, "Torrent file added successfully via XML-RPC."
+    else:
+        current_app.logger.warning(f"Torrent file add ('{filename}') via XML-RPC ('{method_name}') returned an unexpected result: {result}. Considered as failure.")
+        return False, f"Torrent file add via XML-RPC ('{method_name}') for '{filename}' returned an unexpected result: {result}. Expected 0 for success."
 
 # get_torrent_hash_by_name remains the same
 def get_torrent_hash_by_name(torrent_name, max_retries=3, delay_seconds=2):

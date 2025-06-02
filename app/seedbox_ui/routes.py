@@ -2206,24 +2206,31 @@ def rtorrent_add_torrent_action():
         current_app.logger.error(f"Failed to add torrent to rTorrent (httprpc): {error_msg_add}")
         return jsonify({"success": False, "error": f"rTorrent error: {error_msg_add or 'Failed to send to rTorrent.'}"}), 500
 
-    current_app.logger.info(f"Torrent '{original_name}' successfully sent to rTorrent via httprpc. Attempting to get its hash by matching name.")
+    current_app.logger.info(f"Torrent '{original_name}' successfully sent to rTorrent. Introducing delay before hash retrieval.")
 
-    torrent_hash = rtorrent_get_hash_by_name(original_name)
+    # Introduce delay
+    delay_seconds = current_app.config.get('RTORRENT_POST_ADD_DELAY_SECONDS', 3)
+    current_app.logger.debug(f"Waiting {delay_seconds}s before attempting to get hash for '{original_name}'.")
+    time.sleep(delay_seconds)
+
+    current_app.logger.info(f"Attempting to get hash for '{original_name}' from rTorrent.")
+    torrent_hash = rtorrent_get_hash_by_name(original_name) # Max retries are within this function
 
     if not torrent_hash:
-        current_app.logger.warning(f"Could not retrieve hash for torrent '{original_name}' immediately after adding. Association will use original_name as identifier for now.")
-        msg = f"Torrent '{original_name}' added to rTorrent, but its hash could not be immediately verified for pre-association. It may need manual mapping later."
-        current_app.logger.error(msg)
+        warn_msg = f"Torrent '{original_name}' added to rTorrent, but its verification for pre-association failed (hash not found after delay)."
+        current_app.logger.warning(warn_msg)
         return jsonify({
-            "success": True, # Torrent was added
-            "message": msg,
-            "warning": "Could not verify torrent hash for pre-association. Manual mapping may be required.",
+            "success": True, # Torrent was added successfully
+            "message": warn_msg,
+            "warning": "The hash of the torrent could not be retrieved immediately. Pre-association failed. The torrent should be downloading.",
             "torrent_hash": None
-        }), 202 # Accepted, but with a warning or caveat
+        }), 202 # HTTP 202 Accepted: Request accepted, processing not complete or with caveats
 
     current_app.logger.info(f"Found hash '{torrent_hash}' for '{original_name}'. Saving association.")
+    # Verify arguments for add_pending_association:
+    # torrent_identifier (hash), app_type, target_id, label, original_name (for display/fallback)
     if add_pending_association(torrent_hash, app_type, target_id, rtorrent_label, original_name):
-        current_app.logger.info(f"Pending association saved for hash {torrent_hash} -> {original_name}")
+        current_app.logger.info(f"Pending association saved for hash {torrent_hash} ({original_name}) -> App: {app_type}, TargetID: {target_id}, Label: {rtorrent_label}")
         return jsonify({
             "success": True,
             "message": f"Torrent '{original_name}' (Hash: {torrent_hash}) added to rTorrent and pre-associated.",
