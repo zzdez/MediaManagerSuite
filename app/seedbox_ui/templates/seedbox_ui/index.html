@@ -94,6 +94,19 @@
          <small class="text-muted" style="font-size: 0.8em;">
              ({{ node.size_readable if node.size_readable else 'N/A' }}, {{ node.last_modified if node.last_modified else 'N/A' }})
          </small>
+         {# Display Association Info #}
+         {% if node.association %}
+            <div class="mt-1"> {# Ajoute un petit espace au-dessus des badges d'association #}
+                <span class="badge {% if node.association.app_type == 'sonarr' %}bg-primary{% elif node.association.app_type == 'radarr' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                    <i class="fas fa-link"></i> Associé: {{ node.association.app_type | capitalize }} (ID: {{ node.association.target_id }})
+                </span>
+                <small class="text-muted d-block">Label rTorrent: {{ node.association.label }}</small>
+                {% if node.association.torrent_hash %}
+                    <small class="text-muted d-block" title="Hash: {{ node.association.torrent_hash }}">Hash: {{ node.association.torrent_hash | truncate(10) }}...</small>
+                {% endif %}
+                <small class="text-muted d-block">Ajouté: {{ node.association.added_timestamp.split('.')[0].replace('T', ' ') if node.association.added_timestamp else 'N/A' }}</small>
+            </div>
+         {% endif %}
       </span>
 
       {# Colonne des Actions #}
@@ -130,6 +143,15 @@
                         <i class="fas fa-broom"></i> <span class="d-none d-md-inline">Nettoyer</span>
                     </button>
                 </form>
+                {% endif %}
+
+                {# Bouton "Importer (Associé)" #}
+                {% if node.association %}
+                    <form method="POST" action="{{ url_for('seedbox_ui.process_staged_with_association', item_name_in_staging=node.path_for_actions) }}" style="display: inline-block;" onsubmit="return confirm('Lancer l\'importation de \'{{ node.name | e }}\' en utilisant la pré-association ?');">
+                        <button type="submit" class="btn btn-sm btn-success mb-1" title="Lancer l'importation en utilisant la pré-association">
+                            <i class="fas fa-magic"></i> <span class="d-none d-md-inline">Importer (Associé)</span>
+                        </button>
+                    </form>
                 {% endif %}
              {% endif %} {# Fin de if level == 0 #}
          {% endif %} {# Fin de if not node.name.endswith(...) #}

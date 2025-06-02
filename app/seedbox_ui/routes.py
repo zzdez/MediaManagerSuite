@@ -21,6 +21,7 @@ from app.utils.rtorrent_client import (
 )
 from app.utils.mapping_manager import add_pending_association, get_pending_association, remove_pending_association, get_all_pending_associations
 import base64 # Now needed for decoding torrent file content from JS
+import urllib.parse # Added for magnet link parsing
 
 # Définition du Blueprint pour seedbox_ui
 # Le Blueprint lui-même est défini dans app/seedbox_ui/__init__.py
@@ -36,6 +37,62 @@ import base64 # Now needed for decoding torrent file content from JS
 
 # Configuration du logger pour ce module
 logger = logging.getLogger(__name__)
+
+# Minimal bencode parser function (copied from previous attempt)
+def _decode_bencode_name(bencoded_data):
+    """
+    Minimalistic bencode decoder to find info['name'].
+    Returns the value of info['name'] as a string, or None if not found or error.
+    Expects bencoded_data as bytes.
+    """
+    try:
+        # Find '4:infod' (start of info dict)
+        info_dict_match = re.search(b'4:infod', bencoded_data)
+        if not info_dict_match:
+            # Use current_app.logger if available and in context, otherwise module logger
+            try: current_app.logger.debug("Bencode: '4:infod' not found.")
+            except RuntimeError: logger.debug("Bencode: '4:infod' not found (no app context).")
+            return None
+        
+        start_index = info_dict_match.end(0) # Position after '4:infod'
+        
+        name_key_match = re.search(b'4:name', bencoded_data[start_index:])
+        if not name_key_match:
+            try: current_app.logger.debug("Bencode: '4:name' not found after '4:infod'.")
+            except RuntimeError: logger.debug("Bencode: '4:name' not found after '4:infod' (no app context).")
+            return None
+            
+        pos_after_name_key = start_index + name_key_match.end(0) 
+
+        len_match = re.match(rb'(\d+):', bencoded_data[pos_after_name_key:])
+        if not len_match:
+            try: current_app.logger.debug("Bencode: Length prefix for name value not found.")
+            except RuntimeError: logger.debug("Bencode: Length prefix for name value not found (no app context).")
+            return None
+            
+        str_len = int(len_match.group(1))
+        pos_after_len_colon = pos_after_name_key + len_match.end(0)
+        
+        if (pos_after_len_colon + str_len) > len(bencoded_data):
+            try: current_app.logger.debug(f"Bencode: Declared name length {str_len} is out of bounds.")
+            except RuntimeError: logger.debug(f"Bencode: Declared name length {str_len} is out of bounds (no app context).")
+            return None
+
+        name_bytes = bencoded_data[pos_after_len_colon : pos_after_len_colon + str_len]
+        
+        try:
+            return name_bytes.decode('utf-8')
+        except UnicodeDecodeError:
+            try:
+                return name_bytes.decode('latin-1') 
+            except UnicodeDecodeError:
+                return name_bytes.decode('utf-8', errors='replace')
+
+    except Exception as e:
+        # Use current_app.logger if available and in context, otherwise module logger
+        try: current_app.logger.warning(f"Exception in _decode_bencode_name: {e}", exc_info=True)
+        except RuntimeError: logger.warning(f"Exception in _decode_bencode_name (no app context): {e}", exc_info=True)
+        return None
 
 def add_torrent_to_rutorrent(logger, torrent_url_or_magnet, download_dir, label, rutorrent_api_url, username, password, ssl_verify_str):
     """
@@ -937,38 +994,26 @@ def cleanup_staging_subfolder(folder_path_in_staging, staging_root_dir, orphan_e
 # ------------------------------------------------------------------------------
 
 # NOUVELLE FONCTION HELPER POUR CONSTRUIRE L'ARBORESCENCE
-def build_file_tree(directory_path, staging_root_for_relative_path):
+def build_file_tree(directory_path, staging_root_for_relative_path, pending_associations):
     """
     Construit récursivement une structure arborescente pour un dossier donné.
     Chaque nœud contient : name, type ('file' ou 'directory'), path_id (chemin relatif encodé ou simple),
-                          size_readable, last_modified, et 'children' pour les dossiers.
+                          size_readable, last_modified, 'association' (si trouvée), et 'children' pour les dossiers.
     """
     tree = []
     try:
         for item_name in sorted(os.listdir(directory_path), key=lambda x: (not os.path.isdir(os.path.join(directory_path, x)), x.lower())):
             item_path = os.path.join(directory_path, item_name)
-            # path_id est le chemin relatif au staging_root_for_relative_path, utilisé pour les actions
-            # Cela évite de passer des chemins absolus au frontend pour les actions
-            # On le garde simple pour l'instant : juste item_name si c'est un item de premier niveau,
-            # ou un chemin relatif plus complet si on veut gérer des actions sur des sous-niveaux.
-            # Pour les actions actuelles (Mapper, Supprimer, Nettoyer dossier) qui opèrent sur
-            # les items de premier niveau du staging, item_name est suffisant.
-            # Si on voulait des actions sur des sous-fichiers/sous-dossiers, il faudrait un path_id plus complet.
-
-            # Pour le path_id qui sera passé à url_for, il faut le chemin relatif au STAGING_DIR
-            # pour que nos routes <path:item_name> fonctionnent.
-            # Example: si staging_root_for_relative_path = X:\staging et item_path = X:\staging\DossierA\fichier.txt
-            # alors relative_item_path = DossierA\fichier.txt
             relative_item_path = os.path.relpath(item_path, staging_root_for_relative_path)
-            # Remplacer les backslashes par des slashes pour la cohérence dans les URLs (Flask s'en accommode)
             path_id_for_url = relative_item_path.replace('\\', '/')
-
 
             node = {
                 'name': item_name,
-                'path_for_actions': path_id_for_url, # Chemin relatif pour les url_for
-                'is_dir': os.path.isdir(item_path)
+                'path_for_actions': path_id_for_url,
+                'is_dir': os.path.isdir(item_path),
+                'association': pending_associations.get(item_name) # Ajout de l'association si elle existe
             }
+            
             try:
                 stat_info = os.stat(item_path)
                 node['size_bytes_raw'] = stat_info.st_size
@@ -976,8 +1021,8 @@ def build_file_tree(directory_path, staging_root_for_relative_path):
                 node['last_modified'] = datetime.fromtimestamp(stat_info.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
 
                 if node['is_dir']:
-                    node['size_readable'] = "N/A (dossier)" # Ou calculer la taille récursivement si souhaité (peut être lent)
-                    node['children'] = build_file_tree(item_path, staging_root_for_relative_path) # Appel récursif
+                    node['size_readable'] = "N/A (dossier)"
+                    node['children'] = build_file_tree(item_path, staging_root_for_relative_path, pending_associations) # Propager pending_associations
                 else:
                     if stat_info.st_size == 0:
                         node['size_readable'] = "0 B"
@@ -993,7 +1038,8 @@ def build_file_tree(directory_path, staging_root_for_relative_path):
                 logger.error(f"Erreur stat pour {item_path}: {e_stat}")
                 node['size_readable'] = "Erreur"
                 node['last_modified'] = "Erreur"
-                if node['is_dir']: node['children'] = [] # S'assurer que children existe
+                if node['is_dir']: node['children'] = [] 
+                node['association'] = None # S'assurer qu'il n'y a pas d'association partielle en cas d'erreur stat
 
             tree.append(node)
     except OSError as e:
@@ -1166,23 +1212,25 @@ from . import seedbox_ui_bp # Ou from app.seedbox_ui import seedbox_ui_bp si la 
 @seedbox_ui_bp.route('/')
 def index():
     staging_dir = current_app.config.get('STAGING_DIR')
-    if not staging_dir or not os.path.isdir(staging_dir): # Vérifier isdir aussi
+    if not staging_dir or not os.path.isdir(staging_dir):
         flash(f"Le dossier de staging '{staging_dir}' n'est pas configuré ou n'existe pas/n'est pas un dossier.", 'danger')
-        return render_template('seedbox_ui/index.html', items_tree=[]) # Passer items_tree au lieu de items_details
+        return render_template('seedbox_ui/index.html', items_tree=[])
+
+    # Récupérer les associations en attente
+    pending_associations = get_all_pending_associations()
+    logger.debug(f"Associations en attente récupérées: {pending_associations}")
 
     logger.info(f"Construction de l'arborescence pour le dossier de staging: {staging_dir}")
-    # La fonction build_file_tree est appelée avec staging_dir comme base pour les chemins relatifs
-    items_tree_data = build_file_tree(staging_dir, staging_dir)
-    # items_tree_data sera une liste d'objets pour les items à la racine du staging_dir
+    items_tree_data = build_file_tree(staging_dir, staging_dir, pending_associations)
 
     sonarr_configured = bool(current_app.config.get('SONARR_URL') and current_app.config.get('SONARR_API_KEY'))
     radarr_configured = bool(current_app.config.get('RADARR_URL') and current_app.config.get('RADARR_API_KEY'))
 
     return render_template('seedbox_ui/index.html',
-                           items_tree=items_tree_data, # Nouvelle variable pour le template
+                           items_tree=items_tree_data,
                            can_scan_sonarr=sonarr_configured,
                            can_scan_radarr=radarr_configured,
-                           staging_dir_display=staging_dir) # Pour afficher le chemin du staging si besoin
+                           staging_dir_display=staging_dir)
 
 @seedbox_ui_bp.route('/delete/<path:item_name>', methods=['POST'])
 def delete_item(item_name):
@@ -2414,3 +2462,86 @@ def add_torrent_and_map():
 
     # 7. Rediriger
     return redirect(url_for('seedbox_ui.rtorrent_list_view')) # Redirection vers la liste des torrents
+
+@seedbox_ui_bp.route('/process-staged-with-association/<path:item_name_in_staging>', methods=['POST'])
+def process_staged_with_association(item_name_in_staging):
+    """
+    Traite un item du staging en utilisant une pré-association existante.
+    """
+    current_app.logger.info(f"Traitement avec association demandé pour : {item_name_in_staging}")
+
+    staging_dir = current_app.config.get('STAGING_DIR')
+    if not staging_dir: # Should not happen if app is configured
+        flash("Le dossier de staging n'est pas configuré dans l'application.", "danger")
+        current_app.logger.error("process_staged_with_association: STAGING_DIR non configuré.")
+        return redirect(url_for('seedbox_ui.index'))
+
+    path_of_item_in_staging_abs = (Path(staging_dir) / item_name_in_staging).resolve()
+
+    if not path_of_item_in_staging_abs.exists():
+        flash(f"L'item '{item_name_in_staging}' n'a pas été trouvé dans le dossier de staging.", "danger")
+        current_app.logger.error(f"Item '{path_of_item_in_staging_abs}' non trouvé lors du traitement avec association.")
+        return redirect(url_for('seedbox_ui.index'))
+
+    association = get_pending_association(item_name_in_staging)
+
+    if association is None:
+        flash(f"Aucune pré-association trouvée pour '{item_name_in_staging}'. Veuillez le mapper manuellement.", "warning")
+        current_app.logger.warning(f"Aucune association trouvée pour '{item_name_in_staging}' lors du traitement automatique.")
+        return redirect(url_for('seedbox_ui.index'))
+
+    current_app.logger.info(f"Association trouvée pour '{item_name_in_staging}': {association}")
+    
+    app_type = association.get('app_type')
+    target_id = association.get('target_id') # Ceci est un string ou int, les handlers devraient gérer ça.
+
+    if not app_type or target_id is None: # target_id peut être 0, donc vérifier None explicitement.
+        flash(f"Association invalide ou incomplète pour '{item_name_in_staging}'. Type: {app_type}, ID: {target_id}", "danger")
+        current_app.logger.error(f"Association invalide pour {item_name_in_staging}: app_type='{app_type}', target_id='{target_id}'")
+        # On pourrait supprimer cette association invalide ici si on le souhaitait.
+        # remove_pending_association(item_name_in_staging)
+        return redirect(url_for('seedbox_ui.index'))
+
+    result_dict = None
+    # item_name_in_staging est le nom de base du fichier/dossier, qui est aussi la clé d'association.
+    # path_to_cleanup_in_staging_after_success doit être le chemin absolu.
+    path_to_cleanup_after_success_str = str(path_of_item_in_staging_abs)
+
+    if app_type == 'sonarr':
+        current_app.logger.debug(f"Appel de _handle_staged_sonarr_item pour {item_name_in_staging} (Série ID: {target_id})")
+        result_dict = _handle_staged_sonarr_item(
+            item_name_in_staging=item_name_in_staging, # Nom relatif au staging_dir
+            series_id_target=str(target_id), # Assurer que c'est un string pour l'API Sonarr si besoin
+            path_to_cleanup_in_staging_after_success=path_to_cleanup_after_success_str,
+            user_chosen_season=None # Pas de saison forcée dans ce flux automatique
+        )
+    elif app_type == 'radarr':
+        current_app.logger.debug(f"Appel de _handle_staged_radarr_item pour {item_name_in_staging} (Movie ID: {target_id})")
+        result_dict = _handle_staged_radarr_item(
+            item_name_in_staging=item_name_in_staging, # Nom relatif au staging_dir
+            movie_id_target=str(target_id), # Assurer que c'est un string pour l'API Radarr si besoin
+            path_to_cleanup_in_staging_after_success=path_to_cleanup_after_success_str
+        )
+    else:
+        flash(f"Type d'application inconnu ('{app_type}') dans l'association pour '{item_name_in_staging}'.", "danger")
+        current_app.logger.error(f"Type d'application non supporté '{app_type}' dans l'association pour {item_name_in_staging}.")
+        return redirect(url_for('seedbox_ui.index'))
+
+    if result_dict:
+        current_app.logger.debug(f"Résultat du handler pour '{item_name_in_staging}': {result_dict}")
+        if result_dict.get("success"):
+            flash(result_dict.get("message", f"'{item_name_in_staging}' traité avec succès via son association."), "success")
+            if remove_pending_association(item_name_in_staging): # Utiliser item_name_in_staging qui est la clé (release_name)
+                current_app.logger.info(f"Association pour '{item_name_in_staging}' supprimée avec succès.")
+            else:
+                current_app.logger.warning(f"Échec de la suppression de l'association pour '{item_name_in_staging}' (elle n'existait peut-être plus ou la clé a changé).")
+        elif result_dict.get("action_required"):
+             flash(result_dict.get("message", f"Action supplémentaire requise pour '{item_name_in_staging}'."), "info")
+             current_app.logger.info(f"Action requise retournée par le handler pour {item_name_in_staging}: {result_dict.get('message')}")
+        else: # Échec
+            flash(result_dict.get("error", f"Échec du traitement de '{item_name_in_staging}' via son association."), "danger")
+    else:
+        flash(f"Erreur inattendue lors du traitement de '{item_name_in_staging}'. Aucun résultat du handler.", "danger")
+        current_app.logger.error(f"Aucun result_dict retourné par le handler pour {item_name_in_staging} avec app_type {app_type}.")
+
+    return redirect(url_for('seedbox_ui.index'))

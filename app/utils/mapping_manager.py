@@ -1,153 +1,240 @@
-# app/utils/mapping_manager.py
-import json
 import os
-from flask import current_app # To get config for the JSON file path and logger
+import json
+from datetime import datetime
+from flask import current_app
 
-# Name of the JSON file, to be configured in Flask app
-# Example: PENDING_TORRENTS_MAP_FILE = 'data/pending_torrents_map.json'
+# Nom du fichier pour stocker les associations en attente
+# Ce fichier sera à la racine du projet
+PENDING_ASSOCIATIONS_FILE = 'pending_torrents_map.json'
 
-def _get_map_file_path():
-    """Returns the absolute path to the mapping file."""
-    map_file_name = current_app.config.get('PENDING_TORRENTS_MAP_FILE')
-    if not map_file_name:
-        current_app.logger.error("PENDING_TORRENTS_MAP_FILE not set in Flask config.")
-        return None
-    # Assuming map_file_name is relative to the app's instance folder or a predefined 'data' directory
-    # For simplicity, let's assume it's stored in the instance folder if not absolute
-    # A better approach might be to ensure the path is absolute or define a data directory
-    # For now, let's create it in the main app directory if it's just a filename.
-    # This should ideally be in an instance folder or a data folder.
-    # If current_app.instance_path is available and desired:
-    # return os.path.join(current_app.instance_path, map_file_name)
+def get_pending_associations_filepath():
+    """Retourne le chemin absolu du fichier des associations en attente."""
+    return PENDING_ASSOCIATIONS_FILE
 
-    # Let's place it in the root of the project for now for simplicity,
-    # but this should be refined (e.g., in an 'instance' or 'data' folder).
-    # We'll ensure the directory exists.
-    map_file_path = os.path.join(current_app.root_path, '..', map_file_name) # Goes one level up from app dir to project root
-    map_file_path = os.path.abspath(map_file_path)
-
+def _load_associations():
+    """Charge les associations depuis le fichier JSON."""
+    filepath = get_pending_associations_filepath()
+    logger = None
     try:
-        os.makedirs(os.path.dirname(map_file_path), exist_ok=True)
-    except OSError as e:
-        current_app.logger.error(f"Error creating directory for mapping file {os.path.dirname(map_file_path)}: {e}")
-        return None
-    return map_file_path
+        logger = current_app.logger
+    except RuntimeError:
+        pass # logger remains None
 
-def _load_map():
-    """Loads the entire mapping from the JSON file."""
-    map_file_path = _get_map_file_path()
-    if not map_file_path:
-        return {} # Return empty dict if path is not configured
-
-    if not os.path.exists(map_file_path):
-        return {} # Return empty dict if file doesn't exist
-
+    if not os.path.exists(filepath):
+        return {}
     try:
-        with open(map_file_path, 'r', encoding='utf-8') as f:
-            # Handle empty file case
+        with open(filepath, 'r', encoding='utf-8') as f:
             content = f.read()
             if not content:
                 return {}
             return json.loads(content)
-    except json.JSONDecodeError:
-        current_app.logger.error(f"Error decoding JSON from {map_file_path}. Returning empty map.")
-        # Optionally, create a backup of the corrupted file here
-        return {}
-    except Exception as e:
-        current_app.logger.error(f"Error loading mapping file {map_file_path}: {e}")
+    except (json.JSONDecodeError, IOError) as e:
+        if logger:
+            logger.error(f"Erreur lors du chargement du fichier d'associations {filepath}: {e}. Le fichier sera traité comme vide/malformé.")
+        else:
+            print(f"ERROR: Erreur lors du chargement du fichier d'associations {filepath}: {e}. Le fichier sera traité comme vide/malformé.")
         return {}
 
-def _save_map(data_map):
-    """Saves the entire mapping to the JSON file."""
-    map_file_path = _get_map_file_path()
-    if not map_file_path:
-        current_app.logger.error("Cannot save map, file path not configured.")
-        return False
+def _save_associations(associations):
+    """Sauvegarde les associations dans le fichier JSON."""
+    filepath = get_pending_associations_filepath()
+    logger = None
+    try:
+        logger = current_app.logger
+    except RuntimeError:
+        pass
 
     try:
-        with open(map_file_path, 'w', encoding='utf-8') as f:
-            json.dump(data_map, f, indent=4)
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(associations, f, indent=4)
         return True
-    except Exception as e:
-        current_app.logger.error(f"Error saving mapping file {map_file_path}: {e}")
+    except IOError as e:
+        if logger:
+            logger.error(f"Erreur lors de la sauvegarde du fichier d'associations {filepath}: {e}")
+        else:
+            print(f"ERROR: Erreur lors de la sauvegarde du fichier d'associations {filepath}: {e}")
         return False
 
-def add_pending_association(torrent_identifier, app_type, target_id, label, original_name):
+def add_pending_association(release_name, app_type, target_id, label, torrent_hash=None):
     """
-    Adds or updates a pending association.
-    torrent_identifier: Typically the torrent hash or magnet link (must be unique).
-    app_type: 'sonarr' or 'radarr'.
-    target_id: The seriesId (Sonarr) or movieId (Radarr).
-    label: The label used for rTorrent (e.g., 'sonarr', 'radarr').
-    original_name: The original name of the torrent/release (for matching later).
+    Ajoute ou met à jour une association en attente en utilisant release_name comme clé.
     """
-    if not all([torrent_identifier, app_type, target_id, label, original_name]):
-        current_app.logger.warning("Missing data for add_pending_association.")
-        return False
+    logger = None
+    try:
+        logger = current_app.logger
+    except RuntimeError:
+        pass
+        
+    if logger:
+        logger.debug(f"Ajout/Mise à jour de l'association pour release_name: {release_name}")
 
-    current_map = _load_map()
-    current_map[str(torrent_identifier)] = {
-        "app_type": app_type,
-        "target_id": target_id,
-        "label": label,
-        "original_name": original_name,
-        "timestamp": current_app.config.get('APP_START_TIME', '') # Or use datetime.now().isoformat()
+    associations = _load_associations()
+
+    associations[release_name] = {
+        'torrent_hash': torrent_hash,
+        'app_type': app_type,
+        'target_id': target_id,
+        'label': label,
+        'added_timestamp': datetime.utcnow().isoformat()
     }
-    if _save_map(current_map):
-        current_app.logger.info(f"Added/Updated pending association for '{torrent_identifier}' -> '{original_name}'.")
+
+    if _save_associations(associations):
+        if logger:
+            logger.info(f"Association pour '{release_name}' sauvegardée.")
         return True
     else:
-        current_app.logger.error(f"Failed to save map after adding association for '{torrent_identifier}'.")
+        if logger:
+            logger.error(f"Échec de la sauvegarde de l'association pour '{release_name}'.")
         return False
 
-def get_pending_association(release_name_from_staging):
-    """
-    Tries to find a pending association based on the release name found in staging.
-    This requires matching release_name_from_staging (e.g., 'My.Show.S01E01.1080p')
-    with the 'original_name' stored in the map.
+def get_pending_association(release_name):
+    """Récupère une association en attente par son release_name."""
+    logger = None
+    try:
+        logger = current_app.logger
+    except RuntimeError:
+        pass
 
-    Returns the association dict if found, else None.
-    The torrent_identifier (key in the map) is also added to the returned dict.
-    """
-    if not release_name_from_staging:
-        return None
+    associations = _load_associations()
+    association = associations.get(release_name)
+    
+    if logger:
+        if association:
+            logger.debug(f"Association trouvée pour release_name '{release_name}': {association}")
+        else:
+            logger.debug(f"Aucune association trouvée pour release_name '{release_name}'.")
+    return association
 
-    current_map = _load_map()
-    # Iterate through the map to find a match based on original_name.
-    # This could be slow for very large maps, but for a few hundred entries it's fine.
-    # For more robustness, consider cleaning/normalizing both names before comparison.
+def remove_pending_association(release_name):
+    """Supprime une association en attente par son release_name."""
+    logger = None
+    try:
+        logger = current_app.logger
+    except RuntimeError:
+        pass
+        
+    associations = _load_associations()
 
-    # Simple direct match for now
-    for torrent_id, assoc_data in current_map.items():
-        if assoc_data.get("original_name") == release_name_from_staging:
-            current_app.logger.info(f"Found pending association for release '{release_name_from_staging}' (ID: {torrent_id}).")
-            # Add the torrent_id to the returned data for convenience
-            assoc_data_with_id = assoc_data.copy()
-            assoc_data_with_id['torrent_identifier'] = torrent_id
-            return assoc_data_with_id
-
-    current_app.logger.info(f"No pending association found for release name '{release_name_from_staging}'.")
-    return None
-
-def remove_pending_association(torrent_identifier):
-    """Removes a pending association by its identifier (hash or magnet)."""
-    current_map = _load_map()
-    identifier_str = str(torrent_identifier) # Ensure key is string
-
-    if identifier_str in current_map:
-        del current_map[identifier_str]
-        if _save_map(current_map):
-            current_app.logger.info(f"Removed pending association for '{identifier_str}'.")
+    if release_name in associations:
+        del associations[release_name]
+        if _save_associations(associations):
+            if logger:
+                logger.info(f"Association pour '{release_name}' supprimée.")
             return True
         else:
-            current_app.logger.error(f"Failed to save map after removing association for '{identifier_str}'.")
-            # Re-add to map in memory if save failed, to avoid inconsistent state?
-            # For now, log and return False.
+            if logger:
+                logger.error(f"Échec de la sauvegarde après suppression de l'association pour '{release_name}'.")
             return False
-    else:
-        current_app.logger.info(f"No association found to remove for identifier '{identifier_str}'.")
-        return False # Or True, as the state is "not present"
+    
+    if logger:
+        logger.debug(f"Tentative de suppression d'une association non existante pour release_name '{release_name}'.")
+    return False
 
 def get_all_pending_associations():
-    """Returns the entire map of pending associations."""
-    return _load_map()
+    """Récupère toutes les associations en attente."""
+    logger = None
+    try:
+        logger = current_app.logger
+    except RuntimeError:
+        pass
+        
+    if logger:
+        logger.debug("Chargement de toutes les associations en attente.")
+    return _load_associations()
+
+# Exemple d'utilisation (peut être décommenté pour des tests directs)
+if __name__ == '__main__':
+    # Pour les tests hors contexte Flask, current_app.logger ne sera pas disponible.
+    # Les fonctions utilisent maintenant try-except pour current_app.logger.
+    # Un logger basique est utilisé pour la sortie des tests eux-mêmes.
+    import logging
+    logging.basicConfig(level=logging.INFO) # Change to INFO to reduce noise, DEBUG for more details
+    test_logger = logging.getLogger(__name__)
+
+
+    test_logger.info("Test du gestionnaire d'associations en attente...")
+    filepath = get_pending_associations_filepath()
+    test_logger.info(f"Utilisation du fichier: {os.path.abspath(filepath)}")
+
+    # Nettoyer le fichier de test s'il existe
+    if os.path.exists(PENDING_ASSOCIATIONS_FILE):
+        os.remove(PENDING_ASSOCIATIONS_FILE)
+
+    # Test 1: Ajout d'une nouvelle association
+    test_logger.info("\nTest 1: Ajout de 'Release.Name.One'")
+    assert add_pending_association('Release.Name.One', 'sonarr', 'series_id_123', 'tv-sonarr', 'hash123xyz') == True
+    assoc = get_pending_association('Release.Name.One')
+    assert assoc and assoc['app_type'] == 'sonarr' and assoc['target_id'] == 'series_id_123'
+    test_logger.info("Association 'Release.Name.One' ajoutée et vérifiée.")
+
+    # Test 2: Ajout d'une autre association
+    test_logger.info("\nTest 2: Ajout de 'Release.Name.Two'")
+    assert add_pending_association('Release.Name.Two', 'radarr', 456, 'movies-radarr', torrent_hash='hash456abc') == True
+    assoc2 = get_pending_association('Release.Name.Two')
+    assert assoc2 and assoc2['app_type'] == 'radarr' and assoc2['target_id'] == 456
+    test_logger.info("Association 'Release.Name.Two' ajoutée et vérifiée.")
+
+    # Test 3: Récupération de toutes les associations
+    test_logger.info("\nTest 3: Récupération de toutes les associations")
+    all_assocs = get_all_pending_associations()
+    assert len(all_assocs) == 2
+    assert 'Release.Name.One' in all_assocs and 'Release.Name.Two' in all_assocs
+    test_logger.info(f"Toutes les associations récupérées: {all_assocs}")
+
+    # Test 4: Mise à jour d'une association existante (nouvel ajout avec même clé)
+    test_logger.info("\nTest 4: Mise à jour de 'Release.Name.One'")
+    assert add_pending_association('Release.Name.One', 'sonarr', 'series_id_789', 'tv-sonarr-updated', 'hash123xyz-updated') == True
+    updated_assoc = get_pending_association('Release.Name.One')
+    assert updated_assoc and updated_assoc['target_id'] == 'series_id_789' and updated_assoc['label'] == 'tv-sonarr-updated'
+    assert updated_assoc['torrent_hash'] == 'hash123xyz-updated'
+    test_logger.info("Association 'Release.Name.One' mise à jour et vérifiée.")
+    assert len(get_all_pending_associations()) == 2
+
+    # Test 5: Suppression d'une association
+    test_logger.info("\nTest 5: Suppression de 'Release.Name.One'")
+    assert remove_pending_association('Release.Name.One') == True
+    assert get_pending_association('Release.Name.One') is None
+    assert len(get_all_pending_associations()) == 1
+    test_logger.info("Association 'Release.Name.One' supprimée et vérifiée.")
+
+    # Test 6: Tentative de suppression d'une association non existante
+    test_logger.info("\nTest 6: Suppression de 'Non.Existent.Release'")
+    assert remove_pending_association('Non.Existent.Release') == False
+    test_logger.info("Tentative de suppression de 'Non.Existent.Release' gérée.")
+
+    # Test 7: Gestion d'un fichier JSON malformé ou vide
+    test_logger.info("\nTest 7: Gestion fichier malformé/vide")
+    # Simuler un fichier malformé
+    with open(PENDING_ASSOCIATIONS_FILE, 'w') as f:
+        f.write("ceci n'est pas du json")
+    malformed_assocs = _load_associations() # Appelle _load_associations directement pour tester ce cas
+    assert malformed_assocs == {}
+    test_logger.info("Fichier malformé géré, retourne un dict vide.")
+    
+    # S'assurer que add_pending_association peut écraser un fichier malformé
+    test_logger.info("Test 7b: add_pending_association sur un fichier malformé")
+    assert add_pending_association('Release.Name.Three', 'sonarr', 'series_id_101', 'tv-sonarr', 'hash789') == True
+    assoc3 = get_pending_association('Release.Name.Three')
+    assert assoc3 and assoc3['app_type'] == 'sonarr'
+    test_logger.info("add_pending_association a écrasé le fichier malformé et a fonctionné.")
+    
+    # Simuler un fichier vide
+    with open(PENDING_ASSOCIATIONS_FILE, 'w') as f:
+        f.write("") 
+    empty_file_assocs = _load_associations() # Appelle _load_associations directement
+    assert empty_file_assocs == {}
+    test_logger.info("Fichier vide géré, retourne un dict vide.")
+
+    # S'assurer que add_pending_association peut utiliser un fichier vide
+    test_logger.info("Test 7c: add_pending_association sur un fichier vide")
+    assert add_pending_association('Release.Name.Four', 'radarr', 999, 'movies-radarr', 'hash000') == True
+    assoc4 = get_pending_association('Release.Name.Four')
+    assert assoc4 and assoc4['app_type'] == 'radarr'
+    test_logger.info("add_pending_association a utilisé le fichier vide et a fonctionné.")
+
+
+    # Nettoyer après les tests
+    if os.path.exists(PENDING_ASSOCIATIONS_FILE):
+        os.remove(PENDING_ASSOCIATIONS_FILE)
+    test_logger.info(f"\nFichier de test '{PENDING_ASSOCIATIONS_FILE}' nettoyé.")
+    test_logger.info("\nTous les tests unitaires simples sont passés.")
