@@ -784,10 +784,19 @@
                     }
                 }
 
-                const id = item.id || 0;
+                let selectable_id = 0;
+                if (appType === 'sonarr') {
+                    selectable_id = item.id || 0;
+                } else if (appType === 'radarr') {
+                    selectable_id = item.id || 0; // Try Radarr's internal ID first
+                    if (!selectable_id && item.tmdbId) { // If no internal ID, fallback to tmdbId
+                        selectable_id = item.tmdbId;
+                    }
+                }
+
                 const status = item.status || 'N/A';
                 const id_type = appType === 'sonarr' ? 'TVDB ID' : 'TMDB ID';
-                const external_id_val = appType === 'sonarr' ? item.tvdbId : item.tmdbId;
+                const external_id_val = appType === 'sonarr' ? item.tvdbId : (item.tmdbId || 'N/A'); // Ensure tmdbId display for Radarr
 
                 html += `
                     <li class="list-group-item">
@@ -797,12 +806,12 @@
                             </div>
                             <div class="col">
                                 <strong>${title}</strong> (${year})<br>
-                                <small class="text-muted">Statut: ${status} | ${id_type}: ${external_id_val || 'N/A'}</small>
+                                <small class="text-muted">Statut: ${status} | ${id_type}: ${external_id_val}</small>
                             </div>
                             <div class="col-auto">
                                 <button class="btn btn-sm btn-success"
-                                        onclick="selectArrItemForAddTorrent(${id}, '${title}', '${appType}')"
-                                        ${id ? '' : 'disabled title="Média non gérable ou ID manquant"'} >
+                                        onclick="selectArrItemForAddTorrent(${selectable_id}, '${title}', '${appType}')"
+                                        ${selectable_id ? '' : 'disabled title="Média non gérable ou ID manquant"'} >
                                     <i class="fas fa-check"></i> Choisir
                                 </button>
                             </div>
