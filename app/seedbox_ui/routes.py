@@ -19,7 +19,13 @@ from app.utils.rtorrent_client import (
     add_torrent_file as rtorrent_add_torrent_file_httprpc,
     get_torrent_hash_by_name as rtorrent_get_hash_by_name
 )
-from app.utils.mapping_manager import add_pending_association, get_pending_association, remove_pending_association, get_all_pending_associations
+from app.utils.mapping_manager import (
+    add_association_by_hash,
+    get_association_by_hash,
+    remove_association_by_hash,
+    get_all_pending_associations,
+    get_association_by_release_name
+)
 import base64 # Now needed for decoding torrent file content from JS
 import urllib.parse # Added for magnet link parsing
 
@@ -53,38 +59,38 @@ def _decode_bencode_name(bencoded_data):
             try: current_app.logger.debug("Bencode: '4:infod' not found.")
             except RuntimeError: logger.debug("Bencode: '4:infod' not found (no app context).")
             return None
-        
+
         start_index = info_dict_match.end(0) # Position after '4:infod'
-        
+
         name_key_match = re.search(b'4:name', bencoded_data[start_index:])
         if not name_key_match:
             try: current_app.logger.debug("Bencode: '4:name' not found after '4:infod'.")
             except RuntimeError: logger.debug("Bencode: '4:name' not found after '4:infod' (no app context).")
             return None
-            
-        pos_after_name_key = start_index + name_key_match.end(0) 
+
+        pos_after_name_key = start_index + name_key_match.end(0)
 
         len_match = re.match(rb'(\d+):', bencoded_data[pos_after_name_key:])
         if not len_match:
             try: current_app.logger.debug("Bencode: Length prefix for name value not found.")
             except RuntimeError: logger.debug("Bencode: Length prefix for name value not found (no app context).")
             return None
-            
+
         str_len = int(len_match.group(1))
         pos_after_len_colon = pos_after_name_key + len_match.end(0)
-        
+
         if (pos_after_len_colon + str_len) > len(bencoded_data):
             try: current_app.logger.debug(f"Bencode: Declared name length {str_len} is out of bounds.")
             except RuntimeError: logger.debug(f"Bencode: Declared name length {str_len} is out of bounds (no app context).")
             return None
 
         name_bytes = bencoded_data[pos_after_len_colon : pos_after_len_colon + str_len]
-        
+
         try:
             return name_bytes.decode('utf-8')
         except UnicodeDecodeError:
             try:
-                return name_bytes.decode('latin-1') 
+                return name_bytes.decode('latin-1')
             except UnicodeDecodeError:
                 return name_bytes.decode('utf-8', errors='replace')
 
@@ -1013,7 +1019,7 @@ def build_file_tree(directory_path, staging_root_for_relative_path, pending_asso
                 'is_dir': os.path.isdir(item_path),
                 'association': pending_associations.get(item_name) # Ajout de l'association si elle existe
             }
-            
+
             try:
                 stat_info = os.stat(item_path)
                 node['size_bytes_raw'] = stat_info.st_size
@@ -1038,7 +1044,7 @@ def build_file_tree(directory_path, staging_root_for_relative_path, pending_asso
                 logger.error(f"Erreur stat pour {item_path}: {e_stat}")
                 node['size_readable'] = "Erreur"
                 node['last_modified'] = "Erreur"
-                if node['is_dir']: node['children'] = [] 
+                if node['is_dir']: node['children'] = []
                 node['association'] = None # S'assurer qu'il n'y a pas d'association partielle en cas d'erreur stat
 
             tree.append(node)
@@ -1746,17 +1752,18 @@ def sftp_retrieve_and_process_action():
         path_to_cleanup_after_success_abs = str(local_staged_item_path_obj)
 
         # **NEW: Check for pre-association**
-        pending_assoc = get_pending_association(item_basename_on_seedbox) # Match based on the downloaded item's name
+        # get_association_by_release_name returns (torrent_hash, association_data) or (None, None)
+        torrent_hash_of_assoc, pending_assoc_data = get_association_by_release_name(item_basename_on_seedbox)
 
         target_app_type_for_handler = None
         target_id_for_handler = None
         association_source = "None" # For logging
 
-        if pending_assoc:
-            current_app.logger.info(f"SFTP R&P: Pré-association trouvée pour '{item_basename_on_seedbox}': {pending_assoc}")
-            target_app_type_for_handler = pending_assoc.get('app_type')
-            target_id_for_handler = pending_assoc.get('target_id')
-            association_source = f"Pre-association (Torrent ID: {pending_assoc.get('torrent_identifier')})"
+        if pending_assoc_data: # Check if pending_assoc_data is not None
+            current_app.logger.info(f"SFTP R&P: Association trouvée by release name '{item_basename_on_seedbox}' (Hash: {torrent_hash_of_assoc}): {pending_assoc_data}")
+            target_app_type_for_handler = pending_assoc_data.get('app_type')
+            target_id_for_handler = pending_assoc_data.get('target_id')
+            association_source = f"Pre-association (Hash: {torrent_hash_of_assoc})"
         elif direct_target_series_id and app_type_of_remote_folder == 'sonarr': # Check app_type_of_remote_folder for sanity
             target_app_type_for_handler = 'sonarr'
             target_id_for_handler = direct_target_series_id
@@ -1806,12 +1813,12 @@ def sftp_retrieve_and_process_action():
                 flash_msg = final_result_dict.get("message", f"'{item_basename_on_seedbox}' traité avec succès.")
                 current_app.logger.info(f"SFTP R&P: Traitement réussi pour '{item_basename_on_seedbox}'. Message: {flash_msg}")
                 flash(flash_msg, "success")
-                # If processing was successful and it came from a pre-association, remove it
-                if pending_assoc and pending_assoc.get('torrent_identifier'):
-                    if remove_pending_association(pending_assoc['torrent_identifier']):
-                        current_app.logger.info(f"SFTP R&P: Pré-association pour '{pending_assoc['torrent_identifier']}' (item: {item_basename_on_seedbox}) supprimée.")
+                # If processing was successful and it came from a pre-association (torrent_hash_of_assoc is not None)
+                if torrent_hash_of_assoc: # Implies it was found by get_association_by_release_name
+                    if remove_association_by_hash(torrent_hash_of_assoc):
+                        current_app.logger.info(f"SFTP R&P: Association pour hash '{torrent_hash_of_assoc}' (Release: {item_basename_on_seedbox}) supprimée.")
                     else:
-                        current_app.logger.warning(f"SFTP R&P: Échec de la suppression de la pré-association pour '{pending_assoc['torrent_identifier']}'.")
+                        current_app.logger.warning(f"SFTP R&P: Échec de la suppression de l'association pour hash '{torrent_hash_of_assoc}'.")
                 return jsonify(final_result_dict), final_result_dict.get("status_code_override", 200)
             else: # Echec du handler
                 error_msg_handler_fail = final_result_dict.get("error", f"Erreur lors du traitement final de '{item_basename_on_seedbox}'.")
@@ -2285,11 +2292,10 @@ def rtorrent_add_torrent_action():
         }), 202 # HTTP 202 Accepted: Request accepted, processing not complete or with caveats
 
     current_app.logger.info(f"Found hash '{torrent_hash}' for '{original_name}'. Saving association.")
-    # Verify arguments for add_pending_association:
-    # torrent_identifier (hash), app_type, target_id, label, original_name (for display/fallback)
-    # Use original_name for display purposes in association, but cleaned_name was used for lookup.
-    if add_pending_association(torrent_hash, app_type, target_id, rtorrent_label, original_name):
-        current_app.logger.info(f"Pending association saved for hash {torrent_hash} (Original Name: '{original_name}') -> App: {app_type}, TargetID: {target_id}, Label: {rtorrent_label}")
+    # Arguments for add_association_by_hash:
+    # torrent_hash, release_name_expected_on_seedbox, app_type, target_id, label
+    if add_association_by_hash(torrent_hash, original_name, app_type, target_id, rtorrent_label):
+        current_app.logger.info(f"Pending association saved by hash '{torrent_hash}' for expected release name '{original_name}' -> App: {app_type}, TargetID: {target_id}, Label: {rtorrent_label}")
         return jsonify({
             "success": True,
             "message": f"Torrent '{original_name}' (Hash: {torrent_hash}) added to rTorrent and pre-associated.",
@@ -2323,18 +2329,20 @@ def rtorrent_list_view():
         flash("Aucune donnée reçue de rTorrent.", "warning")
         torrents_data = []
 
-    pending_associations = get_all_pending_associations()
+    # pending_associations = get_all_pending_associations() # Removed, direct lookup by hash
 
     torrents_with_assoc = []
     if isinstance(torrents_data, list):
         for torrent in torrents_data: # Each 'torrent' is a dict from the new list_torrents()
             torrent_hash = torrent.get('hash')
             association_info = None
-            if torrent_hash and torrent_hash in pending_associations:
-                association_info = pending_associations[torrent_hash]
-            elif torrent.get('name') in pending_associations: # Fallback if hash wasn't found and name was used as key
-                current_app.logger.warning(f"Found association for torrent '{torrent.get('name')}' using name as key. Hash might have been missed earlier.")
-                association_info = pending_associations[torrent.get('name')]
+            if torrent_hash:
+                # get_association_by_hash returns the association data dict directly, or None
+                association_data = get_association_by_hash(torrent_hash)
+                if association_data:
+                     association_info = association_data
+            # else: # No hash for the torrent, cannot look up association
+            #    current_app.logger.debug(f"Torrent '{torrent.get('name')}' has no hash, cannot look up association.")
 
             torrents_with_assoc.append({
                 "details": torrent,
@@ -2483,17 +2491,18 @@ def process_staged_with_association(item_name_in_staging):
         current_app.logger.error(f"Item '{path_of_item_in_staging_abs}' non trouvé lors du traitement avec association.")
         return redirect(url_for('seedbox_ui.index'))
 
-    association = get_pending_association(item_name_in_staging)
+    # get_association_by_release_name returns (torrent_hash, association_data) or (None, None)
+    torrent_hash_of_assoc, association_data = get_association_by_release_name(item_name_in_staging)
 
-    if association is None:
+    if association_data is None: # Check if association_data is None
         flash(f"Aucune pré-association trouvée pour '{item_name_in_staging}'. Veuillez le mapper manuellement.", "warning")
-        current_app.logger.warning(f"Aucune association trouvée pour '{item_name_in_staging}' lors du traitement automatique.")
+        current_app.logger.warning(f"Aucune association trouvée pour release name '{item_name_in_staging}' lors du traitement automatique.")
         return redirect(url_for('seedbox_ui.index'))
 
-    current_app.logger.info(f"Association trouvée pour '{item_name_in_staging}': {association}")
-    
-    app_type = association.get('app_type')
-    target_id = association.get('target_id') # Ceci est un string ou int, les handlers devraient gérer ça.
+    current_app.logger.info(f"Association trouvée by release name '{item_name_in_staging}' (Hash: {torrent_hash_of_assoc}): {association_data}")
+
+    app_type = association_data.get('app_type')
+    target_id = association_data.get('target_id') # Ceci est un string ou int, les handlers devraient gérer ça.
 
     if not app_type or target_id is None: # target_id peut être 0, donc vérifier None explicitement.
         flash(f"Association invalide ou incomplète pour '{item_name_in_staging}'. Type: {app_type}, ID: {target_id}", "danger")
@@ -2531,10 +2540,13 @@ def process_staged_with_association(item_name_in_staging):
         current_app.logger.debug(f"Résultat du handler pour '{item_name_in_staging}': {result_dict}")
         if result_dict.get("success"):
             flash(result_dict.get("message", f"'{item_name_in_staging}' traité avec succès via son association."), "success")
-            if remove_pending_association(item_name_in_staging): # Utiliser item_name_in_staging qui est la clé (release_name)
-                current_app.logger.info(f"Association pour '{item_name_in_staging}' supprimée avec succès.")
+            if torrent_hash_of_assoc: # Assure qu'on a un hash pour supprimer
+                if remove_association_by_hash(torrent_hash_of_assoc):
+                    current_app.logger.info(f"Association pour hash '{torrent_hash_of_assoc}' (Release: '{item_name_in_staging}') supprimée avec succès.")
+                else:
+                    current_app.logger.warning(f"Échec de la suppression de l'association pour hash '{torrent_hash_of_assoc}' (Release: '{item_name_in_staging}').")
             else:
-                current_app.logger.warning(f"Échec de la suppression de l'association pour '{item_name_in_staging}' (elle n'existait peut-être plus ou la clé a changé).")
+                current_app.logger.warning(f"Aucun hash d'association trouvé pour '{item_name_in_staging}' pour suppression (ne devrait pas arriver si trouvée initialement).")
         elif result_dict.get("action_required"):
              flash(result_dict.get("message", f"Action supplémentaire requise pour '{item_name_in_staging}'."), "info")
              current_app.logger.info(f"Action requise retournée par le handler pour {item_name_in_staging}: {result_dict.get('message')}")
@@ -2545,3 +2557,166 @@ def process_staged_with_association(item_name_in_staging):
         current_app.logger.error(f"Aucun result_dict retourné par le handler pour {item_name_in_staging} avec app_type {app_type}.")
 
     return redirect(url_for('seedbox_ui.index'))
+
+def _run_automated_processing_cycle():
+    current_app.logger.info("Début du cycle de traitement automatisé.")
+    processed_items_count = 0
+    errors_count = 0
+
+    # 1. Récupérer les configurations nécessaires
+    rtorrent_label_sonarr = current_app.config.get('RTORRENT_LABEL_SONARR')
+    rtorrent_label_radarr = current_app.config.get('RTORRENT_LABEL_RADARR')
+    seedbox_sonarr_finished_path = current_app.config.get('SEEDBOX_SONARR_FINISHED_PATH')
+    seedbox_radarr_finished_path = current_app.config.get('SEEDBOX_RADARR_FINISHED_PATH')
+    staging_dir = current_app.config.get('STAGING_DIR')
+
+    if not all([rtorrent_label_sonarr, rtorrent_label_radarr, seedbox_sonarr_finished_path, seedbox_radarr_finished_path, staging_dir]):
+        current_app.logger.error("Automatisation: Configuration manquante (labels rTorrent, chemins distants finis, ou staging_dir). Cycle annulé.")
+        return {"success": False, "message": "Configuration manquante pour l'automatisation."}
+
+    # 2. Lister les torrents depuis rTorrent
+    torrents_from_rtorrent, error_msg_rtorrent = rtorrent_list_torrents_api()
+    if error_msg_rtorrent:
+        current_app.logger.error(f"Automatisation: Erreur rTorrent lors du listage: {error_msg_rtorrent}. Cycle annulé.")
+        return {"success": False, "message": f"Erreur rTorrent: {error_msg_rtorrent}"}
+    if not torrents_from_rtorrent:
+        current_app.logger.info("Automatisation: Aucun torrent trouvé dans rTorrent.")
+        return {"success": True, "message": "Aucun torrent dans rTorrent à traiter.", "processed_count": 0, "errors_count": 0}
+
+    current_app.logger.info(f"Automatisation: {len(torrents_from_rtorrent)} torrent(s) récupéré(s) de rTorrent.")
+
+    sftp_config = {
+        'host': current_app.config.get('SEEDBOX_SFTP_HOST'),
+        'port': int(current_app.config.get('SEEDBOX_SFTP_PORT', 22)),
+        'user': current_app.config.get('SEEDBOX_SFTP_USER'),
+        'password': current_app.config.get('SEEDBOX_SFTP_PASSWORD'),
+    }
+    if not sftp_config['host'] or not sftp_config['user'] or not sftp_config['password']: # Vérification plus spécifique
+        current_app.logger.error("Automatisation: Configuration SFTP incomplète (hôte, utilisateur ou mot de passe manquant). Cycle annulé.")
+        return {"success": False, "message": "Configuration SFTP incomplète."}
+
+    for torrent_info in torrents_from_rtorrent:
+        torrent_hash = torrent_info.get('hash')
+        torrent_name_rtorrent = torrent_info.get('name')
+        torrent_label = torrent_info.get('label')
+        is_complete = torrent_info.get('is_complete', False)
+
+        current_app.logger.debug(f"Automatisation: Examen du torrent: {torrent_name_rtorrent} (Hash: {torrent_hash}, Label: {torrent_label}, Complet: {is_complete})")
+
+        if not is_complete:
+            current_app.logger.debug(f"Automatisation: Torrent '{torrent_name_rtorrent}' non terminé. Ignoré.")
+            continue
+
+        if torrent_label not in [rtorrent_label_sonarr, rtorrent_label_radarr]:
+            current_app.logger.debug(f"Automatisation: Torrent '{torrent_name_rtorrent}' n'a pas un label pertinent ('{torrent_label}'). Ignoré.")
+            continue
+
+        current_app.logger.info(f"Automatisation: Torrent pertinent trouvé: '{torrent_name_rtorrent}' (Hash: {torrent_hash}, Label: {torrent_label}).")
+
+        association_data = get_association_by_hash(torrent_hash)
+        if not association_data:
+            current_app.logger.warning(f"Automatisation: Aucune association trouvée pour le torrent terminé '{torrent_name_rtorrent}' (Hash: {torrent_hash}). Ignoré.")
+            continue
+
+        current_app.logger.info(f"Automatisation: Association trouvée pour '{torrent_name_rtorrent}': {association_data}")
+
+        app_type = association_data.get('app_type')
+        target_id = association_data.get('target_id')
+
+        remote_base_path = ""
+        if app_type == 'sonarr':
+            remote_base_path = seedbox_sonarr_finished_path
+        elif app_type == 'radarr':
+            remote_base_path = seedbox_radarr_finished_path
+        else:
+            current_app.logger.error(f"Automatisation: Type d'application inconnu '{app_type}' dans l'association pour {torrent_name_rtorrent}. Ignoré.")
+            errors_count += 1
+            continue
+
+        # Assurer que remote_base_path se termine par un / s'il n'est pas vide, pour la jonction avec Path
+        if remote_base_path and not remote_base_path.endswith('/'):
+            remote_base_path += '/'
+
+        remote_full_path_to_download = str(Path(remote_base_path) / torrent_name_rtorrent).replace('\\', '/')
+        local_staged_item_name = torrent_name_rtorrent
+        local_staged_item_path_abs = Path(staging_dir) / local_staged_item_name
+
+        current_app.logger.info(f"Automatisation: Préparation du téléchargement SFTP pour '{torrent_name_rtorrent}' depuis '{remote_full_path_to_download}' vers '{local_staged_item_path_abs}'.")
+
+        sftp_client = None
+        transport = None
+        download_success = False
+        try:
+            transport = paramiko.Transport((sftp_config['host'], sftp_config['port']))
+            transport.set_keepalive(60)
+            transport.connect(username=sftp_config['user'], password=sftp_config['password'])
+            sftp_client = paramiko.SFTPClient.from_transport(transport)
+            current_app.logger.info(f"Automatisation: Connecté à SFTP pour télécharger '{torrent_name_rtorrent}'.")
+            download_success = _download_sftp_item_recursive_local(sftp_client, remote_full_path_to_download, local_staged_item_path_abs, current_app.logger)
+        except Exception as e_sftp:
+            current_app.logger.error(f"Automatisation: Erreur SFTP lors du téléchargement de '{remote_full_path_to_download}': {e_sftp}", exc_info=True)
+            errors_count += 1
+            if sftp_client: sftp_client.close() # Fermer en cas d'erreur avant le finally
+            if transport: transport.close()    # Fermer en cas d'erreur avant le finally
+            continue
+        finally:
+            if sftp_client: sftp_client.close()
+            if transport: transport.close()
+
+        if not download_success:
+            current_app.logger.error(f"Automatisation: Échec du téléchargement SFTP de '{remote_full_path_to_download}'. Passage au suivant.")
+            if local_staged_item_path_abs.exists():
+                if local_staged_item_path_abs.is_dir() and not any(local_staged_item_path_abs.iterdir()):
+                    try: shutil.rmtree(local_staged_item_path_abs)
+                    except Exception as e_rm: current_app.logger.error(f"Automatisation: Erreur nettoyage dossier staging partiel {local_staged_item_path_abs}: {e_rm}")
+                elif local_staged_item_path_abs.is_file() and local_staged_item_path_abs.stat().st_size == 0:
+                    try: local_staged_item_path_abs.unlink()
+                    except Exception as e_rm: current_app.logger.error(f"Automatisation: Erreur nettoyage fichier staging partiel {local_staged_item_path_abs}: {e_rm}")
+            errors_count += 1
+            continue
+
+        current_app.logger.info(f"Automatisation: Téléchargement de '{local_staged_item_name}' réussi.")
+
+        handler_result = None
+        if app_type == 'sonarr':
+            handler_result = _handle_staged_sonarr_item(
+                item_name_in_staging=local_staged_item_name,
+                series_id_target=str(target_id), # Assurer string
+                path_to_cleanup_in_staging_after_success=str(local_staged_item_path_abs),
+                user_chosen_season=None
+            )
+        elif app_type == 'radarr':
+            handler_result = _handle_staged_radarr_item(
+                item_name_in_staging=local_staged_item_name,
+                movie_id_target=str(target_id), # Assurer string
+                path_to_cleanup_in_staging_after_success=str(local_staged_item_path_abs)
+            )
+
+        if handler_result and handler_result.get("success"):
+            current_app.logger.info(f"Automatisation: Traitement de '{local_staged_item_name}' réussi: {handler_result.get('message')}")
+            processed_items_count += 1
+            if remove_association_by_hash(torrent_hash):
+                current_app.logger.info(f"Automatisation: Association pour {torrent_hash} ('{torrent_name_rtorrent}') supprimée.")
+            else:
+                current_app.logger.warning(f"Automatisation: Échec de la suppression de l'association pour {torrent_hash} ('{torrent_name_rtorrent}').")
+            # Optionnel: Suppression de rTorrent
+            # from app.utils.rtorrent_client import delete_torrent as rtorrent_delete_torrent
+            # success_delete_rt, msg_delete_rt = rtorrent_delete_torrent(torrent_hash, True) # True pour supprimer les données
+            # if success_delete_rt:
+            #    current_app.logger.info(f"Automatisation: Torrent '{torrent_name_rtorrent}' (Hash: {torrent_hash}) supprimé de rTorrent.")
+            # else:
+            #    current_app.logger.error(f"Automatisation: Échec de la suppression du torrent '{torrent_name_rtorrent}' de rTorrent: {msg_delete_rt}")
+        else:
+            error_detail = (handler_result.get('error', 'Erreur inconnue du handler') if handler_result else 'Pas de résultat du handler')
+            current_app.logger.error(f"Automatisation: Échec du traitement de '{local_staged_item_name}'. Raison: {error_detail}")
+            errors_count += 1
+
+    current_app.logger.info(f"Cycle de traitement automatisé terminé. Items traités: {processed_items_count}, Erreurs: {errors_count}.")
+    return {"success": True, "message": "Cycle de traitement automatisé terminé.", "processed_count": processed_items_count, "errors_count": errors_count}
+
+@seedbox_ui_bp.route('/trigger-automatic-processing', methods=['POST'])
+def trigger_automatic_processing_route():
+    # Pourrait ajouter une authentification/sécurité ici si nécessaire
+    current_app.logger.info("Déclenchement du cycle de traitement automatisé via la route /trigger-automatic-processing.")
+    result = _run_automated_processing_cycle()
+    return jsonify(result)
