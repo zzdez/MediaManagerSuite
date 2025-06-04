@@ -1,1 +1,16 @@
-{}
+{
+    "38A3049D036BDB5125E9717C6FE177F3EC7A5FB7": {
+        "release_name_expected_on_seedbox": "Alaska _ La Ru\u00e9e Vers L'or S00e116 Parker Raconte Tout x265-Amen.mkv.torrent",
+        "app_type": "sonarr",
+        "target_id": 690,
+        "label": "sonarr",
+        "added_timestamp": "2025-06-03T15:20:13.003951"
+    },
+    "BD31633515A1CAE3E23D2821E418400632676606": {
+        "release_name_expected_on_seedbox": "Alaska _ La Ru\u00e9e Vers L'or S00e118 Quand L'exploitation Mini\u00e8re Tourne Mal x265-Amen.mkv",
+        "app_type": "sonarr",
+        "target_id": 690,
+        "label": "sonarr",
+        "added_timestamp": "2025-06-03T17:01:35.981334"
+    }
+}

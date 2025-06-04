@@ -2294,15 +2294,15 @@ def rtorrent_add_torrent_action():
     current_app.logger.info(f"Found hash '{torrent_hash}' for '{original_name}'. Saving association.")
     # Arguments for add_association_by_hash:
     # torrent_hash, release_name_expected_on_seedbox, app_type, target_id, label
-    if add_association_by_hash(torrent_hash, original_name, app_type, target_id, rtorrent_label):
-        current_app.logger.info(f"Pending association saved by hash '{torrent_hash}' for expected release name '{original_name}' -> App: {app_type}, TargetID: {target_id}, Label: {rtorrent_label}")
+    if add_association_by_hash(torrent_hash, cleaned_name, app_type, target_id, rtorrent_label):
+        current_app.logger.info(f"Pending association saved by hash '{torrent_hash}' for expected release name '{cleaned_name}' -> App: {app_type}, TargetID: {target_id}, Label: {rtorrent_label}") # Modified original_name to cleaned_name in log
         return jsonify({
             "success": True,
-            "message": f"Torrent '{original_name}' (Hash: {torrent_hash}) added to rTorrent and pre-associated.",
+            "message": f"Torrent '{cleaned_name}' (Hash: {torrent_hash}) added to rTorrent and pre-associated.", # Modified original_name to cleaned_name in message
             "torrent_hash": torrent_hash
         }), 200
     else:
-        current_app.logger.error(f"Torrent {torrent_hash} added to rTorrent, but failed to save pending association for Original Name: '{original_name}'.")
+        current_app.logger.error(f"Torrent {torrent_hash} added to rTorrent, but failed to save pending association for Cleaned Name: '{cleaned_name}'.") # Modified original_name to cleaned_name in log
         return jsonify({
             "success": True, # Torrent was added
             "error": "Torrent added to rTorrent, but failed to save pre-association metadata. Please check logs.",
@@ -2618,7 +2618,13 @@ def _run_automated_processing_cycle():
             current_app.logger.warning(f"Automatisation: Aucune association trouvée pour le torrent terminé '{torrent_name_rtorrent}' (Hash: {torrent_hash}). Ignoré.")
             continue
 
-        current_app.logger.info(f"Automatisation: Association trouvée pour '{torrent_name_rtorrent}': {association_data}")
+        local_staged_item_name = association_data.get('release_name_expected_on_seedbox')
+        if not local_staged_item_name:
+            current_app.logger.error(f"Automatisation: 'release_name_expected_on_seedbox' est manquant ou vide dans l'association pour {torrent_hash} ('{torrent_name_rtorrent}'). Association data: {association_data}. Ignoré.")
+            errors_count += 1
+            continue
+        
+        current_app.logger.info(f"Automatisation: Association trouvée pour '{torrent_name_rtorrent}', release attendue: '{local_staged_item_name}'. Data: {association_data}")
 
         app_type = association_data.get('app_type')
         target_id = association_data.get('target_id')
@@ -2637,11 +2643,12 @@ def _run_automated_processing_cycle():
         if remote_base_path and not remote_base_path.endswith('/'):
             remote_base_path += '/'
 
+        # remote_full_path_to_download still uses torrent_name_rtorrent, as that's the name on the remote
         remote_full_path_to_download = str(Path(remote_base_path) / torrent_name_rtorrent).replace('\\', '/')
-        local_staged_item_name = torrent_name_rtorrent
+        # local_staged_item_name is now taken from association data (release_name_expected_on_seedbox)
         local_staged_item_path_abs = Path(staging_dir) / local_staged_item_name
 
-        current_app.logger.info(f"Automatisation: Préparation du téléchargement SFTP pour '{torrent_name_rtorrent}' depuis '{remote_full_path_to_download}' vers '{local_staged_item_path_abs}'.")
+        current_app.logger.info(f"Automatisation: Préparation du téléchargement SFTP pour '{torrent_name_rtorrent}' (attendu localement comme '{local_staged_item_name}') depuis '{remote_full_path_to_download}' vers '{local_staged_item_path_abs}'.")
 
         sftp_client = None
         transport = None
@@ -2720,3 +2727,112 @@ def trigger_automatic_processing_route():
     current_app.logger.info("Déclenchement du cycle de traitement automatisé via la route /trigger-automatic-processing.")
     result = _run_automated_processing_cycle()
     return jsonify(result)
+
+@seedbox_ui_bp.route('/api/v1/process-staged-item', methods=['POST'])
+def api_process_staged_item():
+    current_app.logger.info("Requête reçue sur /api/v1/process-staged-item")
+    
+    data = request.get_json()
+    if not data:
+        current_app.logger.error("API Process Staged: Aucune donnée JSON reçue ou malformée.")
+        return jsonify({"success": False, "error": "Aucune donnée JSON reçue ou corps de requête malformé."}), 400
+
+    item_name = data.get('item_name')
+    if not item_name or not isinstance(item_name, str):
+        current_app.logger.error(f"API Process Staged: 'item_name' manquant ou invalide dans JSON. Données: {data}")
+        return jsonify({"success": False, "error": "Requête invalide. Le champ 'item_name' est manquant ou malformé."}), 400
+
+    current_app.logger.info(f"API Process Staged: Traitement demandé pour l'item: '{item_name}'")
+
+    staging_dir = current_app.config.get('STAGING_DIR')
+    if not staging_dir:
+        current_app.logger.error("API Process Staged: STAGING_DIR n'est pas configuré dans l'application.")
+        # Cette erreur est côté serveur, donc 500 est plus approprié.
+        return jsonify({"success": False, "error": "Configuration serveur incomplète (STAGING_DIR)."}), 500
+
+    # Utiliser Path pour construire le chemin et normaliser
+    # item_name pourrait contenir des sous-chemins ex: "dossier/fichier.mkv"
+    # Path.resolve() n'est pas idéal ici car il peut échouer si une partie du chemin n'existe pas.
+    # On veut joindre et normaliser pour la comparaison et la vérification d'existence.
+    item_path = (Path(staging_dir) / item_name).resolve() # resolve() pour obtenir le chemin absolu canonique
+
+    # Sécurité: Vérifier que le chemin résolu est bien DANS le staging_dir
+    # Cela empêche les traversées de répertoire comme item_name = "../../../../etc/passwd"
+    if not item_path.is_relative_to(Path(staging_dir).resolve()):
+        current_app.logger.error(f"API Process Staged: Tentative d'accès hors du STAGING_DIR détectée pour '{item_name}'. Chemin résolu: {item_path}")
+        return jsonify({"success": False, "error": "Chemin d'accès invalide."}), 400
+        
+    if not item_path.exists():
+        current_app.logger.warning(f"API Process Staged: Item '{item_name}' (chemin: {item_path}) non trouvé dans le répertoire de staging.")
+        return jsonify({"success": False, "error": f"Item '{item_name}' non trouvé dans le répertoire de staging."}), 404
+
+    # --- Logique de traitement de l'item ---
+    current_app.logger.info(f"API Process Staged: Recherche d'association pour '{item_name}'.")
+    torrent_hash, association_data = get_association_by_release_name(item_name)
+
+    if association_data:
+        current_app.logger.info(f"API Process Staged: Association trouvée pour '{item_name}'. Hash: {torrent_hash}, Data: {association_data}")
+        app_type = association_data.get('app_type')
+        target_id = association_data.get('target_id')
+        
+        # path_to_cleanup_in_staging_after_success est le chemin absolu de l'item dans le staging.
+        path_to_cleanup_in_staging_after_success = str(item_path)
+
+        if not app_type or target_id is None: # target_id peut être 0 pour certaines applications, donc None est la bonne vérification
+            current_app.logger.error(f"API Process Staged: Association corrompue pour '{item_name}'. app_type='{app_type}', target_id='{target_id}'.")
+            return jsonify({"success": False, "error": f"Association de données corrompue ou incomplète trouvée pour '{item_name}'. Traitement annulé."}), 200 # 200 avec success:false
+
+        result_dict = None
+        if app_type == 'sonarr':
+            current_app.logger.info(f"API Process Staged: Appel du handler Sonarr pour '{item_name}', target_id: {target_id}")
+            result_dict = _handle_staged_sonarr_item(
+                item_name_in_staging=item_name, # item_name est le nom de base/relatif au staging dir
+                series_id_target=str(target_id),
+                path_to_cleanup_in_staging_after_success=path_to_cleanup_in_staging_after_success,
+                user_chosen_season=None 
+            )
+        elif app_type == 'radarr':
+            current_app.logger.info(f"API Process Staged: Appel du handler Radarr pour '{item_name}', target_id: {target_id}")
+            result_dict = _handle_staged_radarr_item(
+                item_name_in_staging=item_name, # item_name est le nom de base/relatif au staging dir
+                movie_id_target=str(target_id),
+                path_to_cleanup_in_staging_after_success=path_to_cleanup_in_staging_after_success
+            )
+        else:
+            current_app.logger.error(f"API Process Staged: Type d'application inconnu '{app_type}' dans l'association pour '{item_name}'.")
+            return jsonify({"success": False, "error": f"Type d'application inconnu '{app_type}' dans l'association pour '{item_name}'."}), 200 # 200 avec success:false
+
+        if result_dict:
+            if result_dict.get("success"):
+                current_app.logger.info(f"API Process Staged: Handler pour '{item_name}' (type: {app_type}) réussi. Message: {result_dict.get('message')}")
+                if torrent_hash: # Seulement si un hash existait pour cette association par nom
+                    if remove_association_by_hash(torrent_hash):
+                        current_app.logger.info(f"API Process Staged: Association pour hash '{torrent_hash}' (item: '{item_name}') supprimée avec succès.")
+                    else:
+                        current_app.logger.warning(f"API Process Staged: Échec de la suppression de l'association pour hash '{torrent_hash}' (item: '{item_name}').")
+                else: # Si get_association_by_release_name ne retourne pas de hash (ce qui serait inhabituel)
+                    current_app.logger.warning(f"API Process Staged: Aucun torrent_hash retourné par get_association_by_release_name pour '{item_name}', donc suppression de l'association par hash non tentée.")
+                
+                return jsonify({
+                    "success": True, 
+                    "message": result_dict.get("message", f"Item '{item_name}' traité et déplacé avec succès via l'API."), 
+                    "details": result_dict
+                }), 200
+            else: # Échec du handler
+                current_app.logger.error(f"API Process Staged: Handler pour '{item_name}' (type: {app_type}) a échoué. Erreur: {result_dict.get('error')}")
+                return jsonify({
+                    "success": False, 
+                    "error": result_dict.get("error", f"Échec du traitement de l'item '{item_name}' par le handler."), 
+                    "details": result_dict
+                }), 200 # 200 avec success:false pour que le client traite la réponse
+        else: # result_dict est None
+            current_app.logger.error(f"API Process Staged: Erreur interne critique. Le handler pour '{app_type}' n'a pas retourné de dictionnaire de résultat pour '{item_name}'.")
+            return jsonify({"success": False, "error": "Erreur interne du serveur : le handler approprié n'a pas retourné de résultat."}), 500
+    else:
+        current_app.logger.info(f"API Process Staged: Aucune pré-association trouvée pour '{item_name}'. L'item est prêt pour un mappage manuel si nécessaire.")
+        return jsonify({
+            "success": True, # La requête API elle-même a réussi
+            "status": "pending_manual_import", 
+            "message": f"Item '{item_name}' validé par l'API. Aucune pré-association trouvée. Traitement manuel ou via une autre interface requis.",
+            "item_path_validated": str(item_path)
+        }), 202 # HTTP 202 Accepted - indique que la requête est valide mais nécessite une action ultérieure
