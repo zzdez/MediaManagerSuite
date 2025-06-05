@@ -582,8 +582,16 @@ def process_staging_item_api(): # Renommé pour éviter conflit si vous aviez un
     if result_from_handler.get("success"):
         logger.info(f"process_staging_item_api: Successfully processed '{item_name_in_staging}' for {app_type} ID {target_id}.")
         # Le statut aura été mis à "imported_by_mms" par le helper.
-        # Optionnel: remove_torrent_from_map si on ne veut plus le suivre après succès.
-        # torrent_map_manager.remove_torrent_from_map(torrent_hash)
+
+        # Maintenant, supprimer l'entrée du map puisque l'import est réussi.
+        if torrent_hash: # S'assurer qu'on a bien un hash (devrait toujours être le cas ici)
+            if torrent_map_manager.remove_torrent_from_map(torrent_hash):
+                logger.info(f"process_staging_item_api: Association pour torrent hash '{torrent_hash}' (Release: {item_name_in_staging}) supprimée du map après import réussi.")
+            else:
+                logger.warning(f"process_staging_item_api: Échec de la suppression de l'association pour hash '{torrent_hash}' du map, bien que l'import ait réussi.")
+        else:
+            logger.warning(f"process_staging_item_api: Aucun torrent_hash disponible pour la suppression du map pour {item_name_in_staging}, bien que l'import ait réussi.")
+
         return jsonify({"status": "success", "message": f"Successfully processed '{item_name_in_staging}'. Details: {result_from_handler.get('message')}"}), 200
     elif result_from_handler.get("manual_required"):
         logger.warning(f"process_staging_item_api: Processing '{item_name_in_staging}' requires manual intervention. Reason: {result_from_handler.get('message')}")
@@ -1452,7 +1460,7 @@ def index():
             release_name = assoc_data.get('release_name')
             if release_name:
                 # On stocke l'association complète, build_file_tree pourra en extraire ce dont il a besoin.
-                associations_by_release_name[release_name] = assoc_data 
+                associations_by_release_name[release_name] = assoc_data
     logger.debug(f"Associations transformées par release_name pour build_file_tree: {associations_by_release_name}")
     # --- FIN ADAPTATION ---
 
