@@ -461,22 +461,27 @@
         // ==================================================================================
         // NOUVELLES FONCTIONS JS POUR LES ITEMS PROBLÉMATIQUES
         // ==================================================================================
-        function openSonarrSearchModalForProblemItem(releaseName, currentTargetId, torrentHash) {
+function openSonarrSearchModalForProblemItem(releaseName, currentTargetId, torrentHash) {
             console.log("Ouverture Modal Sonarr pour item problématique:", releaseName, "ID actuel:", currentTargetId, "Hash:", torrentHash);
-            // currentItemToMap est le releaseName qui est aussi le nom dans le staging
-            currentItemToMap = releaseName;
-            currentItemType = 'problem_item'; // Un type spécifique pour distinguer si besoin
+            currentItemToMap = releaseName; // C'est le nom de la release
+            currentItemType = 'problem_item';
 
-            // Utiliser les IDs de votre modal de recherche Sonarr existant
-            // Assurez-vous que les IDs correspondent à ceux de votre modal pour la recherche Sonarr
-            // que vous utilisez pour le mapping manuel du staging local (ex: sonarrSearchQuery, sonarrSearchResultsModal, etc.)
-            const searchQueryInput = document.getElementById('sonarrSearchQuery'); // Adaptez l'ID si différent
-            const searchResultsDiv = document.getElementById('sonarrSearchResults'); // Adaptez l'ID
-            const selectedSeriesIdInput = document.getElementById('sonarrSelectedSeriesId'); // Adaptez l'ID
-            const selectedSeriesTitleDisplay = document.getElementById('sonarrSelectedSeriesTitle'); // Adaptez l'ID
-            const manualSeasonDiv = document.getElementById('sonarrManualSeasonDiv'); // Adaptez l'ID
-            const manualSeasonInput = document.getElementById('sonarrManualSeasonInput'); // Adaptez l'ID
-            const modalElement = document.getElementById('sonarrSearchResultsModal'); // Adaptez l'ID du MODAL lui-même
+            // --- AJOUT DE LA MISE À JOUR DE L'INPUT CACHÉ ---
+            const originalItemNameInput = document.getElementById('sonarrOriginalItemName'); // ID de l'input caché dans le modal Sonarr
+            if (originalItemNameInput) {
+                originalItemNameInput.value = releaseName; // releaseName est le item_name_in_staging
+            } else {
+                console.error("L'input caché 'sonarrOriginalItemName' est introuvable dans le modal Sonarr !");
+            }
+            // --- FIN DE L'AJOUT ---
+
+            const searchQueryInput = document.getElementById('sonarrSearchQuery');
+            const searchResultsDiv = document.getElementById('sonarrSearchResults');
+            const selectedSeriesIdInput = document.getElementById('sonarrSelectedSeriesId');
+            const selectedSeriesTitleDisplay = document.getElementById('sonarrSelectedSeriesTitle');
+            const manualSeasonDiv = document.getElementById('sonarrManualSeasonDiv');
+            const manualSeasonInput = document.getElementById('sonarrManualSeasonInput');
+            const modalElement = document.getElementById('sonarrSearchModal'); // ID de la div racine du modal Sonarr
 
             if (searchQueryInput) searchQueryInput.value = getCleanedSearchTerm(releaseName);
             if (searchResultsDiv) searchResultsDiv.innerHTML = '';
@@ -492,17 +497,12 @@
             if (manualSeasonDiv) manualSeasonDiv.style.display = currentTargetId ? 'block' : 'none';
             if (manualSeasonInput) manualSeasonInput.value = '';
 
-            // Optionnel: Stocker le torrent_hash pour une action de mise à jour
-            // par exemple dans un data-attribute du modal ou un input caché
             if (modalElement) {
                 modalElement.setAttribute('data-problem-torrent-hash', torrentHash || '');
-            }
-
-            if (modalElement) {
                 var modal = new bootstrap.Modal(modalElement);
                 modal.show();
             } else {
-                console.error("Élément du modal Sonarr non trouvé pour les items problématiques.");
+                console.error("Élément racine du modal Sonarr (ID: 'sonarrSearchModal') non trouvé pour les items problématiques.");
             }
         }
 
@@ -511,12 +511,20 @@
             currentItemToMap = releaseName;
             currentItemType = 'problem_item';
 
-            // Utiliser les IDs de votre modal de recherche Radarr existant
-            const searchQueryInput = document.getElementById('radarrSearchQuery'); // Adaptez l'ID
-            const searchResultsDiv = document.getElementById('radarrSearchResults'); // Adaptez l'ID
-            const selectedMovieIdInput = document.getElementById('radarrSelectedMovieId'); // Adaptez l'ID
-            const selectedMovieTitleDisplay = document.getElementById('radarrSelectedMovieTitle'); // Adaptez l'ID
-            const modalElement = document.getElementById('radarrSearchResultsModal'); // Adaptez l'ID du MODAL
+            // --- AJOUT DE LA MISE À JOUR DE L'INPUT CACHÉ ---
+            const originalItemNameInput = document.getElementById('radarrOriginalItemName'); // ID de l'input caché dans le modal Radarr
+            if (originalItemNameInput) {
+                originalItemNameInput.value = releaseName; // releaseName est le item_name_in_staging
+            } else {
+                console.error("L'input caché 'radarrOriginalItemName' est introuvable dans le modal Radarr !");
+            }
+            // --- FIN DE L'AJOUT ---
+
+            const searchQueryInput = document.getElementById('radarrSearchQuery');
+            const searchResultsDiv = document.getElementById('radarrSearchResults');
+            const selectedMovieIdInput = document.getElementById('radarrSelectedMovieId');
+            const selectedMovieTitleDisplay = document.getElementById('radarrSelectedMovieTitle');
+            const modalElement = document.getElementById('radarrSearchModal'); // ID de la div racine du modal Radarr
 
             if (searchQueryInput) searchQueryInput.value = getCleanedSearchTerm(releaseName);
             if (searchResultsDiv) searchResultsDiv.innerHTML = '';
@@ -532,13 +540,10 @@
 
             if (modalElement) {
                 modalElement.setAttribute('data-problem-torrent-hash', torrentHash || '');
-            }
-
-            if (modalElement) {
                 var modal = new bootstrap.Modal(modalElement);
                 modal.show();
             } else {
-                console.error("Élément du modal Radarr non trouvé pour les items problématiques.");
+                console.error("Élément racine du modal Radarr (ID: 'radarrSearchModal') non trouvé pour les items problématiques.");
             }
         }
         // ==================================================================================
@@ -598,39 +603,79 @@
             } catch (error) { resultsDiv.innerHTML = `<p class="text-danger">Erreur recherche Radarr: ${error.message}</p>`; console.error("Erreur executeRadarrSearch:", error); }
         }
 
-        async function triggerSonarrManualImport(sonarrSeriesId, seriesTitle) { // seriesTitle ici est déjà échappé (vient de escapedSeriesTitle)
-            const originalItemName = document.getElementById('sonarrOriginalItemName').value;
-            const resultsDiv = document.getElementById('sonarrSearchResults');
-            if (sonarrSeriesId === 0) { /* ... */ return; }
-            resultsDiv.innerHTML = `<div class="alert alert-info">Analyse pour '${escapeJsString(originalItemName.split(/[\\/]/).pop())}' avec la série '${seriesTitle}' (ID: ${sonarrSeriesId})...</div>`; // seriesTitle est déjà échappé, pas besoin de re-escapeJsString(seriesTitle)
+async function triggerSonarrManualImport(sonarrSeriesId, seriesTitle) { // seriesTitle ici est déjà échappé (vient de escapedSeriesTitle)
+            const originalItemName = document.getElementById('sonarrOriginalItemName').value; // Ceci est item_name_in_staging
+            const resultsDiv = document.getElementById('sonarrSearchResults'); // Div pour afficher les messages DANS le modal
+
+            if (sonarrSeriesId === 0) { /* Optionnellement gérer le cas où l'ID est 0 si ça a un sens */ return; }
+
+            resultsDiv.innerHTML = `<div class="alert alert-info">Analyse pour '${escapeJsString(originalItemName.split(/[\\/]/).pop())}' avec la série '${seriesTitle}' (ID: ${sonarrSeriesId})...</div>`;
+
+            // --- NOUVEAU: Récupérer le hash du torrent problématique si présent ---
+            const sonarrModalElement = document.getElementById('sonarrSearchModal'); // << VÉRIFIEZ CET ID, est-ce le bon ID de votre modal principal Sonarr ?
+            let problemTorrentHash = null;
+            if (sonarrModalElement) {
+                problemTorrentHash = sonarrModalElement.getAttribute('data-problem-torrent-hash');
+            }
+            // --- FIN NOUVEAU ---
+
+            const payload = {
+                item_name: originalItemName,
+                series_id: sonarrSeriesId
+                // N'ajoutez user_forced_season que si vous l'avez explicitement dans ce modal et qu'il est pertinent
+                // Si vous l'avez, ex: const userForcedSeason = document.getElementById('ID_DE_VOTRE_INPUT_SAISON_DANS_CE_MODAL').value;
+                // if (userForcedSeason) payload.user_forced_season = parseInt(userForcedSeason);
+            };
+
+            // Ajouter le hash au payload s'il existe (indique un re-mapping)
+            if (problemTorrentHash && problemTorrentHash !== '') {
+                payload.problem_torrent_hash = problemTorrentHash;
+                console.log("Re-mapping item problématique avec hash:", problemTorrentHash);
+            }
+
             try {
                 const response = await fetch(`{{ url_for('seedbox_ui.trigger_sonarr_import') }}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ item_name: originalItemName, series_id: sonarrSeriesId })
+                    body: JSON.stringify(payload) // Envoi du payload mis à jour
                 });
-                const result = await response.json();
-                if (!response.ok && response.status !== 200) { throw new Error(result.error || `Erreur HTTP: ${response.status}`); }
+                const result = await response.json(); // Toujours essayer de parser
+
+                // La vérification de response.ok est bonne, mais parfois le backend retourne un 200 avec success:false ou action_required
+                if (!response.ok && !(response.status === 200 && result.action_required)) { // Gérer les erreurs HTTP sauf si c'est une action_required avec un 200
+                    throw new Error(result.error || `Erreur HTTP: ${response.status}`);
+                }
 
                 if (result.success === true) {
                     resultsDiv.innerHTML = `<div class="alert alert-success alert-dismissible fade show" role="alert">${escapeJsString(result.message) || 'Importation initiée.'}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
                     flashMessageGlobally(result.message || `Import pour '${escapeJsString(originalItemName.split(/[\\/]/).pop())}' (série: ${seriesTitle}) initié.`, 'success');
-                    setTimeout(() => { bootstrap.Modal.getInstance(document.getElementById('sonarrSearchModal'))?.hide(); window.location.reload(); }, 3000);
+
+                    // Si c'était un item problématique, on a besoin de s'assurer qu'il disparaît de la liste "Attention"
+                    // window.location.reload() le fera.
+                    setTimeout(() => {
+                        const modalInstance = bootstrap.Modal.getInstance(document.getElementById('sonarrSearchModal')); // << VÉRIFIEZ CET ID
+                        if (modalInstance) modalInstance.hide();
+                        window.location.reload();
+                    }, 2500); // Délai un peu plus court peut-être
                 } else if (result.action_required === "resolve_season_episode_mismatch") {
                     const d = result.details;
+                    // S'assurer que le hash du problème est propagé au modal de résolution si c'était un re-mapping
+                    const problemHashForMismatch = d.problem_torrent_hash || problemTorrentHash;
+
                     const stagingItemNameForForce = escapeJsString(d.staging_item_name);
-                    // seriesTitle est déjà échappé, on le passe tel quel
                     let html = `<div class="alert alert-warning"><h5><i class="fas fa-exclamation-triangle"></i> Discordance S/E</h5>
                         <p>${escapeJsString(result.message)}</p><hr>
                         <p>Fichier <strong>${escapeJsString(d.source_video_file_path_in_staging.split(/[\\/]/).pop())}</strong> :<br>
-                           Suggère: <strong>Saison ${d.filename_season}, Épisode ${d.filename_episode}</strong><br>
-                           Sonarr identifie: <strong>Saison ${d.sonarr_season}, Épisode ${d.sonarr_episode}</strong></p><hr>
+                           Suggère: <strong>Saison ${d.filename_season !== null ? d.filename_season : 'N/A'}, Épisode ${d.filename_episode !== null ? d.filename_episode : 'N/A'}</strong><br>
+                           Sonarr identifie: <strong>Saison ${d.sonarr_season !== null ? d.sonarr_season : 'N/A'}, Épisode ${d.sonarr_episode !== null ? d.sonarr_episode : 'N/A'}</strong></p><hr>
                         <p>Comment voulez-vous procéder ?</p>
-                        <button class="btn btn-primary btn-sm me-2 mb-2" onclick="forceSonarrImport('${stagingItemNameForForce}', ${d.series_id}, 'use_sonarr_info', ${d.sonarr_season}, ${d.sonarr_episode}, '${seriesTitle}')">Utiliser S${d.sonarr_season}E${d.sonarr_episode} (Info Sonarr)</button>
-                        <button class="btn btn-info btn-sm me-2 mb-2" onclick="forceSonarrImport('${stagingItemNameForForce}', ${d.series_id}, 'use_filename_info', ${d.filename_season}, ${d.filename_episode}, '${seriesTitle}')">Utiliser S${d.filename_season}E${d.filename_episode} (Info Fichier)</button>
+                        <button class="btn btn-primary btn-sm me-2 mb-2" onclick="forceSonarrImport('${stagingItemNameForForce}', ${d.series_id}, 'use_sonarr_info', ${d.sonarr_season}, ${d.sonarr_episode}, '${seriesTitle}', '${problemHashForMismatch || ''}')">Utiliser S${d.sonarr_season}E${d.sonarr_episode} (Info Sonarr)</button>
+                        <button class="btn btn-info btn-sm me-2 mb-2" onclick="forceSonarrImport('${stagingItemNameForForce}', ${d.series_id}, 'use_filename_info', ${d.filename_season}, ${d.filename_episode}, '${seriesTitle}', '${problemHashForMismatch || ''}')">Utiliser S${d.filename_season}E${d.filename_episode} (Info Fichier)</button>
                         <button type="button" class="btn btn-secondary btn-sm mb-2" data-bs-dismiss="modal">Annuler</button></div>`;
                     resultsDiv.innerHTML = html;
-                } else { throw new Error(result.error || "Erreur inconnue (import)."); }
+                } else {
+                    throw new Error(result.error || "Erreur inconnue lors de l'import.");
+                }
             } catch (error) {
                 resultsDiv.innerHTML = `<div class="alert alert-danger alert-dismissible fade show" role="alert">Erreur: ${escapeJsString(error.message)}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
                 console.error("Erreur triggerSonarrManualImport:", error);
@@ -658,23 +703,54 @@
             }
         }
 
-        async function triggerRadarrManualImport(radarrMovieId, movieTitle) { // movieTitle ici est déjà échappé
-            const originalItemPathForAction = document.getElementById('radarrOriginalItemName').value;
-            const resultsDiv = document.getElementById('radarrSearchResults');
-            if (radarrMovieId === 0) { /* ... */ return; }
+async function triggerRadarrManualImport(radarrMovieId, movieTitle) { // movieTitle ici est déjà échappé
+            const originalItemPathForAction = document.getElementById('radarrOriginalItemName').value; // Ceci est item_name_in_staging
+            const resultsDiv = document.getElementById('radarrSearchResults'); // Div pour afficher les messages DANS le modal
+
+            if (radarrMovieId === 0) { /* Gérer le cas où l'ID est 0 si nécessaire */ return; }
+
             resultsDiv.innerHTML = `<div class="alert alert-info">Tentative d'import de '${escapeJsString(originalItemPathForAction.split(/[\\/]/).pop())}' pour le film '${movieTitle}' (ID: ${radarrMovieId})...</div>`;
+
+            // --- NOUVEAU: Récupérer le hash du torrent problématique si présent ---
+            const radarrModalElement = document.getElementById('radarrSearchModal'); // << VÉRIFIEZ CET ID, est-ce le bon ID de votre modal Radarr ?
+            let problemTorrentHash = null;
+            if (radarrModalElement) {
+                problemTorrentHash = radarrModalElement.getAttribute('data-problem-torrent-hash');
+            }
+            // --- FIN NOUVEAU ---
+
+            const payload = {
+                item_name: originalItemPathForAction,
+                movie_id: radarrMovieId
+            };
+
+            // Ajouter le hash au payload s'il existe (indique un re-mapping)
+            if (problemTorrentHash && problemTorrentHash !== '') {
+                payload.problem_torrent_hash = problemTorrentHash;
+                console.log("Re-mapping item problématique (Radarr) avec hash:", problemTorrentHash);
+            }
+
             try {
                 const response = await fetch(`{{ url_for('seedbox_ui.trigger_radarr_import') }}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ item_name: originalItemPathForAction, movie_id: radarrMovieId })
+                    body: JSON.stringify(payload) // Envoi du payload mis à jour
                 });
-                const result = await response.json();
-                if (response.ok && result.success) {
+                const result = await response.json(); // Toujours essayer de parser
+
+                if (response.ok && result.success) { // response.ok vérifie les statuts 200-299
                     resultsDiv.innerHTML = `<div class="alert alert-success alert-dismissible fade show" role="alert">Importation pour '${escapeJsString(originalItemPathForAction.split(/[\\/]/).pop())}' vers '${movieTitle}' initiée. Message: ${result.message || ''}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
                     flashMessageGlobally(result.message || `Import pour '${escapeJsString(originalItemPathForAction.split(/[\\/]/).pop())}' (film: ${movieTitle}) initié.`, 'success');
-                    setTimeout(() => { bootstrap.Modal.getInstance(document.getElementById('radarrSearchModal'))?.hide(); window.location.reload(); }, 3000);
-                } else { throw new Error(result.error || "Erreur inconnue (import Radarr)."); }
+
+                    setTimeout(() => {
+                        const modalInstance = bootstrap.Modal.getInstance(document.getElementById('radarrSearchModal')); // << VÉRIFIEZ CET ID
+                        if (modalInstance) modalInstance.hide();
+                        window.location.reload();
+                    }, 2500);
+                } else {
+                    // Si response.ok est faux, ou si response.ok est vrai mais result.success est faux
+                    throw new Error(result.error || `Erreur inconnue lors de l'import Radarr (HTTP ${response.status}).`);
+                }
             } catch (error) {
                 resultsDiv.innerHTML = `<div class="alert alert-danger alert-dismissible fade show" role="alert">Erreur importation Radarr: ${escapeJsString(error.message)}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
                 console.error("Erreur import Radarr:", error);

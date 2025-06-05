@@ -2354,37 +2354,48 @@ def trigger_radarr_import():
     data = request.get_json()
     item_name_from_frontend = data.get('item_name') # Nom de l'item UI (dossier ou fichier dans le staging)
     movie_id_from_frontend = data.get('movie_id')
+    problem_torrent_hash = data.get('problem_torrent_hash') # NOUVEAU : pour re-mapper un item problématique
 
-    logger.info(f"TRIGGER_RADARR_IMPORT: Début pour item '{item_name_from_frontend}', Movie ID {movie_id_from_frontend}")
+    logger = current_app.logger # Utiliser le logger de Flask
+    log_prefix_trigger = f"TRIGGER_RADARR_IMPORT (ProblemHash: {problem_torrent_hash}): "
+    logger.info(f"{log_prefix_trigger}Début pour item '{item_name_from_frontend}', Movie ID {movie_id_from_frontend}")
 
     radarr_url = current_app.config.get('RADARR_URL')
     radarr_api_key = current_app.config.get('RADARR_API_KEY')
     staging_dir = current_app.config.get('STAGING_DIR')
 
-    if not all([item_name_from_frontend, movie_id_from_frontend, radarr_url, radarr_api_key, staging_dir]):
-        return jsonify({"success": False, "error": "Données manquantes ou Radarr non configuré."}), 400
+    if not all([item_name_from_frontend, movie_id_from_frontend is not None, radarr_url, radarr_api_key, staging_dir]): # movie_id peut être 0
+        logger.error(f"{log_prefix_trigger}Données POST manquantes ou config Radarr/staging incomplète.")
+        return jsonify({"success": False, "error": "Données manquantes ou Radarr/staging non configuré."}), 400
+
+    try:
+        movie_id_int = int(movie_id_from_frontend)
+    except ValueError:
+        logger.error(f"{log_prefix_trigger}Movie ID invalide: '{movie_id_from_frontend}'. Doit être un entier.")
+        return jsonify({"success": False, "error": "Format de Movie ID invalide."}), 400
+
 
     path_of_item_in_staging_abs = (Path(staging_dir) / item_name_from_frontend).resolve()
     if not path_of_item_in_staging_abs.exists():
+        logger.error(f"{log_prefix_trigger}Item UI '{item_name_from_frontend}' (résolu en {path_of_item_in_staging_abs}) non trouvé.")
         return jsonify({"success": False, "error": f"Item '{item_name_from_frontend}' non trouvé dans le staging."}), 404
 
-    # Déterminer le chemin à scanner pour le GET manualimport initial
+    # --- Validation optionnelle de MovieID par rapport au nom de fichier (votre logique existante) ---
     path_to_scan_for_validation_get_obj = path_of_item_in_staging_abs.parent if path_of_item_in_staging_abs.is_file() else path_of_item_in_staging_abs
     path_for_api_get_validation_win = str(path_to_scan_for_validation_get_obj).replace('/', '\\')
-
     main_video_filename_for_validation = None
     if path_of_item_in_staging_abs.is_file():
         main_video_filename_for_validation = path_of_item_in_staging_abs.name
     elif path_of_item_in_staging_abs.is_dir():
         for f_name in os.listdir(path_of_item_in_staging_abs):
-            if any(f_name.lower().endswith(ext) for ext in ['.mkv', '.mp4', '.avi']):
+            if any(f_name.lower().endswith(ext) for ext in ['.mkv', '.mp4', '.avi', '.mov']): # Ajout .mov
                 main_video_filename_for_validation = f_name
                 break
 
-    if main_video_filename_for_validation: # Seulement si on a un fichier vidéo à valider
+    if main_video_filename_for_validation:
         manual_import_get_url = f"{radarr_url.rstrip('/')}/api/v3/manualimport"
-        get_params = {'folder': path_for_api_get_validation_win, 'filterExistingFiles': 'false'}
-        logger.debug(f"TRIGGER_RADARR_IMPORT (Validation MovieID): GET Radarr ManualImport: URL={manual_import_get_url}, Params={get_params}")
+        get_params = {'folder': path_for_api_get_validation_win, 'filterExistingFiles': 'false', 'movieId': movie_id_int} # Peut-être ajouter movieId ici
+        logger.debug(f"{log_prefix_trigger}(Validation MovieID): GET Radarr ManualImport: URL={manual_import_get_url}, Params={get_params}")
         manual_import_candidates, error_msg_get = _make_arr_request('GET', manual_import_get_url, radarr_api_key, params=get_params)
 
         if not error_msg_get and isinstance(manual_import_candidates, list):
@@ -2392,30 +2403,52 @@ def trigger_radarr_import():
                 candidate_file_path_from_api = candidate.get('path')
                 if not candidate_file_path_from_api: continue
 
-                abs_cand_path_in_staging_val = (path_to_scan_for_validation_get_obj / candidate_file_path_from_api).resolve()
+                # Recalculer le chemin absolu du candidat DANS LE STAGING
+                if path_to_scan_for_validation_get_obj.is_dir():
+                    abs_cand_path_in_staging_val = (path_to_scan_for_validation_get_obj / candidate_file_path_from_api).resolve()
+                elif candidate_file_path_from_api == path_to_scan_for_validation_get_obj.name : # path_to_scan_for_validation_get_obj est un fichier
+                    abs_cand_path_in_staging_val = path_to_scan_for_validation_get_obj.resolve()
+                else:
+                    continue # Ne correspond pas au fichier qu'on scanne si 'folder' était un fichier
 
                 if abs_cand_path_in_staging_val.name.lower() == main_video_filename_for_validation.lower():
                     candidate_movie_info = candidate.get('movie')
-                    if candidate_movie_info and candidate_movie_info.get('id') is not None and candidate_movie_info.get('id') != movie_id_from_frontend:
-                        logger.error(f"TRIGGER_RADARR_IMPORT: CONFLIT MovieID! Fichier '{main_video_filename_for_validation}' identifié par Radarr comme MovieID {candidate_movie_info.get('id')}, "
-                                     f"mais l'utilisateur cible MovieID {movie_id_from_frontend}. Import annulé.")
-                        return jsonify({"success": False, "error": f"Conflit d'identification Radarr: Le fichier semble correspondre à un autre film (ID {candidate_movie_info.get('id')}) que celui sélectionné (ID {movie_id_from_frontend})."}), 409
-                    break # On a trouvé et validé notre fichier principal
+                    if candidate_movie_info and candidate_movie_info.get('id') is not None and candidate_movie_info.get('id') != movie_id_int:
+                        err_msg_conflict = f"Conflit d'identification Radarr: Le fichier semble correspondre à un autre film (ID {candidate_movie_info.get('id')}) que celui sélectionné (ID {movie_id_int})."
+                        logger.error(f"{log_prefix_trigger}{err_msg_conflict}")
+                        return jsonify({"success": False, "error": err_msg_conflict}), 409 # Conflict
+                    break
     else:
-        logger.info("TRIGGER_RADARR_IMPORT: Aucun fichier vidéo principal trouvé dans l'item pour validation Radarr ID. Passage direct au handler.")
+        logger.info(f"{log_prefix_trigger}Aucun fichier vidéo principal trouvé pour validation Radarr ID. Passage direct au handler.")
+    # --- Fin de la validation optionnelle ---
 
 
-    # Si pas de conflit majeur, appeler le handler
+    # Appeler le handler _handle_staged_radarr_item
+    # Si c'est un re-mapping d'un item problématique, on passe son hash pour que le helper mette à jour/supprime si succès.
     result_dict = _handle_staged_radarr_item(
         item_name_in_staging=item_name_from_frontend,
-        movie_id_target=movie_id_from_frontend,
-        path_to_cleanup_in_staging_after_success=str(path_of_item_in_staging_abs)
+        movie_id_target=str(movie_id_int), # Assurer string
+        path_to_cleanup_in_staging_after_success=str(path_of_item_in_staging_abs),
+        automated_import=False, # C'est une action manuelle
+        torrent_hash_for_status_update=problem_torrent_hash # << IMPORTANT
     )
 
     if result_dict.get("success"):
-        return jsonify(result_dict), result_dict.get("status_code_override", 200)
+        # Si c'était un re-mapping d'un item problématique et que l'import a réussi,
+        # on supprime l'ancienne entrée du map.
+        # La fonction _handle_staged_radarr_item aura mis son statut à "imported_by_mms".
+        if problem_torrent_hash:
+            logger.info(f"{log_prefix_trigger}Re-mapping réussi pour l'item avec hash {problem_torrent_hash}. Suppression de l'ancienne association.")
+            if torrent_map_manager.remove_torrent_from_map(problem_torrent_hash):
+                logger.info(f"{log_prefix_trigger}Ancienne association pour hash {problem_torrent_hash} supprimée.")
+            else: # Ne devrait pas arriver si le hash est valide
+                logger.warning(f"{log_prefix_trigger}Échec de la suppression de l'ancienne association pour hash {problem_torrent_hash} (peut-être déjà supprimée).")
+
+        # status_code_override n'est plus utilisé par les helpers, on gère le code HTTP ici.
+        return jsonify(result_dict), 200
     else:
-        return jsonify(result_dict), result_dict.get("status_code_override", 500)
+        # status_code_override n'est plus utilisé. Le JS gère l'affichage de l'erreur.
+        return jsonify(result_dict), 500 # Ou un autre code d'erreur si pertinent (ex: 400, 409)
 
 # FIN de trigger_radarr_import
 
