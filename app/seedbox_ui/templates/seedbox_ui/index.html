@@ -174,7 +174,7 @@
                 <i class="fas fa-server"></i> Seedbox Radarr (Terminés)
             </a>
         </div>
-        
+
         <div class="btn-group me-2" role="group" aria-label="Seedbox working views group">
             <a href="{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='sonarr_working') }}" class="btn btn-outline-secondary btn-sm">
                 <i class="fas fa-cogs"></i> Seedbox Sonarr (Travail)
@@ -194,7 +194,91 @@
     {# FIN DE LA BARRE D'OUTILS #}
 
 
-    <h1>Contenu du Staging Local</h1>
+{# ========================================================================== #}
+{# SECTION POUR LES ITEMS EN ATTENTE / ERREUR                                 #}
+{# ========================================================================== #}
+{% if items_requiring_attention %}
+    <hr class="my-4">
+    <h2><i class="fas fa-exclamation-triangle text-warning"></i> Torrents en Attente / Nécessitant Attention</h2>
+    <div class="table-responsive">
+        <table class="table table-sm table-hover">
+            <thead>
+                <tr>
+                    <th>Release Name</th>
+                    <th>Type</th>
+                    <th>ID Cible</th>
+                    <th>Statut Actuel</th>
+                    <th>Message</th>
+                    <th>MàJ</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in items_requiring_attention %}
+                <tr>
+                    <td title="{{ item.release_name }}">{{ item.release_name | truncate(60) }}</td>
+                    <td>
+                        <span class="badge {% if item.app_type == 'sonarr' %}bg-primary{% elif item.app_type == 'radarr' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                            {{ item.app_type | capitalize if item.app_type else 'N/A' }}
+                        </span>
+                    </td>
+                    <td>{{ item.target_id if item.target_id is not none else 'N/A' }}</td>
+                    <td><span class="badge bg-info text-dark">{{ item.status | replace('_', ' ') | capitalize }}</span></td>
+                    <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ item.status_message }}">{{ item.status_message | truncate(50) if item.status_message else '-' }}</td>
+                    <td title="{{ item.updated_at if item.updated_at else item.added_at }}">
+                        {{ (item.updated_at if item.updated_at else item.added_at).split('.')[0].replace('T', ' ') if (item.updated_at or item.added_at) else 'N/A' }}
+                    </td>
+                    <td>
+                        {# Bouton Réessayer l'Import (si l'item est dans le staging) #}
+                        {% if item.is_in_staging and item.status != 'processing_by_mms_api' %} {# Évite de relancer si déjà en cours #}
+                        <form action="{{ url_for('seedbox_ui.retry_problematic_import_action', torrent_hash=item.torrent_hash) }}" method="POST" style="display: inline-block;" onsubmit="return confirm('Réessayer l\'import automatique pour \'{{ item.release_name | e }}\' ?');">
+                            <button type="submit" class="btn btn-sm btn-outline-success mb-1" title="Réessayer l'import automatique">
+                                <i class="fas fa-redo"></i> Réessayer
+                            </button>
+                        </form>
+                        {% elif item.status == 'processing_by_mms_api' %}
+                            <button class="btn btn-sm btn-outline-secondary mb-1" disabled title="Traitement déjà en cours ou bloqué.">
+                                <i class="fas fa-spinner fa-spin"></i> En cours...
+                            </button>
+                        {% endif %}
+
+                        {# Bouton Mapper Manuellement (si applicable) #}
+                        {% if item.is_in_staging and item.app_type and item.target_id %}
+                            {# Ouvre le modal existant. Le JS devra être adapté pour pré-remplir. #}
+                            {% if item.app_type == 'sonarr' %}
+                            <button class="btn btn-sm btn-outline-primary mb-1"
+                                    onclick='openSonarrSearchModalForProblemItem({{ item.release_name | tojson | safe }}, {{ item.target_id }}, {{ item.torrent_hash | tojson | safe }})'
+                                    title="Mapper manuellement avec Sonarr (corriger l'association)">
+                                <i class="fas fa-edit"></i> Mapper Sonarr
+                            </button>
+                            {% elif item.app_type == 'radarr' %}
+                            <button class="btn btn-sm btn-outline-warning text-dark mb-1"
+                                    onclick='openRadarrSearchModalForProblemItem({{ item.release_name | tojson | safe }}, {{ item.target_id }}, {{ item.torrent_hash | tojson | safe }})'
+                                    title="Mapper manuellement avec Radarr (corriger l'association)">
+                                <i class="fas fa-edit"></i> Mapper Radarr
+                            </button>
+                            {% endif %}
+                        {% endif %}
+
+                        {# Bouton Supprimer l'Association #}
+                        <form action="{{ url_for('seedbox_ui.delete_problematic_association_action', torrent_hash=item.torrent_hash) }}" method="POST" style="display: inline-block;" onsubmit="return confirm('Supprimer cette association en attente pour \'{{ item.release_name | e }}\' ? L\'item physique (s\'il existe) ne sera pas touché.');">
+                            <button type="submit" class="btn btn-sm btn-outline-danger mb-1" title="Supprimer cette association de la liste des items en attente">
+                                <i class="fas fa-times-circle"></i> Oublier
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% else %}
+    <p class="text-muted">Aucun torrent ne nécessite une attention particulière actuellement.</p>
+{% endif %}
+{# FIN DE LA SECTION POUR LES ITEMS EN ATTENTE / ERREUR #}
+
+<hr class="my-4"> {# Séparateur avant le contenu du staging local #}
+<h1>Contenu du Staging Local</h1>
 
     {# AFFICHAGE EN ARBORESCENCE (votre code existant) #}
     {% if items_tree %}
@@ -374,7 +458,92 @@
             var radarrModal = new bootstrap.Modal(document.getElementById('radarrSearchModal'));
             radarrModal.show();
         }
+        // ==================================================================================
+        // NOUVELLES FONCTIONS JS POUR LES ITEMS PROBLÉMATIQUES
+        // ==================================================================================
+        function openSonarrSearchModalForProblemItem(releaseName, currentTargetId, torrentHash) {
+            console.log("Ouverture Modal Sonarr pour item problématique:", releaseName, "ID actuel:", currentTargetId, "Hash:", torrentHash);
+            // currentItemToMap est le releaseName qui est aussi le nom dans le staging
+            currentItemToMap = releaseName;
+            currentItemType = 'problem_item'; // Un type spécifique pour distinguer si besoin
 
+            // Utiliser les IDs de votre modal de recherche Sonarr existant
+            // Assurez-vous que les IDs correspondent à ceux de votre modal pour la recherche Sonarr
+            // que vous utilisez pour le mapping manuel du staging local (ex: sonarrSearchQuery, sonarrSearchResultsModal, etc.)
+            const searchQueryInput = document.getElementById('sonarrSearchQuery'); // Adaptez l'ID si différent
+            const searchResultsDiv = document.getElementById('sonarrSearchResults'); // Adaptez l'ID
+            const selectedSeriesIdInput = document.getElementById('sonarrSelectedSeriesId'); // Adaptez l'ID
+            const selectedSeriesTitleDisplay = document.getElementById('sonarrSelectedSeriesTitle'); // Adaptez l'ID
+            const manualSeasonDiv = document.getElementById('sonarrManualSeasonDiv'); // Adaptez l'ID
+            const manualSeasonInput = document.getElementById('sonarrManualSeasonInput'); // Adaptez l'ID
+            const modalElement = document.getElementById('sonarrSearchResultsModal'); // Adaptez l'ID du MODAL lui-même
+
+            if (searchQueryInput) searchQueryInput.value = getCleanedSearchTerm(releaseName);
+            if (searchResultsDiv) searchResultsDiv.innerHTML = '';
+            if (selectedSeriesIdInput) selectedSeriesIdInput.value = currentTargetId || '';
+
+            if (selectedSeriesTitleDisplay) {
+                if (currentTargetId) {
+                    selectedSeriesTitleDisplay.innerText = `Série actuelle (problème): ID ${currentTargetId} (Recherchez pour changer)`;
+                } else {
+                    selectedSeriesTitleDisplay.innerText = 'Aucune série sélectionnée';
+                }
+            }
+            if (manualSeasonDiv) manualSeasonDiv.style.display = currentTargetId ? 'block' : 'none';
+            if (manualSeasonInput) manualSeasonInput.value = '';
+
+            // Optionnel: Stocker le torrent_hash pour une action de mise à jour
+            // par exemple dans un data-attribute du modal ou un input caché
+            if (modalElement) {
+                modalElement.setAttribute('data-problem-torrent-hash', torrentHash || '');
+            }
+
+            if (modalElement) {
+                var modal = new bootstrap.Modal(modalElement);
+                modal.show();
+            } else {
+                console.error("Élément du modal Sonarr non trouvé pour les items problématiques.");
+            }
+        }
+
+        function openRadarrSearchModalForProblemItem(releaseName, currentTargetId, torrentHash) {
+            console.log("Ouverture Modal Radarr pour item problématique:", releaseName, "ID actuel:", currentTargetId, "Hash:", torrentHash);
+            currentItemToMap = releaseName;
+            currentItemType = 'problem_item';
+
+            // Utiliser les IDs de votre modal de recherche Radarr existant
+            const searchQueryInput = document.getElementById('radarrSearchQuery'); // Adaptez l'ID
+            const searchResultsDiv = document.getElementById('radarrSearchResults'); // Adaptez l'ID
+            const selectedMovieIdInput = document.getElementById('radarrSelectedMovieId'); // Adaptez l'ID
+            const selectedMovieTitleDisplay = document.getElementById('radarrSelectedMovieTitle'); // Adaptez l'ID
+            const modalElement = document.getElementById('radarrSearchResultsModal'); // Adaptez l'ID du MODAL
+
+            if (searchQueryInput) searchQueryInput.value = getCleanedSearchTerm(releaseName);
+            if (searchResultsDiv) searchResultsDiv.innerHTML = '';
+            if (selectedMovieIdInput) selectedMovieIdInput.value = currentTargetId || '';
+
+            if (selectedMovieTitleDisplay) {
+                if (currentTargetId) {
+                    selectedMovieTitleDisplay.innerText = `Film actuel (problème): ID ${currentTargetId} (Recherchez pour changer)`;
+                } else {
+                    selectedMovieTitleDisplay.innerText = 'Aucun film sélectionné';
+                }
+            }
+
+            if (modalElement) {
+                modalElement.setAttribute('data-problem-torrent-hash', torrentHash || '');
+            }
+
+            if (modalElement) {
+                var modal = new bootstrap.Modal(modalElement);
+                modal.show();
+            } else {
+                console.error("Élément du modal Radarr non trouvé pour les items problématiques.");
+            }
+        }
+        // ==================================================================================
+        // FIN DES NOUVELLES FONCTIONS JS
+        // ==================================================================================
         async function executeSonarrSearch() {
             const query = document.getElementById('sonarrSearchQuery').value;
             if (!query.trim()) {document.getElementById('sonarrSearchResults').innerHTML = '<p class="text-warning">Terme de recherche manquant.</p>'; return;}

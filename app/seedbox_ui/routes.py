@@ -1442,30 +1442,63 @@ from . import seedbox_ui_bp # Ou from app.seedbox_ui import seedbox_ui_bp si la 
 
 @seedbox_ui_bp.route('/')
 def index():
+    logger = current_app.logger # Obtenir le logger
     staging_dir = current_app.config.get('STAGING_DIR')
     if not staging_dir or not os.path.isdir(staging_dir):
         flash(f"Le dossier de staging '{staging_dir}' n'est pas configuré ou n'existe pas/n'est pas un dossier.", 'danger')
-        return render_template('seedbox_ui/index.html', items_tree=[])
+        # Toujours essayer de charger les items en attente même si le staging est problématique
+        # return render_template('seedbox_ui/index.html', items_tree=[]) # Ancien retour
 
-    # Récupérer les associations en attente
-    pending_associations = torrent_map_manager.get_all_torrents_in_map()
-    logger.debug(f"Associations en attente récupérées: {pending_associations}")
-
-    logger.info(f"Construction de l'arborescence pour le dossier de staging: {staging_dir}")
-    # --- ADAPTATION POUR build_file_tree ---
-    all_torrents_by_hash = torrent_map_manager.get_all_torrents_in_map()
-    associations_by_release_name = {}
-    if isinstance(all_torrents_by_hash, dict): # S'assurer que c'est bien un dictionnaire
-        for torrent_hash, assoc_data in all_torrents_by_hash.items():
+    # --- Items du Staging Local (logique existante) ---
+    # Récupérer les associations en attente pour l'affichage DANS l'arbre du staging
+    all_torrents_by_hash_for_staging_tree = torrent_map_manager.get_all_torrents_in_map()
+    associations_by_release_name_for_staging_tree = {}
+    if isinstance(all_torrents_by_hash_for_staging_tree, dict):
+        for torrent_hash, assoc_data in all_torrents_by_hash_for_staging_tree.items():
             release_name = assoc_data.get('release_name')
             if release_name:
-                # On stocke l'association complète, build_file_tree pourra en extraire ce dont il a besoin.
-                associations_by_release_name[release_name] = assoc_data
-    logger.debug(f"Associations transformées par release_name pour build_file_tree: {associations_by_release_name}")
-    # --- FIN ADAPTATION ---
+                # Pour l'arbre, on peut enrichir avec le hash si besoin
+                assoc_data_for_tree = assoc_data.copy()
+                assoc_data_for_tree['torrent_hash'] = torrent_hash
+                associations_by_release_name_for_staging_tree[release_name] = assoc_data_for_tree
+    logger.debug(f"Index: Associations (pour arbre staging) par release_name: {associations_by_release_name_for_staging_tree}")
+
+    items_tree_data = []
+    if staging_dir and os.path.isdir(staging_dir):
+        logger.info(f"Index: Construction de l'arborescence pour le dossier de staging: {staging_dir}")
+        items_tree_data = build_file_tree(staging_dir, staging_dir, associations_by_release_name_for_staging_tree)
+    # --- Fin Items du Staging Local ---
 
 
-    items_tree_data = build_file_tree(staging_dir, staging_dir, associations_by_release_name) # Passer le dict transformé
+    # --- NOUVEAU: Items en Attente/Erreur depuis pending_torrents_map.json ---
+    all_pending_torrents = torrent_map_manager.get_all_torrents_in_map()
+    items_requiring_attention = []
+    if isinstance(all_pending_torrents, dict): # S'assurer que c'est un dictionnaire
+        for torrent_hash, data in all_pending_torrents.items():
+            status = data.get("status", "unknown")
+            # Définir les statuts qui nécessitent une attention.
+            # 'imported_by_mms' ou 'removed_after_success' (si vous l'implémentez) sont OK.
+            # Les autres pourraient nécessiter une attention.
+            # Vous pouvez affiner cette condition.
+            if not status.startswith("imported_") and not status.startswith("removed_"):
+                item_info = data.copy() # Copier pour ne pas modifier l'original en ajoutant le hash
+                item_info['torrent_hash'] = torrent_hash # Ajouter le hash pour les actions
+                # Vérifier si l'item est physiquement dans le staging (pour l'action "Réessayer")
+                if staging_dir and item_info.get('release_name'):
+                    item_info['is_in_staging'] = (Path(staging_dir) / item_info['release_name']).exists()
+                else:
+                    item_info['is_in_staging'] = False
+                items_requiring_attention.append(item_info)
+
+    # Trier les items par date de mise à jour (plus récent en premier) ou par statut
+    if items_requiring_attention:
+        try:
+            items_requiring_attention.sort(key=lambda x: x.get('updated_at', x.get('added_at', '')), reverse=True)
+        except Exception as e_sort:
+             logger.warning(f"Index: Erreur lors du tri des items_requiring_attention: {e_sort}")
+
+    logger.debug(f"Index: Items nécessitant attention: {len(items_requiring_attention)}")
+    # --- Fin Items en Attente/Erreur ---
 
     sonarr_configured = bool(current_app.config.get('SONARR_URL') and current_app.config.get('SONARR_API_KEY'))
     radarr_configured = bool(current_app.config.get('RADARR_URL') and current_app.config.get('RADARR_API_KEY'))
@@ -1474,7 +1507,8 @@ def index():
                            items_tree=items_tree_data,
                            can_scan_sonarr=sonarr_configured,
                            can_scan_radarr=radarr_configured,
-                           staging_dir_display=staging_dir)
+                           staging_dir_display=staging_dir,
+                           items_requiring_attention=items_requiring_attention) # Passer la nouvelle liste au template
 
 @seedbox_ui_bp.route('/delete/<path:item_name>', methods=['POST'])
 def delete_item(item_name):
@@ -3117,7 +3151,89 @@ def api_process_staged_item():
             "message": f"Item '{item_name}' validé par l'API. Aucune pré-association trouvée. Traitement manuel ou via une autre interface requis.",
             "item_path_validated": str(item_path)
         }), 202 # HTTP 202 Accepted - indique que la requête est valide mais nécessite une action ultérieure
+# ==============================================================================
+# ROUTES POUR LA GESTION DES ITEMS PROBLÉMATIQUES DU PENDING_TORRENTS_MAP
+# ==============================================================================
 
+@seedbox_ui_bp.route('/problematic-import/retry/<string:torrent_hash>', methods=['POST'])
+def retry_problematic_import_action(torrent_hash):
+    logger = current_app.logger
+    logger.info(f"Tentative de relance de l'import pour le torrent hash: {torrent_hash}")
+
+    association_data = torrent_map_manager.get_torrent_by_hash(torrent_hash)
+    if not association_data:
+        flash(f"Association non trouvée pour le hash {torrent_hash}.", "danger")
+        return redirect(url_for('seedbox_ui.index'))
+
+    item_name_in_staging = association_data.get('release_name')
+    staging_dir = current_app.config.get('STAGING_DIR')
+
+    if not item_name_in_staging or not staging_dir or not (Path(staging_dir) / item_name_in_staging).exists():
+        flash(f"L'item '{item_name_in_staging or 'Inconnu'}' n'est plus dans le staging ou informations manquantes. Impossible de réessayer.", "warning")
+        if torrent_hash: # S'assurer qu'on a un hash pour mettre à jour le statut
+            torrent_map_manager.update_torrent_status_in_map(torrent_hash, "error_retry_failed_item_not_in_staging", "Item non trouvé dans le staging pour la relance.")
+        return redirect(url_for('seedbox_ui.index'))
+
+    logger.info(f"Relance du traitement pour : '{item_name_in_staging}', Hash: {torrent_hash}")
+    # Mise à jour du statut avant de tenter le traitement
+    torrent_map_manager.update_torrent_status_in_map(torrent_hash, "processing_by_mms_retry", f"Relance manuelle pour {item_name_in_staging}")
+
+    full_staging_path_str = str((Path(staging_dir) / item_name_in_staging).resolve())
+    result_from_handler = {}
+    app_type = association_data.get('app_type')
+    target_id = association_data.get('target_id')
+
+    if app_type == 'sonarr':
+        result_from_handler = _handle_staged_sonarr_item(
+            item_name_in_staging=item_name_in_staging,
+            series_id_target=target_id,
+            path_to_cleanup_in_staging_after_success=full_staging_path_str,
+            automated_import=True,
+            torrent_hash_for_status_update=torrent_hash
+        )
+    elif app_type == 'radarr':
+        result_from_handler = _handle_staged_radarr_item(
+            item_name_in_staging=item_name_in_staging,
+            movie_id_target=target_id,
+            path_to_cleanup_in_staging_after_success=full_staging_path_str,
+            automated_import=True,
+            torrent_hash_for_status_update=torrent_hash
+        )
+    else:
+        flash(f"Type d'application inconnu '{app_type}' pour la relance.", "danger")
+        if torrent_hash: # S'assurer qu'on a un hash
+            torrent_map_manager.update_torrent_status_in_map(torrent_hash, "error_unknown_association_type", "Type d'app inconnu lors de la relance.")
+        return redirect(url_for('seedbox_ui.index'))
+
+    if result_from_handler.get("success"):
+        flash(f"Relance pour '{item_name_in_staging}' réussie: {result_from_handler.get('message')}", "success")
+        # Le helper aura mis à jour/supprimé l'entrée du map si le nettoyage du map est activé après succès.
+        # S'il ne supprime pas, le statut "imported_by_mms" sera mis, donc il n'apparaîtra plus dans la liste "attention".
+    elif result_from_handler.get("manual_required"):
+        flash(f"Relance pour '{item_name_in_staging}' nécessite une attention manuelle: {result_from_handler.get('message')}", "warning")
+    else:
+        flash(f"Échec de la relance pour '{item_name_in_staging}': {result_from_handler.get('message', 'Erreur inconnue')}", "danger")
+
+    return redirect(url_for('seedbox_ui.index'))
+
+
+@seedbox_ui_bp.route('/problematic-association/delete/<string:torrent_hash>', methods=['POST'])
+def delete_problematic_association_action(torrent_hash):
+    logger = current_app.logger
+    logger.info(f"Demande de suppression de l'association pour le torrent hash: {torrent_hash}")
+
+    association_data = torrent_map_manager.get_torrent_by_hash(torrent_hash)
+    release_name_for_flash = association_data.get('release_name', 'Hash Inconnu') if association_data else f"Hash: {torrent_hash}"
+
+    if torrent_map_manager.remove_torrent_from_map(torrent_hash):
+        flash(f"L'association pour '{release_name_for_flash}' a été supprimée.", "success")
+        logger.info(f"Association pour hash {torrent_hash} ('{release_name_for_flash}') supprimée avec succès.")
+    else:
+        # Si get_torrent_by_hash a retourné None, remove_torrent_from_map retournera False car le hash n'est pas trouvé.
+        flash(f"Impossible de trouver ou de supprimer l'association pour '{release_name_for_flash}'.", "danger")
+        logger.warning(f"Tentative de suppression d'une association inexistante ou échec pour hash {torrent_hash} ('{release_name_for_flash}').")
+
+    return redirect(url_for('seedbox_ui.index'))
 if __name__ == '__main__':
     app = create_app() # Ou comment vous créez votre instance d'app
 
