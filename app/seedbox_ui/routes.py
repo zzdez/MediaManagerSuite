@@ -1,33 +1,52 @@
 # app/seedbox_ui/routes.py
+
+# --- Imports Python Standards ---
 import os
 import shutil
 import logging
-import time # Pour le délai
+import time
 import re
-import paramiko
 from pathlib import Path
+import base64
+import urllib.parse
+import json # Pour les payloads/réponses JSON et potentiellement interagir avec des données JSON
+import stat # Si vous l'utilisez pour vérifier les types de fichiers/dossiers (ex: SFTP view)
 from datetime import datetime
-import requests # Pour les appels API
+# --- Imports Flask ---
+from flask import (
+    Blueprint, render_template, current_app, request,
+    flash, redirect, url_for, jsonify, session
+)
+from app.seedbox_ui import seedbox_ui_bp
+# --- Imports de paquets externes (si vous en avez d'autres) ---
+import requests # Pour les appels API externes (Sonarr, Radarr, rTorrent)
 from requests.exceptions import RequestException # Pour gérer les erreurs de connexion
-from flask import Blueprint, render_template, current_app, request, flash, redirect, url_for, jsonify
-import stat
-import json
-# Updated rtorrent_client imports for httprpc
+import paramiko
+# --- Imports spécifiques à l'application MediaManagerSuite ---
+
+# Client rTorrent (assurez-vous que ce chemin est correct pour votre projet)
 from app.utils.rtorrent_client import (
     list_torrents as rtorrent_list_torrents_api,
     add_magnet as rtorrent_add_magnet_httprpc,
     add_torrent_file as rtorrent_add_torrent_file_httprpc,
     get_torrent_hash_by_name as rtorrent_get_hash_by_name
 )
-from app.utils.mapping_manager import (
-    add_association_by_hash,
-    get_association_by_hash,
-    remove_association_by_hash,
-    get_all_pending_associations,
-    get_association_by_release_name
-)
-import base64 # Now needed for decoding torrent file content from JS
-import urllib.parse # Added for magnet link parsing
+
+# Gestionnaire de la map des torrents (NOUVELLE FAÇON D'IMPORTER)
+# Ceci suppose que le fichier app/utils/mapping_manager.py contient le NOUVEAU code que je vous ai fourni.
+from app.utils import mapping_manager as torrent_map_manager
+
+# Si vous avez des fonctions utilitaires spécifiques à seedbox_ui dans un fichier utils.py
+# à l'intérieur du dossier app/seedbox_ui/, vous les importeriez comme ceci :
+# from .utils import nom_de_votre_fonction_utilitaire
+# (Mais _make_arr_request et cleanup_staging_subfolder_recursively sont déjà dans ce fichier routes.py)
+
+# --- Configuration du Logger ---
+# Il est préférable d'obtenir le logger via current_app.logger dans vos fonctions,
+# mais si vous avez besoin d'un logger au niveau du module, vous pouvez faire :
+# logger = logging.getLogger(__name__)
+# Et ensuite utiliser `logger.info(...)` au lieu de `current_app.logger.info(...)`
+# Pour l'instant, nous avons utilisé current_app.logger dans les fonctions modifiées.
 
 # Définition du Blueprint pour seedbox_ui
 # Le Blueprint lui-même est défini dans app/seedbox_ui/__init__.py
@@ -463,11 +482,132 @@ def sftp_build_remote_file_tree(sftp_client, remote_current_path_posix, local_st
         logger.error(f"SFTP Tree: Erreur inattendue lors du listage de {remote_current_path_posix}: {e_list}", exc_info=True)
 
     return tree
+
+@seedbox_ui_bp.route('/process-staging-item', methods=['POST'])
+def process_staging_item_api(): # Renommé pour éviter conflit si vous aviez une var 'process_staging_item'
+    """
+    API endpoint to be called by sftp_downloader_notifier.py after an item
+    is downloaded to the local staging directory.
+    This endpoint will try to automatically import the item using pre-associations.
+    """
+    logger = current_app.logger # Utiliser le logger de Flask
+
+    auth_header = request.headers.get('Authorization')
+    # Optionnel: Sécuriser cet endpoint.
+    # Pour l'instant, on assume qu'il est appelé depuis un script local approuvé.
+    # Vous pourriez ajouter une clé API simple dans l'en-tête ou un token si nécessaire.
+    # Example:
+    # expected_token = current_app.config.get('SFTPSCRIPT_API_TOKEN')
+    # if not expected_token or not auth_header or auth_header != f"Bearer {expected_token}":
+    #     logger.warning("process_staging_item_api: Unauthorized access attempt.")
+    #     return jsonify({"status": "error", "message": "Unauthorized"}), 401
+
+    data = request.get_json()
+    if not data or 'item_name_in_staging' not in data:
+        logger.warning("process_staging_item_api: POST request missing 'item_name_in_staging' in JSON body.")
+        return jsonify({"status": "error", "message": "Missing 'item_name_in_staging' in JSON payload"}), 400
+
+    item_name_in_staging = data['item_name_in_staging']
+    # Sécurité simple: s'assurer que item_name_in_staging ne contient pas de traversée de répertoire
+    if ".." in item_name_in_staging or "/" in item_name_in_staging or "\\" in item_name_in_staging:
+        logger.error(f"process_staging_item_api: Invalid item_name_in_staging (path traversal attempt?): {item_name_in_staging}")
+        return jsonify({"status": "error", "message": "Invalid item name"}), 400
+
+    logger.info(f"process_staging_item_api: Received request to process staging item: '{item_name_in_staging}'")
+
+    # Utiliser torrent_map_manager pour trouver l'association
+    # Note: find_torrent_by_release_name s'attend au nom de la release tel qu'il est dans le staging
+    torrent_hash, mapping_data = torrent_map_manager.find_torrent_by_release_name(item_name_in_staging)
+
+    if not mapping_data:
+        logger.info(f"process_staging_item_api: No pre-association found for release name: '{item_name_in_staging}'. Item will require manual mapping.")
+        # On pourrait mettre à jour un log interne ou une DB d'items non mappés ici si besoin.
+        # Le script SFTP pourrait être informé de cela pour qu'il ne retente pas indéfiniment pour cet item
+        return jsonify({"status": "no_association_found", "message": "No pre-association found. Manual mapping required."}), 202 # 202 Accepted
+
+    logger.info(f"process_staging_item_api: Found pre-association for '{item_name_in_staging}': Torrent Hash {torrent_hash}, Type: {mapping_data.get('app_type')}, Target ID: {mapping_data.get('target_id')}")
+
+    full_staging_path_str = str((Path(current_app.config['STAGING_DIR']) / item_name_in_staging).resolve())
+
+    # Vérifier si le chemin existe réellement dans le staging
+    if not os.path.exists(full_staging_path_str):
+        err_msg = f"Staging path '{full_staging_path_str}' does not exist for item '{item_name_in_staging}'."
+        logger.error(f"process_staging_item_api: {err_msg}")
+        torrent_map_manager.update_torrent_status_in_map(torrent_hash, "error_staging_path_missing_on_api_call", err_msg)
+        return jsonify({"status": "error", "message": err_msg}), 404 # Not Found
+
+    # Mettre à jour le statut dans la map avant de commencer le traitement
+    torrent_map_manager.update_torrent_status_in_map(
+        torrent_hash,
+        "processing_by_mms_api",
+        f"MMS API processing started for {item_name_in_staging}"
+    )
+
+    result_from_handler = {}
+    app_type = mapping_data.get('app_type')
+    target_id = mapping_data.get('target_id')
+
+    # path_to_cleanup est le nom de l'item dans le staging, car nos helpers attendent cela
+    # pour la fonction cleanup_staging_subfolder_recursively.
+    path_to_cleanup = item_name_in_staging # Le nom du dossier/fichier principal dans STAGING_DIR
+
+    if app_type == 'sonarr':
+        # Pour l'import automatique, on ne force pas de saison.
+        # _handle_staged_sonarr_item essaiera de la parser ou de se fier à Sonarr.
+        # Si une saison spécifique était stockée dans mapping_data, on pourrait la passer.
+        # Exemple: user_chosen_season_from_map = mapping_data.get('season_number')
+        result_from_handler = _handle_staged_sonarr_item(
+            item_name_in_staging=item_name_in_staging, # Le nom du dossier/fichier dans STAGING_DIR
+            series_id_target=target_id,
+            path_to_cleanup_in_staging_after_success=full_staging_path_str, # Chemin absolu de l'item à nettoyer
+            user_chosen_season=None, # Laisser le helper déterminer ou se fier à Sonarr
+            automated_import=True,
+            torrent_hash_for_status_update=torrent_hash
+        )
+    elif app_type == 'radarr':
+        result_from_handler = _handle_staged_radarr_item(
+            item_name_in_staging=item_name_in_staging, # Le nom du dossier/fichier dans STAGING_DIR
+            movie_id_target=target_id,
+            path_to_cleanup_in_staging_after_success=full_staging_path_str, # Chemin absolu de l'item à nettoyer
+            automated_import=True,
+            torrent_hash_for_status_update=torrent_hash
+        )
+    else:
+        err_msg = f"Unknown association type '{app_type}' for torrent {torrent_hash}, item '{item_name_in_staging}'."
+        logger.error(f"process_staging_item_api: {err_msg}")
+        torrent_map_manager.update_torrent_status_in_map(torrent_hash, "error_unknown_association_type", err_msg)
+        return jsonify({"status": "error", "message": err_msg}), 500
+
+    # Analyser le résultat du helper
+    if result_from_handler.get("success"):
+        logger.info(f"process_staging_item_api: Successfully processed '{item_name_in_staging}' for {app_type} ID {target_id}.")
+        # Le statut aura été mis à "imported_by_mms" par le helper.
+        # Optionnel: remove_torrent_from_map si on ne veut plus le suivre après succès.
+        # torrent_map_manager.remove_torrent_from_map(torrent_hash)
+        return jsonify({"status": "success", "message": f"Successfully processed '{item_name_in_staging}'. Details: {result_from_handler.get('message')}"}), 200
+    elif result_from_handler.get("manual_required"):
+        logger.warning(f"process_staging_item_api: Processing '{item_name_in_staging}' requires manual intervention. Reason: {result_from_handler.get('message')}")
+        # Le statut aura déjà été mis à jour par le helper avec une erreur spécifique.
+        return jsonify({"status": "manual_intervention_required", "message": result_from_handler.get('message')}), 202 # Accepted, mais nécessite action
+    else: # Erreur générique non gérée comme "manual_required" par le helper (devrait être rare)
+        err_msg = f"Error processing '{item_name_in_staging}'. Reason: {result_from_handler.get('message', 'Unknown error from handler')}"
+        logger.error(f"process_staging_item_api: {err_msg}")
+        # Le statut peut ou peut ne pas avoir été mis à jour par le helper, s'assurer qu'il y a une indication d'erreur
+        current_status_data = torrent_map_manager.get_torrent_by_hash(torrent_hash)
+        if current_status_data and not current_status_data.get("status", "").startswith("error_"):
+             torrent_map_manager.update_torrent_status_in_map(torrent_hash, "error_mms_api_processing_failed", err_msg)
+        return jsonify({"status": "error", "message": err_msg}), 500
+
+
 # ==============================================================================
 # NOUVELLE FONCTION HELPER POUR TRAITER UN ITEM SONARR DÉJÀ DANS LE STAGING
 # ==============================================================================
 
-def _handle_staged_sonarr_item(item_name_in_staging, series_id_target, path_to_cleanup_in_staging_after_success, user_chosen_season=None): # user_chosen_episode enlevé pour l'instant
+def _handle_staged_sonarr_item(item_name_in_staging, series_id_target,
+                               path_to_cleanup_in_staging_after_success,
+                               user_chosen_season=None,
+                               automated_import=False, # NOUVEAU
+                               torrent_hash_for_status_update=None): # NOUVEAU
     """
     Gère l'import d'un item Sonarr déjà présent dans le staging local.
     - Tente d'obtenir des infos de Sonarr sur le fichier (qualité, langue).
@@ -476,7 +616,10 @@ def _handle_staged_sonarr_item(item_name_in_staging, series_id_target, path_to_c
     - Déclenche un RescanSeries.
     - Nettoie le dossier de staging.
     """
-    logger.info(f"HELPER _handle_staged_sonarr_item: Traitement de '{item_name_in_staging}' pour Série ID {series_id_target}. Saison explicitement choisie: {user_chosen_season}")
+    # Utiliser le logger de Flask
+    logger = current_app.logger
+    log_prefix = f"HELPER _handle_staged_sonarr_item (Automated: {automated_import}, Hash: {torrent_hash_for_status_update}): "
+    logger.info(f"{log_prefix}Traitement de '{item_name_in_staging}' pour Série ID {series_id_target}. Saison explicite: {user_chosen_season}")
 
     # Récupérer les configs
     sonarr_url = current_app.config.get('SONARR_URL')
@@ -486,25 +629,28 @@ def _handle_staged_sonarr_item(item_name_in_staging, series_id_target, path_to_c
 
     path_of_item_in_staging_abs = (Path(staging_dir_str) / item_name_in_staging).resolve()
     if not path_of_item_in_staging_abs.exists():
-        logger.error(f"_handle_staged_sonarr_item: Item '{item_name_in_staging}' (résolu en {path_of_item_in_staging_abs}) non trouvé.")
-        return {"success": False, "error": f"Item '{item_name_in_staging}' non trouvé dans le staging."}
+        err_msg = f"Item '{item_name_in_staging}' (résolu en {path_of_item_in_staging_abs}) non trouvé."
+        logger.error(f"{log_prefix}{err_msg}")
+        if torrent_hash_for_status_update and automated_import:
+            torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_staging_path_missing", err_msg)
+        return {"success": False, "message": err_msg, "manual_required": True if automated_import else False}
 
-    # Déterminer le chemin à scanner pour l'API manualimport de Sonarr et le fichier principal
     path_to_scan_for_api_get_obj = None
-    main_video_file_abs_path_in_staging = None # Chemin absolu du fichier vidéo principal
+    main_video_file_abs_path_in_staging = None
     original_filename_of_video = None
 
     if path_of_item_in_staging_abs.is_file():
         if any(str(path_of_item_in_staging_abs).lower().endswith(ext) for ext in ['.mkv', '.mp4', '.avi']):
-            path_to_scan_for_api_get_obj = path_of_item_in_staging_abs # Scanner le fichier lui-même
+            path_to_scan_for_api_get_obj = path_of_item_in_staging_abs
             main_video_file_abs_path_in_staging = path_of_item_in_staging_abs
             original_filename_of_video = path_of_item_in_staging_abs.name
         else:
-            logger.error(f"_handle_staged_sonarr_item: Item fichier '{item_name_in_staging}' n'est pas une vidéo reconnue.")
-            return {"success": False, "error": "Le fichier sélectionné n'est pas un type vidéo reconnu."}
+            err_msg = f"Item fichier '{item_name_in_staging}' n'est pas une vidéo reconnue."
+            logger.error(f"{log_prefix}{err_msg}")
+            # Pas besoin de mettre à jour le statut du torrent ici, car c'est un pbm avec le fichier lui-même
+            return {"success": False, "message": err_msg, "manual_required": True if automated_import else False}
     elif path_of_item_in_staging_abs.is_dir():
-        path_to_scan_for_api_get_obj = path_of_item_in_staging_abs # Scanner le dossier
-        # Trouver le fichier vidéo principal à l'intérieur
+        path_to_scan_for_api_get_obj = path_of_item_in_staging_abs
         for root, _, files in os.walk(path_of_item_in_staging_abs):
             for file in files:
                 if any(file.lower().endswith(ext) for ext in ['.mkv', '.mp4', '.avi']):
@@ -514,140 +660,179 @@ def _handle_staged_sonarr_item(item_name_in_staging, series_id_target, path_to_c
             if main_video_file_abs_path_in_staging:
                 break
         if not main_video_file_abs_path_in_staging:
-            logger.error(f"_handle_staged_sonarr_item: Aucun fichier vidéo trouvé dans le dossier '{item_name_in_staging}'.")
-            return {"success": False, "error": "Aucun fichier vidéo trouvé dans le dossier stagé."}
+            err_msg = f"Aucun fichier vidéo trouvé dans le dossier '{item_name_in_staging}'."
+            logger.error(f"{log_prefix}{err_msg}")
+            return {"success": False, "message": err_msg, "manual_required": True if automated_import else False}
     else:
-        return {"success": False, "error": "Item de staging non valide."}, 400
+        err_msg = "Item de staging non valide (ni fichier, ni dossier)."
+        logger.error(f"{log_prefix}{err_msg}")
+        return {"success": False, "message": err_msg, "manual_required": True if automated_import else False} # Status code 400 pour l'API
 
     path_for_api_get_str_win = str(path_to_scan_for_api_get_obj).replace('/', '\\')
-    logger.info(f"_handle_staged_sonarr_item: Fichier vidéo principal identifié: {main_video_file_abs_path_in_staging}")
-    logger.info(f"_handle_staged_sonarr_item: Dossier/Fichier scanné par Sonarr pour infos: {path_for_api_get_str_win}")
+    logger.info(f"{log_prefix}Fichier vidéo principal: {main_video_file_abs_path_in_staging}")
+    logger.info(f"{log_prefix}Scan Sonarr pour infos sur: {path_for_api_get_str_win}")
 
-    # --- Tenter d'obtenir des infos (qualité, langue) de Sonarr pour ce fichier ---
     manual_import_get_url = f"{sonarr_url.rstrip('/')}/api/v3/manualimport"
-    get_params = {'folder': path_for_api_get_str_win, 'filterExistingFiles': 'false'} # On scanne le fichier ou son dossier direct
-    logger.debug(f"_handle_staged_sonarr_item: GET Sonarr ManualImport pour infos: URL={manual_import_get_url}, Params={get_params}")
+    get_params = {'folder': path_for_api_get_str_win, 'filterExistingFiles': 'false'}
+    logger.debug(f"{log_prefix}GET Sonarr ManualImport: URL={manual_import_get_url}, Params={get_params}")
     manual_import_candidates, error_msg_get = _make_arr_request('GET', manual_import_get_url, sonarr_api_key, params=get_params)
 
-    # Variables pour les infos extraites de Sonarr (ou des valeurs par défaut)
     sonarr_identified_season_num = None
-    sonarr_identified_episode_num = None
-    # On ne prend plus quality et language de ce call car on ne fait plus de POST ManualImport à Sonarr
+    # sonarr_identified_episode_num = None # Pas utilisé pour l'instant pour la destination
 
     if error_msg_get or not isinstance(manual_import_candidates, list):
-        logger.warning(f"_handle_staged_sonarr_item: Erreur ou pas de candidats de Sonarr lors du GET manualimport pour '{original_filename_of_video}': {error_msg_get or 'Pas de candidats'}. On continue avec les infos du nom de fichier.")
-    else: # On a des candidats, on essaie de trouver celui qui correspond à notre fichier vidéo principal
+        logger.warning(f"{log_prefix}Erreur ou pas de candidats Sonarr GET manualimport pour '{original_filename_of_video}': {error_msg_get or 'Pas de candidats'}. On continue avec parsing nom de fichier.")
+    else:
         found_candidate_info = False
         for candidate in manual_import_candidates:
             candidate_path_from_api = candidate.get('path')
             if not candidate_path_from_api: continue
 
-            abs_cand_path_in_staging = (path_to_scan_for_api_get_obj / candidate_path_from_api).resolve() if path_to_scan_for_api_get_obj.is_dir() else path_to_scan_for_api_get_obj.resolve()
+            # Recalculer le chemin absolu du candidat DANS LE STAGING
+            # Si path_to_scan_for_api_get_obj est un fichier, candidate_path_from_api est juste le nom du fichier.
+            # Si path_to_scan_for_api_get_obj est un dossier, candidate_path_from_api est relatif à ce dossier.
+            if path_to_scan_for_api_get_obj.is_dir():
+                abs_cand_path_in_staging = (path_to_scan_for_api_get_obj / candidate_path_from_api).resolve()
+            else: # path_to_scan_for_api_get_obj est un fichier
+                 # Sonarr retourne souvent le nom du fichier lui-même comme 'path' relatif au 'folder' scanné, même si 'folder' est un fichier.
+                 # Il faut vérifier si candidate_path_from_api == path_to_scan_for_api_get_obj.name
+                if candidate_path_from_api == path_to_scan_for_api_get_obj.name:
+                    abs_cand_path_in_staging = path_to_scan_for_api_get_obj.resolve()
+                else: # Cas étrange, on log et on continue
+                    logger.warning(f"{log_prefix}Candidate path '{candidate_path_from_api}' ne correspond pas au fichier scanné '{path_to_scan_for_api_get_obj.name}'.")
+                    continue
 
             if abs_cand_path_in_staging == main_video_file_abs_path_in_staging.resolve():
-                # C'est notre fichier ! Récupérer les infos S/E de Sonarr
                 candidate_episodes_info = candidate.get('episodes', [])
                 if candidate_episodes_info:
                     sonarr_identified_season_num = candidate_episodes_info[0].get('seasonNumber')
-                    sonarr_identified_episode_num = candidate_episodes_info[0].get('episodeNumber')
-                    logger.info(f"_handle_staged_sonarr_item: Sonarr a identifié '{original_filename_of_video}' comme S{sonarr_identified_season_num}E{sonarr_identified_episode_num}.")
+                    # sonarr_identified_episode_num = candidate_episodes_info[0].get('episodeNumber')
+                    logger.info(f"{log_prefix}Sonarr a identifié S{sonarr_identified_season_num} pour '{original_filename_of_video}'.")
                 else:
-                    logger.warning(f"_handle_staged_sonarr_item: Sonarr a trouvé le fichier '{original_filename_of_video}' mais sans infos d'épisode.")
+                    logger.warning(f"{log_prefix}Sonarr a trouvé '{original_filename_of_video}' mais sans infos d'épisode.")
                 found_candidate_info = True
                 break
         if not found_candidate_info:
-             logger.warning(f"_handle_staged_sonarr_item: Le fichier '{original_filename_of_video}' n'a pas été spécifiquement retourné par le scan Sonarr, ou sans infos d'épisode.")
+             logger.warning(f"{log_prefix}Fichier '{original_filename_of_video}' non trouvé ou sans infos d'épisode par GET manualimport Sonarr.")
 
-
-    # --- Déterminer la saison à utiliser pour le déplacement ---
     season_to_use_for_move = None
     if user_chosen_season is not None:
         season_to_use_for_move = user_chosen_season
-        logger.info(f"_handle_staged_sonarr_item: Utilisation de la saison forcée par l'utilisateur: {season_to_use_for_move}")
-    else: # Pas de saison forcée, on essaie de parser le nom du fichier
-        filename_s_num_parsed, _ = None, None
-        s_e_match = re.search(r'[._\s\[\(-]S(\d{1,3})[E._\s-]?(\d{1,3})', original_filename_of_video, re.IGNORECASE)
+        logger.info(f"{log_prefix}Utilisation saison forcée: {season_to_use_for_move}")
+    else:
+        filename_s_num_parsed = None
+        s_e_match = re.search(r'[._\s\[\(-]S(\d{1,3})([E._\s-]\d{1,3})?', original_filename_of_video, re.IGNORECASE) # Episode part optional
         if s_e_match:
             try: filename_s_num_parsed = int(s_e_match.group(1))
             except ValueError: pass
 
         if filename_s_num_parsed is not None:
             season_to_use_for_move = filename_s_num_parsed
-            logger.info(f"_handle_staged_sonarr_item: Utilisation de la saison S{season_to_use_for_move} parsée du nom de fichier '{original_filename_of_video}'.")
+            logger.info(f"{log_prefix}Utilisation saison S{season_to_use_for_move} parsée du nom de fichier.")
             if sonarr_identified_season_num is not None and sonarr_identified_season_num != filename_s_num_parsed:
-                logger.warning(f"_handle_staged_sonarr_item: Discordance (info): Nom de fichier S{filename_s_num_parsed} vs Sonarr S{sonarr_identified_season_num}. On utilise S{filename_s_num_parsed}.")
+                logger.warning(f"{log_prefix}Discordance info: Nom de fichier S{filename_s_num_parsed} vs Sonarr S{sonarr_identified_season_num}. On utilise S{filename_s_num_parsed}.")
         elif sonarr_identified_season_num is not None:
             season_to_use_for_move = sonarr_identified_season_num
-            logger.info(f"_handle_staged_sonarr_item: Utilisation de la saison S{season_to_use_for_move} identifiée par Sonarr (nom de fichier non parsable).")
+            logger.info(f"{log_prefix}Utilisation saison S{season_to_use_for_move} identifiée par Sonarr.")
         else:
-            logger.error(f"_handle_staged_sonarr_item: Impossible de déterminer le numéro de saison pour '{original_filename_of_video}'. Annulation.")
-            return {"success": False, "error": f"Impossible de déterminer la saison pour '{original_filename_of_video}'."}
+            # EN MODE AUTOMATIQUE : Si on n'a pas de saison, c'est un problème. On ne peut pas deviner.
+            # On pourrait tenter une saison par défaut (ex: saison 1) MAIS c'est risqué.
+            # Préférable de marquer pour intervention manuelle.
+            err_msg = f"Impossible de déterminer le numéro de saison pour '{original_filename_of_video}'."
+            logger.error(f"{log_prefix}{err_msg}")
+            if torrent_hash_for_status_update and automated_import:
+                torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_sonarr_season_undefined", err_msg)
+            return {"success": False, "message": err_msg, "manual_required": True} # Toujours manual_required ici
 
-    # --- Récupérer les détails de la série pour le chemin racine ---
     series_details_url = f"{sonarr_url.rstrip('/')}/api/v3/series/{series_id_target}"
     series_data, error_series_data = _make_arr_request('GET', series_details_url, sonarr_api_key)
     if error_series_data or not series_data:
-        return {"success": False, "error": "Impossible de récupérer les détails de la série Sonarr."}
+        err_msg = f"Impossible de récupérer détails série Sonarr ID {series_id_target}: {error_series_data}"
+        logger.error(f"{log_prefix}{err_msg}")
+        if torrent_hash_for_status_update and automated_import:
+             torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_sonarr_api", err_msg)
+        return {"success": False, "message": err_msg, "manual_required": True if automated_import else False}
+
     series_root_folder_path = series_data.get('path')
     series_title = series_data.get('title', 'Série Inconnue')
     if not series_root_folder_path:
-        return {"success": False, "error": "Chemin racine de la série non trouvé dans Sonarr."}
+        err_msg = f"Chemin racine de la série '{series_title}' (ID {series_id_target}) non trouvé dans Sonarr."
+        logger.error(f"{log_prefix}{err_msg}")
+        if torrent_hash_for_status_update and automated_import:
+             torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_sonarr_config", err_msg)
+        return {"success": False, "message": err_msg, "manual_required": True if automated_import else False}
 
-    # --- Déplacement du fichier principal ---
-    dest_season_folder_name = f"Season {str(season_to_use_for_move).zfill(2)}" # Ex: Season 00, Season 13, Season 14
+    dest_season_folder_name = f"Season {str(season_to_use_for_move).zfill(2)}"
     dest_season_path_abs = Path(series_root_folder_path) / dest_season_folder_name
-    dest_file_path_abs = dest_season_path_abs / original_filename_of_video # Garde le nom original du fichier
+    dest_file_path_abs = dest_season_path_abs / original_filename_of_video
 
-    logger.info(f"_handle_staged_sonarr_item: Déplacement MMS: '{main_video_file_abs_path_in_staging}' vers '{dest_file_path_abs}'")
+    logger.info(f"{log_prefix}Déplacement MMS: '{main_video_file_abs_path_in_staging}' vers '{dest_file_path_abs}'")
     imported_successfully = False
     try:
         dest_season_path_abs.mkdir(parents=True, exist_ok=True)
         if main_video_file_abs_path_in_staging.resolve() != dest_file_path_abs.resolve():
             shutil.move(str(main_video_file_abs_path_in_staging), str(dest_file_path_abs))
         else:
-            logger.warning(f"_handle_staged_sonarr_item: Source et destination identiques pour le déplacement {main_video_file_abs_path_in_staging}. Fichier déjà en place?")
+            logger.warning(f"{log_prefix}Source et destination identiques: {main_video_file_abs_path_in_staging}. Fichier déjà en place?")
         imported_successfully = True
     except Exception as e_move:
-        logger.error(f"_handle_staged_sonarr_item: Erreur move '{main_video_file_abs_path_in_staging}': {e_move}. Tentative copie/suppr.")
+        logger.error(f"{log_prefix}Erreur move '{original_filename_of_video}': {e_move}. Tentative copie/suppr.")
         try:
-            shutil.copy2(str(main_video_file_abs_path_in_staging), str(dest_file_path_abs))
-            os.remove(str(main_video_file_abs_path_in_staging))
-            imported_successfully = True
+            # Ensure parent of main_video_file_abs_path_in_staging exists if we are to remove it
+            if main_video_file_abs_path_in_staging.parent.exists():
+                 shutil.copy2(str(main_video_file_abs_path_in_staging), str(dest_file_path_abs))
+                 os.remove(str(main_video_file_abs_path_in_staging)) # Remove original after successful copy
+                 imported_successfully = True
+            else: # Source parent does not exist, cannot remove, something is wrong
+                logger.error(f"{log_prefix}Parent du fichier source {main_video_file_abs_path_in_staging.parent} n'existe pas. Abandon de la copie/suppression.")
+                imported_successfully = False # Marquer comme échec si on ne peut pas nettoyer la source
         except Exception as e_copy:
-            logger.error(f"_handle_staged_sonarr_item: Erreur copie/suppr '{main_video_file_abs_path_in_staging}': {e_copy}")
-            return {"success": False, "error": f"Échec du déplacement du fichier '{original_filename_of_video}': {e_copy}"}
+            err_msg = f"Échec du déplacement (copie/suppression) du fichier '{original_filename_of_video}': {e_copy}"
+            logger.error(f"{log_prefix}{err_msg}")
+            if torrent_hash_for_status_update and automated_import:
+                 torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_mms_file_move", err_msg)
+            return {"success": False, "message": err_msg, "manual_required": True if automated_import else False}
 
     if not imported_successfully:
-         return {"success": False, "error": f"Échec inattendu du déplacement du fichier '{original_filename_of_video}'."}
+        err_msg = f"Échec inattendu du déplacement de '{original_filename_of_video}'."
+        logger.error(f"{log_prefix}{err_msg}")
+        if torrent_hash_for_status_update and automated_import:
+             torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_mms_file_move", err_msg)
+        return {"success": False, "message": err_msg, "manual_required": True if automated_import else False}
 
-    # --- Nettoyage du dossier de staging d'origine ---
-    # path_to_cleanup_in_staging_after_success est le chemin complet de l'item cliqué initialement.
-    # C'est CE dossier/fichier qu'on veut nettoyer.
-    # Si c'était un fichier, on nettoie son dossier parent (qui est original_release_folder_in_staging)
-    # Si c'était un dossier, on le nettoie lui-même.
     actual_folder_to_cleanup = Path(path_to_cleanup_in_staging_after_success)
-    if actual_folder_to_cleanup.is_file(): # Si on a cliqué sur un fichier, on nettoie son dossier parent
+    if actual_folder_to_cleanup.is_file():
         actual_folder_to_cleanup = actual_folder_to_cleanup.parent
 
     if actual_folder_to_cleanup.exists() and actual_folder_to_cleanup.is_dir():
-        logger.info(f"_handle_staged_sonarr_item: Nettoyage du dossier de staging: {actual_folder_to_cleanup}")
-        time.sleep(1)
-        cleanup_staging_subfolder_recursively(str(actual_folder_to_cleanup), staging_dir_str, orphan_exts)
+        logger.info(f"{log_prefix}Nettoyage dossier staging: {actual_folder_to_cleanup}")
+        time.sleep(1) # Petit délai pour s'assurer que le handle du fichier est libéré
+        # Assurez-vous que cleanup_staging_subfolder_recursively est importée ou définie
+        try:
+            cleanup_staging_subfolder_recursively(str(actual_folder_to_cleanup), staging_dir_str, orphan_exts)
+        except NameError: # Fallback si la fonction n'est pas disponible (devrait l'être)
+            logger.error(f"{log_prefix}Fonction 'cleanup_staging_subfolder_recursively' non trouvée. Nettoyage manuel requis pour {actual_folder_to_cleanup}")
+        except Exception as e_cleanup:
+            logger.error(f"{log_prefix}Erreur lors du nettoyage de {actual_folder_to_cleanup}: {e_cleanup}")
 
-    # --- Rescan Sonarr ---
+
     rescan_payload = {"name": "RescanSeries", "seriesId": series_id_target}
     command_url = f"{sonarr_url.rstrip('/')}/api/v3/command"
     _, error_rescan = _make_arr_request('POST', command_url, sonarr_api_key, json_data=rescan_payload)
 
-    message = f"'{original_filename_of_video}' (pour '{series_title}', S{str(season_to_use_for_move).zfill(2)}) déplacé avec succès."
-    status_code_override = 200
+    final_message = f"'{original_filename_of_video}' (pour '{series_title}', S{str(season_to_use_for_move).zfill(2)}) déplacé avec succès."
     if error_rescan:
-        message += f" Échec du Rescan Sonarr: {error_rescan}."
-        status_code_override = 207 # Multi-Status: une partie a réussi, une autre non
+        final_message += f" Échec du Rescan Sonarr: {error_rescan}."
+        logger.warning(f"{log_prefix}Rescan Sonarr échoué: {error_rescan}")
     else:
-        message += " Rescan Sonarr initié."
+        final_message += " Rescan Sonarr initié."
+        logger.info(f"{log_prefix}Rescan Sonarr initié pour série ID {series_id_target}.")
 
-    return {"success": True, "message": message, "status_code_override": status_code_override}
+    if torrent_hash_for_status_update and automated_import: # Uniquement si tout s'est bien passé jusque là
+        torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "imported_by_mms", final_message)
+        # Optionnel: remove_torrent_from_map(torrent_hash_for_status_update) si on ne veut plus le suivre
+
+    return {"success": True, "message": final_message, "manual_required": False} # status_code_override enlevé, la route API s'en chargera
 
 # ==============================================================================
 # FIN DE LA FONCTION HELPER _handle_staged_sonarr_item
@@ -655,17 +840,22 @@ def _handle_staged_sonarr_item(item_name_in_staging, series_id_target, path_to_c
 # ==============================================================================
 # NOUVELLE FONCTION HELPER POUR TRAITER UN ITEM RADARR DÉJÀ DANS LE STAGING
 # ==============================================================================
-def _handle_staged_radarr_item(item_name_in_staging, movie_id_target, path_to_cleanup_in_staging_after_success):
+# Ligne juste avant : la fonction _handle_staged_sonarr_item (ou d'autres helpers)
+
+def _handle_staged_radarr_item(item_name_in_staging, movie_id_target,
+                               path_to_cleanup_in_staging_after_success,
+                               automated_import=False, # NOUVEAU
+                               torrent_hash_for_status_update=None): # NOUVEAU
     """
     Gère l'import d'un item Radarr déjà présent dans le staging local.
     - MediaManagerSuite effectue le déplacement.
     - Déclenche un RescanMovie.
     - Nettoie le dossier de staging.
-    Retourne un dictionnaire: {"success": True/False, "message": "..."}
     """
-    logger.info(f"HELPER _handle_staged_radarr_item: Traitement de '{item_name_in_staging}' pour Movie ID {movie_id_target}.")
+    logger = current_app.logger
+    log_prefix = f"HELPER _handle_staged_radarr_item (Automated: {automated_import}, Hash: {torrent_hash_for_status_update}): "
+    logger.info(f"{log_prefix}Traitement de '{item_name_in_staging}' pour Movie ID {movie_id_target}.")
 
-    # Récupérer les configs
     radarr_url = current_app.config.get('RADARR_URL')
     radarr_api_key = current_app.config.get('RADARR_API_KEY')
     staging_dir_str = current_app.config.get('STAGING_DIR')
@@ -673,10 +863,12 @@ def _handle_staged_radarr_item(item_name_in_staging, movie_id_target, path_to_cl
 
     path_of_item_in_staging_abs = (Path(staging_dir_str) / item_name_in_staging).resolve()
     if not path_of_item_in_staging_abs.exists():
-        logger.error(f"_handle_staged_radarr_item: Item '{item_name_in_staging}' (résolu en {path_of_item_in_staging_abs}) non trouvé.")
-        return {"success": False, "error": f"Item '{item_name_in_staging}' non trouvé dans le staging."}
+        err_msg = f"Item '{item_name_in_staging}' (résolu en {path_of_item_in_staging_abs}) non trouvé."
+        logger.error(f"{log_prefix}{err_msg}")
+        if torrent_hash_for_status_update and automated_import:
+            torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_staging_path_missing", err_msg)
+        return {"success": False, "message": err_msg, "manual_required": True if automated_import else False}
 
-    # Identifier le fichier vidéo principal
     main_video_file_abs_path_in_staging = None
     original_filename_of_video = None
 
@@ -693,82 +885,107 @@ def _handle_staged_radarr_item(item_name_in_staging, movie_id_target, path_to_cl
             if main_video_file_abs_path_in_staging:
                 break
         if not main_video_file_abs_path_in_staging:
-            logger.error(f"_handle_staged_radarr_item: Aucun fichier vidéo trouvé dans le dossier '{item_name_in_staging}'.")
-            return {"success": False, "error": "Aucun fichier vidéo trouvé dans le dossier stagé."}
+            err_msg = f"Aucun fichier vidéo trouvé dans le dossier '{item_name_in_staging}'."
+            logger.error(f"{log_prefix}{err_msg}")
+            return {"success": False, "message": err_msg, "manual_required": True if automated_import else False}
     else:
-        return {"success": False, "error": "Item de staging non valide."}, 400
+        err_msg = "Item de staging non valide (ni fichier, ni dossier)."
+        logger.error(f"{log_prefix}{err_msg}")
+        return {"success": False, "message": err_msg, "manual_required": True if automated_import else False}
 
-    logger.info(f"_handle_staged_radarr_item: Fichier vidéo principal identifié: {main_video_file_abs_path_in_staging}")
+    logger.info(f"{log_prefix}Fichier vidéo principal: {main_video_file_abs_path_in_staging}")
 
-    # --- Récupérer les détails du film cible pour le chemin de destination ---
     movie_details_url = f"{radarr_url.rstrip('/')}/api/v3/movie/{movie_id_target}"
-    logger.debug(f"_handle_staged_radarr_item: GET Radarr Movie Details: URL={movie_details_url}")
+    logger.debug(f"{log_prefix}GET Radarr Movie Details: URL={movie_details_url}")
     movie_data, error_movie_data = _make_arr_request('GET', movie_details_url, radarr_api_key)
 
     if error_movie_data or not movie_data or not isinstance(movie_data, dict):
-        logger.error(f"_handle_staged_radarr_item: Erreur détails film {movie_id_target}: {error_movie_data or 'Pas de données'}")
-        return {"success": False, "error": "Impossible de récupérer les détails du film depuis Radarr."}
+        err_msg = f"Erreur détails film {movie_id_target}: {error_movie_data or 'Pas de données Radarr'}"
+        logger.error(f"{log_prefix}{err_msg}")
+        if torrent_hash_for_status_update and automated_import:
+             torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_radarr_api", err_msg)
+        return {"success": False, "message": err_msg, "manual_required": True if automated_import else False}
 
-    # 'path' dans /api/v3/movie/{id} est le chemin complet du dossier du film
     expected_movie_folder_path_from_radarr_api = movie_data.get('path')
     movie_title = movie_data.get('title', 'Film Inconnu')
     if not expected_movie_folder_path_from_radarr_api:
-        logger.error(f"_handle_staged_radarr_item: Chemin ('path') manquant pour film ID {movie_id_target} dans Radarr. Assurez-vous qu'un Root Folder est assigné.")
-        return {"success": False, "error": f"Chemin de destination non configuré dans Radarr pour '{movie_title}'."}
+        err_msg = f"Chemin ('path') manquant pour film ID {movie_id_target} ('{movie_title}') dans Radarr."
+        logger.error(f"{log_prefix}{err_msg}")
+        if torrent_hash_for_status_update and automated_import:
+             torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_radarr_config", err_msg)
+        return {"success": False, "message": err_msg, "manual_required": True if automated_import else False}
 
-    logger.info(f"_handle_staged_radarr_item: Chemin dossier final Radarr pour '{movie_title}': {expected_movie_folder_path_from_radarr_api}")
+    logger.info(f"{log_prefix}Chemin dossier final Radarr pour '{movie_title}': {expected_movie_folder_path_from_radarr_api}")
 
-    # --- Déplacement du fichier vidéo ---
     destination_folder_for_movie = Path(expected_movie_folder_path_from_radarr_api).resolve()
-    # On garde le nom original du fichier vidéo. Radarr le renommera si configuré.
     destination_video_file_path_abs = destination_folder_for_movie / original_filename_of_video
 
-    logger.info(f"_handle_staged_radarr_item: Déplacement MMS: '{main_video_file_abs_path_in_staging}' vers '{destination_video_file_path_abs}'")
+    logger.info(f"{log_prefix}Déplacement MMS: '{main_video_file_abs_path_in_staging}' vers '{destination_video_file_path_abs}'")
     imported_successfully = False
     try:
-        destination_folder_for_movie.mkdir(parents=True, exist_ok=True) # Crée le dossier du film si besoin
+        destination_folder_for_movie.mkdir(parents=True, exist_ok=True)
         if main_video_file_abs_path_in_staging.resolve() != destination_video_file_path_abs.resolve():
             shutil.move(str(main_video_file_abs_path_in_staging), str(destination_video_file_path_abs))
         else:
-            logger.warning(f"_handle_staged_radarr_item: Source et destination identiques: {main_video_file_abs_path_in_staging}")
+            logger.warning(f"{log_prefix}Source et destination identiques: {main_video_file_abs_path_in_staging}")
         imported_successfully = True
     except Exception as e_move:
-        logger.error(f"_handle_staged_radarr_item: Erreur move '{original_filename_of_video}': {e_move}. Tentative copie/suppr.")
+        logger.error(f"{log_prefix}Erreur move '{original_filename_of_video}': {e_move}. Tentative copie/suppr.")
         try:
-            shutil.copy2(str(main_video_file_abs_path_in_staging), str(destination_video_file_path_abs))
-            os.remove(str(main_video_file_abs_path_in_staging))
-            imported_successfully = True
+            if main_video_file_abs_path_in_staging.parent.exists():
+                shutil.copy2(str(main_video_file_abs_path_in_staging), str(destination_video_file_path_abs))
+                os.remove(str(main_video_file_abs_path_in_staging))
+                imported_successfully = True
+            else:
+                logger.error(f"{log_prefix}Parent du fichier source {main_video_file_abs_path_in_staging.parent} n'existe pas. Abandon copie/suppr.")
+                imported_successfully = False
         except Exception as e_copy:
-            logger.error(f"_handle_staged_radarr_item: Erreur copie/suppr '{original_filename_of_video}': {e_copy}")
-            return {"success": False, "error": f"Échec du déplacement du fichier '{original_filename_of_video}': {e_copy}"}
+            err_msg = f"Échec du déplacement (copie/suppression) du fichier '{original_filename_of_video}': {e_copy}"
+            logger.error(f"{log_prefix}{err_msg}")
+            if torrent_hash_for_status_update and automated_import:
+                 torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_mms_file_move", err_msg)
+            return {"success": False, "message": err_msg, "manual_required": True if automated_import else False}
 
     if not imported_successfully:
-         return {"success": False, "error": f"Échec inattendu du déplacement du fichier '{original_filename_of_video}'."}
+        err_msg = f"Échec inattendu du déplacement de '{original_filename_of_video}'."
+        logger.error(f"{log_prefix}{err_msg}")
+        if torrent_hash_for_status_update and automated_import:
+             torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_mms_file_move", err_msg)
+        return {"success": False, "message": err_msg, "manual_required": True if automated_import else False}
 
-    # --- Nettoyage du dossier de staging d'origine ---
-    actual_folder_to_cleanup = Path(path_to_cleanup_in_staging_after_success) # Ceci est le chemin de l'item cliqué
+    actual_folder_to_cleanup = Path(path_to_cleanup_in_staging_after_success)
     if actual_folder_to_cleanup.is_file():
         actual_folder_to_cleanup = actual_folder_to_cleanup.parent
 
     if actual_folder_to_cleanup.exists() and actual_folder_to_cleanup.is_dir():
-        logger.info(f"_handle_staged_radarr_item: Nettoyage dossier staging: {actual_folder_to_cleanup}")
+        logger.info(f"{log_prefix}Nettoyage dossier staging: {actual_folder_to_cleanup}")
         time.sleep(1)
-        cleanup_staging_subfolder_recursively(str(actual_folder_to_cleanup), staging_dir_str, orphan_exts)
+        try:
+            cleanup_staging_subfolder_recursively(str(actual_folder_to_cleanup), staging_dir_str, orphan_exts)
+        except NameError:
+            logger.error(f"{log_prefix}Fonction 'cleanup_staging_subfolder_recursively' non trouvée. Nettoyage manuel requis pour {actual_folder_to_cleanup}")
+        except Exception as e_cleanup:
+            logger.error(f"{log_prefix}Erreur lors du nettoyage de {actual_folder_to_cleanup}: {e_cleanup}")
 
-    # --- Rescan Radarr ---
     rescan_payload = {"name": "RescanMovie", "movieId": movie_id_target}
     command_url = f"{radarr_url.rstrip('/')}/api/v3/command"
     _, error_rescan = _make_arr_request('POST', command_url, radarr_api_key, json_data=rescan_payload)
 
-    message = f"Fichier pour '{movie_title}' déplacé avec succès."
-    status_code_override = 200
+    final_message = f"Fichier pour '{movie_title}' déplacé avec succès."
     if error_rescan:
-        message += f" Échec du Rescan Radarr: {error_rescan}."
-        status_code_override = 207
+        final_message += f" Échec du Rescan Radarr: {error_rescan}."
+        logger.warning(f"{log_prefix}Rescan Radarr échoué: {error_rescan}")
     else:
-        message += " Rescan Radarr initié."
+        final_message += " Rescan Radarr initié."
+        logger.info(f"{log_prefix}Rescan Radarr initié pour movie ID {movie_id_target}.")
 
-    return {"success": True, "message": message, "status_code_override": status_code_override}
+    if torrent_hash_for_status_update and automated_import:
+        torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "imported_by_mms", final_message)
+        # Optionnel: remove_torrent_from_map(torrent_hash_for_status_update)
+
+    return {"success": True, "message": final_message, "manual_required": False}
+
+# Ligne juste après : vos autres routes, ou la fin du fichier.
 
 # FIN de _handle_staged_radarr_item
 def sftp_delete_recursive(sftp_client, remote_path_posix, current_logger):
@@ -1223,11 +1440,24 @@ def index():
         return render_template('seedbox_ui/index.html', items_tree=[])
 
     # Récupérer les associations en attente
-    pending_associations = get_all_pending_associations()
+    pending_associations = torrent_map_manager.get_all_torrents_in_map()
     logger.debug(f"Associations en attente récupérées: {pending_associations}")
 
     logger.info(f"Construction de l'arborescence pour le dossier de staging: {staging_dir}")
-    items_tree_data = build_file_tree(staging_dir, staging_dir, pending_associations)
+    # --- ADAPTATION POUR build_file_tree ---
+    all_torrents_by_hash = torrent_map_manager.get_all_torrents_in_map()
+    associations_by_release_name = {}
+    if isinstance(all_torrents_by_hash, dict): # S'assurer que c'est bien un dictionnaire
+        for torrent_hash, assoc_data in all_torrents_by_hash.items():
+            release_name = assoc_data.get('release_name')
+            if release_name:
+                # On stocke l'association complète, build_file_tree pourra en extraire ce dont il a besoin.
+                associations_by_release_name[release_name] = assoc_data 
+    logger.debug(f"Associations transformées par release_name pour build_file_tree: {associations_by_release_name}")
+    # --- FIN ADAPTATION ---
+
+
+    items_tree_data = build_file_tree(staging_dir, staging_dir, associations_by_release_name) # Passer le dict transformé
 
     sonarr_configured = bool(current_app.config.get('SONARR_URL') and current_app.config.get('SONARR_API_KEY'))
     radarr_configured = bool(current_app.config.get('RADARR_URL') and current_app.config.get('RADARR_API_KEY'))
@@ -1753,7 +1983,7 @@ def sftp_retrieve_and_process_action():
 
         # **NEW: Check for pre-association**
         # get_association_by_release_name returns (torrent_hash, association_data) or (None, None)
-        torrent_hash_of_assoc, pending_assoc_data = get_association_by_release_name(item_basename_on_seedbox)
+        torrent_hash_of_assoc, pending_assoc_data = torrent_map_manager.find_torrent_by_release_name(item_basename_on_seedbox)
 
         target_app_type_for_handler = None
         target_id_for_handler = None
@@ -1815,7 +2045,7 @@ def sftp_retrieve_and_process_action():
                 flash(flash_msg, "success")
                 # If processing was successful and it came from a pre-association (torrent_hash_of_assoc is not None)
                 if torrent_hash_of_assoc: # Implies it was found by get_association_by_release_name
-                    if remove_association_by_hash(torrent_hash_of_assoc):
+                    if torrent_map_manager.remove_torrent_from_map(torrent_hash_of_assoc):
                         current_app.logger.info(f"SFTP R&P: Association pour hash '{torrent_hash_of_assoc}' (Release: {item_basename_on_seedbox}) supprimée.")
                     else:
                         current_app.logger.warning(f"SFTP R&P: Échec de la suppression de l'association pour hash '{torrent_hash_of_assoc}'.")
@@ -2201,6 +2431,7 @@ def cleanup_staging_item_action(item_name):
 # FIN DE trigger_rdarr_import
 # ------------------------------------------------------------------------------
 
+# Ligne ~1129 dans votre fichier
 @seedbox_ui_bp.route('/interaction/rtorrent/add', methods=['POST'])
 def rtorrent_add_torrent_action():
     data = request.get_json()
@@ -2208,107 +2439,149 @@ def rtorrent_add_torrent_action():
         return jsonify({"success": False, "error": "No JSON data received."}), 400
 
     magnet_link = data.get('magnet_link')
-    torrent_file_b64 = data.get('torrent_file_b64') # Base64 encoded .torrent file content
-    app_type = data.get('app_type') # 'sonarr' or 'radarr'
-    target_id = data.get('target_id') # seriesId or movieId
-    original_name = data.get('original_name') # Original torrent name for matching later
+    torrent_file_b64 = data.get('torrent_file_b64')
+    app_type = data.get('app_type')
+    target_id = data.get('target_id')
+    original_name_from_js = data.get('original_name') # Nom du fichier .torrent ou nom d'affichage du magnet
 
-    current_app.logger.info(f"Action rTorrent Add: Type={app_type}, TargetID={target_id}, OriginalName='{original_name}', HasMagnet={bool(magnet_link)}, HasFile={bool(torrent_file_b64)}")
+    current_app.logger.info(f"Action rTorrent Add: Type={app_type}, TargetID={target_id}, OriginalNameJS='{original_name_from_js}', HasMagnet={bool(magnet_link)}, HasFile={bool(torrent_file_b64)}")
 
-    if not (magnet_link or torrent_file_b64):
+    if not (magnet_link or torrent_file_b64): # Manque torrent_file_b64
         return jsonify({"success": False, "error": "Missing magnet link or torrent file content."}), 400
-    if not app_type or not target_id or not original_name:
+    if not app_type or target_id is None or not original_name_from_js: # target_id peut être 0
         return jsonify({"success": False, "error": "Missing app_type, target_id, or original_name."}), 400
     if app_type not in ['sonarr', 'radarr']:
         return jsonify({"success": False, "error": "Invalid app_type. Must be 'sonarr' or 'radarr'."}), 400
 
-    # Get label and download directory from config
+    try:
+        target_id_int = int(target_id)
+    except ValueError:
+        current_app.logger.error(f"Invalid target_id format: {target_id}. Must be an integer.")
+        return jsonify({"success": False, "error": "Invalid target_id format."}), 400
+
+
     if app_type == 'sonarr':
         rtorrent_label = current_app.config.get('RTORRENT_LABEL_SONARR')
         rtorrent_download_dir = current_app.config.get('RTORRENT_DOWNLOAD_DIR_SONARR')
-    else: # radarr
+    else:
         rtorrent_label = current_app.config.get('RTORRENT_LABEL_RADARR')
         rtorrent_download_dir = current_app.config.get('RTORRENT_DOWNLOAD_DIR_RADARR')
 
     if not rtorrent_label or not rtorrent_download_dir:
-        msg = f"Label or download directory for {app_type} not configured in MediaManagerSuite."
+        msg = f"Label or download directory for {app_type} not configured."
         current_app.logger.error(msg)
         return jsonify({"success": False, "error": msg}), 500
 
     success_add = False
     error_msg_add = "No action taken."
 
-    current_app.logger.info(f"Preparing to add torrent via XML-RPC. App Type: {app_type}, Target ID: {target_id}, Original Name: '{original_name}', Calculated Label: '{rtorrent_label}', Calculated Download Dir: '{rtorrent_download_dir}', Magnet: {bool(magnet_link)}, File (b64 provided): {bool(torrent_file_b64)}")
-    if magnet_link:
-        current_app.logger.info(f"Adding magnet to rTorrent via httprpc: Label='{rtorrent_label}', Dir='{rtorrent_download_dir}'")
-        success_add, error_msg_add = rtorrent_add_magnet_httprpc(magnet_link, rtorrent_label, rtorrent_download_dir)
-    elif torrent_file_b64:
+    # --- NOUVELLE LOGIQUE POUR DÉTERMINER release_name_for_map ---
+    release_name_for_map = None # Le nom qui sera utilisé pour le dossier/fichier sur la seedbox
+    torrent_content_bytes = None
+
+    if torrent_file_b64:
         try:
-            # The client's add_torrent_file expects bytes, JS sends base64 string. Decode it.
-            # import base64 # Ensure import is at the top of the file
             torrent_content_bytes = base64.b64decode(torrent_file_b64)
-            # original_name here is the filename of the .torrent file, needed by the client function
-            current_app.logger.info(f"Adding torrent file '{original_name}' to rTorrent via httprpc: Label='{rtorrent_label}', Dir='{rtorrent_download_dir}'")
-            success_add, error_msg_add = rtorrent_add_torrent_file_httprpc(torrent_content_bytes, original_name, rtorrent_label, rtorrent_download_dir)
+            # Utiliser _decode_bencode_name pour obtenir le nom du contenu principal du torrent
+            release_name_for_map = _decode_bencode_name(torrent_content_bytes)
+            if not release_name_for_map:
+                current_app.logger.warning(f"Impossible d'extraire info['name'] du fichier torrent '{original_name_from_js}'. Utilisation de original_name_from_js (nettoyé) comme fallback pour release_name.")
+                # Fallback: nettoyer original_name_from_js (nom du fichier .torrent)
+                temp_name = re.sub(r'^\[[^\]]*\]\s*', '', original_name_from_js)
+                release_name_for_map = re.sub(r'\.torrent$', '', temp_name, flags=re.IGNORECASE).strip()
+            else:
+                current_app.logger.info(f"Nom de la release (info['name']) extrait du torrent: '{release_name_for_map}'")
+
         except base64.binascii.Error as e_b64:
             current_app.logger.error(f"Error decoding base64 torrent file content: {e_b64}")
             return jsonify({"success": False, "error": "Invalid base64 torrent file content."}), 400
-        except Exception as e_file_prep: # Catch any other errors during file prep
-            current_app.logger.error(f"Error preparing torrent file for upload: {e_file_prep}", exc_info=True)
-            return jsonify({"success": False, "error": f"Error preparing torrent file: {str(e_file_prep)}"}), 500
+        except Exception as e_bdecode:
+            current_app.logger.error(f"Error decoding bencode for torrent '{original_name_from_js}': {e_bdecode}")
+            # Fallback si _decode_bencode_name échoue
+            temp_name = re.sub(r'^\[[^\]]*\]\s*', '', original_name_from_js)
+            release_name_for_map = re.sub(r'\.torrent$', '', temp_name, flags=re.IGNORECASE).strip()
 
+    elif magnet_link:
+        # Pour les magnets, on n'a pas le contenu bencode directement.
+        # On peut essayer de parser le paramètre 'dn' (Display Name) du magnet.
+        parsed_magnet = urllib.parse.parse_qs(urllib.parse.urlparse(magnet_link).query)
+        display_names = parsed_magnet.get('dn')
+        if display_names and display_names[0]:
+            release_name_for_map = display_names[0].strip()
+            current_app.logger.info(f"Nom de la release (dn) extrait du magnet: '{release_name_for_map}'")
+        else:
+            # Si pas de 'dn', on utilise original_name_from_js (qui pourrait être le magnet lui-même ou un nom fourni)
+            # et on le nettoie un peu, mais c'est moins fiable.
+            release_name_for_map = original_name_from_js.strip() # Un nettoyage plus poussé pourrait être nécessaire
+            current_app.logger.warning(f"Paramètre 'dn' non trouvé dans le magnet. Utilisation de '{release_name_for_map}' comme release_name.")
+
+    if not release_name_for_map: # Fallback ultime si tout a échoué
+         current_app.logger.error("Impossible de déterminer un nom de release pour le mapping. Abandon.")
+         return jsonify({"success": False, "error": "Impossible de déterminer le nom de la release pour le mapping."}), 500
+    # --- FIN NOUVELLE LOGIQUE ---
+
+
+    current_app.logger.info(f"Préparation ajout XML-RPC. App: {app_type}, TargetID: {target_id_int}, ReleaseName: '{release_name_for_map}', Label: '{rtorrent_label}', Dir: '{rtorrent_download_dir}'")
+    if magnet_link:
+        current_app.logger.info(f"Ajout magnet à rTorrent: Label='{rtorrent_label}', Dir='{rtorrent_download_dir}'")
+        success_add, error_msg_add = rtorrent_add_magnet_httprpc(magnet_link, rtorrent_label, rtorrent_download_dir)
+    elif torrent_content_bytes: # Utiliser les bytes déjà décodés
+        current_app.logger.info(f"Ajout fichier torrent '{original_name_from_js}' à rTorrent: Label='{rtorrent_label}', Dir='{rtorrent_download_dir}'")
+        success_add, error_msg_add = rtorrent_add_torrent_file_httprpc(torrent_content_bytes, original_name_from_js, rtorrent_label, rtorrent_download_dir)
 
     if not success_add:
-        current_app.logger.error(f"Failed to add torrent to rTorrent (httprpc): {error_msg_add}")
+        current_app.logger.error(f"Échec ajout torrent à rTorrent: {error_msg_add}")
         return jsonify({"success": False, "error": f"rTorrent error: {error_msg_add or 'Failed to send to rTorrent.'}"}), 500
 
-    current_app.logger.info(f"Torrent '{original_name}' successfully sent to rTorrent. Introducing delay before hash retrieval.")
+    current_app.logger.info(f"Torrent '{original_name_from_js}' envoyé à rTorrent. Attente pour récupération hash.")
 
-    # Introduce delay
-    delay_seconds = current_app.config.get('RTORRENT_POST_ADD_DELAY_SECONDS', 3)
-    current_app.logger.debug(f"Waiting {delay_seconds}s before attempting to get hash for '{original_name}'.")
+    delay_seconds = current_app.config.get('RTORRENT_POST_ADD_DELAY_SECONDS', 3) # Assurez-vous que cette config existe ou mettez une valeur par défaut
+    current_app.logger.debug(f"Attente {delay_seconds}s...")
     time.sleep(delay_seconds)
 
-    current_app.logger.info(f"Original torrent name for hash lookup: '{original_name}'")
-    # Remove bracketed prefixes (e.g., [Xthor])
-    cleaned_name = re.sub(r'^\[[^\]]*\]\s*', '', original_name)
-    # Remove .torrent extension case-insensitively
-    cleaned_name = re.sub(r'\.torrent$', '', cleaned_name, flags=re.IGNORECASE)
-    # Trim whitespace
-    cleaned_name = cleaned_name.strip()
-    current_app.logger.info(f"Cleaned torrent name for hash lookup: '{cleaned_name}'")
+    # Le nom pour chercher le hash dans rTorrent est souvent basé sur `original_name_from_js` (nom du .torrent) ou `release_name_for_map` (nom du contenu)
+    # rtorrent_get_hash_by_name devrait essayer les deux ou être cohérent avec ce que rTorrent utilise.
+    # On va essayer avec `release_name_for_map` d'abord, car c'est ce que rTorrent utilise souvent comme nom de tâche.
+    name_for_hash_lookup = release_name_for_map
+    current_app.logger.info(f"Tentative de récupération du hash pour '{name_for_hash_lookup}' (basé sur le nom de la release).")
+    actual_hash = rtorrent_get_hash_by_name(name_for_hash_lookup)
 
-    current_app.logger.info(f"Attempting to get hash for '{cleaned_name}' from rTorrent.")
-    torrent_hash = rtorrent_get_hash_by_name(cleaned_name) # Max retries are within this function
+    if not actual_hash:
+        current_app.logger.warning(f"Hash non trouvé pour '{name_for_hash_lookup}'. Tentative avec nom original du torrent '{original_name_from_js}' (nettoyé).")
+        temp_cleaned_original_name = re.sub(r'\.torrent$', '', original_name_from_js, flags=re.IGNORECASE).strip()
+        actual_hash = rtorrent_get_hash_by_name(temp_cleaned_original_name)
 
-    if not torrent_hash:
-        warn_msg = f"Torrent '{original_name}' added to rTorrent, but its verification for pre-association failed (hash not found after delay)."
+    if not actual_hash:
+        warn_msg = f"Torrent '{original_name_from_js}' ajouté, mais pré-association échouée (hash non trouvé pour '{name_for_hash_lookup}' ou '{temp_cleaned_original_name}')."
         current_app.logger.warning(warn_msg)
-        return jsonify({
-            "success": True, # Torrent was added successfully
-            "message": warn_msg,
-            "warning": "The hash of the torrent could not be retrieved immediately. Pre-association failed. The torrent should be downloading.",
-            "torrent_hash": None
-        }), 202 # HTTP 202 Accepted: Request accepted, processing not complete or with caveats
+        return jsonify({"success": True, "message": warn_msg, "warning": "Hash non récupérable.", "torrent_hash": None}), 202
 
-    current_app.logger.info(f"Found hash '{torrent_hash}' for '{original_name}'. Saving association.")
-    # Arguments for add_association_by_hash:
-    # torrent_hash, release_name_expected_on_seedbox, app_type, target_id, label
-    if add_association_by_hash(torrent_hash, cleaned_name, app_type, target_id, rtorrent_label):
-        current_app.logger.info(f"Pending association saved by hash '{torrent_hash}' for expected release name '{cleaned_name}' -> App: {app_type}, TargetID: {target_id}, Label: {rtorrent_label}") # Modified original_name to cleaned_name in log
-        return jsonify({
-            "success": True,
-            "message": f"Torrent '{cleaned_name}' (Hash: {torrent_hash}) added to rTorrent and pre-associated.", # Modified original_name to cleaned_name in message
-            "torrent_hash": torrent_hash
-        }), 200
+    current_app.logger.info(f"Hash trouvé '{actual_hash}' pour '{original_name_from_js}'. Sauvegarde association.")
+
+    # Utilisation de torrent_map_manager.add_or_update_torrent_in_map
+    # `release_name_for_map` est le nom de la release attendu dans le staging.
+    # `original_name_from_js` est le nom original du fichier .torrent ou du magnet.
+    # `rtorrent_download_dir` est le chemin de base sur la seedbox, rTorrent ajoutera probablement `release_name_for_map` à cela.
+    # Donc, `seedbox_download_path` est le chemin complet où le contenu sera.
+    seedbox_final_dl_path = str(Path(rtorrent_download_dir) / release_name_for_map).replace('\\', '/')
+
+
+    # APPEL MIS À JOUR ICI:
+    if torrent_map_manager.add_or_update_torrent_in_map(
+            torrent_hash=actual_hash,
+            release_name=release_name_for_map, # Nom de la release (sans .torrent)
+            app_type=app_type,
+            target_id=target_id_int,
+            label=rtorrent_label,
+            seedbox_download_path=seedbox_final_dl_path, # Chemin complet attendu sur la seedbox
+            original_torrent_name=original_name_from_js, # Nom du .torrent ou magnet
+            initial_status="transferring_to_seedbox" # Ou autre statut pertinent
+        ):
+        current_app.logger.info(f"Association map sauvegardée: Hash='{actual_hash}', Release='{release_name_for_map}'")
+        return jsonify({"success": True, "message": f"Torrent '{release_name_for_map}' (Hash: {actual_hash}) ajouté et pré-associé.", "torrent_hash": actual_hash}), 200
     else:
-        current_app.logger.error(f"Torrent {torrent_hash} added to rTorrent, but failed to save pending association for Cleaned Name: '{cleaned_name}'.") # Modified original_name to cleaned_name in log
-        return jsonify({
-            "success": True, # Torrent was added
-            "error": "Torrent added to rTorrent, but failed to save pre-association metadata. Please check logs.",
-            "torrent_hash": torrent_hash,
-            "warning": "Pre-association failed to save."
-        }), 207 # Multi-Status
+        current_app.logger.error(f"Torrent {actual_hash} ajouté, mais échec sauvegarde association pour Release: '{release_name_for_map}'.")
+        return jsonify({"success": True, "error": "Torrent ajouté, mais échec sauvegarde pré-association.", "torrent_hash": actual_hash, "warning": "Pré-association non sauvegardée."}), 207
 
 @seedbox_ui_bp.route('/rtorrent/list-view')
 def rtorrent_list_view():
@@ -2338,7 +2611,7 @@ def rtorrent_list_view():
             association_info = None
             if torrent_hash:
                 # get_association_by_hash returns the association data dict directly, or None
-                association_data = get_association_by_hash(torrent_hash)
+                association_data = torrent_map_manager.get_torrent_by_hash(torrent_hash)
                 if association_data:
                      association_info = association_data
             # else: # No hash for the torrent, cannot look up association
@@ -2492,7 +2765,7 @@ def process_staged_with_association(item_name_in_staging):
         return redirect(url_for('seedbox_ui.index'))
 
     # get_association_by_release_name returns (torrent_hash, association_data) or (None, None)
-    torrent_hash_of_assoc, association_data = get_association_by_release_name(item_name_in_staging)
+    torrent_hash_of_assoc, association_data = torrent_map_manager.find_torrent_by_release_name(item_name_in_staging)
 
     if association_data is None: # Check if association_data is None
         flash(f"Aucune pré-association trouvée pour '{item_name_in_staging}'. Veuillez le mapper manuellement.", "warning")
@@ -2541,7 +2814,7 @@ def process_staged_with_association(item_name_in_staging):
         if result_dict.get("success"):
             flash(result_dict.get("message", f"'{item_name_in_staging}' traité avec succès via son association."), "success")
             if torrent_hash_of_assoc: # Assure qu'on a un hash pour supprimer
-                if remove_association_by_hash(torrent_hash_of_assoc):
+                if torrent_map_manager.remove_torrent_from_map(torrent_hash_of_assoc):
                     current_app.logger.info(f"Association pour hash '{torrent_hash_of_assoc}' (Release: '{item_name_in_staging}') supprimée avec succès.")
                 else:
                     current_app.logger.warning(f"Échec de la suppression de l'association pour hash '{torrent_hash_of_assoc}' (Release: '{item_name_in_staging}').")
@@ -2613,7 +2886,7 @@ def _run_automated_processing_cycle():
 
         current_app.logger.info(f"Automatisation: Torrent pertinent trouvé: '{torrent_name_rtorrent}' (Hash: {torrent_hash}, Label: {torrent_label}).")
 
-        association_data = get_association_by_hash(torrent_hash)
+        association_data = torrent_map_manager.get_torrent_by_hash(torrent_hash)
         if not association_data:
             current_app.logger.warning(f"Automatisation: Aucune association trouvée pour le torrent terminé '{torrent_name_rtorrent}' (Hash: {torrent_hash}). Ignoré.")
             continue
@@ -2623,7 +2896,7 @@ def _run_automated_processing_cycle():
             current_app.logger.error(f"Automatisation: 'release_name_expected_on_seedbox' est manquant ou vide dans l'association pour {torrent_hash} ('{torrent_name_rtorrent}'). Association data: {association_data}. Ignoré.")
             errors_count += 1
             continue
-        
+
         current_app.logger.info(f"Automatisation: Association trouvée pour '{torrent_name_rtorrent}', release attendue: '{local_staged_item_name}'. Data: {association_data}")
 
         app_type = association_data.get('app_type')
@@ -2702,7 +2975,7 @@ def _run_automated_processing_cycle():
         if handler_result and handler_result.get("success"):
             current_app.logger.info(f"Automatisation: Traitement de '{local_staged_item_name}' réussi: {handler_result.get('message')}")
             processed_items_count += 1
-            if remove_association_by_hash(torrent_hash):
+            if torrent_map_manager.remove_torrent_from_map(torrent_hash):
                 current_app.logger.info(f"Automatisation: Association pour {torrent_hash} ('{torrent_name_rtorrent}') supprimée.")
             else:
                 current_app.logger.warning(f"Automatisation: Échec de la suppression de l'association pour {torrent_hash} ('{torrent_name_rtorrent}').")
@@ -2731,7 +3004,7 @@ def trigger_automatic_processing_route():
 @seedbox_ui_bp.route('/api/v1/process-staged-item', methods=['POST'])
 def api_process_staged_item():
     current_app.logger.info("Requête reçue sur /api/v1/process-staged-item")
-    
+
     data = request.get_json()
     if not data:
         current_app.logger.error("API Process Staged: Aucune donnée JSON reçue ou malformée.")
@@ -2761,20 +3034,20 @@ def api_process_staged_item():
     if not item_path.is_relative_to(Path(staging_dir).resolve()):
         current_app.logger.error(f"API Process Staged: Tentative d'accès hors du STAGING_DIR détectée pour '{item_name}'. Chemin résolu: {item_path}")
         return jsonify({"success": False, "error": "Chemin d'accès invalide."}), 400
-        
+
     if not item_path.exists():
         current_app.logger.warning(f"API Process Staged: Item '{item_name}' (chemin: {item_path}) non trouvé dans le répertoire de staging.")
         return jsonify({"success": False, "error": f"Item '{item_name}' non trouvé dans le répertoire de staging."}), 404
 
     # --- Logique de traitement de l'item ---
     current_app.logger.info(f"API Process Staged: Recherche d'association pour '{item_name}'.")
-    torrent_hash, association_data = get_association_by_release_name(item_name)
+    torrent_hash, association_data = torrent_map_manager.find_torrent_by_release_name(item_name)
 
     if association_data:
         current_app.logger.info(f"API Process Staged: Association trouvée pour '{item_name}'. Hash: {torrent_hash}, Data: {association_data}")
         app_type = association_data.get('app_type')
         target_id = association_data.get('target_id')
-        
+
         # path_to_cleanup_in_staging_after_success est le chemin absolu de l'item dans le staging.
         path_to_cleanup_in_staging_after_success = str(item_path)
 
@@ -2789,7 +3062,7 @@ def api_process_staged_item():
                 item_name_in_staging=item_name, # item_name est le nom de base/relatif au staging dir
                 series_id_target=str(target_id),
                 path_to_cleanup_in_staging_after_success=path_to_cleanup_in_staging_after_success,
-                user_chosen_season=None 
+                user_chosen_season=None
             )
         elif app_type == 'radarr':
             current_app.logger.info(f"API Process Staged: Appel du handler Radarr pour '{item_name}', target_id: {target_id}")
@@ -2806,23 +3079,23 @@ def api_process_staged_item():
             if result_dict.get("success"):
                 current_app.logger.info(f"API Process Staged: Handler pour '{item_name}' (type: {app_type}) réussi. Message: {result_dict.get('message')}")
                 if torrent_hash: # Seulement si un hash existait pour cette association par nom
-                    if remove_association_by_hash(torrent_hash):
+                    if torrent_map_manager.remove_torrent_from_map(torrent_hash):
                         current_app.logger.info(f"API Process Staged: Association pour hash '{torrent_hash}' (item: '{item_name}') supprimée avec succès.")
                     else:
                         current_app.logger.warning(f"API Process Staged: Échec de la suppression de l'association pour hash '{torrent_hash}' (item: '{item_name}').")
                 else: # Si get_association_by_release_name ne retourne pas de hash (ce qui serait inhabituel)
                     current_app.logger.warning(f"API Process Staged: Aucun torrent_hash retourné par get_association_by_release_name pour '{item_name}', donc suppression de l'association par hash non tentée.")
-                
+
                 return jsonify({
-                    "success": True, 
-                    "message": result_dict.get("message", f"Item '{item_name}' traité et déplacé avec succès via l'API."), 
+                    "success": True,
+                    "message": result_dict.get("message", f"Item '{item_name}' traité et déplacé avec succès via l'API."),
                     "details": result_dict
                 }), 200
             else: # Échec du handler
                 current_app.logger.error(f"API Process Staged: Handler pour '{item_name}' (type: {app_type}) a échoué. Erreur: {result_dict.get('error')}")
                 return jsonify({
-                    "success": False, 
-                    "error": result_dict.get("error", f"Échec du traitement de l'item '{item_name}' par le handler."), 
+                    "success": False,
+                    "error": result_dict.get("error", f"Échec du traitement de l'item '{item_name}' par le handler."),
                     "details": result_dict
                 }), 200 # 200 avec success:false pour que le client traite la réponse
         else: # result_dict est None
@@ -2832,7 +3105,17 @@ def api_process_staged_item():
         current_app.logger.info(f"API Process Staged: Aucune pré-association trouvée pour '{item_name}'. L'item est prêt pour un mappage manuel si nécessaire.")
         return jsonify({
             "success": True, # La requête API elle-même a réussi
-            "status": "pending_manual_import", 
+            "status": "pending_manual_import",
             "message": f"Item '{item_name}' validé par l'API. Aucune pré-association trouvée. Traitement manuel ou via une autre interface requis.",
             "item_path_validated": str(item_path)
         }), 202 # HTTP 202 Accepted - indique que la requête est valide mais nécessite une action ultérieure
+
+if __name__ == '__main__':
+    app = create_app() # Ou comment vous créez votre instance d'app
+
+    print("\n" + "="*30 + " Routes Enregistrées " + "="*30)
+    for rule in app.url_map.iter_rules():
+        print(f"Endpoint: {rule.endpoint:<30} Methods: {str(list(rule.methods)):<30} URL: {str(rule)}")
+    print("="*80 + "\n")
+
+    app.run(host='0.0.0.0', port=5001, debug=True, use_reloader=False) # Mettez use_reloader=False pour ce test pour être sûr

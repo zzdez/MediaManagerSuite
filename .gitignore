@@ -102,3 +102,6 @@ local_settings.py # Example user-specific settings
 # Config files potentially containing secrets
 # config/users.json # Peut-être à ignorer si vous ne voulez pas versionner les users/passwords
 # config/parametres_college.json # Idem si contient des clés API sensibles
+instance/
+pending_torrents_map.json
+pending_torrents_map.json
