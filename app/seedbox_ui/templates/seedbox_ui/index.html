@@ -28,41 +28,53 @@
 {# ========================================================================== #}
 {# MACRO JINJA2 POUR RENDRE L'ARBORESCENCE (PLACÉ EN HAUT DU BODY) #}
 {# ========================================================================== #}
+
 {% macro render_tree_node(node, can_scan_sonarr, can_scan_radarr, level=0) %}
-  {# ... Votre macro render_tree_node RESTE EXACTEMENT LA MÊME ... #}
-  {# ... Je ne la recopie pas ici pour la brièveté, mais elle doit être là ... #}
-  <li style="margin-left: {{ level * 20 }}px;"> {# Indentation basée sur le niveau #}
-    <div class="tree-node-item"> {# Wrapper pour chaque ligne d'item #}
-      {# Icône et nom, avec gestion du pliage/dépliage pour les dossiers #}
-      <span class="icon-container">
+  <li style="margin-left: {{ level * 20 }}px;">
+    <div class="tree-node-item d-flex align-items-center"> {# Ajout de d-flex et align-items-center pour mieux gérer l'alignement vertical #}
+
+      {# --- CASE À COCHER POUR LES ITEMS DE NIVEAU 0 --- #}
+      <span style="width: 25px; flex-shrink: 0; text-align: center;"> {# Conteneur pour la case ou l'espace vide #}
+          {% if level == 0 %}
+              <input type="checkbox" class="form-check-input staging-item-checkbox"
+                     value="{{ node.path_for_actions }}"
+                     aria-label="Sélectionner {{ node.name }}"
+                     style="margin-top: 0; vertical-align: middle;"> {# Style pour mieux aligner #}
+          {% endif %}
+      </span>
+      {# --- FIN CASE À COCHER --- #}
+
+      {# Icône de dossier/fichier #}
+      <span class="icon-container" style="width: 25px; text-align: center; flex-shrink: 0;"> {# style="width: 25px; text-align: center;" ajouté ici aussi #}
         {% if node.is_dir and node.children %}
           <a href="#" class="toggle-children me-1" data-bs-toggle="tooltip" title="Déplier/Replier"><i class="fas fa-plus-square"></i></a>
         {% elif node.is_dir %}
-          <i class="fas fa-folder text-warning me-1"></i> {# Dossier vide #}
+          <i class="fas fa-folder text-warning me-1"></i>
         {% else %}
-          <i class="fas fa-file text-info me-1"></i> {# Fichier #}
+          <i class="fas fa-file text-info me-1"></i>
         {% endif %}
       </span>
 
-      <span class="item-name-details" title="{{ node.name }}"> {# title pour voir le nom complet au survol #}
+      {# Nom de l'item et détails #}
+      <span class="item-name-details flex-grow-1" title="{{ node.name }}"> {# flex-grow-1 pour qu'il prenne l'espace restant #}
          {{ node.name }}
          <small class="text-muted" style="font-size: 0.8em;">
              ({{ node.size_readable if node.size_readable else 'N/A' }}, {{ node.last_modified if node.last_modified else 'N/A' }})
          </small>
          {# Display Association Info #}
          {% if node.association %}
-            <div class="mt-1"> {# Ajoute un petit espace au-dessus des badges d'association #}
+            <div class="mt-1">
                 <span class="badge {% if node.association.app_type == 'sonarr' %}bg-primary{% elif node.association.app_type == 'radarr' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
                     <i class="fas fa-link"></i> Associé: {{ node.association.app_type | capitalize }} (ID: {{ node.association.target_id }})
                 </span>
                 <small class="text-muted d-block">Label rTorrent: {{ node.association.label }}</small>
-                {% if node.association.torrent_hash %} {# Modifié pour utiliser torrent_hash directement #}
+                {% if node.association.torrent_hash %}
                     <small class="text-muted d-block" title="Hash: {{ node.association.torrent_hash }}">Hash: {{ node.association.torrent_hash | truncate(10) }}...</small>
-                {% elif node.association.release_name %} {# Fallback si pas de hash mais un release_name #}
+                {% elif node.association.release_name %}
                     <small class="text-muted d-block">Release: {{ node.association.release_name | truncate(20) }}</small>
                 {% endif %}
                 {% if node.association.status %}
-                    <small class="text-muted d-block">Statut: {{ node.association.status }}</small>
+                    <small class="text-muted d-block">Statut: {{ node.association.status | replace('_', ' ') | capitalize }}</small>
                 {% endif %}
                 <small class="text-muted d-block">Ajouté: {{ node.association.added_at.split('.')[0].replace('T', ' ') if node.association.added_at else 'N/A' }}</small>
             </div>
@@ -70,11 +82,12 @@
       </span>
 
       {# Colonne des Actions #}
-      <div class="action-buttons item-actions">
+      <div class="action-buttons item-actions ms-auto" style="min-width: 300px;"> {# ms-auto pour pousser à droite, ajuster min-width si besoin #}
          {% if not node.name.endswith("(Erreur de lecture)") %}
-             {% if level == 0 %} {# On affiche Mapper/Supprimer/Nettoyer que pour le niveau racine du staging pour l'instant #}
-                {% if can_scan_sonarr %} {# can_scan_sonarr est passé au template depuis la route #}
-                {# Bouton Mapper Sonarr #}
+             {% if level == 0 %}
+                {# ... Vos boutons d'action individuels (Mapper Sonarr, Mapper Radarr, Suppr., Nettoyer, Importer Associé) ... #}
+                {# ... restent les mêmes qu'avant ... #}
+                {% if can_scan_sonarr %}
                 <button class="btn btn-sm btn-outline-primary mb-1"
                         onclick='openSonarrSearchModal({{ node.path_for_actions | tojson | safe }}, "{{ 'directory' if node.is_dir else 'file' }}")'
                         title="Rechercher et mapper manuellement avec Sonarr">
@@ -82,23 +95,20 @@
                 </button>
                 {% endif %}
 
-                {% if can_scan_radarr %} {# can_scan_radarr est passé au template depuis la route #}
-                {# Bouton Mapper Radarr #}
-                <button class="btn btn-sm btn-outline-warning text-dark mb-1" {# Couleur changée pour Radarr #}
+                {% if can_scan_radarr %}
+                <button class="btn btn-sm btn-outline-warning text-dark mb-1"
                         onclick='openRadarrSearchModal({{ node.path_for_actions | tojson | safe }}, "{{ 'directory' if node.is_dir else 'file' }}")'
                         title="Rechercher et mapper manuellement avec Radarr">
                     <i class="fas fa-search"></i> <span class="d-none d-md-inline">Mapper Radarr</span>
                 </button>
                 {% endif %}
 
-                {# Bouton Supprimer (formulaire) #}
                 <form action="{{ url_for('seedbox_ui.delete_item', item_name=node.path_for_actions) }}" method="POST" style="display: inline-block;" onsubmit="return confirm('Supprimer \'{{ node.name | e }}\' ? Cette action est irréversible et supprimera tout le contenu.');">
                     <button type="submit" class="btn btn-sm btn-danger mb-1" title="Supprimer l'item et son contenu du staging">
                         <i class="fas fa-trash-alt"></i> <span class="d-none d-md-inline">Suppr.</span>
                     </button>
                 </form>
 
-                {# Bouton Nettoyer dossier (formulaire) #}
                 {% if node.is_dir %}
                 <form action="{{ url_for('seedbox_ui.cleanup_staging_item_action', item_name=node.path_for_actions) }}" method="POST" style="display: inline-block;" onsubmit="return confirm('Nettoyer le dossier \'{{ node.name | e }}\' ?\n\nCeci va :\n1. Supprimer les fichiers orphelins (ex: .nfo, .txt) à l\'intérieur.\n2. Supprimer les sous-dossiers qui deviendraient vides.\n3. Supprimer le dossier principal \'{{ node.name | e }}\' lui-même s\'il devient vide ou ne contient plus que des orphelins (maintenant supprimés).\n\nLes fichiers vidéo ou autres fichiers non-orphelins ne seront PAS supprimés par cette action.');">
                     <button type="submit" class="btn btn-sm btn-warning mb-1" title="Nettoyer le dossier (supprime orphelins et dossiers vides récursivement)">
@@ -107,7 +117,6 @@
                 </form>
                 {% endif %}
 
-                {# Bouton "Importer (Associé)" #}
                 {% if node.association %}
                     <form method="POST" action="{{ url_for('seedbox_ui.process_staged_with_association', item_name_in_staging=node.path_for_actions) }}" style="display: inline-block;" onsubmit="return confirm('Lancer l\'importation de \'{{ node.name | e }}\' en utilisant la pré-association ?');">
                         <button type="submit" class="btn btn-sm btn-success mb-1" title="Lancer l'importation en utilisant la pré-association">
@@ -115,13 +124,13 @@
                         </button>
                     </form>
                 {% endif %}
-             {% endif %} {# Fin de if level == 0 #}
-         {% endif %} {# Fin de if not node.name.endswith(...) #}
+             {% endif %}
+         {% endif %}
       </div>
     </div>
 
     {% if node.is_dir and node.children %}
-      <ul class="children-list" style="display: none;"> {# Initialement masqué, JS gère le dépliage #}
+      <ul class="children-list" style="display: none;">
         {% for child_node in node.children %}
           {{ render_tree_node(child_node, can_scan_sonarr, can_scan_radarr, level + 1) }}
         {% endfor %}
@@ -189,6 +198,12 @@
             <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#addTorrentModal">
                 <i class="fas fa-plus"></i> Ajouter Torrent
             </button>
+            {# --- NOUVEAU BOUTON D'ACTION GROUPÉE --- #}
+            <button type="button" class="btn btn-primary btn-sm" id="batchMapToSonarrBtn" disabled
+                    onclick="openBatchSonarrMapModal()">
+                <i class="fas fa-object-group"></i> Mapper Sélection vers Série Sonarr
+            </button>
+            {# --- FIN NOUVEAU BOUTON --- #}
         </div>
     </div>
     {# FIN DE LA BARRE D'OUTILS #}
@@ -355,7 +370,7 @@
         </div>
     </div>
 
-    <!-- Modales Sonarr et Radarr (inchangées) -->
+    <!-- Modal Sonarr MODIFIÉ -->
     <div class="modal fade" id="sonarrSearchModal" tabindex="-1" aria-labelledby="sonarrSearchModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
@@ -365,23 +380,55 @@
                 </div>
                 <div class="modal-body">
                     <p>Mapping pour : <strong id="sonarrItemToMap"></strong> (<span id="sonarrItemType"></span>)</p>
+                    {# Ces inputs cachés stockent l'item du staging en cours de traitement #}
                     <input type="hidden" id="sonarrOriginalItemName" value="">
                     <input type="hidden" id="sonarrOriginalItemType" value="">
+
+                    {# Champ de recherche Sonarr #}
                     <div class="input-group mb-3">
                         <input type="text" class="form-control" id="sonarrSearchQuery" placeholder="Nom de la série...">
                         <button class="btn btn-outline-primary" type="button" onclick="executeSonarrSearch()">
                             <i class="fas fa-search"></i> Rechercher
                         </button>
                     </div>
-                    <div id="sonarrSearchResults" style="max-height: 400px; overflow-y: auto;"></div>
+
+                    {# Div pour afficher les résultats de la recherche Sonarr #}
+                    <div id="sonarrSearchResults" class="mb-3" style="max-height: 300px; overflow-y: auto;">
+                        {/* Les résultats de la recherche seront injectés ici par JavaScript */}
+                    </div>
+
+                    {# --- ÉLÉMENTS AJOUTÉS/MODIFIÉS CI-DESSOUS --- #}
+
+                    {# Input caché pour stocker l'ID de la série Sonarr sélectionnée #}
+                    <input type="hidden" id="sonarrSelectedSeriesId" value="">
+
+                    {# Paragraphe pour afficher le titre de la série sélectionnée #}
+                    <p id="sonarrSelectedSeriesTitle" class="fw-bold mt-2">Aucune série sélectionnée</p>
+
+                    {# Div et input pour la saisie manuelle de la saison (initialement cachée) #}
+                    <div id="sonarrManualSeasonDiv" class="mb-3" style="display: none;">
+                        <label for="sonarrManualSeasonInput" class="form-label">
+                            Forcer la Saison pour le déplacement (optionnel, laisser vide pour auto-détection) :
+                        </label>
+                        <input type="number" class="form-control form-control-sm" id="sonarrManualSeasonInput" placeholder="Ex: 1">
+                        <small class="form-text text-muted">
+                            Utile si la détection automatique de la saison par Sonarr ou le nom de fichier est incorrecte.
+                        </small>
+                    </div>
+                    {# --- FIN DES ÉLÉMENTS AJOUTÉS/MODIFIÉS --- #}
+
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    {# Bouton principal pour l'action de mapping. Son onclick sera géré par JavaScript. #}
+                    {# J'utilise l'ID 'sonarrModalMapButton' pour le cibler facilement en JS #}
+                    <button type="button" class="btn btn-primary" id="sonarrModalMapButton">
+                        <i class="fas fa-link"></i> Mapper à cette Série
+                    </button>
                 </div>
             </div>
         </div>
     </div>
-
     <div class="modal fade" id="radarrSearchModal" tabindex="-1" aria-labelledby="radarrSearchModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
@@ -433,15 +480,47 @@
             return cleanedName || baseNameForSearch.split('.')[0];
         }
 
-        function openSonarrSearchModal(itemPathForAction, itemType) {
+        function openSonarrSearchModal(itemPathForAction, itemType) { // itemPathForAction est le node.path_for_actions
             const itemNameForDisplay = itemPathForAction.split(/[\\/]/).pop();
             document.getElementById('sonarrItemToMap').textContent = itemNameForDisplay;
-            document.getElementById('sonarrOriginalItemName').value = itemPathForAction;
+            document.getElementById('sonarrOriginalItemName').value = itemPathForAction; // Input caché pour item_name
             document.getElementById('sonarrOriginalItemType').value = itemType;
             document.getElementById('sonarrItemType').textContent = itemType === 'directory' ? 'Dossier (Staging)' : 'Fichier (Staging)';
-            document.getElementById('sonarrSearchQuery').value = getCleanedSearchTerm(itemPathForAction);
-            document.getElementById('sonarrSearchResults').innerHTML = '';
-            document.getElementById('sonarrSearchModalLabel').textContent = "Rechercher et Mapper avec Sonarr";
+
+            const searchQueryInput = document.getElementById('sonarrSearchQuery');
+            if (searchQueryInput) searchQueryInput.value = getCleanedSearchTerm(itemPathForAction);
+
+            const searchResultsDiv = document.getElementById('sonarrSearchResults');
+            if (searchResultsDiv) searchResultsDiv.innerHTML = ''; // Vider les résultats
+
+            document.getElementById('sonarrSelectedSeriesId').value = ''; // Vider l'ID sélectionné
+            document.getElementById('sonarrSelectedSeriesTitle').innerText = 'Aucune série sélectionnée';
+            document.getElementById('sonarrManualSeasonDiv').style.display = 'block'; // Afficher pour l'individuel
+            document.getElementById('sonarrManualSeasonInput').value = '';
+
+            currentlySelectedSonarrSeriesIdInModal = null; // Réinitialiser l'ID
+
+            const modalMapButton = document.getElementById('sonarrModalMapButton');
+            if (modalMapButton) {
+                modalMapButton.innerHTML = '<i class="fas fa-link"></i> Mapper à cette Série';
+                modalMapButton.disabled = true; // Désactiver jusqu'à sélection
+                modalMapButton.onclick = function() {
+                    const seriesId = document.getElementById('sonarrSelectedSeriesId').value;
+                    const seriesTitle = document.getElementById('sonarrSelectedSeriesTitle').innerText.replace('Série sélectionnée : ', ''); // Pour l'affichage
+                    const userForcedSeason = document.getElementById('sonarrManualSeasonInput').value;
+
+                    if (seriesId) {
+                        // On appelle votre fonction existante triggerSonarrManualImport (qui doit être adaptée)
+                        // ou on déclenche directement le fetch ici.
+                        // Pour l'instant, supposons que triggerSonarrManualImport existe et gère le fetch.
+                        // Il faudra lui passer userForcedSeason.
+                        triggerSonarrManualImportWithSeason(seriesId, seriesTitle, userForcedSeason);
+                    } else {
+                        alert("Veuillez sélectionner une série.");
+                    }
+                };
+            }
+
             var sonarrModal = new bootstrap.Modal(document.getElementById('sonarrSearchModal'));
             sonarrModal.show();
         }
@@ -546,6 +625,182 @@ function openSonarrSearchModalForProblemItem(releaseName, currentTargetId, torre
                 console.error("Élément racine du modal Radarr (ID: 'radarrSearchModal') non trouvé pour les items problématiques.");
             }
         }
+
+        const batchMapButton = document.getElementById('batchMapToSonarrBtn');
+        const stagingItemCheckboxes = document.querySelectorAll('.staging-item-checkbox');
+        let selectedStagingItemsForBatch = []; // Pour stocker les path_for_actions des items cochés
+
+        // Fonction pour mettre à jour l'état du bouton d'action groupée
+        function updateBatchActionButtonState() {
+            selectedStagingItemsForBatch = [];
+            stagingItemCheckboxes.forEach(checkbox => {
+                if (checkbox.checked) {
+                    selectedStagingItemsForBatch.push(checkbox.value);
+                }
+            });
+
+            if (batchMapButton) {
+                batchMapButton.disabled = selectedStagingItemsForBatch.length === 0;
+            }
+        }
+
+        // Ajouter des écouteurs d'événements aux cases à cocher
+        stagingItemCheckboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', updateBatchActionButtonState);
+        });
+
+        // Appeler une fois au chargement pour initialiser l'état du bouton (si des cases sont cochées par défaut, peu probable ici)
+        // updateBatchActionButtonState(); // Généralement pas nécessaire au chargement initial avec des cases non cochées
+
+        function openBatchSonarrMapModal() {
+            if (selectedStagingItemsForBatch.length === 0) { // selectedStagingItemsForBatch est remplie par updateBatchActionButtonState
+                alert("Veuillez sélectionner au moins un item du staging.");
+                return;
+            }
+            console.log("Batch Map: Ouvrir modal pour items:", selectedStagingItemsForBatch);
+
+            const sonarrModalElement = document.getElementById('sonarrSearchModal');
+            if (!sonarrModalElement) {
+                console.error("Modal Sonarr (ID: sonarrSearchModal) non trouvé !");
+                return;
+            }
+
+            // Réinitialiser les champs du modal
+            document.getElementById('sonarrSearchQuery').value = '';
+            document.getElementById('sonarrSearchResults').innerHTML = `<p class="text-muted">Recherchez une série Sonarr pour mapper les <strong>${selectedStagingItemsForBatch.length} items</strong> sélectionnés.</p>`;
+
+            // Ces éléments existent maintenant grâce à la modification du HTML du modal
+            document.getElementById('sonarrSelectedSeriesId').value = '';
+            document.getElementById('sonarrSelectedSeriesTitle').innerText = 'Aucune série sélectionnée';
+            document.getElementById('sonarrManualSeasonDiv').style.display = 'none';
+            document.getElementById('sonarrManualSeasonInput').value = '';
+
+            currentlySelectedSonarrSeriesIdInModal = null; // Réinitialiser l'ID sélectionné
+
+            // Configurer le bouton de soumission du modal pour l'action de batch
+            const modalMapButton = document.getElementById('sonarrModalMapButton');
+            if (modalMapButton) {
+                modalMapButton.innerHTML = '<i class="fas fa-object-group"></i> Mapper Sélection à cette Série';
+                modalMapButton.disabled = true; // Désactiver jusqu'à ce qu'une série soit sélectionnée
+
+                // Définir l'action onclick pour le bouton de mapping du modal
+                modalMapButton.onclick = function() {
+                    if (currentlySelectedSonarrSeriesIdInModal) {
+                        triggerBatchSonarrMapAction(currentlySelectedSonarrSeriesIdInModal);
+                    } else {
+                        alert("Veuillez d'abord rechercher et sélectionner une série dans la liste.");
+                    }
+                };
+            } else {
+                console.error("Bouton de mapping (ID: sonarrModalMapButton) non trouvé dans le modal Sonarr.");
+            }
+
+            var modal = new bootstrap.Modal(sonarrModalElement);
+            modal.show();
+        }
+
+        async function triggerBatchSonarrMapAction(selectedSeriesIdForBatch) {
+        // Vérifier si selectedSeriesIdForBatch est valide
+        if (!selectedSeriesIdForBatch) {
+            alert("Aucune série Sonarr n'a été sélectionnée pour le mapping groupé.");
+            return;
+        }
+        if (selectedStagingItemsForBatch.length === 0) {
+            alert("Aucun item du staging n'est sélectionné pour le mapping groupé.");
+            return;
+        }
+
+        const payload = {
+            item_names: selectedStagingItemsForBatch,
+            series_id: parseInt(selectedSeriesIdForBatch)
+        };
+
+        console.log("Payload pour batch map Sonarr:", payload);
+        const resultsDivInModal = document.getElementById('sonarrSearchResults');
+        if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-info">Traitement groupé en cours pour ${selectedStagingItemsForBatch.length} items...</div>`;
+
+        const modalMapButton = document.getElementById('sonarrModalMapButton');
+        if(modalMapButton) modalMapButton.disabled = true;
+
+        try {
+            const response = await fetch("{{ url_for('seedbox_ui.batch_map_to_sonarr_series_action') }}", {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                let message = `Traitement groupé terminé. ${result.processed_count || 0} items traités avec succès.`;
+                if (result.errors_count && result.errors_count > 0) {
+                    message += ` ${result.errors_count} items ont échoué ou nécessité une attention.`;
+                    if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-warning">${escapeJsString(message)}<br>Détails dans les logs.</div>`;
+                } else {
+                    if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-success">${escapeJsString(message)}</div>`;
+                }
+                flashMessageGlobally(message, (result.errors_count && result.errors_count > 0) ? 'warning' : 'success');
+                setTimeout(() => {
+                    const modalInstance = bootstrap.Modal.getInstance(document.getElementById('sonarrSearchModal'));
+                    if (modalInstance) modalInstance.hide();
+                    window.location.reload();
+                }, 3500); // Un peu plus de temps pour lire le message dans le modal
+            } else {
+                throw new Error(result.error || `Erreur HTTP ${response.status} lors du traitement groupé.`);
+            }
+        } catch (error) {
+            console.error('Erreur lors du mapping Sonarr groupé:', error);
+            if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-danger">Erreur: ${escapeJsString(error.message)}</div>`;
+            flashMessageGlobally(`Erreur lors du mapping groupé: ${escapeJsString(error.message)}`, 'danger');
+        } finally {
+            if(modalMapButton) modalMapButton.disabled = false;
+        }
+    }
+
+        // ==================================================================================
+        // NOUVELLE FONCTION HELPER POUR LA SÉLECTION D'UNE SÉRIE DANS LE MODAL SONARR
+        // (appelée par executeSonarrSearch)
+        // ==================================================================================
+        function handleSonarrSeriesSelectionInModal(seriesId, seriesTitle) { // seriesTitle est déjà échappé si elle vient de escapedSeriesTitle
+            // Mettre à jour les champs cachés et visibles du modal
+            const selectedSeriesIdInput = document.getElementById('sonarrSelectedSeriesId');
+            const selectedSeriesTitleDisplay = document.getElementById('sonarrSelectedSeriesTitle');
+
+            if (selectedSeriesIdInput) selectedSeriesIdInput.value = seriesId;
+            if (selectedSeriesTitleDisplay) selectedSeriesTitleDisplay.innerText = `Série sélectionnée : ${seriesTitle}`;
+
+            // La variable globale pour stocker l'ID actuellement sélectionné dans le modal
+            currentlySelectedSonarrSeriesIdInModal = seriesId;
+
+            // Activer le bouton de mapping principal du modal
+            const modalMapButton = document.getElementById('sonarrModalMapButton');
+            if (modalMapButton) {
+                modalMapButton.disabled = !seriesId; // Activer si seriesId a une valeur (non nulle, non vide)
+            }
+
+            // Afficher un message de confirmation dans la zone des résultats
+            const resultsDiv = document.getElementById('sonarrSearchResults');
+            if(resultsDiv) {
+                resultsDiv.innerHTML = `<p class="alert alert-info mt-2">Série sélectionnée : <strong>${seriesTitle}</strong> (ID: ${seriesId}).<br>Cliquez sur le bouton "Mapper..." en bas du modal pour confirmer.</p>`;
+            }
+
+            // Afficher la div pour la saison manuelle si on est en mode mapping individuel.
+            // Pour le batch, openBatchSonarrMapModal la cache.
+            // Il faudrait un moyen de savoir si on est en mode batch ou individuel ici,
+            // ou que openSonarrSearchModal (pour l'individuel) s'assure qu'elle est visible.
+            const manualSeasonDiv = document.getElementById('sonarrManualSeasonDiv');
+            // On peut vérifier quel onclick est actuellement attaché au bouton principal du modal pour déterminer le mode.
+            const sonarrModalMapBtn = document.getElementById('sonarrModalMapButton');
+            if (sonarrModalMapBtn && sonarrModalMapBtn.onclick && sonarrModalMapBtn.onclick.toString().includes('triggerSonarrManualImportWithSeason')) {
+                // On est probablement en mode mapping individuel
+                if (manualSeasonDiv) manualSeasonDiv.style.display = 'block';
+            } else {
+                // Mode batch ou autre, on ne touche pas ou on s'assure qu'elle est cachée si c'est la règle pour le batch
+                // if (manualSeasonDiv) manualSeasonDiv.style.display = 'none'; // Déjà fait par openBatchSonarrMapModal
+            }
+        }
+        // ==================================================================================
+        // FIN DE LA NOUVELLE FONCTION HELPER
+        // ==================================================================================
         // ==================================================================================
         // FIN DES NOUVELLES FONCTIONS JS
         // ==================================================================================
@@ -576,92 +831,87 @@ function openSonarrSearchModalForProblemItem(releaseName, currentTargetId, torre
             } catch (error) { resultsDiv.innerHTML = `<p class="text-danger">Erreur recherche Sonarr: ${error.message}</p>`; console.error("Erreur executeSonarrSearch:", error); }
         }
 
-        async function executeRadarrSearch() {
-            const query = document.getElementById('radarrSearchQuery').value;
-            if (!query.trim()) {document.getElementById('radarrSearchResults').innerHTML = '<p class="text-warning">Terme de recherche manquant.</p>'; return;}
-            const resultsDiv = document.getElementById('radarrSearchResults');
-            resultsDiv.innerHTML = `<div class="d-flex align-items-center"><strong role="status">Recherche Radarr...</strong><div class="spinner-border ms-auto"></div></div>`;
+        async function executeSonarrSearch() {
+            const query = document.getElementById('sonarrSearchQuery').value;
+            // ... (début de votre fonction inchangé : gestion query vide, spinner) ...
+            const resultsDiv = document.getElementById('sonarrSearchResults');
+            resultsDiv.innerHTML = `<div class="d-flex align-items-center"><strong role="status">Recherche Sonarr...</strong><div class="spinner-border ms-auto"></div></div>`;
+
             try {
-                const response = await fetch(`{{ url_for('seedbox_ui.search_radarr_api') }}?query=${encodeURIComponent(query)}`);
-                if (!response.ok) { let eD; try{eD=await response.json()}catch(e){eD={error:"Erreur serveur."}} throw new Error(eD.error||`HTTP ${response.status}`); }
+                const response = await fetch(`{{ url_for('seedbox_ui.search_sonarr_api') }}?query=${encodeURIComponent(query)}`);
+                // ... (votre gestion de réponse et erreurs) ...
                 const results = await response.json();
-                if (results.length === 0) { resultsDiv.innerHTML = '<p class="text-muted">Aucun film trouvé.</p>'; return; }
+                if (results.length === 0) { /* ... */ return; }
                 let html = '<ul class="list-group mt-3">';
-                results.forEach(movie => {
-                    let posterUrl = movie.remotePoster || (movie.images && movie.images.length > 0 ? movie.images.find(img => img.coverType === 'poster')?.remoteUrl : 'https://via.placeholder.com/60x90?text=N/A');
-                    const escapedMovieTitle = escapeJsString(movie.title); // Échappé une fois ici
-                    let onclickAction = `triggerRadarrManualImport(${movie.id || 0}, '${escapedMovieTitle}')`; // On utilise escapedMovieTitle
+                results.forEach(series => {
+                    let posterUrl = series.remotePoster || (series.images && series.images.length > 0 ? series.images.find(img => img.coverType === 'poster')?.remoteUrl : 'https://via.placeholder.com/60x90?text=N/A');
+                    const escapedSeriesTitle = escapeJsString(series.title);
+
+                    // ---- MODIFICATION DE L'ACTION ONCLICK ----
+                    // Au lieu d'appeler triggerSonarrManualImport directement, on appelle handleSonarrSeriesSelectionInModal
+                    let onclickAction = `handleSonarrSeriesSelectionInModal(${series.id || 0}, '${escapedSeriesTitle}')`;
+
                     html += `
                         <li class="list-group-item"><div class="row align-items-center">
-                            <div class="col-auto"><img src="${posterUrl}" alt="${escapedMovieTitle}" class="img-fluid rounded" style="max-height: 90px;"></div>
-                            <div class="col"><strong>${movie.title}</strong> (${movie.year||'N/A'})<br><small class="text-muted">Statut: ${movie.status||'N/A'} | TMDB ID: ${movie.tmdbId||'N/A'}</small><p class="mb-0 small">${(movie.overview||'').substring(0,120)}${(movie.overview||'').length>120?'...':''}</p></div>
-                            <div class="col-auto"><button class="btn btn-success btn-sm" onclick="${onclickAction}" ${movie.id?'':'disabled title="Film non géré par Radarr."'}><i class="fas fa-link"></i> Mapper</button></div>
+                            <div class="col-auto"><img src="${posterUrl}" alt="${escapedSeriesTitle}" class="img-fluid rounded" style="max-height: 90px;"></div>
+                            <div class="col"><strong>${series.title}</strong> (${series.year||'N/A'})<br><small class="text-muted">Statut: ${series.status||'N/A'} | TVDB ID: ${series.tvdbId||'N/A'}</small><p class="mb-0 small">${(series.overview||'').substring(0,120)}${(series.overview||'').length>120?'...':''}</p></div>
+                            <div class="col-auto"><button class="btn btn-success btn-sm" onclick="${onclickAction}" ${series.id?'':'disabled title="Série non gérée par Sonarr."'}><i class="fas fa-check-circle"></i> Sélectionner</button></div> {# Texte du bouton changé #}
                         </div></li>`;
                 });
                 html += '</ul>';
                 resultsDiv.innerHTML = html;
-            } catch (error) { resultsDiv.innerHTML = `<p class="text-danger">Erreur recherche Radarr: ${error.message}</p>`; console.error("Erreur executeRadarrSearch:", error); }
+            } catch (error) { /* ... votre gestion d'erreur ... */ }
         }
 
-async function triggerSonarrManualImport(sonarrSeriesId, seriesTitle) { // seriesTitle ici est déjà échappé (vient de escapedSeriesTitle)
-            const originalItemName = document.getElementById('sonarrOriginalItemName').value; // Ceci est item_name_in_staging
-            const resultsDiv = document.getElementById('sonarrSearchResults'); // Div pour afficher les messages DANS le modal
+        async function triggerSonarrManualImportWithSeason(sonarrSeriesId, seriesTitle, userForcedSeason) {
+            const originalItemName = document.getElementById('sonarrOriginalItemName').value;
+            const resultsDiv = document.getElementById('sonarrSearchResults'); // Div DANS le modal
 
-            if (sonarrSeriesId === 0) { /* Optionnellement gérer le cas où l'ID est 0 si ça a un sens */ return; }
+            if (sonarrSeriesId === 0) { return; }
+            if(resultsDiv) resultsDiv.innerHTML = `<div class="alert alert-info">Analyse pour '${escapeJsString(originalItemName.split(/[\\/]/).pop())}' avec la série '${seriesTitle}' (ID: ${sonarrSeriesId})...</div>`;
 
-            resultsDiv.innerHTML = `<div class="alert alert-info">Analyse pour '${escapeJsString(originalItemName.split(/[\\/]/).pop())}' avec la série '${seriesTitle}' (ID: ${sonarrSeriesId})...</div>`;
-
-            // --- NOUVEAU: Récupérer le hash du torrent problématique si présent ---
-            const sonarrModalElement = document.getElementById('sonarrSearchModal'); // << VÉRIFIEZ CET ID, est-ce le bon ID de votre modal principal Sonarr ?
-            let problemTorrentHash = null;
-            if (sonarrModalElement) {
-                problemTorrentHash = sonarrModalElement.getAttribute('data-problem-torrent-hash');
-            }
-            // --- FIN NOUVEAU ---
+            const sonarrModalElement = document.getElementById('sonarrSearchModal');
+            const problemTorrentHash = sonarrModalElement ? sonarrModalElement.getAttribute('data-problem-torrent-hash') : null;
 
             const payload = {
                 item_name: originalItemName,
-                series_id: sonarrSeriesId
-                // N'ajoutez user_forced_season que si vous l'avez explicitement dans ce modal et qu'il est pertinent
-                // Si vous l'avez, ex: const userForcedSeason = document.getElementById('ID_DE_VOTRE_INPUT_SAISON_DANS_CE_MODAL').value;
-                // if (userForcedSeason) payload.user_forced_season = parseInt(userForcedSeason);
+                series_id: parseInt(sonarrSeriesId)
             };
-
-            // Ajouter le hash au payload s'il existe (indique un re-mapping)
-            if (problemTorrentHash && problemTorrentHash !== '') {
-                payload.problem_torrent_hash = problemTorrentHash;
-                console.log("Re-mapping item problématique avec hash:", problemTorrentHash);
+            if (userForcedSeason && userForcedSeason.trim() !== '') {
+                payload.user_forced_season = parseInt(userForcedSeason);
             }
+            if (problemTorrentHash && problemTorrentHash !== '') { // Si on remappe un item problématique
+                payload.problem_torrent_hash = problemTorrentHash;
+            }
+
+            // Désactiver le bouton de soumission du modal pendant le traitement
+            const modalMapButton = document.getElementById('sonarrModalMapButton');
+            if(modalMapButton) modalMapButton.disabled = true;
 
             try {
                 const response = await fetch(`{{ url_for('seedbox_ui.trigger_sonarr_import') }}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload) // Envoi du payload mis à jour
+                    body: JSON.stringify(payload)
                 });
-                const result = await response.json(); // Toujours essayer de parser
-
-                // La vérification de response.ok est bonne, mais parfois le backend retourne un 200 avec success:false ou action_required
-                if (!response.ok && !(response.status === 200 && result.action_required)) { // Gérer les erreurs HTTP sauf si c'est une action_required avec un 200
+                const result = await response.json();
+                if (!response.ok && !(response.status === 200 && result.action_required)) {
                     throw new Error(result.error || `Erreur HTTP: ${response.status}`);
                 }
 
                 if (result.success === true) {
-                    resultsDiv.innerHTML = `<div class="alert alert-success alert-dismissible fade show" role="alert">${escapeJsString(result.message) || 'Importation initiée.'}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
+                    if(resultsDiv) resultsDiv.innerHTML = `<div class="alert alert-success">${escapeJsString(result.message) || 'Importation initiée.'}</div>`;
                     flashMessageGlobally(result.message || `Import pour '${escapeJsString(originalItemName.split(/[\\/]/).pop())}' (série: ${seriesTitle}) initié.`, 'success');
-
-                    // Si c'était un item problématique, on a besoin de s'assurer qu'il disparaît de la liste "Attention"
-                    // window.location.reload() le fera.
                     setTimeout(() => {
-                        const modalInstance = bootstrap.Modal.getInstance(document.getElementById('sonarrSearchModal')); // << VÉRIFIEZ CET ID
+                        const modalInstance = bootstrap.Modal.getInstance(document.getElementById('sonarrSearchModal'));
                         if (modalInstance) modalInstance.hide();
                         window.location.reload();
-                    }, 2500); // Délai un peu plus court peut-être
+                    }, 2500);
                 } else if (result.action_required === "resolve_season_episode_mismatch") {
+                    // ... (votre logique existante pour afficher le modal de discordance S/E) ...
+                    // S'assurer de passer problemTorrentHash à forceSonarrImport si pertinent
                     const d = result.details;
-                    // S'assurer que le hash du problème est propagé au modal de résolution si c'était un re-mapping
-                    const problemHashForMismatch = d.problem_torrent_hash || problemTorrentHash;
-
+                    const problemHashForMismatch = d.problem_torrent_hash || payload.problem_torrent_hash; // Utiliser celui du payload si dispo
                     const stagingItemNameForForce = escapeJsString(d.staging_item_name);
                     let html = `<div class="alert alert-warning"><h5><i class="fas fa-exclamation-triangle"></i> Discordance S/E</h5>
                         <p>${escapeJsString(result.message)}</p><hr>
@@ -672,13 +922,16 @@ async function triggerSonarrManualImport(sonarrSeriesId, seriesTitle) { // serie
                         <button class="btn btn-primary btn-sm me-2 mb-2" onclick="forceSonarrImport('${stagingItemNameForForce}', ${d.series_id}, 'use_sonarr_info', ${d.sonarr_season}, ${d.sonarr_episode}, '${seriesTitle}', '${problemHashForMismatch || ''}')">Utiliser S${d.sonarr_season}E${d.sonarr_episode} (Info Sonarr)</button>
                         <button class="btn btn-info btn-sm me-2 mb-2" onclick="forceSonarrImport('${stagingItemNameForForce}', ${d.series_id}, 'use_filename_info', ${d.filename_season}, ${d.filename_episode}, '${seriesTitle}', '${problemHashForMismatch || ''}')">Utiliser S${d.filename_season}E${d.filename_episode} (Info Fichier)</button>
                         <button type="button" class="btn btn-secondary btn-sm mb-2" data-bs-dismiss="modal">Annuler</button></div>`;
-                    resultsDiv.innerHTML = html;
+                    if(resultsDiv) resultsDiv.innerHTML = html;
                 } else {
-                    throw new Error(result.error || "Erreur inconnue lors de l'import.");
+                    throw new Error(result.error || "Erreur inconnue (import).");
                 }
             } catch (error) {
-                resultsDiv.innerHTML = `<div class="alert alert-danger alert-dismissible fade show" role="alert">Erreur: ${escapeJsString(error.message)}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
-                console.error("Erreur triggerSonarrManualImport:", error);
+                if(resultsDiv) resultsDiv.innerHTML = `<div class="alert alert-danger">${escapeJsString(error.message)}</div>`;
+                console.error("Erreur triggerSonarrManualImportWithSeason:", error);
+                flashMessageGlobally(`Erreur d'import Sonarr: ${escapeJsString(error.message)}`, 'danger');
+            } finally {
+                if(modalMapButton) modalMapButton.disabled = false;
             }
         }
 
@@ -992,10 +1245,11 @@ async function triggerRadarrManualImport(radarrMovieId, movieTitle) { // movieTi
             }
             let html = '<ul class="list-group mt-3">';
             results.forEach(item => {
-                const title = escapeJsString(item.title);
+                const title = escapeJsString(item.title); // Vous avez déjà une fonction escapeJsString
                 const year = item.year || 'N/A';
-                // Handle cases where images might be null or empty
-                let posterUrl = 'https://via.placeholder.com/40x60?text=N/A';
+
+                // --- Gestion de posterUrl améliorée ---
+                let posterUrl = null; // Initialiser à null
                 if (item.remotePoster) {
                     posterUrl = item.remotePoster;
                 } else if (item.images && item.images.length > 0) {
@@ -1004,26 +1258,34 @@ async function triggerRadarrManualImport(radarrMovieId, movieTitle) { // movieTi
                         posterUrl = posterImage.remoteUrl;
                     }
                 }
+                // Si posterUrl est toujours null ou undefined, utiliser le placeholder
+                if (!posterUrl) { // Vérifie null, undefined, chaîne vide
+                    posterUrl = 'https://via.placeholder.com/40x60?text=N/A';
+                }
+                // --- Fin de la gestion de posterUrl ---
 
                 let selectable_id = 0;
+                // La logique pour selectable_id semble bonne, mais assurons-nous que item.id ou item.tmdbId sont bien des nombres ou null/undefined
                 if (appType === 'sonarr') {
-                    selectable_id = item.id || 0;
+                    selectable_id = parseInt(item.id) || 0; // S'assurer que c'est un nombre, sinon 0
                 } else if (appType === 'radarr') {
-                    selectable_id = item.id || 0; // Try Radarr's internal ID first
-                    if (!selectable_id && item.tmdbId) { // If no internal ID, fallback to tmdbId
-                        selectable_id = item.tmdbId;
+                    selectable_id = parseInt(item.id) || 0;
+                    if (!selectable_id && item.tmdbId) {
+                        selectable_id = parseInt(item.tmdbId) || 0;
                     }
                 }
 
                 const status = item.status || 'N/A';
                 const id_type = appType === 'sonarr' ? 'TVDB ID' : 'TMDB ID';
-                const external_id_val = appType === 'sonarr' ? item.tvdbId : (item.tmdbId || 'N/A'); // Ensure tmdbId display for Radarr
+                const external_id_val = appType === 'sonarr' ? (item.tvdbId || 'N/A') : (item.tmdbId || 'N/A');
 
+                // Construire le HTML de l'item de liste (votre code existant, je ne le reproduis pas en entier)
+                // Assurez-vous juste que la variable 'posterUrl' est bien utilisée dans la balise <img>
                 html += `
                     <li class="list-group-item">
                         <div class="row align-items-center">
                             <div class="col-auto" style="width:50px;">
-                                <img src="${posterUrl}" alt="Poster" class="img-fluid rounded" style="max-height: 60px;">
+                                <img src="${posterUrl}" alt="Poster pour ${title}" class="img-fluid rounded" style="max-height: 60px;" onerror="this.onerror=null; this.src='https://via.placeholder.com/40x60?text=ImgErr';"> {# Ajout de onerror #}
                             </div>
                             <div class="col">
                                 <strong>${title}</strong> (${year})<br>

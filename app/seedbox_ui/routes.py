@@ -3185,6 +3185,107 @@ def api_process_staged_item():
             "item_path_validated": str(item_path)
         }), 202 # HTTP 202 Accepted - indique que la requête est valide mais nécessite une action ultérieure
 # ==============================================================================
+# ROUTE POUR LE MAPPING GROUPÉ VERS UNE SÉRIE SONARR
+# ==============================================================================
+@seedbox_ui_bp.route('/batch-map-to-sonarr-series', methods=['POST']) # Nom de fonction cohérent avec l'endpoint
+def batch_map_to_sonarr_series_action():
+    logger = current_app.logger
+    data = request.get_json()
+
+    if not data:
+        logger.error("Batch Map Sonarr: Aucune donnée JSON reçue.")
+        return jsonify({"success": False, "error": "Aucune donnée JSON reçue."}), 400
+
+    item_names_in_staging = data.get('item_names') # Liste de noms d'items (path_for_actions)
+    series_id_target_str = data.get('series_id')
+
+    if not isinstance(item_names_in_staging, list) or not item_names_in_staging:
+        logger.error(f"Batch Map Sonarr: 'item_names' manquants ou n'est pas une liste. Reçu: {item_names_in_staging}")
+        return jsonify({"success": False, "error": "'item_names' est requis et doit être une liste non vide."}), 400
+
+    if not series_id_target_str:
+        logger.error("Batch Map Sonarr: 'series_id' manquant.")
+        return jsonify({"success": False, "error": "'series_id' est requis."}), 400
+
+    try:
+        series_id_target = int(series_id_target_str)
+    except ValueError:
+        logger.error(f"Batch Map Sonarr: 'series_id' invalide: {series_id_target_str}. Doit être un entier.")
+        return jsonify({"success": False, "error": "Format de series_id invalide."}), 400
+
+    logger.info(f"Batch Map Sonarr: Traitement de {len(item_names_in_staging)} items pour la série ID {series_id_target}.")
+
+    staging_dir = current_app.config.get('STAGING_DIR')
+    if not staging_dir:
+        logger.error("Batch Map Sonarr: STAGING_DIR non configuré.")
+        return jsonify({"success": False, "error": "Configuration serveur incomplète (STAGING_DIR)."}), 500
+
+    successful_imports = 0
+    failed_imports_details = [] # Pour stocker les détails des échecs
+
+    for item_name in item_names_in_staging:
+        logger.info(f"Batch Map Sonarr: Traitement de l'item '{item_name}' pour la série {series_id_target}.")
+
+        full_staging_path_str = str((Path(staging_dir) / item_name).resolve())
+        if not os.path.exists(full_staging_path_str):
+            logger.warning(f"Batch Map Sonarr: Item '{item_name}' non trouvé dans le staging à '{full_staging_path_str}'. Ignoré.")
+            failed_imports_details.append({"item": item_name, "reason": "Non trouvé dans le staging"})
+            continue
+
+        # Vérifier s'il y a une pré-association existante pour cet item et la traiter/supprimer
+        # find_torrent_by_release_name utilise le nom de la release (qui est item_name ici)
+        torrent_hash_existing, existing_assoc = torrent_map_manager.find_torrent_by_release_name(item_name)
+
+        if existing_assoc:
+            logger.info(f"Batch Map Sonarr: L'item '{item_name}' a une pré-association existante (Hash: {torrent_hash_existing}). Elle sera utilisée/remplacée.")
+            # Le _handle_staged_sonarr_item, s'il reçoit ce torrent_hash_existing,
+            # mettra à jour le statut à "imported_by_mms" ou supprimera l'entrée si configuré.
+        else:
+            torrent_hash_existing = None # Pas d'association à nettoyer spécifiquement par hash plus tard
+
+        # Appeler le helper _handle_staged_sonarr_item
+        # automated_import=False car c'est une action manuelle, mais on ne veut pas d'interaction pour la saison ici.
+        # Le helper doit essayer de parser la saison. Si on voulait plus de contrôle, il faudrait une UI pour chaque item.
+        # Pour le batch, on se fie au parsing automatique ou à Sonarr.
+        result_dict = _handle_staged_sonarr_item(
+            item_name_in_staging=item_name,
+            series_id_target=series_id_target, # Déjà un entier
+            path_to_cleanup_in_staging_after_success=full_staging_path_str,
+            user_chosen_season=None, # Pas de saison forcée pour le batch pour l'instant
+            automated_import=False, # Action manuelle, mais le helper gère le retour JSON
+            torrent_hash_for_status_update=torrent_hash_existing # Pour nettoyer l'ancienne association
+        )
+
+        if result_dict.get("success"):
+            successful_imports += 1
+            logger.info(f"Batch Map Sonarr: Succès pour '{item_name}'. Message: {result_dict.get('message')}")
+            # Si une association existait et que le nettoyage du map est activé dans le helper (ou que le statut est mis à imported), c'est géré.
+            # Si vous voulez explicitement supprimer l'association ici après un succès de _handle_staged_sonarr_item:
+            if torrent_hash_existing:
+                 if torrent_map_manager.remove_torrent_from_map(torrent_hash_existing):
+                     logger.info(f"Batch Map Sonarr: Association pour '{item_name}' (Hash: {torrent_hash_existing}) supprimée après import réussi.")
+                 else: # Peut arriver si _handle_staged_sonarr_item l'a déjà supprimée via son propre remove_torrent_from_map
+                     logger.info(f"Batch Map Sonarr: Association pour '{item_name}' (Hash: {torrent_hash_existing}) non trouvée pour suppression (peut-être déjà traitée).")
+        else:
+            logger.error(f"Batch Map Sonarr: Échec pour '{item_name}'. Raison: {result_dict.get('message', 'Erreur inconnue du handler')}")
+            failed_imports_details.append({"item": item_name, "reason": result_dict.get('message', 'Erreur inconnue')})
+
+    total_items = len(item_names_in_staging)
+    final_message = f"Traitement groupé terminé. {successful_imports}/{total_items} items importés avec succès."
+    if failed_imports_details:
+        final_message += f" {len(failed_imports_details)} items ont échoué ou nécessité une attention."
+        # Vous pourriez inclure failed_imports_details dans la réponse si le JS peut l'afficher.
+
+    logger.info(final_message)
+    return jsonify({
+        "success": True, # La route elle-même a fonctionné, même s'il y a des échecs partiels
+        "message": final_message,
+        "processed_count": successful_imports,
+        "errors_count": len(failed_imports_details),
+        "error_details": failed_imports_details # Pour un logging JS plus détaillé si besoin
+    }), 200
+
+# ==============================================================================
 # ROUTES POUR LA GESTION DES ITEMS PROBLÉMATIQUES DU PENDING_TORRENTS_MAP
 # ==============================================================================
 
