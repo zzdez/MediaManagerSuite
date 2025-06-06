@@ -190,13 +190,51 @@
     </div>
 
     <!-- Modales Sonarr et Radarr (INCHANGÉES - on les réutilise) -->
+<!-- Modal Sonarr MODIFIÉ (Assurez-vous que c'est celui-ci dans votre template) -->
     <div class="modal fade" id="sonarrSearchModal" tabindex="-1" aria-labelledby="sonarrSearchModalLabel" aria-hidden="true">
-        {# ... contenu de la modale Sonarr ... #}
-        <div class="modal-dialog modal-lg"> <div class="modal-content"> <div class="modal-header"> <h5 class="modal-title" id="sonarrSearchModalLabel">Rechercher et Mapper (Sonarr)</h5> <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button> </div> <div class="modal-body"> <p>Pour : <strong id="sonarrItemToMap"></strong> (<span id="sonarrItemType"></span>)</p><input type="hidden" id="sonarrOriginalItemName" value=""><input type="hidden" id="sonarrOriginalItemType" value=""><div class="input-group mb-3"><input type="text" class="form-control" id="sonarrSearchQuery" placeholder="Nom de la série..."><button class="btn btn-outline-primary" type="button" onclick="executeSonarrSearch()"><i class="fas fa-search"></i> Rechercher</button></div><div id="sonarrSearchResults" style="max-height: 400px; overflow-y: auto;"></div></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button></div></div></div>
-    </div>
-    <div class="modal fade" id="radarrSearchModal" tabindex="-1" aria-labelledby="radarrSearchModalLabel" aria-hidden="true">
-        {# ... contenu de la modale Radarr ... #}
-        <div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="radarrSearchModalLabel">Rechercher et Mapper (Radarr)</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body"><p>Pour : <strong id="radarrItemToMap"></strong> (<span id="radarrItemType"></span>)</p><input type="hidden" id="radarrOriginalItemName" value=""><input type="hidden" id="radarrOriginalItemType" value=""><div class="input-group mb-3"><input type="text" class="form-control" id="radarrSearchQuery" placeholder="Titre du film..."><button class="btn btn-outline-primary" type="button" onclick="executeRadarrSearch()"><i class="fas fa-search"></i> Rechercher</button></div><div id="radarrSearchResults" style="max-height: 400px; overflow-y: auto;"></div></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button></div></div></div>
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="sonarrSearchModalLabel">Rechercher et Mapper avec Sonarr</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Mapping pour : <strong id="sonarrItemToMap"></strong> (<span id="sonarrItemType"></span>)</p>
+                    <input type="hidden" id="sonarrOriginalItemName" value="">
+                    <input type="hidden" id="sonarrOriginalItemType" value="">
+
+                    <div class="input-group mb-3">
+                        <input type="text" class="form-control" id="sonarrSearchQuery" placeholder="Nom de la série...">
+                        <button class="btn btn-outline-primary" type="button" onclick="executeSonarrSearch()">
+                            <i class="fas fa-search"></i> Rechercher
+                        </button>
+                    </div>
+
+                    <div id="sonarrSearchResults" class="mb-3" style="max-height: 300px; overflow-y: auto;">
+                        {/* Les résultats de la recherche seront injectés ici par JavaScript */}
+                    </div>
+                    <input type="hidden" id="sonarrSelectedSeriesId" value="">
+
+                    <p id="sonarrSelectedSeriesTitle" class="fw-bold mt-2">Aucune série sélectionnée</p>
+
+                    <div id="sonarrManualSeasonDiv" class="mb-3" style="display: none;">
+                        <label for="sonarrManualSeasonInput" class="form-label">
+                            Forcer la Saison pour le déplacement (optionnel, laisser vide pour auto-détection) :
+                        </label>
+                        <input type="number" class="form-control form-control-sm" id="sonarrManualSeasonInput" placeholder="Ex: 1">
+                        <small class="form-text text-muted">
+                            Utile si la détection automatique de la saison par Sonarr ou le nom de fichier est incorrecte.
+                        </small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="button" class="btn btn-primary" id="sonarrModalMapButton">
+                        <i class="fas fa-link"></i> Mapper à cette Série
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 
 
@@ -214,6 +252,7 @@
     // Pour le rapatriement groupé
     const batchRapatrierButton = document.getElementById('batchRapatrierBtn'); // Bouton principal du batch
     let selectedRemoteItemsForBatch = []; // Items sélectionnés pour le batch
+    const batchRapatrierAndPremapSonarrButton = document.getElementById('batchRapatrierAndPremapSonarrBtn'); // NOUVEAU BOUTON
 
     // --- FONCTIONS UTILITAIRES ---
         function escapeJsString(str) {
@@ -243,7 +282,7 @@
         const allAlerts = container.querySelectorAll('.alert.alert-dismissible.show');
         const newAlert = allAlerts[allAlerts.length-1];
         if(newAlert)newAlert.scrollIntoView({behavior:'smooth',block:'center'});
-            }    
+            }
 
         // --- Fonction pour le bouton "Rapatrier" simple (vers staging) ---
         async function triggerManualSftpDownload(buttonElement) {
@@ -296,28 +335,74 @@
         }
 
         // Appelée par le bouton "Rapatrier & Mapper" de la liste distante
-        function openSftpRetrieveAndMapModal(buttonElement) {
-            console.log("openSftpRetrieveAndMapModal called"); // Log pour débogage
-            sftpItemForDirectMap.remotePath = buttonElement.getAttribute('data-remote-path');
-            sftpItemForDirectMap.appType = buttonElement.getAttribute('data-app-type');
-            sftpItemForDirectMap.itemNameForDisplay = buttonElement.getAttribute('data-item-name-for-modal');
-            sftpItemForDirectMap.itemTypeForDisplay = buttonElement.getAttribute('data-item-type');
+function openSftpRetrieveAndMapModal(buttonElement) {
+    console.log("Ouverture modal pour Rapatrier & Mapper INDIVIDUEL");
+    sftpItemForDirectMap.remotePath = buttonElement.getAttribute('data-remote-path');
+    sftpItemForDirectMap.appType = buttonElement.getAttribute('data-app-type');
+    sftpItemForDirectMap.itemNameForDisplay = buttonElement.getAttribute('data-item-name-for-modal');
+    sftpItemForDirectMap.itemTypeForDisplay = buttonElement.getAttribute('data-item-type');
 
-            console.log("SFTP Context Set:", sftpItemForDirectMap);
+    const targetArrTypeForModal = sftpItemForDirectMap.appType; // 'sonarr' ou 'radarr'
+    const modalId = (targetArrTypeForModal === 'sonarr') ? 'sonarrSearchModal' : 'radarrSearchModal';
+    const modalElement = document.getElementById(modalId);
 
-            const targetArrTypeForModal = sftpItemForDirectMap.appType;
-            const modalId = (targetArrTypeForModal === 'sonarr') ? 'sonarrSearchModal' : 'radarrSearchModal';
+    if (!modalElement) {
+        console.error(`Modal ${modalId} non trouvé!`);
+        return;
+    }
 
-            document.getElementById(`${targetArrTypeForModal}ItemToMap`).textContent = sftpItemForDirectMap.itemNameForDisplay;
-            document.getElementById(`${targetArrTypeForModal}OriginalItemName`).value = "SFTP_CONTEXT_ACTIVE"; // Indicateur pour les fonctions de recherche
-            document.getElementById(`${targetArrTypeForModal}ItemType`).textContent = sftpItemForDirectMap.itemTypeForDisplay === 'directory' ? 'Dossier (Distant)' : 'Fichier (Distant)';
-            document.getElementById(`${targetArrTypeForModal}SearchQuery`).value = getCleanedSearchTerm(sftpItemForDirectMap.itemNameForDisplay);
-            document.getElementById(`${targetArrTypeForModal}SearchResults`).innerHTML = '';
-            document.getElementById(`${targetArrTypeForModal}SearchModalLabel`).textContent = `Rapatrier & Mapper: ${sftpItemForDirectMap.itemNameForDisplay} (${targetArrTypeForModal.charAt(0).toUpperCase() + targetArrTypeForModal.slice(1)})`;
+    // Réinitialiser et pré-remplir les champs du modal
+    document.getElementById(`${targetArrTypeForModal}ItemToMap`).textContent = sftpItemForDirectMap.itemNameForDisplay;
+    // 'sonarrOriginalItemName' n'est pas utilisé par executeSftpRetrieveAndProcess qui utilise sftpItemForDirectMap.remotePath
+    // document.getElementById(`${targetArrTypeForModal}OriginalItemName`).value = "SFTP_CONTEXT_ACTIVE"; // Peut-être pas nécessaire
+    document.getElementById(`${targetArrTypeForModal}ItemType`).textContent = sftpItemForDirectMap.itemTypeForDisplay === 'directory' ? 'Dossier (Distant)' : 'Fichier (Distant)';
+    document.getElementById(`${targetArrTypeForModal}SearchQuery`).value = getCleanedSearchTerm(sftpItemForDirectMap.itemNameForDisplay);
+    document.getElementById(`${targetArrTypeForModal}SearchResults`).innerHTML = '';
+    document.getElementById(`${targetArrTypeForModal}SearchModalLabel`).textContent = `Rapatrier & Mapper: ${sftpItemForDirectMap.itemNameForDisplay}`;
+    
+    // Pour Sonarr, s'assurer que les champs d'ID et de titre sont aussi réinitialisés
+    if (targetArrTypeForModal === 'sonarr') {
+        document.getElementById('sonarrSelectedSeriesId').value = '';
+        document.getElementById('sonarrSelectedSeriesTitle').innerText = 'Aucune série sélectionnée';
+        document.getElementById('sonarrManualSeasonDiv').style.display = 'none'; // Cacher pour ce flux aussi, ou le gérer.
+    } else if (targetArrTypeForModal === 'radarr') {
+        // Faire de même pour les champs Radarr si vous les avez (radarrSelectedMovieId, etc.)
+        document.getElementById('radarrSelectedMovieId').value = ''; // Supposant que cet ID existe
+        document.getElementById('radarrSelectedMovieTitle').innerText = 'Aucun film sélectionné'; // Supposant que cet ID existe
+    }
 
-            var modalInstance = new bootstrap.Modal(document.getElementById(modalId));
-            modalInstance.show();
-        }
+    // Configurer le bouton de soumission du modal approprié
+    const modalMapButtonId = (targetArrTypeForModal === 'sonarr') ? 'sonarrModalMapButton' : 'radarrModalMapButton'; // Assurez-vous d'avoir radarrModalMapButton pour le modal Radarr
+    const modalMapButton = document.getElementById(modalMapButtonId);
+
+    if (modalMapButton) {
+        modalMapButton.innerHTML = `<i class="fas fa-link"></i> Rapatrier & Mapper cet item`;
+        modalMapButton.disabled = true; // Désactiver jusqu'à sélection
+        
+        modalMapButton.onclick = function() {
+            let selectedMediaId;
+            let selectedMediaTitle;
+            if (targetArrTypeForModal === 'sonarr') {
+                selectedMediaId = document.getElementById('sonarrSelectedSeriesId').value;
+                selectedMediaTitle = document.getElementById('sonarrSelectedSeriesTitle').innerText.replace('Série sélectionnée : ','');
+            } else { // radarr
+                selectedMediaId = document.getElementById('radarrSelectedMovieId').value;
+                selectedMediaTitle = document.getElementById('radarrSelectedMovieTitle').innerText.replace('Film sélectionné : ','');
+            }
+
+            if (selectedMediaId) {
+                executeSftpRetrieveAndProcess(selectedMediaId, selectedMediaTitle, targetArrTypeForModal);
+            } else {
+                alert(`Veuillez d'abord rechercher et sélectionner un(e) ${targetArrTypeForModal === 'sonarr' ? 'série' : 'film'}.`);
+            }
+        };
+    } else {
+        console.error(`Bouton de mapping (ID: ${modalMapButtonId}) non trouvé dans le modal ${targetArrTypeForModal}.`);
+    }
+
+    var modalInstance = new bootstrap.Modal(modalElement);
+    modalInstance.show();
+}
 
         // Appelée par les boutons "Mapper" DANS LES MODALES quand sftpItemForDirectMap.remotePath est actif
         async function executeSftpRetrieveAndProcess(targetMediaId, targetMediaTitleForDisplay, arrType) {
@@ -399,15 +484,15 @@
                     // L'action onclick appelle TOUJOURS executeSftpRetrieveAndProcess si on est dans ce template
                     // Car ce template est UNIQUEMENT pour la vue distante SFTP.
                     // Le `sftpItemForDirectMap.remotePath` sera vérifié dans executeSftpRetrieveAndProcess.
-                    let onclickAction = `executeSftpRetrieveAndProcess(${series.id || 0}, '${escapedSeriesTitle}', 'sonarr')`;
+                    let onclickAction = `handleGenericSonarrSeriesSelection(${series.id || 0}, '${escapedSeriesTitle}')`;
 
                     html += `
                         <li class="list-group-item"><div class="row align-items-center">
                             <div class="col-auto"><img src="${posterUrl}" alt="Poster" class="img-fluid rounded" style="max-height: 90px;"></div>
                             <div class="col"><strong>${series.title}</strong> (${series.year||'N/A'})<br><small class="text-muted">Statut: ${series.status||'N/A'} | TVDB ID: ${series.tvdbId||'N/A'}</small></div>
-                            <div class="col-auto"><button class="btn btn-success btn-sm" onclick="${onclickAction}" ${series.id?'':'disabled title="Série non gérée par Sonarr."'}><i class="fas fa-link"></i> Mapper</button></div>
-                        </div></li>`;
-                });
+                            <div class="col-auto"><button class="btn btn-success btn-sm" onclick="${onclickAction}" ${series.id?'':'disabled title="Série non gérée"'}><i class="fas fa-check-circle"></i> Sélectionner</button></div>
+                       </div></li>`;
+                    });
                 html += '</ul>';
                 resultsDiv.innerHTML = html;
             } catch (error) { resultsDiv.innerHTML = `<p class="text-danger">Erreur recherche Sonarr: ${error.message}</p>`; console.error("Erreur executeSonarrSearch:", error); }
@@ -441,41 +526,22 @@
                 resultsDiv.innerHTML = html;
             } catch (error) { resultsDiv.innerHTML = `<p class="text-danger">Erreur recherche Radarr: ${error.message}</p>`; console.error("Erreur executeRadarrSearch:", error); }
         }
+        // --- NOUVELLE FONCTION HELPER pour la sélection générique dans le modal Sonarr ---
+        function handleGenericSonarrSeriesSelection(seriesId, seriesTitle) { // seriesTitle est déjà échappé
+            document.getElementById('sonarrSelectedSeriesId').value = seriesId; // Champ caché dans le modal Sonarr
+            document.getElementById('sonarrSelectedSeriesTitle').innerText = `Série sélectionnée : ${seriesTitle}`; // Champ visible dans le modal Sonarr
 
-
-        // Fonction MISE À JOUR pour gérer l'état de TOUS les boutons de batch basés sur la sélection
-        function updateBatchActionButtonsState() {
-            selectedRemoteItemsForBatch = []; // Recalculer
-            const currentCheckboxes = document.querySelectorAll('.remote-item-batch-download-checkbox');
-            currentCheckboxes.forEach(checkbox => {
-                if (checkbox.checked) {
-                    selectedRemoteItemsForBatch.push(checkbox.value);
-                }
-            });
-
-            const anyItemSelected = selectedRemoteItemsForBatch.length > 0;
-
-            // Gérer le bouton de rapatriement simple
-            const simpleRapatrierButton = document.getElementById('batchRapatrierBtn');
-            if (simpleRapatrierButton) {
-                simpleRapatrierButton.disabled = !anyItemSelected;
+            // Activer le bouton de mapping principal du modal Sonarr (celui avec l'ID sonarrModalMapButton)
+            const modalMapButton = document.getElementById('sonarrModalMapButton'); // Assurez-vous que ce bouton existe dans votre modal HTML
+            if (modalMapButton) {
+                modalMapButton.disabled = !seriesId;
             }
-
-            // Gérer le nouveau bouton de rapatriement et pré-mapping Sonarr
-            const premapSonarrButton = document.getElementById('batchRapatrierAndPremapSonarrBtn');
-            if (premapSonarrButton) {
-                premapSonarrButton.disabled = !anyItemSelected;
-            }
-
-            // Gérer votre bouton de suppression groupée existant (s'il utilise une autre classe de checkbox)
-            const deleteCheckboxes = document.querySelectorAll('.sftp-item-delete-checkbox'); // Adaptez la classe si besoin
-            let anyDeleteSelected = false;
-            deleteCheckboxes.forEach(cb => { if (cb.checked) anyDeleteSelected = true; });
-            const batchDeleteBtn = document.getElementById('batchDeleteBtn'); // ID de votre bouton de suppression de masse
-            if (batchDeleteBtn) {
-                batchDeleteBtn.disabled = !anyDeleteSelected;
+            const resultsDiv = document.getElementById('sonarrSearchResults');
+            if(resultsDiv) {
+                resultsDiv.innerHTML = `<p class="alert alert-info mt-2">Série sélectionnée : <strong>${seriesTitle}</strong> (ID: ${seriesId}).<br>Cliquez sur le bouton d'action en bas du modal.</p>`;
             }
         }
+        // --- FIN NOUVELLE FONCTION HELPER ---
 
     async function handleBatchRapatrier() {
         if (selectedRemoteItemsForBatch.length === 0) {
@@ -533,61 +599,51 @@
         }
         // --- NOUVELLE LOGIQUE POUR "RAPATRIER & PRÉ-MAPPER SÉLECTION (SONARR)" ---
 
-        const batchRapatrierAndPremapSonarrButton = document.getElementById('batchRapatrierAndPremapSonarrBtn');
+
         // La variable selectedRemoteItemsForBatch est déjà globale et utilisée par updateBatchButtonsStates
 
         // Variable pour stocker l'ID de la série Sonarr sélectionnée dans le modal pour cette action spécifique
         let seriesIdForBatchPremap = null; // Ou utilisez la variable globale que nous avions pour le modal Sonarr si elle est partagée
 
         // Cette fonction sera appelée lorsque l'utilisateur clique sur "Rapatrier & Pré-Mapper Sélection (Sonarr)"
-        function openBatchRetrieveAndPremapSonarrModal() {
-            if (selectedRemoteItemsForBatch.length === 0) { // selectedRemoteItemsForBatch est rempli par updateBatchButtonsStates
-                alert("Veuillez sélectionner au moins un item de la seedbox à rapatrier et pré-mapper.");
+        // --- FONCTIONS POUR LE BATCH RAPATRIEMENT ET PRÉ-MAPPING SONARR ---
+        // MODIFIÉ : La variable seriesIdForBatchPremap n'est plus nécessaire globalement ici
+        function openBatchRetrieveAndPremapSonarrModal() { // Note: J'ai retiré la redéfinition de seriesIdForBatchPremap d'ici
+            if (selectedRemoteItemsForBatch.length === 0) {
+                alert("Veuillez sélectionner au moins un item de la seedbox.");
                 return;
             }
-            console.log("Rapatrier & Pré-mapper (Sonarr) pour items:", selectedRemoteItemsForBatch);
+            console.log("Ouverture modal pour Rapatrier & Pré-mapper (Sonarr) items:", selectedRemoteItemsForBatch);
 
-            seriesIdForBatchPremap = null; // Réinitialiser l'ID de série pour cette action
-
-            const sonarrModalElement = document.getElementById('sonarrSearchModal'); 
+            const sonarrModalElement = document.getElementById('sonarrSearchModal');
             if (!sonarrModalElement) {
-                console.error("Modal Sonarr (ID: sonarrSearchModal) non trouvé !");
-                alert("Erreur: Le modal de recherche Sonarr est introuvable.");
-                return;
+                console.error("Modal Sonarr (ID: sonarrSearchModal) non trouvé !"); return;
             }
 
-            // Réinitialiser les champs du modal Sonarr (votre modal doit avoir ces IDs)
-            const searchQueryInput = document.getElementById('sonarrSearchQuery');
-            const searchResultsDiv = document.getElementById('sonarrSearchResults');
-            const selectedSeriesIdInput = document.getElementById('sonarrSelectedSeriesId'); // Input caché
-            const selectedSeriesTitleDisplay = document.getElementById('sonarrSelectedSeriesTitle'); // Pour afficher le titre
-            const manualSeasonDiv = document.getElementById('sonarrManualSeasonDiv');
-            const manualSeasonInput = document.getElementById('sonarrManualSeasonInput');
-            
-            if(searchQueryInput) searchQueryInput.value = '';
-            if(searchResultsDiv) searchResultsDiv.innerHTML = `<p class="text-muted">Recherchez une série Sonarr pour les <strong>${selectedRemoteItemsForBatch.length} items</strong> sélectionnés à rapatrier et pré-mapper.</p>`;
-            if(selectedSeriesIdInput) selectedSeriesIdInput.value = '';
-            if(selectedSeriesTitleDisplay) selectedSeriesTitleDisplay.innerText = 'Aucune série sélectionnée';
-            if(manualSeasonDiv) manualSeasonDiv.style.display = 'none'; 
-            if(manualSeasonInput) manualSeasonInput.value = '';
-            
-            // Configurer le bouton de soumission du modal Sonarr (`sonarrModalMapButton`) pour cette action spécifique
-            const modalMapButton = document.getElementById('sonarrModalMapButton'); // Bouton avec ID défini dans votre modal Sonarr
+            // Réinitialiser les champs du modal (votre modal Sonarr doit avoir ces IDs)
+            document.getElementById('sonarrSearchQuery').value = '';
+            document.getElementById('sonarrSearchResults').innerHTML = `<p class="text-muted">Recherchez la série Sonarr cible pour les <strong>${selectedRemoteItemsForBatch.length} items</strong> sélectionnés.</p>`;
+            document.getElementById('sonarrSelectedSeriesId').value = ''; // Input caché
+            document.getElementById('sonarrSelectedSeriesTitle').innerText = 'Aucune série sélectionnée'; // Champ visible
+            document.getElementById('sonarrManualSeasonDiv').style.display = 'none';
+            document.getElementById('sonarrManualSeasonInput').value = '';
+
+            // Configurer le bouton de soumission du modal Sonarr
+            const modalMapButton = document.getElementById('sonarrModalMapButton'); // VÉRIFIEZ QUE CE BOUTON EXISTE DANS VOTRE MODAL SONARR HTML avec cet ID
             if (modalMapButton) {
                 modalMapButton.innerHTML = '<i class="fas fa-link"></i> Rapatrier & Pré-Mapper Sélection';
-                modalMapButton.disabled = true; 
-                
-                modalMapButton.onclick = function() { 
-                    // Lire l'ID depuis l'input caché, qui est mis à jour par handleSonarrSeriesSelectionInModal
+                modalMapButton.disabled = true;
+
+                modalMapButton.onclick = function() {
                     const currentSelectedId = document.getElementById('sonarrSelectedSeriesId').value;
                     if (currentSelectedId) {
-                        triggerBatchRetrieveAndPremapSonarr(currentSelectedId); 
+                        triggerBatchRetrieveAndPremapSonarr(currentSelectedId);
                     } else {
                         alert("Veuillez d'abord rechercher et sélectionner une série Sonarr.");
                     }
                 };
             } else {
-                console.error("Bouton de mapping (ID: sonarrModalMapButton) non trouvé dans le modal Sonarr.");
+                console.error("Bouton de mapping principal (ID: sonarrModalMapButton) non trouvé dans le modal Sonarr.");
             }
 
             var modal = new bootstrap.Modal(sonarrModalElement);
@@ -596,73 +652,71 @@
 
         // Fonction appelée par le bouton "Mapper" du modal Sonarr dans le contexte de Rapatrier & Pré-Mapper
         async function triggerBatchRetrieveAndPremapSonarr(targetSeriesId) {
-            if (!targetSeriesId) {
-                alert("Aucune série Sonarr sélectionnée.");
-                return;
-            }
-            if (selectedRemoteItemsForBatch.length === 0) {
-                alert("Aucun item distant sélectionné.");
-                return;
-            }
-
-            const payload = {
-                remote_paths: selectedRemoteItemsForBatch,
-                series_id: parseInt(targetSeriesId),
-                app_type_context: "{{ app_type | e }}" 
-            };
-
-            console.log("Payload pour Rapatrier & Pré-mapper Sonarr:", payload);
-            // Utiliser un span global pour le feedback si vous en avez un, ou celui du modal.
-            const statusSpan = document.getElementById('batchGlobalStatus') || document.getElementById('sftpActionFeedback'); 
+            // ... (VOTRE CODE POUR CETTE FONCTION RESTE LE MÊME que celui que je vous ai fourni précédemment)
+            // Il fait le fetch vers 'seedbox_ui.sftp_batch_retrieve_and_premap_sonarr_action'
+            if (!targetSeriesId) { alert("Aucune série Sonarr sélectionnée."); return; }
+            if (selectedRemoteItemsForBatch.length === 0) { alert("Aucun item distant sélectionné."); return; }
+            const payload = { remote_paths: selectedRemoteItemsForBatch, series_id: parseInt(targetSeriesId), app_type_context: "{{ app_type | e }}" };
+            console.log("Payload pour R&P Sonarr:", payload);
+            const statusSpan = document.getElementById('batchGlobalStatus') || document.getElementById('sftpActionFeedback');
             const resultsDivInModal = document.getElementById('sonarrSearchResults');
             const modalMapButton = document.getElementById('sonarrModalMapButton');
             const mainActionButton = document.getElementById('batchRapatrierAndPremapSonarrBtn');
-
-
-            if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-info"><i class="fas fa-spinner fa-spin"></i> Rapatriement et pré-mappage en cours pour ${selectedRemoteItemsForBatch.length} items...</div>`;
+            if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-info"><i class="fas fa-spinner fa-spin"></i> Traitement...</div>`;
             if(modalMapButton) modalMapButton.disabled = true;
             if(mainActionButton) mainActionButton.disabled = true;
-
             try {
-                const response = await fetch("{{ url_for('seedbox_ui.sftp_batch_retrieve_and_premap_sonarr_action') }}", { 
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(payload)
+                const response = await fetch("{{ url_for('seedbox_ui.sftp_batch_retrieve_and_premap_sonarr_action') }}", {
+                    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
                 });
                 const result = await response.json();
-
                 if (response.ok && result.success) {
-                    let message = `Rapatriement & Pré-mappage terminé. ${result.successful_ops || 0} item(s) traité(s) avec succès.`;
-                    if (result.failed_ops && result.failed_ops > 0) {
-                        message += ` ${result.failed_ops} échec(s).`;
-                        if(statusSpan) statusSpan.innerHTML = `<span class="text-warning">${escapeJsString(message)}</span>`;
-                        if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-warning">${escapeJsString(message)}<br>Consultez les logs.</div>`;
-                    } else {
-                        if(statusSpan) statusSpan.innerHTML = `<span class="text-success">${escapeJsString(message)}</span>`;
-                        if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-success">${escapeJsString(message)}</div>`;
-                    }
-                    flashMessageGlobally(message, (result.failed_ops && result.failed_ops > 0) ? 'warning' : 'success');
-                    setTimeout(() => {
-                        const modalInstance = bootstrap.Modal.getInstance(document.getElementById('sonarrSearchModal'));
-                        if (modalInstance) modalInstance.hide();
-                        window.location.reload(); 
-                    }, 4000);
-                } else {
-                    throw new Error(result.error || `Erreur HTTP ${response.status} lors du traitement.`);
-                }
+                    let message = result.message || `Rapatriement & Pré-mappage terminé. ${result.successful_ops || 0} succès, ${result.failed_ops || 0} échecs.`;
+                    if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-${result.failed_ops > 0 ? 'warning' : 'success'}">${escapeJsString(message)}</div>`;
+                    flashMessageGlobally(message, (result.failed_ops > 0 ? 'warning' : 'success'));
+                    setTimeout(() => { const mi = bootstrap.Modal.getInstance(document.getElementById('sonarrSearchModal')); if (mi) mi.hide(); window.location.reload(); }, 4000);
+                } else { throw new Error(result.error || `Erreur HTTP ${response.status}`); }
             } catch (error) {
-                console.error('Erreur Rapatrier & Pré-mapper Sonarr:', error);
-                const errorMsgDisplay = `Erreur: ${escapeJsString(error.message)}`;
-                if(statusSpan) statusSpan.innerHTML = `<span class="text-danger">${errorMsgDisplay}</span>`;
-                if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-danger">${errorMsgDisplay}</div>`;
-                flashMessageGlobally(`Erreur Rapatrier & Pré-mapper: ${escapeJsString(error.message)}`, 'danger');
+                const errMsg = `Erreur: ${escapeJsString(error.message)}`;
+                if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-danger">${errMsg}</div>`;
+                flashMessageGlobally(`Erreur R&P: ${escapeJsString(error.message)}`, 'danger');
             } finally {
                 if(modalMapButton) modalMapButton.disabled = false;
                 if(mainActionButton) mainActionButton.disabled = false;
             }
         }
         // --- FIN NOUVELLE LOGIQUE ---
+        // --- FONCTION MODIFIÉE POUR GÉRER L'ÉTAT DES BOUTONS DE BATCH ---
+        function updateBatchActionButtonsState() { // Renommée, était updateBatchRapatrierButtonState
+            selectedRemoteItemsForBatch = [];
+            const downloadCheckboxes = document.querySelectorAll('.remote-item-batch-download-checkbox');
+            downloadCheckboxes.forEach(checkbox => {
+                if (checkbox.checked) {
+                    selectedRemoteItemsForBatch.push(checkbox.value);
+                }
+            });
+            const anyDownloadSelected = selectedRemoteItemsForBatch.length > 0;
+
+            if (batchRapatrierButton) {
+                batchRapatrierButton.disabled = !anyDownloadSelected;
+            }
+            // MODIFIÉ : Gérer le nouveau bouton
+            if (batchRapatrierAndPremapSonarrButton) {
+                batchRapatrierAndPremapSonarrButton.disabled = !anyDownloadSelected;
+            }
+
+            const deleteCheckboxes = document.querySelectorAll('.sftp-item-delete-checkbox');
+            let anyDeleteSelected = false;
+            deleteCheckboxes.forEach(cb => { if (cb.checked) anyDeleteSelected = true; });
+            const globalDeleteButton = document.getElementById('batchDeleteBtn');
+            if (globalDeleteButton) {
+                globalDeleteButton.disabled = !anyDeleteSelected;
+            }
+        }
+
+// --- BLOC DOMContentLoaded UNIQUE ---
         document.addEventListener('DOMContentLoaded', function() {
+            // Gestion du pliage/dépliage
             document.querySelectorAll('.file-tree .toggle-children').forEach(toggler => {
                 toggler.addEventListener('click', function (event) {
                     event.preventDefault();
@@ -681,52 +735,58 @@
                     }
                 });
             });
+
+            // Tooltips
             var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-            tooltipTriggerList.map(function (tooltipTriggerEl) { return new bootstrap.Tooltip(tooltipTriggerEl) });
+            tooltipTriggerList.map(function (tooltipTriggerEl) { return new bootstrap.Tooltip(tooltipTriggerEl); });
 
-            const selectAllCheckbox = document.getElementById('selectAllSftpItems');
-            const itemCheckboxes = document.querySelectorAll('.sftp-item-checkbox');
-            const deleteButton = document.getElementById('sftpDeleteButton');
-
-            if (selectAllCheckbox && deleteButton) {
-                if (itemCheckboxes.length === 0) {
-                    selectAllCheckbox.disabled = true;
-                    selectAllCheckbox.checked = false;
+            // Logique pour "Tout Sélectionner" pour la SUPPRESSION
+            const selectAllDeleteCheckbox = document.getElementById('selectAllSftpItems');
+            const itemDeleteCheckboxes = document.querySelectorAll('.sftp-item-delete-checkbox');
+            if (selectAllDeleteCheckbox) {
+                if (itemDeleteCheckboxes.length === 0) {
+                    selectAllDeleteCheckbox.disabled = true;
+                    selectAllDeleteCheckbox.checked = false;
                 }
-                selectAllCheckbox.addEventListener('change', function() {
-                    itemCheckboxes.forEach(checkbox => { checkbox.checked = selectAllCheckbox.checked; });
-                    toggleDeleteButtonState();
+                selectAllDeleteCheckbox.addEventListener('change', function() {
+                    itemDeleteCheckboxes.forEach(checkbox => { checkbox.checked = selectAllDeleteCheckbox.checked; });
+                    updateBatchActionButtonsState();
                 });
-                itemCheckboxes.forEach(checkbox => { checkbox.addEventListener('change', toggleDeleteButtonState); });
-                function toggleDeleteButtonState() {
-                    let anyChecked = false;
-                    itemCheckboxes.forEach(checkbox => { if (checkbox.checked) { anyChecked = true; } });
-                    deleteButton.disabled = !anyChecked;
-                }
-                toggleDeleteButtonState();
-            } else if (deleteButton) {
-                deleteButton.disabled = true;
             }
+            itemDeleteCheckboxes.forEach(checkbox => {
+                checkbox.addEventListener('change', updateBatchActionButtonsState);
+            });
 
+            // Listeners pour la fermeture des modals
             const sonarrModalEl = document.getElementById('sonarrSearchModal');
             const radarrModalEl = document.getElementById('radarrSearchModal');
             if (sonarrModalEl) { sonarrModalEl.addEventListener('hidden.bs.modal', clearSftpContext); }
             if (radarrModalEl) { radarrModalEl.addEventListener('hidden.bs.modal', clearSftpContext); }
 
-            // Batch download functionality
-            const batchDownloadCheckboxes = document.querySelectorAll('.remote-item-batch-download-checkbox');
-            batchDownloadCheckboxes.forEach(checkbox => {
-                checkbox.addEventListener('change', updateBatchActionButtonsState);
+            // Listeners pour les checkboxes de RAPATRIEMENT groupé (remote-item-batch-download-checkbox)
+            document.querySelectorAll('.remote-item-batch-download-checkbox').forEach(checkbox => {
+                checkbox.addEventListener('change', updateBatchActionButtonsState); // APPELLE LA FONCTION UNIFIÉE
             });
 
-            // Initial call to set button state
-            updateBatchActionButtonsState();
-
-            // Event listener for the batch download button
+            // Listener pour le bouton de rapatriement groupé simple
             if (batchRapatrierButton) {
                 batchRapatrierButton.addEventListener('click', handleBatchRapatrier);
+            } else {
+                console.error("Bouton 'batchRapatrierBtn' non trouvé.");
             }
+
+            // MODIFIÉ : Listener pour le NOUVEAU bouton de rapatriement et pré-mapping Sonarr
+            if (batchRapatrierAndPremapSonarrButton) {
+                console.log("Attachement du listener pour 'batchRapatrierAndPremapSonarrBtn'.");
+                batchRapatrierAndPremapSonarrButton.addEventListener('click', openBatchRetrieveAndPremapSonarrModal);
+            } else {
+                // Ce bouton est conditionnel dans le HTML (seulement pour les vues Sonarr)
+                // donc ce n'est pas une erreur s'il n'est pas trouvé sur les pages Radarr.
+                // console.info("Bouton 'batchRapatrierAndPremapSonarrBtn' non présent sur cette page.");
+            }
+
+            updateBatchActionButtonsState(); // Appel initial pour tous les boutons
         });
-updateBatchActionButtonsState    </script>
+    </script>
 </body>
 </html>
