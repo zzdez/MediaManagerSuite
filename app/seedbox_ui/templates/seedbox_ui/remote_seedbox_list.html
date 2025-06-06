@@ -139,15 +139,27 @@
 
         <p class="text-muted">Contenu de : <code>{{ target_root_folder_path }}</code> sur la seedbox.</p>
 
-        {# --- NOUVEAU BOUTON POUR RAPATRIEMENT GROUPÉ ET SON FEEDBACK --- #}
-        {# Placé ici, avant l'affichage de l'arbre des items #}
-        <div class="mb-3 mt-2 d-flex align-items-center"> {# d-flex pour aligner le bouton et le statut #}
-            <button type="button" class="btn btn-success btn-sm" id="batchRapatrierBtn" disabled> {# btn-sm pour être cohérent avec les autres #}
-                <i class="fas fa-download"></i> Rapatrier la Sélection vers Staging
-            </button>
-            <span id="batchRapatrierStatus" class="ms-3"></span> {# ms-3 pour un peu d'espace #}
-        </div>
-        {# --- FIN NOUVEAU BOUTON --- #}
+        {# --- BOUTONS D'ACTION GROUPÉE --- #}
+        <div class="mb-3 mt-2 btn-toolbar" role="toolbar">
+            <div class="btn-group me-2" role="group">
+                <button type="button" class="btn btn-success btn-sm" id="batchRapatrierBtn" disabled>
+                    <i class="fas fa-download"></i> Rapatrier Sélection vers Staging
+                </button>
+            </div>
+
+            {# --- NOUVEAU BOUTON "RAPATRIER & PRÉ-MAPPER SONARR" --- #}
+            {% if app_type == 'sonarr' or app_type == 'sonarr_working' %} {# Afficher seulement pour les vues Sonarr #}
+            <div class="btn-group me-2" role="group">
+                <button type="button" class="btn btn-primary btn-sm" id="batchRapatrierAndPremapSonarrBtn" disabled>
+                    <i class="fas fa-link"></i> Rapatrier & Pré-Mapper Sélection (Sonarr)
+                </button>
+            </div>
+            {% endif %}
+            {# --- FIN NOUVEAU BOUTON --- #}
+                <div class="ms-auto"> {# Pour pousser le statut à droite si on en veut un global #}
+         <span id="batchGlobalStatus" class="ms-3"></span>
+    </div>
+</div>
 
         {# Votre arbre de fichiers/dossiers distants commence ici #}
         {% if items_tree %}
@@ -431,21 +443,39 @@
         }
 
 
-   function updateBatchRapatrierButtonState() {
-        selectedRemoteItemsForBatch = [];
-        const currentCheckboxes = document.querySelectorAll('.remote-item-batch-download-checkbox'); 
-        // console.log("[updateBatchState] Checkboxes trouvées:", currentCheckboxes.length);
-        currentCheckboxes.forEach(checkbox => {
-            if (checkbox.checked) {
-                selectedRemoteItemsForBatch.push(checkbox.value);
+        // Fonction MISE À JOUR pour gérer l'état de TOUS les boutons de batch basés sur la sélection
+        function updateBatchActionButtonsState() {
+            selectedRemoteItemsForBatch = []; // Recalculer
+            const currentCheckboxes = document.querySelectorAll('.remote-item-batch-download-checkbox');
+            currentCheckboxes.forEach(checkbox => {
+                if (checkbox.checked) {
+                    selectedRemoteItemsForBatch.push(checkbox.value);
+                }
+            });
+
+            const anyItemSelected = selectedRemoteItemsForBatch.length > 0;
+
+            // Gérer le bouton de rapatriement simple
+            const simpleRapatrierButton = document.getElementById('batchRapatrierBtn');
+            if (simpleRapatrierButton) {
+                simpleRapatrierButton.disabled = !anyItemSelected;
             }
-        });
-        // console.log("[updateBatchState] Items sélectionnés:", selectedRemoteItemsForBatch.length);
-        if (batchRapatrierButton) { // Vérifier si le bouton existe
-            batchRapatrierButton.disabled = selectedRemoteItemsForBatch.length === 0;
-            // console.log("[updateBatchState] Bouton disabled:", batchRapatrierButton.disabled);
+
+            // Gérer le nouveau bouton de rapatriement et pré-mapping Sonarr
+            const premapSonarrButton = document.getElementById('batchRapatrierAndPremapSonarrBtn');
+            if (premapSonarrButton) {
+                premapSonarrButton.disabled = !anyItemSelected;
+            }
+
+            // Gérer votre bouton de suppression groupée existant (s'il utilise une autre classe de checkbox)
+            const deleteCheckboxes = document.querySelectorAll('.sftp-item-delete-checkbox'); // Adaptez la classe si besoin
+            let anyDeleteSelected = false;
+            deleteCheckboxes.forEach(cb => { if (cb.checked) anyDeleteSelected = true; });
+            const batchDeleteBtn = document.getElementById('batchDeleteBtn'); // ID de votre bouton de suppression de masse
+            if (batchDeleteBtn) {
+                batchDeleteBtn.disabled = !anyDeleteSelected;
+            }
         }
-    }
 
     async function handleBatchRapatrier() {
         if (selectedRemoteItemsForBatch.length === 0) {
@@ -501,7 +531,137 @@
             const newAlert=container.querySelector('.alert.alert-dismissible.show:not([data-bs-dismiss="alert"] ~ .alert)'); // Essayer de cibler la dernière alerte
             if(newAlert)newAlert.scrollIntoView({behavior:'smooth',block:'center'})
         }
+        // --- NOUVELLE LOGIQUE POUR "RAPATRIER & PRÉ-MAPPER SÉLECTION (SONARR)" ---
 
+        const batchRapatrierAndPremapSonarrButton = document.getElementById('batchRapatrierAndPremapSonarrBtn');
+        // La variable selectedRemoteItemsForBatch est déjà globale et utilisée par updateBatchButtonsStates
+
+        // Variable pour stocker l'ID de la série Sonarr sélectionnée dans le modal pour cette action spécifique
+        let seriesIdForBatchPremap = null; // Ou utilisez la variable globale que nous avions pour le modal Sonarr si elle est partagée
+
+        // Cette fonction sera appelée lorsque l'utilisateur clique sur "Rapatrier & Pré-Mapper Sélection (Sonarr)"
+        function openBatchRetrieveAndPremapSonarrModal() {
+            if (selectedRemoteItemsForBatch.length === 0) { // selectedRemoteItemsForBatch est rempli par updateBatchButtonsStates
+                alert("Veuillez sélectionner au moins un item de la seedbox à rapatrier et pré-mapper.");
+                return;
+            }
+            console.log("Rapatrier & Pré-mapper (Sonarr) pour items:", selectedRemoteItemsForBatch);
+
+            seriesIdForBatchPremap = null; // Réinitialiser l'ID de série pour cette action
+
+            const sonarrModalElement = document.getElementById('sonarrSearchModal'); 
+            if (!sonarrModalElement) {
+                console.error("Modal Sonarr (ID: sonarrSearchModal) non trouvé !");
+                alert("Erreur: Le modal de recherche Sonarr est introuvable.");
+                return;
+            }
+
+            // Réinitialiser les champs du modal Sonarr (votre modal doit avoir ces IDs)
+            const searchQueryInput = document.getElementById('sonarrSearchQuery');
+            const searchResultsDiv = document.getElementById('sonarrSearchResults');
+            const selectedSeriesIdInput = document.getElementById('sonarrSelectedSeriesId'); // Input caché
+            const selectedSeriesTitleDisplay = document.getElementById('sonarrSelectedSeriesTitle'); // Pour afficher le titre
+            const manualSeasonDiv = document.getElementById('sonarrManualSeasonDiv');
+            const manualSeasonInput = document.getElementById('sonarrManualSeasonInput');
+            
+            if(searchQueryInput) searchQueryInput.value = '';
+            if(searchResultsDiv) searchResultsDiv.innerHTML = `<p class="text-muted">Recherchez une série Sonarr pour les <strong>${selectedRemoteItemsForBatch.length} items</strong> sélectionnés à rapatrier et pré-mapper.</p>`;
+            if(selectedSeriesIdInput) selectedSeriesIdInput.value = '';
+            if(selectedSeriesTitleDisplay) selectedSeriesTitleDisplay.innerText = 'Aucune série sélectionnée';
+            if(manualSeasonDiv) manualSeasonDiv.style.display = 'none'; 
+            if(manualSeasonInput) manualSeasonInput.value = '';
+            
+            // Configurer le bouton de soumission du modal Sonarr (`sonarrModalMapButton`) pour cette action spécifique
+            const modalMapButton = document.getElementById('sonarrModalMapButton'); // Bouton avec ID défini dans votre modal Sonarr
+            if (modalMapButton) {
+                modalMapButton.innerHTML = '<i class="fas fa-link"></i> Rapatrier & Pré-Mapper Sélection';
+                modalMapButton.disabled = true; 
+                
+                modalMapButton.onclick = function() { 
+                    // Lire l'ID depuis l'input caché, qui est mis à jour par handleSonarrSeriesSelectionInModal
+                    const currentSelectedId = document.getElementById('sonarrSelectedSeriesId').value;
+                    if (currentSelectedId) {
+                        triggerBatchRetrieveAndPremapSonarr(currentSelectedId); 
+                    } else {
+                        alert("Veuillez d'abord rechercher et sélectionner une série Sonarr.");
+                    }
+                };
+            } else {
+                console.error("Bouton de mapping (ID: sonarrModalMapButton) non trouvé dans le modal Sonarr.");
+            }
+
+            var modal = new bootstrap.Modal(sonarrModalElement);
+            modal.show();
+        }
+
+        // Fonction appelée par le bouton "Mapper" du modal Sonarr dans le contexte de Rapatrier & Pré-Mapper
+        async function triggerBatchRetrieveAndPremapSonarr(targetSeriesId) {
+            if (!targetSeriesId) {
+                alert("Aucune série Sonarr sélectionnée.");
+                return;
+            }
+            if (selectedRemoteItemsForBatch.length === 0) {
+                alert("Aucun item distant sélectionné.");
+                return;
+            }
+
+            const payload = {
+                remote_paths: selectedRemoteItemsForBatch,
+                series_id: parseInt(targetSeriesId),
+                app_type_context: "{{ app_type | e }}" 
+            };
+
+            console.log("Payload pour Rapatrier & Pré-mapper Sonarr:", payload);
+            // Utiliser un span global pour le feedback si vous en avez un, ou celui du modal.
+            const statusSpan = document.getElementById('batchGlobalStatus') || document.getElementById('sftpActionFeedback'); 
+            const resultsDivInModal = document.getElementById('sonarrSearchResults');
+            const modalMapButton = document.getElementById('sonarrModalMapButton');
+            const mainActionButton = document.getElementById('batchRapatrierAndPremapSonarrBtn');
+
+
+            if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-info"><i class="fas fa-spinner fa-spin"></i> Rapatriement et pré-mappage en cours pour ${selectedRemoteItemsForBatch.length} items...</div>`;
+            if(modalMapButton) modalMapButton.disabled = true;
+            if(mainActionButton) mainActionButton.disabled = true;
+
+            try {
+                const response = await fetch("{{ url_for('seedbox_ui.sftp_batch_retrieve_and_premap_sonarr_action') }}", { 
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    let message = `Rapatriement & Pré-mappage terminé. ${result.successful_ops || 0} item(s) traité(s) avec succès.`;
+                    if (result.failed_ops && result.failed_ops > 0) {
+                        message += ` ${result.failed_ops} échec(s).`;
+                        if(statusSpan) statusSpan.innerHTML = `<span class="text-warning">${escapeJsString(message)}</span>`;
+                        if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-warning">${escapeJsString(message)}<br>Consultez les logs.</div>`;
+                    } else {
+                        if(statusSpan) statusSpan.innerHTML = `<span class="text-success">${escapeJsString(message)}</span>`;
+                        if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-success">${escapeJsString(message)}</div>`;
+                    }
+                    flashMessageGlobally(message, (result.failed_ops && result.failed_ops > 0) ? 'warning' : 'success');
+                    setTimeout(() => {
+                        const modalInstance = bootstrap.Modal.getInstance(document.getElementById('sonarrSearchModal'));
+                        if (modalInstance) modalInstance.hide();
+                        window.location.reload(); 
+                    }, 4000);
+                } else {
+                    throw new Error(result.error || `Erreur HTTP ${response.status} lors du traitement.`);
+                }
+            } catch (error) {
+                console.error('Erreur Rapatrier & Pré-mapper Sonarr:', error);
+                const errorMsgDisplay = `Erreur: ${escapeJsString(error.message)}`;
+                if(statusSpan) statusSpan.innerHTML = `<span class="text-danger">${errorMsgDisplay}</span>`;
+                if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-danger">${errorMsgDisplay}</div>`;
+                flashMessageGlobally(`Erreur Rapatrier & Pré-mapper: ${escapeJsString(error.message)}`, 'danger');
+            } finally {
+                if(modalMapButton) modalMapButton.disabled = false;
+                if(mainActionButton) mainActionButton.disabled = false;
+            }
+        }
+        // --- FIN NOUVELLE LOGIQUE ---
         document.addEventListener('DOMContentLoaded', function() {
             document.querySelectorAll('.file-tree .toggle-children').forEach(toggler => {
                 toggler.addEventListener('click', function (event) {
@@ -552,7 +712,21 @@
             const radarrModalEl = document.getElementById('radarrSearchModal');
             if (sonarrModalEl) { sonarrModalEl.addEventListener('hidden.bs.modal', clearSftpContext); }
             if (radarrModalEl) { radarrModalEl.addEventListener('hidden.bs.modal', clearSftpContext); }
+
+            // Batch download functionality
+            const batchDownloadCheckboxes = document.querySelectorAll('.remote-item-batch-download-checkbox');
+            batchDownloadCheckboxes.forEach(checkbox => {
+                checkbox.addEventListener('change', updateBatchActionButtonsState);
+            });
+
+            // Initial call to set button state
+            updateBatchActionButtonsState();
+
+            // Event listener for the batch download button
+            if (batchRapatrierButton) {
+                batchRapatrierButton.addEventListener('click', handleBatchRapatrier);
+            }
         });
-    </script>
+updateBatchActionButtonsState    </script>
 </body>
 </html>

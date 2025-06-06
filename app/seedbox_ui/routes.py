@@ -3507,3 +3507,138 @@ def sftp_batch_download_action():
         "mms_notifications_sent": mms_notifications_sent,
         "mms_notifications_failed": mms_notifications_failed
     }), 200
+# ==============================================================================
+# ROUTE POUR LE RAPATRIEMENT SFTP GROUPÉ ET PRÉ-MAPPING SONARR DIRECT
+# ==============================================================================
+@seedbox_ui_bp.route('/sftp-batch-retrieve-and-premap-sonarr', methods=['POST'])
+def sftp_batch_retrieve_and_premap_sonarr_action():
+    logger = current_app.logger
+    data = request.get_json()
+
+    if not data:
+        logger.error("SFTP Batch Retrieve & Premap Sonarr: Aucune donnée JSON reçue.")
+        return jsonify({"success": False, "error": "Aucune donnée JSON reçue."}), 400
+
+    remote_paths_to_download = data.get('remote_paths')
+    series_id_target_str = data.get('series_id')
+    app_type_context = data.get('app_type_context') # 'sonarr' ou 'sonarr_working'
+
+    if not isinstance(remote_paths_to_download, list) or not remote_paths_to_download:
+        logger.error(f"SFTP Batch R&P Sonarr: 'remote_paths' manquants ou invalides. Reçu: {remote_paths_to_download}")
+        return jsonify({"success": False, "error": "'remote_paths' est requis (liste non vide)."}), 400
+
+    if not series_id_target_str:
+        logger.error("SFTP Batch R&P Sonarr: 'series_id' manquant.")
+        return jsonify({"success": False, "error": "'series_id' pour Sonarr est requis."}), 400
+
+    if app_type_context not in ['sonarr', 'sonarr_working']:
+        logger.warning(f"SFTP Batch R&P Sonarr: Contexte d'application '{app_type_context}' inattendu pour une action Sonarr.")
+        # On pourrait continuer ou retourner une erreur. Pour l'instant, on continue.
+
+    try:
+        series_id_target = int(series_id_target_str)
+    except ValueError:
+        logger.error(f"SFTP Batch R&P Sonarr: 'series_id' invalide: {series_id_target_str}.")
+        return jsonify({"success": False, "error": "Format de series_id invalide."}), 400
+
+    logger.info(f"SFTP Batch R&P Sonarr: Rapatriement & Pré-mappage pour {len(remote_paths_to_download)} items vers Série Sonarr ID {series_id_target}.")
+
+    # Récupérer les configurations SFTP et Staging
+    sftp_host = current_app.config.get('SEEDBOX_SFTP_HOST')
+    sftp_port_str = current_app.config.get('SEEDBOX_SFTP_PORT')
+    sftp_user = current_app.config.get('SEEDBOX_SFTP_USER')
+    sftp_password = current_app.config.get('SEEDBOX_SFTP_PASSWORD')
+    local_staging_dir_str = current_app.config.get('STAGING_DIR')
+
+    if not all([sftp_host, sftp_port_str, sftp_user, sftp_password, local_staging_dir_str]):
+        logger.error("SFTP Batch R&P Sonarr: Configuration SFTP ou staging_dir manquante.")
+        return jsonify({"success": False, "error": "Configuration serveur incomplète."}), 500
+    try:
+        sftp_port = int(sftp_port_str)
+    except (ValueError, TypeError):
+        logger.error(f"SFTP Batch R&P Sonarr: Port SFTP invalide '{sftp_port_str}'.")
+        return jsonify({"success": False, "error": "Configuration du port SFTP invalide."}), 500
+
+    local_staging_dir_pathobj = Path(local_staging_dir_str)
+    sftp_client = None
+    transport = None
+    successful_operations = 0
+    failed_operations = 0
+    operation_details = [] # Pour stocker le résultat de chaque item
+
+    try:
+        logger.debug(f"SFTP Batch R&P Sonarr: Connexion à {sftp_host}:{sftp_port}")
+        transport = paramiko.Transport((sftp_host, sftp_port))
+        transport.set_keepalive(60)
+        transport.connect(username=sftp_user, password=sftp_password)
+        sftp_client = paramiko.SFTPClient.from_transport(transport)
+        logger.info(f"SFTP Batch R&P Sonarr: Connecté à {sftp_host}.")
+
+        for remote_path_posix in remote_paths_to_download:
+            item_basename_on_seedbox = Path(remote_path_posix).name # Deviendra item_name_in_staging
+            local_staged_item_pathobj = local_staging_dir_pathobj / item_basename_on_seedbox
+            item_status = {"item": item_basename_on_seedbox, "downloaded": False, "imported": False, "message": ""}
+
+            logger.info(f"SFTP Batch R&P Sonarr: Traitement de '{remote_path_posix}'.")
+
+            # 1. Rapatriement SFTP
+            if not _download_sftp_item_recursive_local(sftp_client, remote_path_posix, local_staged_item_pathobj, logger):
+                item_status["message"] = "Échec du téléchargement SFTP."
+                logger.error(f"SFTP Batch R&P Sonarr: {item_status['message']} pour {remote_path_posix}")
+                failed_operations += 1
+                # Nettoyer si partiellement téléchargé
+                if local_staged_item_pathobj.exists():
+                    if local_staged_item_pathobj.is_dir() and not any(local_staged_item_pathobj.iterdir()):
+                        try: shutil.rmtree(local_staged_item_pathobj)
+                        except Exception as e_rm: logger.warning(f"SFTP Batch R&P Sonarr: Échec nettoyage partiel {local_staged_item_pathobj}: {e_rm}")
+                    elif local_staged_item_pathobj.is_file() and local_staged_item_pathobj.stat().st_size == 0:
+                        try: local_staged_item_pathobj.unlink()
+                        except Exception as e_rm: logger.warning(f"SFTP Batch R&P Sonarr: Échec nettoyage partiel {local_staged_item_pathobj}: {e_rm}")
+                operation_details.append(item_status)
+                continue # Passer à l'item suivant
+
+            item_status["downloaded"] = True
+            logger.info(f"SFTP Batch R&P Sonarr: Téléchargement de '{item_basename_on_seedbox}' réussi.")
+
+            # 2. Appel direct à _handle_staged_sonarr_item (pas de création d'entrée dans pending_torrents_map)
+            # C'est un import direct post-rapatriement.
+            result_handle = _handle_staged_sonarr_item(
+                item_name_in_staging=item_basename_on_seedbox,
+                series_id_target=series_id_target, # Déjà un int
+                path_to_cleanup_in_staging_after_success=str(local_staged_item_pathobj),
+                user_chosen_season=None, # Pour le batch, on laisse Sonarr/parsing de nom faire
+                automated_import=False, # C'est une action manuelle mais on veut le retour JSON
+                torrent_hash_for_status_update=None # Pas d'association préalable à mettre à jour/supprimer ici
+            )
+
+            if result_handle.get("success"):
+                item_status["imported"] = True
+                item_status["message"] = result_handle.get("message", "Importé avec succès.")
+                successful_operations += 1
+                logger.info(f"SFTP Batch R&P Sonarr: Succès de l'import pour '{item_basename_on_seedbox}'.")
+            else:
+                item_status["message"] = result_handle.get("message", "Échec de l'import par le handler Sonarr.")
+                logger.error(f"SFTP Batch R&P Sonarr: {item_status['message']} pour '{item_basename_on_seedbox}'.")
+                failed_operations += 1
+            operation_details.append(item_status)
+
+    except paramiko.ssh_exception.AuthenticationException as e_auth:
+        logger.error(f"SFTP Batch R&P Sonarr: Erreur d'authentification SFTP: {e_auth}")
+        return jsonify({"success": False, "error": "Erreur d'authentification SFTP."}), 401
+    except Exception as e_sftp_main:
+        logger.error(f"SFTP Batch R&P Sonarr: Erreur SFTP principale: {e_sftp_main}", exc_info=True)
+        return jsonify({"success": False, "error": f"Erreur SFTP: {str(e_sftp_main)}"}), 500
+    finally:
+        if sftp_client: sftp_client.close()
+        if transport: transport.close()
+        logger.debug("SFTP Batch R&P Sonarr: Connexion SFTP fermée.")
+
+    final_message = f"Rapatriement & Pré-mappage Sonarr terminé. {successful_operations} item(s) traité(s) avec succès, {failed_operations} échec(s)."
+    logger.info(f"SFTP Batch R&P Sonarr: Fin. {final_message}")
+    return jsonify({
+        "success": True, # La route elle-même a fonctionné
+        "message": final_message,
+        "successful_ops": successful_operations,
+        "failed_ops": failed_operations,
+        "details": operation_details # Pour un logging plus fin côté JS si besoin
+    }), 200
