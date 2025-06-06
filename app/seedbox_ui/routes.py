@@ -3377,3 +3377,133 @@ if __name__ == '__main__':
     print("="*80 + "\n")
 
     app.run(host='0.0.0.0', port=5001, debug=True, use_reloader=False) # Mettez use_reloader=False pour ce test pour être sûr
+# ==============================================================================
+# ROUTE POUR LE RAPATRIEMENT SFTP GROUPÉ DEPUIS LA SEEDBOX
+# ==============================================================================
+@seedbox_ui_bp.route('/sftp-batch-download', methods=['POST'])
+def sftp_batch_download_action():
+    logger = current_app.logger
+    data = request.get_json()
+
+    if not data:
+        logger.error("SFTP Batch Download: Aucune donnée JSON reçue.")
+        return jsonify({"success": False, "error": "Aucune donnée JSON reçue."}), 400
+
+    remote_paths_to_download = data.get('remote_paths') # Liste de chemins POSIX complets
+    app_type_context = data.get('app_type_context') # 'sonarr', 'radarr', etc. (optionnel, pour info/log)
+
+    if not isinstance(remote_paths_to_download, list) or not remote_paths_to_download:
+        logger.error(f"SFTP Batch Download: 'remote_paths' manquants ou n'est pas une liste. Reçu: {remote_paths_to_download}")
+        return jsonify({"success": False, "error": "'remote_paths' est requis et doit être une liste non vide."}), 400
+
+    logger.info(f"SFTP Batch Download: Rapatriement demandé pour {len(remote_paths_to_download)} items. Contexte: {app_type_context}")
+
+    sftp_host = current_app.config.get('SEEDBOX_SFTP_HOST')
+    sftp_port_str = current_app.config.get('SEEDBOX_SFTP_PORT') # Peut être None ou string
+    sftp_user = current_app.config.get('SEEDBOX_SFTP_USER')
+    sftp_password = current_app.config.get('SEEDBOX_SFTP_PASSWORD')
+    local_staging_dir_str = current_app.config.get('STAGING_DIR')
+
+    if not all([sftp_host, sftp_port_str, sftp_user, sftp_password, local_staging_dir_str]):
+        logger.error("SFTP Batch Download: Configuration SFTP ou staging_dir manquante.")
+        return jsonify({"success": False, "error": "Configuration serveur incomplète."}), 500
+
+    try:
+        sftp_port = int(sftp_port_str)
+    except (ValueError, TypeError):
+        logger.error(f"SFTP Batch Download: Port SFTP invalide '{sftp_port_str}'. Doit être un nombre.")
+        return jsonify({"success": False, "error": "Configuration du port SFTP invalide."}), 500
+
+    local_staging_dir_pathobj = Path(local_staging_dir_str)
+
+    sftp_client = None
+    transport = None
+    successful_downloads_count = 0
+    failed_downloads_count = 0
+    downloaded_item_names_for_mms_processing = [] # Pour appeler l'API MMS après
+
+    try:
+        logger.debug(f"SFTP Batch Download: Connexion à {sftp_host}:{sftp_port}")
+        transport = paramiko.Transport((sftp_host, sftp_port))
+        transport.set_keepalive(60)
+        transport.connect(username=sftp_user, password=sftp_password)
+        sftp_client = paramiko.SFTPClient.from_transport(transport)
+        logger.info(f"SFTP Batch Download: Connecté à {sftp_host}.")
+
+        for remote_path_posix in remote_paths_to_download:
+            item_basename_on_seedbox = Path(remote_path_posix).name
+            local_destination_for_item_pathobj = local_staging_dir_pathobj / item_basename_on_seedbox
+
+            logger.info(f"SFTP Batch Download: Tentative de téléchargement de '{remote_path_posix}' vers '{local_destination_for_item_pathobj}'")
+
+            # Réutiliser votre helper de téléchargement SFTP
+            # _download_sftp_item_recursive_local(sftp_client, remote_path_posix, local_destination_for_item_pathobj, logger_instance)
+            # Assurez-vous que _download_sftp_item_recursive_local est défini ou importé correctement.
+            # Si elle est définie dans le même fichier, pas besoin d'import.
+            if _download_sftp_item_recursive_local(sftp_client, remote_path_posix, local_destination_for_item_pathobj, logger):
+                logger.info(f"SFTP Batch Download: Succès du téléchargement de '{item_basename_on_seedbox}'.")
+                successful_downloads_count += 1
+                downloaded_item_names_for_mms_processing.append(item_basename_on_seedbox)
+            else:
+                logger.error(f"SFTP Batch Download: Échec du téléchargement de '{item_basename_on_seedbox}' depuis '{remote_path_posix}'.")
+                failed_downloads_count += 1
+                # Nettoyer un téléchargement partiel si nécessaire (votre helper le fait peut-être déjà)
+                if local_destination_for_item_pathobj.exists():
+                    if local_destination_for_item_pathobj.is_dir() and not any(local_destination_for_item_pathobj.iterdir()):
+                        try: shutil.rmtree(local_destination_for_item_pathobj)
+                        except Exception as e_rm: logger.warning(f"SFTP Batch Download: Échec nettoyage partiel dossier {local_destination_for_item_pathobj}: {e_rm}")
+                    elif local_destination_for_item_pathobj.is_file() and local_destination_for_item_pathobj.stat().st_size == 0:
+                        try: local_destination_for_item_pathobj.unlink()
+                        except Exception as e_rm: logger.warning(f"SFTP Batch Download: Échec nettoyage partiel fichier {local_destination_for_item_pathobj}: {e_rm}")
+
+    except paramiko.ssh_exception.AuthenticationException as e_auth:
+        logger.error(f"SFTP Batch Download: Erreur d'authentification SFTP: {e_auth}")
+        return jsonify({"success": False, "error": "Erreur d'authentification SFTP."}), 401 # Unauthorized
+    except Exception as e_sftp_connect:
+        logger.error(f"SFTP Batch Download: Erreur de connexion SFTP ou autre: {e_sftp_connect}", exc_info=True)
+        return jsonify({"success": False, "error": f"Erreur SFTP: {str(e_sftp_connect)}"}), 500
+    finally:
+        if sftp_client: sftp_client.close()
+        if transport: transport.close()
+        logger.debug("SFTP Batch Download: Connexion SFTP fermée.")
+
+    # --- APRÈS LA BOUCLE DE TÉLÉCHARGEMENT, NOTIFIER MMS POUR CHAQUE ITEM TÉLÉCHARGÉ ---
+    mms_notifications_sent = 0
+    mms_notifications_failed = 0
+    if downloaded_item_names_for_mms_processing:
+        logger.info(f"SFTP Batch Download: {len(downloaded_item_names_for_mms_processing)} items téléchargés. Notification à MMS pour traitement...")
+        mms_api_url = current_app.config.get('MMS_API_PROCESS_STAGING_URL') # URL de votre API MMS
+        if not mms_api_url:
+            logger.error("SFTP Batch Download: MMS_API_PROCESS_STAGING_URL non configurée. Impossible de notifier MMS.")
+            # Les items sont téléchargés mais MMS ne sera pas notifié.
+        else:
+            for item_name_to_process in downloaded_item_names_for_mms_processing:
+                logger.debug(f"SFTP Batch Download: Notification à MMS pour '{item_name_to_process}'...")
+                try:
+                    payload_mms = {"item_name_in_staging": item_name_to_process}
+                    headers_mms = {"Content-Type": "application/json"}
+                    # Ajoutez un token d'auth si votre API MMS le requiert
+                    # mms_api_token = current_app.config.get('SFTPSCRIPT_API_TOKEN')
+                    # if mms_api_token: headers_mms['Authorization'] = f"Bearer {mms_api_token}"
+
+                    response_mms = requests.post(mms_api_url, json=payload_mms, headers=headers_mms, timeout=60)
+                    response_mms.raise_for_status() # Vérifier les erreurs HTTP
+                    logger.info(f"SFTP Batch Download: Notification à MMS pour '{item_name_to_process}' réussie. Réponse MMS: {response_mms.status_code} - {response_mms.json()}")
+                    mms_notifications_sent +=1
+                except Exception as e_mms_notify:
+                    logger.error(f"SFTP Batch Download: Échec de la notification à MMS pour '{item_name_to_process}': {e_mms_notify}")
+                    mms_notifications_failed +=1
+
+    final_message = f"Rapatriement groupé : {successful_downloads_count} téléchargé(s) avec succès, {failed_downloads_count} échec(s) de téléchargement."
+    if mms_notifications_sent > 0 or mms_notifications_failed > 0:
+        final_message += f" Notifications MMS : {mms_notifications_sent} envoyée(s), {mms_notifications_failed} échec(s)."
+
+    logger.info(f"SFTP Batch Download: Fin. {final_message}")
+    return jsonify({
+        "success": True, # La route elle-même a terminé son travail
+        "message": final_message,
+        "successful_downloads": successful_downloads_count,
+        "failed_downloads": failed_downloads_count,
+        "mms_notifications_sent": mms_notifications_sent,
+        "mms_notifications_failed": mms_notifications_failed
+    }), 200

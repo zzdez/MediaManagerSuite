@@ -4,18 +4,15 @@ import os
 from dotenv import load_dotenv
 
 # --- Configuration des Chemins de Base ---
-# 'basedir' est la racine du projet MediaManagerSuite (là où se trouve ce fichier config.py, run.py, le dossier app/, etc.)
 basedir = os.path.abspath(os.path.dirname(__file__))
-INSTANCE_FOLDER_PATH = os.path.join(basedir, 'instance') # Le dossier 'instance/' sera à la racine du projet
+INSTANCE_FOLDER_PATH = os.path.join(basedir, 'instance')
 
-# Chargement du fichier .env
 dotenv_path = os.path.join(basedir, '.env')
 if os.path.exists(dotenv_path):
     load_dotenv(dotenv_path=dotenv_path, verbose=True)
 else:
-    print(f"ATTENTION: Le fichier .env n'a pas été trouvé à l'emplacement attendu: {dotenv_path}")
+    print(f"ATTENTION: Le fichier .env n'a pas été trouvé à: {dotenv_path}")
     print("           Les variables d'environnement pourraient ne pas être chargées.")
-    print("           Assurez-vous qu'il existe et qu'il est à la racine du projet.")
 
 class Config:
     # --- Clé Secrète Globale ---
@@ -23,6 +20,18 @@ class Config:
 
     # --- Configuration Globale Flask ---
     DEBUG = os.environ.get('FLASK_DEBUG', '0').lower() in ('true', '1', 't')
+
+    # --- URL de l'API interne de MMS pour traiter les items du staging ---
+    # Utilisée par sftp_batch_download_action (et sftp_downloader_notifier.py)
+    # Par défaut, pointe vers l'application elle-même sur localhost.
+    # Assurez-vous que le port correspond à celui sur lequel Flask écoute.
+    MMS_API_PROCESS_STAGING_URL = os.getenv(
+        'MMS_API_PROCESS_STAGING_URL',
+        f"http://127.0.0.1:{os.getenv('FLASK_RUN_PORT', 5001)}/seedbox/process-staging-item"
+    )
+    # Optionnel : Si vous sécurisez cette API avec un token simple
+    # SFTPSCRIPT_API_TOKEN = os.getenv('SFTPSCRIPT_API_TOKEN')
+
 
     # --- Configurations pour Plex Web Editor ---
     PLEX_URL = os.environ.get('PLEX_URL')
@@ -38,12 +47,13 @@ class Config:
     SONARR_API_KEY = os.environ.get('SONARR_API_KEY')
     RADARR_URL = os.environ.get('RADARR_URL')
     RADARR_API_KEY = os.environ.get('RADARR_API_KEY')
-
-    # NOUVELLE CONFIGURATION pour le fichier de mapping des torrents dans le dossier 'instance'
     PENDING_TORRENTS_MAP_FILE = os.environ.get(
         'PENDING_TORRENTS_MAP_FILE',
         os.path.join(INSTANCE_FOLDER_PATH, 'pending_torrents_map.json')
     )
+    # Délai en secondes après l'ajout d'un torrent à rTorrent avant de tenter de récupérer son hash.
+    RTORRENT_POST_ADD_DELAY_SECONDS = int(os.getenv('RTORRENT_POST_ADD_DELAY_SECONDS', 3))
+
 
     # --- rTorrent/ruTorrent httprpc API Configuration ---
     RUTORRENT_API_URL = os.getenv('RUTORRENT_API_URL')
@@ -56,18 +66,17 @@ class Config:
     RTORRENT_DOWNLOAD_DIR_SONARR = os.getenv('RTORRENT_DOWNLOAD_DIR_SONARR', '/downloads/incomplete/sonarr_temp/')
     RTORRENT_DOWNLOAD_DIR_RADARR = os.getenv('RTORRENT_DOWNLOAD_DIR_RADARR', '/downloads/incomplete/radarr_temp/')
 
-    # --- SFTP Configuration (utilisé par remote_seedbox_view et potentiellement sftp_downloader_notifier.py) ---
+    # --- SFTP Configuration ---
     SEEDBOX_SFTP_HOST = os.environ.get('SEEDBOX_SFTP_HOST')
-    SEEDBOX_SFTP_PORT = int(os.environ.get('SEEDBOX_SFTP_PORT', 22)) # Port SFTP par défaut est 22
+    SEEDBOX_SFTP_PORT = int(os.environ.get('SEEDBOX_SFTP_PORT', 22))
     SEEDBOX_SFTP_USER = os.environ.get('SEEDBOX_SFTP_USER')
     SEEDBOX_SFTP_PASSWORD = os.environ.get('SEEDBOX_SFTP_PASSWORD')
-    # Chemins sur la seedbox (pour remote_seedbox_view ou information)
     SEEDBOX_SONARR_FINISHED_PATH = os.environ.get('SEEDBOX_SONARR_FINISHED_PATH')
     SEEDBOX_RADARR_FINISHED_PATH = os.environ.get('SEEDBOX_RADARR_FINISHED_PATH')
     SEEDBOX_SONARR_WORKING_PATH = os.environ.get('SEEDBOX_SONARR_WORKING_PATH')
     SEEDBOX_RADARR_WORKING_PATH = os.environ.get('SEEDBOX_RADARR_WORKING_PATH')
 
-    # Configuration du chemin JSON utilisé par le script sftp_downloader_notifier.py (si pertinent pour MMS)
+    # Configuration du chemin JSON utilisé par le script sftp_downloader_notifier.py
     PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT = os.environ.get('PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT')
 
 

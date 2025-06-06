@@ -23,19 +23,39 @@
 </head>
 <body>
 
-{# MACRO POUR L'ARBRE DISTANT #}
 {% macro render_remote_tree_node(node, app_type, allow_sftp_delete, level=0) %}
   <li style="margin-left: {{ level * 20 }}px;">
-    <div class="tree-node-item">
+    <div class="tree-node-item d-flex align-items-center"> {# d-flex pour un meilleur alignement #}
+
+      {# --- NOUVELLE CASE À COCHER POUR LE RAPATRIEMENT GROUPÉ --- #}
+      {# Elle est affichée pour tous les items, quel que soit allow_sftp_delete #}
+      {# On ne l'affiche pas si l'item est déjà dans le staging local (pour les items de niveau 0) #}
+      <span style="width: 25px; flex-shrink: 0; text-align: center;">
+          {% if not (level == 0 and node.is_in_local_staging) %} {# Ne pas afficher si déjà dans staging au niveau 0 #}
+              <input type="checkbox" class="form-check-input remote-item-batch-download-checkbox" {# Classe CSS distincte #}
+                     value="{{ node.path_for_actions | e }}"
+                     data-item-name="{{ node.name | e }}"
+                     aria-label="Sélectionner {{ node.name | e }} pour rapatriement groupé">
+          {% endif %}
+      </span>
+      {# --- FIN NOUVELLE CASE À COCHER --- #}
+
+      {# Case à cocher existante pour la SUPPRESSION (si allow_sftp_delete) #}
       {% if allow_sftp_delete %}
-      <span class="checkbox-container">
-          <input type="checkbox" class="form-check-input sftp-item-checkbox"
-                 name="selected_items_paths" value="{{ node.path_for_actions | e }}"
+      <span class="checkbox-container" style="width: 25px; flex-shrink: 0; text-align: center;"> {# Donner une largeur fixe pour l'alignement #}
+          <input type="checkbox" class="form-check-input sftp-item-delete-checkbox" {# Classe CSS distincte #}
+                 name="selected_items_paths_for_delete" {# Nom distinct pour éviter conflit #}
+                 value="{{ node.path_for_actions | e }}"
                  title="Sélectionner {{ node.name | e }} pour suppression">
       </span>
+      {% elif not (level == 0 and node.is_in_local_staging) %} {# Espace réservé si pas de case à cocher de suppression et pas de case de dl #}
+         {# Si la case de DL n'est pas là, et celle de suppression non plus, ajouter un espace pour aligner les icones #}
+         {# Cet else est combiné avec le if de la case de DL. S'il n'y a AUCUNE case, on met un spacer. #}
+         {# <span style="width: 25px; flex-shrink: 0;"></span> #}
+         {# La logique ci-dessus pour la case de DL gère déjà l'espacement. #}
       {% endif %}
 
-      <span class="icon-container">
+      <span class="icon-container" style="width: 25px; text-align: center; flex-shrink: 0;">
         {% if node.is_dir and node.children %}
           <a href="#" class="toggle-children me-1" title="Déplier/Replier"><i class="fas fa-plus-square"></i></a>
         {% elif node.is_dir %}
@@ -45,18 +65,19 @@
         {% endif %}
       </span>
 
-      <span class="item-name-details" title="{{ node.name }}">
+      <span class="item-name-details flex-grow-1" title="{{ node.name }}">
          {{ node.name }}
          <small class="text-muted fs-sm">
              ({{ node.size_readable if node.size_readable else 'N/A' }}{% if node.last_modified != 'N/A' %}, {{ node.last_modified }}{% endif %})
          </small>
-         {% if level == 0 and not allow_sftp_delete and node.is_in_local_staging %}
-            <span class="badge bg-light text-dark border ms-2">Staging Local</span>
+         {% if level == 0 and not allow_sftp_delete and node.is_in_local_staging %} {# Uniquement pour les items "Terminés" de premier niveau #}
+            <span class="badge bg-success ms-2">Déjà dans Staging Local</span>
          {% endif %}
       </span>
 
-      <div class="action-buttons item-actions">
+      <div class="action-buttons item-actions ms-auto" style="min-width: 200px;">
         {% if not allow_sftp_delete %} {# Mode "Terminés" #}
+            {# Le bouton de rapatriement individuel est conservé, mais désactivé si déjà dans staging #}
             <button class="btn btn-xs btn-outline-secondary"
                     data-remote-path="{{ node.path_for_actions | e }}"
                     data-app-type="{{ app_type | e }}"
@@ -66,9 +87,10 @@
                 <i class="fas fa-download"></i> <span class="d-none d-md-inline">Staging</span>
             </button>
 
+            {# Le bouton Rapatrier & Mapper est conservé, désactivé si déjà dans staging #}
             <button class="btn btn-xs btn-outline-primary"
                     data-remote-path="{{ node.path_for_actions | e }}"
-                    data-app-type="{{ app_type | e }}" {# sonarr ou radarr #}
+                    data-app-type="{{ app_type | e }}"
                     data-item-name-for-modal="{{ node.name | e }}"
                     data-item-type="{{ 'directory' if node.is_dir else 'file' }}"
                     onclick="openSftpRetrieveAndMapModal(this)"
@@ -77,8 +99,7 @@
                 <i class="fas fa-link"></i> <span class="d-none d-md-inline">Rapatrier & Mapper</span>
             </button>
         {% else %}
-            {# Mode "Working Folder" - Actions de suppression gérées par le formulaire global #}
-            {# On pourrait ajouter un bouton "Supprimer cet item unique" ici si besoin #}
+            {# Mode "Working Folder" - Actions de suppression gérées par le formulaire global (via la case à cocher sftp-item-delete-checkbox) #}
         {% endif %}
       </div>
     </div>
@@ -108,45 +129,51 @@
             </div>
         </header>
 
-        <div id="sftpActionFeedback" class="mt-3"></div>
+        <div id="sftpActionFeedback" class="mt-3"></div> {# Votre feedback existant #}
+
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}{% for category, message in messages %}<div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">{{ message }}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>{% endfor %}{% endif %}
         {% endwith %}
+
         {% if error_message %}<div class="alert alert-danger" role="alert"><strong>Erreur :</strong> {{ error_message }}</div>{% endif %}
 
         <p class="text-muted">Contenu de : <code>{{ target_root_folder_path }}</code> sur la seedbox.</p>
 
+        {# --- NOUVEAU BOUTON POUR RAPATRIEMENT GROUPÉ ET SON FEEDBACK --- #}
+        {# Placé ici, avant l'affichage de l'arbre des items #}
+        <div class="mb-3 mt-2 d-flex align-items-center"> {# d-flex pour aligner le bouton et le statut #}
+            <button type="button" class="btn btn-success btn-sm" id="batchRapatrierBtn" disabled> {# btn-sm pour être cohérent avec les autres #}
+                <i class="fas fa-download"></i> Rapatrier la Sélection vers Staging
+            </button>
+            <span id="batchRapatrierStatus" class="ms-3"></span> {# ms-3 pour un peu d'espace #}
+        </div>
+        {# --- FIN NOUVEAU BOUTON --- #}
+
+        {# Votre arbre de fichiers/dossiers distants commence ici #}
         {% if items_tree %}
-            {% if allow_sftp_delete %}
-            <form id="sftpDeleteForm" method="POST" action="{{ url_for('seedbox_ui.sftp_delete_items_action') }}">
-                <input type="hidden" name="current_remote_folder" value="{{ target_root_folder_path | e }}">
-                <input type="hidden" name="app_type_source" value="{{ app_type | e }}">
-                <div class="mb-2 d-flex align-items-center p-2 bg-light border rounded">
-                    <div class="form-check me-3">
-                        <input type="checkbox" class="form-check-input" id="selectAllSftpItems" title="Tout sélectionner/désélectionner">
-                        <label class="form-check-label" for="selectAllSftpItems">Tout Sélectionner</label>
-                    </div>
-                    <button type="submit" class="btn btn-danger btn-sm" id="sftpDeleteButton" disabled
-                            onclick="return confirm('Êtes-vous sûr de vouloir supprimer DÉFINITIVEMENT les items sélectionnés de la seedbox ?\nCette action est IRRÉVERSIBLE !');">
-                        <i class="fas fa-trash-alt"></i> Supprimer la Sélection de la Seedbox
+            <form id="sftpDeleteForm" action="{{ url_for('seedbox_ui.sftp_delete_items_action') }}" method="POST">
+                <input type="hidden" name="app_type_source" value="{{ app_type }}"> {# app_type est le contexte actuel de la page #}
+
+                <ul class="file-tree">
+                    {% for root_node in items_tree %}
+                        {# Assurez-vous que la macro render_remote_tree_node est bien celle modifiée #}
+                        {# avec la case à cocher class="remote-item-batch-download-checkbox" #}
+                        {{ render_remote_tree_node(root_node, app_type, allow_sftp_delete, 0) }}
+                    {% endfor %}
+                </ul>
+
+                {% if allow_sftp_delete %} {# Afficher le bouton de suppression groupée uniquement si pertinent #}
+                <div class="mt-3">
+                    <button type="submit" class="btn btn-danger btn-sm" id="batchDeleteBtn" disabled
+                            onclick="return confirm('Êtes-vous sûr de vouloir supprimer DÉFINITIVEMENT les items sélectionnés de la seedbox ?');">
+                        <i class="fas fa-trash-alt"></i> Supprimer Sélection de la Seedbox
                     </button>
+                    <small class="text-muted ms-2">(Utilise les cases à cocher à côté des icônes pour la suppression)</small>
                 </div>
-            {% endif %}
-
-            <ul class="file-tree mt-2">
-                {% for root_node in items_tree %}
-                    {{ render_remote_tree_node(root_node, app_type, allow_sftp_delete, 0) }}
-                {% endfor %}
-            </ul>
-
-            {% if allow_sftp_delete and items_tree %}
+                {% endif %}
             </form>
-            {% endif %}
-
         {% elif not error_message %}
-            <div class="alert alert-info" role="alert">
-                Le dossier distant '{{ target_root_folder_path }}' est vide ou aucun item n'a pu être listé.
-            </div>
+            <div class="alert alert-info">Aucun item trouvé dans ce dossier distant ou dossier inaccessible.</div>
         {% endif %}
     </div>
 
@@ -164,32 +191,47 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         {# // const csrfToken = "{{ csrf_token() }}"; #}
+    // --- VARIABLES GLOBALES POUR LE CONTEXTE DE LA PAGE ---
+    let sftpItemForDirectMap = { // Pour "Rapatrier & Mapper" individuel
+        remotePath: null,
+        appType: null,
+        itemNameForDisplay: null,
+        itemTypeForDisplay: null
+    };
 
-        // --- Variable globale pour le contexte du mappage SFTP ---
-        let sftpItemForDirectMap = {
-            remotePath: null,
-            appType: null,
-            itemNameForDisplay: null,
-            itemTypeForDisplay: null
-        };
+    // Pour le rapatriement groupé
+    const batchRapatrierButton = document.getElementById('batchRapatrierBtn'); // Bouton principal du batch
+    let selectedRemoteItemsForBatch = []; // Items sélectionnés pour le batch
 
+    // --- FONCTIONS UTILITAIRES ---
         function escapeJsString(str) {
             if (str === null || typeof str === 'undefined') { return ''; }
             return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t').replace(/</g, '\\u003C').replace(/>/g, '\\u003E').replace(/&/g, '\\u0026');
         }
 
-        function getCleanedSearchTerm(itemName) {
-            let cleanedName = itemName;
-            cleanedName = cleanedName.replace(/\.(mkv|mp4|avi|srt|nfo|jpg)$/i, '');
-            cleanedName = cleanedName.replace(/[\.\[\(]?\d{3,4}p[\.\]\)]?/i, '');
-            cleanedName = cleanedName.replace(/[\.\[\(]?(hdtv|web-dl|webrip|bluray|x264|x265|hevc|ac3|dts)[\.\]\)]?/gi, '');
-            cleanedName = cleanedName.replace(/[\.\[\(]?S\d{1,2}(E\d{1,2}(-E?\d{1,2})?)?[\.\]\)]?/i, '');
-            cleanedName = cleanedName.replace(/[\.\[\(]?\d{4}[\.\]\)]?$/, '');
-            cleanedName = cleanedName.replace(/[\._]+/g, ' ').replace(/\s+/g, ' ').trim();
-            const parts = itemName.split(/[\\/]/);
-            const baseName = parts.pop() || parts.pop() || itemName;
-            return cleanedName || baseName.split('.')[0];
-        }
+    function getCleanedSearchTerm(itemName) { // Votre fonction existante
+        let cleanedName = itemName;
+        cleanedName = cleanedName.replace(/\.(mkv|mp4|avi|srt|nfo|jpg)$/i, '');
+        cleanedName = cleanedName.replace(/[\.\[\(]?\d{3,4}p[\.\]\)]?/i, '');
+        cleanedName = cleanedName.replace(/[\.\[\(]?(hdtv|web-dl|webrip|bluray|x264|x265|hevc|ac3|dts)[\.\]\)]?/gi, '');
+        cleanedName = cleanedName.replace(/[\.\[\(]?S\d{1,2}(E\d{1,2}(-E?\d{1,2})?)?[\.\]\)]?/i, '');
+        cleanedName = cleanedName.replace(/[\.\[\(]?\d{4}[\.\]\)]?$/, '');
+        cleanedName = cleanedName.replace(/[\._]+/g, ' ').replace(/\s+/g, ' ').trim();
+        const parts = itemName.split(/[\\/]/);
+        const baseName = parts.pop() || parts.pop() || itemName;
+        return cleanedName || baseName.split('.')[0];
+    }
+
+    function flashMessageGlobally(message, category) { // Votre fonction existante
+        const container=document.querySelector('div.container.mt-4');
+        if(!container)return;
+        const alertHtml=`<div class="alert alert-${category} alert-dismissible fade show" role="alert" style="margin-top: 1rem;">${escapeJsString(message)}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>`;
+        const firstMajorElement=container.querySelector('header.border-bottom + h1, header.border-bottom + p.text-muted, header.border-bottom + div.mb-3, #sftpActionFeedback + p.text-muted, div.btn-toolbar.mb-3') || container.querySelector('h1') || container.querySelector('p.text-muted') || container.querySelector('div.mb-3');
+        if(firstMajorElement){firstMajorElement.insertAdjacentHTML('afterend',alertHtml)}else{container.insertAdjacentHTML('afterbegin',alertHtml)}
+        const allAlerts = container.querySelectorAll('.alert.alert-dismissible.show');
+        const newAlert = allAlerts[allAlerts.length-1];
+        if(newAlert)newAlert.scrollIntoView({behavior:'smooth',block:'center'});
+            }    
 
         // --- Fonction pour le bouton "Rapatrier" simple (vers staging) ---
         async function triggerManualSftpDownload(buttonElement) {
@@ -388,6 +430,68 @@
             } catch (error) { resultsDiv.innerHTML = `<p class="text-danger">Erreur recherche Radarr: ${error.message}</p>`; console.error("Erreur executeRadarrSearch:", error); }
         }
 
+
+   function updateBatchRapatrierButtonState() {
+        selectedRemoteItemsForBatch = [];
+        const currentCheckboxes = document.querySelectorAll('.remote-item-batch-download-checkbox'); 
+        // console.log("[updateBatchState] Checkboxes trouvées:", currentCheckboxes.length);
+        currentCheckboxes.forEach(checkbox => {
+            if (checkbox.checked) {
+                selectedRemoteItemsForBatch.push(checkbox.value);
+            }
+        });
+        // console.log("[updateBatchState] Items sélectionnés:", selectedRemoteItemsForBatch.length);
+        if (batchRapatrierButton) { // Vérifier si le bouton existe
+            batchRapatrierButton.disabled = selectedRemoteItemsForBatch.length === 0;
+            // console.log("[updateBatchState] Bouton disabled:", batchRapatrierButton.disabled);
+        }
+    }
+
+    async function handleBatchRapatrier() {
+        if (selectedRemoteItemsForBatch.length === 0) {
+            alert("Veuillez sélectionner au moins un item à rapatrier.");
+            return;
+        }
+
+        const appTypeSource = "{{ app_type | e }}"; // Contexte de la page (sonarr, radarr, etc.)
+        const statusSpan = document.getElementById('batchRapatrierStatus');
+
+        if (batchRapatrierButton) batchRapatrierButton.disabled = true;
+        if (statusSpan) statusSpan.innerHTML = `<span class="text-info"><i class="fas fa-spinner fa-spin"></i> Rapatriement de ${selectedRemoteItemsForBatch.length} item(s) en cours...</span>`;
+
+        try {
+            const response = await fetch("{{ url_for('seedbox_ui.sftp_batch_download_action') }}", {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    remote_paths: selectedRemoteItemsForBatch,
+                    app_type_context: appTypeSource
+                })
+            });
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                let message = `Rapatriement groupé terminé. ${result.successful_downloads || 0} item(s) rapatrié(s).`;
+                if (result.failed_downloads && result.failed_downloads > 0) {
+                    message += ` ${result.failed_downloads} échec(s).`;
+                    if (statusSpan) statusSpan.innerHTML = `<span class="text-warning">${escapeJsString(message)} (MMS traitera les items rapatriés)</span>`;
+                    flashMessageGlobally(message, 'warning');
+                } else {
+                    if (statusSpan) statusSpan.innerHTML = `<span class="text-success">${escapeJsString(message)} (MMS va maintenant essayer de les importer si associés)</span>`;
+                    flashMessageGlobally(message, 'success');
+                }
+                setTimeout(() => { window.location.reload(); }, 4500);
+            } else {
+                throw new Error(result.error || `Erreur HTTP ${response.status} lors du rapatriement groupé.`);
+            }
+        } catch (error) {
+            console.error('Erreur lors du rapatriement SFTP groupé:', error);
+            if (statusSpan) statusSpan.innerHTML = `<span class="text-danger">Erreur: ${escapeJsString(error.message)}</span>`;
+            flashMessageGlobally(`Erreur rapatriement groupé: ${escapeJsString(error.message)}`, 'danger');
+        } finally {
+            if (batchRapatrierButton) batchRapatrierButton.disabled = false;
+        }
+    }
         function flashMessageGlobally(message, category) {
             const container=document.querySelector('div.container.mt-4');
             if(!container)return;
