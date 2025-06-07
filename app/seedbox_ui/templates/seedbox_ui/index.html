@@ -429,6 +429,7 @@
             </div>
         </div>
     </div>
+    <!-- Modal Radarr MODIFIÉ -->
     <div class="modal fade" id="radarrSearchModal" tabindex="-1" aria-labelledby="radarrSearchModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
@@ -446,10 +447,21 @@
                             <i class="fas fa-search"></i> Rechercher
                         </button>
                     </div>
-                    <div id="radarrSearchResults" style="max-height: 400px; overflow-y: auto;"></div>
+                    <div id="radarrSearchResults" class="mb-3" style="max-height: 300px; overflow-y: auto;">
+                        {/* Les résultats de la recherche seront injectés ici par JavaScript */}
+                    </div>
+
+                    {# --- ÉLÉMENTS AJOUTÉS CI-DESSOUS --- #}
+                    <input type="hidden" id="radarrSelectedMovieId" value="">
+                    <p id="radarrSelectedMovieTitle" class="fw-bold mt-2">Aucun film sélectionné</p>
+                    {# --- FIN DES ÉLÉMENTS AJOUTÉS --- #}
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button> {# Changé "Fermer" en "Annuler" pour plus de cohérence #}
+                    {# --- BOUTON DE MAPPING AJOUTÉ --- #}
+                    <button type="button" class="btn btn-primary" id="radarrModalMapButton">
+                        <i class="fas fa-link"></i> Mapper à ce Film
+                    </button>
                 </div>
             </div>
         </div>
@@ -525,18 +537,49 @@
             sonarrModal.show();
         }
 
-        function openRadarrSearchModal(itemPathForAction, itemType) {
-            const itemNameForDisplay = itemPathForAction.split(/[\\/]/).pop();
-            document.getElementById('radarrItemToMap').textContent = itemNameForDisplay;
-            document.getElementById('radarrOriginalItemName').value = itemPathForAction;
-            document.getElementById('radarrOriginalItemType').value = itemType;
-            document.getElementById('radarrItemType').textContent = itemType === 'directory' ? 'Dossier (Staging)' : 'Fichier (Staging)';
-            document.getElementById('radarrSearchQuery').value = getCleanedSearchTerm(itemPathForAction);
-            document.getElementById('radarrSearchResults').innerHTML = '';
-            document.getElementById('radarrSearchModalLabel').textContent = "Rechercher et Mapper avec Radarr";
-            var radarrModal = new bootstrap.Modal(document.getElementById('radarrSearchModal'));
-            radarrModal.show();
-        }
+function openRadarrSearchModal(itemPathForAction, itemType) { // itemPathForAction est node.path_for_actions
+    const itemNameForDisplay = itemPathForAction.split(/[\\/]/).pop();
+
+    // Mettre à jour les infos de l'item en cours de mapping
+    document.getElementById('radarrItemToMap').textContent = itemNameForDisplay;
+    document.getElementById('radarrOriginalItemName').value = itemPathForAction;
+    document.getElementById('radarrOriginalItemType').value = itemType;
+    document.getElementById('radarrItemType').textContent = itemType === 'directory' ? 'Dossier (Staging)' : 'Fichier (Staging)';
+
+    // Réinitialiser les champs de recherche et de sélection
+    const searchQueryInput = document.getElementById('radarrSearchQuery');
+    if (searchQueryInput) searchQueryInput.value = getCleanedSearchTerm(itemPathForAction); // Pré-remplir la recherche
+
+    const searchResultsDiv = document.getElementById('radarrSearchResults');
+    if (searchResultsDiv) searchResultsDiv.innerHTML = '';
+
+    const selectedMovieIdInput = document.getElementById('radarrSelectedMovieId');
+    if (selectedMovieIdInput) selectedMovieIdInput.value = '';
+
+    const selectedMovieTitleDisplay = document.getElementById('radarrSelectedMovieTitle');
+    if (selectedMovieTitleDisplay) selectedMovieTitleDisplay.innerText = 'Aucun film sélectionné';
+
+    // Configurer le bouton de mapping du modal
+    const modalMapButton = document.getElementById('radarrModalMapButton');
+    if (modalMapButton) {
+        modalMapButton.innerHTML = '<i class="fas fa-link"></i> Mapper à ce Film';
+        modalMapButton.disabled = true; // Désactiver jusqu'à sélection
+        modalMapButton.onclick = function() {
+            const movieId = document.getElementById('radarrSelectedMovieId').value;
+            // const movieTitle = document.getElementById('radarrSelectedMovieTitle').innerText.replace('Film sélectionné : ', ''); // Pour affichage seulement
+            if (movieId) {
+                triggerRadarrManualImport(movieId); // Appelle votre fonction de soumission pour Radarr
+            } else {
+                alert("Veuillez sélectionner un film.");
+            }
+        };
+    } else {
+        console.error("Bouton de mapping (ID: radarrModalMapButton) non trouvé dans le modal Radarr.");
+    }
+
+    var radarrModal = new bootstrap.Modal(document.getElementById('radarrSearchModal'));
+    radarrModal.show();
+}
         // ==================================================================================
         // NOUVELLES FONCTIONS JS POUR LES ITEMS PROBLÉMATIQUES
         // ==================================================================================
@@ -804,65 +847,197 @@ function openSonarrSearchModalForProblemItem(releaseName, currentTargetId, torre
         // ==================================================================================
         // FIN DES NOUVELLES FONCTIONS JS
         // ==================================================================================
-        async function executeSonarrSearch() {
-            const query = document.getElementById('sonarrSearchQuery').value;
-            if (!query.trim()) {document.getElementById('sonarrSearchResults').innerHTML = '<p class="text-warning">Terme de recherche manquant.</p>'; return;}
-            const resultsDiv = document.getElementById('sonarrSearchResults');
-            resultsDiv.innerHTML = `<div class="d-flex align-items-center"><strong role="status">Recherche Sonarr...</strong><div class="spinner-border ms-auto"></div></div>`;
-            try {
-                const response = await fetch(`{{ url_for('seedbox_ui.search_sonarr_api') }}?query=${encodeURIComponent(query)}`);
-                if (!response.ok) { let eD; try{eD=await response.json()}catch(e){eD={error:"Erreur serveur."}} throw new Error(eD.error||`HTTP ${response.status}`); }
-                const results = await response.json();
-                if (results.length === 0) { resultsDiv.innerHTML = '<p class="text-muted">Aucune série trouvée.</p>'; return; }
-                let html = '<ul class="list-group mt-3">';
-                results.forEach(series => {
-                    let posterUrl = series.remotePoster || (series.images && series.images.length > 0 ? series.images.find(img => img.coverType === 'poster')?.remoteUrl : 'https://via.placeholder.com/60x90?text=N/A');
-                    const escapedSeriesTitle = escapeJsString(series.title); // Échappé une fois ici
-                    let onclickAction = `triggerSonarrManualImport(${series.id || 0}, '${escapedSeriesTitle}')`; // On utilise escapedSeriesTitle
-                    html += `
-                        <li class="list-group-item"><div class="row align-items-center">
-                            <div class="col-auto"><img src="${posterUrl}" alt="${escapedSeriesTitle}" class="img-fluid rounded" style="max-height: 90px;"></div>
-                            <div class="col"><strong>${series.title}</strong> (${series.year||'N/A'})<br><small class="text-muted">Statut: ${series.status||'N/A'} | TVDB ID: ${series.tvdbId||'N/A'}</small><p class="mb-0 small">${(series.overview||'').substring(0,120)}${(series.overview||'').length>120?'...':''}</p></div>
-                            <div class="col-auto"><button class="btn btn-success btn-sm" onclick="${onclickAction}" ${series.id?'':'disabled title="Série non gérée par Sonarr."'}><i class="fas fa-link"></i> Mapper</button></div>
-                        </div></li>`;
-                });
-                html += '</ul>';
-                resultsDiv.innerHTML = html;
-            } catch (error) { resultsDiv.innerHTML = `<p class="text-danger">Erreur recherche Sonarr: ${error.message}</p>`; console.error("Erreur executeSonarrSearch:", error); }
-        }
+async function executeSonarrSearch() {
+         const query = document.getElementById('sonarrSearchQuery').value;
+         const resultsDiv = document.getElementById('sonarrSearchResults');
 
-        async function executeSonarrSearch() {
-            const query = document.getElementById('sonarrSearchQuery').value;
-            // ... (début de votre fonction inchangé : gestion query vide, spinner) ...
-            const resultsDiv = document.getElementById('sonarrSearchResults');
-            resultsDiv.innerHTML = `<div class="d-flex align-items-center"><strong role="status">Recherche Sonarr...</strong><div class="spinner-border ms-auto"></div></div>`;
+         if (!query.trim()) {
+             if(resultsDiv) resultsDiv.innerHTML = '<p class="text-warning">Terme de recherche manquant.</p>';
+             return;
+         }
+         if(resultsDiv) resultsDiv.innerHTML = `<div class="d-flex align-items-center"><strong role="status">Recherche Sonarr...</strong><div class="spinner-border ms-auto"></div></div>`;
 
-            try {
-                const response = await fetch(`{{ url_for('seedbox_ui.search_sonarr_api') }}?query=${encodeURIComponent(query)}`);
-                // ... (votre gestion de réponse et erreurs) ...
-                const results = await response.json();
-                if (results.length === 0) { /* ... */ return; }
-                let html = '<ul class="list-group mt-3">';
-                results.forEach(series => {
-                    let posterUrl = series.remotePoster || (series.images && series.images.length > 0 ? series.images.find(img => img.coverType === 'poster')?.remoteUrl : 'https://via.placeholder.com/60x90?text=N/A');
-                    const escapedSeriesTitle = escapeJsString(series.title);
+         try {
+             const response = await fetch(`{{ url_for('seedbox_ui.search_sonarr_api') }}?query=${encodeURIComponent(query)}`);
+             if (!response.ok) {
+                 let eD; try{eD=await response.json()}catch(e){eD={error:"Erreur serveur."}}
+                 throw new Error(eD.error||`HTTP ${response.status}`);
+             }
+             const results = await response.json();
 
-                    // ---- MODIFICATION DE L'ACTION ONCLICK ----
-                    // Au lieu d'appeler triggerSonarrManualImport directement, on appelle handleSonarrSeriesSelectionInModal
-                    let onclickAction = `handleSonarrSeriesSelectionInModal(${series.id || 0}, '${escapedSeriesTitle}')`;
+             if (!resultsDiv) { // Vérification ajoutée
+                 console.error("Div 'sonarrSearchResults' non trouvée.");
+                 return;
+             }
 
-                    html += `
-                        <li class="list-group-item"><div class="row align-items-center">
-                            <div class="col-auto"><img src="${posterUrl}" alt="${escapedSeriesTitle}" class="img-fluid rounded" style="max-height: 90px;"></div>
-                            <div class="col"><strong>${series.title}</strong> (${series.year||'N/A'})<br><small class="text-muted">Statut: ${series.status||'N/A'} | TVDB ID: ${series.tvdbId||'N/A'}</small><p class="mb-0 small">${(series.overview||'').substring(0,120)}${(series.overview||'').length>120?'...':''}</p></div>
-                            <div class="col-auto"><button class="btn btn-success btn-sm" onclick="${onclickAction}" ${series.id?'':'disabled title="Série non gérée par Sonarr."'}><i class="fas fa-check-circle"></i> Sélectionner</button></div> {# Texte du bouton changé #}
-                        </div></li>`;
-                });
-                html += '</ul>';
-                resultsDiv.innerHTML = html;
-            } catch (error) { /* ... votre gestion d'erreur ... */ }
-        }
+             if (results.length === 0) {
+                 resultsDiv.innerHTML = '<p class="text-muted">Aucune série trouvée.</p>';
+                 return;
+             }
+             let html = '<ul class="list-group mt-3">';
+             results.forEach(series => {
+                 let posterUrl = series.remotePoster || (series.images && series.images.length > 0 ? series.images.find(img => img.coverType === 'poster')?.remoteUrl : 'https://via.placeholder.com/60x90?text=N/A');
+                 if (!posterUrl) { posterUrl = 'https://via.placeholder.com/60x90?text=N/A';} // Fallback
+                 const escapedSeriesTitle = escapeJsString(series.title);
 
+                 // ---- MODIFICATION DE L'ACTION ONCLICK ----
+                 let onclickAction = `handleGenericSonarrSeriesSelection(${series.id || 0}, '${escapedSeriesTitle}')`;
+
+                 html += `
+                     <li class="list-group-item"><div class="row align-items-center">
+                         <div class="col-auto"><img src="${posterUrl}" alt="${escapedSeriesTitle}" class="img-fluid rounded" style="max-height: 90px;" onerror="this.onerror=null; this.src='https://via.placeholder.com/60x90?text=ImgErr';"></div>
+                         <div class="col"><strong>${series.title}</strong> (${series.year||'N/A'})<br><small class="text-muted">Statut: ${series.status||'N/A'} | TVDB ID: ${series.tvdbId||'N/A'}</small><p class="mb-0 small">${(series.overview||'').substring(0,120)}${(series.overview||'').length>120?'...':''}</p></div>
+                         <div class="col-auto"><button class="btn btn-success btn-sm" onclick="${onclickAction}" ${series.id?'':'disabled title="Série non gérée."'}><i class="fas fa-check-circle"></i> Sélectionner</button></div>
+                     </div></li>`;
+             });
+             html += '</ul>';
+             resultsDiv.innerHTML = html;
+         } catch (error) {
+             if(resultsDiv) resultsDiv.innerHTML = `<p class="text-danger">Erreur recherche Sonarr: ${error.message}</p>`;
+             console.error("Erreur executeSonarrSearch:", error);
+         }
+     }
+
+     async function executeRadarrSearch() {
+         const query = document.getElementById('radarrSearchQuery').value; // ID de l'input de recherche Radarr
+         const resultsDiv = document.getElementById('radarrSearchResults'); // ID de la div pour les résultats Radarr
+
+         if (!query.trim()) {
+             if(resultsDiv) resultsDiv.innerHTML = '<p class="text-warning">Terme de recherche manquant.</p>';
+             return;
+         }
+         if(resultsDiv) resultsDiv.innerHTML = `<div class="d-flex align-items-center"><strong role="status">Recherche Radarr...</strong><div class="spinner-border ms-auto"></div></div>`;
+
+         try {
+             const response = await fetch(`{{ url_for('seedbox_ui.search_radarr_api') }}?query=${encodeURIComponent(query)}`);
+             if (!response.ok) {
+                 let eD; try{eD=await response.json()}catch(e){eD={error:"Erreur serveur Radarr."}}
+                 throw new Error(eD.error||`HTTP ${response.status}`);
+             }
+             const results = await response.json();
+
+             if (!resultsDiv) {
+                 console.error("Div 'radarrSearchResults' non trouvée.");
+                 return;
+             }
+
+             if (results.length === 0) {
+                 resultsDiv.innerHTML = '<p class="text-muted">Aucun film trouvé.</p>';
+                 return;
+             }
+             let html = '<ul class="list-group mt-3">';
+             results.forEach(movie => {
+                 let posterUrl = movie.remotePoster || (movie.images && movie.images.length > 0 ? movie.images.find(img => img.coverType === 'poster')?.remoteUrl : 'https://via.placeholder.com/60x90?text=N/A');
+                 if (!posterUrl) { posterUrl = 'https://via.placeholder.com/60x90?text=N/A'; }
+                 const escapedMovieTitle = escapeJsString(movie.title);
+
+                 // L'action onclick appelle handleGenericRadarrMovieSelection
+                 let onclickAction = `handleGenericRadarrMovieSelection(${movie.id || 0}, '${escapedMovieTitle}')`;
+
+                 html += `
+                     <li class="list-group-item"><div class="row align-items-center">
+                         <div class="col-auto"><img src="${posterUrl}" alt="Poster pour ${escapedMovieTitle}" class="img-fluid rounded" style="max-height: 90px;" onerror="this.onerror=null; this.src='https://via.placeholder.com/60x90?text=ImgErr';"></div>
+                         <div class="col"><strong>${movie.title}</strong> (${movie.year||'N/A'})<br><small class="text-muted">Statut: ${movie.status||'N/A'} | TMDB ID: ${movie.tmdbId||'N/A'}</small><p class="mb-0 small">${(movie.overview||'').substring(0,120)}${(movie.overview||'').length>120?'...':''}</p></div>
+                         <div class="col-auto"><button class="btn btn-success btn-sm" onclick="${onclickAction}" ${movie.id?'':'disabled title="Film non géré."'}><i class="fas fa-check-circle"></i> Sélectionner</button></div>
+                     </div></li>`;
+             });
+             html += '</ul>';
+             resultsDiv.innerHTML = html;
+         } catch (error) {
+             if(resultsDiv) resultsDiv.innerHTML = `<p class="text-danger">Erreur recherche Radarr: ${error.message}</p>`;
+             console.error("Erreur executeRadarrSearch:", error);
+         }
+     }
+
+     // --- NOUVELLE FONCTION HELPER pour la sélection générique dans le modal RADARR ---
+function handleGenericRadarrMovieSelection(movieId, movieTitle) { // movieTitle est déjà échappé
+    const selectedMovieIdInput = document.getElementById('radarrSelectedMovieId');
+    const selectedMovieTitleDisplay = document.getElementById('radarrSelectedMovieTitle');
+
+    if (selectedMovieIdInput) selectedMovieIdInput.value = movieId;
+    if (selectedMovieTitleDisplay) selectedMovieTitleDisplay.innerText = `Film sélectionné : ${movieTitle}`;
+
+    const modalMapButton = document.getElementById('radarrModalMapButton');
+    if (modalMapButton) {
+        modalMapButton.disabled = !movieId;
+    }
+    const resultsDiv = document.getElementById('radarrSearchResults');
+    if(resultsDiv) {
+        resultsDiv.innerHTML = `<p class="alert alert-info mt-2">Film sélectionné : <strong>${movieTitle}</strong> (ID: ${movieId}).<br>Cliquez sur le bouton "Mapper..." en bas du modal.</p>`;
+    }
+}
+
+     // MODIFIEZ votre fonction openRadarrSearchModal (pour mapping individuel depuis staging)
+     function openRadarrSearchModal(itemPathForAction, itemType) {
+         const itemNameForDisplay = itemPathForAction.split(/[\\/]/).pop();
+         document.getElementById('radarrItemToMap').textContent = itemNameForDisplay;
+         document.getElementById('radarrOriginalItemName').value = itemPathForAction;
+         document.getElementById('radarrOriginalItemType').value = itemType;
+         document.getElementById('radarrItemType').textContent = itemType === 'directory' ? 'Dossier (Staging)' : 'Fichier (Staging)';
+
+         const searchQueryInput = document.getElementById('radarrSearchQuery');
+         if (searchQueryInput) searchQueryInput.value = getCleanedSearchTerm(itemPathForAction);
+
+         const searchResultsDiv = document.getElementById('radarrSearchResults');
+         if (searchResultsDiv) searchResultsDiv.innerHTML = '';
+
+         document.getElementById('radarrSelectedMovieId').value = '';
+         document.getElementById('radarrSelectedMovieTitle').innerText = 'Aucun film sélectionné';
+
+         const modalMapButton = document.getElementById('radarrModalMapButton');
+         if (modalMapButton) {
+             modalMapButton.innerHTML = '<i class="fas fa-link"></i> Mapper à ce Film';
+             modalMapButton.disabled = true;
+             modalMapButton.onclick = function() {
+                 const movieId = document.getElementById('radarrSelectedMovieId').value;
+                 if (movieId) {
+                     triggerRadarrManualImport(movieId); // Appelle votre fonction de soumission pour Radarr
+                 } else {
+                     alert("Veuillez sélectionner un film.");
+                 }
+             };
+         }
+
+         var radarrModal = new bootstrap.Modal(document.getElementById('radarrSearchModal'));
+         radarrModal.show();
+     }
+
+     // Votre fonction triggerRadarrManualImport (appelée par le mapping individuel depuis le staging)
+     async function triggerRadarrManualImport(radarrMovieId) {
+         // ... (votre code existant, mais assurez-vous qu'il récupère problem_torrent_hash si le modal est réutilisé)
+         const originalItemName = document.getElementById('radarrOriginalItemName').value;
+         const movieTitleForDisplay = document.getElementById('radarrSelectedMovieTitle').innerText.replace('Film sélectionné : ', '');
+         const resultsDiv = document.getElementById('radarrSearchResults');
+         if(resultsDiv) resultsDiv.innerHTML = `<div class="alert alert-info">Tentative d'import pour '${escapeJsString(originalItemName.split(/[\\/]/).pop())}' vers '${escapeJsString(movieTitleForDisplay)}'...</div>`;
+
+         const radarrModalElement = document.getElementById('radarrSearchModal');
+         const problemTorrentHash = radarrModalElement ? radarrModalElement.getAttribute('data-problem-torrent-hash') : null;
+
+         const payload = { item_name: originalItemName, movie_id: parseInt(radarrMovieId) };
+         if (problemTorrentHash && problemTorrentHash !== '') {
+             payload.problem_torrent_hash = problemTorrentHash;
+         }
+
+         const modalMapButton = document.getElementById('radarrModalMapButton');
+         if(modalMapButton) modalMapButton.disabled = true;
+         // ... (reste de votre fetch vers seedbox_ui.trigger_radarr_import et gestion de la réponse)
+          try {
+             const response = await fetch(`{{ url_for('seedbox_ui.trigger_radarr_import') }}`, { /* ... */ body: JSON.stringify(payload) });
+             const result = await response.json();
+             if (response.ok && result.success) {
+                 // ... (succès)
+                 flashMessageGlobally(result.message || `Import pour '${escapeJsString(originalItemName.split(/[\\/]/).pop())}' réussi.`, 'success');
+                  setTimeout(() => { /* ... reload ... */ }, 2500);
+             } else {
+                 throw new Error(result.error || "Erreur inconnue (import Radarr).");
+             }
+         } catch (error) {
+             // ... (erreur)
+              flashMessageGlobally(`Erreur d'import Radarr: ${escapeJsString(error.message)}`, 'danger');
+         } finally {
+             if(modalMapButton) modalMapButton.disabled = false;
+         }
+     }
         async function triggerSonarrManualImportWithSeason(sonarrSeriesId, seriesTitle, userForcedSeason) {
             const originalItemName = document.getElementById('sonarrOriginalItemName').value;
             const resultsDiv = document.getElementById('sonarrSearchResults'); // Div DANS le modal
