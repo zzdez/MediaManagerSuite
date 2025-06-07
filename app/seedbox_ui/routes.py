@@ -611,224 +611,228 @@ def process_staging_item_api(): # Renommé pour éviter conflit si vous aviez un
 # NOUVELLE FONCTION HELPER POUR TRAITER UN ITEM SONARR DÉJÀ DANS LE STAGING
 # ==============================================================================
 
-def _handle_staged_sonarr_item(item_name_in_staging, series_id_target,
-                               path_to_cleanup_in_staging_after_success,
-                               user_chosen_season=None,
-                               automated_import=False, # NOUVEAU
-                               torrent_hash_for_status_update=None): # NOUVEAU
-    """
-    Gère l'import d'un item Sonarr déjà présent dans le staging local.
-    - Tente d'obtenir des infos de Sonarr sur le fichier (qualité, langue).
-    - Utilise user_chosen_season si fourni, sinon essaie de parser le nom de fichier, sinon se fie à Sonarr.
-    - MediaManagerSuite effectue le déplacement.
-    - Déclenche un RescanSeries.
-    - Nettoie le dossier de staging.
-    """
-    # Utiliser le logger de Flask
-    logger = current_app.logger
-    log_prefix = f"HELPER _handle_staged_sonarr_item (Automated: {automated_import}, Hash: {torrent_hash_for_status_update}): "
-    logger.info(f"{log_prefix}Traitement de '{item_name_in_staging}' pour Série ID {series_id_target}. Saison explicite: {user_chosen_season}")
+# Dans app/seedbox_ui/routes.py
 
-    # Récupérer les configs
+def _handle_staged_sonarr_item(item_name_in_staging, series_id_target,
+                               path_to_cleanup_in_staging_after_success, # Chemin absolu du dossier de release dans le staging
+                               user_chosen_season=None, # Saison choisie pour TOUS les épisodes si c'est un pack de saison mal nommé
+                               automated_import=False,
+                               torrent_hash_for_status_update=None):
+    logger = current_app.logger
+    log_prefix = f"HDL_SONARR (Auto:{automated_import}, Hash:{torrent_hash_for_status_update}, Item:'{item_name_in_staging}', SeriesID:{series_id_target}, ChosenS:{user_chosen_season}): "
+    logger.info(f"{log_prefix}Début du traitement.")
+
     sonarr_url = current_app.config.get('SONARR_URL')
     sonarr_api_key = current_app.config.get('SONARR_API_KEY')
     staging_dir_str = current_app.config.get('STAGING_DIR')
     orphan_exts = current_app.config.get('ORPHAN_EXTENSIONS', [])
 
-    path_of_item_in_staging_abs = (Path(staging_dir_str) / item_name_in_staging).resolve()
-    if not path_of_item_in_staging_abs.exists():
-        err_msg = f"Item '{item_name_in_staging}' (résolu en {path_of_item_in_staging_abs}) non trouvé."
+    # path_to_process_abs est le dossier de la release (ou le fichier unique) dans le staging
+    path_to_process_abs = (Path(staging_dir_str) / item_name_in_staging).resolve()
+
+    if not path_to_process_abs.exists():
+        err_msg = f"Item '{item_name_in_staging}' non trouvé à '{path_to_process_abs}'."
         logger.error(f"{log_prefix}{err_msg}")
         if torrent_hash_for_status_update and automated_import:
             torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_staging_path_missing", err_msg)
         return {"success": False, "message": err_msg, "manual_required": True if automated_import else False}
 
-    path_to_scan_for_api_get_obj = None
-    main_video_file_abs_path_in_staging = None
-    original_filename_of_video = None
-
-    if path_of_item_in_staging_abs.is_file():
-        if any(str(path_of_item_in_staging_abs).lower().endswith(ext) for ext in ['.mkv', '.mp4', '.avi']):
-            path_to_scan_for_api_get_obj = path_of_item_in_staging_abs
-            main_video_file_abs_path_in_staging = path_of_item_in_staging_abs
-            original_filename_of_video = path_of_item_in_staging_abs.name
-        else:
-            err_msg = f"Item fichier '{item_name_in_staging}' n'est pas une vidéo reconnue."
-            logger.error(f"{log_prefix}{err_msg}")
-            # Pas besoin de mettre à jour le statut du torrent ici, car c'est un pbm avec le fichier lui-même
-            return {"success": False, "message": err_msg, "manual_required": True if automated_import else False}
-    elif path_of_item_in_staging_abs.is_dir():
-        path_to_scan_for_api_get_obj = path_of_item_in_staging_abs
-        for root, _, files in os.walk(path_of_item_in_staging_abs):
-            for file in files:
-                if any(file.lower().endswith(ext) for ext in ['.mkv', '.mp4', '.avi']):
-                    main_video_file_abs_path_in_staging = Path(root) / file
-                    original_filename_of_video = file
-                    break
-            if main_video_file_abs_path_in_staging:
-                break
-        if not main_video_file_abs_path_in_staging:
-            err_msg = f"Aucun fichier vidéo trouvé dans le dossier '{item_name_in_staging}'."
-            logger.error(f"{log_prefix}{err_msg}")
-            return {"success": False, "message": err_msg, "manual_required": True if automated_import else False}
-    else:
-        err_msg = "Item de staging non valide (ni fichier, ni dossier)."
-        logger.error(f"{log_prefix}{err_msg}")
-        return {"success": False, "message": err_msg, "manual_required": True if automated_import else False} # Status code 400 pour l'API
-
-    path_for_api_get_str_win = str(path_to_scan_for_api_get_obj).replace('/', '\\')
-    logger.info(f"{log_prefix}Fichier vidéo principal: {main_video_file_abs_path_in_staging}")
-    logger.info(f"{log_prefix}Scan Sonarr pour infos sur: {path_for_api_get_str_win}")
-
-    manual_import_get_url = f"{sonarr_url.rstrip('/')}/api/v3/manualimport"
-    get_params = {'folder': path_for_api_get_str_win, 'filterExistingFiles': 'false'}
-    logger.debug(f"{log_prefix}GET Sonarr ManualImport: URL={manual_import_get_url}, Params={get_params}")
-    manual_import_candidates, error_msg_get = _make_arr_request('GET', manual_import_get_url, sonarr_api_key, params=get_params)
-
-    sonarr_identified_season_num = None
-    # sonarr_identified_episode_num = None # Pas utilisé pour l'instant pour la destination
-
-    if error_msg_get or not isinstance(manual_import_candidates, list):
-        logger.warning(f"{log_prefix}Erreur ou pas de candidats Sonarr GET manualimport pour '{original_filename_of_video}': {error_msg_get or 'Pas de candidats'}. On continue avec parsing nom de fichier.")
-    else:
-        found_candidate_info = False
-        for candidate in manual_import_candidates:
-            candidate_path_from_api = candidate.get('path')
-            if not candidate_path_from_api: continue
-
-            # Recalculer le chemin absolu du candidat DANS LE STAGING
-            # Si path_to_scan_for_api_get_obj est un fichier, candidate_path_from_api est juste le nom du fichier.
-            # Si path_to_scan_for_api_get_obj est un dossier, candidate_path_from_api est relatif à ce dossier.
-            if path_to_scan_for_api_get_obj.is_dir():
-                abs_cand_path_in_staging = (path_to_scan_for_api_get_obj / candidate_path_from_api).resolve()
-            else: # path_to_scan_for_api_get_obj est un fichier
-                 # Sonarr retourne souvent le nom du fichier lui-même comme 'path' relatif au 'folder' scanné, même si 'folder' est un fichier.
-                 # Il faut vérifier si candidate_path_from_api == path_to_scan_for_api_get_obj.name
-                if candidate_path_from_api == path_to_scan_for_api_get_obj.name:
-                    abs_cand_path_in_staging = path_to_scan_for_api_get_obj.resolve()
-                else: # Cas étrange, on log et on continue
-                    logger.warning(f"{log_prefix}Candidate path '{candidate_path_from_api}' ne correspond pas au fichier scanné '{path_to_scan_for_api_get_obj.name}'.")
-                    continue
-
-            if abs_cand_path_in_staging == main_video_file_abs_path_in_staging.resolve():
-                candidate_episodes_info = candidate.get('episodes', [])
-                if candidate_episodes_info:
-                    sonarr_identified_season_num = candidate_episodes_info[0].get('seasonNumber')
-                    # sonarr_identified_episode_num = candidate_episodes_info[0].get('episodeNumber')
-                    logger.info(f"{log_prefix}Sonarr a identifié S{sonarr_identified_season_num} pour '{original_filename_of_video}'.")
-                else:
-                    logger.warning(f"{log_prefix}Sonarr a trouvé '{original_filename_of_video}' mais sans infos d'épisode.")
-                found_candidate_info = True
-                break
-        if not found_candidate_info:
-             logger.warning(f"{log_prefix}Fichier '{original_filename_of_video}' non trouvé ou sans infos d'épisode par GET manualimport Sonarr.")
-
-    season_to_use_for_move = None
-    if user_chosen_season is not None:
-        season_to_use_for_move = user_chosen_season
-        logger.info(f"{log_prefix}Utilisation saison forcée: {season_to_use_for_move}")
-    else:
-        filename_s_num_parsed = None
-        s_e_match = re.search(r'[._\s\[\(-]S(\d{1,3})([E._\s-]\d{1,3})?', original_filename_of_video, re.IGNORECASE) # Episode part optional
-        if s_e_match:
-            try: filename_s_num_parsed = int(s_e_match.group(1))
-            except ValueError: pass
-
-        if filename_s_num_parsed is not None:
-            season_to_use_for_move = filename_s_num_parsed
-            logger.info(f"{log_prefix}Utilisation saison S{season_to_use_for_move} parsée du nom de fichier.")
-            if sonarr_identified_season_num is not None and sonarr_identified_season_num != filename_s_num_parsed:
-                logger.warning(f"{log_prefix}Discordance info: Nom de fichier S{filename_s_num_parsed} vs Sonarr S{sonarr_identified_season_num}. On utilise S{filename_s_num_parsed}.")
-        elif sonarr_identified_season_num is not None:
-            season_to_use_for_move = sonarr_identified_season_num
-            logger.info(f"{log_prefix}Utilisation saison S{season_to_use_for_move} identifiée par Sonarr.")
-        else:
-            # EN MODE AUTOMATIQUE : Si on n'a pas de saison, c'est un problème. On ne peut pas deviner.
-            # On pourrait tenter une saison par défaut (ex: saison 1) MAIS c'est risqué.
-            # Préférable de marquer pour intervention manuelle.
-            err_msg = f"Impossible de déterminer le numéro de saison pour '{original_filename_of_video}'."
-            logger.error(f"{log_prefix}{err_msg}")
-            if torrent_hash_for_status_update and automated_import:
-                torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_sonarr_season_undefined", err_msg)
-            return {"success": False, "message": err_msg, "manual_required": True} # Toujours manual_required ici
-
+    # Récupérer les détails de la série pour le chemin racine (fait une seule fois)
     series_details_url = f"{sonarr_url.rstrip('/')}/api/v3/series/{series_id_target}"
     series_data, error_series_data = _make_arr_request('GET', series_details_url, sonarr_api_key)
     if error_series_data or not series_data:
         err_msg = f"Impossible de récupérer détails série Sonarr ID {series_id_target}: {error_series_data}"
+        # ... (gestion d'erreur et retour comme avant) ...
         logger.error(f"{log_prefix}{err_msg}")
         if torrent_hash_for_status_update and automated_import:
              torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_sonarr_api", err_msg)
         return {"success": False, "message": err_msg, "manual_required": True if automated_import else False}
 
-    series_root_folder_path = series_data.get('path')
-    series_title = series_data.get('title', 'Série Inconnue')
-    if not series_root_folder_path:
-        err_msg = f"Chemin racine de la série '{series_title}' (ID {series_id_target}) non trouvé dans Sonarr."
+    series_root_folder_path_str = series_data.get('path')
+    series_title_from_sonarr = series_data.get('title', 'Série Inconnue')
+    if not series_root_folder_path_str:
+        err_msg = f"Chemin racine pour série '{series_title_from_sonarr}' (ID {series_id_target}) non trouvé dans Sonarr."
+        # ... (gestion d'erreur et retour) ...
         logger.error(f"{log_prefix}{err_msg}")
         if torrent_hash_for_status_update and automated_import:
              torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_sonarr_config", err_msg)
         return {"success": False, "message": err_msg, "manual_required": True if automated_import else False}
 
-    dest_season_folder_name = f"Season {str(season_to_use_for_move).zfill(2)}"
-    dest_season_path_abs = Path(series_root_folder_path) / dest_season_folder_name
-    dest_file_path_abs = dest_season_path_abs / original_filename_of_video
+    series_root_path = Path(series_root_folder_path_str)
 
-    logger.info(f"{log_prefix}Déplacement MMS: '{main_video_file_abs_path_in_staging}' vers '{dest_file_path_abs}'")
-    imported_successfully = False
-    try:
-        dest_season_path_abs.mkdir(parents=True, exist_ok=True)
-        if main_video_file_abs_path_in_staging.resolve() != dest_file_path_abs.resolve():
-            shutil.move(str(main_video_file_abs_path_in_staging), str(dest_file_path_abs))
+    video_files_to_process = []
+    if path_to_process_abs.is_file():
+        if any(str(path_to_process_abs).lower().endswith(ext) for ext in ['.mkv', '.mp4', '.avi']):
+            video_files_to_process.append({"path": path_to_process_abs, "original_filename": path_to_process_abs.name})
         else:
-            logger.warning(f"{log_prefix}Source et destination identiques: {main_video_file_abs_path_in_staging}. Fichier déjà en place?")
-        imported_successfully = True
-    except Exception as e_move:
-        logger.error(f"{log_prefix}Erreur move '{original_filename_of_video}': {e_move}. Tentative copie/suppr.")
-        try:
-            # Ensure parent of main_video_file_abs_path_in_staging exists if we are to remove it
-            if main_video_file_abs_path_in_staging.parent.exists():
-                 shutil.copy2(str(main_video_file_abs_path_in_staging), str(dest_file_path_abs))
-                 os.remove(str(main_video_file_abs_path_in_staging)) # Remove original after successful copy
-                 imported_successfully = True
-            else: # Source parent does not exist, cannot remove, something is wrong
-                logger.error(f"{log_prefix}Parent du fichier source {main_video_file_abs_path_in_staging.parent} n'existe pas. Abandon de la copie/suppression.")
-                imported_successfully = False # Marquer comme échec si on ne peut pas nettoyer la source
-        except Exception as e_copy:
-            err_msg = f"Échec du déplacement (copie/suppression) du fichier '{original_filename_of_video}': {e_copy}"
+            err_msg = f"Item fichier '{item_name_in_staging}' n'est pas une vidéo reconnue."
             logger.error(f"{log_prefix}{err_msg}")
-            if torrent_hash_for_status_update and automated_import:
-                 torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_mms_file_move", err_msg)
             return {"success": False, "message": err_msg, "manual_required": True if automated_import else False}
-
-    if not imported_successfully:
-        err_msg = f"Échec inattendu du déplacement de '{original_filename_of_video}'."
+    elif path_to_process_abs.is_dir():
+        for root, _, files in os.walk(path_to_process_abs):
+            for file_name in files:
+                if any(file_name.lower().endswith(ext) for ext in ['.mkv', '.mp4', '.avi']):
+                    video_files_to_process.append({"path": Path(root) / file_name, "original_filename": file_name})
+        if not video_files_to_process:
+            err_msg = f"Aucun fichier vidéo trouvé dans le dossier '{item_name_in_staging}'."
+            logger.error(f"{log_prefix}{err_msg}")
+            return {"success": False, "message": err_msg, "manual_required": True if automated_import else False}
+    else:
+        err_msg = "Item de staging non valide."
+        # ... (gestion d'erreur et retour) ...
         logger.error(f"{log_prefix}{err_msg}")
-        if torrent_hash_for_status_update and automated_import:
-             torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_mms_file_move", err_msg)
         return {"success": False, "message": err_msg, "manual_required": True if automated_import else False}
 
+    logger.info(f"{log_prefix} Fichiers vidéo à traiter: {[str(f['path']) for f in video_files_to_process]}")
+
+    successful_moves = 0
+    failed_moves_details = []
+    processed_filenames_for_message = []
+
+    for video_file_info in video_files_to_process:
+        current_video_file_path = video_file_info["path"]
+        original_video_filename = video_file_info["original_filename"]
+        logger.info(f"{log_prefix}Traitement du fichier vidéo: {original_video_filename}")
+
+        # --- Détermination Saison/Épisode pour CE fichier ---
+        # (Similaire à la logique existante, mais appliquée par fichier)
+        sonarr_identified_season_num_for_file = None
+        # Path à scanner pour Sonarr (dossier parent du fichier vidéo actuel)
+        path_to_scan_for_file_api = str(current_video_file_path.parent).replace('/', '\\')
+
+        manual_import_get_url = f"{sonarr_url.rstrip('/')}/api/v3/manualimport"
+        # On passe le dossier parent du fichier pour que Sonarr puisse analyser le nom du fichier
+        get_params_file = {'folder': path_to_scan_for_file_api, 'filterExistingFiles': 'false', 'seriesId': series_id_target}
+        logger.debug(f"{log_prefix}GET Sonarr ManualImport pour fichier '{original_video_filename}': Params={get_params_file}")
+        candidates, error_get_file = _make_arr_request('GET', manual_import_get_url, sonarr_api_key, params=get_params_file)
+
+        if not error_get_file and isinstance(candidates, list):
+            for cand in candidates:
+                # Sonarr retourne 'path' relatif au 'folder' scanné.
+                # On compare le nom de fichier.
+                if Path(cand.get('path','')).name.lower() == original_video_filename.lower():
+                    ep_info = cand.get('episodes', [])
+                    if ep_info:
+                        sonarr_identified_season_num_for_file = ep_info[0].get('seasonNumber')
+                        logger.info(f"{log_prefix}Sonarr a identifié S{sonarr_identified_season_num_for_file} pour '{original_video_filename}'.")
+                    break
+        else:
+            logger.warning(f"{log_prefix}Pas de candidat Sonarr ou erreur pour '{original_video_filename}': {error_get_file}")
+
+        # Logique de détermination de la saison (user_chosen_season a la priorité pour tous les fichiers du pack)
+        season_for_this_file = None
+        if user_chosen_season is not None:
+            season_for_this_file = user_chosen_season
+            logger.info(f"{log_prefix}Utilisation saison forcée '{user_chosen_season}' pour '{original_video_filename}'.")
+        else:
+            # Parsing du nom de CE fichier
+            s_e_match = re.search(r'[._\s\[\(-]S(\d{1,3})([E._\s-]\d{1,3})?', original_video_filename, re.IGNORECASE)
+            if s_e_match:
+                try: season_for_this_file = int(s_e_match.group(1))
+                except (ValueError, IndexError): pass
+
+            if season_for_this_file is not None:
+                logger.info(f"{log_prefix}Saison S{season_for_this_file} parsée du nom de fichier '{original_video_filename}'.")
+                if sonarr_identified_season_num_for_file is not None and sonarr_identified_season_num_for_file != season_for_this_file:
+                    logger.warning(f"{log_prefix}Discordance (info): Nom fichier S{season_for_this_file} vs Sonarr S{sonarr_identified_season_num_for_file}. Priorité au nom de fichier.")
+            elif sonarr_identified_season_num_for_file is not None:
+                season_for_this_file = sonarr_identified_season_num_for_file
+                logger.info(f"{log_prefix}Utilisation saison S{season_for_this_file} identifiée par Sonarr pour '{original_video_filename}'.")
+            else:
+                # Cas problématique : pas de saison choisie, pas de parsing, pas d'info Sonarr
+                # En mode automatisé, c'est un échec pour ce fichier.
+                # En mode manuel (depuis UI), on pourrait demander la saison pour le pack.
+                # Pour l'instant, si automatisé et pas de saison, on logue une erreur pour CE fichier.
+                err_msg_file = f"Impossible de déterminer la saison pour '{original_video_filename}'."
+                logger.error(f"{log_prefix}{err_msg_file}")
+                failed_moves_details.append({"file": original_video_filename, "reason": err_msg_file})
+                # Si on est en mode automatisé et qu'on ne peut pas déterminer une saison, on pourrait skipper ce fichier.
+                if automated_import: # Si l'appel vient de l'API automatique
+                    # Mettre à jour le statut du torrent principal pour indiquer un problème
+                    if torrent_hash_for_status_update:
+                         torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_sonarr_season_undefined_for_file", f"Saison manquante pour {original_video_filename}")
+                    # On pourrait choisir de retourner une erreur ici si on veut que TOUT échoue si un fichier échoue
+                    # ou juste continuer avec les autres fichiers. Pour l'instant, on continue.
+                continue # Passer au fichier vidéo suivant
+
+        if season_for_this_file is None: # Double check, au cas où la logique ci-dessus a un trou
+            err_msg_file = f"Saison non déterminée pour '{original_video_filename}' après toutes les vérifications."
+            logger.error(f"{log_prefix}{err_msg_file}")
+            failed_moves_details.append({"file": original_video_filename, "reason": err_msg_file})
+            continue
+
+        # --- Déplacement de CE fichier ---
+        dest_season_folder_name = f"Season {str(season_for_this_file).zfill(2)}"
+        dest_season_path_abs = series_root_path / dest_season_folder_name
+        dest_file_path_abs = dest_season_path_abs / original_video_filename
+
+        logger.info(f"{log_prefix}Déplacement MMS: '{current_video_file_path}' vers '{dest_file_path_abs}'")
+        try:
+            dest_season_path_abs.mkdir(parents=True, exist_ok=True)
+            if current_video_file_path.resolve() != dest_file_path_abs.resolve():
+                shutil.move(str(current_video_file_path), str(dest_file_path_abs))
+            else:
+                logger.warning(f"{log_prefix}Source et destination identiques pour {original_video_filename}.")
+            successful_moves += 1
+            processed_filenames_for_message.append(original_video_filename)
+        except Exception as e_move:
+            logger.error(f"{log_prefix}Erreur déplacement '{original_video_filename}': {e_move}. Tentative copie/suppr.")
+            try:
+                if current_video_file_path.parent.exists():
+                    shutil.copy2(str(current_video_file_path), str(dest_file_path_abs))
+                    os.remove(str(current_video_file_path))
+                    successful_moves += 1
+                    processed_filenames_for_message.append(original_video_filename)
+                else: # Source parent does not exist, something is wrong
+                    logger.error(f"{log_prefix}Parent source {current_video_file_path.parent} inexistant. Échec copie/suppression pour {original_video_filename}")
+                    failed_moves_details.append({"file": original_video_filename, "reason": f"Erreur de déplacement (parent source manquant): {e_move}"})
+            except Exception as e_copy:
+                logger.error(f"{log_prefix}Erreur copie/suppr '{original_video_filename}': {e_copy}")
+                failed_moves_details.append({"file": original_video_filename, "reason": f"Échec copie/suppression: {e_copy}"})
+    # --- Fin de la boucle sur les fichiers vidéo ---
+
+    if successful_moves == 0 and video_files_to_process: # Si aucun fichier n'a pu être déplacé
+        final_err_msg = "Aucun fichier vidéo n'a pu être déplacé."
+        if failed_moves_details:
+            final_err_msg += f" Premier échec: {failed_moves_details[0]['reason']}"
+        logger.error(f"{log_prefix}{final_err_msg}")
+        if torrent_hash_for_status_update and automated_import:
+            torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_mms_all_files_failed_move", final_err_msg)
+        return {"success": False, "message": final_err_msg, "manual_required": True if automated_import else False}
+
+    # --- Nettoyage du dossier de staging d'origine (path_to_cleanup_in_staging_after_success) ---
+    # path_to_cleanup_in_staging_after_success est le chemin absolu du dossier de release passé à la fonction
     actual_folder_to_cleanup = Path(path_to_cleanup_in_staging_after_success)
-    if actual_folder_to_cleanup.is_file():
-        actual_folder_to_cleanup = actual_folder_to_cleanup.parent
+    # Si l'item original était un fichier, on cible son parent pour le cleanup.
+    # Mais si on traite un pack, path_to_cleanup_in_staging_after_success est déjà le dossier.
+    if actual_folder_to_cleanup.is_file(): # Devrait rarement arriver si on traite des packs de dossier
+         actual_folder_to_cleanup = actual_folder_to_cleanup.parent
 
     if actual_folder_to_cleanup.exists() and actual_folder_to_cleanup.is_dir():
-        logger.info(f"{log_prefix}Nettoyage dossier staging: {actual_folder_to_cleanup}")
-        time.sleep(1) # Petit délai pour s'assurer que le handle du fichier est libéré
-        # Assurez-vous que cleanup_staging_subfolder_recursively est importée ou définie
+        logger.info(f"{log_prefix}Nettoyage du dossier de staging: {actual_folder_to_cleanup}")
+        time.sleep(1)
         try:
+            # La fonction cleanup_staging_subfolder_recursively devrait maintenant vider le dossier
+            # car tous les fichiers vidéo principaux ont été déplacés.
             cleanup_staging_subfolder_recursively(str(actual_folder_to_cleanup), staging_dir_str, orphan_exts)
-        except NameError: # Fallback si la fonction n'est pas disponible (devrait l'être)
-            logger.error(f"{log_prefix}Fonction 'cleanup_staging_subfolder_recursively' non trouvée. Nettoyage manuel requis pour {actual_folder_to_cleanup}")
         except Exception as e_cleanup:
             logger.error(f"{log_prefix}Erreur lors du nettoyage de {actual_folder_to_cleanup}: {e_cleanup}")
+            # Ne pas considérer cela comme un échec bloquant de l'import si les fichiers ont été déplacés.
+    else:
+        logger.warning(f"{log_prefix}Dossier à nettoyer {actual_folder_to_cleanup} non trouvé ou n'est pas un dossier.")
 
 
+    # --- Rescan Sonarr (une seule fois après tous les déplacements) ---
     rescan_payload = {"name": "RescanSeries", "seriesId": series_id_target}
     command_url = f"{sonarr_url.rstrip('/')}/api/v3/command"
     _, error_rescan = _make_arr_request('POST', command_url, sonarr_api_key, json_data=rescan_payload)
 
-    final_message = f"'{original_filename_of_video}' (pour '{series_title}', S{str(season_to_use_for_move).zfill(2)}) déplacé avec succès."
+    final_message = f"{successful_moves} fichier(s) (pour '{series_title_from_sonarr}') déplacé(s) avec succès."
+    if processed_filenames_for_message:
+        final_message += f" Fichiers: {', '.join(processed_filenames_for_message[:3])}{'...' if len(processed_filenames_for_message) > 3 else ''}."
+    if failed_moves_details:
+        final_message += f" {len(failed_moves_details)} fichier(s) ont échoué (voir logs)."
+
     if error_rescan:
         final_message += f" Échec du Rescan Sonarr: {error_rescan}."
         logger.warning(f"{log_prefix}Rescan Sonarr échoué: {error_rescan}")
@@ -836,11 +840,18 @@ def _handle_staged_sonarr_item(item_name_in_staging, series_id_target,
         final_message += " Rescan Sonarr initié."
         logger.info(f"{log_prefix}Rescan Sonarr initié pour série ID {series_id_target}.")
 
-    if torrent_hash_for_status_update and automated_import: # Uniquement si tout s'est bien passé jusque là
-        torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "imported_by_mms", final_message)
-        # Optionnel: remove_torrent_from_map(torrent_hash_for_status_update) si on ne veut plus le suivre
+    if torrent_hash_for_status_update and automated_import:
+        # Si certains fichiers ont échoué mais d'autres non, le statut est un peu ambigu.
+        # On pourrait créer un statut "imported_partial_error"
+        current_status_update = "imported_by_mms" if not failed_moves_details else "imported_partial_mms_error"
+        torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, current_status_update, final_message)
+        # Si tout est ok et pas d'échecs, et que la config est de supprimer du map:
+        # if not failed_moves_details and current_app.config.get('AUTO_REMOVE_SUCCESSFUL_FROM_MAP', True):
+        #    torrent_map_manager.remove_torrent_from_map(torrent_hash_for_status_update)
 
-    return {"success": True, "message": final_message, "manual_required": False} # status_code_override enlevé, la route API s'en chargera
+    return {"success": True if not failed_moves_details else False, # Succès global si aucun échec de fichier individuel
+            "message": final_message,
+            "manual_required": bool(failed_moves_details) } # Manuel requis s'il y a eu des échecs
 
 # ==============================================================================
 # FIN DE LA FONCTION HELPER _handle_staged_sonarr_item
