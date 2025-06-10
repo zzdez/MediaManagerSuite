@@ -1648,6 +1648,147 @@ def search_radarr_api():
         return jsonify({"error": error_msg}), 500
 
     return jsonify(results if results else [])
+# ==============================================================================
+# ROUTES API POUR RÉCUPÉRER LES CONFIGURATIONS DE SONARR (Root Folders, Profiles)
+# ==============================================================================
+
+@seedbox_ui_bp.route('/api/get-sonarr-rootfolders', methods=['GET'])
+def get_sonarr_rootfolders_api():
+    logger = current_app.logger
+    logger.info("API: Demande de récupération des dossiers racine Sonarr.")
+
+    sonarr_url = current_app.config.get('SONARR_URL')
+    sonarr_api_key = current_app.config.get('SONARR_API_KEY')
+
+    if not sonarr_url or not sonarr_api_key:
+        logger.error("API Get Sonarr Root Folders: Configuration Sonarr manquante.")
+        return jsonify({"error": "Sonarr non configuré dans l'application."}), 500
+
+    api_endpoint = f"{sonarr_url.rstrip('/')}/api/v3/rootfolder"
+
+    rootfolders_data, error_msg = _make_arr_request('GET', api_endpoint, sonarr_api_key)
+
+    if error_msg:
+        logger.error(f"API Get Sonarr Root Folders: Erreur lors de l'appel à Sonarr: {error_msg}")
+        return jsonify({"error": f"Erreur Sonarr: {error_msg}"}), 502 # Bad Gateway ou erreur de l'API distante
+
+    if rootfolders_data and isinstance(rootfolders_data, list):
+        logger.info(f"API Get Sonarr Root Folders: {len(rootfolders_data)} dossier(s) racine trouvé(s).")
+        # On ne retourne que les champs utiles pour le frontend : id (non utilisé pour l'ajout) et path
+        # L'API Sonarr pour /rootfolder retourne une liste d'objets comme :
+        # [ { "id": 1, "path": "/mnt/series", "freeSpace": 123456, ... }, ... ]
+        # Pour l'ajout d'une série, Sonarr attend le `rootFolderPath` (le chemin).
+        formatted_folders = [{"id": folder.get("id"), "path": folder.get("path")} for folder in rootfolders_data if folder.get("path")]
+        return jsonify(formatted_folders), 200
+    else:
+        logger.warning("API Get Sonarr Root Folders: Aucune donnée ou format inattendu reçu de Sonarr pour les dossiers racine.")
+        return jsonify([]), 200 # Retourner une liste vide si rien n'est trouvé ou erreur de format
+
+
+@seedbox_ui_bp.route('/api/get-sonarr-qualityprofiles', methods=['GET'])
+def get_sonarr_qualityprofiles_api():
+    logger = current_app.logger
+    logger.info("API: Demande de récupération des profils de qualité Sonarr.")
+
+    sonarr_url = current_app.config.get('SONARR_URL')
+    sonarr_api_key = current_app.config.get('SONARR_API_KEY')
+
+    if not sonarr_url or not sonarr_api_key:
+        logger.error("API Get Sonarr Quality Profiles: Configuration Sonarr manquante.")
+        return jsonify({"error": "Sonarr non configuré dans l'application."}), 500
+
+    api_endpoint = f"{sonarr_url.rstrip('/')}/api/v3/qualityprofile"
+
+    profiles_data, error_msg = _make_arr_request('GET', api_endpoint, sonarr_api_key)
+
+    if error_msg:
+        logger.error(f"API Get Sonarr Quality Profiles: Erreur lors de l'appel à Sonarr: {error_msg}")
+        return jsonify({"error": f"Erreur Sonarr: {error_msg}"}), 502
+
+    if profiles_data and isinstance(profiles_data, list):
+        logger.info(f"API Get Sonarr Quality Profiles: {len(profiles_data)} profil(s) de qualité trouvé(s).")
+        # L'API Sonarr /qualityprofile retourne une liste d'objets comme :
+        # [ { "id": 1, "name": "Any", ... }, { "id": 2, "name": "HD-1080p", ... } ]
+        # On a besoin de 'id' et 'name' pour le select.
+        formatted_profiles = [{"id": profile.get("id"), "name": profile.get("name")} for profile in profiles_data if profile.get("id") is not None and profile.get("name")]
+        return jsonify(formatted_profiles), 200
+    else:
+        logger.warning("API Get Sonarr Quality Profiles: Aucune donnée ou format inattendu reçu de Sonarr pour les profils.")
+        return jsonify([]), 200
+# ==============================================================================
+# ROUTES API POUR RÉCUPÉRER LES CONFIGURATIONS DE RADARR (Root Folders, Profiles)
+# ==============================================================================
+
+@seedbox_ui_bp.route('/api/get-radarr-rootfolders', methods=['GET'])
+def get_radarr_rootfolders_api():
+    logger = current_app.logger
+    logger.info("API: Demande de récupération des dossiers racine Radarr.")
+
+    radarr_url = current_app.config.get('RADARR_URL')
+    radarr_api_key = current_app.config.get('RADARR_API_KEY')
+
+    if not radarr_url or not radarr_api_key:
+        logger.error("API Get Radarr Root Folders: Configuration Radarr manquante.")
+        return jsonify({"error": "Radarr non configuré dans l'application."}), 500
+
+    api_endpoint = f"{radarr_url.rstrip('/')}/api/v3/rootfolder"
+
+    # Utilisation de votre helper _make_arr_request
+    rootfolders_data, error_msg = _make_arr_request('GET', api_endpoint, radarr_api_key)
+
+    if error_msg:
+        logger.error(f"API Get Radarr Root Folders: Erreur lors de l'appel à Radarr: {error_msg}")
+        return jsonify({"error": f"Erreur Radarr: {error_msg}"}), 502 # Bad Gateway ou erreur de l'API distante
+
+    if rootfolders_data and isinstance(rootfolders_data, list):
+        logger.info(f"API Get Radarr Root Folders: {len(rootfolders_data)} dossier(s) racine trouvé(s).")
+        # Radarr retourne une liste d'objets avec 'path' et 'id'.
+        # Pour l'ajout de film, Radarr attend le 'rootFolderPath' (le chemin).
+        formatted_folders = []
+        for folder in rootfolders_data:
+            if folder.get("path"): # S'assurer que le chemin existe
+                # Radarr peut avoir des 'unmappedFolders', on ne les veut pas forcément.
+                # Un dossier racine valide a généralement un ID et un chemin.
+                # On peut ajouter plus de filtres si nécessaire (ex: folder.get('accessible') is True)
+                formatted_folders.append({"id": folder.get("id"), "path": folder.get("path")})
+        return jsonify(formatted_folders), 200
+    else:
+        logger.warning("API Get Radarr Root Folders: Aucune donnée ou format inattendu reçu de Radarr pour les dossiers racine.")
+        return jsonify([]), 200
+
+
+@seedbox_ui_bp.route('/api/get-radarr-qualityprofiles', methods=['GET'])
+def get_radarr_qualityprofiles_api():
+    logger = current_app.logger
+    logger.info("API: Demande de récupération des profils de qualité Radarr.")
+
+    radarr_url = current_app.config.get('RADARR_URL')
+    radarr_api_key = current_app.config.get('RADARR_API_KEY')
+
+    if not radarr_url or not radarr_api_key:
+        logger.error("API Get Radarr Quality Profiles: Configuration Radarr manquante.")
+        return jsonify({"error": "Radarr non configuré dans l'application."}), 500
+
+    api_endpoint = f"{radarr_url.rstrip('/')}/api/v3/qualityprofile" # Endpoint identique à Sonarr pour les profils
+
+    profiles_data, error_msg = _make_arr_request('GET', api_endpoint, radarr_api_key)
+
+    if error_msg:
+        logger.error(f"API Get Radarr Quality Profiles: Erreur lors de l'appel à Radarr: {error_msg}")
+        return jsonify({"error": f"Erreur Radarr: {error_msg}"}), 502
+
+    if profiles_data and isinstance(profiles_data, list):
+        logger.info(f"API Get Radarr Quality Profiles: {len(profiles_data)} profil(s) de qualité trouvé(s).")
+        # Radarr retourne une liste d'objets avec 'id' et 'name'.
+        formatted_profiles = []
+        for profile in profiles_data:
+            if profile.get("id") is not None and profile.get("name"):
+                formatted_profiles.append({"id": profile.get("id"), "name": profile.get("name")})
+        return jsonify(formatted_profiles), 200
+    else:
+        logger.warning("API Get Radarr Quality Profiles: Aucune donnée ou format inattendu reçu de Radarr pour les profils.")
+        return jsonify([]), 200
+
 # ------------------------------------------------------------------------------
 # ROUTE POUR AFFICHER LE CONTENU D'UN DOSSIER DISTANT DE LA SEEDBOX
 # ------------------------------------------------------------------------------
@@ -2517,157 +2658,215 @@ def cleanup_staging_item_action(item_name):
 # FIN DE trigger_rdarr_import
 # ------------------------------------------------------------------------------
 
-# Ligne ~1129 dans votre fichier
 @seedbox_ui_bp.route('/interaction/rtorrent/add', methods=['POST'])
 def rtorrent_add_torrent_action():
+    logger = current_app.logger
     data = request.get_json()
-    if not data:
-        return jsonify({"success": False, "error": "No JSON data received."}), 400
 
+    if not data:
+        logger.error("RTORRENT_ADD_ACTION: Aucune donnée JSON reçue.")
+        return jsonify({"success": False, "error": "Aucune donnée JSON reçue."}), 400
+
+    # Récupération des données du payload JS
     magnet_link = data.get('magnet_link')
     torrent_file_b64 = data.get('torrent_file_b64')
     app_type = data.get('app_type')
-    target_id = data.get('target_id')
-    original_name_from_js = data.get('original_name') # Nom du fichier .torrent ou nom d'affichage du magnet
+    original_name_from_js = data.get('original_name')
 
-    current_app.logger.info(f"Action rTorrent Add: Type={app_type}, TargetID={target_id}, OriginalNameJS='{original_name_from_js}', HasMagnet={bool(magnet_link)}, HasFile={bool(torrent_file_b64)}")
+    is_new_media = data.get('is_new_media', False)
+    external_id_str = data.get('external_id') # TVDB ID (Sonarr) ou TMDB ID (Radarr)
+    title_for_add = data.get('title_for_add')
+    root_folder_path_chosen = data.get('root_folder_path')
+    quality_profile_id_chosen_str = data.get('quality_profile_id')
+    target_id_existing_str = data.get('target_id') # ID interne si média existant
 
-    if not (magnet_link or torrent_file_b64): # Manque torrent_file_b64
-        return jsonify({"success": False, "error": "Missing magnet link or torrent file content."}), 400
-    if not app_type or target_id is None or not original_name_from_js: # target_id peut être 0
-        return jsonify({"success": False, "error": "Missing app_type, target_id, or original_name."}), 400
+    logger.info(f"RTORRENT_ADD_ACTION: Payload reçu: app_type='{app_type}', is_new={is_new_media}, "
+                f"external_id='{external_id_str}', title_add='{title_for_add}', root='{root_folder_path_chosen}', "
+                f"q_profile='{quality_profile_id_chosen_str}', existing_id='{target_id_existing_str}', "
+                f"original_name='{original_name_from_js}'")
+
+    # --- Validations initiales ---
+    if not (magnet_link or torrent_file_b64):
+        return jsonify({"success": False, "error": "Lien magnet ou fichier torrent manquant."}), 400
+    if not app_type or not original_name_from_js:
+        return jsonify({"success": False, "error": "Type d'application ou nom original manquant."}), 400
     if app_type not in ['sonarr', 'radarr']:
-        return jsonify({"success": False, "error": "Invalid app_type. Must be 'sonarr' or 'radarr'."}), 400
+        return jsonify({"success": False, "error": "Type d'application invalide."}), 400
 
-    try:
-        target_id_int = int(target_id)
-    except ValueError:
-        current_app.logger.error(f"Invalid target_id format: {target_id}. Must be an integer.")
-        return jsonify({"success": False, "error": "Invalid target_id format."}), 400
+    actual_target_id = None # Deviendra l'ID interne Sonarr/Radarr
 
+    if is_new_media:
+        if not external_id_str or not title_for_add or not root_folder_path_chosen or not quality_profile_id_chosen_str:
+            logger.error("RTORRENT_ADD_ACTION: Données manquantes pour l'ajout d'un nouveau média.")
+            return jsonify({"success": False, "error": "Pour un nouveau média, ID externe, titre, dossier racine et profil de qualité sont requis."}), 400
+        try:
+            # external_id sera tvdbId pour Sonarr, tmdbId pour Radarr
+            external_id = int(external_id_str)
+            quality_profile_id_chosen = int(quality_profile_id_chosen_str)
+        except ValueError:
+            logger.error("RTORRENT_ADD_ACTION: Format ID externe ou profil qualité invalide.")
+            return jsonify({"success": False, "error": "Format invalide pour ID externe ou profil de qualité."}), 400
+    else: # Média existant
+        if target_id_existing_str is None:
+            logger.error("RTORRENT_ADD_ACTION: target_id manquant pour un média existant.")
+            return jsonify({"success": False, "error": "target_id manquant pour un média existant."}), 400
+        try:
+            actual_target_id = int(target_id_existing_str)
+        except ValueError:
+            logger.error(f"RTORRENT_ADD_ACTION: Format de target_id invalide: {target_id_existing_str}")
+            return jsonify({"success": False, "error": "Format de target_id invalide pour média existant."}), 400
 
+    # --- Configuration rTorrent et *Arr ---
     if app_type == 'sonarr':
         rtorrent_label = current_app.config.get('RTORRENT_LABEL_SONARR')
         rtorrent_download_dir = current_app.config.get('RTORRENT_DOWNLOAD_DIR_SONARR')
-    else:
+        arr_url = current_app.config.get('SONARR_URL')
+        arr_api_key = current_app.config.get('SONARR_API_KEY')
+    else: # radarr
         rtorrent_label = current_app.config.get('RTORRENT_LABEL_RADARR')
         rtorrent_download_dir = current_app.config.get('RTORRENT_DOWNLOAD_DIR_RADARR')
+        arr_url = current_app.config.get('RADARR_URL')
+        arr_api_key = current_app.config.get('RADARR_API_KEY')
 
     if not rtorrent_label or not rtorrent_download_dir:
-        msg = f"Label or download directory for {app_type} not configured."
-        current_app.logger.error(msg)
-        return jsonify({"success": False, "error": msg}), 500
+        return jsonify({"success": False, "error": f"Configuration rTorrent (label/dir) manquante pour {app_type}."}), 500
+    if is_new_media and (not arr_url or not arr_api_key):
+         return jsonify({"success": False, "error": f"Configuration API {app_type} manquante pour ajouter un nouveau média."}), 500
 
-    success_add = False
-    error_msg_add = "No action taken."
+    # --- Étape 1 (Optionnelle) : Ajouter le média à Sonarr/Radarr si nouveau ---
+    if is_new_media:
+        logger.info(f"RTORRENT_ADD_ACTION: Ajout de '{title_for_add}' (ID externe: {external_id}) à {app_type.capitalize()}...")
+        add_payload = {}
+        api_add_endpoint = ""
 
-    # --- NOUVELLE LOGIQUE POUR DÉTERMINER release_name_for_map ---
-    release_name_for_map = None # Le nom qui sera utilisé pour le dossier/fichier sur la seedbox
+        if app_type == 'sonarr':
+            # Récupérer le languageProfileId (par défaut 1 si non configurable par l'utilisateur)
+            # Vous pourriez avoir une route API pour les lister et les faire choisir.
+            language_profile_id = 1 # TODO: Rendre configurable ou récupérer dynamiquement
+            add_payload = {
+                "tvdbId": external_id,
+                "title": title_for_add,
+                "qualityProfileId": quality_profile_id_chosen,
+                "languageProfileId": language_profile_id,
+                "rootFolderPath": root_folder_path_chosen,
+                "seasonFolder": True,
+                "monitored": True,
+                "addOptions": { "searchForMissingEpisodes": False } # Ou True si vous voulez une recherche immédiate
+            }
+            api_add_endpoint = f"{arr_url.rstrip('/')}/api/v3/series"
+        else: # radarr
+            add_payload = {
+                "tmdbId": external_id,
+                "title": title_for_add,
+                "qualityProfileId": quality_profile_id_chosen,
+                "rootFolderPath": root_folder_path_chosen,
+                "monitored": True,
+                "addOptions": { "searchForMovie": False } # Ou True
+            }
+            api_add_endpoint = f"{arr_url.rstrip('/')}/api/v3/movie"
+
+        logger.debug(f"RTORRENT_ADD_ACTION: Payload d'ajout à {app_type.capitalize()}: {add_payload}")
+        added_media_data, error_add_media = _make_arr_request('POST', api_add_endpoint, arr_api_key, json_data=add_payload)
+
+        if error_add_media or not added_media_data or not isinstance(added_media_data, dict) or not added_media_data.get("id"):
+            err_msg = f"Échec de l'ajout de '{title_for_add}' à {app_type.capitalize()}: {error_add_media or 'Réponse API invalide ou ID manquant.'}"
+            logger.error(f"RTORRENT_ADD_ACTION: {err_msg}. Réponse API: {added_media_data}")
+            # Vérifier si l'erreur est due à un média déjà existant (conflit)
+            if error_add_media and isinstance(error_add_media, str) and ("already been added" in error_add_media.lower() or "exists with a different" in error_add_media.lower()):
+                 # Essayer de récupérer l'ID existant si possible (plus complexe, nécessite une recherche par titre/ID externe)
+                 # Pour l'instant, on retourne l'erreur.
+                 pass # L'utilisateur devra mapper manuellement à l'existant.
+            return jsonify({"success": False, "error": err_msg}), 502
+
+        actual_target_id = added_media_data.get("id")
+        logger.info(f"RTORRENT_ADD_ACTION: Média '{title_for_add}' ajouté à {app_type.capitalize()} avec ID interne: {actual_target_id}")
+    # Si ce n'était pas un nouveau média, actual_target_id a été défini à partir de target_id_existing_str
+
+    if actual_target_id is None: # Sécurité : on doit avoir un ID cible à ce stade
+        logger.error("RTORRENT_ADD_ACTION: ID cible final non déterminé. Impossible de continuer.")
+        return jsonify({"success": False, "error": "Erreur interne: ID cible non déterminé."}), 500
+
+    # --- Étape 2 : Déterminer le nom de la release pour rTorrent et le map ---
+    release_name_for_map = None
     torrent_content_bytes = None
-
     if torrent_file_b64:
         try:
             torrent_content_bytes = base64.b64decode(torrent_file_b64)
-            # Utiliser _decode_bencode_name pour obtenir le nom du contenu principal du torrent
             release_name_for_map = _decode_bencode_name(torrent_content_bytes)
             if not release_name_for_map:
-                current_app.logger.warning(f"Impossible d'extraire info['name'] du fichier torrent '{original_name_from_js}'. Utilisation de original_name_from_js (nettoyé) comme fallback pour release_name.")
-                # Fallback: nettoyer original_name_from_js (nom du fichier .torrent)
+                logger.warning(f"RTORRENT_ADD_ACTION: Impossible d'extraire info['name'] de '{original_name_from_js}'. Fallback sur nom de fichier.")
                 temp_name = re.sub(r'^\[[^\]]*\]\s*', '', original_name_from_js)
                 release_name_for_map = re.sub(r'\.torrent$', '', temp_name, flags=re.IGNORECASE).strip()
-            else:
-                current_app.logger.info(f"Nom de la release (info['name']) extrait du torrent: '{release_name_for_map}'")
-
-        except base64.binascii.Error as e_b64:
-            current_app.logger.error(f"Error decoding base64 torrent file content: {e_b64}")
-            return jsonify({"success": False, "error": "Invalid base64 torrent file content."}), 400
-        except Exception as e_bdecode:
-            current_app.logger.error(f"Error decoding bencode for torrent '{original_name_from_js}': {e_bdecode}")
-            # Fallback si _decode_bencode_name échoue
+        except Exception as e_decode:
+            logger.error(f"RTORRENT_ADD_ACTION: Erreur décodage torrent '{original_name_from_js}' pour release_name: {e_decode}. Fallback.")
             temp_name = re.sub(r'^\[[^\]]*\]\s*', '', original_name_from_js)
             release_name_for_map = re.sub(r'\.torrent$', '', temp_name, flags=re.IGNORECASE).strip()
-
     elif magnet_link:
-        # Pour les magnets, on n'a pas le contenu bencode directement.
-        # On peut essayer de parser le paramètre 'dn' (Display Name) du magnet.
         parsed_magnet = urllib.parse.parse_qs(urllib.parse.urlparse(magnet_link).query)
         display_names = parsed_magnet.get('dn')
         if display_names and display_names[0]:
             release_name_for_map = display_names[0].strip()
-            current_app.logger.info(f"Nom de la release (dn) extrait du magnet: '{release_name_for_map}'")
         else:
-            # Si pas de 'dn', on utilise original_name_from_js (qui pourrait être le magnet lui-même ou un nom fourni)
-            # et on le nettoie un peu, mais c'est moins fiable.
-            release_name_for_map = original_name_from_js.strip() # Un nettoyage plus poussé pourrait être nécessaire
-            current_app.logger.warning(f"Paramètre 'dn' non trouvé dans le magnet. Utilisation de '{release_name_for_map}' comme release_name.")
+            release_name_for_map = original_name_from_js.strip() # Peut nécessiter un nettoyage plus poussé
+            logger.warning(f"RTORRENT_ADD_ACTION: 'dn' non trouvé dans magnet. Utilisation de '{release_name_for_map}' (depuis original_name_from_js).")
 
-    if not release_name_for_map: # Fallback ultime si tout a échoué
-         current_app.logger.error("Impossible de déterminer un nom de release pour le mapping. Abandon.")
-         return jsonify({"success": False, "error": "Impossible de déterminer le nom de la release pour le mapping."}), 500
-    # --- FIN NOUVELLE LOGIQUE ---
+    if not release_name_for_map:
+         return jsonify({"success": False, "error": "Impossible de déterminer le nom de la release pour rTorrent/mapping."}), 500
+    logger.info(f"RTORRENT_ADD_ACTION: Nom de release déterminé pour rTorrent/map: '{release_name_for_map}'")
 
-
-    current_app.logger.info(f"Préparation ajout XML-RPC. App: {app_type}, TargetID: {target_id_int}, ReleaseName: '{release_name_for_map}', Label: '{rtorrent_label}', Dir: '{rtorrent_download_dir}'")
+    # --- Étape 3 : Ajouter le torrent à rTorrent ---
+    success_add_rtorrent, error_msg_rtorrent = False, "Action rTorrent non initialisée."
     if magnet_link:
-        current_app.logger.info(f"Ajout magnet à rTorrent: Label='{rtorrent_label}', Dir='{rtorrent_download_dir}'")
-        success_add, error_msg_add = rtorrent_add_magnet_httprpc(magnet_link, rtorrent_label, rtorrent_download_dir)
-    elif torrent_content_bytes: # Utiliser les bytes déjà décodés
-        current_app.logger.info(f"Ajout fichier torrent '{original_name_from_js}' à rTorrent: Label='{rtorrent_label}', Dir='{rtorrent_download_dir}'")
-        success_add, error_msg_add = rtorrent_add_torrent_file_httprpc(torrent_content_bytes, original_name_from_js, rtorrent_label, rtorrent_download_dir)
+        success_add_rtorrent, error_msg_rtorrent = rtorrent_add_magnet_httprpc(magnet_link, rtorrent_label, rtorrent_download_dir)
+    elif torrent_content_bytes:
+        success_add_rtorrent, error_msg_rtorrent = rtorrent_add_torrent_file_httprpc(torrent_content_bytes, original_name_from_js, rtorrent_label, rtorrent_download_dir)
 
-    if not success_add:
-        current_app.logger.error(f"Échec ajout torrent à rTorrent: {error_msg_add}")
-        return jsonify({"success": False, "error": f"rTorrent error: {error_msg_add or 'Failed to send to rTorrent.'}"}), 500
+    if not success_add_rtorrent:
+        logger.error(f"RTORRENT_ADD_ACTION: Échec ajout à rTorrent: {error_msg_rtorrent}")
+        # Si on avait ajouté un média à *Arr, on pourrait vouloir le supprimer, mais c'est complexe.
+        # Pour l'instant, on retourne l'erreur.
+        return jsonify({"success": False, "error": f"Erreur rTorrent: {error_msg_rtorrent}"}), 500
+    logger.info(f"RTORRENT_ADD_ACTION: Torrent '{original_name_from_js}' envoyé à rTorrent.")
 
-    current_app.logger.info(f"Torrent '{original_name_from_js}' envoyé à rTorrent. Attente pour récupération hash.")
-
-    delay_seconds = current_app.config.get('RTORRENT_POST_ADD_DELAY_SECONDS', 3) # Assurez-vous que cette config existe ou mettez une valeur par défaut
-    current_app.logger.debug(f"Attente {delay_seconds}s...")
-    time.sleep(delay_seconds)
-
-    # Le nom pour chercher le hash dans rTorrent est souvent basé sur `original_name_from_js` (nom du .torrent) ou `release_name_for_map` (nom du contenu)
-    # rtorrent_get_hash_by_name devrait essayer les deux ou être cohérent avec ce que rTorrent utilise.
-    # On va essayer avec `release_name_for_map` d'abord, car c'est ce que rTorrent utilise souvent comme nom de tâche.
-    name_for_hash_lookup = release_name_for_map
-    current_app.logger.info(f"Tentative de récupération du hash pour '{name_for_hash_lookup}' (basé sur le nom de la release).")
-    actual_hash = rtorrent_get_hash_by_name(name_for_hash_lookup)
+    # --- Étape 4 : Récupérer le Hash et Sauvegarder l'Association ---
+    time.sleep(current_app.config.get('RTORRENT_POST_ADD_DELAY_SECONDS', 3))
+    actual_hash = rtorrent_get_hash_by_name(release_name_for_map) # Tenter avec le nom de la release (info['name'] ou dn)
+    if not actual_hash: # Fallback sur le nom original du fichier .torrent (nettoyé)
+        cleaned_original_filename = re.sub(r'\.torrent$', '', original_name_from_js, flags=re.IGNORECASE).strip()
+        if cleaned_original_filename != release_name_for_map: # Éviter de chercher deux fois la même chose
+            logger.info(f"RTORRENT_ADD_ACTION: Hash non trouvé pour '{release_name_for_map}', tentative avec '{cleaned_original_filename}'.")
+            actual_hash = rtorrent_get_hash_by_name(cleaned_original_filename)
 
     if not actual_hash:
-        current_app.logger.warning(f"Hash non trouvé pour '{name_for_hash_lookup}'. Tentative avec nom original du torrent '{original_name_from_js}' (nettoyé).")
-        temp_cleaned_original_name = re.sub(r'\.torrent$', '', original_name_from_js, flags=re.IGNORECASE).strip()
-        actual_hash = rtorrent_get_hash_by_name(temp_cleaned_original_name)
+        msg = f"Torrent '{original_name_from_js}' ajouté à rTorrent, mais son hash n'a pas pu être récupéré immédiatement. La pré-association automatique a échoué. L'item devra être mappé manuellement depuis le staging ou la vue rTorrent."
+        logger.warning(f"RTORRENT_ADD_ACTION: {msg}")
+        return jsonify({"success": True, "message": msg, "warning": "Hash non récupérable pour pré-association."}), 202
 
-    if not actual_hash:
-        warn_msg = f"Torrent '{original_name_from_js}' ajouté, mais pré-association échouée (hash non trouvé pour '{name_for_hash_lookup}' ou '{temp_cleaned_original_name}')."
-        current_app.logger.warning(warn_msg)
-        return jsonify({"success": True, "message": warn_msg, "warning": "Hash non récupérable.", "torrent_hash": None}), 202
+    logger.info(f"RTORRENT_ADD_ACTION: Hash rTorrent '{actual_hash}' trouvé pour '{original_name_from_js}'.")
 
-    current_app.logger.info(f"Hash trouvé '{actual_hash}' pour '{original_name_from_js}'. Sauvegarde association.")
+    # Le chemin sur la seedbox sera le rtorrent_download_dir + le nom de la release que rTorrent utilise (release_name_for_map)
+    seedbox_full_download_path = str(Path(rtorrent_download_dir) / release_name_for_map).replace('\\', '/')
 
-    # Utilisation de torrent_map_manager.add_or_update_torrent_in_map
-    # `release_name_for_map` est le nom de la release attendu dans le staging.
-    # `original_name_from_js` est le nom original du fichier .torrent ou du magnet.
-    # `rtorrent_download_dir` est le chemin de base sur la seedbox, rTorrent ajoutera probablement `release_name_for_map` à cela.
-    # Donc, `seedbox_download_path` est le chemin complet où le contenu sera.
-    seedbox_final_dl_path = str(Path(rtorrent_download_dir) / release_name_for_map).replace('\\', '/')
-
-
-    # APPEL MIS À JOUR ICI:
     if torrent_map_manager.add_or_update_torrent_in_map(
             torrent_hash=actual_hash,
-            release_name=release_name_for_map, # Nom de la release (sans .torrent)
+            release_name=release_name_for_map,
             app_type=app_type,
-            target_id=target_id_int,
+            target_id=actual_target_id, # ID interne Sonarr/Radarr
             label=rtorrent_label,
-            seedbox_download_path=seedbox_final_dl_path, # Chemin complet attendu sur la seedbox
-            original_torrent_name=original_name_from_js, # Nom du .torrent ou magnet
-            initial_status="transferring_to_seedbox" # Ou autre statut pertinent
+            seedbox_download_path=seedbox_full_download_path,
+            original_torrent_name=original_name_from_js,
+            initial_status="transferring_to_seedbox"
         ):
-        current_app.logger.info(f"Association map sauvegardée: Hash='{actual_hash}', Release='{release_name_for_map}'")
-        return jsonify({"success": True, "message": f"Torrent '{release_name_for_map}' (Hash: {actual_hash}) ajouté et pré-associé.", "torrent_hash": actual_hash}), 200
+        final_msg = f"Torrent '{release_name_for_map}' (Hash: {actual_hash}) ajouté à rTorrent. "
+        if is_new_media:
+            final_msg += f"Nouveau média '{title_for_add}' (ID {app_type.capitalize()}: {actual_target_id}) ajouté et pré-associé."
+        else:
+            final_msg += f"Pré-associé au média existant (ID {app_type.capitalize()}: {actual_target_id})."
+        logger.info(f"RTORRENT_ADD_ACTION: {final_msg}")
+        return jsonify({"success": True, "message": final_msg, "torrent_hash": actual_hash}), 200
     else:
-        current_app.logger.error(f"Torrent {actual_hash} ajouté, mais échec sauvegarde association pour Release: '{release_name_for_map}'.")
-        return jsonify({"success": True, "error": "Torrent ajouté, mais échec sauvegarde pré-association.", "torrent_hash": actual_hash, "warning": "Pré-association non sauvegardée."}), 207
+        logger.error(f"RTORRENT_ADD_ACTION: Torrent {actual_hash} ajouté, mais échec sauvegarde de l'association pour '{release_name_for_map}'.")
+        return jsonify({"success": True, "error": "Torrent ajouté, mais échec de la sauvegarde de la pré-association.", "torrent_hash": actual_hash}), 207
 
 @seedbox_ui_bp.route('/rtorrent/list-view')
 def rtorrent_list_view():

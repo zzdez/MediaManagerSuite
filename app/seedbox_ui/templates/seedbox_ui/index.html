@@ -314,159 +314,196 @@
 
 </div> {# Fin du container principal #}
 
-<!-- Add Torrent Modal -->
-    <div class="modal fade" id="addTorrentModal" tabindex="-1" aria-labelledby="addTorrentModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="addTorrentModalLabel">Ajouter un Torrent à rTorrent et Pré-associer</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <form id="addTorrentForm">
-                        <div class="mb-3">
-                            <label for="torrentMagnetLink" class="form-label">Lien Magnet</label>
-                            <input type="text" class="form-control" id="torrentMagnetLink" placeholder="coller le lien magnet ici...">
-                        </div>
-                        <div class="mb-3">
-                            <label for="torrentFileUpload" class="form-label">Ou Fichier .torrent</label>
-                            <input type="file" class="form-control" id="torrentFileUpload" accept=".torrent">
-                        </div>
-                        <hr>
-                        <div class="mb-3">
-                            <label class="form-label">Type de Média (pour pré-association) :</label>
-                            <div>
-                                <input type="radio" class="btn-check" name="addTorrentAppType" id="addTorrentSonarr" value="sonarr" autocomplete="off">
-                                <label class="btn btn-outline-primary btn-sm" for="addTorrentSonarr">Sonarr (Série)</label>
+{# ========================================================================== #}
+{# MODAL POUR AJOUTER UN TORRENT ET PRÉ-ASSOCIER (addTorrentModal)            #}
+{# ========================================================================== #}
+<div class="modal fade" id="addTorrentModal" tabindex="-1" aria-labelledby="addTorrentModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addTorrentModalLabel">Ajouter un Torrent à rTorrent et Pré-associer</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addTorrentForm">
+                    {# Champs Fichier Torrent et Lien Magnet #}
+                    <div class="mb-3">
+                        <label for="torrentFileUpload" class="form-label">Fichier .torrent :</label>
+                        <input class="form-control form-control-sm" type="file" id="torrentFileUpload" accept=".torrent">
+                    </div>
+                    <div class="mb-3">
+                        <label for="torrentMagnetLink" class="form-label">Ou Lien Magnet :</label>
+                        <input type="text" class="form-control form-control-sm" id="torrentMagnetLink" placeholder="magnet:?xt=urn:btih:...">
+                    </div>
+                    <hr>
+                    {# Choix Sonarr/Radarr #}
+                    <div class="mb-3">
+                        <label class="form-label">Type de Média (pour pré-association) :</label>
+                        <div>
+                            <input type="radio" class="btn-check" name="addTorrentAppType" id="addTorrentSonarrRadio" value="sonarr" autocomplete="off">
+                            <label class="btn btn-outline-primary btn-sm" for="addTorrentSonarrRadio">Sonarr (Série)</label>
 
-                                <input type="radio" class="btn-check" name="addTorrentAppType" id="addTorrentRadarr" value="radarr" autocomplete="off">
-                                <label class="btn btn-outline-secondary btn-sm" for="addTorrentRadarr">Radarr (Film)</label>
-                            </div>
+                            <input type="radio" class="btn-check" name="addTorrentAppType" id="addTorrentRadarrRadio" value="radarr" autocomplete="off">
+                            <label class="btn btn-outline-secondary btn-sm" for="addTorrentRadarrRadio">Radarr (Film)</label>
                         </div>
+                    </div>
 
-                        <input type="hidden" id="addTorrentTargetId">
-                        <input type="hidden" id="addTorrentOriginalName">
+                    {# Inputs cachés pour stocker les infos de sélection #}
+                    <input type="hidden" id="addTorrentTargetId">      {# Stocke l'ID Sonarr/Radarr (si existant) OU TVDB/TMDB ID (si nouveau) #}
+                    <input type="hidden" id="addTorrentOriginalName">  {# Nom du fichier torrent ou dn du magnet #}
 
-                        <div id="addTorrentArrSearchSection" class="mt-3" style="display: none;">
-                            <p>Pré-associer avec : <strong id="selectedMediaDisplay">Aucun</strong></p>
-                            <div class="input-group mb-3">
-                                <input type="text" class="form-control" id="addTorrentArrSearchQuery" placeholder="Rechercher...">
-                                <button class="btn btn-outline-info" type="button" id="addTorrentExecuteArrSearchBtn">
-                                    <i class="fas fa-search"></i> Rechercher
-                                </button>
-                            </div>
-                            <div id="addTorrentArrSearchResults" style="max-height: 300px; overflow-y: auto;">
-                                <!-- Search results will be populated here -->
-                            </div>
+                    {# Section de recherche qui s'affiche après avoir choisi Sonarr/Radarr #}
+                    <div id="addTorrentArrSearchSection" class="mt-3" style="display: none;">
+                        <p>Pré-associer avec : <strong id="addTorrentSelectedMediaDisplay">Aucun</strong></p>
+                        <div class="input-group mb-3">
+                            <input type="text" class="form-control" id="addTorrentArrSearchQuery" placeholder="Rechercher...">
+                            <button class="btn btn-outline-info" type="button" id="addTorrentExecuteArrSearchBtn">
+                                <i class="fas fa-search"></i> Rechercher
+                            </button>
                         </div>
-                        <div id="addTorrentFeedback" class="mt-3"></div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
-                    <button type="button" class="btn btn-primary" id="submitAddTorrentBtn">Lancer et Pré-associer</button>
-                </div>
+                        <div id="addTorrentArrSearchResults" style="max-height: 250px; overflow-y: auto;">
+                            {/* Les résultats de recherche (appelant selectArrItemForAddTorrent) */}
+                        </div>
+                    </div>
+
+                    {# Options pour l'ajout de NOUVELLE SÉRIE SONARR (UNIQUEMENT DANS addTorrentModal) #}
+                    <div id="addTorrentSonarrNewSeriesOptions" class="mt-3 pt-3 border-top" style="display: none;">
+                        <h5>Options pour l'ajout de la nouvelle série à Sonarr :</h5>
+                        <div class="mb-2">
+                            <label for="sonarrRootFolderSelectForAdd" class="form-label form-label-sm">Dossier Racine Sonarr :</label>
+                            <select class="form-select form-select-sm" id="sonarrRootFolderSelectForAdd" required>
+                                <option value="" selected disabled>Chargement...</option>
+                            </select>
+                            <div id="sonarrRootFolderErrorForAdd" class="text-danger small mt-1"></div>
+                        </div>
+                        <div class="mb-2">
+                            <label for="sonarrQualityProfileSelectForAdd" class="form-label form-label-sm">Profil de Qualité Sonarr :</label>
+                            <select class="form-select form-select-sm" id="sonarrQualityProfileSelectForAdd" required>
+                                <option value="" selected disabled>Chargement...</option>
+                            </select>
+                            <div id="sonarrQualityProfileErrorForAdd" class="text-danger small mt-1"></div>
+                        </div>
+                        {# TODO: Ajouter Language Profile select pour Sonarr si nécessaire #}
+                    </div>
+
+                    {# Options pour l'ajout de NOUVEAU FILM RADARR (UNIQUEMENT DANS addTorrentModal) #}
+                    <div id="addTorrentRadarrNewMovieOptions" class="mt-3 pt-3 border-top" style="display: none;">
+                        <h5>Options pour l'ajout du nouveau film à Radarr :</h5>
+                        <div class="mb-2">
+                            <label for="radarrRootFolderSelectForAdd" class="form-label form-label-sm">Dossier Racine Radarr :</label>
+                            <select class="form-select form-select-sm" id="radarrRootFolderSelectForAdd" required>
+                                <option value="" selected disabled>Chargement...</option>
+                            </select>
+                            <div id="radarrRootFolderErrorForAdd" class="text-danger small mt-1"></div>
+                        </div>
+                        <div class="mb-2">
+                            <label for="radarrQualityProfileSelectForAdd" class="form-label form-label-sm">Profil de Qualité Radarr :</label>
+                            <select class="form-select form-select-sm" id="radarrQualityProfileSelectForAdd" required>
+                                <option value="" selected disabled>Chargement...</option>
+                            </select>
+                            <div id="radarrQualityProfileErrorForAdd" class="text-danger small mt-1"></div>
+                        </div>
+                         <div class="mb-2">
+                            <label for="radarrMinimumAvailabilitySelectForAdd" class="form-label form-label-sm">Disponibilité Minimale :</label>
+                            <select class="form-select form-select-sm" id="radarrMinimumAvailabilitySelectForAdd" required>
+                                <option value="announced" selected>Announced</option>
+                                <option value="inCinemas">In Cinemas</option>
+                                <option value="released">Released (Physique/Web)</option>
+                                <option value="preDB">PreDB</option> {# Généralement pas recommandé pour l'ajout auto #}
+                            </select>
+                        </div>
+                    </div>
+                    <div id="addTorrentFeedback" class="mt-3"></div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" id="submitAddTorrentBtn">Lancer et Pré-associer</button>
             </div>
         </div>
     </div>
+</div>
 
-    <!-- Modal Sonarr MODIFIÉ -->
-    <div class="modal fade" id="sonarrSearchModal" tabindex="-1" aria-labelledby="sonarrSearchModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="sonarrSearchModalLabel">Rechercher et Mapper avec Sonarr</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <p>Mapping pour : <strong id="sonarrItemToMap"></strong> (<span id="sonarrItemType"></span>)</p>
-                    {# Ces inputs cachés stockent l'item du staging en cours de traitement #}
-                    <input type="hidden" id="sonarrOriginalItemName" value="">
-                    <input type="hidden" id="sonarrOriginalItemType" value="">
 
-                    {# Champ de recherche Sonarr #}
-                    <div class="input-group mb-3">
-                        <input type="text" class="form-control" id="sonarrSearchQuery" placeholder="Nom de la série...">
-                        <button class="btn btn-outline-primary" type="button" onclick="executeSonarrSearch()">
-                            <i class="fas fa-search"></i> Rechercher
-                        </button>
-                    </div>
+{# ========================================================================== #}
+{# MODAL GÉNÉRIQUE POUR RECHERCHE/MAPPING SONARR (utilisé par staging, etc.)  #}
+{# ========================================================================== #}
+<div class="modal fade" id="sonarrSearchModal" tabindex="-1" aria-labelledby="sonarrSearchModalGenericLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="sonarrSearchModalGenericLabel">Mapper à une Série Sonarr</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Item en cours de mapping : <strong id="sonarrItemToMap"></strong> (<span id="sonarrItemType"></span>)</p>
+                <input type="hidden" id="sonarrOriginalItemName" value=""> {# Stocke le path_for_actions de l'item du staging/seedbox #}
+                <input type="hidden" id="sonarrOriginalItemType" value="">
 
-                    {# Div pour afficher les résultats de la recherche Sonarr #}
-                    <div id="sonarrSearchResults" class="mb-3" style="max-height: 300px; overflow-y: auto;">
-                        {/* Les résultats de la recherche seront injectés ici par JavaScript */}
-                    </div>
-
-                    {# --- ÉLÉMENTS AJOUTÉS/MODIFIÉS CI-DESSOUS --- #}
-
-                    {# Input caché pour stocker l'ID de la série Sonarr sélectionnée #}
-                    <input type="hidden" id="sonarrSelectedSeriesId" value="">
-
-                    {# Paragraphe pour afficher le titre de la série sélectionnée #}
-                    <p id="sonarrSelectedSeriesTitle" class="fw-bold mt-2">Aucune série sélectionnée</p>
-
-                    {# Div et input pour la saisie manuelle de la saison (initialement cachée) #}
-                    <div id="sonarrManualSeasonDiv" class="mb-3" style="display: none;">
-                        <label for="sonarrManualSeasonInput" class="form-label">
-                            Forcer la Saison pour le déplacement (optionnel, laisser vide pour auto-détection) :
-                        </label>
-                        <input type="number" class="form-control form-control-sm" id="sonarrManualSeasonInput" placeholder="Ex: 1">
-                        <small class="form-text text-muted">
-                            Utile si la détection automatique de la saison par Sonarr ou le nom de fichier est incorrecte.
-                        </small>
-                    </div>
-                    {# --- FIN DES ÉLÉMENTS AJOUTÉS/MODIFIÉS --- #}
-
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
-                    {# Bouton principal pour l'action de mapping. Son onclick sera géré par JavaScript. #}
-                    {# J'utilise l'ID 'sonarrModalMapButton' pour le cibler facilement en JS #}
-                    <button type="button" class="btn btn-primary" id="sonarrModalMapButton">
-                        <i class="fas fa-link"></i> Mapper à cette Série
+                <div class="input-group mb-3">
+                    <input type="text" class="form-control" id="sonarrSearchQuery" placeholder="Nom de la série...">
+                    <button class="btn btn-outline-primary" type="button" onclick="executeSonarrSearch()"> {# Appelle executeSonarrSearch (générique) #}
+                        <i class="fas fa-search"></i> Rechercher
                     </button>
                 </div>
+                <div id="sonarrSearchResults" class="mb-3" style="max-height: 300px; overflow-y: auto;"></div>
+
+                <input type="hidden" id="sonarrSelectedSeriesId"> {# Stocke l'ID Sonarr (interne ou TVDB) #}
+                <p id="sonarrSelectedSeriesTitle" class="fw-bold mt-2">Aucune série sélectionnée</p>
+
+                <div id="sonarrManualSeasonDiv" class="mb-3" style="display: none;">
+                    <label for="sonarrManualSeasonInput" class="form-label form-label-sm">Forcer la Saison (optionnel) :</label>
+                    <input type="number" class="form-control form-control-sm" id="sonarrManualSeasonInput" placeholder="Ex: 1">
+                </div>
+
+                {# PAS de addTorrentSonarrNewSeriesOptions ici, car ce modal n'ajoute pas de NOUVELLE série à Sonarr. #}
+                {# S'il faut ajouter une série qui n'existe pas, l'utilisateur doit passer par "Ajouter Torrent". #}
+                {# Ou alors, on complexifie ce modal pour qu'il gère aussi l'ajout, mais c'est l'étape d'après. #}
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" id="sonarrModalMapButton">Mapper</button> {# Texte et action gérés par JS #}
             </div>
         </div>
     </div>
-    <!-- Modal Radarr MODIFIÉ -->
-    <div class="modal fade" id="radarrSearchModal" tabindex="-1" aria-labelledby="radarrSearchModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="radarrSearchModalLabel">Rechercher et Mapper avec Radarr</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <p>Mapping pour : <strong id="radarrItemToMap"></strong> (<span id="radarrItemType"></span>)</p>
-                    <input type="hidden" id="radarrOriginalItemName" value="">
-                    <input type="hidden" id="radarrOriginalItemType" value="">
-                     <div class="input-group mb-3">
-                        <input type="text" class="form-control" id="radarrSearchQuery" placeholder="Titre du film...">
-                        <button class="btn btn-outline-primary" type="button" onclick="executeRadarrSearch()">
-                            <i class="fas fa-search"></i> Rechercher
-                        </button>
-                    </div>
-                    <div id="radarrSearchResults" class="mb-3" style="max-height: 300px; overflow-y: auto;">
-                        {/* Les résultats de la recherche seront injectés ici par JavaScript */}
-                    </div>
+</div>
 
-                    {# --- ÉLÉMENTS AJOUTÉS CI-DESSOUS --- #}
-                    <input type="hidden" id="radarrSelectedMovieId" value="">
-                    <p id="radarrSelectedMovieTitle" class="fw-bold mt-2">Aucun film sélectionné</p>
-                    {# --- FIN DES ÉLÉMENTS AJOUTÉS --- #}
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button> {# Changé "Fermer" en "Annuler" pour plus de cohérence #}
-                    {# --- BOUTON DE MAPPING AJOUTÉ --- #}
-                    <button type="button" class="btn btn-primary" id="radarrModalMapButton">
-                        <i class="fas fa-link"></i> Mapper à ce Film
+
+{# ========================================================================== #}
+{# MODAL GÉNÉRIQUE POUR RECHERCHE/MAPPING RADARR (utilisé par staging, etc.)  #}
+{# ========================================================================== #}
+<div class="modal fade" id="radarrSearchModal" tabindex="-1" aria-labelledby="radarrSearchModalGenericLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="radarrSearchModalGenericLabel">Mapper à un Film Radarr</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Item en cours de mapping : <strong id="radarrItemToMap"></strong> (<span id="radarrItemType"></span>)</p>
+                <input type="hidden" id="radarrOriginalItemName" value="">
+                <input type="hidden" id="radarrOriginalItemType" value="">
+
+                <div class="input-group mb-3">
+                    <input type="text" class="form-control" id="radarrSearchQuery" placeholder="Titre du film...">
+                    <button class="btn btn-outline-primary" type="button" onclick="executeRadarrSearch()"> {# Appelle executeRadarrSearch (générique) #}
+                        <i class="fas fa-search"></i> Rechercher
                     </button>
                 </div>
+                <div id="radarrSearchResults" class="mb-3" style="max-height: 300px; overflow-y: auto;"></div>
+
+                <input type="hidden" id="radarrSelectedMovieId"> {# Stocke l'ID Radarr (interne ou TMDB) #}
+                <p id="radarrSelectedMovieTitle" class="fw-bold mt-2">Aucun film sélectionné</p>
+
+                {# PAS de addTorrentRadarrNewMovieOptions ici #}
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" id="radarrModalMapButton">Mapper</button> {# Texte et action gérés par JS #}
             </div>
         </div>
     </div>
-    <!-- Fin des Modales -->
+</div>
 
     <!-- Bootstrap Bundle JS (Popper.js included) -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
@@ -492,10 +529,24 @@
             return cleanedName || baseNameForSearch.split('.')[0];
         }
 
-        function openSonarrSearchModal(itemPathForAction, itemType) { // itemPathForAction est le node.path_for_actions
+        function openSonarrSearchModal(itemPathForAction, itemType) { // itemPathForAction est node.path_for_actions
             const itemNameForDisplay = itemPathForAction.split(/[\\/]/).pop();
+
+            // --- NOUVEAU : Récupérer l'élément du modal et définir le contexte ---
+            const sonarrModalElement = document.getElementById('sonarrSearchModal');
+            if (!sonarrModalElement) {
+                console.error("Modal Sonarr (ID: sonarrSearchModal) non trouvé lors de l'ouverture pour mapping individuel!");
+                return;
+            }
+            sonarrModalElement.setAttribute('data-current-action', 'mapIndividualStaging'); // Contexte pour le mapping individuel depuis le staging
+            sonarrModalElement.removeAttribute('data-is-new-series'); // Nettoyer les anciens états
+            sonarrModalElement.removeAttribute('data-selected-media-id');
+            sonarrModalElement.removeAttribute('data-selected-media-title');
+            sonarrModalElement.removeAttribute('data-problem-torrent-hash'); // Nettoyer aussi s'il était là
+            // --- FIN NOUVEAU ---
+
             document.getElementById('sonarrItemToMap').textContent = itemNameForDisplay;
-            document.getElementById('sonarrOriginalItemName').value = itemPathForAction; // Input caché pour item_name
+            document.getElementById('sonarrOriginalItemName').value = itemPathForAction;
             document.getElementById('sonarrOriginalItemType').value = itemType;
             document.getElementById('sonarrItemType').textContent = itemType === 'directory' ? 'Dossier (Staging)' : 'Fichier (Staging)';
 
@@ -503,38 +554,54 @@
             if (searchQueryInput) searchQueryInput.value = getCleanedSearchTerm(itemPathForAction);
 
             const searchResultsDiv = document.getElementById('sonarrSearchResults');
-            if (searchResultsDiv) searchResultsDiv.innerHTML = ''; // Vider les résultats
+            if (searchResultsDiv) searchResultsDiv.innerHTML = '';
 
-            document.getElementById('sonarrSelectedSeriesId').value = ''; // Vider l'ID sélectionné
+            document.getElementById('sonarrSelectedSeriesId').value = '';
             document.getElementById('sonarrSelectedSeriesTitle').innerText = 'Aucune série sélectionnée';
-            document.getElementById('sonarrManualSeasonDiv').style.display = 'block'; // Afficher pour l'individuel
+
+            // La visibilité de sonarrManualSeasonDiv sera gérée par handleGenericSonarrSeriesSelection
+            // en fonction de data-current-action et si la série est nouvelle/existante.
+            // On peut s'assurer qu'il est caché initialement si on veut, ou laisser handleGeneric... le gérer.
+            const manualSeasonDiv = document.getElementById('sonarrManualSeasonDiv');
+            if(manualSeasonDiv) manualSeasonDiv.style.display = 'none'; // Cacher par défaut, handleGeneric... le montrera si besoin
             document.getElementById('sonarrManualSeasonInput').value = '';
 
-            currentlySelectedSonarrSeriesIdInModal = null; // Réinitialiser l'ID
+            currentlySelectedSonarrSeriesIdInModal = null;
 
             const modalMapButton = document.getElementById('sonarrModalMapButton');
             if (modalMapButton) {
-                modalMapButton.innerHTML = '<i class="fas fa-link"></i> Mapper à cette Série';
-                modalMapButton.disabled = true; // Désactiver jusqu'à sélection
+                modalMapButton.innerHTML = '<i class="fas fa-link"></i> Mapper à cette Série'; // Texte par défaut pour mapping individuel
+                modalMapButton.disabled = true;
+                modalMapButton.classList.remove('btn-info'); // S'assurer qu'il a le style par défaut
+                modalMapButton.classList.add('btn-primary');
+
                 modalMapButton.onclick = function() {
-                    const seriesId = document.getElementById('sonarrSelectedSeriesId').value;
-                    const seriesTitle = document.getElementById('sonarrSelectedSeriesTitle').innerText.replace('Série sélectionnée : ', ''); // Pour l'affichage
+                    const seriesId = document.getElementById('sonarrSelectedSeriesId').value; // Ou currentlySelectedSonarrSeriesIdInModal
+                    const seriesTitle = document.getElementById('sonarrSelectedSeriesTitle').innerText.replace('Série sélectionnée : ', '');
                     const userForcedSeason = document.getElementById('sonarrManualSeasonInput').value;
 
-                    if (seriesId) {
-                        // On appelle votre fonction existante triggerSonarrManualImport (qui doit être adaptée)
-                        // ou on déclenche directement le fetch ici.
-                        // Pour l'instant, supposons que triggerSonarrManualImport existe et gère le fetch.
-                        // Il faudra lui passer userForcedSeason.
-                        triggerSonarrManualImportWithSeason(seriesId, seriesTitle, userForcedSeason);
+                    // Lire les attributs data- du modal pour savoir si c'est un ajout
+                    const isNewSeries = sonarrModalElement.getAttribute('data-is-new-series') === 'true';
+                    const mediaIdForPayload = sonarrModalElement.getAttribute('data-selected-media-id'); // tvdbId si nouveau, seriesId si existant
+                    const mediaTitleForAdd = sonarrModalElement.getAttribute('data-selected-media-title'); // Titre pour l'ajout
+
+                    if (mediaIdForPayload) { // mediaIdForPayload contient l'ID pertinent (Sonarr ou TVDB)
+                        triggerSonarrManualImportWithSeason(
+                            mediaIdForPayload, // Passer l'ID stocké (Sonarr ID ou TVDB ID)
+                            seriesTitle,       // Titre pour affichage (non utilisé par backend si existant)
+                            userForcedSeason,
+                            isNewSeries,       // Nouveau paramètre booléen
+                            mediaTitleForAdd   // Nouveau paramètre (titre si ajout)
+                            // problem_torrent_hash n'est pas pertinent pour ce flux (mapping depuis staging)
+                        );
                     } else {
                         alert("Veuillez sélectionner une série.");
                     }
                 };
             }
 
-            var sonarrModal = new bootstrap.Modal(document.getElementById('sonarrSearchModal'));
-            sonarrModal.show();
+            var modal = new bootstrap.Modal(sonarrModalElement);
+            modal.show();
         }
 
 function openRadarrSearchModal(itemPathForAction, itemType) { // itemPathForAction est node.path_for_actions
@@ -803,100 +870,276 @@ function openSonarrSearchModalForProblemItem(releaseName, currentTargetId, torre
         // NOUVELLE FONCTION HELPER POUR LA SÉLECTION D'UNE SÉRIE DANS LE MODAL SONARR
         // (appelée par executeSonarrSearch)
         // ==================================================================================
-        function handleSonarrSeriesSelectionInModal(seriesId, seriesTitle) { // seriesTitle est déjà échappé si elle vient de escapedSeriesTitle
-            // Mettre à jour les champs cachés et visibles du modal
+        // MODIFIÉE pour accepter et utiliser 'isAdded'
+        function handleSonarrSeriesSelectionInModal(mediaId, seriesTitle, isAdded) {
+            console.log(`handleSonarrSeriesSelectionInModal: mediaId=${mediaId}, title=${seriesTitle}, isAdded=${isAdded}`);
+
             const selectedSeriesIdInput = document.getElementById('sonarrSelectedSeriesId');
             const selectedSeriesTitleDisplay = document.getElementById('sonarrSelectedSeriesTitle');
+            const modalMapButton = document.getElementById('sonarrModalMapButton');
+            const resultsDiv = document.getElementById('sonarrSearchResults');
+            const sonarrModalElement = document.getElementById('sonarrSearchModal');
 
-            if (selectedSeriesIdInput) selectedSeriesIdInput.value = seriesId;
+            // NOUVEAU : Références aux nouveaux éléments HTML pour l'ajout de série
+            const newSeriesOptionsDiv = document.getElementById('sonarrNewSeriesOptions');
+            const rootFolderSelect = document.getElementById('sonarrRootFolderSelect');
+            const qualityProfileSelect = document.getElementById('sonarrQualityProfileSelect');
+            const rootFolderErrorDiv = document.getElementById('sonarrRootFolderError');
+            const qualityProfileErrorDiv = document.getElementById('sonarrQualityProfileError');
+
+            if (selectedSeriesIdInput) selectedSeriesIdInput.value = mediaId;
             if (selectedSeriesTitleDisplay) selectedSeriesTitleDisplay.innerText = `Série sélectionnée : ${seriesTitle}`;
 
-            // La variable globale pour stocker l'ID actuellement sélectionné dans le modal
-            currentlySelectedSonarrSeriesIdInModal = seriesId;
+            currentlySelectedSonarrSeriesIdInModal = mediaId;
 
-            // Activer le bouton de mapping principal du modal
-            const modalMapButton = document.getElementById('sonarrModalMapButton');
+            if (sonarrModalElement) {
+                sonarrModalElement.setAttribute('data-is-new-series', isAdded ? 'false' : 'true');
+                sonarrModalElement.setAttribute('data-selected-media-id', mediaId);
+                sonarrModalElement.setAttribute('data-selected-media-title', seriesTitle); // Stocker le titre non échappé si possible
+            }
+
             if (modalMapButton) {
-                modalMapButton.disabled = !seriesId; // Activer si seriesId a une valeur (non nulle, non vide)
+                modalMapButton.disabled = !mediaId;
+                if (!isAdded) {
+                    modalMapButton.innerHTML = '<i class="fas fa-plus-circle"></i> Ajouter & Mapper Sélection';
+                    modalMapButton.classList.remove('btn-primary');
+                    modalMapButton.classList.add('btn-info');
+                } else {
+                    modalMapButton.classList.remove('btn-info');
+                    modalMapButton.classList.add('btn-primary');
+                    // Le texte du bouton pour "Mapper existant" est déjà géré par la fonction qui ouvre le modal
+                }
             }
 
-            // Afficher un message de confirmation dans la zone des résultats
-            const resultsDiv = document.getElementById('sonarrSearchResults');
             if(resultsDiv) {
-                resultsDiv.innerHTML = `<p class="alert alert-info mt-2">Série sélectionnée : <strong>${seriesTitle}</strong> (ID: ${seriesId}).<br>Cliquez sur le bouton "Mapper..." en bas du modal pour confirmer.</p>`;
+                resultsDiv.innerHTML = `<p class="alert alert-info mt-2">Série sélectionnée : <strong>${seriesTitle}</strong> (ID: ${mediaId}).<br>
+                    ${isAdded ? 'Cette série est déjà gérée par Sonarr. Prêt à mapper.' : 'Cette série sera ajoutée à Sonarr puis mappée.'}<br>
+                    ${!isAdded ? 'Veuillez choisir un dossier racine et un profil de qualité ci-dessous.<br>' : ''}
+                    Cliquez sur le bouton d'action en bas du modal.</p>`;
             }
 
-            // Afficher la div pour la saison manuelle si on est en mode mapping individuel.
-            // Pour le batch, openBatchSonarrMapModal la cache.
-            // Il faudrait un moyen de savoir si on est en mode batch ou individuel ici,
-            // ou que openSonarrSearchModal (pour l'individuel) s'assure qu'elle est visible.
+            // Gérer l'affichage de la div pour la saison manuelle
             const manualSeasonDiv = document.getElementById('sonarrManualSeasonDiv');
-            // On peut vérifier quel onclick est actuellement attaché au bouton principal du modal pour déterminer le mode.
-            const sonarrModalMapBtn = document.getElementById('sonarrModalMapButton');
-            if (sonarrModalMapBtn && sonarrModalMapBtn.onclick && sonarrModalMapBtn.onclick.toString().includes('triggerSonarrManualImportWithSeason')) {
-                // On est probablement en mode mapping individuel
-                if (manualSeasonDiv) manualSeasonDiv.style.display = 'block';
+            if (manualSeasonDiv) {
+                const currentAction = sonarrModalElement ? sonarrModalElement.getAttribute('data-current-action') : null;
+                if (isAdded && (currentAction === 'mapIndividualStaging' || currentAction === 'mapProblemItem')) {
+                    manualSeasonDiv.style.display = 'block';
+                } else {
+                    manualSeasonDiv.style.display = 'none';
+                }
+            }
+
+            // --- NOUVEAU : Gérer l'affichage des options pour nouvelle série ---
+            if (newSeriesOptionsDiv && rootFolderSelect && qualityProfileSelect) {
+                if (!isAdded) { // Si c'est une NOUVELLE série à ajouter
+                    newSeriesOptionsDiv.style.display = 'block';
+                    // Désactiver le bouton de mapping tant que les options ne sont pas chargées/choisies
+                    if(modalMapButton) modalMapButton.disabled = true;
+
+                    // Vider les options précédentes et afficher "Chargement..."
+                    rootFolderSelect.innerHTML = '<option value="">Chargement des dossiers racine...</option>';
+                    qualityProfileSelect.innerHTML = '<option value="">Chargement des profils de qualité...</option>';
+                    rootFolderSelect.disabled = true;
+                    qualityProfileSelect.disabled = true;
+                    if(rootFolderErrorDiv) rootFolderErrorDiv.textContent = '';
+                    if(qualityProfileErrorDiv) qualityProfileErrorDiv.textContent = '';
+
+                    // Appeler les fonctions pour peupler les selects (nous les créerons ensuite)
+                    populateSonarrRootFolders(rootFolderSelect, rootFolderErrorDiv, modalMapButton);
+                    populateSonarrQualityProfiles(qualityProfileSelect, qualityProfileErrorDiv, modalMapButton);
+                } else { // Si la série est déjà ajoutée, cacher ces options
+                    newSeriesOptionsDiv.style.display = 'none';
+                    if(modalMapButton) modalMapButton.disabled = !mediaId; // Réactiver si un mediaId est là
+                }
             } else {
-                // Mode batch ou autre, on ne touche pas ou on s'assure qu'elle est cachée si c'est la règle pour le batch
-                // if (manualSeasonDiv) manualSeasonDiv.style.display = 'none'; // Déjà fait par openBatchSonarrMapModal
+                console.warn("Éléments HTML pour les options de nouvelle série (sonarrNewSeriesOptions, etc.) non trouvés.");
+            }
+            // --- FIN NOUVEAU ---
+        }
+
+        // --- NOUVELLES FONCTIONS POUR PEUPLER LES SELECTS (à placer avec vos autres fonctions JS) ---
+        async function populateSonarrRootFolders(selectElement, errorElement, mapButtonToEnable) {
+            try {
+                const response = await fetch("{{ url_for('seedbox_ui.get_sonarr_rootfolders_api') }}"); // NOUVELLE ROUTE BACKEND
+                if (!response.ok) throw new Error(`Erreur HTTP ${response.status} lors de la récupération des dossiers racine.`);
+                const rootFolders = await response.json();
+
+                selectElement.innerHTML = '<option value="">-- Choisir un dossier racine --</option>'; // Option par défaut
+                if (rootFolders && rootFolders.length > 0) {
+                    rootFolders.forEach(folder => {
+                        // L'API Sonarr /rootfolder retourne des objets avec 'path' et 'id' (l'id n'est pas utilisé pour l'ajout, c'est le path)
+                        // Mais pour l'ajout de série, Sonarr attend le 'rootFolderPath' (le chemin)
+                        selectElement.add(new Option(folder.path, folder.path)); // Valeur = chemin
+                    });
+                    selectElement.disabled = false;
+                } else {
+                    selectElement.innerHTML = '<option value="">Aucun dossier racine configuré dans Sonarr</option>';
+                    if(errorElement) errorElement.textContent = "Aucun dossier racine Sonarr trouvé.";
+                }
+            } catch (error) {
+                console.error("Erreur populateSonarrRootFolders:", error);
+                selectElement.innerHTML = '<option value="">Erreur chargement</option>';
+                if(errorElement) errorElement.textContent = `Erreur: ${error.message}`;
+            }
+            // Activer le bouton de mapping principal si les deux selects sont prêts (ou si l'un n'est pas nécessaire)
+            checkAndEnableMapButton(mapButtonToEnable);
+        }
+
+        async function populateSonarrQualityProfiles(selectElement, errorElement, mapButtonToEnable) {
+            try {
+                const response = await fetch("{{ url_for('seedbox_ui.get_sonarr_qualityprofiles_api') }}"); // NOUVELLE ROUTE BACKEND
+                if (!response.ok) throw new Error(`Erreur HTTP ${response.status} lors de la récupération des profils de qualité.`);
+                const qualityProfiles = await response.json();
+
+                selectElement.innerHTML = '<option value="">-- Choisir un profil de qualité --</option>';
+                if (qualityProfiles && qualityProfiles.length > 0) {
+                    qualityProfiles.forEach(profile => {
+                        selectElement.add(new Option(profile.name, profile.id)); // Valeur = ID du profil
+                    });
+                    selectElement.disabled = false;
+                } else {
+                    selectElement.innerHTML = '<option value="">Aucun profil de qualité trouvé dans Sonarr</option>';
+                    if(errorElement) errorElement.textContent = "Aucun profil de qualité Sonarr trouvé.";
+                }
+            } catch (error) {
+                console.error("Erreur populateSonarrQualityProfiles:", error);
+                selectElement.innerHTML = '<option value="">Erreur chargement</option>';
+                if(errorElement) errorElement.textContent = `Erreur: ${error.message}`;
+            }
+            checkAndEnableMapButton(mapButtonToEnable);
+        }
+
+        function checkAndEnableMapButton(mapButton) {
+            // Activer le bouton de mapping principal si une série est sélectionnée ET
+            // (si c'est une nouvelle série) si un root folder et un quality profile sont sélectionnés.
+            if (!mapButton) return;
+
+            const sonarrModalElement = document.getElementById('sonarrSearchModal');
+            const isNew = sonarrModalElement ? sonarrModalElement.getAttribute('data-is-new-series') === 'true' : false;
+            const mediaIdSelected = document.getElementById('sonarrSelectedSeriesId').value;
+
+            if (!mediaIdSelected) {
+                mapButton.disabled = true;
+                return;
+            }
+
+            if (isNew) {
+                const rootFolderSelected = document.getElementById('sonarrRootFolderSelect').value;
+                const qualityProfileSelected = document.getElementById('sonarrQualityProfileSelect').value;
+                mapButton.disabled = !(rootFolderSelected && qualityProfileSelected);
+            } else {
+                mapButton.disabled = false; // Pour une série existante, l'ID suffit
             }
         }
+        // --- FIN NOUVELLES FONCTIONS ---
         // ==================================================================================
         // FIN DE LA NOUVELLE FONCTION HELPER
         // ==================================================================================
         // ==================================================================================
         // FIN DES NOUVELLES FONCTIONS JS
         // ==================================================================================
-async function executeSonarrSearch() {
-         const query = document.getElementById('sonarrSearchQuery').value;
-         const resultsDiv = document.getElementById('sonarrSearchResults');
+        async function executeSonarrSearch() {
+            const query = document.getElementById('sonarrSearchQuery').value;
+            const resultsDiv = document.getElementById('sonarrSearchResults');
 
-         if (!query.trim()) {
-             if(resultsDiv) resultsDiv.innerHTML = '<p class="text-warning">Terme de recherche manquant.</p>';
-             return;
-         }
-         if(resultsDiv) resultsDiv.innerHTML = `<div class="d-flex align-items-center"><strong role="status">Recherche Sonarr...</strong><div class="spinner-border ms-auto"></div></div>`;
+            if (!query.trim()) {
+                if(resultsDiv) resultsDiv.innerHTML = '<p class="text-warning">Terme de recherche manquant.</p>';
+                return;
+            }
+            if(resultsDiv) resultsDiv.innerHTML = `<div class="d-flex align-items-center"><strong role="status">Recherche Sonarr...</strong><div class="spinner-border ms-auto"></div></div>`;
 
-         try {
-             const response = await fetch(`{{ url_for('seedbox_ui.search_sonarr_api') }}?query=${encodeURIComponent(query)}`);
-             if (!response.ok) {
-                 let eD; try{eD=await response.json()}catch(e){eD={error:"Erreur serveur."}}
-                 throw new Error(eD.error||`HTTP ${response.status}`);
-             }
-             const results = await response.json();
+            try {
+                const response = await fetch(`{{ url_for('seedbox_ui.search_sonarr_api') }}?query=${encodeURIComponent(query)}`);
+                if (!response.ok) {
+                    let eD; try{eD=await response.json()}catch(e){eD={error:"Erreur serveur."}}
+                    throw new Error(eD.error||`HTTP ${response.status}`);
+                }
+                const results = await response.json();
 
-             if (!resultsDiv) { // Vérification ajoutée
-                 console.error("Div 'sonarrSearchResults' non trouvée.");
-                 return;
-             }
+                if (!resultsDiv) {
+                    console.error("Div 'sonarrSearchResults' non trouvée.");
+                    return;
+                }
 
-             if (results.length === 0) {
-                 resultsDiv.innerHTML = '<p class="text-muted">Aucune série trouvée.</p>';
-                 return;
-             }
-             let html = '<ul class="list-group mt-3">';
-             results.forEach(series => {
-                 let posterUrl = series.remotePoster || (series.images && series.images.length > 0 ? series.images.find(img => img.coverType === 'poster')?.remoteUrl : 'https://via.placeholder.com/60x90?text=N/A');
-                 if (!posterUrl) { posterUrl = 'https://via.placeholder.com/60x90?text=N/A';} // Fallback
-                 const escapedSeriesTitle = escapeJsString(series.title);
+                if (results.length > 0) {
+                    console.log("Premier résultat brut de l'API Sonarr (/lookup) pour \"" + results[0].title + "\":", JSON.stringify(results[0], null, 2));
+                } else {
+                    console.log("Aucun résultat retourné par l'API Sonarr (/lookup).");
+                }
 
-                 // ---- MODIFICATION DE L'ACTION ONCLICK ----
-                 let onclickAction = `handleGenericSonarrSeriesSelection(${series.id || 0}, '${escapedSeriesTitle}')`;
+                if (results.length === 0) {
+                    resultsDiv.innerHTML = '<p class="text-muted">Aucune série trouvée.</p>';
+                    return;
+                }
+                let html = '<ul class="list-group mt-3">';
+                results.forEach(series => {
+                    // alert(`Processing series in forEach: ${series.title} - TVDB ID: ${series.tvdbId} - Sonarr ID: ${series.id}`); // Commentez ou supprimez après débogage
 
-                 html += `
-                     <li class="list-group-item"><div class="row align-items-center">
-                         <div class="col-auto"><img src="${posterUrl}" alt="${escapedSeriesTitle}" class="img-fluid rounded" style="max-height: 90px;" onerror="this.onerror=null; this.src='https://via.placeholder.com/60x90?text=ImgErr';"></div>
-                         <div class="col"><strong>${series.title}</strong> (${series.year||'N/A'})<br><small class="text-muted">Statut: ${series.status||'N/A'} | TVDB ID: ${series.tvdbId||'N/A'}</small><p class="mb-0 small">${(series.overview||'').substring(0,120)}${(series.overview||'').length>120?'...':''}</p></div>
-                         <div class="col-auto"><button class="btn btn-success btn-sm" onclick="${onclickAction}" ${series.id?'':'disabled title="Série non gérée."'}><i class="fas fa-check-circle"></i> Sélectionner</button></div>
-                     </div></li>`;
-             });
-             html += '</ul>';
-             resultsDiv.innerHTML = html;
-         } catch (error) {
-             if(resultsDiv) resultsDiv.innerHTML = `<p class="text-danger">Erreur recherche Sonarr: ${error.message}</p>`;
-             console.error("Erreur executeSonarrSearch:", error);
-         }
-     }
+                    let posterUrl = series.remotePoster || (series.images && series.images.length > 0 ? series.images.find(img => img.coverType === 'poster')?.remoteUrl : 'https://via.placeholder.com/60x90?text=N/A');
+                    if (!posterUrl) { posterUrl = 'https://via.placeholder.com/60x90?text=N/A';}
+                    const escapedSeriesTitle = escapeJsString(series.title); // Assurez-vous que escapeJsString est bien définie
+
+                    const sonarrIdAsInt = parseInt(series.id); // Convertir en entier pour une comparaison fiable
+                    const isAlreadyInSonarr = !isNaN(sonarrIdAsInt) && sonarrIdAsInt > 0;
+                    const idForHandler = isAlreadyInSonarr ? sonarrIdAsInt : (parseInt(series.tvdbId) || 0); // Assurer que tvdbId est aussi un nombre ou 0
+
+                    console.log(
+                        `Traitement série: "${series.title}"\n` +
+                        `  - series.id (raw): ${series.id}, series.tvdbId (raw): ${series.tvdbId}\n` +
+                        `  - isAlreadyInSonarr (calculé): ${isAlreadyInSonarr}\n` +
+                        `  - idForHandler (utilisé pour le bouton): ${idForHandler}`
+                    );
+
+                    let buttonText = "";
+                    let buttonIcon = "";
+                    let buttonClass = "btn-success";
+                    let buttonTitle = "";
+                    let disabledReason = "ID externe/interne manquant ou invalide";
+
+                    if (isAlreadyInSonarr) {
+                        buttonText = "Sélectionner";
+                        buttonIcon = "fas fa-check-circle";
+                        buttonTitle = `Mapper à la série existante : ${series.title}`;
+                    } else {
+                        buttonText = "Ajouter & Sélectionner";
+                        buttonIcon = "fas fa-plus-circle";
+                        buttonClass = "btn-info";
+                        buttonTitle = `Ajouter la série '${series.title}' à Sonarr et la sélectionner`;
+                        if (!idForHandler) { // Si tvdbId est manquant pour une nouvelle série
+                            disabledReason = "TVDB ID manquant pour ajouter cette nouvelle série";
+                        }
+                    }
+
+                    // MODIFIÉ : Conversion explicite de isAlreadyInSonarr en chaîne pour l'attribut onclick
+                    const isAddedStringForOnclick = isAlreadyInSonarr ? 'true' : 'false';
+                    let onclickAction = `handleGenericSonarrSeriesSelection(${idForHandler || 0}, '${escapedSeriesTitle}', ${isAddedStringForOnclick})`;
+
+                    html += `
+                        <li class="list-group-item"><div class="row align-items-center">
+                            <div class="col-auto"><img src="${posterUrl}" alt="${escapedSeriesTitle}" class="img-fluid rounded" style="max-height: 90px;" onerror="this.onerror=null; this.src='https://via.placeholder.com/60x90?text=ImgErr';"></div>
+                            <div class="col">
+                                <strong>${series.title}</strong> (${series.year||'N/A'})<br>
+                                <small class="text-muted">
+                                    Statut: <span class="fw-bold ${isAlreadyInSonarr ? 'text-success' : 'text-primary'}">${isAlreadyInSonarr ? (series.status || 'Gérée') : 'Non Ajoutée'}</span>
+                                    | TVDB ID: ${series.tvdbId||'N/A'}
+                                    ${isAlreadyInSonarr && series.id ? `| Sonarr ID: ${series.id}` : ''}
+                                </small>
+                                <p class="mb-0 small">${(series.overview||'').substring(0,120)}${(series.overview||'').length>120?'...':''}</p>
+                            </div>
+                            <div class="col-auto">
+                                <button type="button" class="btn ${buttonClass} btn-sm" onclick="${onclickAction}" title="${buttonTitle}" ${idForHandler ? '' : `disabled title="${disabledReason}"`}>
+                                    <i class="${buttonIcon}"></i> ${buttonText}
+                                </button>
+                            </div>
+                        </div></li>`;
+                });
+                html += '</ul>';
+                resultsDiv.innerHTML = html;
+            } catch (error) {
+                if(resultsDiv) resultsDiv.innerHTML = `<p class="text-danger">Erreur recherche Sonarr: ${error.message}</p>`;
+                console.error("Erreur executeSonarrSearch:", error);
+            }
+        }
 
      async function executeRadarrSearch() {
          const query = document.getElementById('radarrSearchQuery').value; // ID de l'input de recherche Radarr
@@ -950,23 +1193,125 @@ async function executeSonarrSearch() {
      }
 
      // --- NOUVELLE FONCTION HELPER pour la sélection générique dans le modal RADARR ---
-function handleGenericRadarrMovieSelection(movieId, movieTitle) { // movieTitle est déjà échappé
-    const selectedMovieIdInput = document.getElementById('radarrSelectedMovieId');
-    const selectedMovieTitleDisplay = document.getElementById('radarrSelectedMovieTitle');
+    function handleGenericRadarrMovieSelection(movieId, movieTitle) { // movieTitle est déjà échappé
+        const selectedMovieIdInput = document.getElementById('radarrSelectedMovieId');
+        const selectedMovieTitleDisplay = document.getElementById('radarrSelectedMovieTitle');
 
-    if (selectedMovieIdInput) selectedMovieIdInput.value = movieId;
-    if (selectedMovieTitleDisplay) selectedMovieTitleDisplay.innerText = `Film sélectionné : ${movieTitle}`;
+        if (selectedMovieIdInput) selectedMovieIdInput.value = movieId;
+        if (selectedMovieTitleDisplay) selectedMovieTitleDisplay.innerText = `Film sélectionné : ${movieTitle}`;
 
-    const modalMapButton = document.getElementById('radarrModalMapButton');
-    if (modalMapButton) {
-        modalMapButton.disabled = !movieId;
+        const modalMapButton = document.getElementById('radarrModalMapButton');
+        if (modalMapButton) {
+            modalMapButton.disabled = !movieId;
+        }
+        const resultsDiv = document.getElementById('radarrSearchResults');
+        if(resultsDiv) {
+            resultsDiv.innerHTML = `<p class="alert alert-info mt-2">Film sélectionné : <strong>${movieTitle}</strong> (ID: ${movieId}).<br>Cliquez sur le bouton "Mapper..." en bas du modal.</p>`;
+        }
     }
-    const resultsDiv = document.getElementById('radarrSearchResults');
-    if(resultsDiv) {
-        resultsDiv.innerHTML = `<p class="alert alert-info mt-2">Film sélectionné : <strong>${movieTitle}</strong> (ID: ${movieId}).<br>Cliquez sur le bouton "Mapper..." en bas du modal.</p>`;
-    }
-}
+    // --- NOUVELLE FONCTION HELPER pour la sélection générique dans le modal SONARR ---
+    // (Utilisée par sonarrSearchModal pour le mapping depuis staging, items problématiques, ou batch premap seedbox)
+        function handleGenericSonarrSeriesSelection(mediaId, seriesTitle, isAddedBoolean) { // Renommé pour clarté
+            // isAddedBoolean est maintenant un vrai booléen true/false
 
+            console.log(`handleGenericSonarrSeriesSelection: mediaId=${mediaId}, title=${seriesTitle}, isAdded=${isAddedBoolean}`);
+
+            // Éléments communs aux modals de recherche Sonarr
+            const selectedSeriesIdInput = document.getElementById('sonarrSelectedSeriesId'); // Dans sonarrSearchModal
+            const selectedSeriesTitleDisplay = document.getElementById('sonarrSelectedSeriesTitle'); // Dans sonarrSearchModal
+            const modalMapButton = document.getElementById('sonarrModalMapButton'); // Bouton principal de sonarrSearchModal
+            const searchResultsDiv = document.getElementById('sonarrSearchResults'); // Dans sonarrSearchModal
+            const sonarrModalElement = document.getElementById('sonarrSearchModal'); // L'élément du modal sonarrSearchModal
+
+            // Éléments spécifiques au modal addTorrentModal
+            const addTorrentSelectedSeriesIdInput = document.getElementById('addTorrentTargetId'); // Input pour l'ID dans addTorrentModal
+            const addTorrentSelectedMediaDisplay = document.getElementById('addTorrentSelectedMediaDisplay'); // Pour afficher le nom dans addTorrentModal
+            const addTorrentModalElement = document.getElementById('addTorrentModal'); // L'élément du modal addTorrentModal
+            const addTorrentSonarrOptionsDiv = document.getElementById('addTorrentSonarrNewSeriesOptions'); // Options dans addTorrentModal
+
+            // Déterminer quel modal est actif ou concerné (simpliste, basé sur celui qui a appelé la recherche)
+            // On pourrait passer le contexte en argument si c'était plus complexe.
+            // Pour l'instant, on met à jour les deux s'ils existent, ou on cible en fonction du contexte d'appel.
+            // Le plus simple est de savoir quel modal a initié la recherche.
+            // Supposons que executeSonarrSearch est pour sonarrSearchModal,
+            // et executeArrSearchForAddTorrentModal est pour addTorrentModal.
+
+            // Mise à jour des champs pour le modal qui a probablement initié la recherche
+            // Si on est dans le contexte de addTorrentModal (currentAddTorrentAppType serait défini)
+            if (typeof currentAddTorrentAppType !== 'undefined' && currentAddTorrentAppType === 'sonarr') {
+                if (addTorrentSelectedSeriesIdInput) addTorrentSelectedSeriesIdInput.value = mediaId;
+                if (addTorrentSelectedMediaDisplay) addTorrentSelectedMediaDisplay.innerHTML = `Série : <strong>${seriesTitle}</strong> (ID: ${mediaId})`;
+                if (addTorrentModalElement) {
+                    addTorrentModalElement.setAttribute('data-selected-is-new', !isAddedBoolean ? 'true' : 'false');
+                    addTorrentModalElement.setAttribute('data-selected-media-id', mediaId);
+                    addTorrentModalElement.setAttribute('data-selected-media-title', seriesTitle);
+                    addTorrentModalElement.setAttribute('data-selected-media-type', 'sonarr');
+                }
+                // Activer le bouton principal de addTorrentModal
+                const submitAddTorrentBtn = document.getElementById('submitAddTorrentBtn');
+                if (submitAddTorrentBtn) submitAddTorrentBtn.disabled = !mediaId;
+
+                // Afficher les options d'ajout si c'est une nouvelle série DANS addTorrentModal
+                if (addTorrentSonarrOptionsDiv) {
+                    if (!isAddedBoolean) {
+                        addTorrentSonarrOptionsDiv.style.display = 'block';
+                        populateSelectFromServer("{{ url_for('seedbox_ui.get_sonarr_rootfolders_api') }}", 'sonarrRootFolderSelectForAdd', 'path', 'path', 'Dossier Racine Sonarr');
+                        populateSelectFromServer("{{ url_for('seedbox_ui.get_sonarr_qualityprofiles_api') }}", 'sonarrQualityProfileSelectForAdd', 'id', 'name', 'Profil Qualité Sonarr');
+                    } else {
+                        addTorrentSonarrOptionsDiv.style.display = 'none';
+                    }
+                }
+                 if(document.getElementById('torrentSonarrSearchResults')) document.getElementById('torrentSonarrSearchResults').innerHTML = `<p class="alert alert-info mt-2">Série sélectionnée : <strong>${seriesTitle}</strong>. Prêt à continuer.</p>`;
+
+
+            } else { // Contexte de sonarrSearchModal (staging local, items problématiques, etc.)
+                if (selectedSeriesIdInput) selectedSeriesIdInput.value = mediaId;
+                if (selectedSeriesTitleDisplay) selectedSeriesTitleDisplay.innerText = `Série sélectionnée : ${seriesTitle}`;
+                currentlySelectedSonarrSeriesIdInModal = mediaId;
+
+                if (sonarrModalElement) {
+                    sonarrModalElement.setAttribute('data-selected-is-new', !isAddedBoolean ? 'true' : 'false');
+                    sonarrModalElement.setAttribute('data-selected-media-id', mediaId);
+                    sonarrModalElement.setAttribute('data-selected-media-title', seriesTitle);
+                }
+
+                if (modalMapButton) { // sonarrModalMapButton
+                    modalMapButton.disabled = !mediaId;
+                    // Le texte du bouton est déjà géré par la fonction qui a ouvert sonarrSearchModal
+                    // On ajuste juste la classe si c'est un "ajout" (ce qui ne devrait pas arriver pour ce modal pour l'instant)
+                    if (!isAddedBoolean) {
+                        modalMapButton.classList.remove('btn-primary');
+                        modalMapButton.classList.add('btn-info');
+                        // Normalement, sonarrSearchModal ne devrait pas gérer l'ajout de nouvelles séries.
+                        // Si on voulait le permettre, il faudrait aussi lui ajouter les selects RootFolder/QualityProfile.
+                    } else {
+                        modalMapButton.classList.remove('btn-info');
+                        modalMapButton.classList.add('btn-primary');
+                    }
+                }
+
+                if(resultsDiv) { // sonarrSearchResults
+                    resultsDiv.innerHTML = `<p class="alert alert-info mt-2">Série sélectionnée : <strong>${seriesTitle}</strong> (ID: ${mediaId}).<br>
+                        ${isAddedBoolean ? 'Cette série est déjà gérée par Sonarr.' : 'Cette série devrait être ajoutée (fonctionnalité non active pour ce dialogue).'}<br>
+                        Cliquez sur le bouton d'action en bas du modal.</p>`;
+                }
+
+                const manualSeasonDiv = document.getElementById('sonarrManualSeasonDiv');
+                if (manualSeasonDiv && sonarrModalElement) {
+                    const currentAction = sonarrModalElement.getAttribute('data-current-action');
+                    if (isAddedBoolean && (currentAction === 'mapIndividualStaging' || currentAction === 'mapProblemItem' || currentAction === 'sftpRetrieveAndMapIndividual')) {
+                        manualSeasonDiv.style.display = 'block';
+                    } else {
+                        manualSeasonDiv.style.display = 'none';
+                    }
+                }
+            }
+            // Activer le bouton de soumission du modal principal "Ajouter Torrent" si on est dans ce contexte
+            // et que toutes les conditions sont remplies (y compris les selects pour nouvelle série)
+            if (typeof currentAddTorrentAppType !== 'undefined' && currentAddTorrentAppType === 'sonarr') {
+                 checkAndEnableAddTorrentSubmitButtonState();
+            }
+        }
      // MODIFIEZ votre fonction openRadarrSearchModal (pour mapping individuel depuis staging)
      function openRadarrSearchModal(itemPathForAction, itemType) {
          const itemNameForDisplay = itemPathForAction.split(/[\\/]/).pop();
@@ -1038,32 +1383,60 @@ function handleGenericRadarrMovieSelection(movieId, movieTitle) { // movieTitle 
              if(modalMapButton) modalMapButton.disabled = false;
          }
      }
-        async function triggerSonarrManualImportWithSeason(sonarrSeriesId, seriesTitle, userForcedSeason) {
-            const originalItemName = document.getElementById('sonarrOriginalItemName').value;
-            const resultsDiv = document.getElementById('sonarrSearchResults'); // Div DANS le modal
+        async function triggerSonarrManualImportWithSeason(
+            mediaIdFromSelection, // Peut être Sonarr ID (si existant) ou TVDB ID (si nouveau)
+            seriesTitleForDisplay, // Titre pour les messages, déjà échappé
+            userForcedSeason
+            // problem_torrent_hash est déjà géré dans le payload en le lisant du modal
+        ) {
+            const originalItemName = document.getElementById('sonarrOriginalItemName').value; // item_name_in_staging
+            const resultsDiv = document.getElementById('sonarrSearchResults');
+            const sonarrModalElement = document.getElementById('sonarrSearchModal'); // L'élément du modal
 
-            if (sonarrSeriesId === 0) { return; }
-            if(resultsDiv) resultsDiv.innerHTML = `<div class="alert alert-info">Analyse pour '${escapeJsString(originalItemName.split(/[\\/]/).pop())}' avec la série '${seriesTitle}' (ID: ${sonarrSeriesId})...</div>`;
+            if (!mediaIdFromSelection && mediaIdFromSelection !== 0) { // mediaId peut être 0 si non trouvé par lookup mais on veut quand même essayer
+                alert("Aucun ID de série valide fourni.");
+                return;
+            }
+            if(resultsDiv) resultsDiv.innerHTML = `<div class="alert alert-info">Préparation de l'import pour '${escapeJsString(originalItemName.split(/[\\/]/).pop())}' vers la série '${seriesTitleForDisplay}'...</div>`;
 
-            const sonarrModalElement = document.getElementById('sonarrSearchModal');
+            // --- NOUVEAU : Lire les attributs data- du modal ---
+            const isNewSeries = sonarrModalElement ? sonarrModalElement.getAttribute('data-is-new-series') === 'true' : false;
+            // mediaIdForPayload est l'ID qui sera pertinent pour le backend (Sonarr ID ou TVDB ID)
+            const mediaIdForPayload = sonarrModalElement ? sonarrModalElement.getAttribute('data-selected-media-id') : mediaIdFromSelection; // Fallback sur l'argument
+            // mediaTitleForAdd est le titre à utiliser si on ajoute la série
+            const mediaTitleForAdd = sonarrModalElement ? sonarrModalElement.getAttribute('data-selected-media-title') : seriesTitleForDisplay; // Fallback
+
             const problemTorrentHash = sonarrModalElement ? sonarrModalElement.getAttribute('data-problem-torrent-hash') : null;
+            // --- FIN NOUVEAU ---
 
             const payload = {
                 item_name: originalItemName,
-                series_id: parseInt(sonarrSeriesId)
+                is_new_series: isNewSeries, // Indiquer au backend si c'est un ajout
+                problem_torrent_hash: (problemTorrentHash && problemTorrentHash !== '') ? problemTorrentHash : undefined
             };
+
+            if (isNewSeries) {
+                payload.tvdb_id = parseInt(mediaIdForPayload); // Si nouvelle, mediaIdForPayload est le tvdbId
+                payload.series_title_for_add = mediaTitleForAdd; // Le titre à utiliser pour l'ajout
+                // IMPORTANT: Il faudra ajouter le root_folder_path et quality_profile_id au payload si isNewSeries
+                // Pour l'instant, on omet, mais le backend devra les demander ou utiliser des défauts.
+                // payload.root_folder_path = document.getElementById('ID_DE_VOTRE_SELECTEUR_ROOTFOLDER_SONARR').value;
+                // payload.quality_profile_id = document.getElementById('ID_DE_VOTRE_SELECTEUR_QUALITYPROFILE_SONARR').value;
+                console.log("Préparation pour AJOUTER et mapper nouvelle série:", payload);
+            } else {
+                payload.series_id = parseInt(mediaIdForPayload); // Si existante, mediaIdForPayload est l'ID interne Sonarr
+                console.log("Préparation pour MAPPER série existante:", payload);
+            }
+
             if (userForcedSeason && userForcedSeason.trim() !== '') {
                 payload.user_forced_season = parseInt(userForcedSeason);
             }
-            if (problemTorrentHash && problemTorrentHash !== '') { // Si on remappe un item problématique
-                payload.problem_torrent_hash = problemTorrentHash;
-            }
 
-            // Désactiver le bouton de soumission du modal pendant le traitement
             const modalMapButton = document.getElementById('sonarrModalMapButton');
             if(modalMapButton) modalMapButton.disabled = true;
 
             try {
+                // La route backend '/trigger-sonarr-import' devra être adaptée pour gérer 'is_new_series', 'tvdb_id', etc.
                 const response = await fetch(`{{ url_for('seedbox_ui.trigger_sonarr_import') }}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1075,36 +1448,30 @@ function handleGenericRadarrMovieSelection(movieId, movieTitle) { // movieTitle 
                 }
 
                 if (result.success === true) {
-                    if(resultsDiv) resultsDiv.innerHTML = `<div class="alert alert-success">${escapeJsString(result.message) || 'Importation initiée.'}</div>`;
-                    flashMessageGlobally(result.message || `Import pour '${escapeJsString(originalItemName.split(/[\\/]/).pop())}' (série: ${seriesTitle}) initié.`, 'success');
+                    if(resultsDiv) resultsDiv.innerHTML = `<div class="alert alert-success">${escapeJsString(result.message) || 'Importation/Ajout initié.'}</div>`;
+                    flashMessageGlobally(result.message || `Action pour '${escapeJsString(originalItemName.split(/[\\/]/).pop())}' (série: ${seriesTitleForDisplay}) initiée.`, 'success');
                     setTimeout(() => {
-                        const modalInstance = bootstrap.Modal.getInstance(document.getElementById('sonarrSearchModal'));
+                        const modalInstance = bootstrap.Modal.getInstance(sonarrModalElement);
                         if (modalInstance) modalInstance.hide();
                         window.location.reload();
                     }, 2500);
                 } else if (result.action_required === "resolve_season_episode_mismatch") {
-                    // ... (votre logique existante pour afficher le modal de discordance S/E) ...
-                    // S'assurer de passer problemTorrentHash à forceSonarrImport si pertinent
                     const d = result.details;
-                    const problemHashForMismatch = d.problem_torrent_hash || payload.problem_torrent_hash; // Utiliser celui du payload si dispo
-                    const stagingItemNameForForce = escapeJsString(d.staging_item_name);
-                    let html = `<div class="alert alert-warning"><h5><i class="fas fa-exclamation-triangle"></i> Discordance S/E</h5>
-                        <p>${escapeJsString(result.message)}</p><hr>
-                        <p>Fichier <strong>${escapeJsString(d.source_video_file_path_in_staging.split(/[\\/]/).pop())}</strong> :<br>
-                           Suggère: <strong>Saison ${d.filename_season !== null ? d.filename_season : 'N/A'}, Épisode ${d.filename_episode !== null ? d.filename_episode : 'N/A'}</strong><br>
-                           Sonarr identifie: <strong>Saison ${d.sonarr_season !== null ? d.sonarr_season : 'N/A'}, Épisode ${d.sonarr_episode !== null ? d.sonarr_episode : 'N/A'}</strong></p><hr>
-                        <p>Comment voulez-vous procéder ?</p>
-                        <button class="btn btn-primary btn-sm me-2 mb-2" onclick="forceSonarrImport('${stagingItemNameForForce}', ${d.series_id}, 'use_sonarr_info', ${d.sonarr_season}, ${d.sonarr_episode}, '${seriesTitle}', '${problemHashForMismatch || ''}')">Utiliser S${d.sonarr_season}E${d.sonarr_episode} (Info Sonarr)</button>
-                        <button class="btn btn-info btn-sm me-2 mb-2" onclick="forceSonarrImport('${stagingItemNameForForce}', ${d.series_id}, 'use_filename_info', ${d.filename_season}, ${d.filename_episode}, '${seriesTitle}', '${problemHashForMismatch || ''}')">Utiliser S${d.filename_season}E${d.filename_episode} (Info Fichier)</button>
-                        <button type="button" class="btn btn-secondary btn-sm mb-2" data-bs-dismiss="modal">Annuler</button></div>`;
+                    // Assurer que problem_torrent_hash est propagé si c'était un re-mapping
+                    const problemHashForMismatch = d.problem_torrent_hash || payload.problem_torrent_hash;
+                    // ... (votre logique existante pour afficher le modal de discordance S/E) ...
+                    // ... en s'assurant que problemHashForMismatch est passé à forceSonarrImport ...
+                    let html = `<div class="alert alert-warning">...`; // Votre HTML pour discordance
+                    // Assurez-vous que les appels à forceSonarrImport dans ce HTML incluent bien problemHashForMismatch
+                    // Exemple: onclick="forceSonarrImport('...', '${problemHashForMismatch || ''}')"
                     if(resultsDiv) resultsDiv.innerHTML = html;
                 } else {
-                    throw new Error(result.error || "Erreur inconnue (import).");
+                    throw new Error(result.error || "Erreur inconnue (import/ajout).");
                 }
             } catch (error) {
                 if(resultsDiv) resultsDiv.innerHTML = `<div class="alert alert-danger">${escapeJsString(error.message)}</div>`;
                 console.error("Erreur triggerSonarrManualImportWithSeason:", error);
-                flashMessageGlobally(`Erreur d'import Sonarr: ${escapeJsString(error.message)}`, 'danger');
+                flashMessageGlobally(`Erreur d'action Sonarr: ${escapeJsString(error.message)}`, 'danger');
             } finally {
                 if(modalMapButton) modalMapButton.disabled = false;
             }
@@ -1228,63 +1595,199 @@ async function triggerRadarrManualImport(radarrMovieId, movieTitle) { // movieTi
         let currentAddTorrentAppType = null; // 'sonarr' or 'radarr'
 
         function initializeAddTorrentModal() {
-            document.getElementById('addTorrentForm').reset();
-            document.getElementById('addTorrentArrSearchSection').style.display = 'none';
-            document.getElementById('addTorrentArrSearchResults').innerHTML = '';
-            document.getElementById('addTorrentFeedback').innerHTML = '';
-            document.getElementById('selectedMediaDisplay').textContent = 'Aucun';
-            document.getElementById('addTorrentTargetId').value = '';
-            document.getElementById('addTorrentOriginalName').value = '';
+            console.log("INIT_MODAL: Début");
+
+            const modalElement = document.getElementById('addTorrentModal');
+            if (!modalElement) {
+                console.error("INIT_MODAL_ERROR: Modal 'addTorrentModal' introuvable !");
+                return;
+            }
+
+            const addTorrentForm = document.getElementById('addTorrentForm');
+            if (addTorrentForm) {
+                console.log("INIT_MODAL: 1. Avant form.reset()");
+                addTorrentForm.reset();
+            }
+
+            const searchSection = document.getElementById('addTorrentArrSearchSection');
+            if (searchSection) {
+                console.log("INIT_MODAL: 2. Avant searchSection.style.display");
+                searchSection.style.display = 'none';
+            }
+
+            const searchResults = document.getElementById('addTorrentArrSearchResults');
+            if (searchResults) {
+                console.log("INIT_MODAL: 3. Avant searchResults.innerHTML");
+                searchResults.innerHTML = '';
+            }
+
+            const feedbackDiv = document.getElementById('addTorrentFeedback');
+            if (feedbackDiv) {
+                console.log("INIT_MODAL: 4. Avant feedbackDiv.innerHTML");
+                feedbackDiv.innerHTML = '';
+            }
+
+            const selectedMediaDisplayElement = document.getElementById('addTorrentSelectedMediaDisplay'); // ID CORRECT
+            if (selectedMediaDisplayElement) {
+                selectedMediaDisplayElement.textContent = 'Aucun';
+            } else {
+                console.error("handleAddTorrentAppTypeChange: Élément 'addTorrentSelectedMediaDisplay' non trouvé !");
+            }
+
+            const targetIdInput = document.getElementById('addTorrentTargetId');
+            if (targetIdInput) {
+                console.log("INIT_MODAL: 6. Avant targetIdInput.value");
+                targetIdInput.value = '';
+            }
+
+            const originalNameInput = document.getElementById('addTorrentOriginalName');
+            if (originalNameInput) {
+                console.log("INIT_MODAL: 7. Avant originalNameInput.value");
+                originalNameInput.value = '';
+            }
+
             currentAddTorrentAppType = null;
 
-            const fileInput = document.getElementById('torrentFileUpload');
-            fileInput.value = '';
-            const magnetInput = document.getElementById('torrentMagnetLink');
-            magnetInput.value = '';
+            const sonarrOptionsDiv = document.getElementById('addTorrentSonarrNewSeriesOptions');
+            const radarrOptionsDiv = document.getElementById('addTorrentRadarrNewMovieOptions');
+            if (sonarrOptionsDiv) {
+                console.log("INIT_MODAL: 8. Avant sonarrOptionsDiv.style.display");
+                sonarrOptionsDiv.style.display = 'none';
+            }
+            if (radarrOptionsDiv) {
+                console.log("INIT_MODAL: 9. Avant radarrOptionsDiv.style.display");
+                radarrOptionsDiv.style.display = 'none';
+            }
 
-            // Ensure event listeners are not duplicated if modal is shown multiple times
-            // For simplicity, re-adding them here, but a more robust solution might detach old ones.
+            const sonarrRootS = document.getElementById('sonarrRootFolderSelectForAdd');
+            const sonarrQualS = document.getElementById('sonarrQualityProfileSelectForAdd');
+            const radarrRootS = document.getElementById('radarrRootFolderSelectForAdd');
+            const radarrQualS = document.getElementById('radarrQualityProfileSelectForAdd');
+            const radarrAvailS = document.getElementById('radarrMinimumAvailabilitySelectForAdd');
+
+            console.log("INIT_MODAL: 10. Avant réinitialisation des selects");
+            if(sonarrRootS) { sonarrRootS.innerHTML = '<option value="" selected disabled>Chargement...</option>'; sonarrRootS.disabled = true; }
+            if(sonarrQualS) { sonarrQualS.innerHTML = '<option value="" selected disabled>Chargement...</option>'; sonarrQualS.disabled = true; }
+            if(radarrRootS) { radarrRootS.innerHTML = '<option value="" selected disabled>Chargement...</option>'; radarrRootS.disabled = true; }
+            if(radarrQualS) { radarrQualS.innerHTML = '<option value="" selected disabled>Chargement...</option>'; radarrQualS.disabled = true; }
+            if(radarrAvailS) { radarrAvailS.value = 'announced'; radarrAvailS.disabled = true; }
+
+            console.log("INIT_MODAL: 11. Avant attachement des listeners");
+            // Listeners
             document.querySelectorAll('input[name="addTorrentAppType"]').forEach(radio => {
+                radio.removeEventListener('change', handleAddTorrentAppTypeChange);
                 radio.addEventListener('change', handleAddTorrentAppTypeChange);
             });
 
-            document.getElementById('addTorrentExecuteArrSearchBtn').addEventListener('click', executeArrSearchForAddTorrentModal);
+            const searchBtn = document.getElementById('addTorrentExecuteArrSearchBtn');
+            if (searchBtn) {
+                searchBtn.removeEventListener('click', executeArrSearchForAddTorrentModal);
+                searchBtn.addEventListener('click', executeArrSearchForAddTorrentModal);
+            }
 
-            document.getElementById('torrentFileUpload').addEventListener('change', handleTorrentFileChangeForAddTorrent);
-            document.getElementById('torrentMagnetLink').addEventListener('input', handleMagnetLinkInputForAddTorrent);
+            const fileUpload = document.getElementById('torrentFileUpload');
+            if (fileUpload) {
+                fileUpload.removeEventListener('change', handleTorrentFileChangeForAddTorrent);
+                fileUpload.addEventListener('change', handleTorrentFileChangeForAddTorrent);
+            }
 
-            document.getElementById('submitAddTorrentBtn').addEventListener('click', handleSubmitAddTorrent);
+            const magnetLinkInput = document.getElementById('torrentMagnetLink');
+            if (magnetLinkInput) {
+                magnetLinkInput.removeEventListener('input', handleMagnetLinkInputForAddTorrent);
+                magnetLinkInput.addEventListener('input', handleMagnetLinkInputForAddTorrent);
+            }
+
+            const submitBtn = document.getElementById('submitAddTorrentBtn');
+            if (submitBtn) {
+                submitBtn.removeEventListener('click', handleSubmitAddTorrent);
+                submitBtn.addEventListener('click', handleSubmitAddTorrent);
+                console.log("INIT_MODAL: 12. Avant submitBtn.disabled");
+                submitBtn.disabled = true;
+            }
+
+            if (modalElement) {
+                console.log("INIT_MODAL: 13. Avant nettoyage des data-attributes");
+                modalElement.removeAttribute('data-selected-is-new');
+                modalElement.removeAttribute('data-selected-media-id');
+                modalElement.removeAttribute('data-selected-media-title');
+                modalElement.removeAttribute('data-selected-media-type');
+            }
+            console.log("INIT_MODAL: Fin");
         }
 
-        function handleAddTorrentAppTypeChange() {
+function handleAddTorrentAppTypeChange() {
             currentAddTorrentAppType = this.value;
-            document.getElementById('addTorrentArrSearchSection').style.display = 'block';
-            document.getElementById('addTorrentArrSearchResults').innerHTML = '';
-            document.getElementById('addTorrentArrSearchQuery').value = '';
-            document.getElementById('selectedMediaDisplay').textContent = 'Aucun';
-            document.getElementById('addTorrentTargetId').value = '';
+            console.log("handleAddTorrentAppTypeChange: Nouveau type sélectionné:", currentAddTorrentAppType);
+
+            const searchSection = document.getElementById('addTorrentArrSearchSection');
+            if (searchSection) searchSection.style.display = 'block';
+            else console.error("handleAddTorrentAppTypeChange: 'addTorrentArrSearchSection' non trouvé !");
+
+            const searchResults = document.getElementById('addTorrentArrSearchResults');
+            if (searchResults) searchResults.innerHTML = '';
+            else console.error("handleAddTorrentAppTypeChange: 'addTorrentArrSearchResults' non trouvé !");
+
+            const searchQuery = document.getElementById('addTorrentArrSearchQuery');
+            if (searchQuery) searchQuery.value = '';
+            else console.error("handleAddTorrentAppTypeChange: 'addTorrentArrSearchQuery' non trouvé !");
+
+            // --- CORRECTION DE L'ID ICI ---
+            const selectedMediaDisplayElement = document.getElementById('addTorrentSelectedMediaDisplay'); // ID CORRECT
+            if (selectedMediaDisplayElement) {
+                selectedMediaDisplayElement.textContent = 'Aucun';
+                console.log("handleAddTorrentAppTypeChange: textContent de 'addTorrentSelectedMediaDisplay' mis à 'Aucun'.");
+            } else {
+                console.error("handleAddTorrentAppTypeChange: ERREUR - L'élément avec l'ID 'addTorrentSelectedMediaDisplay' est introuvable !");
+            }
+            // --- FIN CORRECTION ---
+
+            const targetIdInput = document.getElementById('addTorrentTargetId');
+            if (targetIdInput) targetIdInput.value = '';
+            else console.error("handleAddTorrentAppTypeChange: 'addTorrentTargetId' non trouvé !");
+
             const queryPlaceholder = (currentAddTorrentAppType === 'sonarr') ? 'Nom de la série...' : 'Titre du film...';
-            document.getElementById('addTorrentArrSearchQuery').placeholder = queryPlaceholder;
+            if (searchQuery) searchQuery.placeholder = queryPlaceholder; // searchQuery peut être null si non trouvé plus haut
+
+            const sonarrOptionsDiv = document.getElementById('addTorrentSonarrNewSeriesOptions');
+            const radarrOptionsDiv = document.getElementById('addTorrentRadarrNewMovieOptions');
+            if (sonarrOptionsDiv) sonarrOptionsDiv.style.display = 'none';
+            else console.error("handleAddTorrentAppTypeChange: 'addTorrentSonarrNewSeriesOptions' non trouvé !");
+
+            if (radarrOptionsDiv) radarrOptionsDiv.style.display = 'none';
+            else console.error("handleAddTorrentAppTypeChange: 'addTorrentRadarrNewMovieOptions' non trouvé !");
 
             const torrentFile = document.getElementById('torrentFileUpload').files[0];
-            if (torrentFile) {
-                document.getElementById('addTorrentArrSearchQuery').value = getCleanedSearchTerm(torrentFile.name);
+            if (torrentFile && searchQuery) {
+                searchQuery.value = getCleanedSearchTerm(torrentFile.name);
+            }
+
+            // Assurez-vous que updateSubmitAddTorrentButtonState est définie et appelée correctement
+            if (typeof updateSubmitAddTorrentButtonState === "function") {
+                updateSubmitAddTorrentButtonState();
+            } else {
+                console.error("handleAddTorrentAppTypeChange: La fonction updateSubmitAddTorrentButtonState n'est pas définie !");
             }
         }
 
         async function executeArrSearchForAddTorrentModal() {
             const query = document.getElementById('addTorrentArrSearchQuery').value;
-            const resultsDiv = document.getElementById('addTorrentArrSearchResults');
+            const resultsDivId = 'addTorrentArrSearchResults'; // ID de votre div unique pour les résultats
+            const resultsDivElement = document.getElementById(resultsDivId);
+
             if (!currentAddTorrentAppType) {
-                resultsDiv.innerHTML = '<p class="text-warning">Veuillez d\'abord sélectionner Sonarr ou Radarr.</p>';
+                if(resultsDivElement) resultsDivElement.innerHTML = '<p class="text-warning">Veuillez d\'abord sélectionner Sonarr ou Radarr.</p>';
                 return;
             }
             if (!query.trim()) {
-                resultsDiv.innerHTML = '<p class="text-warning">Terme de recherche manquant.</p>';
+                if(resultsDivElement) resultsDivElement.innerHTML = '<p class="text-warning">Terme de recherche manquant.</p>';
                 return;
             }
 
-            resultsDiv.innerHTML = `<div class="d-flex align-items-center"><strong role="status">Recherche ${currentAddTorrentAppType}...</strong><div class="spinner-border ms-auto"></div></div>`;
+            if(resultsDivElement) resultsDivElement.innerHTML = `<div class="d-flex align-items-center"><strong role="status">Recherche ${currentAddTorrentAppType}...</strong><div class="spinner-border ms-auto"></div></div>`;
+            else {
+                 console.error(`Élément avec ID '${resultsDivId}' non trouvé.`);
+                 return;
+            }
 
             const searchUrl = (currentAddTorrentAppType === 'sonarr') ?
                               `{{ url_for('seedbox_ui.search_sonarr_api') }}?query=${encodeURIComponent(query)}` :
@@ -1297,9 +1800,9 @@ async function triggerRadarrManualImport(radarrMovieId, movieTitle) { // movieTi
                     throw new Error(errorDetail);
                 }
                 const results = await response.json();
-                renderArrSearchResultsForAddTorrent(results, currentAddTorrentAppType, resultsDiv);
+                renderArrSearchResultsForAddTorrent(results, currentAddTorrentAppType, resultsDivId); // Passe l'ID
             } catch (error) {
-                resultsDiv.innerHTML = `<p class="text-danger">Erreur recherche: ${escapeJsString(error.message)}</p>`;
+                if(resultsDivElement) resultsDivElement.innerHTML = `<p class="text-danger">Erreur recherche: ${escapeJsString(error.message)}</p>`;
                 console.error("Erreur recherche *Arr pour AddTorrentModal:", error);
             }
         }
@@ -1330,35 +1833,23 @@ async function triggerRadarrManualImport(radarrMovieId, movieTitle) { // movieTi
         async function handleSubmitAddTorrent() {
             const magnetLink = document.getElementById('torrentMagnetLink').value.trim();
             const torrentFile = document.getElementById('torrentFileUpload').files[0];
+            // currentAddTorrentAppType est défini lorsque l'utilisateur choisit Sonarr/Radarr dans le modal
             const appType = currentAddTorrentAppType;
-            const targetId = document.getElementById('addTorrentTargetId').value;
+            // addTorrentTargetId stocke l'ID (interne *Arr ou externe TVDB/TMDB) sélectionné via selectArrItemForAddTorrent
+            const mediaIdFromSelection = document.getElementById('addTorrentTargetId').value;
             let originalName = document.getElementById('addTorrentOriginalName').value.trim();
             const feedbackDiv = document.getElementById('addTorrentFeedback');
+            const submitButton = document.getElementById('submitAddTorrentBtn'); // Référence au bouton
+
             feedbackDiv.innerHTML = '';
 
-            if (!magnetLink && !torrentFile) {
-                feedbackDiv.innerHTML = '<p class="text-danger">Veuillez fournir un lien magnet ou un fichier .torrent.</p>'; return;
-            }
-            if (magnetLink && torrentFile) {
-                feedbackDiv.innerHTML = '<p class="text-danger">Veuillez fournir SOIT un lien magnet OU un fichier .torrent, pas les deux.</p>'; return;
-            }
-            if (!appType) {
-                feedbackDiv.innerHTML = '<p class="text-danger">Veuillez sélectionner le type de média (Sonarr ou Radarr).</p>'; return;
-            }
-            if (!targetId) {
+            if (!magnetLink && !torrentFile) { /* ... (vos validations existantes) ... */ return; }
+            if (magnetLink && torrentFile) { /* ... */ return; }
+            if (!appType) { /* ... */ return; }
+            if (!mediaIdFromSelection) { // mediaIdFromSelection vient de la sélection dans la liste des résultats
                 feedbackDiv.innerHTML = '<p class="text-danger">Veuillez rechercher et sélectionner une série ou un film cible.</p>'; return;
             }
-            if (!originalName) { // Ensure originalName is set, especially if magnet parsing failed or file was deselected
-                if (torrentFile) originalName = torrentFile.name;
-                else if (magnetLink) {
-                    const dnMatch = magnetLink.match(/&dn=([^&]+)/);
-                    if (dnMatch && dnMatch[1]) originalName = decodeURIComponent(dnMatch[1]).replace(/\+/g, ' ');
-                    else originalName = 'magnet_download_' + Date.now().toString().slice(-6);
-                } else { // Should not happen if first check passed
-                     feedbackDiv.innerHTML = '<p class="text-danger">Erreur interne: Nom original non déterminé.</p>'; return;
-                }
-                 document.getElementById('addTorrentOriginalName').value = originalName; // Update hidden input if it was empty
-            }
+            if (!originalName) { /* ... (votre logique de fallback pour originalName) ... */ return; }
 
             let torrentFileB64 = null;
             if (torrentFile) {
@@ -1369,38 +1860,81 @@ async function triggerRadarrManualImport(radarrMovieId, movieTitle) { // movieTi
                 }
             }
 
+            // --- NOUVEAU : Lire les attributs data- du modal pour le contexte d'ajout ---
+            const addTorrentModalElement = document.getElementById('addTorrentModal');
+            const isNewMedia = addTorrentModalElement.getAttribute('data-selected-is-new') === 'true';
+            // mediaIdForPayload est l'ID pertinent (interne ou externe) stocké par selectArrItemForAddTorrent
+            const mediaIdForPayload = addTorrentModalElement.getAttribute('data-selected-media-id');
+            const mediaTitleForAdd = addTorrentModalElement.getAttribute('data-selected-media-title'); // Titre si nouveau
+            // const selectedAppType = addTorrentModalElement.getAttribute('data-selected-media-type'); // Devrait correspondre à appType
+
+            if (!mediaIdForPayload) { // Sécurité, devrait être défini par selectArrItemForAddTorrent
+                 feedbackDiv.innerHTML = '<p class="text-danger">Erreur interne: ID du média sélectionné non trouvé.</p>'; return;
+            }
+            // --- FIN NOUVEAU ---
+
             const payload = {
                 magnet_link: magnetLink || null,
                 torrent_file_b64: torrentFileB64,
-                app_type: appType,
-                target_id: parseInt(targetId),
-                original_name: originalName
+                app_type: appType, // 'sonarr' ou 'radarr'
+                original_name: originalName, // Nom du fichier .torrent ou du magnet
+                is_new_media: isNewMedia // Booléen
             };
 
-            this.disabled = true;
-            feedbackDiv.innerHTML = '<p class="text-info">Ajout du torrent en cours...</p>';
+            if (isNewMedia) {
+                payload.external_id = parseInt(mediaIdForPayload); // C'est tvdbId ou tmdbId
+                payload.title_for_add = mediaTitleForAdd; // Titre à utiliser pour l'ajout
+
+                // Récupérer les valeurs des selects pour Root Folder et Quality Profile
+                if (appType === 'sonarr') {
+                    payload.root_folder_path = document.getElementById('sonarrRootFolderSelectForAdd').value;
+                    payload.quality_profile_id = parseInt(document.getElementById('sonarrQualityProfileSelectForAdd').value);
+                } else if (appType === 'radarr') {
+                    payload.root_folder_path = document.getElementById('radarrRootFolderSelectForAdd').value;
+                    payload.quality_profile_id = parseInt(document.getElementById('radarrQualityProfileSelectForAdd').value);
+                }
+
+                // Validation pour les nouvelles options
+                if (!payload.root_folder_path) {
+                    feedbackDiv.innerHTML = '<p class="text-danger">Veuillez sélectionner un Dossier Racine pour le nouveau média.</p>'; return;
+                }
+                if (!payload.quality_profile_id || isNaN(payload.quality_profile_id)) {
+                    feedbackDiv.innerHTML = '<p class="text-danger">Veuillez sélectionner un Profil de Qualité pour le nouveau média.</p>'; return;
+                }
+            } else { // Média existant
+                payload.target_id = parseInt(mediaIdForPayload); // C'est l'ID interne Sonarr/Radarr
+            }
+
+            console.log("Payload final pour /rtorrent_add_torrent_action:", payload);
+
+            if(submitButton) submitButton.disabled = true; // Utiliser la variable du bouton
+            feedbackDiv.innerHTML = '<p class="text-info">Ajout du torrent et pré-association en cours...</p>';
 
             try {
+                // La route backend '/interaction/rtorrent/add' (rtorrent_add_torrent_action)
+                // devra être adaptée pour gérer ce nouveau payload.
                 const response = await fetch(`{{ url_for('seedbox_ui.rtorrent_add_torrent_action') }}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-                const result = await response.json(); // Attempt to parse JSON regardless of response.ok
+                const result = await response.json();
                 if (response.ok && result.success) {
                     feedbackDiv.innerHTML = `<p class="alert alert-success">${escapeJsString(result.message)} (Hash: ${escapeJsString(result.torrent_hash || 'N/A')})</p>`;
                     setTimeout(() => {
-                        const modalInstance = bootstrap.Modal.getInstance(document.getElementById('addTorrentModal'));
+                        const modalInstance = bootstrap.Modal.getInstance(addTorrentModalElement);
                         if (modalInstance) modalInstance.hide();
-                        flashMessageGlobally(result.message || "Torrent ajouté avec succès.", 'success');
-                    }, 2500);
+                        flashMessageGlobally(result.message || "Action pour le torrent terminée avec succès.", 'success');
+                        // Recharger pour voir les changements dans pending_torrents_map ou la liste rTorrent
+                        // window.location.reload(); // Décommentez si vous voulez un rechargement
+                    }, 3000);
                 } else {
                     throw new Error(result.error || `Erreur HTTP ${response.status}`);
                 }
             } catch (error) {
                 feedbackDiv.innerHTML = `<p class="alert alert-danger">Erreur: ${escapeJsString(error.message)}</p>`;
             } finally {
-                this.disabled = false;
+                if(submitButton) submitButton.disabled = false; // Utiliser la variable du bouton
             }
         }
 
@@ -1413,64 +1947,115 @@ async function triggerRadarrManualImport(radarrMovieId, movieTitle) { // movieTi
             });
         }
 
-        function renderArrSearchResultsForAddTorrent(results, appType, resultsDiv) {
+        function renderArrSearchResultsForAddTorrent(results, appType, resultsDivId) {
+            const resultsDiv = document.getElementById(resultsDivId);
+            if (!resultsDiv) {
+                console.error(`Div de résultats (ID: ${resultsDivId}) non trouvée.`);
+                return;
+            }
+
             if (!results || results.length === 0) {
                 resultsDiv.innerHTML = `<p class="text-muted">Aucun ${appType === 'sonarr' ? 'série' : 'film'} trouvé.</p>`;
                 return;
             }
-            let html = '<ul class="list-group mt-3">';
+
+            if (results.length > 0) {
+                console.log(`Premier résultat brut de l'API ${appType} (/lookup) pour "${results[0].title}":`, JSON.stringify(results[0], null, 2));
+            }
+
+            let html = '<ul class="list-group mt-3 list-group-flush">';
             results.forEach(item => {
-                const title = escapeJsString(item.title); // Vous avez déjà une fonction escapeJsString
+                const title = escapeJsString(item.title);
                 const year = item.year || 'N/A';
 
-                // --- Gestion de posterUrl améliorée ---
-                let posterUrl = null; // Initialiser à null
-                if (item.remotePoster) {
-                    posterUrl = item.remotePoster;
-                } else if (item.images && item.images.length > 0) {
-                    const posterImage = item.images.find(img => img.coverType === 'poster');
-                    if (posterImage && posterImage.remoteUrl) {
-                        posterUrl = posterImage.remoteUrl;
-                    }
-                }
-                // Si posterUrl est toujours null ou undefined, utiliser le placeholder
-                if (!posterUrl) { // Vérifie null, undefined, chaîne vide
-                    posterUrl = 'https://via.placeholder.com/40x60?text=N/A';
-                }
-                // --- Fin de la gestion de posterUrl ---
+                let posterUrl = item.remotePoster || (item.images && item.images.length > 0 ? item.images.find(img => img.coverType === 'poster')?.remoteUrl : null);
+                if (!posterUrl) { posterUrl = 'https://via.placeholder.com/40x60?text=N/A'; }
 
-                let selectable_id = 0;
-                // La logique pour selectable_id semble bonne, mais assurons-nous que item.id ou item.tmdbId sont bien des nombres ou null/undefined
+                let isAlreadyAdded = false; // Initialiser
+                let idForSelection = null;
+                let idTypeForDisplay = "";
+                let externalIdForDisplay = "";
+                let sonarrRadarrInternalIdDisplay = "";
+                let buttonText = "Choisir";
+                let buttonIcon = "fas fa-check-circle";
+                let buttonClass = "btn-success";
+                let buttonTitle = "";
+
                 if (appType === 'sonarr') {
-                    selectable_id = parseInt(item.id) || 0; // S'assurer que c'est un nombre, sinon 0
+                    const sonarrId = parseInt(item.id); // Essayer de convertir item.id en nombre
+                    isAlreadyAdded = !isNaN(sonarrId) && sonarrId > 0; // Vrai si sonarrId est un nombre > 0
+                    idForSelection = isAlreadyAdded ? sonarrId : item.tvdbId;
+                    idTypeForDisplay = "TVDB ID";
+                    externalIdForDisplay = item.tvdbId || 'N/A';
+                    if (isAlreadyAdded && sonarrId) {
+                        sonarrRadarrInternalIdDisplay = `| Sonarr ID: ${sonarrId}`;
+                    }
+                    // ... (logique pour buttonText, etc. pour Sonarr, comme vous l'avez)
+                    if (isAlreadyAdded) {
+                        buttonText = "Sélectionner";
+                        buttonTitle = `Sélectionner la série existante : ${item.title}`;
+                    } else {
+                        buttonText = "Ajouter & Sélectionner";
+                        buttonIcon = "fas fa-plus-circle";
+                        buttonClass = "btn-info";
+                        buttonTitle = `Ajouter la série '${item.title}' à Sonarr et la sélectionner`;
+                    }
                 } else if (appType === 'radarr') {
-                    selectable_id = parseInt(item.id) || 0;
-                    if (!selectable_id && item.tmdbId) {
-                        selectable_id = parseInt(item.tmdbId) || 0;
+                    const radarrId = parseInt(item.id); // Essayer de convertir item.id en nombre
+                    isAlreadyAdded = !isNaN(radarrId) && radarrId > 0; // Vrai si radarrId est un nombre > 0
+                    idForSelection = isAlreadyAdded ? radarrId : item.tmdbId;
+                    idTypeForDisplay = "TMDB ID";
+                    externalIdForDisplay = item.tmdbId || 'N/A';
+                     if (isAlreadyAdded && radarrId) {
+                        sonarrRadarrInternalIdDisplay = `| Radarr ID: ${radarrId}`;
+                    }
+                    // ... (logique pour buttonText, etc. pour Radarr, comme vous l'avez)
+                    if (isAlreadyAdded) {
+                        buttonText = "Sélectionner";
+                        buttonTitle = `Sélectionner le film existant : ${item.title}`;
+                    } else {
+                        buttonText = "Ajouter & Sélectionner";
+                        buttonIcon = "fas fa-plus-circle";
+                        buttonClass = "btn-info";
+                        buttonTitle = `Ajouter le film '${item.title}' à Radarr et le sélectionner`;
                     }
                 }
 
-                const status = item.status || 'N/A';
-                const id_type = appType === 'sonarr' ? 'TVDB ID' : 'TMDB ID';
-                const external_id_val = appType === 'sonarr' ? (item.tvdbId || 'N/A') : (item.tmdbId || 'N/A');
+                console.log( // Log pour vérifier les valeurs finales avant de générer le bouton
+                    `renderArr: Item='${item.title}', AppType='${appType}'\n` +
+                    `  - item.id (raw): '${item.id}', item.tvdbId: '${item.tvdbId}', item.tmdbId: '${item.tmdbId}'\n` +
+                    `  - isAlreadyAdded (booléen): ${isAlreadyAdded}\n` +
+                    `  - idForSelection (utilisé pour bouton et onclick): ${idForSelection}`
+                );
 
-                // Construire le HTML de l'item de liste (votre code existant, je ne le reproduis pas en entier)
-                // Assurez-vous juste que la variable 'posterUrl' est bien utilisée dans la balise <img>
+                const isAddedStringForOnclick = isAlreadyAdded ? 'true' : 'false';
+                // Assurer que idForSelection est un nombre ou 0 pour l'onclick, et que title est bien échappé
+                let onclickAction = `selectArrItemForAddTorrent(${idForSelection || 0}, '${title}', '${appType}', ${isAddedStringForOnclick})`;
+
+                console.log(`renderArr: onclickAction STRING: ${onclickAction}`);
+
                 html += `
                     <li class="list-group-item">
                         <div class="row align-items-center">
                             <div class="col-auto" style="width:50px;">
-                                <img src="${posterUrl}" alt="Poster pour ${title}" class="img-fluid rounded" style="max-height: 60px;" onerror="this.onerror=null; this.src='https://via.placeholder.com/40x60?text=ImgErr';"> {# Ajout de onerror #}
+                                <img src="${posterUrl}" alt="Poster pour ${title}" class="img-fluid rounded"
+                                     style="max-height: 60px;"
+                                     onerror="this.onerror=null; this.src='https://via.placeholder.com/40x60?text=ImgErr';">
                             </div>
                             <div class="col">
-                                <strong>${title}</strong> (${year})<br>
-                                <small class="text-muted">Statut: ${status} | ${id_type}: ${external_id_val}</small>
+                                <strong>${item.title}</strong> (${year})<br>
+                                <small class="text-muted">
+                                    Statut: <span class="fw-bold ${isAlreadyAdded ? 'text-success' : 'text-primary'}">${isAlreadyAdded ? (item.status || 'Géré(e)') : 'Non Ajouté(e)'}</span>
+                                    | ${idTypeForDisplay}: ${externalIdForDisplay}
+                                    ${sonarrRadarrInternalIdDisplay}
+                                </small>
                             </div>
                             <div class="col-auto">
-                                <button class="btn btn-sm btn-success"
-                                        onclick="selectArrItemForAddTorrent(${selectable_id}, '${title}', '${appType}')"
-                                        ${selectable_id ? '' : 'disabled title="Média non gérable ou ID manquant"'} >
-                                    <i class="fas fa-check"></i> Choisir
+                                <button type="button" class="btn ${buttonClass} btn-sm"
+                                        onclick="${onclickAction}"
+                                        title="${buttonTitle}"
+                                        ${idForSelection ? '' : 'disabled title="ID externe/interne manquant ou invalide"'} > {# Condition de désactivation #}
+                                    <i class="${buttonIcon}"></i> ${buttonText}
                                 </button>
                             </div>
                         </div>
@@ -1479,12 +2064,205 @@ async function triggerRadarrManualImport(radarrMovieId, movieTitle) { // movieTi
             html += '</ul>';
             resultsDiv.innerHTML = html;
         }
+        // --- NOUVELLE FONCTION HELPER POUR PEUPLER LES SELECTS DEPUIS LE SERVEUR ---
+        async function populateSelectFromServer(apiUrl, selectElementId, valueField, textField, selectTypeForLog) {
+            const selectElement = document.getElementById(selectElementId);
+            const defaultOptionText = `-- Choisir un ${selectTypeForLog} --`;
 
-        function selectArrItemForAddTorrent(itemId, itemTitle, appType) { // itemTitle is already escaped
-            document.getElementById('addTorrentTargetId').value = itemId;
-            document.getElementById('selectedMediaDisplay').innerHTML = `${appType === 'sonarr' ? 'Série' : 'Film'}: <strong>${itemTitle}</strong> (ID: ${itemId})`;
-            document.getElementById('addTorrentArrSearchResults').innerHTML = `<p class="alert alert-info">Sélectionné : <strong>${itemTitle}</strong>. Vous pouvez maintenant lancer le téléchargement.</p>`;
+            if (!selectElement) {
+                console.error(`Élément Select (ID: ${selectElementId}) non trouvé pour ${selectTypeForLog}.`);
+                return;
+            }
+            console.log(`Peuplement de ${selectElementId} depuis ${apiUrl}`);
+            selectElement.innerHTML = `<option value="">Chargement de ${selectTypeForLog.toLowerCase()}...</option>`;
+            selectElement.disabled = true;
+
+            const errorDivId = selectElementId.replace('SelectForAdd', 'ErrorForAdd'); // Assurez-vous que le remplacement est correct pour vos IDs d'erreur
+            const errorElement = document.getElementById(errorDivId);
+            if (errorElement) errorElement.textContent = '';
+
+            try {
+                const response = await fetch(apiUrl);
+                if (!response.ok) {
+                    let errorMsg = `Erreur HTTP ${response.status}`;
+                    try {
+                        const errData = await response.json();
+                        errorMsg = errData.error || errorMsg;
+                    } catch (e) { /* Pas de corps JSON ou erreur de parsing */ }
+                    throw new Error(errorMsg);
+                }
+                const dataItems = await response.json();
+
+                selectElement.innerHTML = `<option value="">${defaultOptionText}</option>`;
+                if (dataItems && dataItems.length > 0) {
+                    dataItems.forEach(item => {
+                        selectElement.add(new Option(item[textField], item[valueField]));
+                    });
+                    selectElement.disabled = false;
+                    // Attacher le listener seulement si le select est activé et a des options
+                    selectElement.removeEventListener('change', updateSubmitAddTorrentButtonState);
+                    selectElement.addEventListener('change', updateSubmitAddTorrentButtonState);
+                } else {
+                    selectElement.innerHTML = `<option value="">Aucun ${selectTypeForLog.toLowerCase()} trouvé</option>`;
+                    // Le select reste disabled = true (défini plus haut)
+                    if (errorElement) errorElement.textContent = `Aucun ${selectTypeForLog.toLowerCase()} disponible. Vérifiez la configuration de ${selectTypeForLog.split(' ')[0]}.`;
+                }
+            } catch (error) {
+                console.error(`Erreur lors du chargement des ${selectTypeForLog.toLowerCase()}:`, error);
+                selectElement.innerHTML = `<option value="">Erreur chargement</option>`;
+                // Le select reste disabled = true
+                if (errorElement) errorElement.textContent = `Erreur: ${error.message}`;
+            } finally { // Assurer que l'état du bouton principal est mis à jour
+                if (typeof updateSubmitAddTorrentButtonState === "function") {
+                    updateSubmitAddTorrentButtonState();
+                } else {
+                    console.warn("updateSubmitAddTorrentButtonState n'est pas définie au moment de l'appel final de populateSelectFromServer");
+                }
+            }
         }
+        // --- FIN NOUVELLE FONCTION HELPER ---
+        function selectArrItemForAddTorrent(itemId, itemTitle, appType, isAddedString) {
+            const isAdded = (String(isAddedString).toLowerCase() === 'true');
+            console.log(`selectArrItemForAddTorrent: itemId=${itemId}, title=${itemTitle}, appType=${appType}, isAddedBoolean=${isAdded}`);
+
+            document.getElementById('addTorrentTargetId').value = itemId;
+            document.getElementById('addTorrentSelectedMediaDisplay').innerHTML = `${appType === 'sonarr' ? 'Série' : 'Film'}: <strong>${itemTitle}</strong> (ID: ${itemId})`;
+
+            const addTorrentModalElement = document.getElementById('addTorrentModal');
+            if (addTorrentModalElement) {
+                addTorrentModalElement.setAttribute('data-selected-is-new', !isAdded ? 'true' : 'false');
+                addTorrentModalElement.setAttribute('data-selected-media-id', itemId);
+                addTorrentModalElement.setAttribute('data-selected-media-title', itemTitle);
+                addTorrentModalElement.setAttribute('data-selected-media-type', appType);
+                console.log("Attributs data- sur addTorrentModal:",
+                            {
+                                isNew: addTorrentModalElement.getAttribute('data-selected-is-new'),
+                                mediaId: addTorrentModalElement.getAttribute('data-selected-media-id')
+                            });
+            }
+
+            const resultsDivId = (appType === 'sonarr') ? 'torrentSonarrSearchResults' : 'torrentRadarrSearchResults';
+            const resultsDiv = document.getElementById(resultsDivId);
+            if (resultsDiv) {
+                 resultsDiv.innerHTML = `<p class="alert alert-info mt-2"><strong>${itemTitle}</strong> sélectionné.<br>
+                    ${isAdded ? 'Ce média est déjà géré.' : 'Ce média sera ajouté à ' + appType.charAt(0).toUpperCase() + appType.slice(1) + '.'}<br>
+                    ${!isAdded ? 'Veuillez choisir les options d\'ajout ci-dessous.<br>' : ''}
+                    Prêt à lancer le téléchargement et la pré-association.</p>`;
+            }
+
+            const sonarrOptionsDiv = document.getElementById('addTorrentSonarrNewSeriesOptions');
+            const radarrOptionsDiv = document.getElementById('addTorrentRadarrNewMovieOptions');
+            const sonarrRootSelect = document.getElementById('sonarrRootFolderSelectForAdd');
+            const sonarrQualitySelect = document.getElementById('sonarrQualityProfileSelectForAdd');
+            const radarrRootSelect = document.getElementById('radarrRootFolderSelectForAdd');
+            const radarrQualitySelect = document.getElementById('radarrQualityProfileSelectForAdd');
+
+            if (sonarrOptionsDiv) sonarrOptionsDiv.style.display = 'none';
+            if (sonarrRootSelect) { sonarrRootSelect.disabled = true; sonarrRootSelect.innerHTML = '<option value="">--</option>'; }
+            if (sonarrQualitySelect) { sonarrQualitySelect.disabled = true; sonarrQualitySelect.innerHTML = '<option value="">--</option>'; }
+            if (radarrOptionsDiv) radarrOptionsDiv.style.display = 'none';
+            if (radarrRootSelect) { radarrRootSelect.disabled = true; radarrRootSelect.innerHTML = '<option value="">--</option>'; }
+            if (radarrQualitySelect) { radarrQualitySelect.disabled = true; radarrQualitySelect.innerHTML = '<option value="">--</option>'; }
+
+            if (!isAdded) {
+                if (appType === 'sonarr' && sonarrOptionsDiv) {
+                    // ...
+                } else if (appType === 'radarr' && radarrOptionsDiv) {
+                    radarrOptionsDiv.style.display = 'block';
+                    populateSelectFromServer("{{ url_for('seedbox_ui.get_radarr_rootfolders_api') }}", 'radarrRootFolderSelectForAdd', 'path', 'path', 'Dossier Racine Radarr');
+                    populateSelectFromServer("{{ url_for('seedbox_ui.get_radarr_qualityprofiles_api') }}", 'radarrQualityProfileSelectForAdd', 'id', 'name', 'Profil Qualité Radarr');
+
+                    // --- ACTIVER LE SELECT DE DISPONIBILITÉ ---
+                    const radarrAvailS = document.getElementById('radarrMinimumAvailabilitySelectForAdd');
+                    if (radarrAvailS) {
+                        radarrAvailS.disabled = false;
+                        // Ajouter un listener pour mettre à jour l'état du bouton de soumission quand il change
+                        radarrAvailS.removeEventListener('change', updateSubmitAddTorrentButtonState); // Éviter duplication
+                        radarrAvailS.addEventListener('change', updateSubmitAddTorrentButtonState);
+                    }
+                    // --- FIN ACTIVATION ---
+                }
+            }
+            updateSubmitAddTorrentButtonState();
+        }
+
+        // --- NOUVELLE FONCTION pour gérer l'état du bouton submitAddTorrentBtn ---
+        function updateSubmitAddTorrentButtonState() {
+            const submitButton = document.getElementById('submitAddTorrentBtn');
+            if (!submitButton) {
+                console.warn("Bouton 'submitAddTorrentBtn' non trouvé pour la mise à jour de l'état.");
+                return;
+            }
+
+            const addTorrentModalElement = document.getElementById('addTorrentModal');
+            // S'assurer que l'élément modal existe avant de lire les attributs
+            if (!addTorrentModalElement) {
+                console.error("Élément 'addTorrentModal' non trouvé. Impossible de lire les attributs data-.");
+                submitButton.disabled = true; // Sécurité : désactiver le bouton
+                return;
+            }
+
+            const isNew = addTorrentModalElement.getAttribute('data-selected-is-new') === 'true';
+            const mediaId = document.getElementById('addTorrentTargetId').value; // ID externe si nouveau, interne si existant
+            const appType = currentAddTorrentAppType; // Variable globale mise à jour par le choix Sonarr/Radarr
+
+            let allRequiredOptionsSelected = false; // Renommé pour plus de clarté
+
+            if (mediaId) { // Un média doit avoir été sélectionné via la recherche
+                if (isNew) { // Si c'est un nouveau média, vérifier les selects supplémentaires
+                    let rootFolderSelected = false;
+                    let qualityProfileSelected = false;
+
+                    if (appType === 'sonarr') {
+                        const rootSelect = document.getElementById('sonarrRootFolderSelectForAdd');
+                        const qualitySelect = document.getElementById('sonarrQualityProfileSelectForAdd');
+
+                        rootFolderSelected = rootSelect && !!rootSelect.value; // !! convertit en booléen (valeur non vide)
+                        qualityProfileSelected = qualitySelect && !!qualitySelect.value;
+
+                        allRequiredOptionsSelected = rootFolderSelected && qualityProfileSelected;
+                    } else if (appType === 'radarr') {
+                        const rootSelect = document.getElementById('radarrRootFolderSelectForAdd');
+                        const qualitySelect = document.getElementById('radarrQualityProfileSelectForAdd');
+                        const availabilitySelect = document.getElementById('radarrMinimumAvailabilitySelectForAdd'); // Le select pour la disponibilité
+
+                        rootFolderSelected = rootSelect && !!rootSelect.value;
+                        qualityProfileSelected = qualitySelect && !!qualitySelect.value;
+                        // --- VÉRIFICATION AJOUTÉE POUR LA DISPONIBILITÉ RADARR ---
+                        const availabilitySelected = availabilitySelect && !!availabilitySelect.value;
+
+                        allRequiredOptionsSelected = rootFolderSelected && qualityProfileSelected && availabilitySelected;
+                        // --- FIN VÉRIFICATION AJOUTÉE ---
+                    }
+                } else { // Média existant : l'ID du média suffit pour cette partie des conditions
+                    allRequiredOptionsSelected = true;
+                }
+            }
+
+            // Vérifier aussi qu'un fichier ou un magnet est fourni
+            const magnetLinkInput = document.getElementById('torrentMagnetLink');
+            const torrentFileInput = document.getElementById('torrentFileUpload');
+            let magnetLink = "";
+            let torrentFile = null;
+
+            if (magnetLinkInput) magnetLink = magnetLinkInput.value.trim();
+            if (torrentFileInput) torrentFile = torrentFileInput.files[0];
+
+            const sourceProvided = !!(magnetLink || torrentFile);
+
+            submitButton.disabled = !(allRequiredOptionsSelected && sourceProvided);
+
+            console.log(
+                `updateSubmitAddTorrentButtonState: \n` +
+                `  - mediaId: ${mediaId} (un média est-il sélectionné ?)\n` +
+                `  - isNew: ${isNew} (est-ce un nouveau média ?)\n` +
+                `  - appType: ${appType} (Sonarr ou Radarr ?)\n` +
+                `  - sourceProvided: ${sourceProvided} (fichier ou magnet ?)\n` +
+                `  - allRequiredOptionsSelected (pour nouveau média): ${allRequiredOptionsSelected} (options d'ajout remplies ?)\n` +
+                `  - SUBMIT_BTN_DISABLED: ${submitButton.disabled}`
+            );
+        }
+        // --- FIN NOUVELLE FONCTION ---
     </script>
 </body>
 </html>
