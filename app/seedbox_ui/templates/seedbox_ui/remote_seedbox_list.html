@@ -27,23 +27,15 @@
   <li style="margin-left: {{ level * 20 }}px;">
     <div class="tree-node-item d-flex align-items-center"> {# d-flex pour un meilleur alignement #}
 
-      {# --- NOUVELLE CASE À COCHER POUR LE RAPATRIEMENT GROUPÉ --- #}
-      {# Elle est affichée pour tous les items, quel que soit allow_sftp_delete #}
-      <span style="width: 25px; flex-shrink: 0; text-align: center;">
-          <input type="checkbox" class="form-check-input remote-item-batch-download-checkbox" {# Classe CSS distincte #}
+      {# --- CASE À COCHER UNIQUE POUR ACTIONS GROUPÉES --- #}
+      <span style="width: 30px; flex-shrink: 0; text-align: center; padding-right: 5px;"> {# Ajustement léger du style pour un seul checkbox #}
+          <input type="checkbox" class="form-check-input batch-action-item-checkbox"
+                 name="selected_items_paths" {# Corrigé pour correspondre au backend pour la suppression #}
                  value="{{ node.path_for_actions | e }}"
                  data-item-name="{{ node.name | e }}"
-                 aria-label="Sélectionner {{ node.name | e }} pour rapatriement groupé">
+                 aria-label="Sélectionner {{ node.name | e }} pour une action groupée">
       </span>
-      {# --- FIN NOUVELLE CASE À COCHER --- #}
-
-      {# Case à cocher existante pour la SUPPRESSION (toujours affichée) #}
-      <span class="checkbox-container" style="width: 25px; flex-shrink: 0; text-align: center;"> {# Donner une largeur fixe pour l'alignement #}
-          <input type="checkbox" class="form-check-input sftp-item-delete-checkbox" {# Classe CSS distincte #}
-                 name="selected_items_paths_for_delete" {# Nom distinct pour éviter conflit #}
-                 value="{{ node.path_for_actions | e }}"
-                 title="Sélectionner {{ node.name | e }} pour suppression">
-      </span>
+      {# --- FIN CASE À COCHER UNIQUE --- #}
 
       <span class="icon-container" style="width: 25px; text-align: center; flex-shrink: 0;">
         {% if node.is_dir and node.children %}
@@ -145,9 +137,12 @@
             </div>
             {% endif %}
             {% endif %} {# End 'working' not in app_type #}
-            
-            {# Le bouton de suppression groupée est géré par le formulaire sftpDeleteForm et sa visibilité contrôlée par allow_sftp_delete #}
-            {# Pas de changement direct ici pour le bouton de suppression groupée, il apparaîtra en bas si allow_sftp_delete est vrai #}
+
+            <div class="btn-group me-2" role="group" aria-label="Groupe d'action de suppression">
+                <button type="button" class="btn btn-danger btn-sm" id="batchDeleteBtn" disabled>
+                    <i class="fas fa-trash-alt"></i> Supprimer Sélection de la Seedbox
+                </button>
+            </div>
 
             <div class="ms-auto"> {# Pour pousser le statut à droite si on en veut un global #}
          <span id="batchGlobalStatus" class="ms-3"></span>
@@ -156,26 +151,13 @@
 
         {# Votre arbre de fichiers/dossiers distants commence ici #}
         {% if items_tree %}
-            <form id="sftpDeleteForm" action="{{ url_for('seedbox_ui.sftp_delete_items_action') }}" method="POST">
-                <input type="hidden" name="app_type_source" value="{{ app_type }}"> {# app_type est le contexte actuel de la page #}
-
-                <ul class="file-tree">
-                    {% for root_node in items_tree %}
-                        {# Assurez-vous que la macro render_remote_tree_node est bien celle modifiée #}
-                        {# avec la case à cocher class="remote-item-batch-download-checkbox" #}
-                        {{ render_remote_tree_node(root_node, app_type, allow_sftp_delete, 0) }}
-                    {% endfor %}
-                </ul>
-
-                {# Bouton de suppression groupée, toujours visible #}
-                <div class="mt-3">
-                    <button type="submit" class="btn btn-danger btn-sm" id="batchDeleteBtn" disabled
-                            onclick="return confirm('Êtes-vous sûr de vouloir supprimer DÉFINITIVEMENT les items sélectionnés de la seedbox ?');">
-                        <i class="fas fa-trash-alt"></i> Supprimer Sélection de la Seedbox
-                    </button>
-                    <small class="text-muted ms-2">(Utilise les cases à cocher à côté des icônes pour la suppression)</small>
-                </div>
-            </form>
+            {# Le formulaire sftpDeleteForm n'est plus nécessaire car la suppression est gérée par JS #}
+            <ul class="file-tree">
+                {% for root_node in items_tree %}
+                    {# La macro render_remote_tree_node rend les items avec la classe .batch-action-item-checkbox #}
+                    {{ render_remote_tree_node(root_node, app_type, allow_sftp_delete, 0) }}
+                {% endfor %}
+            </ul>
         {% elif not error_message %}
             <div class="alert alert-info">Aucun item trouvé dans ce dossier distant ou dossier inaccessible.</div>
         {% endif %}
@@ -224,8 +206,12 @@
 
     // --- Batch Action Variables ---
     const batchRapatrierButton = document.getElementById('batchRapatrierBtn');
+    // selectedRemoteItemsForBatch is still declared globally as updateBatchActionButtonsState populates it,
+    // and some older functions might still reference it before they are fully updated.
+    // However, primary action handlers will now re-query the DOM.
     let selectedRemoteItemsForBatch = [];
     const batchRapatrierAndPremapSonarrButton = document.getElementById('batchRapatrierAndPremapSonarrBtn');
+    const globalDeleteButton = document.getElementById('batchDeleteBtn'); // Added for clarity
 
     // --- Page specific functions that might call modal functions ---
 
@@ -376,17 +362,22 @@
 
     // --- SFTP Batch Download (No mapping, just download to staging) ---
     async function handleBatchRapatrier() {
-        if (selectedRemoteItemsForBatch.length === 0) { alert("Sélectionnez des items à rapatrier."); return; }
+        const currentSelectedItems = [];
+        document.querySelectorAll('.batch-action-item-checkbox:checked').forEach(checkbox => {
+            currentSelectedItems.push(checkbox.value);
+        });
+
+        if (currentSelectedItems.length === 0) { alert("Sélectionnez des items à rapatrier."); return; }
         const appTypeSource = "{{ app_type | e }}"; 
         const feedbackEl = document.getElementById('batchGlobalStatus') || document.getElementById('sftpActionFeedback');
 
         if (batchRapatrierButton) batchRapatrierButton.disabled = true;
-        if (feedbackEl) feedbackEl.innerHTML = `<span class="text-info"><i class="fas fa-spinner fa-spin"></i> Rapatriement de ${selectedRemoteItemsForBatch.length} item(s)...</span>`;
+        if (feedbackEl) feedbackEl.innerHTML = `<span class="text-info"><i class="fas fa-spinner fa-spin"></i> Rapatriement de ${currentSelectedItems.length} item(s)...</span>`;
 
         try {
             const response = await fetch(window.appUrls.sftpBatchDownload, {
                 method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ remote_paths: selectedRemoteItemsForBatch, app_type_context: appTypeSource })
+                body: JSON.stringify({ remote_paths: currentSelectedItems, app_type_context: appTypeSource })
             });
             const result = await response.json();
             if (response.ok && result.success) {
@@ -405,17 +396,28 @@
 
     // --- SFTP Batch Retrieve and Premap to SONARR ---
     function openBatchRetrieveAndPremapSonarrModal() {
-        if (selectedRemoteItemsForBatch.length === 0) { alert("Sélectionnez des items."); return; }
+        const currentSelectedItems = [];
+        document.querySelectorAll('.batch-action-item-checkbox:checked').forEach(checkbox => {
+            currentSelectedItems.push(checkbox.value);
+        });
+
+        if (currentSelectedItems.length === 0) { alert("Sélectionnez des items."); return; }
         
         const sonarrModalElement = document.getElementById('sonarrSearchModal');
         if (!sonarrModalElement) { console.error("Modal Sonarr non trouvé!"); return; }
 
         sonarrModalElement.setAttribute('data-current-action', 'sftpBatchRetrieveAndPremapSonarr');
-        document.getElementById('sonarrItemToMap').textContent = `${selectedRemoteItemsForBatch.length} items sélectionnés`;
+        // Pass currentSelectedItems to the function that will actually execute the action.
+        // Store it on the modal element or pass it to triggerBatchRetrieveAndPremapSonarr.
+        // For this example, let's assume triggerBatchRetrieveAndPremapSonarr will re-query or receive it.
+        sonarrModalElement.dataset.currentSelectedItemsForBatch = JSON.stringify(currentSelectedItems);
+
+
+        document.getElementById('sonarrItemToMap').textContent = `${currentSelectedItems.length} items sélectionnés`;
         document.getElementById('sonarrOriginalItemName').value = ''; 
         document.getElementById('sonarrItemType').textContent = 'Lot (Distant)';
         document.getElementById('sonarrSearchQuery').value = '';
-        document.getElementById('sonarrSearchResults').innerHTML = `<p class="text-muted">Recherchez la série Sonarr cible pour les <strong>${selectedRemoteItemsForBatch.length} items</strong>.</p>`;
+        document.getElementById('sonarrSearchResults').innerHTML = `<p class="text-muted">Recherchez la série Sonarr cible pour les <strong>${currentSelectedItems.length} items</strong>.</p>`;
         document.getElementById('sonarrSelectedSeriesId').value = '';
         document.getElementById('sonarrSelectedSeriesTitle').innerText = 'Aucune série sélectionnée';
         document.getElementById('sonarrManualSeasonDiv').style.display = 'none'; 
@@ -427,7 +429,15 @@
             modalMapButton.disabled = true;
             modalMapButton.onclick = function() {
                 const targetSeriesId = document.getElementById('sonarrSelectedSeriesId').value;
-                if (targetSeriesId) { triggerBatchRetrieveAndPremapSonarr(targetSeriesId); }
+                if (targetSeriesId) {
+                    // Retrieve the items from the modal's dataset or re-query.
+                    const itemsToProcess = JSON.parse(sonarrModalElement.dataset.currentSelectedItemsForBatch || '[]');
+                    if (itemsToProcess.length > 0) {
+                        triggerBatchRetrieveAndPremapSonarr(targetSeriesId, itemsToProcess);
+                    } else {
+                        alert("Aucun item sélectionné pour le traitement (erreur interne).");
+                    }
+                }
                 else { alert("Sélectionnez une série Sonarr."); }
             };
         }
@@ -435,7 +445,7 @@
         sonarrModalInstance.show();
     }
 
-    async function triggerBatchRetrieveAndPremapSonarr(targetSeriesId) {
+    async function triggerBatchRetrieveAndPremapSonarr(targetSeriesId, itemsToProcess) { // Now accepts itemsToProcess
         const resultsDivInModal = document.getElementById('sonarrSearchResults');
         const modalMapButton = document.getElementById('sonarrModalMapButton');
         const mainActionButton = document.getElementById('batchRapatrierAndPremapSonarrBtn');
@@ -446,7 +456,7 @@
 
         try {
             const payload = {
-                remote_paths: selectedRemoteItemsForBatch,
+                remote_paths: itemsToProcess, // Use the passed itemsToProcess
                 series_id: parseInt(targetSeriesId),
                 app_type_context: "{{ app_type | e }}" 
             };
@@ -525,10 +535,16 @@
         tooltipTriggerList.map(function (tooltipTriggerEl) { return new bootstrap.Tooltip(tooltipTriggerEl); });
 
         // Checkbox listeners for batch actions
-        document.querySelectorAll('.remote-item-batch-download-checkbox, .sftp-item-delete-checkbox').forEach(checkbox => {
+        // Combined listener for the new single checkbox class
+        document.querySelectorAll('.batch-action-item-checkbox').forEach(checkbox => {
             checkbox.addEventListener('change', updateBatchActionButtonsState);
         });
         
+        const globalDeleteButtonJS = document.getElementById('batchDeleteBtn');
+        if (globalDeleteButtonJS) {
+            globalDeleteButtonJS.addEventListener('click', handleBatchSftpDelete);
+        }
+
         // Batch Rapatrier Button
         if (batchRapatrierButton) {
             batchRapatrierButton.addEventListener('click', handleBatchRapatrier);
@@ -563,19 +579,68 @@
 
     // This function needs to be defined for checkboxes to work
     function updateBatchActionButtonsState() {
-        selectedRemoteItemsForBatch = [];
-        document.querySelectorAll('.remote-item-batch-download-checkbox:checked').forEach(checkbox => {
+        selectedRemoteItemsForBatch = []; // Clear and repopulate global list (can be removed if no other function uses it directly)
+        document.querySelectorAll('.batch-action-item-checkbox:checked').forEach(checkbox => {
             selectedRemoteItemsForBatch.push(checkbox.value);
         });
-        const anyDownloadSelected = selectedRemoteItemsForBatch.length > 0;
+        const anyItemSelected = selectedRemoteItemsForBatch.length > 0;
 
-        if (batchRapatrierButton) batchRapatrierButton.disabled = !anyDownloadSelected;
-        if (batchRapatrierAndPremapSonarrButton) batchRapatrierAndPremapSonarrButton.disabled = !anyDownloadSelected;
+        // Update all batch buttons based on anyItemSelected
+        if (batchRapatrierButton) batchRapatrierButton.disabled = !anyItemSelected;
+        if (batchRapatrierAndPremapSonarrButton) batchRapatrierAndPremapSonarrButton.disabled = !anyItemSelected;
 
-        let anyDeleteSelected = false;
-        document.querySelectorAll('.sftp-item-delete-checkbox:checked').forEach(cb => { anyDeleteSelected = true; });
-        const globalDeleteButton = document.getElementById('batchDeleteBtn');
-        if (globalDeleteButton) globalDeleteButton.disabled = !anyDeleteSelected;
+        // globalDeleteButton was already declared at the top of the script
+        if (globalDeleteButton) globalDeleteButton.disabled = !anyItemSelected;
+    }
+
+    async function handleBatchSftpDelete() {
+        const selectedCheckboxes = document.querySelectorAll('.batch-action-item-checkbox:checked');
+        const remotePaths = Array.from(selectedCheckboxes).map(cb => cb.value);
+
+        if (remotePaths.length === 0) {
+            alert("Veuillez sélectionner des items à supprimer.");
+            return;
+        }
+
+        if (!confirm(`Êtes-vous sûr de vouloir supprimer DÉFINITIVEMENT ${remotePaths.length} item(s) sélectionné(s) de la seedbox ?`)) {
+            return;
+        }
+
+        const deleteButton = document.getElementById('batchDeleteBtn');
+        const feedbackEl = document.getElementById('sftpActionFeedback'); // Or batchGlobalStatus
+        if (deleteButton) deleteButton.disabled = true;
+        if (feedbackEl) feedbackEl.innerHTML = `<span class="text-info"><i class="fas fa-spinner fa-spin"></i> Suppression en cours...</span>`;
+
+        const formData = new FormData();
+        remotePaths.forEach(path => formData.append('selected_items_paths', path));
+        formData.append('app_type_source', '{{ app_type | e }}'); // Get current app_type
+
+        try {
+            const response = await fetch("{{ url_for('seedbox_ui.sftp_delete_items_action') }}", {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok) {
+                if (feedbackEl) feedbackEl.innerHTML = `<span class="text-success">Suppression réussie. Rechargement...</span>`;
+                // Utiliser flashMessageGlobally si disponible et adapté, sinon le message via feedbackEl est déjà là.
+                // flashMessageGlobally(`${remotePaths.length} item(s) marqué(s) pour suppression. La page va se recharger.`, 'success');
+                // Le flash via le backend après redirection est préférable.
+                setTimeout(() => { window.location.reload(); }, 2500); // La redirection du backend affichera les flash messages.
+            } else {
+                let errorMsg = `Erreur HTTP ${response.status} lors de la suppression.`;
+                try { // Essayer de parser une erreur JSON du backend
+                    const result = await response.json();
+                    if (result && result.error) errorMsg = result.error;
+                } catch (e) { /* Ignore if response is not JSON */ }
+                throw new Error(errorMsg);
+            }
+        } catch (error) {
+            console.error('Error during SFTP batch delete:', error);
+            if (feedbackEl) feedbackEl.innerHTML = `<span class="text-danger">Erreur: ${escapeJsString(error.message)}</span>`;
+            // flashMessageGlobally(`Erreur lors de la suppression: ${error.message}`, 'danger');
+            if (deleteButton) deleteButton.disabled = false;
+        }
     }
     console.log("remote_seedbox_list.html inline script: END -- all functions should be defined now.");
     </script>
