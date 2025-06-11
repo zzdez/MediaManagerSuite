@@ -429,15 +429,49 @@ def sftp_build_remote_file_tree(sftp_client, remote_current_path_posix, local_st
             item_full_remote_path_posix = Path(remote_current_path_posix).joinpath(attr.filename).as_posix()
 
             potential_local_path = local_staging_dir_pathobj_to_check / attr.filename # Pour les items de premier niveau seulement
-            # Pour les sous-niveaux, cette vérification 'is_in_local_staging' est moins pertinente
-            # ou nécessiterait de reconstruire le chemin relatif complet par rapport au staging.
-            # Pour l'instant, on ne la fait que pour les items de premier niveau du scan.
-            # On pourrait passer le `relative_path_from_root_scan` pour une vérification plus précise.
-            is_present_in_local_staging = False
-            if Path(remote_current_path_posix).as_posix() == Path(base_remote_path_for_actions).as_posix(): # Seulement pour le niveau racine scanné
-                 potential_local_path_root_item = local_staging_dir_pathobj_to_check / attr.filename
-                 is_present_in_local_staging = potential_local_path_root_item.exists()
+            # Calculer le chemin relatif de l'item courant par rapport à base_remote_path_for_actions
+            # item_full_remote_path_posix est le chemin complet de l'item distant actuel
+            # base_remote_path_for_actions est le chemin racine du scan SFTP
 
+            # S'assurer que les deux chemins sont des objets Path et normalisés pour la comparaison relative_to
+            path_obj_item_full_remote = Path(item_full_remote_path_posix)
+            path_obj_base_remote = Path(base_remote_path_for_actions)
+
+            is_present_in_local_staging = False
+            try:
+                # Obtenir le chemin relatif
+                # .relative_to() s'attend à ce que path_obj_base_remote soit un parent de path_obj_item_full_remote
+                # ou identique. Si item_full_remote_path_posix est "/scan/base/Movies/movie.mkv"
+                # et base_remote_path_for_actions est "/scan/base/", alors relative_path sera "Movies/movie.mkv".
+                # Si les chemins ne sont pas relatifs (par exemple, base_remote_path_for_actions est un sous-dossier
+                # de item_full_remote_path_posix, ou ils sont complètement différents), une ValueError sera levée.
+                # Cela ne devrait pas arriver si base_remote_path_for_actions est bien la racine du scan.
+                if item_full_remote_path_posix.startswith(base_remote_path_for_actions):
+                    relative_path = path_obj_item_full_remote.relative_to(path_obj_base_remote)
+                    # Construire le chemin local potentiel en joignant le répertoire de staging local et le chemin relatif
+                    potential_local_path = local_staging_dir_pathobj_to_check.joinpath(relative_path)
+                    is_present_in_local_staging = potential_local_path.exists()
+                else:
+                    # Ce cas peut se produire si item_full_remote_path_posix n'est pas DANS base_remote_path_for_actions
+                    # ce qui pourrait être une erreur de logique en amont ou une structure de dossier inattendue.
+                    # Pour l'instant, on considère que l'item n'est pas dans le staging local.
+                    logger.debug(f"SFTP Tree: Item {item_full_remote_path_posix} n'est pas relatif à la base {base_remote_path_for_actions}. "
+                                 f"Impossible de vérifier 'is_in_local_staging' précisément pour cet item via chemin relatif.")
+                    # On pourrait aussi choisir de vérifier uniquement le nom de fichier à la racine du staging comme fallback:
+                    # is_present_in_local_staging = (local_staging_dir_pathobj_to_check / attr.filename).exists()
+                    # Mais la consigne est d'utiliser le chemin relatif.
+                    is_present_in_local_staging = False
+
+
+            except ValueError as e_rel_path:
+                # Cela peut arriver si base_remote_path_for_actions n'est pas un parent de item_full_remote_path_posix.
+                # Ex: item_full_remote_path_posix = /foo/bar, base_remote_path_for_actions = /other/path
+                logger.warning(f"SFTP Tree: Erreur de calcul du chemin relatif pour {item_full_remote_path_posix} par rapport à {base_remote_path_for_actions}: {e_rel_path}. "
+                               f"is_in_local_staging sera False.")
+                is_present_in_local_staging = False
+            except Exception as e_path_logic:
+                logger.error(f"SFTP Tree: Erreur inattendue dans la logique de is_in_local_staging pour {attr.filename}: {e_path_logic}", exc_info=True)
+                is_present_in_local_staging = False
 
             node = {
                 'name': attr.filename,
