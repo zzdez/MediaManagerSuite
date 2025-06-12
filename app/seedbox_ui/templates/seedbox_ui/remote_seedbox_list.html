@@ -52,7 +52,8 @@
          <small class="text-muted fs-sm">
              ({{ node.size_readable if node.size_readable else 'N/A' }}{% if node.last_modified != 'N/A' %}, {{ node.last_modified }}{% endif %})
          </small>
-         {% if not allow_sftp_delete and node.is_in_local_staging %} {# Uniquement pour les items en vues "Terminés" (pas "Working") #}
+         {# DEBUG: level={{ level }}, allow_sftp_delete={{ allow_sftp_delete }}, node.is_in_local_staging={{ node.is_in_local_staging }} #}
+         {% if level == 0 and not allow_sftp_delete and node.is_in_local_staging %}  {# <--- REMETTRE level == 0 #}
             <span class="badge bg-success ms-2">Déjà dans Staging Local</span>
          {% endif %}
       </span>
