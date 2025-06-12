@@ -54,6 +54,14 @@ def create_app(config_class=Config):
     except ImportError as e:
         logger.error(f"Erreur lors de l'import ou de l'enregistrement du blueprint seedbox_ui: {e}")
 
+    # AJOUT POUR LE NOUVEAU BLUEPRINT
+    try:
+        from app.config_ui import config_ui_bp
+        app.register_blueprint(config_ui_bp, url_prefix='/configuration')
+        logger.info("Blueprint 'config_ui' enregistré avec succès.")
+    except ImportError as e:
+        logger.error(f"Erreur lors de l'import ou de l'enregistrement du blueprint config_ui: {e}")
+    # FIN DE L'AJOUT
 
     # Route pour la page d'accueil/portail
     @app.route('/')

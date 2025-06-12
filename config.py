@@ -79,6 +79,17 @@ class Config:
     # Configuration du chemin JSON utilisé par le script sftp_downloader_notifier.py
     PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT = os.environ.get('PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT')
 
+    # --- Configuration Interface de Configuration ---
+    CONFIG_UI_PASSWORD = os.environ.get('CONFIG_UI_PASSWORD')
+    if not CONFIG_UI_PASSWORD:
+        print("-" * 70)
+        print("ATTENTION : Le mot de passe pour l'interface de configuration (CONFIG_UI_PASSWORD) n'est pas défini dans .env !")
+        print("            L'accès à la page de configuration ne sera pas sécurisé.")
+        print("            Veuillez définir CONFIG_UI_PASSWORD dans votre fichier .env.")
+        print("-" * 70)
+        # Vous pourriez assigner une valeur par défaut non sécurisée ici si nécessaire pour le dev,
+        # mais il est préférable de simplement laisser la vérification échouer plus tard si non défini.
+        # CONFIG_UI_PASSWORD = "debug_password" # NON RECOMMANDÉ POUR LA PRODUCTION
 
     # --- Vérifications et Avertissements au Démarrage ---
     # (Cette section est exécutée à l'import de Config, donc une seule fois au démarrage de l'app)
