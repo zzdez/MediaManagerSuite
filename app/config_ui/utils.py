@@ -26,88 +26,105 @@ def parse_template_env():
               'options' (list, optionnel): Options pour les types 'select' (par ex. pour booléens).
     '''
     if not os.path.exists(TEMPLATE_ENV_PATH):
-        # Gérer le cas où template.env n'existe pas
-        # Vous pourriez logger une erreur ici ou retourner une liste vide.
+        # Gérer le cas où .env.template n'existe pas.
+        # Un message d'erreur est printé, et une liste vide est retournée,
+        # ce qui sera géré par la route pour afficher un message à l'utilisateur.
         print(f"ERREUR : Le fichier {TEMPLATE_ENV_PATH} est introuvable.")
         return []
 
-    params = []
+    params = [] # Liste pour stocker les dictionnaires de paramètres parsés.
+    # Charge les valeurs actuelles du .env principal sans affecter os.environ.
+    # Cela permet de comparer les valeurs du .env.template avec celles réellement en cours d'utilisation.
     current_env_values = dotenv_values(DOTENV_PATH)
 
     with open(TEMPLATE_ENV_PATH, 'r', encoding='utf-8') as f:
         for line in f:
             line = line.strip()
-            if not line or line.startswith('# ---'): # Ignorer les lignes vides et les séparateurs de section
-                # Conserver les séparateurs de section pour l'affichage
+            # Ignorer les lignes vides. Les séparateurs de section sont traités spécifiquement.
+            if not line or line.startswith('# ---'):
+                # Conserver les séparateurs de section pour l'affichage dans le formulaire.
                 if line.startswith('# ---'):
-                    params.append({'is_separator': True, 'text': line[2:-2].strip()})
+                    params.append({'is_separator': True, 'text': line[2:-2].strip()}) # Extrait le texte du séparateur.
                 continue
 
             comment_match = re.search(r'#\s*(.*)', line)
             description = ''
             var_line = line
             if comment_match:
-                description = comment_match.group(1).strip()
-                var_line = line[:comment_match.start()].strip() # Ce qui est avant le commentaire
+                description = comment_match.group(1).strip() # Extrait le contenu du commentaire.
+                var_line = line[:comment_match.start()].strip() # Isole la partie de la ligne avant le commentaire (potentielle variable).
 
-            if var_line.startswith('#'): # Si la ligne entière est un commentaire (non traité comme description de var)
-                if description and not any(p.get('name') for p in params if 'name' in p): # Si c'est un commentaire général avant toute variable
+            # Gérer les lignes qui sont entièrement des commentaires (non associées directement à une variable sur la même ligne).
+            if var_line.startswith('#'):
+                # Ces commentaires peuvent être des descriptions générales pour une section ou un groupe de variables.
+                if description and not any(p.get('name') for p in params if 'name' in p): # Commentaire général en début de fichier/section.
                      params.append({'is_comment_general': True, 'text': description})
-                elif description: # Si c'est un commentaire après des variables, peut-être pour un groupe
+                elif description: # Commentaire de bloc pour un groupe de variables ou une explication.
                      params.append({'is_comment_block': True, 'text': description})
                 continue
 
 
             if '=' in var_line:
-                name, default_value = var_line.split('=', 1)
+                name, default_value = var_line.split('=', 1) # Sépare la variable de sa valeur par défaut.
                 name = name.strip()
                 default_value = default_value.strip()
-                
-                # Essayer de récupérer la valeur actuelle du .env principal
+
+                # Récupérer la valeur actuelle du .env principal.
+                # Si la clé n'existe pas dans .env, la valeur par défaut du .env.template est utilisée comme valeur actuelle.
                 current_value = current_env_values.get(name, default_value)
 
-                # Inférence de type (simplifiée)
-                param_type = 'string' # Par défaut
+                # --- Inférence de Type ---
+                # L'ordre d'inférence est :
+                # 1. Mots-clés dans le nom de la variable (ex: PASSWORD, TOKEN -> type 'password').
+                # 2. Forme de la valeur par défaut (ex: 'true'/'false' -> type 'bool'; '123' -> type 'int').
+                # 3. Commentaire explicite `# TYPE: <type>` qui surcharge les inférences précédentes.
+                # Le type par défaut est 'string'.
+                param_type = 'string'
                 options = None
 
-                # Inférence basée sur le nom (convention pour les mots de passe/tokens)
+                # 1. Inférence basée sur des mots-clés dans le nom de la variable.
                 if 'PASSWORD' in name.upper() or 'TOKEN' in name.upper() or 'API_KEY' in name.upper() or 'SECRET_KEY' in name.upper():
                     param_type = 'password'
-                elif default_value.lower() in ['true', 'false', 'yes', 'no', '1', '0']:
+                # 2. Inférence basée sur la forme de la valeur par défaut.
+                elif default_value.lower() in ['true', 'false', 'yes', 'no', '1', '0']: # Booléens
                     param_type = 'bool'
-                    options = [('True', 'True'), ('False', 'False')] # Ou Yes/No selon la préférence
-                     # Mettre à jour current_value pour correspondre aux options si booléen
+                    options = [('True', 'True'), ('False', 'False')] # Options pour le rendu du formulaire.
+                    # Normaliser la valeur actuelle pour correspondre aux options si c'est un booléen.
                     if str(current_value).lower() in ['true', '1', 't', 'yes']:
                         current_value = 'True'
                     elif str(current_value).lower() in ['false', '0', 'f', 'no']:
                         current_value = 'False'
-                    else: # Si la valeur actuelle n'est pas clairement un booléen reconnu, utiliser la valeur par défaut
+                    else: # Si la valeur actuelle n'est pas un booléen clair, forcer en utilisant la valeur par défaut normalisée.
                         current_value = 'True' if default_value.lower() in ['true', '1', 't', 'yes'] else 'False'
-
-                elif default_value.isdigit():
+                elif default_value.isdigit(): # Entiers
                     param_type = 'int'
-                elif ',' in default_value and not any(c.isspace() for c in default_value.split(',')[0]): # Simple heuristique pour list_str
+                # Heuristique simple pour list_str (ex: "item1,item2").
+                # Vérifie la présence de virgules et s'assure que le premier segment ne contient pas d'espaces
+                # (pour éviter de traiter des phrases comme des listes).
+                elif ',' in default_value and (not default_value.split(',')[0] or not any(c.isspace() for c in default_value.split(',')[0])):
                     param_type = 'list_str'
-                
-                # Priorité aux commentaires de type explicite
+
+                # 3. Priorité au commentaire de type explicite (ex: "# TYPE: bool").
+                #    Ceci surcharge toute inférence précédente.
                 type_comment_match = re.search(r'#\s*TYPE:\s*(\w+)', description, re.IGNORECASE)
                 if type_comment_match:
                     explicit_type = type_comment_match.group(1).lower()
                     if explicit_type in ['string', 'int', 'bool', 'list_str', 'password']:
-                        param_type = explicit_type
+                        param_type = explicit_type # Appliquer le type explicite.
+                    # Si le type explicite est booléen, s'assurer que les options et la valeur actuelle sont correctement (re)définies.
                     if explicit_type == 'bool':
                         options = [('True', 'True'), ('False', 'False')]
+                        # Re-normaliser current_value basé sur le type explicite bool.
                         if str(current_value).lower() in ['true', '1', 't', 'yes']:
                             current_value = 'True'
                         elif str(current_value).lower() in ['false', '0', 'f', 'no']:
                             current_value = 'False'
-                        else:
+                        else: # Forcer en utilisant la valeur par défaut normalisée.
                              current_value = 'True' if default_value.lower() in ['true', '1', 't', 'yes'] else 'False'
 
-
-                # Nettoyer la description si elle contenait le type
+                # Nettoyer la description de l'annotation de type pour éviter de l'afficher dans l'UI.
                 description = re.sub(r'#\s*TYPE:\s*\w+', '', description).strip()
-                
+
                 params.append({
                     'name': name,
                     'default_value': default_value,
@@ -128,7 +145,7 @@ def parse_template_env():
 if __name__ == '__main__':
     # Pour tester la fonction directement
     # Assurez-vous que .env.template et .env existent à la racine du projet pour ce test
-    
+
     # Créer un .env.template de test
     sample_template_content = """
 # --- Section Générale ---

@@ -103,19 +103,19 @@
                                     {# Champ caché pour envoyer "False" si la case n'est pas cochée #}
                                     <input type="hidden" name="{{ param.name }}_hidden_bool_marker" value="False">
                                 {% elif param.type == 'int' %}
-                                    <input type="number" class="form-control" id="{{ param.name }}" name="{{ param.name }}" value="{{ param.current_value }}">
+                                    <input type="number" class="form-control" id="{{ param.name }}" name="{{ param.name }}" value="{{ param.current_value }}" placeholder="{{ param.default_value }}">
                                 {% elif param.type == 'password' %}
                                     <div class="input-group">
-                                        <input type="password" class="form-control" id="{{ param.name }}" name="{{ param.name }}" value="{{ param.current_value }}">
+                                        <input type="password" class="form-control" id="{{ param.name }}" name="{{ param.name }}" value="{{ param.current_value }}" placeholder="{{ param.default_value }}">
                                         <button class="btn btn-outline-secondary" type="button" onclick="togglePasswordVisibility('{{ param.name }}')">
                                             <i class="fas fa-eye"></i>
                                         </button>
                                     </div>
                                 {% elif param.type == 'list_str' %}
-                                     <input type="text" class="form-control" id="{{ param.name }}" name="{{ param.name }}" value="{{ param.current_value }}" placeholder="Valeurs séparées par des virgules">
+                                     <input type="text" class="form-control" id="{{ param.name }}" name="{{ param.name }}" value="{{ param.current_value }}" placeholder="{{ param.default_value }}">
                                      <small class="form-text text-muted">Les valeurs doivent être séparées par des virgules. Ex: val1,val2,val3</small>
                                 {% else %} {# string par défaut #}
-                                    <input type="text" class="form-control" id="{{ param.name }}" name="{{ param.name }}" value="{{ param.current_value }}">
+                                    <input type="text" class="form-control" id="{{ param.name }}" name="{{ param.name }}" value="{{ param.current_value }}" placeholder="{{ param.default_value }}">
                                 {% endif %}
                             </div>
                         </div>
