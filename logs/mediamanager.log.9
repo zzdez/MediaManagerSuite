@@ -1,0 +1,110 @@
+2025-06-12 18:36:58,719 INFO: show_library: Arguments finaux pour API search(): {'unwatched': False, 'addedAt>>=': '100d', 'sort': 'addedAt:desc'} [in X:\MediaManagerSuite\app\plex_editor\routes.py:223]
+2025-06-12 18:36:59,199 INFO: Emprunt d'identité réussi pour 'User'. [in X:\MediaManagerSuite\app\plex_editor\routes.py:245]
+2025-06-12 18:36:59,205 INFO: Exécution de library.search sur 'Films' pour utilisateur 'User' avec args: {'unwatched': False, 'addedAt>>=': '100d', 'sort': 'addedAt:desc'} [in X:\MediaManagerSuite\app\plex_editor\routes.py:270]
+2025-06-12 18:36:59,233 ERROR: Exception on /plex/library/Films [GET] [in X:\MediaManagerSuite\venv\Lib\site-packages\flask\app.py:875]
+Traceback (most recent call last):
+  File "X:\MediaManagerSuite\venv\Lib\site-packages\flask\app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+  File "X:\MediaManagerSuite\venv\Lib\site-packages\flask\app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "X:\MediaManagerSuite\venv\Lib\site-packages\flask\app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "X:\MediaManagerSuite\venv\Lib\site-packages\flask\app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "X:\MediaManagerSuite\app\plex_editor\routes.py", line 335, in show_library
+    return render_template('plex_editor/library.html',
+                           title=f"Bibliothèque {library_name or 'Inconnue'} - {user_title_in_session}",
+    ...<4 lines>...
+                           plex_error=plex_error_message,
+                           user_title=user_title_in_session)
+  File "X:\MediaManagerSuite\venv\Lib\site-packages\flask\templating.py", line 150, in render_template
+    return _render(app, template, context)
+  File "X:\MediaManagerSuite\venv\Lib\site-packages\flask\templating.py", line 131, in _render
+    rv = template.render(context)
+  File "X:\MediaManagerSuite\venv\Lib\site-packages\jinja2\environment.py", line 1295, in render
+    self.environment.handle_exception()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "X:\MediaManagerSuite\venv\Lib\site-packages\jinja2\environment.py", line 942, in handle_exception
+    raise rewrite_traceback_stack(source=source)
+  File "X:\MediaManagerSuite\app\plex_editor\templates\plex_editor\library.html", line 371, in top-level template code
+    Ajouter le tag <strong>'{{ current_app.config.RADARR_TAG_ON_ARCHIVE }}'</strong> dans Radarr.
+    
+  File "X:\MediaManagerSuite\venv\Lib\site-packages\jinja2\environment.py", line 490, in getattr
+    return getattr(obj, attribute)
+jinja2.exceptions.UndefinedError: 'current_app' is undefined
+2025-06-12 18:36:59,236 ERROR: Erreur interne du serveur (500): 500 Internal Server Error: The server encountered an internal error and was unable to complete your request. Either the server is overloaded or there is an error in the application. [in X:\MediaManagerSuite\app\__init__.py:84]
+Traceback (most recent call last):
+  File "X:\MediaManagerSuite\venv\Lib\site-packages\flask\app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+  File "X:\MediaManagerSuite\venv\Lib\site-packages\flask\app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "X:\MediaManagerSuite\venv\Lib\site-packages\flask\app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "X:\MediaManagerSuite\venv\Lib\site-packages\flask\app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "X:\MediaManagerSuite\app\plex_editor\routes.py", line 335, in show_library
+    return render_template('plex_editor/library.html',
+                           title=f"Bibliothèque {library_name or 'Inconnue'} - {user_title_in_session}",
+    ...<4 lines>...
+                           plex_error=plex_error_message,
+                           user_title=user_title_in_session)
+  File "X:\MediaManagerSuite\venv\Lib\site-packages\flask\templating.py", line 150, in render_template
+    return _render(app, template, context)
+  File "X:\MediaManagerSuite\venv\Lib\site-packages\flask\templating.py", line 131, in _render
+    rv = template.render(context)
+  File "X:\MediaManagerSuite\venv\Lib\site-packages\jinja2\environment.py", line 1295, in render
+    self.environment.handle_exception()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "X:\MediaManagerSuite\venv\Lib\site-packages\jinja2\environment.py", line 942, in handle_exception
+    raise rewrite_traceback_stack(source=source)
+  File "X:\MediaManagerSuite\app\plex_editor\templates\plex_editor\library.html", line 371, in top-level template code
+    Ajouter le tag <strong>'{{ current_app.config.RADARR_TAG_ON_ARCHIVE }}'</strong> dans Radarr.
+    
+  File "X:\MediaManagerSuite\venv\Lib\site-packages\jinja2\environment.py", line 490, in getattr
+    return getattr(obj, attribute)
+jinja2.exceptions.UndefinedError: 'current_app' is undefined
+2025-06-12 18:36:59,308 WARNING: Erreur 404 - Page non trouvée: http://localhost:5001/favicon.ico (Référent: http://localhost:5001/plex/library/Films?vu=vu&note_filter_type=toutes&note_filter_value=&date_filter_type=ajout_recent_jours&date_filter_value=100) [in X:\MediaManagerSuite\app\__init__.py:79]
+2025-06-12 18:37:33,720 INFO: MediaManagerSuite startup in production mode [in X:\MediaManagerSuite\app\__init__.py:35]
+2025-06-12 18:37:34,125 INFO: Blueprint 'plex_editor' enregistré avec succès. [in X:\MediaManagerSuite\app\__init__.py:46]
+2025-06-12 18:37:34,286 INFO: Blueprint 'seedbox_ui' enregistré avec succès. [in X:\MediaManagerSuite\app\__init__.py:51]
+2025-06-12 18:37:34,291 INFO: Blueprint 'config_ui' enregistré avec succès. [in X:\MediaManagerSuite\app\__init__.py:59]
+2025-06-12 18:37:34,291 INFO: Application MediaManagerSuite créée et configurée. [in X:\MediaManagerSuite\app\__init__.py:88]
+2025-06-12 18:37:34,291 INFO: Démarrage MediaManagerSuite. Debug: False, Reloader: False (pour test) [in X:\MediaManagerSuite\run.py:18]
+2025-06-12 18:37:49,861 INFO: Utilisateur 'User' (ID: 36440265) sélectionné. [in X:\MediaManagerSuite\app\plex_editor\routes.py:75]
+2025-06-12 18:37:55,151 INFO: show_library: Arguments finaux pour API search(): {'sort': 'addedAt:desc'} [in X:\MediaManagerSuite\app\plex_editor\routes.py:223]
+2025-06-12 18:37:55,496 INFO: Emprunt d'identité réussi pour 'User'. [in X:\MediaManagerSuite\app\plex_editor\routes.py:245]
+2025-06-12 18:37:55,502 INFO: Exécution de library.search sur 'Films' pour utilisateur 'User' avec args: {'sort': 'addedAt:desc'} [in X:\MediaManagerSuite\app\plex_editor\routes.py:270]
+2025-06-12 18:37:57,121 ERROR: Exception on /plex/library/Films [GET] [in X:\MediaManagerSuite\venv\Lib\site-packages\flask\app.py:875]
+Traceback (most recent call last):
+  File "X:\MediaManagerSuite\venv\Lib\site-packages\flask\app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+  File "X:\MediaManagerSuite\venv\Lib\site-packages\flask\app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "X:\MediaManagerSuite\venv\Lib\site-packages\flask\app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "X:\MediaManagerSuite\venv\Lib\site-packages\flask\app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "X:\MediaManagerSuite\app\plex_editor\routes.py", line 335, in show_library
+    return render_template('plex_editor/library.html',
+                           title=f"Bibliothèque {library_name or 'Inconnue'} - {user_title_in_session}",
+    ...<4 lines>...
+                           plex_error=plex_error_message,
+                           user_title=user_title_in_session)
+  File "X:\MediaManagerSuite\venv\Lib\site-packages\flask\templating.py", line 150, in render_template
+    return _render(app, template, context)
+  File "X:\MediaManagerSuite\venv\Lib\site-packages\flask\templating.py", line 131, in _render
+    rv = template.render(context)
+  File "X:\MediaManagerSuite\venv\Lib\site-packages\jinja2\environment.py", line 1295, in render
+    self.environment.handle_exception()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "X:\MediaManagerSuite\venv\Lib\site-packages\jinja2\environment.py", line 942, in handle_exception
+    raise rewrite_traceback_stack(source=source)
+  File "X:\MediaManagerSuite\app\plex_editor\templates\plex_editor\library.html", line 371, in top-level template code
+    Ajouter le tag <strong>'{{ current_app.config.RADARR_TAG_ON_ARCHIVE }}'</strong> dans Radarr.
+    
+  File "X:\MediaManagerSuite\venv\Lib\site-packages\jinja2\environment.py", line 490, in getattr
+    return getattr(obj, attribute)
+jinja2.exceptions.UndefinedError: 'current_app' is undefined

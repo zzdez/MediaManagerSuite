@@ -40,12 +40,10 @@ def create_app(config_class=Config):
 
 
     # Enregistrement des Blueprints
-    try:
-        from app.plex_editor import plex_editor_bp # Correct car plex_editor est un sous-package de app
-        app.register_blueprint(plex_editor_bp, url_prefix='/plex')
-        logger.info("Blueprint 'plex_editor' enregistré avec succès.")
-    except ImportError as e:
-        logger.error(f"Erreur lors de l'import ou de l'enregistrement du blueprint plex_editor: {e}")
+    # try/except a été temporairement retiré pour voir l'erreur d'importation réelle
+    from app.plex_editor import plex_editor_bp
+    app.register_blueprint(plex_editor_bp, url_prefix='/plex')
+    logger.info("Blueprint 'plex_editor' enregistré avec succès.")
 
     try:
         from app.seedbox_ui import seedbox_ui_bp # Correct car seedbox_ui est un sous-package de app

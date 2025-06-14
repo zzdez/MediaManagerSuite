@@ -3,7 +3,11 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    {# Titre de la page incluant le nom de la bibliothèque et l'utilisateur #}
+    {# Bootstrap 5 CSS pour la modale #}
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    {# Font Awesome pour les icônes #}
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
+    
     <title>{{ title }} - Editeur Plex</title>
     <style>
         /* Styles généraux (similaires à index.html) */
@@ -42,7 +46,7 @@
             margin-bottom: 1.5rem;
             display: inline-block;
             font-size: 0.9em;
-            color: #007bff;
+            color: #0d6efd;
             text-decoration: none;
         }
         .back-link:hover { text-decoration: underline; }
@@ -118,8 +122,8 @@
             display: inline-block; /* Pour le lien reset */
              transition: background-color 0.2s ease, opacity 0.2s ease;
         }
-        .filter-form button[type=submit] { background-color: #007bff; }
-        .filter-form button[type=submit]:hover { background-color: #0056b3; }
+        .filter-form button[type=submit] { background-color: #0d6efd; }
+        .filter-form button[type=submit]:hover { background-color: #0b5ed7; }
         .filter-form a.reset-button { background-color: #6c757d; }
         .filter-form a.reset-button:hover { background-color: #5a6268; color: white; }
 
@@ -153,9 +157,9 @@
             white-space: nowrap; /* Empêche le retour à la ligne des détails */
         }
         .item-details strong { color: #343a40; font-weight: 500; }
-        .item-details .watched-yes { color: #198754; /* Vert Bootstrap */ }
-        .item-details .watched-no { color: #dc3545; /* Rouge Bootstrap */ }
-        .item-details span { margin-left: 12px; } /* Espace entre détails */
+        .item-details .watched-yes { color: #198754; }
+        .item-details .watched-no { color: #dc3545; }
+        .item-details span { margin-left: 12px; }
         .item-details span:first-child { margin-left: 0; }
 
         /* Message si liste vide */
@@ -169,11 +173,12 @@
         }
         .item-actions {
             margin-left: 20px;
-            flex-shrink: 0; /* Pour qu'il ne soit pas compressé */
+            flex-shrink: 0;
+            display: flex;
+            gap: 5px; /* Espace entre les boutons d'action */
         }
 
-        .delete-button {
-            background-color: #dc3545; /* Rouge danger Bootstrap */
+        .action-button {
             color: white;
             border: none;
             padding: 6px 12px;
@@ -182,9 +187,12 @@
             font-size: 0.85em;
             transition: background-color 0.2s ease;
         }
-        .delete-button:hover {
-            background-color: #c82333; /* Rouge plus foncé */
-        }
+        .delete-button { background-color: #dc3545; } /* Rouge danger Bootstrap */
+        .delete-button:hover { background-color: #c82333; }
+        
+        .archive-button { background-color: #ffc107; color: #000; } /* Jaune warning Bootstrap */
+        .archive-button:hover { background-color: #e0a800; }
+        .archive-button:disabled { background-color: #e9ecef; color: #6c757d; cursor: not-allowed; opacity: 0.7;}
 
     </style>
 </head>
@@ -233,7 +241,7 @@
                            placeholder="Pour Exacte/Min/Max">
                 </div>
             </div>
-            <div class="form-row"> {# Nouvelle ligne pour les filtres de date pour une meilleure organisation #}
+            <div class="form-row">
                 <div class="filter-group">
                     <label for="date_filter_type">Date:</label>
                     <select name="date_filter_type" id="date_filter_type">
@@ -257,38 +265,34 @@
                 <button type="submit">Appliquer les Filtres</button>
             </div>
         </form>
-        {# --- Fin du Formulaire de Filtres --- #}
 
-        {# --- Début Bloc principal pour affichage des résultats ou erreurs --- #}
         {% if plex_error %}
-            <p class="alert alert-danger">Impossible de charger les éléments. Erreur : {{ plex_error }}</p>
+            <div class="alert alert-danger">{{ plex_error }}</div>
         {% elif items is not none %}
 
-            {# --- DÉBUT DU FORMULAIRE POUR LA SUPPRESSION GROUPÉE --- #}
             <form id="bulk-delete-form" method="POST" action="{{ url_for('plex_editor.bulk_delete_items') }}">
                 <input type="hidden" name="current_library_name" value="{{ library_name }}">
-                {# Optionnel: <input type="hidden" name="query_string" value="{{ request.query_string.decode() }}"> #}
 
-                {% if items %} {# Afficher la barre d'actions groupées seulement s'il y a des items #}
-                <div class="bulk-actions-header">
+                {% if items %}
+                <div class="bulk-actions-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; padding: 10px; background-color: #f1f3f5; border-radius: 5px;">
                     <div>
                         <input type="checkbox" id="select-all-checkbox" style="margin-right: 10px; vertical-align: middle;">
                         <label for="select-all-checkbox" style="font-weight: 500; cursor: pointer; vertical-align: middle;">Sélectionner Tout / Rien</label>
                     </div>
-                    <button type="submit" id="bulk-delete-button" class="delete-button" style="background-color: #007bff; padding: 8px 15px;">
+                    <button type="submit" id="bulk-delete-button" class="delete-button" style="background-color: #0d6efd; padding: 8px 15px;">
                         Supprimer la Sélection (<span id="selected-count">0</span>)
                     </button>
                 </div>
-                {% endif %} {# Fin du if items pour bulk-actions-header #}
+                {% endif %}
 
                 <h2>Résultats ({{ items|length }}) :</h2>
                 <ul id="item-list">
                     {% for item in items %}
-                        <li style="display: flex; align-items: center; gap: 10px; padding-left: 10px; padding-right: 10px;">
-                            <input type="checkbox" name="selected_item_keys" value="{{ item.ratingKey }}" class="item-checkbox" style="flex-shrink: 0;">
+                        <li data-rating-key="{{ item.ratingKey }}"> {# Ajout d'un identifiant à la ligne #}
+                            <input type="checkbox" name="selected_item_keys" value="{{ item.ratingKey }}" class="item-checkbox" style="flex-shrink: 0; margin-right: 15px;">
 
                             <div class="item-content" style="flex-grow: 1; display: flex; justify-content: space-between; align-items: center;">
-                                <span class="item-title" style="margin-right: 15px;">{{ item.title }} {% if item.year %}({{ item.year }}){% endif %}</span>
+                                <span class="item-title">{{ item.title }} {% if item.year %}({{ item.year }}){% endif %}</span>
                                 <span class="item-details">
                                     <span>Vu: <strong class="{{ 'watched-yes' if item.isWatched else 'watched-no' }}">{{ 'Oui' if item.isWatched else 'Non' }}</strong></span>
                                     <span>Note: <strong>{{ item.userRating if item.userRating is not none else 'N/A' }}</strong></span>
@@ -296,40 +300,102 @@
                                 </span>
                             </div>
 
-                            <span class="item-actions" style="flex-shrink: 0;">
+                            <div class="item-actions">
                                 <form method="POST" action="{{ url_for('plex_editor.delete_item', rating_key=item.ratingKey) }}"
                                       onsubmit="return confirm('Êtes-vous sûr de vouloir supprimer définitivement : « {{ item.title }} » ?');"
                                       style="display: inline;">
                                     <input type="hidden" name="current_library_name" value="{{ library_name }}">
-                                    <button type="submit" class="delete-button">Suppr. Indiv.</button>
+                                    <button type="submit" class="action-button delete-button" title="Supprimer de Plex et du disque dur">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
                                 </form>
-                            </span>
+                                
+                                {% if item.type == 'movie' %}
+                                <button type="button" class="action-button archive-button archive-movie-btn"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#archiveMovieModal"
+                                        data-rating-key="{{ item.ratingKey }}"
+                                        data-title="{{ item.title|e }}"
+                                        {% if not item.isWatched %}disabled title="Le film doit être 'Vu' pour être archivé"{% else %}title="Archiver le film"{% endif %}>
+                                    <i class="fas fa-archive"></i>
+                                </button>
+                                {% endif %}
+                            </div>
                         </li>
                     {% else %}
                         <li class="no-results">Aucun élément ne correspond aux filtres sélectionnés dans cette bibliothèque pour l'utilisateur <strong>{{ user_title }}</strong>.</li>
                     {% endfor %}
                 </ul>
 
-                {% if items %} {# Afficher le bouton footer seulement s'il y a des items #}
-                <div class="bulk-actions-footer">
-                    <button type="submit" id="bulk-delete-button-footer" class="delete-button" style="background-color: #007bff; padding: 8px 15px;">
+                {% if items %}
+                <div class="bulk-actions-footer" style="display: flex; justify-content: flex-end; margin-top: 1rem;">
+                    <button type="submit" id="bulk-delete-button-footer" class="delete-button" style="background-color: #0d6efd; padding: 8px 15px;">
                        Supprimer la Sélection (<span id="selected-count-footer">0</span>)
                    </button>
                 </div>
-                {% endif %} {# Fin du if items pour bulk-actions-footer #}
+                {% endif %}
+            </form>
 
-            </form> {# --- FIN DU FORMULAIRE POUR LA SUPPRESSION GROUPÉE --- #}
-
-        {% else %} {# Cas où items is None (erreur de chargement) et pas plex_error #}
-             <p class="alert alert-warning">Aucun élément à afficher ou une erreur est survenue lors de la récupération des données.</p>
-        {% endif %} {# --- FIN DU BLOC {% if plex_error %} / {% elif items is not none %} / {% else %} --- #}
+        {% else %}
+             <div class="alert alert-warning">Aucun élément à afficher ou une erreur est survenue lors de la récupération des données.</div>
+        {% endif %}
 
     </div> {# Fin .container #}
 
-    {# --- SCRIPT JAVASCRIPT --- #}
-    {% if items is not none and items %} {# Conditionner le script sur items existant ET non vide #}
+    <!-- Archive Movie Confirmation Modal -->
+    <div class="modal fade" id="archiveMovieModal" tabindex="-1" aria-labelledby="archiveMovieModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="archiveMovieModalLabel">Archiver le film</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Vous êtes sur le point d'archiver le film : <strong id="archiveMovieModalTitle"></strong>.</p>
+                    <p>Veuillez confirmer les actions à effectuer :</p>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" value="" id="archiveDeleteFiles" checked>
+                        <label class="form-check-label" for="archiveDeleteFiles">
+                            <strong>Supprimer les fichiers</strong> du disque dur.
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" value="" id="archiveUnmonitor" checked>
+                        <label class="form-check-label" for="archiveUnmonitor">
+                            Marquer comme <strong>non surveillé</strong> dans Radarr.
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" value="" id="archiveAddTag" checked>
+                        <label class="form-check-label" for="archiveAddTag">
+                            Ajouter le tag <strong>'{{ config.RADARR_TAG_ON_ARCHIVE }}'</strong> dans Radarr.
+                        </label>
+                    </div>
+                    <div class="alert alert-warning mt-3" role="alert">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <strong>Attention :</strong> La suppression des fichiers est définitive.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="button" class="btn btn-primary" id="confirmArchiveMovieBtn">Confirmer l'archivage</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Fin Modale -->
+
+    {# Bootstrap 5 JS Bundle (pour la modale) #}
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    {# jQuery (si vous l'utilisez ailleurs, sinon on peut s'en passer) #}
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+    {# --- SCRIPT JAVASCRIPT POUR LA SUPPRESSION GROUPEE (Votre code existant) --- #}
+    {% if items is not none and items %}
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            // Votre code JS existant pour la suppression groupée va ici...
+            // (Laissé intact car il fonctionne bien)
             const selectAllCheckbox = document.getElementById('select-all-checkbox');
             const itemCheckboxes = document.querySelectorAll('.item-checkbox');
             const bulkDeleteForm = document.getElementById('bulk-delete-form');
@@ -370,7 +436,7 @@
                 });
             });
 
-            updateSelectedCount(); // Appel initial
+            updateSelectedCount();
 
             if (bulkDeleteForm) {
                 bulkDeleteForm.addEventListener('submit', function(event) {
@@ -384,15 +450,13 @@
                         event.preventDefault();
                         return false;
                     }
-                    // Gestion du texte des boutons
                     function updateButtonText(buttonElement) {
                         if (buttonElement) {
                             buttonElement.disabled = true;
-                            // Trouve le texte avant le span et le remplace
                             let textNode = Array.from(buttonElement.childNodes).find(node => node.nodeType === Node.TEXT_NODE && node.textContent.includes('Supprimer la Sélection'));
                             if (textNode) {
                                 textNode.textContent = 'Suppression en cours... (';
-                            } else { // Fallback si la structure du texte change
+                            } else {
                                 buttonElement.innerHTML = 'Suppression en cours... (<span id="'+ (buttonElement.id.includes('footer') ? 'selected-count-footer' : 'selected-count') +'">'+checkedCount+'</span>)';
                             }
                         }
@@ -403,7 +467,10 @@
             }
         });
     </script>
-    {% endif %} {# Fin du if items pour le script #}
+    {% endif %}
+
+    {# --- SCRIPT JAVASCRIPT POUR LA NOUVELLE FONCTIONNALITE D'ARCHIVAGE --- #}
+    <script src="{{ url_for('static', filename='js/plex_editor_ui.js') }}"></script>
 
 </body>
 </html>

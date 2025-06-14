@@ -1,4 +1,4 @@
-# app/utils.py
+# app/plex_editor/utils.py
 import os
 import shutil
 from flask import current_app, flash

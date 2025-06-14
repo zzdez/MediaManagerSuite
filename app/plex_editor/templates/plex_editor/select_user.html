@@ -38,7 +38,7 @@
             <p class="error-message">Impossible de charger la liste des utilisateurs :<br>{{ plex_error }}</p>
             <p class="user-list-info">Vérifiez votre connexion, l'URL et le Token Plex dans la configuration.</p>
         {% elif users %}
-            <form method="POST" action="{{ url_for('plex_editor.select_user') }}" id="user-select-form">
+            <form method="POST" action="{{ url_for('plex_editor.index') }}" id="user-select-form">
                 <label for="user_select">Choisissez l'utilisateur Plex :</label>
                 <select name="user_id" id="user_select" required>
                     <option value="" disabled selected hidden>-- Sélectionnez un utilisateur --</option>
