@@ -2,6 +2,7 @@
 
 # --- Imports Python Standards ---
 import os
+from app import login_required
 import shutil
 import logging
 import time
@@ -518,6 +519,7 @@ def sftp_build_remote_file_tree(sftp_client, remote_current_path_posix, local_st
     return tree
 
 @seedbox_ui_bp.route('/process-staging-item', methods=['POST'])
+@login_required
 def process_staging_item_api(): # Renommé pour éviter conflit si vous aviez une var 'process_staging_item'
     """
     API endpoint to be called by sftp_downloader_notifier.py after an item
@@ -1486,6 +1488,7 @@ def send_arr_command(base_url, api_key, command_name, item_path_to_scan=None):
 from . import seedbox_ui_bp # Ou from app.seedbox_ui import seedbox_ui_bp si la structure l'exige
 
 @seedbox_ui_bp.route('/')
+@login_required
 def index():
     logger = current_app.logger # Obtenir le logger
     staging_dir = current_app.config.get('STAGING_DIR')
@@ -1556,6 +1559,7 @@ def index():
                            items_requiring_attention=items_requiring_attention) # Passer la nouvelle liste au template
 
 @seedbox_ui_bp.route('/delete/<path:item_name>', methods=['POST'])
+@login_required
 def delete_item(item_name):
     staging_dir = current_app.config.get('STAGING_DIR')
     item_path = os.path.join(staging_dir, item_name) # item_name peut contenir des sous-dossiers, d'où <path:>
@@ -1591,6 +1595,7 @@ def delete_item(item_name):
     return redirect(url_for('seedbox_ui.index'))
 
 @seedbox_ui_bp.route('/scan-sonarr/<path:item_name>', methods=['POST'])
+@login_required
 def scan_sonarr(item_name):
     sonarr_url = current_app.config.get('SONARR_URL')
     sonarr_api_key = current_app.config.get('SONARR_API_KEY')
@@ -1610,6 +1615,7 @@ def scan_sonarr(item_name):
     return redirect(url_for('seedbox_ui.index'))
 
 @seedbox_ui_bp.route('/scan-radarr/<path:item_name>', methods=['POST'])
+@login_required
 def scan_radarr(item_name):
     radarr_url = current_app.config.get('RADARR_URL')
     radarr_api_key = current_app.config.get('RADARR_API_KEY')
@@ -1632,6 +1638,7 @@ def scan_radarr(item_name):
 # --- Routes pour la recherche et le mapping (Priorité 1) ---
 
 @seedbox_ui_bp.route('/search-sonarr-api') # GET request
+@login_required
 def search_sonarr_api():
     query = request.args.get('query')
     # original_item_name = request.args.get('original_item_name') # Peut être utile pour le contexte
@@ -1662,6 +1669,7 @@ def search_sonarr_api():
 
 
 @seedbox_ui_bp.route('/search-radarr-api') # GET request
+@login_required
 def search_radarr_api():
     query = request.args.get('query')
     radarr_url = current_app.config.get('RADARR_URL')
@@ -1687,6 +1695,7 @@ def search_radarr_api():
 # ==============================================================================
 
 @seedbox_ui_bp.route('/api/get-sonarr-rootfolders', methods=['GET'])
+@login_required
 def get_sonarr_rootfolders_api():
     logger = current_app.logger
     logger.info("API: Demande de récupération des dossiers racine Sonarr.")
@@ -1720,6 +1729,7 @@ def get_sonarr_rootfolders_api():
 
 
 @seedbox_ui_bp.route('/api/get-sonarr-qualityprofiles', methods=['GET'])
+@login_required
 def get_sonarr_qualityprofiles_api():
     logger = current_app.logger
     logger.info("API: Demande de récupération des profils de qualité Sonarr.")
@@ -1754,6 +1764,7 @@ def get_sonarr_qualityprofiles_api():
 # ==============================================================================
 
 @seedbox_ui_bp.route('/api/get-radarr-rootfolders', methods=['GET'])
+@login_required
 def get_radarr_rootfolders_api():
     logger = current_app.logger
     logger.info("API: Demande de récupération des dossiers racine Radarr.")
@@ -1792,6 +1803,7 @@ def get_radarr_rootfolders_api():
 
 
 @seedbox_ui_bp.route('/api/get-radarr-qualityprofiles', methods=['GET'])
+@login_required
 def get_radarr_qualityprofiles_api():
     logger = current_app.logger
     logger.info("API: Demande de récupération des profils de qualité Radarr.")
@@ -1828,6 +1840,7 @@ def get_radarr_qualityprofiles_api():
 # ------------------------------------------------------------------------------
 
 @seedbox_ui_bp.route('/remote-view/<app_type_target>')
+@login_required
 def remote_seedbox_view(app_type_target):
     logger.info(f"Demande d'affichage (arbre) du contenu distant seedbox pour: {app_type_target}")
 
@@ -1937,6 +1950,7 @@ def remote_seedbox_view(app_type_target):
 # ROUTE POUR LE RAPATRIEMENT SFTP MANUEL
 #-------------------------------------------------------------------------------
 @seedbox_ui_bp.route('/manual-sftp-download', methods=['POST'])
+@login_required
 def manual_sftp_download_action():
     data = request.get_json()
     remote_path_to_download_posix = data.get('remote_path')
@@ -2068,6 +2082,7 @@ def manual_sftp_download_action():
 # NOUVELLE ROUTE POUR "RAPATRIER & TRAITER" (PLACÉE ICI)
 # ------------------------------------------------------------------------------
 @seedbox_ui_bp.route('/sftp-retrieve-and-process', methods=['POST'])
+@login_required
 def sftp_retrieve_and_process_action():
     data = request.get_json()
     remote_path_posix = data.get('remote_path')
@@ -2300,6 +2315,7 @@ def sftp_retrieve_and_process_action():
 # (Implémentation de la suppression réelle à faire ensuite)
 # ------------------------------------------------------------------------------
 @seedbox_ui_bp.route('/sftp-delete-items', methods=['POST'])
+@login_required
 def sftp_delete_items_action():
     selected_paths_to_delete = request.form.getlist('selected_items_paths') # Ce sont des chemins POSIX complets
     app_type_source_page = request.form.get('app_type_source', 'sonarr_working') # Pour la redirection
@@ -2367,6 +2383,7 @@ def sftp_delete_items_action():
 # ------------------------------------------------------------------------------
 
 @seedbox_ui_bp.route('/trigger-sonarr-import', methods=['POST'])
+@login_required
 def trigger_sonarr_import():
     data = request.get_json()
     item_name_from_frontend = data.get('item_name') # Nom de l'item UI (dossier ou fichier dans le staging, peut être un chemin relatif)
@@ -2495,6 +2512,7 @@ def trigger_sonarr_import():
 # NOUVELLE ROUTE POUR L'IMPORT FORCÉ SONARR (PLACÉE ICI)
 # ------------------------------------------------------------------------------
 @seedbox_ui_bp.route('/force-sonarr-import-action', methods=['POST'])
+@login_required
 def force_sonarr_import_action():
     data = request.get_json()
     item_name_from_frontend = data.get('item_name') # Nom de l'item UI original (dossier ou fichier du staging)
@@ -2536,6 +2554,7 @@ def force_sonarr_import_action():
 # ------------------------------------------------------------------------------
 
 @seedbox_ui_bp.route('/trigger-radarr-import', methods=['POST'])
+@login_required
 def trigger_radarr_import():
     data = request.get_json()
     item_name_from_frontend = data.get('item_name') # Nom de l'item UI (dossier ou fichier dans le staging)
@@ -2640,6 +2659,7 @@ def trigger_radarr_import():
 
 
 @seedbox_ui_bp.route('/cleanup-staging-item/<path:item_name>', methods=['POST'])
+@login_required
 def cleanup_staging_item_action(item_name):
     staging_dir = current_app.config.get('STAGING_DIR')
     orphan_exts = current_app.config.get('ORPHAN_EXTENSIONS', [])
@@ -2693,6 +2713,7 @@ def cleanup_staging_item_action(item_name):
 # ------------------------------------------------------------------------------
 
 @seedbox_ui_bp.route('/interaction/rtorrent/add', methods=['POST'])
+@login_required
 def rtorrent_add_torrent_action():
     logger = current_app.logger
     data = request.get_json()
@@ -2903,6 +2924,7 @@ def rtorrent_add_torrent_action():
         return jsonify({"success": True, "error": "Torrent ajouté, mais échec de la sauvegarde de la pré-association.", "torrent_hash": actual_hash}), 207
 
 @seedbox_ui_bp.route('/rtorrent/list-view')
+@login_required
 def rtorrent_list_view():
     current_app.logger.info("Accessing rTorrent list view page (using httprpc client).")
 
@@ -2961,6 +2983,7 @@ def rtorrent_list_view():
                            config_label_radarr=config_label_radarr)
 
 @seedbox_ui_bp.route('/add-torrent-and-map', methods=['POST'])
+@login_required
 def add_torrent_and_map():
     """
     Route pour ajouter un torrent à rTorrent/ruTorrent et potentiellement préparer un mapping.
@@ -3064,6 +3087,7 @@ def add_torrent_and_map():
     return redirect(url_for('seedbox_ui.rtorrent_list_view')) # Redirection vers la liste des torrents
 
 @seedbox_ui_bp.route('/process-staged-with-association/<path:item_name_in_staging>', methods=['POST'])
+@login_required
 def process_staged_with_association(item_name_in_staging):
     """
     Traite un item du staging en utilisant une pré-association existante.
@@ -3314,6 +3338,7 @@ def _run_automated_processing_cycle():
     return {"success": True, "message": "Cycle de traitement automatisé terminé.", "processed_count": processed_items_count, "errors_count": errors_count}
 
 @seedbox_ui_bp.route('/trigger-automatic-processing', methods=['POST'])
+@login_required
 def trigger_automatic_processing_route():
     # Pourrait ajouter une authentification/sécurité ici si nécessaire
     current_app.logger.info("Déclenchement du cycle de traitement automatisé via la route /trigger-automatic-processing.")
@@ -3321,6 +3346,7 @@ def trigger_automatic_processing_route():
     return jsonify(result)
 
 @seedbox_ui_bp.route('/api/v1/process-staged-item', methods=['POST'])
+@login_required
 def api_process_staged_item():
     current_app.logger.info("Requête reçue sur /api/v1/process-staged-item")
 
@@ -3432,6 +3458,7 @@ def api_process_staged_item():
 # ROUTE POUR LE MAPPING GROUPÉ VERS UNE SÉRIE SONARR
 # ==============================================================================
 @seedbox_ui_bp.route('/batch-map-to-sonarr-series', methods=['POST']) # Nom de fonction cohérent avec l'endpoint
+@login_required
 def batch_map_to_sonarr_series_action():
     logger = current_app.logger
     data = request.get_json()
@@ -3534,6 +3561,7 @@ def batch_map_to_sonarr_series_action():
 # ==============================================================================
 
 @seedbox_ui_bp.route('/problematic-import/retry/<string:torrent_hash>', methods=['POST'])
+@login_required
 def retry_problematic_import_action(torrent_hash):
     logger = current_app.logger
     logger.info(f"Tentative de relance de l'import pour le torrent hash: {torrent_hash}")
@@ -3596,6 +3624,7 @@ def retry_problematic_import_action(torrent_hash):
 
 
 @seedbox_ui_bp.route('/problematic-association/delete/<string:torrent_hash>', methods=['POST'])
+@login_required
 def delete_problematic_association_action(torrent_hash):
     logger = current_app.logger
     logger.info(f"Demande de suppression de l'association pour le torrent hash: {torrent_hash}")
@@ -3625,6 +3654,7 @@ if __name__ == '__main__':
 # ROUTE POUR LE RAPATRIEMENT SFTP GROUPÉ DEPUIS LA SEEDBOX
 # ==============================================================================
 @seedbox_ui_bp.route('/sftp-batch-download', methods=['POST'])
+@login_required
 def sftp_batch_download_action():
     logger = current_app.logger
     data = request.get_json()
@@ -3755,6 +3785,7 @@ def sftp_batch_download_action():
 # ROUTE POUR LE RAPATRIEMENT SFTP GROUPÉ ET PRÉ-MAPPING SONARR DIRECT
 # ==============================================================================
 @seedbox_ui_bp.route('/sftp-batch-retrieve-and-premap-sonarr', methods=['POST'])
+@login_required
 def sftp_batch_retrieve_and_premap_sonarr_action():
     logger = current_app.logger
     data = request.get_json()

@@ -26,6 +26,10 @@
             </a>
         </div>
 
+        {% if session.logged_in %}
+            <a href="{{ url_for('logout') }}" class="btn btn-danger mt-3">Déconnexion</a>
+        {% endif %}
+
         <!-- LIGNE MODIFIÉE CI-DESSOUS -->
         <p class="mt-5 mb-3 text-muted">© MediaManagerSuite {{ current_year }}</p>
         <!-- FIN DE LA LIGNE MODIFIÉE -->

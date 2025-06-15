@@ -73,7 +73,7 @@ class Config:
     PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT = os.environ.get('PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT')
 
     # --- Configuration Interface de Configuration ---
-    CONFIG_UI_PASSWORD = os.environ.get('CONFIG_UI_PASSWORD')
+    APP_PASSWORD = os.environ.get('APP_PASSWORD')
 
 # --- FIN DE LA CLASSE CONFIG ---
 
@@ -81,9 +81,9 @@ class Config:
 # --- Section de vérification et d'avertissements (exécutée une seule fois au démarrage) ---
 # Ce code est maintenant en dehors de la classe, donc il peut accéder aux attributs de Config sans NameError.
 def check_and_print_startup_info():
-    if not Config.CONFIG_UI_PASSWORD:
+    if not Config.APP_PASSWORD:
         print("-" * 70)
-        print("ATTENTION : Le mot de passe pour l'interface de configuration (CONFIG_UI_PASSWORD) n'est pas défini dans .env !")
+        print("ATTENTION : Le mot de passe pour l'application (APP_PASSWORD) n'est pas défini dans .env !")
         print("            L'accès à la page de configuration ne sera pas sécurisé.")
         print("-" * 70)
 

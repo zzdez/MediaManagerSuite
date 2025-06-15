@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+from app import login_required
 from flask import (render_template, current_app, flash, abort, url_for,
                    redirect, request, session, jsonify)
 from datetime import datetime
@@ -57,6 +58,7 @@ def get_plex_admin_server():
 # --- Routes du Blueprint ---
 
 @plex_editor_bp.route('/', methods=['GET', 'POST'])
+@login_required
 def index(): # (### MODIFICATION ICI ###) - Le nom de la fonction est maintenant 'index'
     """Page d'accueil du module, pour sélectionner l'utilisateur Plex."""
     users_list = []
@@ -95,6 +97,7 @@ def index(): # (### MODIFICATION ICI ###) - Le nom de la fonction est maintenant
                            plex_error=plex_error_message)
 
 @plex_editor_bp.route('/libraries')
+@login_required
 def list_libraries():
     """Affiche la liste des bibliothèques Plex disponibles."""
     if 'plex_user_id' not in session:
@@ -123,6 +126,7 @@ def list_libraries():
                            plex_error=plex_error_message,
                            user_title=user_title)
 @plex_editor_bp.route('/library/<path:library_name>')
+@login_required
 def show_library(library_name):
     if 'plex_user_id' not in session:
         flash("Veuillez sélectionner un utilisateur.", "info")
@@ -346,6 +350,7 @@ def show_library(library_name):
                            config=current_app.config)
 
 @plex_editor_bp.route('/delete_item/<int:rating_key>', methods=['POST'])
+@login_required
 def delete_item(rating_key):
     # --- Début des logs de débogage initiaux ---
     print(f"--- PRINT: FONCTION delete_item APPELÉE pour rating_key: {rating_key} ---")
@@ -452,6 +457,7 @@ def delete_item(rating_key):
 
 
 @plex_editor_bp.route('/bulk_delete_items', methods=['POST'])
+@login_required
 def bulk_delete_items():
     # --- Début des logs de débogage initiaux ---
     print("--- PRINT: FONCTION bulk_delete_items APPELÉE ---")
@@ -583,6 +589,7 @@ def bulk_delete_items():
 
 # --- NOUVELLE ROUTE POUR L'ARCHIVAGE ---
 @plex_editor_bp.route('/archive_movie', methods=['POST'])
+@login_required
 def archive_movie_route():
     data = request.get_json()
     rating_key = data.get('ratingKey')

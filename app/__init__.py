@@ -4,11 +4,24 @@ import logging
 from logging.handlers import RotatingFileHandler
 import os
 from datetime import datetime
+import secrets # Added import
+from functools import wraps # Added for login_required decorator
 
-from flask import Flask, render_template, session, flash, request, redirect, url_for
+from flask import Flask, render_template, session, flash, request, redirect, url_for, current_app # Added current_app
 from config import Config # Correct car config.py est à la racine du projet
 
 logger = logging.getLogger(__name__)
+
+# Décorateur login_required
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('logged_in'):
+            session['next_url'] = request.url
+            flash("Veuillez vous connecter pour accéder à cette page.", 'warning')
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
 
 def create_app(config_class=Config):
     app = Flask(__name__)
@@ -63,6 +76,7 @@ def create_app(config_class=Config):
 
     # Route pour la page d'accueil/portail
     @app.route('/')
+    @login_required
     def home():
         current_year = datetime.utcnow().year
         return render_template('home_portal.html',
@@ -72,6 +86,26 @@ def create_app(config_class=Config):
         # Option B: Rediriger vers un module par défaut
         # return redirect(url_for('seedbox_ui.index'))
 
+    @app.route('/login', methods=['GET', 'POST'])
+    def login():
+        if request.method == 'POST':
+            password = request.form.get('password')
+            app_password = current_app.config.get('APP_PASSWORD')
+            if app_password and password and secrets.compare_digest(password, app_password):
+                session['logged_in'] = True
+                session.permanent = True  # Make session permanent
+                flash('Connexion réussie !', 'success')
+                next_url = session.pop('next_url', None)
+                return redirect(next_url or url_for('home'))
+            else:
+                flash('Mot de passe incorrect.', 'danger')
+        return render_template('login.html', title="Connexion")
+
+    @app.route('/logout')
+    def logout():
+        session.pop('logged_in', None)
+        flash('Vous avez été déconnecté.', 'info')
+        return redirect(url_for('login'))
 
     # Gestionnaires d'erreurs HTTP globaux
     @app.errorhandler(404)

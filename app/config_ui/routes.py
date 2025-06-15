@@ -3,73 +3,10 @@ from flask import render_template, request, redirect, url_for, session, flash, c
 from . import config_ui_bp
 from dotenv import set_key, load_dotenv # Removed dotenv_values as it's not directly used here, but in utils.
 from .utils import parse_template_env, DOTENV_PATH
-
-CONFIG_UI_AUTHENTICATED_KEY = 'config_ui_authenticated' # Clé utilisée pour stocker l'état d'authentification dans la session.
-
-@config_ui_bp.before_request
-def require_login():
-    """
-    Exécuté avant chaque requête pour les routes de ce blueprint.
-    Vérifie si l'utilisateur est authentifié pour accéder aux pages de configuration.
-    Redirige vers la page de connexion si non authentifié, en conservant l'URL initialement demandée.
-    Exclut la page de connexion elle-même et les fichiers statiques de cette vérification.
-    """
-    # Permettre l'accès aux fichiers statiques (CSS, JS) et à la page de login sans authentification.
-    if request.endpoint and ('static' in request.endpoint or request.endpoint == 'config_ui.login'):
-        return
-
-    # Si l'utilisateur n'est pas authentifié (clé absente de la session), le rediriger vers la page de login.
-    # 'next=request.url' est ajouté pour que l'utilisateur soit redirigé vers la page
-    # qu'il tentait d'accéder après une connexion réussie.
-    if not session.get(CONFIG_UI_AUTHENTICATED_KEY):
-        return redirect(url_for('config_ui.login', next=request.url))
-
-@config_ui_bp.route('/login', methods=['GET', 'POST'])
-def login():
-    """
-    Gère l'accès à l'interface de configuration.
-    Si l'utilisateur est déjà connecté, il est redirigé vers la page de configuration.
-    En méthode GET, affiche le formulaire de connexion.
-    En méthode POST, vérifie le mot de passe fourni :
-        - En cas de succès, enregistre l'authentification dans la session et redirige.
-        - En cas d'échec, affiche un message d'erreur.
-    """
-    # Si l'utilisateur est déjà authentifié, le rediriger vers la page principale de configuration.
-    if session.get(CONFIG_UI_AUTHENTICATED_KEY):
-        return redirect(url_for('config_ui.show_config'))
-
-    if request.method == 'POST':
-        password_form = request.form.get('password', '') # Récupère le mot de passe du formulaire.
-        # Récupère le mot de passe de configuration stocké dans la configuration de l'application.
-        config_password = current_app.config.get('CONFIG_UI_PASSWORD', '')
-
-        # Utilisation de secrets.compare_digest pour une comparaison de mots de passe
-        # résistante aux attaques par canal auxiliaire (timing attacks).
-        if config_password and secrets.compare_digest(password_form, config_password):
-            session[CONFIG_UI_AUTHENTICATED_KEY] = True # Enregistre l'état authentifié.
-            # Rend la session persistante (sa durée de vie est contrôlée par permanent_session_lifetime dans Flask).
-            session.permanent = True
-            next_page = request.args.get('next') # Vérifie si une URL de redirection 'next' est présente.
-            flash('Connexion réussie.', 'success')
-            # Redirige vers la page 'next' ou, par défaut, vers la page de configuration.
-            return redirect(next_page or url_for('config_ui.show_config'))
-        else:
-            flash('Mot de passe incorrect. Vérifiez la variable CONFIG_UI_PASSWORD dans votre .env.', 'danger')
-
-    # Afficher le formulaire de connexion pour une requête GET ou si la connexion POST a échoué.
-    return render_template('login_config.html', title="Connexion Configuration")
-
-@config_ui_bp.route('/logout')
-def logout():
-    """
-    Gère la déconnexion de l'interface de configuration.
-    Supprime l'indicateur d'authentification de la session et redirige vers la page de connexion.
-    """
-    session.pop(CONFIG_UI_AUTHENTICATED_KEY, None) # Supprime la clé d'authentification de la session.
-    flash('Vous avez été déconnecté.', 'info')
-    return redirect(url_for('config_ui.login'))
+from app import login_required # Added import
 
 @config_ui_bp.route('/')
+@login_required
 def show_config():
     """
     Affiche la page principale de l'interface de configuration.
@@ -89,16 +26,12 @@ def show_config():
                            params=params_list)
 
 @config_ui_bp.route('/save', methods=['POST'])
+@login_required
 def save_config():
     """
     Traite la soumission du formulaire de configuration.
     Sauvegarde les modifications apportées aux variables d'environnement dans le fichier .env.
     """
-    # Mesure de sécurité : vérifier à nouveau l'authentification avant toute action de sauvegarde.
-    if not session.get(CONFIG_UI_AUTHENTICATED_KEY):
-        flash("Accès non autorisé.", "danger")
-        return redirect(url_for('config_ui.login'))
-
     # Récupérer la structure attendue des variables (noms, types par défaut) depuis .env.template.
     # Cela sert de référence pour savoir quelles variables traiter et comment les valider/convertir.
     expected_params = parse_template_env()
