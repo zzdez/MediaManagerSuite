@@ -27,6 +27,7 @@
         </div>
 
         {% if session.logged_in %}
+            <a href="{{ url_for('config_ui.show_config') }}" class="btn btn-lg btn-info portal-link mt-3">Configuration Application</a>
             <a href="{{ url_for('logout') }}" class="btn btn-danger mt-3">Déconnexion</a>
         {% endif %}
 
