@@ -221,10 +221,11 @@ def show_library(library_name):
          current_filters_from_url['date_filter_value'] = ''
          current_app.logger.warning(f"Erreur de valeur pour filtre date flexible: {e_date_flex}")
 
-    sort_order = request.args.get('sort', 'addedAt:desc')
+sort_order = request.args.get('sort', 'addedAt:desc')
     search_args['sort'] = sort_order
     current_app.logger.info(f"show_library: Arguments finaux pour API search(): {search_args}")
-
+    # ### NOUVELLE LOGIQUE DE FILTRAGE SPÉCIAL POUR LES SÉRIES VUES ###
+    filter_fully_watched_shows_in_python = False
     if not plex_url or not admin_token:
         flash('Erreur: Configuration Plex du serveur principal (URL/Token) manquante.', 'danger')
         plex_error_message = "Configuration Plex manquante"
@@ -267,9 +268,16 @@ def show_library(library_name):
                     current_app.logger.info(f"Recherche dans le contexte du compte principal '{final_context_user_title}'.")
                     user_specific_plex_server = plex_server_admin_conn
 
-                if user_specific_plex_server:
+if user_specific_plex_server:
                     try:
                         library_object = user_specific_plex_server.library.section(library_name)
+                        
+                        # ### ON ACTIVE NOTRE FILTRE SI NÉCESSAIRE ###
+                        if library_object.type == 'show' and current_filters_from_url['vu'] == 'vu':
+                            filter_fully_watched_shows_in_python = True
+                            # Note: `search_args['unwatched'] = False` est déjà défini plus haut, c'est parfait.
+                            current_app.logger.info("Filtre spécial activé: Séries entièrement vues (post-filtrage Python).")
+                        
                         current_app.logger.info(f"Exécution de library.search sur '{library_object.title}' pour utilisateur '{final_context_user_title}' avec args: {search_args}")
                         items_from_plex_api = library_object.search(**search_args)
                     except NotFound:
@@ -304,13 +312,21 @@ def show_library(library_name):
             flash("Erreur majeure inattendue.", 'danger')
             items_from_plex_api = []
 
-    items_filtered_final = []
-    if items_from_plex_api is not None:
+        items_filtered_final = []
+        if items_from_plex_api is not None:
+            # On applique d'abord le filtre des séries vues si nécessaire
+            if filter_fully_watched_shows_in_python:
+                intermediate_list = [show for show in items_from_plex_api if show.leafCount == show.viewedLeafCount]
+                current_app.logger.info(f"Filtrage Python 'Séries Vues': {len(intermediate_list)}/{len(items_from_plex_api)} séries restantes.")
+            else:
+                intermediate_list = items_from_plex_api
+
+        # Ensuite, on applique le filtre des notes sur la liste déjà filtrée
         if filter_for_non_notes_in_python:
-            items_filtered_final = [item for item in items_from_plex_api if item.userRating is None]
-            current_app.logger.info(f"Filtrage Python 'Non Notés': {len(items_filtered_final)}/{len(items_from_plex_api)} éléments.")
+            items_filtered_final = [item for item in intermediate_list if item.userRating is None]
+            current_app.logger.info(f"Filtrage Python 'Non Notés': {len(items_filtered_final)}/{len(intermediate_list)} éléments.")
         else:
-            items_filtered_final = items_from_plex_api
+            items_filtered_final = intermediate_list
 
         if library_object:
             applied_filters_str_parts = []
@@ -670,6 +686,115 @@ def archive_movie_route():
         return jsonify({'status': 'error', 'message': f"Movie with ratingKey {rating_key} not found in Plex."}), 404
     except Exception as e:
         current_app.logger.error(f"Error archiving movie: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+# --- NOUVELLE ROUTE POUR L'ARCHIVAGE DE SÉRIE ---
+@plex_editor_bp.route('/archive_show', methods=['POST'])
+@login_required
+def archive_show_route():
+    data = request.get_json()
+    rating_key = data.get('ratingKey')
+    options = data.get('options', {})
+
+    if not rating_key:
+        return jsonify({'status': 'error', 'message': 'Missing ratingKey.'}), 400
+
+    plex_server = get_plex_admin_server()
+    if not plex_server:
+        return jsonify({'status': 'error', 'message': 'Could not connect to Plex server.'}), 500
+
+    try:
+        show = plex_server.fetchItem(int(rating_key))
+        if not show or show.type != 'show':
+            return jsonify({'status': 'error', 'message': 'Show not found or not a show item.'}), 404
+
+        # --- Vérification 1: Tous les épisodes sont-ils vus dans Plex ? ---
+        if show.viewedLeafCount != show.leafCount:
+            return jsonify({'status': 'error', 'message': 'Not all episodes are marked as watched in Plex.'}), 400
+
+        # --- Actions Sonarr ---
+        sonarr_series = None
+        if options.get('unmonitor') or options.get('addTag'):
+            for guid_obj in show.guids:
+                sonarr_series = get_sonarr_series_by_guid(guid_obj.id)
+                if sonarr_series:
+                    break
+
+            if not sonarr_series:
+                return jsonify({'status': 'error', 'message': 'Show not found in Sonarr.'}), 404
+
+            # --- Vérification 2: La série est-elle "ended" dans Sonarr ? ---
+            if sonarr_series.get('status', 'continuing') != 'ended':
+                return jsonify({'status': 'error', 'message': f"Cannot archive. Show '{show.title}' is not 'ended' in Sonarr (status: {sonarr_series.get('status')})."}), 400
+
+            series_id = sonarr_series['id']
+            # On doit récupérer l'objet complet pour la mise à jour, car l'API /series retourne une version allégée
+            full_series_data = get_sonarr_series_by_id(series_id)
+            if not full_series_data:
+                return jsonify({'status': 'error', 'message': 'Could not fetch full series details from Sonarr.'}), 500
+
+            # Prépare le payload de mise à jour
+            if options.get('unmonitor'):
+                full_series_data['monitored'] = False
+                current_app.logger.info(f"Setting '{show.title}' to unmonitored in Sonarr.")
+
+            if options.get('addTag'):
+                # On ajoute deux tags : un générique 'vu' et un spécifique 'vu-complet'
+                vu_tag_id = get_sonarr_tag_id('vu')
+                vu_complet_tag_id = get_sonarr_tag_id('vu-complet')
+                if vu_tag_id and vu_tag_id not in full_series_data.get('tags', []):
+                    full_series_data['tags'].append(vu_tag_id)
+                if vu_complet_tag_id and vu_complet_tag_id not in full_series_data.get('tags', []):
+                    full_series_data['tags'].append(vu_complet_tag_id)
+
+            # Envoie la mise à jour à Sonarr
+            # Note: Sonarr attend l'objet série complet pour un PUT
+            update_result = update_sonarr_series(full_series_data)
+            if not update_result:
+                return jsonify({'status': 'error', 'message': 'Failed to update series in Sonarr.'}), 500
+
+        # --- File Deletion Action ---
+        if options.get('deleteFiles'):
+            current_app.logger.info(f"Starting file cleanup for entire show: {show.title}")
+            if not sonarr_series: # Au cas où on ne fait que supprimer les fichiers
+                 for guid_obj in show.guids:
+                    sonarr_series = get_sonarr_series_by_guid(guid_obj.id)
+                    if sonarr_series: break
+
+            if not sonarr_series:
+                return jsonify({'status': 'error', 'message': 'Show not found in Sonarr, cannot get file list.'}), 404
+
+            # Récupérer la liste de tous les fichiers d'épisodes de la série
+            episode_files = get_sonarr_episode_files(sonarr_series['id'])
+            if episode_files is None:
+                return jsonify({'status': 'error', 'message': 'Could not retrieve episode file list from Sonarr.'}), 500
+
+            if not episode_files:
+                current_app.logger.warning(f"No episode files found in Sonarr for '{show.title}', but attempting to clean up based on Plex paths.")
+
+            # On supprime les fichiers un par un
+            for file_info in episode_files:
+                media_filepath = file_info.get('path')
+                if media_filepath and os.path.exists(media_filepath):
+                    try:
+                        if not _is_dry_run_mode():
+                            os.remove(media_filepath)
+                        current_app.logger.info(f"ARCHIVE SHOW: {'[SIMULATION] ' if _is_dry_run_mode() else ''}Deleting file: {media_filepath}")
+                    except Exception as e_file:
+                        current_app.logger.error(f"Failed to delete file {media_filepath}: {e_file}")
+
+            # Après avoir supprimé tous les fichiers, on nettoie les dossiers parents vides
+            # On prend le chemin du premier fichier comme point de départ pour le nettoyage
+            if show.locations:
+                initial_path_for_cleanup = show.locations[0]
+                cleanup_parent_directory_recursively(initial_path_for_cleanup)
+                flash(f"Nettoyage des dossiers pour '{show.title}' terminé.", "info")
+
+        return jsonify({'status': 'success', 'message': f"Série '{show.title}' archivée avec succès."})
+
+    except NotFound:
+        return jsonify({'status': 'error', 'message': f"Show with ratingKey {rating_key} not found in Plex."}), 404
+    except Exception as e:
+        current_app.logger.error(f"Error archiving show: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500
 # --- Gestionnaires d'erreur ---
 #@app.errorhandler(404)

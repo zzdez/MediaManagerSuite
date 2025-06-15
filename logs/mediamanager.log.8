@@ -1,4 +1,4 @@
-2025-06-12 18:37:57,126 ERROR: Erreur interne du serveur (500): 500 Internal Server Error: The server encountered an internal error and was unable to complete your request. Either the server is overloaded or there is an error in the application. [in X:\MediaManagerSuite\app\__init__.py:84]
+2025-06-12 19:00:10,264 ERROR: Erreur interne du serveur (500): 500 Internal Server Error: The server encountered an internal error and was unable to complete your request. Either the server is overloaded or there is an error in the application. [in X:\MediaManagerSuite\app\__init__.py:84]
 Traceback (most recent call last):
   File "X:\MediaManagerSuite\venv\Lib\site-packages\flask\app.py", line 1511, in wsgi_app
     response = self.full_dispatch_request()
@@ -12,9 +12,9 @@ Traceback (most recent call last):
   File "X:\MediaManagerSuite\app\plex_editor\routes.py", line 335, in show_library
     return render_template('plex_editor/library.html',
                            title=f"Bibliothèque {library_name or 'Inconnue'} - {user_title_in_session}",
-    ...<4 lines>...
-                           plex_error=plex_error_message,
-                           user_title=user_title_in_session)
+    ...<5 lines>...
+                           user_title=user_title_in_session,
+                           config=current_app.config) # ### MODIFICATION ICI ###
   File "X:\MediaManagerSuite\venv\Lib\site-packages\flask\templating.py", line 150, in render_template
     return _render(app, template, context)
   File "X:\MediaManagerSuite\venv\Lib\site-packages\flask\templating.py", line 131, in _render
@@ -30,26 +30,12 @@ Traceback (most recent call last):
   File "X:\MediaManagerSuite\venv\Lib\site-packages\jinja2\environment.py", line 490, in getattr
     return getattr(obj, attribute)
 jinja2.exceptions.UndefinedError: 'current_app' is undefined
-2025-06-12 18:38:58,452 INFO: MediaManagerSuite startup in production mode [in X:\MediaManagerSuite\app\__init__.py:35]
-2025-06-12 18:38:58,863 INFO: Blueprint 'plex_editor' enregistré avec succès. [in X:\MediaManagerSuite\app\__init__.py:46]
-2025-06-12 18:38:59,014 INFO: Blueprint 'seedbox_ui' enregistré avec succès. [in X:\MediaManagerSuite\app\__init__.py:51]
-2025-06-12 18:38:59,018 INFO: Blueprint 'config_ui' enregistré avec succès. [in X:\MediaManagerSuite\app\__init__.py:59]
-2025-06-12 18:38:59,018 INFO: Application MediaManagerSuite créée et configurée. [in X:\MediaManagerSuite\app\__init__.py:88]
-2025-06-12 18:38:59,019 INFO: Démarrage MediaManagerSuite. Debug: False, Reloader: False (pour test) [in X:\MediaManagerSuite\run.py:18]
-2025-06-12 18:39:02,135 INFO: show_library: Arguments finaux pour API search(): {'sort': 'addedAt:desc'} [in X:\MediaManagerSuite\app\plex_editor\routes.py:223]
-2025-06-12 18:39:02,542 INFO: Emprunt d'identité réussi pour 'User'. [in X:\MediaManagerSuite\app\plex_editor\routes.py:245]
-2025-06-12 18:39:02,547 INFO: Exécution de library.search sur 'Films' pour utilisateur 'User' avec args: {'sort': 'addedAt:desc'} [in X:\MediaManagerSuite\app\plex_editor\routes.py:270]
-2025-06-12 18:39:04,585 WARNING: Erreur 404 - Page non trouvée: http://localhost:5001/favicon.ico (Référent: http://localhost:5001/plex/library/Films) [in X:\MediaManagerSuite\app\__init__.py:79]
-2025-06-12 18:41:23,187 INFO: MediaManagerSuite startup in production mode [in X:\MediaManagerSuite\app\__init__.py:35]
-2025-06-12 18:41:23,594 INFO: Blueprint 'plex_editor' enregistré avec succès. [in X:\MediaManagerSuite\app\__init__.py:46]
-2025-06-12 18:41:23,748 INFO: Blueprint 'seedbox_ui' enregistré avec succès. [in X:\MediaManagerSuite\app\__init__.py:51]
-2025-06-12 18:41:23,753 INFO: Blueprint 'config_ui' enregistré avec succès. [in X:\MediaManagerSuite\app\__init__.py:59]
-2025-06-12 18:41:23,753 INFO: Application MediaManagerSuite créée et configurée. [in X:\MediaManagerSuite\app\__init__.py:88]
-2025-06-12 18:41:23,754 INFO: Démarrage MediaManagerSuite. Debug: False, Reloader: False (pour test) [in X:\MediaManagerSuite\run.py:18]
-2025-06-12 18:41:30,355 INFO: show_library: Arguments finaux pour API search(): {'sort': 'addedAt:desc'} [in X:\MediaManagerSuite\app\plex_editor\routes.py:223]
-2025-06-12 18:41:30,948 INFO: Emprunt d'identité réussi pour 'User'. [in X:\MediaManagerSuite\app\plex_editor\routes.py:245]
-2025-06-12 18:41:30,954 INFO: Exécution de library.search sur 'Films' pour utilisateur 'User' avec args: {'sort': 'addedAt:desc'} [in X:\MediaManagerSuite\app\plex_editor\routes.py:270]
-2025-06-12 18:41:32,598 ERROR: Exception on /plex/library/Films [GET] [in X:\MediaManagerSuite\venv\Lib\site-packages\flask\app.py:875]
+2025-06-12 19:00:10,332 WARNING: Erreur 404 - Page non trouvée: http://localhost:5001/favicon.ico (Référent: http://localhost:5001/plex/library/Films) [in X:\MediaManagerSuite\app\__init__.py:79]
+2025-06-12 19:00:18,733 INFO: Utilisateur 'User' (ID: 36440265) sélectionné. [in X:\MediaManagerSuite\app\plex_editor\routes.py:75]
+2025-06-12 19:00:21,385 INFO: show_library: Arguments finaux pour API search(): {'sort': 'addedAt:desc'} [in X:\MediaManagerSuite\app\plex_editor\routes.py:223]
+2025-06-12 19:00:22,541 INFO: Emprunt d'identité réussi pour 'User'. [in X:\MediaManagerSuite\app\plex_editor\routes.py:245]
+2025-06-12 19:00:22,547 INFO: Exécution de library.search sur 'Films' pour utilisateur 'User' avec args: {'sort': 'addedAt:desc'} [in X:\MediaManagerSuite\app\plex_editor\routes.py:270]
+2025-06-12 19:00:24,107 ERROR: Exception on /plex/library/Films [GET] [in X:\MediaManagerSuite\venv\Lib\site-packages\flask\app.py:875]
 Traceback (most recent call last):
   File "X:\MediaManagerSuite\venv\Lib\site-packages\flask\app.py", line 1511, in wsgi_app
     response = self.full_dispatch_request()
@@ -63,9 +49,9 @@ Traceback (most recent call last):
   File "X:\MediaManagerSuite\app\plex_editor\routes.py", line 335, in show_library
     return render_template('plex_editor/library.html',
                            title=f"Bibliothèque {library_name or 'Inconnue'} - {user_title_in_session}",
-    ...<4 lines>...
-                           plex_error=plex_error_message,
-                           user_title=user_title_in_session)
+    ...<5 lines>...
+                           user_title=user_title_in_session,
+                           config=current_app.config) # ### MODIFICATION ICI ###
   File "X:\MediaManagerSuite\venv\Lib\site-packages\flask\templating.py", line 150, in render_template
     return _render(app, template, context)
   File "X:\MediaManagerSuite\venv\Lib\site-packages\flask\templating.py", line 131, in _render
@@ -81,7 +67,7 @@ Traceback (most recent call last):
   File "X:\MediaManagerSuite\venv\Lib\site-packages\jinja2\environment.py", line 490, in getattr
     return getattr(obj, attribute)
 jinja2.exceptions.UndefinedError: 'current_app' is undefined
-2025-06-12 18:41:32,603 ERROR: Erreur interne du serveur (500): 500 Internal Server Error: The server encountered an internal error and was unable to complete your request. Either the server is overloaded or there is an error in the application. [in X:\MediaManagerSuite\app\__init__.py:84]
+2025-06-12 19:00:24,110 ERROR: Erreur interne du serveur (500): 500 Internal Server Error: The server encountered an internal error and was unable to complete your request. Either the server is overloaded or there is an error in the application. [in X:\MediaManagerSuite\app\__init__.py:84]
 Traceback (most recent call last):
   File "X:\MediaManagerSuite\venv\Lib\site-packages\flask\app.py", line 1511, in wsgi_app
     response = self.full_dispatch_request()
@@ -95,9 +81,9 @@ Traceback (most recent call last):
   File "X:\MediaManagerSuite\app\plex_editor\routes.py", line 335, in show_library
     return render_template('plex_editor/library.html',
                            title=f"Bibliothèque {library_name or 'Inconnue'} - {user_title_in_session}",
-    ...<4 lines>...
-                           plex_error=plex_error_message,
-                           user_title=user_title_in_session)
+    ...<5 lines>...
+                           user_title=user_title_in_session,
+                           config=current_app.config) # ### MODIFICATION ICI ###
   File "X:\MediaManagerSuite\venv\Lib\site-packages\flask\templating.py", line 150, in render_template
     return _render(app, template, context)
   File "X:\MediaManagerSuite\venv\Lib\site-packages\flask\templating.py", line 131, in _render
@@ -113,5 +99,17 @@ Traceback (most recent call last):
   File "X:\MediaManagerSuite\venv\Lib\site-packages\jinja2\environment.py", line 490, in getattr
     return getattr(obj, attribute)
 jinja2.exceptions.UndefinedError: 'current_app' is undefined
-2025-06-12 18:59:55,557 INFO: show_library: Arguments finaux pour API search(): {'sort': 'addedAt:desc'} [in X:\MediaManagerSuite\app\plex_editor\routes.py:223]
-2025-06-12 18:59:55,933 INFO: Emprunt d'identité réussi pour 'User'. [in X:\MediaManagerSuite\app\plex_editor\routes.py:245]
+2025-06-12 19:20:24,396 INFO: MediaManagerSuite startup in production mode [in X:\MediaManagerSuite\app\__init__.py:35]
+2025-06-12 19:20:24,807 INFO: Blueprint 'plex_editor' enregistré avec succès. [in X:\MediaManagerSuite\app\__init__.py:46]
+2025-06-12 19:20:24,955 INFO: Blueprint 'seedbox_ui' enregistré avec succès. [in X:\MediaManagerSuite\app\__init__.py:51]
+2025-06-12 19:20:24,959 INFO: Blueprint 'config_ui' enregistré avec succès. [in X:\MediaManagerSuite\app\__init__.py:59]
+2025-06-12 19:20:24,960 INFO: Application MediaManagerSuite créée et configurée. [in X:\MediaManagerSuite\app\__init__.py:88]
+2025-06-12 19:20:24,960 INFO: Démarrage MediaManagerSuite. Debug: False, Reloader: False (pour test) [in X:\MediaManagerSuite\run.py:18]
+2025-06-12 19:20:29,277 INFO: show_library: Arguments finaux pour API search(): {'sort': 'addedAt:desc'} [in X:\MediaManagerSuite\app\plex_editor\routes.py:223]
+2025-06-12 19:20:29,691 INFO: Emprunt d'identité réussi pour 'User'. [in X:\MediaManagerSuite\app\plex_editor\routes.py:245]
+2025-06-12 19:20:29,962 INFO: Exécution de library.search sur 'Films' pour utilisateur 'User' avec args: {'sort': 'addedAt:desc'} [in X:\MediaManagerSuite\app\plex_editor\routes.py:270]
+2025-06-12 19:20:31,957 WARNING: Erreur 404 - Page non trouvée: http://localhost:5001/favicon.ico (Référent: http://localhost:5001/plex/library/Films) [in X:\MediaManagerSuite\app\__init__.py:79]
+2025-06-12 19:20:53,511 INFO: Filtre date API: ajout_recent_jours = 100d [in X:\MediaManagerSuite\app\plex_editor\routes.py:180]
+2025-06-12 19:20:53,512 INFO: show_library: Arguments finaux pour API search(): {'unwatched': False, 'addedAt>>=': '100d', 'sort': 'addedAt:desc'} [in X:\MediaManagerSuite\app\plex_editor\routes.py:223]
+2025-06-12 19:20:53,948 INFO: Emprunt d'identité réussi pour 'User'. [in X:\MediaManagerSuite\app\plex_editor\routes.py:245]
+2025-06-12 19:20:53,955 INFO: Exécution de library.search sur 'Films' pour utilisateur 'User' avec args: {'unwatched': False, 'addedAt>>=': '100d', 'sort': 'addedAt:desc'} [in X:\MediaManagerSuite\app\plex_editor\routes.py:270]

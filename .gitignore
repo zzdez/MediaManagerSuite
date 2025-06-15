@@ -105,3 +105,9 @@ local_settings.py # Example user-specific settings
 instance/
 pending_torrents_map.json
 pending_torrents_map.json
+logs/mediamanager.log.5
+logs/mediamanager.log.4
+logs/mediamanager.log.3
+logs/mediamanager.log.2
+logs/mediamanager.log.10
+logs/mediamanager.log.1
