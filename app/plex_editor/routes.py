@@ -664,7 +664,7 @@ def archive_movie_route():
     # ÉTAPE 1: Obtenir les deux connexions nécessaires
     admin_plex_server = get_plex_admin_server()
     user_plex_server = get_user_specific_plex_server()
-    
+
     if not admin_plex_server or not user_plex_server:
         return jsonify({'status': 'error', 'message': 'Could not establish Plex connections.'}), 500
 
@@ -683,11 +683,11 @@ def archive_movie_route():
         # --- Radarr Actions ---
         if options.get('unmonitor') or options.get('addTag'):
             radarr_movie = None
-            
+
             # ### DÉBOGAGE DES GUIDs PLEX ###
             guids_to_check = [g.id for g in movie_admin_context.guids]
             current_app.logger.info(f"Recherche du film '{movie_admin_context.title}' dans Radarr avec les GUIDs suivants : {guids_to_check}")
-            
+
             for guid_str in guids_to_check:
                 current_app.logger.info(f"  -> Tentative avec le GUID : {guid_str}")
                 radarr_movie = get_radarr_movie_by_guid(guid_str)
@@ -696,7 +696,7 @@ def archive_movie_route():
                     break
                 else:
                     current_app.logger.info(f"  -> Échec avec le GUID {guid_str}.")
-            
+
             if not radarr_movie:
                 return jsonify({'status': 'error', 'message': 'Movie not found in Radarr.'}), 404
 
@@ -758,7 +758,7 @@ def archive_movie_route():
         except Exception as e_scan:
             current_app.logger.error(f"Échec du déclenchement du scan Plex: {e_scan}", exc_info=True)
             flash("Échec du déclenchement du scan de la bibliothèque dans Plex.", "warning")
-            
+
         return jsonify({'status': 'success', 'message': f"'{movie_admin_context.title}' successfully archived."})
 
     except NotFound:
@@ -766,7 +766,7 @@ def archive_movie_route():
     except Exception as e:
         current_app.logger.error(f"Error archiving movie: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500
-# --- NOUVELLE ROUTE POUR L'ARCHIVAGE DE SÉRIE ---
+# --- ROUTE POUR L'ARCHIVAGE DE SÉRIE COMPLÈTE ---
 @plex_editor_bp.route('/archive_show', methods=['POST'])
 @login_required
 def archive_show_route():
@@ -785,42 +785,31 @@ def archive_show_route():
         show = user_plex_server.fetchItem(int(rating_key))
         if not show or show.type != 'show':
             return jsonify({'status': 'error', 'message': 'Show not found or not a show item.'}), 404
-        # ### DÉBOGAGE DES COMPTES D'ÉPISODES ###
-        current_app.logger.info(f"Vérification de la série '{show.title}':")
-        current_app.logger.info(f"  - Nombre total d'épisodes (leafCount) rapporté par Plex: {show.leafCount}")
-        current_app.logger.info(f"  - Nombre d'épisodes vus (viewedLeafCount) rapporté par Plex: {show.viewedLeafCount}")
-        # --- Vérification 1: Tous les épisodes sont-ils vus dans Plex ? ---
+
         if show.viewedLeafCount != show.leafCount:
-            return jsonify({'status': 'error', 'message': 'Not all episodes are marked as watched in Plex.'}), 400
+            error_msg = f"Not all episodes are marked as watched in Plex (Viewed: {show.viewedLeafCount}, Total: {show.leafCount})."
+            return jsonify({'status': 'error', 'message': error_msg}), 400
 
-        # --- Actions Sonarr ---
         sonarr_series = None
+        for guid_obj in show.guids:
+            sonarr_series = get_sonarr_series_by_guid(guid_obj.id)
+            if sonarr_series: break
+
+        if not sonarr_series:
+            return jsonify({'status': 'error', 'message': 'Show not found in Sonarr.'}), 404
+
+        if sonarr_series.get('status', 'continuing') != 'ended':
+            return jsonify({'status': 'error', 'message': f"Cannot archive. Show '{show.title}' is not 'ended' in Sonarr."}), 400
+
         if options.get('unmonitor') or options.get('addTag'):
-            for guid_obj in show.guids:
-                sonarr_series = get_sonarr_series_by_guid(guid_obj.id)
-                if sonarr_series:
-                    break
-
-            if not sonarr_series:
-                return jsonify({'status': 'error', 'message': 'Show not found in Sonarr.'}), 404
-
-            # --- Vérification 2: La série est-elle "ended" dans Sonarr ? ---
-            if sonarr_series.get('status', 'continuing') != 'ended':
-                return jsonify({'status': 'error', 'message': f"Cannot archive. Show '{show.title}' is not 'ended' in Sonarr (status: {sonarr_series.get('status')})."}), 400
-
             series_id = sonarr_series['id']
-            # On doit récupérer l'objet complet pour la mise à jour, car l'API /series retourne une version allégée
             full_series_data = get_sonarr_series_by_id(series_id)
             if not full_series_data:
                 return jsonify({'status': 'error', 'message': 'Could not fetch full series details from Sonarr.'}), 500
 
-            # Prépare le payload de mise à jour
             if options.get('unmonitor'):
                 full_series_data['monitored'] = False
-                current_app.logger.info(f"Setting '{show.title}' to unmonitored in Sonarr.")
-
             if options.get('addTag'):
-                # On ajoute deux tags : un générique 'vu' et un spécifique 'vu-complet'
                 vu_tag_id = get_sonarr_tag_id('vu')
                 vu_complet_tag_id = get_sonarr_tag_id('vu-complet')
                 if vu_tag_id and vu_tag_id not in full_series_data.get('tags', []):
@@ -828,89 +817,248 @@ def archive_show_route():
                 if vu_complet_tag_id and vu_complet_tag_id not in full_series_data.get('tags', []):
                     full_series_data['tags'].append(vu_complet_tag_id)
 
-            # Envoie la mise à jour à Sonarr
-            # Note: Sonarr attend l'objet série complet pour un PUT
-            update_result = update_sonarr_series(full_series_data)
-            if not update_result:
+            if not update_sonarr_series(full_series_data):
                 return jsonify({'status': 'error', 'message': 'Failed to update series in Sonarr.'}), 500
 
-        # --- File Deletion Action ---
         if options.get('deleteFiles'):
-            current_app.logger.info(f"Starting file cleanup for entire show: {show.title}")
-            if not sonarr_series: # Au cas où on ne fait que supprimer les fichiers
-                 for guid_obj in show.guids:
-                    sonarr_series = get_sonarr_series_by_guid(guid_obj.id)
-                    if sonarr_series: break
-
-            if not sonarr_series:
-                return jsonify({'status': 'error', 'message': 'Show not found in Sonarr, cannot get file list.'}), 404
-
-            # (### BLOC ENTIÈREMENT REMANIÉ ###)
-            # On récupère la liste des fichiers depuis Sonarr
             episode_files = get_sonarr_episode_files(sonarr_series['id'])
             if episode_files is None:
-                return jsonify({'status': 'error', 'message': 'Could not retrieve episode file list from Sonarr.'}), 500
+                return jsonify({'status': 'error', 'message': 'Could not retrieve episode file list.'}), 500
 
             last_deleted_filepath = None
-            # On supprime les fichiers un par un
             for file_info in episode_files:
                 media_filepath = file_info.get('path')
                 if media_filepath and os.path.exists(media_filepath):
                     try:
-                        if not _is_dry_run_mode():
-                            os.remove(media_filepath)
-                        # On garde en mémoire le chemin du dernier fichier pour démarrer le nettoyage
+                        if not _is_dry_run_mode(): os.remove(media_filepath)
                         last_deleted_filepath = media_filepath
                         current_app.logger.info(f"ARCHIVE SHOW: {'[SIMULATION] ' if _is_dry_run_mode() else ''}Deleting file: {media_filepath}")
                     except Exception as e_file:
                         current_app.logger.error(f"Failed to delete file {media_filepath}: {e_file}")
 
-            # On lance le nettoyage des dossiers en partant du chemin d'un des fichiers supprimés
             if last_deleted_filepath:
-                current_app.logger.info(f"Lancement du nettoyage récursif à partir de {last_deleted_filepath}")
                 admin_plex_server = get_plex_admin_server()
                 if admin_plex_server:
                     library_sections = admin_plex_server.library.sections()
                     temp_roots = {os.path.normpath(loc) for lib in library_sections for loc in lib.locations}
                     temp_guards = {os.path.normpath(os.path.splitdrive(r)[0] + os.sep) if os.path.splitdrive(r)[0] else os.path.normpath(os.sep + r.split(os.sep)[1]) for r in temp_roots if r}
-                    active_plex_library_roots = list(temp_roots)
-                    deduced_base_paths_guards = list(temp_guards)
+                    cleanup_parent_directory_recursively(last_deleted_filepath, list(temp_roots), list(temp_guards))
 
-                    cleanup_parent_directory_recursively(
-                        last_deleted_filepath,
-                        dynamic_plex_library_roots=active_plex_library_roots,
-                        base_paths_guards=deduced_base_paths_guards
-                    )
-                flash(f"Nettoyage des dossiers pour '{show.title}' terminé.", "info")
-
-        # --- Déclencher un scan de la bibliothèque dans Plex pour voir les changements ---
         try:
-            # On récupère l'objet bibliothèque en utilisant la connexion admin pour avoir les droits de scan
             admin_plex_server = get_plex_admin_server()
             if admin_plex_server:
-                # L'objet `show` a un attribut `librarySectionTitle` qui contient le nom de sa bibliothèque
-                library_name = show.librarySectionTitle
-                show_library = admin_plex_server.library.section(library_name)
-
-                current_app.logger.info(f"Déclenchement d'un scan de la bibliothèque '{show_library.title}' dans Plex.")
-                if not _is_dry_run_mode():
-                    show_library.update()
-                    flash(f"Scan de la bibliothèque '{show_library.title}' déclenché dans Plex.", "info")
-                else:
-                     flash(f"[SIMULATION] Un scan de la bibliothèque '{show_library.title}' serait déclenché.", "info")
-            else:
-                current_app.logger.error("Impossible de récupérer la connexion admin pour déclencher le scan Plex.")
-
+                show_library = admin_plex_server.library.section(show.librarySectionTitle)
+                if not _is_dry_run_mode(): show_library.update()
+                flash(f"Scan de la bibliothèque '{show_library.title}' déclenché.", "info")
         except Exception as e_scan:
-            current_app.logger.error(f"Échec du déclenchement du scan Plex: {e_scan}", exc_info=True)
-            flash("Échec du déclenchement du scan de la bibliothèque dans Plex.", "warning")
+            current_app.logger.error(f"Échec du déclenchement du scan Plex: {e_scan}")
 
         return jsonify({'status': 'success', 'message': f"Série '{show.title}' archivée avec succès."})
 
     except NotFound:
-        return jsonify({'status': 'error', 'message': f"Show with ratingKey {rating_key} not found in Plex."}), 404
+        return jsonify({'status': 'error', 'message': f"Show with ratingKey {rating_key} not found."}), 404
     except Exception as e:
         current_app.logger.error(f"Error archiving show: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+# --- FONCTION DE TRAITEMENT POUR LA GESTION DES SAISONS ---
+def handle_manage_seasons_post(rating_key):
+    """Traite les soumissions du formulaire de la page de gestion des saisons."""
+    form_data = request.form
+    seasons_to_monitor = set(form_data.getlist('monitored_seasons', type=int))
+    seasons_to_delete = set(form_data.getlist('delete_seasons', type=int))
+
+    current_app.logger.info(f"Gestion des saisons pour la série {rating_key}: Surveiller={seasons_to_monitor}, Supprimer={seasons_to_delete}")
+
+    admin_plex_server = get_plex_admin_server()
+    if not admin_plex_server:
+        flash("Erreur de connexion admin à Plex.", "danger")
+        return redirect(url_for('plex_editor.manage_seasons', rating_key=rating_key))
+
+    try:
+        show = admin_plex_server.fetchItem(rating_key)
+
+        sonarr_series = next((s for g in show.guids if (s := get_sonarr_series_by_guid(g.id))), None)
+        if not sonarr_series:
+            flash("Série non trouvée dans Sonarr.", "danger")
+            return redirect(url_for('plex_editor.manage_seasons', rating_key=rating_key))
+
+        series_id = sonarr_series['id']
+        full_series_data = get_sonarr_series_by_id(series_id)
+        if not full_series_data:
+            flash("Impossible de récupérer les détails de la série depuis Sonarr.", "danger")
+            return redirect(url_for('plex_editor.manage_seasons', rating_key=rating_key))
+
+        # --- ÉTAPE 1: Mettre à jour le monitoring ---
+        monitoring_changed = False
+        for season in full_series_data.get('seasons', []):
+            is_monitored = season.get('seasonNumber') in seasons_to_monitor
+            if season.get('monitored') != is_monitored:
+                season['monitored'] = is_monitored
+                monitoring_changed = True
+
+        if monitoring_changed:
+            if update_sonarr_series(full_series_data):
+                flash("Statut de surveillance des saisons mis à jour dans Sonarr.", "success")
+            else:
+                flash("Échec de la mise à jour de la surveillance dans Sonarr.", "danger")
+
+        # --- ÉTAPE 2: Supprimer les fichiers ---
+        if seasons_to_delete:
+            episode_files = get_sonarr_episode_files(series_id)
+            if episode_files:
+                files_to_delete = [f for f in episode_files if f.get('seasonNumber') in seasons_to_delete]
+                deleted_count = 0
+                last_deleted_filepath = None
+                for file_info in files_to_delete:
+                    filepath = file_info.get('path')
+                    if filepath and os.path.exists(filepath):
+                        try:
+                            if not _is_dry_run_mode(): os.remove(filepath)
+                            deleted_count += 1
+                            last_deleted_filepath = filepath
+                        except Exception as e:
+                            current_app.logger.error(f"Impossible de supprimer le fichier {filepath}: {e}")
+
+                if deleted_count > 0:
+                    flash(f"{deleted_count} fichier(s) ont été supprimés (ou leur suppression simulée).", "success")
+
+                if last_deleted_filepath:
+                    library_sections = admin_plex_server.library.sections()
+                    temp_roots = {os.path.normpath(loc) for lib in library_sections for loc in lib.locations}
+                    temp_guards = {os.path.normpath(os.path.splitdrive(r)[0] + os.sep) if os.path.splitdrive(r)[0] else os.path.normpath(os.sep + r.split(os.sep)[1]) for r in temp_roots if r}
+                    cleanup_parent_directory_recursively(last_deleted_filepath, list(temp_roots), list(temp_guards))
+
+        # --- ÉTAPE 3: Déclencher un scan Plex ---
+        try:
+            show_library = admin_plex_server.library.section(show.librarySectionTitle)
+            if not _is_dry_run_mode(): show_library.update()
+            flash("Scan de la bibliothèque Plex déclenché.", "info")
+        except Exception as e:
+            current_app.logger.warning(f"Impossible de déclencher le scan Plex: {e}")
+
+        return redirect(url_for('plex_editor.manage_seasons', rating_key=rating_key))
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur dans handle_manage_seasons_post: {e}", exc_info=True)
+        flash("Une erreur inattendue est survenue.", "danger")
+        return redirect(url_for('plex_editor.manage_seasons', rating_key=rating_key))
+
+
+# --- ROUTE PRINCIPALE POUR LA GESTION DES SAISONS ---
+@plex_editor_bp.route('/manage_seasons/<int:rating_key>', methods=['GET', 'POST'])
+@login_required
+def manage_seasons(rating_key):
+    if request.method == 'POST':
+        return handle_manage_seasons_post(rating_key)
+
+    # --- Logique GET ---
+    user_plex_server = get_user_specific_plex_server()
+    if not user_plex_server:
+        return redirect(url_for('plex_editor.index'))
+
+    try:
+        show = user_plex_server.fetchItem(rating_key)
+        if not show or show.type != 'show': abort(404)
+
+        sonarr_series = next((s for g in show.guids if (s := get_sonarr_series_by_guid(g.id))), None)
+        if not sonarr_series:
+            return render_template('plex_editor/manage_seasons.html', show=show, seasons_data=[], library_name=show.librarySectionTitle, error_message="Série non trouvée dans Sonarr.")
+
+        full_sonarr_series_data = get_sonarr_series_by_id(sonarr_series['id'])
+        if not full_sonarr_series_data:
+             return render_template('plex_editor/manage_seasons.html', show=show, seasons_data=[], library_name=show.librarySectionTitle, error_message="Impossible de récupérer les détails de Sonarr.")
+
+        seasons_data = []
+        for plex_season in show.seasons():
+            sonarr_season_info = next((s for s in full_sonarr_series_data.get('seasons', []) if s.get('seasonNumber') == plex_season.seasonNumber), None)
+
+            seasons_data.append({
+                'title': plex_season.title,
+                'index': plex_season.seasonNumber,
+                'leafCount': plex_season.leafCount,
+                'viewedLeafCount': plex_season.viewedLeafCount,
+                'monitored': sonarr_season_info.get('monitored', False) if sonarr_season_info else False,
+            })
+
+        return render_template('plex_editor/manage_seasons.html',
+                               show=show,
+                               seasons_data=seasons_data,
+                               library_name=show.librarySectionTitle,
+                               error_message=None)
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur dans manage_seasons (GET): {e}", exc_info=True)
+        flash("Une erreur est survenue lors du chargement de la page.", "danger")
+        return redirect(url_for('plex_editor.list_libraries'))
+@plex_editor_bp.route('/reject_show', methods=['POST'])
+@login_required
+def reject_show_route():
+    rating_key = request.get_json().get('ratingKey')
+    if not rating_key:
+        return jsonify({'status': 'error', 'message': 'Missing ratingKey.'}), 400
+
+    admin_plex_server = get_plex_admin_server()
+    if not admin_plex_server:
+        return jsonify({'status': 'error', 'message': 'Could not connect to Plex server.'}), 500
+
+    try:
+        show = admin_plex_server.fetchItem(rating_key)
+        
+        sonarr_series = next((s for g in show.guids if (s := get_sonarr_series_by_guid(g.id))), None)
+        if not sonarr_series:
+            return jsonify({'status': 'error', 'message': 'Show not found in Sonarr.'}), 404
+
+        # Mise à jour Sonarr
+        series_id = sonarr_series['id']
+        full_series_data = get_sonarr_series_by_id(series_id)
+        full_series_data['monitored'] = False
+        
+        tag_label = 'rejeté' # Tu peux rendre ce tag configurable plus tard
+        tag_id = get_sonarr_tag_id(tag_label)
+        if tag_id and tag_id not in full_series_data.get('tags', []):
+            full_series_data['tags'].append(tag_id)
+        
+        update_sonarr_series(full_series_data)
+
+        # Suppression des fichiers
+        episode_files = get_sonarr_episode_files(series_id)
+        if episode_files:
+            last_deleted_filepath = None
+            for file_info in episode_files:
+                filepath = file_info.get('path')
+                if filepath and os.path.exists(filepath):
+                    try:
+                        if not _is_dry_run_mode(): os.remove(filepath)
+                        last_deleted_filepath = filepath
+                    except Exception as e:
+                        current_app.logger.error(f"Impossible de supprimer le fichier {filepath}: {e}")
+            
+            # Nettoyage des dossiers après la suppression
+            if last_deleted_filepath:
+                current_app.logger.info(f"Lancement du nettoyage récursif pour le rejet à partir de {last_deleted_filepath}")
+                library_sections = admin_plex_server.library.sections()
+                temp_roots = {os.path.normpath(loc) for lib in library_sections for loc in lib.locations}
+                temp_guards = {os.path.normpath(os.path.splitdrive(r)[0] + os.sep) if os.path.splitdrive(r)[0] else os.path.normpath(os.sep + r.split(os.sep)[1]) for r in temp_roots if r}
+                cleanup_parent_directory_recursively(
+                    last_deleted_filepath,
+                    dynamic_plex_library_roots=list(temp_roots),
+                    base_paths_guards=list(temp_guards)
+                )
+
+        # Scan Plex
+        try:
+            show_library = admin_plex_server.library.section(show.librarySectionTitle)
+            if not _is_dry_run_mode(): show_library.update()
+            flash("Scan de la bibliothèque Plex déclenché.", "info")
+        except Exception as e:
+            current_app.logger.warning(f"Impossible de déclencher le scan Plex: {e}")
+
+        return jsonify({'status': 'success', 'message': f"Série '{show.title}' rejetée et supprimée."})
+
+    except Exception as e:
+        current_app.logger.error(f"Error rejecting show: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500
 # --- Gestionnaires d'erreur ---
 #@app.errorhandler(404)

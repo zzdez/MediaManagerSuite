@@ -7,7 +7,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     {# Font Awesome pour les icônes #}
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
-    
+
     <title>{{ title }} - Editeur Plex</title>
     <style>
         /* Styles généraux (similaires à index.html) */
@@ -189,7 +189,7 @@
         }
         .delete-button { background-color: #dc3545; } /* Rouge danger Bootstrap */
         .delete-button:hover { background-color: #c82333; }
-        
+
         .archive-button { background-color: #ffc107; color: #000; } /* Jaune warning Bootstrap */
         .archive-button:hover { background-color: #e0a800; }
         .archive-button:disabled { background-color: #e9ecef; color: #6c757d; cursor: not-allowed; opacity: 0.7;}
@@ -309,7 +309,7 @@
                                         <i class="fas fa-trash"></i>
                                     </button>
                                 </form>
-                                
+
                                 {% if item.type == 'movie' %}
                                 <button type="button" class="action-button archive-button archive-movie-btn"
                                         data-bs-toggle="modal"
@@ -323,17 +323,36 @@
 
                                 {# ### NOUVEAU BLOC POUR LES SÉRIES ### #}
                                 {% if item.type == 'show' %}
-                                <button type="button" class="action-button archive-show-btn"
-                                        style="background-color: #0dcaf0; color: #000;"
-                                        data-bs-toggle="modal"
-                                        data-bs-target="#archiveShowModal"
-                                        data-rating-key="{{ item.ratingKey }}"
-                                        data-title="{{ item.title|e }}"
-                                        data-leaf-count="{{ item.leafCount }}"
-                                        data-viewed-leaf-count="{{ item.viewedLeafCount }}"
-                                        {% if item.leafCount != item.viewedLeafCount %}disabled title="Tous les épisodes doivent être 'Vus' pour archiver la série complète"{% endif %}>
-                                    <i class="fas fa-tv"></i> <i class="fas fa-archive"></i>
-                                </button>
+
+                                    {# --- BOUTON AJOUTÉ ICI --- #}
+                                    <a href="{{ url_for('plex_editor.manage_seasons', rating_key=item.ratingKey) }}"
+                                       class="action-button"
+                                       style="background-color: #6f42c1; color: white;"
+                                       title="Gérer les saisons de cette série">
+                                        <i class="fas fa-list-ol"></i>
+                                    </a>
+                                    {# --- FIN DE L'AJOUT --- #}
+
+                                    <button type="button" class="action-button archive-show-btn"
+                                            style="background-color: #0dcaf0; color: #000;"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#archiveShowModal"
+                                            data-rating-key="{{ item.ratingKey }}"
+                                            data-title="{{ item.title|e }}"
+                                            data-leaf-count="{{ item.leafCount }}"
+                                            data-viewed-leaf-count="{{ item.viewedLeafCount }}"
+                                            {% if item.leafCount != item.viewedLeafCount %}disabled title="Tous les épisodes doivent être 'Vus' pour archiver la série complète"{% endif %}>
+                                        <i class="fas fa-tv"></i> <i class="fas fa-archive"></i>
+                                    </button>
+                                                                        {# ### NOUVEAU BOUTON "REJETER" ### #}
+                                    <button type="button" class="action-button reject-show-btn"
+                                            style="background-color: #dc3545; color: white;"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#rejectShowModal"
+                                            data-rating-key="{{ item.ratingKey }}"
+                                            data-title="{{ item.title|e }}">
+                                        <i class="fas fa-thumbs-down"></i>
+                                    </button>
                                 {% endif %}
                                 {# ### FIN DU NOUVEAU BLOC ### #}
                             </div>
@@ -412,7 +431,7 @@
                 <div class="modal-body">
                     <p>Vous êtes sur le point d'archiver la série : <strong id="archiveShowModalTitle"></strong>.</p>
                     <p><strong>Conditions :</strong> Cette action n'est possible que si la série est considérée comme "Terminée" (Ended) dans Sonarr.</p>
-                    
+
                     <div class="alert alert-info" role="alert">
                         <span id="archiveShowModalEpisodeCount"></span> épisodes sur <span id="archiveShowModalTotalCount"></span> sont marqués comme vus.
                     </div>
@@ -449,6 +468,33 @@
         </div>
     </div>
     <!-- ### FIN NOUVELLE MODALE ### -->
+        <!-- Rejet Show Confirmation Modal -->
+    <div class="modal fade" id="rejectShowModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title">Rejeter la Série</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Vous êtes sur le point de rejeter et supprimer définitivement la série : <strong id="rejectShowModalTitle"></strong>.</p>
+                    <p>Actions qui seront effectuées :</p>
+                    <ul>
+                        <li>Les fichiers de la série seront <strong>supprimés</strong> du disque.</li>
+                        <li>La série sera marquée comme <strong>non surveillée</strong> dans Sonarr.</li>
+                        <li>Un tag (ex: 'rejeté') sera ajouté dans Sonarr.</li>
+                    </ul>
+                    <div class="alert alert-danger mt-3">
+                        <strong>ATTENTION :</strong> Cette action est irréversible !
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="button" class="btn btn-danger" id="confirmRejectShowBtn">Oui, rejeter et supprimer</button>
+                </div>
+            </div>
+        </div>
+    </div>
     {# Bootstrap 5 JS Bundle (pour la modale) #}
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     {# jQuery (si vous l'utilisez ailleurs, sinon on peut s'en passer) #}

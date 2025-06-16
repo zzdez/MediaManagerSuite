@@ -1,5 +1,5 @@
 $(document).ready(function() {
-    
+
     // =================================================================
     // ### LOGIQUE POUR L'ARCHIVAGE DES FILMS (TON CODE EXISTANT) ###
     // =================================================================
@@ -61,7 +61,7 @@ $(document).ready(function() {
     // =================================================================
     // ### LOGIQUE POUR L'ARCHIVAGE DES SÉRIES (NOUVEAU BLOC) ###
     // =================================================================
-    
+
     let ratingKeyToShowArchive = null;
 
     // 1. Quand un bouton "Archive Show" est cliqué
@@ -118,6 +118,39 @@ $(document).ready(function() {
             const modal = bootstrap.Modal.getInstance(document.getElementById('archiveShowModal'));
             modal.hide();
             ratingKeyToShowArchive = null;
+        });
+    });
+    // ### LOGIQUE POUR REJETER UNE SÉRIE ###
+    let ratingKeyToShowReject = null;
+
+    $('.reject-show-btn').on('click', function() {
+        ratingKeyToShowReject = $(this).data('rating-key');
+        const showTitle = $(this).data('title');
+        $('#rejectShowModalTitle').text(showTitle);
+    });
+
+    $('#confirmRejectShowBtn').on('click', function() {
+        const btn = $(this);
+        btn.prop('disabled', true).text('Suppression...');
+
+        fetch('/plex/reject_show', { // Nouvelle URL Backend
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ratingKey: ratingKeyToShowReject })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                $(`.reject-show-btn[data-rating-key='${ratingKeyToShowReject}']`).closest('li').fadeOut(500, function() { $(this).remove(); });
+                alert(data.message);
+            } else {
+                alert('Erreur: ' + data.message);
+            }
+        })
+        .finally(() => {
+            btn.prop('disabled', false).text('Oui, rejeter et supprimer');
+            const modal = bootstrap.Modal.getInstance(document.getElementById('rejectShowModal'));
+            modal.hide();
         });
     });
 
