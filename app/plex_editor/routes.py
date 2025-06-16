@@ -15,7 +15,11 @@ from . import plex_editor_bp
 # Importer les utils spécifiques à plex_editor
 from .utils import cleanup_parent_directory_recursively, get_media_filepath, _is_dry_run_mode
 # Importer les utils globaux/partagés
-from app.utils.arr_client import get_radarr_tag_id, get_radarr_movie_by_guid, update_radarr_movie
+from app.utils.arr_client import (
+    get_radarr_tag_id, get_radarr_movie_by_guid, update_radarr_movie,
+    get_sonarr_tag_id, get_sonarr_series_by_guid, get_sonarr_series_by_id,
+    update_sonarr_series, get_sonarr_episode_files
+)
 
 # --- Fonctions Utilitaires ---
 
@@ -54,7 +58,47 @@ def get_plex_admin_server():
         current_app.logger.error(f"Erreur de connexion au serveur Plex admin: {e}", exc_info=True)
         flash("Erreur de connexion au serveur Plex admin.", "danger")
         return None
+# ### NOUVELLE FONCTION HELPER POUR LE CONTEXTE UTILISATEUR ###
+def get_user_specific_plex_server():
+    """
+    Returns a PlexServer instance connected as the user in session.
+    Handles impersonation for managed users. Returns None on failure.
+    """
+    if 'plex_user_id' not in session:
+        flash("Session utilisateur invalide. Veuillez vous reconnecter.", "danger")
+        return None
 
+    plex_url = current_app.config.get('PLEX_URL')
+    admin_token = current_app.config.get('PLEX_TOKEN')
+
+    try:
+        plex_admin_server = PlexServer(plex_url, admin_token)
+        main_account = get_main_plex_account_object()
+        if not main_account: return None
+
+        user_id_in_session = session.get('plex_user_id')
+
+        if str(main_account.id) == user_id_in_session:
+            current_app.logger.debug("Contexte: Utilisateur Principal (Admin).")
+            return plex_admin_server
+
+        user_to_impersonate = next((u for u in main_account.users() if str(u.id) == user_id_in_session), None)
+        if user_to_impersonate:
+            try:
+                managed_user_token = user_to_impersonate.get_token(plex_admin_server.machineIdentifier)
+                current_app.logger.debug(f"Contexte: Emprunt d'identité pour '{user_to_impersonate.title}'.")
+                return PlexServer(plex_url, managed_user_token)
+            except Exception as e:
+                current_app.logger.error(f"Échec de l'emprunt d'identité pour {user_to_impersonate.title}: {e}")
+                flash(f"Impossible d'emprunter l'identité de {user_to_impersonate.title}. Action annulée.", "danger")
+                return None
+        else:
+            flash(f"Utilisateur de la session non trouvé. Reconnexion requise.", "warning")
+            return None
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur majeure lors de l'obtention de la connexion utilisateur Plex : {e}", exc_info=True)
+        return None
 # --- Routes du Blueprint ---
 
 @plex_editor_bp.route('/', methods=['GET', 'POST'])
@@ -130,7 +174,10 @@ def list_libraries():
 def show_library(library_name):
     if 'plex_user_id' not in session:
         flash("Veuillez sélectionner un utilisateur.", "info")
-        return redirect(url_for('plex_editor.index')) # (### MODIFICATION ICI ###) - Pointeur vers 'index'
+    user_specific_plex_server = get_user_specific_plex_server()
+    if not user_specific_plex_server:
+        # Rediriger si la connexion échoue
+        return redirect(url_for('plex_editor.index'))
 
     user_id_in_session = session.get('plex_user_id')
     user_title_in_session = session.get('plex_user_title', 'Utilisateur Inconnu')
@@ -221,7 +268,7 @@ def show_library(library_name):
          current_filters_from_url['date_filter_value'] = ''
          current_app.logger.warning(f"Erreur de valeur pour filtre date flexible: {e_date_flex}")
 
-sort_order = request.args.get('sort', 'addedAt:desc')
+    sort_order = request.args.get('sort', 'addedAt:desc')
     search_args['sort'] = sort_order
     current_app.logger.info(f"show_library: Arguments finaux pour API search(): {search_args}")
     # ### NOUVELLE LOGIQUE DE FILTRAGE SPÉCIAL POUR LES SÉRIES VUES ###
@@ -268,37 +315,37 @@ sort_order = request.args.get('sort', 'addedAt:desc')
                     current_app.logger.info(f"Recherche dans le contexte du compte principal '{final_context_user_title}'.")
                     user_specific_plex_server = plex_server_admin_conn
 
-if user_specific_plex_server:
-                    try:
-                        library_object = user_specific_plex_server.library.section(library_name)
-                        
-                        # ### ON ACTIVE NOTRE FILTRE SI NÉCESSAIRE ###
-                        if library_object.type == 'show' and current_filters_from_url['vu'] == 'vu':
-                            filter_fully_watched_shows_in_python = True
-                            # Note: `search_args['unwatched'] = False` est déjà défini plus haut, c'est parfait.
-                            current_app.logger.info("Filtre spécial activé: Séries entièrement vues (post-filtrage Python).")
-                        
-                        current_app.logger.info(f"Exécution de library.search sur '{library_object.title}' pour utilisateur '{final_context_user_title}' avec args: {search_args}")
-                        items_from_plex_api = library_object.search(**search_args)
-                    except NotFound:
-                        plex_error_message = f"Bibliothèque '{library_name}' non trouvée."
-                        current_app.logger.warning(f"show_library: {plex_error_message}")
-                        items_from_plex_api = []
-                        library_object = None
-                    except BadRequest as e_br:
-                        plex_error_message = f"Filtre invalide: {e_br}"
-                        current_app.logger.error(f"show_library: BadRequest lors de la recherche: {e_br}", exc_info=True)
-                        flash(f"Erreur dans les filtres: {e_br}", "danger")
-                        items_from_plex_api = []
-                    except Exception as e_s:
-                        plex_error_message = f"Erreur de recherche: {e_s}"
-                        current_app.logger.error(f"show_library: Erreur pendant recherche: {e_s}", exc_info=True)
-                        flash("Erreur pendant la recherche.", "danger")
-                        items_from_plex_api = []
-                else:
-                    plex_error_message = plex_error_message or "Erreur critique: Connexion Plex non préparée."
-                    current_app.logger.critical("show_library: user_specific_plex_server est None avant recherche.")
+            if user_specific_plex_server:
+                try:
+                    library_object = user_specific_plex_server.library.section(library_name)
+
+                    # ### ON ACTIVE NOTRE FILTRE SI NÉCESSAIRE ###
+                    if library_object.type == 'show' and current_filters_from_url['vu'] == 'vu':
+                        filter_fully_watched_shows_in_python = True
+                        # Note: `search_args['unwatched'] = False` est déjà défini plus haut, c'est parfait.
+                        current_app.logger.info("Filtre spécial activé: Séries entièrement vues (post-filtrage Python).")
+
+                    current_app.logger.info(f"Exécution de library.search sur '{library_object.title}' pour utilisateur '{final_context_user_title}' avec args: {search_args}")
+                    items_from_plex_api = library_object.search(**search_args)
+                except NotFound:
+                    plex_error_message = f"Bibliothèque '{library_name}' non trouvée."
+                    current_app.logger.warning(f"show_library: {plex_error_message}")
                     items_from_plex_api = []
+                    library_object = None
+                except BadRequest as e_br:
+                    plex_error_message = f"Filtre invalide: {e_br}"
+                    current_app.logger.error(f"show_library: BadRequest lors de la recherche: {e_br}", exc_info=True)
+                    flash(f"Erreur dans les filtres: {e_br}", "danger")
+                    items_from_plex_api = []
+                except Exception as e_s:
+                    plex_error_message = f"Erreur de recherche: {e_s}"
+                    current_app.logger.error(f"show_library: Erreur pendant recherche: {e_s}", exc_info=True)
+                    flash("Erreur pendant la recherche.", "danger")
+                    items_from_plex_api = []
+            else:
+                plex_error_message = plex_error_message or "Erreur critique: Connexion Plex non préparée."
+                current_app.logger.critical("show_library: user_specific_plex_server est None avant recherche.")
+                items_from_plex_api = []
 
         except Unauthorized:
             plex_error_message = "Token Plex principal invalide."
@@ -345,11 +392,11 @@ if user_specific_plex_server:
             if filter_for_non_notes_in_python and items_from_plex_api and len(items_from_plex_api) != len(items_filtered_final) :
                 flash_message += f" ({len(items_from_plex_api)} avant filtre 'Non Notés')."
             flash(flash_message, 'info')
-    elif not plex_error_message and library_object:
-        flash(f"Aucun élément trouvé dans '{library_object.title}' pour '{final_context_user_title}' avec les filtres.", "info")
-    elif plex_error_message and not library_object :
-        if library_name and "Bibliothèque" not in plex_error_message :
-            flash(f"Erreur lors de l'accès à la bibliothèque '{library_name}'.", "danger")
+        elif not plex_error_message and library_object:
+            flash(f"Aucun élément trouvé dans '{library_object.title}' pour '{final_context_user_title}' avec les filtres.", "info")
+        elif plex_error_message and not library_object :
+            if library_name and "Bibliothèque" not in plex_error_message :
+                flash(f"Erreur lors de l'accès à la bibliothèque '{library_name}'.", "danger")
 
 # --- Ligne de débogage à ajouter ici ---
     current_app.logger.info(f"DEBUG_TAG: La valeur de RADARR_TAG_ON_ARCHIVE est '{current_app.config.get('RADARR_TAG_ON_ARCHIVE')}'")
@@ -603,7 +650,7 @@ def bulk_delete_items():
 # (### SUPPRESSION ICI ###) - La ligne d'import qui était ici a été supprimée car elle est déjà en haut du fichier.
 
 
-# --- NOUVELLE ROUTE POUR L'ARCHIVAGE ---
+# --- ROUTE D'ARCHIVAGE DE FILM (VERSION CORRIGÉE) ---
 @plex_editor_bp.route('/archive_movie', methods=['POST'])
 @login_required
 def archive_movie_route():
@@ -614,22 +661,42 @@ def archive_movie_route():
     if not rating_key:
         return jsonify({'status': 'error', 'message': 'Missing ratingKey.'}), 400
 
-    plex_server = get_plex_admin_server()
-    if not plex_server:
-        return jsonify({'status': 'error', 'message': 'Could not connect to Plex server.'}), 500
+    # ÉTAPE 1: Obtenir les deux connexions nécessaires
+    admin_plex_server = get_plex_admin_server()
+    user_plex_server = get_user_specific_plex_server()
+    
+    if not admin_plex_server or not user_plex_server:
+        return jsonify({'status': 'error', 'message': 'Could not establish Plex connections.'}), 500
 
     try:
-        movie = plex_server.fetchItem(int(rating_key))
-        if not movie or movie.type != 'movie':
+        # ÉTAPE 2: Récupérer l'objet film dans les deux contextes
+        # Contexte admin pour les actions (suppression, scan) et les métadonnées fiables
+        movie_admin_context = admin_plex_server.fetchItem(int(rating_key))
+        if not movie_admin_context or movie_admin_context.type != 'movie':
             return jsonify({'status': 'error', 'message': 'Movie not found or not a movie item.'}), 404
+
+        # Contexte utilisateur pour la seule vérification du statut de visionnage
+        movie_user_context = user_plex_server.fetchItem(int(rating_key))
+        if not movie_user_context.isWatched:
+            return jsonify({'status': 'error', 'message': 'Movie is not marked as watched for the current user.'}), 400
 
         # --- Radarr Actions ---
         if options.get('unmonitor') or options.get('addTag'):
             radarr_movie = None
-            for guid_obj in movie.guids:
-                radarr_movie = get_radarr_movie_by_guid(guid_obj.id)
-                if radarr_movie: break
-
+            
+            # ### DÉBOGAGE DES GUIDs PLEX ###
+            guids_to_check = [g.id for g in movie_admin_context.guids]
+            current_app.logger.info(f"Recherche du film '{movie_admin_context.title}' dans Radarr avec les GUIDs suivants : {guids_to_check}")
+            
+            for guid_str in guids_to_check:
+                current_app.logger.info(f"  -> Tentative avec le GUID : {guid_str}")
+                radarr_movie = get_radarr_movie_by_guid(guid_str)
+                if radarr_movie:
+                    current_app.logger.info(f"  -> SUCCÈS ! Film trouvé dans Radarr avec le GUID {guid_str}. (Titre Radarr: {radarr_movie.get('title')})")
+                    break
+                else:
+                    current_app.logger.info(f"  -> Échec avec le GUID {guid_str}.")
+            
             if not radarr_movie:
                 return jsonify({'status': 'error', 'message': 'Movie not found in Radarr.'}), 404
 
@@ -644,8 +711,9 @@ def archive_movie_route():
                 return jsonify({'status': 'error', 'message': 'Failed to update movie in Radarr.'}), 500
 
         # --- File Deletion Action ---
+        # On utilise l'objet admin pour être sûr d'avoir le bon chemin de fichier
         if options.get('deleteFiles'):
-            media_filepath = get_media_filepath(movie)
+            media_filepath = get_media_filepath(movie_admin_context)
             if media_filepath and os.path.exists(media_filepath):
                 try:
                     is_simulating = _is_dry_run_mode()
@@ -658,29 +726,40 @@ def archive_movie_route():
                     else:
                         flash(f"[SIMULATION] Fichier '{os.path.basename(media_filepath)}' serait supprimé.", "info")
 
-                    library_sections = plex_server.library.sections()
+                    # Logique de nettoyage du dossier parent
+                    library_sections = admin_plex_server.library.sections()
                     temp_roots = {os.path.normpath(loc) for lib in library_sections for loc in lib.locations}
                     temp_guards = {os.path.normpath(os.path.splitdrive(r)[0] + os.sep) if os.path.splitdrive(r)[0] else os.path.normpath(os.sep + r.split(os.sep)[1]) for r in temp_roots if r}
-                    active_plex_library_roots = list(temp_roots)
-                    deduced_base_paths_guards = list(temp_guards)
-
                     cleanup_parent_directory_recursively(
                         media_filepath,
-                        dynamic_plex_library_roots=active_plex_library_roots,
-                        base_paths_guards=deduced_base_paths_guards
+                        dynamic_plex_library_roots=list(temp_roots),
+                        base_paths_guards=list(temp_guards)
                     )
-                except OSError as e_os:
-                    current_app.logger.error(f"ARCHIVE: Erreur de suppression (OSError) pour '{media_filepath}': {e_os}", exc_info=True)
-                    flash(f"Erreur lors de la suppression du fichier '{os.path.basename(media_filepath)}'. Vérifiez les permissions.", "danger")
                 except Exception as e_cleanup:
-                    current_app.logger.error(f"ARCHIVE: Erreur durant le processus de nettoyage pour '{movie.title}': {e_cleanup}", exc_info=True)
-                    flash(f"Erreur inattendue durant le nettoyage pour '{movie.title}'.", "danger")
+                    current_app.logger.error(f"ARCHIVE: Erreur durant le processus de nettoyage pour '{movie_admin_context.title}': {e_cleanup}", exc_info=True)
+                    flash(f"Erreur inattendue durant le nettoyage pour '{movie_admin_context.title}'.", "danger")
             elif media_filepath:
                  current_app.logger.warning(f"ARCHIVE: Chemin '{media_filepath}' non trouvé sur le disque, nettoyage ignoré.")
             else:
-                current_app.logger.warning(f"ARCHIVE: Chemin du fichier pour '{movie.title}' non trouvé dans Plex, nettoyage ignoré.")
+                current_app.logger.warning(f"ARCHIVE: Chemin du fichier pour '{movie_admin_context.title}' non trouvé dans Plex, nettoyage ignoré.")
 
-        return jsonify({'status': 'success', 'message': f"'{movie.title}' successfully archived."})
+        # --- Déclencher un scan de la bibliothèque dans Plex ---
+        # Cette partie est maintenant DANS le bloc `try` principal
+        try:
+            # On utilise l'objet movie_admin_context qui est lié à la connexion admin
+            library_name = movie_admin_context.librarySectionTitle
+            movie_library = admin_plex_server.library.section(library_name)
+            current_app.logger.info(f"Déclenchement d'un scan de la bibliothèque '{movie_library.title}' dans Plex.")
+            if not _is_dry_run_mode():
+                movie_library.update()
+                flash(f"Scan de la bibliothèque '{movie_library.title}' déclenché.", "info")
+            else:
+                 flash(f"[SIMULATION] Un scan de la bibliothèque '{movie_library.title}' serait déclenché.", "info")
+        except Exception as e_scan:
+            current_app.logger.error(f"Échec du déclenchement du scan Plex: {e_scan}", exc_info=True)
+            flash("Échec du déclenchement du scan de la bibliothèque dans Plex.", "warning")
+            
+        return jsonify({'status': 'success', 'message': f"'{movie_admin_context.title}' successfully archived."})
 
     except NotFound:
         return jsonify({'status': 'error', 'message': f"Movie with ratingKey {rating_key} not found in Plex."}), 404
@@ -698,15 +777,18 @@ def archive_show_route():
     if not rating_key:
         return jsonify({'status': 'error', 'message': 'Missing ratingKey.'}), 400
 
-    plex_server = get_plex_admin_server()
-    if not plex_server:
-        return jsonify({'status': 'error', 'message': 'Could not connect to Plex server.'}), 500
+    user_plex_server = get_user_specific_plex_server()
+    if not user_plex_server:
+        return jsonify({'status': 'error', 'message': 'Could not get user-specific Plex connection.'}), 500
 
     try:
-        show = plex_server.fetchItem(int(rating_key))
+        show = user_plex_server.fetchItem(int(rating_key))
         if not show or show.type != 'show':
             return jsonify({'status': 'error', 'message': 'Show not found or not a show item.'}), 404
-
+        # ### DÉBOGAGE DES COMPTES D'ÉPISODES ###
+        current_app.logger.info(f"Vérification de la série '{show.title}':")
+        current_app.logger.info(f"  - Nombre total d'épisodes (leafCount) rapporté par Plex: {show.leafCount}")
+        current_app.logger.info(f"  - Nombre d'épisodes vus (viewedLeafCount) rapporté par Plex: {show.viewedLeafCount}")
         # --- Vérification 1: Tous les épisodes sont-ils vus dans Plex ? ---
         if show.viewedLeafCount != show.leafCount:
             return jsonify({'status': 'error', 'message': 'Not all episodes are marked as watched in Plex.'}), 400
@@ -763,14 +845,13 @@ def archive_show_route():
             if not sonarr_series:
                 return jsonify({'status': 'error', 'message': 'Show not found in Sonarr, cannot get file list.'}), 404
 
-            # Récupérer la liste de tous les fichiers d'épisodes de la série
+            # (### BLOC ENTIÈREMENT REMANIÉ ###)
+            # On récupère la liste des fichiers depuis Sonarr
             episode_files = get_sonarr_episode_files(sonarr_series['id'])
             if episode_files is None:
                 return jsonify({'status': 'error', 'message': 'Could not retrieve episode file list from Sonarr.'}), 500
 
-            if not episode_files:
-                current_app.logger.warning(f"No episode files found in Sonarr for '{show.title}', but attempting to clean up based on Plex paths.")
-
+            last_deleted_filepath = None
             # On supprime les fichiers un par un
             for file_info in episode_files:
                 media_filepath = file_info.get('path')
@@ -778,16 +859,51 @@ def archive_show_route():
                     try:
                         if not _is_dry_run_mode():
                             os.remove(media_filepath)
+                        # On garde en mémoire le chemin du dernier fichier pour démarrer le nettoyage
+                        last_deleted_filepath = media_filepath
                         current_app.logger.info(f"ARCHIVE SHOW: {'[SIMULATION] ' if _is_dry_run_mode() else ''}Deleting file: {media_filepath}")
                     except Exception as e_file:
                         current_app.logger.error(f"Failed to delete file {media_filepath}: {e_file}")
 
-            # Après avoir supprimé tous les fichiers, on nettoie les dossiers parents vides
-            # On prend le chemin du premier fichier comme point de départ pour le nettoyage
-            if show.locations:
-                initial_path_for_cleanup = show.locations[0]
-                cleanup_parent_directory_recursively(initial_path_for_cleanup)
+            # On lance le nettoyage des dossiers en partant du chemin d'un des fichiers supprimés
+            if last_deleted_filepath:
+                current_app.logger.info(f"Lancement du nettoyage récursif à partir de {last_deleted_filepath}")
+                admin_plex_server = get_plex_admin_server()
+                if admin_plex_server:
+                    library_sections = admin_plex_server.library.sections()
+                    temp_roots = {os.path.normpath(loc) for lib in library_sections for loc in lib.locations}
+                    temp_guards = {os.path.normpath(os.path.splitdrive(r)[0] + os.sep) if os.path.splitdrive(r)[0] else os.path.normpath(os.sep + r.split(os.sep)[1]) for r in temp_roots if r}
+                    active_plex_library_roots = list(temp_roots)
+                    deduced_base_paths_guards = list(temp_guards)
+
+                    cleanup_parent_directory_recursively(
+                        last_deleted_filepath,
+                        dynamic_plex_library_roots=active_plex_library_roots,
+                        base_paths_guards=deduced_base_paths_guards
+                    )
                 flash(f"Nettoyage des dossiers pour '{show.title}' terminé.", "info")
+
+        # --- Déclencher un scan de la bibliothèque dans Plex pour voir les changements ---
+        try:
+            # On récupère l'objet bibliothèque en utilisant la connexion admin pour avoir les droits de scan
+            admin_plex_server = get_plex_admin_server()
+            if admin_plex_server:
+                # L'objet `show` a un attribut `librarySectionTitle` qui contient le nom de sa bibliothèque
+                library_name = show.librarySectionTitle
+                show_library = admin_plex_server.library.section(library_name)
+
+                current_app.logger.info(f"Déclenchement d'un scan de la bibliothèque '{show_library.title}' dans Plex.")
+                if not _is_dry_run_mode():
+                    show_library.update()
+                    flash(f"Scan de la bibliothèque '{show_library.title}' déclenché dans Plex.", "info")
+                else:
+                     flash(f"[SIMULATION] Un scan de la bibliothèque '{show_library.title}' serait déclenché.", "info")
+            else:
+                current_app.logger.error("Impossible de récupérer la connexion admin pour déclencher le scan Plex.")
+
+        except Exception as e_scan:
+            current_app.logger.error(f"Échec du déclenchement du scan Plex: {e_scan}", exc_info=True)
+            flash("Échec du déclenchement du scan de la bibliothèque dans Plex.", "warning")
 
         return jsonify({'status': 'success', 'message': f"Série '{show.title}' archivée avec succès."})
 

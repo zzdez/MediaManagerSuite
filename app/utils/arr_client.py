@@ -10,7 +10,7 @@ def _radarr_api_request(method, endpoint, params=None, json_data=None):
     config = current_app.config
     headers = {'X-Api-Key': config.get('RADARR_API_KEY')}
     url = f"{config.get('RADARR_URL', '').rstrip('/')}/api/v3/{endpoint.lstrip('/')}"
-    
+
     try:
         response = requests.request(method, url, headers=headers, params=params, json=json_data, timeout=20)
         response.raise_for_status()
@@ -23,7 +23,7 @@ def get_radarr_tag_id(tag_label):
     """Finds a tag by its label in Radarr and returns its ID. Creates it if not found."""
     all_tags = _radarr_api_request('GET', 'tag')
     if all_tags is None:
-        return None 
+        return None
 
     for tag in all_tags:
         if tag.get('label', '').lower() == tag_label.lower():
@@ -45,8 +45,12 @@ def get_radarr_movie_by_guid(plex_guid):
         id_key = 'imdbId'
         id_value = plex_guid.split('//')[-1]
     elif 'tmdb' in plex_guid:
-        id_key = 'tmdbId'
-        id_value = plex_guid.split('//')[-1]
+            id_key = 'tmdbId'
+            try:
+                id_value = int(plex_guid.split('//')[-1])
+            except (ValueError, IndexError):
+                current_app.logger.error(f"Impossible d'extraire un entier du tmdb_guid: {plex_guid}")
+                return None
     else:
         return None
 
@@ -72,7 +76,7 @@ def _sonarr_api_request(method, endpoint, params=None, json_data=None):
     config = current_app.config
     headers = {'X-Api-Key': config.get('SONARR_API_KEY')}
     url = f"{config.get('SONARR_URL', '').rstrip('/')}/api/v3/{endpoint.lstrip('/')}"
-    
+
     try:
         response = requests.request(method, url, headers=headers, params=params, json=json_data, timeout=20)
         response.raise_for_status()
@@ -99,7 +103,7 @@ def get_sonarr_tag_id(tag_label):
     if new_tag and 'id' in new_tag:
         current_app.logger.info(f"Sonarr: Successfully created tag '{tag_label}' with ID {new_tag['id']}.")
         return new_tag['id']
-    
+
     current_app.logger.error(f"Sonarr: Failed to create tag '{tag_label}'.")
     return None
 
