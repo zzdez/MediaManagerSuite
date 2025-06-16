@@ -260,6 +260,25 @@
                            value="{{ current_filters.date_filter_value or '' }}" placeholder="Ex: 30, 2023-10-25, 2022">
                 </div>
             </div>
+
+            {# ### NOUVELLE LIGNE POUR LE FILTRE DE DATE DE VISIONNAGE ### #}
+            <div class="form-row">
+                <div class="filter-group">
+                    <label for="viewdate_filter_type">Date de Visionnage:</label>
+                    <select name="viewdate_filter_type" id="viewdate_filter_type">
+                        <option value="aucun" {% if not current_filters.viewdate_filter_type or current_filters.viewdate_filter_type == 'aucun' %}selected{% endif %}>-- Non Spécifié --</option>
+                        <option value="viewed_recent_days" {% if current_filters.viewdate_filter_type == 'viewed_recent_days' %}selected{% endif %}>Vu dans les X derniers jours</option>
+                        <option value="viewed_after_date" {% if current_filters.viewdate_filter_type == 'viewed_after_date' %}selected{% endif %}>Vu après le (YYYY-MM-DD)</option>
+                        <option value="viewed_before_date" {% if current_filters.viewdate_filter_type == 'viewed_before_date' %}selected{% endif %}>Vu avant le (YYYY-MM-DD)</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="viewdate_filter_value">Valeur Date Visionnage:</label>
+                    <input type="text" name="viewdate_filter_value" id="viewdate_filter_value"
+                           value="{{ current_filters.viewdate_filter_value or '' }}" placeholder="Ex: 30, 2024-05-20">
+                </div>
+            </div>
+
             <div class="button-row">
                 <a href="{{ url_for('plex_editor.show_library', library_name=library_name) }}" class="button reset-button">Réinitialiser</a>
                 <button type="submit">Appliquer les Filtres</button>

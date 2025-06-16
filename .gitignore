@@ -97,7 +97,7 @@ local_settings.py # Example user-specific settings
 # *.swp # Vim swap files
 
 # Logs directory (si vous ne voulez pas le versionner)
-# logs/ # Décommentez si vous ne voulez PAS inclure les logs dans git
+logs/ # Décommentez si vous ne voulez PAS inclure les logs dans git
 
 # Config files potentially containing secrets
 # config/users.json # Peut-être à ignorer si vous ne voulez pas versionner les users/passwords

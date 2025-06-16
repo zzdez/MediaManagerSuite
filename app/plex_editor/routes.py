@@ -193,11 +193,12 @@ def show_library(library_name):
     current_filters_from_url = {
         'vu': request.args.get('vu', 'tous'),
         'note_filter_type': request.args.get('note_filter_type', 'toutes'),
-        'note_filter_value': request.args.get('note_filter_value', type=float),
+        'note_filter_value': request.args.get('note_filter_value', ''),
         'date_filter_type': request.args.get('date_filter_type', 'aucun'),
-        'date_filter_value': request.args.get('date_filter_value', '')
+        'date_filter_value': request.args.get('date_filter_value', ''),
+        'viewdate_filter_type': request.args.get('viewdate_filter_type', 'aucun'),
+        'viewdate_filter_value': request.args.get('viewdate_filter_value', '')
     }
-    current_app.logger.debug(f"show_library: Filtres URL initiaux: {current_filters_from_url}")
 
     search_args = {}
     filter_for_non_notes_in_python = False
@@ -267,6 +268,46 @@ def show_library(library_name):
          current_filters_from_url['date_filter_type'] = 'aucun'
          current_filters_from_url['date_filter_value'] = ''
          current_app.logger.warning(f"Erreur de valeur pour filtre date flexible: {e_date_flex}")
+
+    # ### NOUVELLE LOGIQUE POUR LA DATE DE VISIONNAGE (BLOC À INSÉRER) ###
+    viewdate_type = current_filters_from_url.get('viewdate_filter_type')
+    viewdate_value = current_filters_from_url.get('viewdate_filter_value')
+
+    if viewdate_type and viewdate_type != 'aucun':
+        try:
+            if viewdate_type == 'viewed_recent_days':
+                if viewdate_value.isdigit() and int(viewdate_value) > 0:
+                    search_args['lastViewedAt>>='] = f"{int(viewdate_value)}d"
+                elif viewdate_value:
+                    raise ValueError("Nombre de jours invalide")
+
+            elif viewdate_type in ['viewed_before_date', 'viewed_after_date']:
+                if viewdate_value:
+                    # On est un peu plus flexible sur le format de date ici aussi
+                    parsed_date = None
+                    for fmt in ('%Y-%m-%d', '%Y/%m/%d', '%d-%m-%Y', '%d/%m/%Y'):
+                        try:
+                            parsed_date = datetime.strptime(viewdate_value, fmt)
+                            break
+                        except ValueError:
+                            continue
+
+                    if not parsed_date:
+                        raise ValueError("Format de date non reconnu")
+
+                    date_str_for_api = parsed_date.strftime('%Y-%m-%d')
+                    if viewdate_type == 'viewed_before_date':
+                        search_args['lastViewedAt<<='] = date_str_for_api
+                    else: # viewed_after_date
+                        search_args['lastViewedAt>>='] = date_str_for_api
+                else:
+                    raise ValueError("Date manquante")
+
+        except ValueError as e_viewdate:
+            flash(f"Valeur pour date de visionnage invalide ('{viewdate_value}'): {e_viewdate}. Filtre ignoré.", "warning")
+            current_filters_from_url['viewdate_filter_type'] = 'aucun'
+            current_filters_from_url['viewdate_filter_value'] = ''
+    # ### FIN DU NOUVEAU BLOC ###
 
     sort_order = request.args.get('sort', 'addedAt:desc')
     search_args['sort'] = sort_order
@@ -1005,7 +1046,7 @@ def reject_show_route():
 
     try:
         show = admin_plex_server.fetchItem(rating_key)
-        
+
         sonarr_series = next((s for g in show.guids if (s := get_sonarr_series_by_guid(g.id))), None)
         if not sonarr_series:
             return jsonify({'status': 'error', 'message': 'Show not found in Sonarr.'}), 404
@@ -1014,12 +1055,12 @@ def reject_show_route():
         series_id = sonarr_series['id']
         full_series_data = get_sonarr_series_by_id(series_id)
         full_series_data['monitored'] = False
-        
+
         tag_label = 'rejeté' # Tu peux rendre ce tag configurable plus tard
         tag_id = get_sonarr_tag_id(tag_label)
         if tag_id and tag_id not in full_series_data.get('tags', []):
             full_series_data['tags'].append(tag_id)
-        
+
         update_sonarr_series(full_series_data)
 
         # Suppression des fichiers
@@ -1034,7 +1075,7 @@ def reject_show_route():
                         last_deleted_filepath = filepath
                     except Exception as e:
                         current_app.logger.error(f"Impossible de supprimer le fichier {filepath}: {e}")
-            
+
             # Nettoyage des dossiers après la suppression
             if last_deleted_filepath:
                 current_app.logger.info(f"Lancement du nettoyage récursif pour le rejet à partir de {last_deleted_filepath}")
