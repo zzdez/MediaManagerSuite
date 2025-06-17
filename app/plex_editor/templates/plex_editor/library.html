@@ -212,7 +212,21 @@
             {% endfor %}
           {% endif %}
         {% endwith %}
-
+        {# ### BLOC POUR LES FILTRES INTELLIGENTS ### #}
+        {# On affiche ce bloc seulement si :
+           1. On n'est PAS déjà en train de voir un filtre spécial (view_mode != 'ready_to_watch')
+           2. On visualise UNE SEULE bibliothèque (selected_libs|length == 1)
+           3. L'objet de cette bibliothèque existe et est de type 'show'
+        #}
+        {% if view_mode != 'ready_to_watch' and selected_libs and selected_libs|length == 1 and library_obj and library_obj.type == 'show' %}
+        <div class="mb-4 p-3 bg-light border rounded shadow-sm">
+            <h5 class="mb-3">Filtres Intelligents</h5>
+            <a href="{{ url_for('plex_editor.show_library', library_name=library_obj.title, special_filter='ready_to_watch') }}" class="btn btn-success">
+                <i class="fas fa-magic"></i> Trouver une série terminée et non vue
+            </a>
+        </div>
+        {% endif %}
+        {# ### FIN DU BLOC ### #}
         {# --- Formulaire de Filtres (VERSION CORRIGÉE ET COMPLÈTE) --- #}
         <form method="GET" action="{% if current_selected_libs %}{{ url_for('plex_editor.show_library') }}{% else %}{{ url_for('plex_editor.show_library', library_name=library_obj.title if library_obj else None) }}{% endif %}" class="filter-form">
             {% if current_selected_libs %}
@@ -243,8 +257,8 @@
             <div class="form-row">
                 <div class="filter-group" style="flex-grow: 1;">
                     <label for="title_filter"><i class="fas fa-search"></i> Rechercher par Titre :</label>
-                    <input type="text" name="title_filter" id="title_filter" class="form-control" 
-                           value="{{ current_filters.title_filter or '' }}" 
+                    <input type="text" name="title_filter" id="title_filter" class="form-control"
+                           value="{{ current_filters.title_filter or '' }}"
                            placeholder="Entrez une partie du titre...">
                 </div>
             </div>
@@ -317,6 +331,7 @@
             </div>
         </form>
 
+
         {% if plex_error %}
             <div class="alert alert-danger">{{ plex_error }}</div>
         {% elif items is not none %}
@@ -352,60 +367,54 @@
                             </div>
 
                             <div class="item-actions">
-                                <form method="POST" action="{{ url_for('plex_editor.delete_item', rating_key=item.ratingKey) }}"
-                                      onsubmit="return confirm('Êtes-vous sûr de vouloir supprimer définitivement : « {{ item.title }} » ?');"
-                                      style="display: inline;">
-                                    <input type="hidden" name="current_library_name" value="{{ display_title }}">
+                                {# Le bouton Supprimer est toujours disponible #}
+                                <form method="POST" action="{{ url_for('plex_editor.delete_item', rating_key=item.ratingKey) }}" onsubmit="return confirm('Êtes-vous sûr de vouloir supprimer définitivement : « {{ item.title }} » ?');">
+                                    <input type="hidden" name="current_library_name" value="{{ library_name }}">
                                     <button type="submit" class="action-button delete-button" title="Supprimer de Plex et du disque dur">
                                         <i class="fas fa-trash"></i>
                                     </button>
                                 </form>
 
-                                {% if item.type == 'movie' %}
+                                {# Le bouton Archiver Film n'est PAS affiché dans cette vue spéciale #}
+                                {% if item.type == 'movie' and view_mode != 'ready_to_watch' %}
                                 <button type="button" class="action-button archive-button archive-movie-btn"
-                                        data-bs-toggle="modal"
-                                        data-bs-target="#archiveMovieModal"
-                                        data-rating-key="{{ item.ratingKey }}"
-                                        data-title="{{ item.title|e }}"
-                                        {% if not item.isWatched %}disabled title="Le film doit être 'Vu' pour être archivé"{% else %}title="Archiver le film"{% endif %}>
+                                        data-bs-toggle="modal" data-bs-target="#archiveMovieModal"
+                                        data-rating-key="{{ item.ratingKey }}" data-title="{{ item.title|e }}"
+                                        {% if not item.isWatched %}disabled{% endif %} title="Archiver le film">
                                     <i class="fas fa-archive"></i>
                                 </button>
                                 {% endif %}
 
-                                {# ### NOUVEAU BLOC POUR LES SÉRIES ### #}
                                 {% if item.type == 'show' %}
-
-                                    {# --- BOUTON AJOUTÉ ICI --- #}
+                                    {# Le bouton Gérer Saisons n'est pas affiché en mode "Prêtes à Regarder" #}
+                                    {% if view_mode != 'ready_to_watch' %}
                                     <a href="{{ url_for('plex_editor.manage_seasons', rating_key=item.ratingKey) }}"
-                                       class="action-button"
-                                       style="background-color: #6f42c1; color: white;"
-                                       title="Gérer les saisons de cette série">
+                                       class="action-button" style="background-color: #6f42c1; color: white;"
+                                       title="Gérer les saisons">
                                         <i class="fas fa-list-ol"></i>
                                     </a>
-                                    {# --- FIN DE L'AJOUT --- #}
+                                    {% endif %}
 
+                                    {# Le bouton Archiver Série n'est pas affiché en mode "Prêtes à Regarder" #}
+                                    {% if view_mode != 'ready_to_watch' %}
                                     <button type="button" class="action-button archive-show-btn"
                                             style="background-color: #0dcaf0; color: #000;"
-                                            data-bs-toggle="modal"
-                                            data-bs-target="#archiveShowModal"
-                                            data-rating-key="{{ item.ratingKey }}"
-                                            data-title="{{ item.title|e }}"
-                                            data-leaf-count="{{ item.leafCount }}"
-                                            data-viewed-leaf-count="{{ item.viewedLeafCount }}"
-                                            {% if item.leafCount != item.viewedLeafCount %}disabled title="Tous les épisodes doivent être 'Vus' pour archiver la série complète"{% endif %}>
-                                        <i class="fas fa-tv"></i> <i class="fas fa-archive"></i>
+                                            data-bs-toggle="modal" data-bs-target="#archiveShowModal"
+                                            data-rating-key="{{ item.ratingKey }}" data-title="{{ item.title|e }}"
+                                            data-leaf-count="{{ item.leafCount }}" data-viewed-leaf-count="{{ item.viewedLeafCount }}"
+                                            {% if item.leafCount != item.viewedLeafCount %}disabled{% endif %} title="Archiver la série complète">
+                                        <i class="fas fa-tv"></i> <i class="fas fa-archive"></i>
                                     </button>
-                                                                        {# ### NOUVEAU BOUTON "REJETER" ### #}
+                                    {% endif %}
+
+                                    {# Le bouton Rejeter est TOUJOURS disponible pour les séries #}
                                     <button type="button" class="action-button reject-show-btn"
                                             style="background-color: #dc3545; color: white;"
-                                            data-bs-toggle="modal"
-                                            data-bs-target="#rejectShowModal"
-                                            data-rating-key="{{ item.ratingKey }}"
-                                            data-title="{{ item.title|e }}">
+                                            data-bs-toggle="modal" data-bs-target="#rejectShowModal"
+                                            data-rating-key="{{ item.ratingKey }}" data-title="{{ item.title|e }}">
                                         <i class="fas fa-thumbs-down"></i>
                                     </button>
                                 {% endif %}
-                                {# ### FIN DU NOUVEAU BLOC ### #}
                             </div>
                         </li>
                     {% else %}

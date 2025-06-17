@@ -18,7 +18,8 @@ from .utils import cleanup_parent_directory_recursively, get_media_filepath, _is
 from app.utils.arr_client import (
     get_radarr_tag_id, get_radarr_movie_by_guid, update_radarr_movie,
     get_sonarr_tag_id, get_sonarr_series_by_guid, get_sonarr_series_by_id,
-    update_sonarr_series, get_sonarr_episode_files
+    update_sonarr_series, get_sonarr_episode_files,
+    get_all_sonarr_series # <--- AJOUT ICI
 )
 
 # --- Fonctions Utilitaires ---
@@ -169,12 +170,92 @@ def list_libraries():
                            libraries=libraries,
                            plex_error=plex_error_message,
                            user_title=user_title)
+def find_ready_to_watch_shows_in_library(library_name):
+    """
+    Fonction helper qui trouve les séries terminées, complètes et non vues
+    dans une bibliothèque Plex spécifique. Retourne une liste d'objets Show de Plex.
+    """
+    current_app.logger.info(f"Lancement du filtre spécial 'Prêtes à Regarder' pour la bibliothèque '{library_name}'.")
+    try:
+        # --- ÉTAPE 1: Récupérer et filtrer les séries de Sonarr ---
+        all_sonarr_series = get_all_sonarr_series()
+        if not all_sonarr_series:
+            flash("Impossible de récupérer la liste des séries depuis Sonarr.", "danger")
+            return []
 
+        # On ne garde que les séries terminées et à 100%
+        candidate_series = [
+            s for s in all_sonarr_series
+            if s.get('status') == 'ended' and s.get('statistics', {}).get('percentOfEpisodes', 0) == 100.0
+        ]
+
+        # On stocke leurs TVDB IDs pour une recherche rapide (set est plus performant)
+        candidate_tvdb_ids = {s.get('tvdbId') for s in candidate_series}
+        current_app.logger.info(f"{len(candidate_tvdb_ids)} séries candidates trouvées dans Sonarr (terminées et complètes).")
+
+        # --- ÉTAPE 2: Croiser avec la bibliothèque Plex ---
+        ready_to_watch_shows = []
+        user_plex_server = get_user_specific_plex_server()
+        if not user_plex_server:
+            flash("Erreur de connexion à Plex.", "danger")
+            return []
+
+        library = user_plex_server.library.section(library_name)
+        if library.type != 'show':
+            current_app.logger.warning(f"Le filtre 'Prêtes à Regarder' a été appelé sur une bibliothèque qui n'est pas de type 'show': {library_name}")
+            return []
+
+        current_app.logger.info(f"Scan de la bibliothèque Plex '{library_name}' pour trouver les séries non vues...")
+        # On utilise search(unwatched=True) pour que Plex fasse le premier gros tri, c'est plus efficace
+        for show in library.search(unwatched=True):
+            # On vérifie que la série est bien 100% non vue (unwatched=True peut inclure les séries partiellement vues)
+            if show.viewedLeafCount != 0:
+                continue
+
+            plex_tvdb_id = None
+            for guid in show.guids:
+                if 'tvdb' in guid.id:
+                    try:
+                        plex_tvdb_id = int(guid.id.split('//')[1])
+                        break
+                    except (ValueError, IndexError):
+                        continue
+
+# Si la série est dans notre liste de candidates Sonarr, c'est un match !
+            if plex_tvdb_id in candidate_tvdb_ids:
+                ready_to_watch_shows.append(show)
+                current_app.logger.info(f"  -> MATCH: '{show.title}' est prête à être regardée.")
+
+        ready_to_watch_shows.sort(key=lambda s: s.titleSort.lower())
+        flash(f"{len(ready_to_watch_shows)} série(s) prête(s) à être commencée(s) trouvée(s) !", "success")
+        return ready_to_watch_shows
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur dans find_ready_to_watch_shows_in_library: {e}", exc_info=True)
+        flash("Une erreur est survenue pendant la recherche complexe.", "danger")
+        return []
 # Nouvelle route pour gérer potentiellement plusieurs bibliothèques via query params
 @plex_editor_bp.route('/library')
 @plex_editor_bp.route('/library/<path:library_name>')
 @login_required
 def show_library(library_name=None):
+    # --- DÉTECTION DES FILTRES SPÉCIAUX ---
+    special_filter = request.args.get('special_filter')
+    if special_filter == 'ready_to_watch' and library_name:
+        # On appelle notre nouvelle fonction logique
+        items_list = find_ready_to_watch_shows_in_library(library_name)
+
+        # On affiche les résultats en utilisant le même template
+        return render_template('plex_editor/library.html',
+                               title=f"Séries Prêtes à Regarder",
+                               library_name=library_name,
+                               items=items_list,
+                               current_filters={'sort_by': 'titleSort:asc'},
+                               selected_libs=[library_name],
+                               plex_error=None,
+                               user_title=session.get('plex_user_title', ''),
+                               config=current_app.config,
+                               view_mode='ready_to_watch') # La virgule est maintenant à l'intérieur
     if 'plex_user_id' not in session:
         flash("Veuillez sélectionner un utilisateur.", "info")
         return redirect(url_for('plex_editor.index'))
@@ -188,7 +269,7 @@ def show_library(library_name=None):
     if not library_names:
         flash("Veuillez sélectionner au moins une bibliothèque.", "warning")
         return redirect(url_for('plex_editor.list_libraries'))
-    
+
     # --- ÉTAPE 2: RÉCUPÉRER TOUS LES FILTRES DE L'URL ---
     current_filters = {
         'vu': request.args.get('vu', 'tous'),
@@ -227,7 +308,7 @@ def show_library(library_name=None):
             elif note_type == 'note_max': search_args['userRating<<='] = note_val_float
         except (ValueError, TypeError):
             flash(f"La valeur de note '{current_filters['note_filter_value']}' est invalide.", "warning")
-    
+
     # Filtre de date d'ajout/sortie
     date_type = current_filters['date_filter_type']
     date_value = current_filters['date_filter_value']
@@ -288,7 +369,7 @@ def show_library(library_name=None):
                 # to avoid conflicting filters if other types are mixed.
                 # However, the current logic seems to handle this by a Python post-filter flag, which is fine.
                 filter_fully_watched_shows_in_python = True
-            
+
             items_from_lib = library_object.search(**search_args)
             all_items.extend(items_from_lib)
         except NotFound:
@@ -399,17 +480,34 @@ def show_library(library_name=None):
     # Page title for <title> tag
     page_title = f"Bibliothèque: {display_title} - {user_title_in_session}"
 
+    # --- ÉTAPE 6: RENDU DU TEMPLATE ---
+    display_title = ", ".join(library_names)
+    
+    # On définit library_obj uniquement si on est en mode vue unique
+    library_obj_for_template = None
+    if len(library_names) == 1:
+        # On essaie de récupérer l'objet depuis la liste qu'on a déjà traitée
+        # (Cette variable n'existait pas, on va la créer)
+        # Pour l'instant, on le refait, c'est plus simple
+        try:
+            # On a besoin d'une connexion pour ça
+            if not user_specific_plex_server:
+                 user_specific_plex_server = get_user_specific_plex_server()
+            if user_specific_plex_server:
+                library_obj_for_template = user_specific_plex_server.library.section(library_names[0])
+        except Exception:
+            library_obj_for_template = None # On ne plante pas si ça échoue
+
     return render_template('plex_editor/library.html',
-                           title=page_title, # For <title> tag in HTML
-                           display_title=display_title, # For H1 and general display in template body
                            items=items_filtered,
                            current_filters=current_filters,
+                           library_name=display_title,
+                           library_obj=library_obj_for_template, # ### La variable est maintenant correctement définie ###
                            selected_libs=library_names,
-                           plex_error=plex_error_message, # Kept for potential direct error display in template
-                           user_title=user_title_in_session,
+                           plex_error=plex_error_message,
+                           user_title=session.get('plex_user_title', 'Utilisateur Inconnu'),
                            config=current_app.config,
-                           library_obj=library_obj_for_template
-                           )
+                           view_mode='standard')
 
 @plex_editor_bp.route('/delete_item/<int:rating_key>', methods=['POST'])
 @login_required

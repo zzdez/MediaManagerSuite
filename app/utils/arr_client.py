@@ -145,3 +145,10 @@ def get_sonarr_episode_files(series_id):
 def delete_sonarr_episode_file(episode_file_id):
     """Deletes a single episode file from Sonarr's database and from disk."""
     return _sonarr_api_request('DELETE', f'episodefile/{episode_file_id}')
+
+# ... (après les autres fonctions sonarr)
+
+def get_all_sonarr_series():
+    """Fetches all series from Sonarr."""
+    current_app.logger.info("Récupération de toutes les séries depuis l'API Sonarr.")
+    return _sonarr_api_request('GET', 'series') 
