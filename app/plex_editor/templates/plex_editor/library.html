@@ -214,7 +214,7 @@
         {% endwith %}
 
         {# --- Formulaire de Filtres (VERSION CORRIGÉE ET COMPLÈTE) --- #}
-        <form method="GET" action="{% if current_selected_libs %}{{ url_for('plex_editor.show_library') }}{% else %}{{ url_for('plex_editor.show_library', library_name=library_obj.title) }}{% endif %}" class="filter-form">
+        <form method="GET" action="{% if current_selected_libs %}{{ url_for('plex_editor.show_library') }}{% else %}{{ url_for('plex_editor.show_library', library_name=library_obj.title if library_obj else None) }}{% endif %}" class="filter-form">
             {% if current_selected_libs %}
                 {% for lib_title in current_selected_libs %}
                     <input type="hidden" name="selected_libs" value="{{ lib_title }}">

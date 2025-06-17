@@ -268,17 +268,41 @@ def show_library(library_name=None):
     if not user_specific_plex_server:
         return redirect(url_for('plex_editor.index'))
 
-    for lib_name in library_names:
+    library_obj_for_template = None # Initialize here as per A.4
+
+    for i, lib_name in enumerate(library_names):
         try:
             library_object = user_specific_plex_server.library.section(lib_name)
+
+            # Assign library_obj_for_template as per A.4
+            # If it's the first library in a (potentially multi) list, or the only one.
+            if i == 0:
+                library_obj_for_template = library_object
+
             if library_object.type == 'show' and current_filters['vu'] == 'vu':
+                # This specific filter needs to be applied in Python after fetching all shows
+                # if we want to check for *fully* watched shows.
+                # Plex API's `unwatched=False` for shows returns shows with *any* watched episode.
+                # So, we fetch all (or based on other filters) and then filter in Python.
+                # We remove 'unwatched' from search_args if it was set for 'vu' status for shows
+                # to avoid conflicting filters if other types are mixed.
+                # However, the current logic seems to handle this by a Python post-filter flag, which is fine.
                 filter_fully_watched_shows_in_python = True
             
             items_from_lib = library_object.search(**search_args)
             all_items.extend(items_from_lib)
+        except NotFound:
+            plex_error_message = f"Bibliothèque '{lib_name}' non trouvée."
+            current_app.logger.warning(f"show_library: {plex_error_message}")
+            # Decide if we should continue with other libraries or break.
+            # For now, let's assume we skip this library and continue if multiple are selected.
+            if len(library_names) == 1: # If only one and not found, then break.
+                break
+            # If multiple, one not found might be acceptable, plex_error_message will be shown.
         except Exception as e:
             plex_error_message = f"Erreur lors de l'accès à '{lib_name}': {e}"
             current_app.logger.error(plex_error_message, exc_info=True)
+            # Similar to NotFound, decide error handling strategy. Let's break for general errors.
             break
 
     # --- ÉTAPE 5: POST-FILTRAGE ET TRI ---
@@ -288,124 +312,104 @@ def show_library(library_name=None):
     if filter_for_non_notes_in_python:
         items_filtered = [item for item in items_filtered if getattr(item, 'userRating', None) is None]
 
-    sort_key, sort_dir = current_filters['sort_by'].split(':')
-    is_reverse = (sort_dir == 'desc')
+    sort_key_attr, sort_direction = current_filters['sort_by'].split(':')
+    sort_reverse_flag = (sort_direction == 'desc')
+
+    def robust_sort_key_func(item):
+        val = getattr(item, sort_key_attr, None)
+
+        if val is None:
+            if sort_key_attr in ['addedAt', 'lastViewedAt', 'originallyAvailableAt', 'updatedAt']:
+                return datetime.min # For dates, None means "very old"
+            elif sort_key_attr in ['userRating', 'rating', 'year']:
+                return float('-inf') if sort_reverse_flag else float('inf') # Numerics, None is smallest or largest
+            else: # Primarily for strings like titleSort, title
+                return "" # For strings, None can be treated as an empty string
+
+        if isinstance(val, str):
+            return val.lower() # Case-insensitive sort for strings
+
+        # For datetime objects, no special handling needed if not None
+        # For numeric types (int, float), no special handling needed if not None
+        return val
+
     try:
-        items_filtered.sort(key=lambda item: getattr(item, sort_key.split('__')[0], None) or (datetime.min if 'At' in sort_key else ''), reverse=is_reverse)
-    except TypeError:
-        flash("Erreur de tri (types de données mixtes).", "warning")
+        items_filtered.sort(key=robust_sort_key_func, reverse=sort_reverse_flag)
+        current_app.logger.info(f"Trié {len(items_filtered)} éléments par '{sort_key_attr}' ({sort_direction}).")
+    except TypeError as e_sort_type:
+        current_app.logger.error(f"Erreur de tri (TypeError) sur la clé '{sort_key_attr}': {e_sort_type}. Les données sont peut-être mixtes ou non comparables.", exc_info=True)
+        flash(f"Erreur de tri pour '{sort_key_attr}': les données ne sont pas homogènes ou comparables. Le tri a peut-être échoué.", "warning")
+    except Exception as e_sort:
+        current_app.logger.error(f"Erreur de tri inattendue sur la clé '{sort_key_attr}': {e_sort}", exc_info=True)
+        flash(f"Erreur inattendue pendant le tri par '{sort_key_attr}'.", "warning")
 
     # --- ÉTAPE 6: RENDU DU TEMPLATE ---
     display_title = ", ".join(library_names)
+    user_title_in_session = session.get('plex_user_title', 'Utilisateur Inconnu')
 
-    return render_template('plex_editor/library.html',
-                           items=items_filtered,
-                           current_filters=current_filters,
-                           library_name=display_title,
-                           selected_libs=library_names,
-                           plex_error=plex_error_message,
-                           user_title=session.get('plex_user_title', 'Utilisateur Inconnu'),
-                           config=current_app.config)
+    # Construction du message Flash consolidé
+    final_flash_message = ""
+    flash_category = "info"
 
-    def sort_key_func(item):
-        val = None
-        if sort_key_attr == 'titleSort': # titleSort est généralement déjà en minuscule et normalisé
-            val = getattr(item, 'titleSort', getattr(item, 'title', ''))
-            return val.lower() if isinstance(val, str) else ''
-
-        # Pour les dates, on veut s'assurer qu'on compare des objets datetime
-        # Si l'attribut est None, on utilise datetime.min pour qu'il soit au début en asc, à la fin en desc
-        if sort_key_attr in ['addedAt', 'lastViewedAt', 'originallyAvailableAt', 'updatedAt']:
-            val = getattr(item, sort_key_attr, None)
-            return val if isinstance(val, datetime) else datetime.min # datetime.min pour les None
-
-        elif sort_key_attr == 'userRating' or sort_key_attr == 'rating': # Note utilisateur ou critique
-            val = getattr(item, sort_key_attr, None)
-            return float(val) if val is not None else -1.0 # -1 pour les notes non définies
-
-        elif sort_key_attr == 'year':
-            val = getattr(item, sort_key_attr, None)
-            return int(val) if val is not None else 0 # 0 pour les années non définies
-
-        # Fallback pour d'autres attributs, potentiellement non numériques/dates
-        val = getattr(item, sort_key_attr, None)
-        if val is None: # Pour éviter les erreurs de comparaison entre types mixtes
-            if isinstance(sort_reverse_flag, bool) and sort_reverse_flag: # desc
-                 # Pour le tri descendant, les None peuvent être traités comme "les plus petits"
-                 # en retournant une valeur qui les placera en fin de liste.
-                 # Cela dépend du type attendu des autres valeurs.
-                 # Si on s'attend à des chaînes, '' est un bon défaut. Si des nombres, 0 ou float('-inf').
-                 # Étant donné que c'est un fallback, '' est un choix neutre.
-                return ''
-            else: # asc
-                # Pour le tri ascendant, les None peuvent être "les plus petits".
-                return ''
-        return val
-
-    if items_filtered_final:
-        try:
-            items_filtered_final.sort(key=sort_key_func, reverse=sort_reverse_flag)
-            current_app.logger.info(f"Trié {len(items_filtered_final)} éléments par '{sort_key_attr}' ({sort_direction}).")
-        except TypeError as e_sort_type:
-            current_app.logger.error(f"Erreur de tri (TypeError) sur la clé '{sort_key_attr}': {e_sort_type}. Les données sont peut-être mixtes ou non comparables.", exc_info=True)
-            flash(f"Erreur de tri pour '{sort_key_attr}': les données ne sont pas homogènes ou comparables. Le tri a peut-être échoué.", "warning")
-        except Exception as e_sort: # Attrape d'autres erreurs de tri potentielles
-            current_app.logger.error(f"Erreur de tri inattendue sur la clé '{sort_key_attr}': {e_sort}", exc_info=True)
-            flash(f"Erreur inattendue pendant le tri par '{sort_key_attr}'.", "warning")
-
-    # Construction du message Flash final
-    if processed_library_objects or plex_error_message:
-        num_items = len(items_filtered_final)
-        lib_names_str = template_library_name_display
+    if plex_error_message:
+        final_flash_message = plex_error_message
+        flash_category = "danger"
+        # S'il y a une erreur majeure de bibliothèque, on n'affiche peut-être pas le nombre d'items etc.
+        # ou alors on l'ajoute au message d'erreur.
+        if not all_items and not items_filtered : # No items likely due to this error
+             final_flash_message += " Aucun élément ne peut être affiché."
+        else: # Some items might exist from other libraries if it's a multi-lib view
+             final_flash_message += f" Affichage de {len(items_filtered)} élément(s) potentiellement partiel."
+    else:
+        num_items = len(items_filtered)
+        lib_names_str = display_title # Already a comma-separated string of library names
 
         applied_filters_parts = []
-        if current_filters_from_url['vu'] != 'tous':
-            applied_filters_parts.append(f"Vu: {current_filters_from_url['vu']}")
-        if filter_fully_watched_shows_in_python:
-             applied_filters_parts.append("Dont séries entièrement vues")
-        if filter_for_non_notes_in_python:
+        if current_filters['vu'] != 'tous':
+            applied_filters_parts.append(f"Vu: {current_filters['vu']}")
+        # Specific flags for Python-based filters
+        if filter_fully_watched_shows_in_python and library_obj_for_template and library_obj_for_template.type == 'show': # Check if relevant
+             applied_filters_parts.append("Séries entièrement vues")
+        if filter_for_non_notes_in_python: # This is a general filter
             applied_filters_parts.append("Note: Non Notés")
-        elif current_filters_from_url['note_filter_type'] != 'toutes' and current_filters_from_url['note_filter_value']:
-            applied_filters_parts.append(f"Note: {current_filters_from_url['note_filter_type']} {current_filters_from_url['note_filter_value']}")
-        # Ajouter d'autres filtres actifs ici si nécessaire
+        # Note filter from form
+        elif current_filters['note_filter_type'] != 'toutes' and current_filters['note_filter_value']:
+            applied_filters_parts.append(f"Note: {current_filters['note_filter_type']} {current_filters['note_filter_value']}")
+
+        if current_filters['date_filter_type'] != 'aucun' and current_filters['date_filter_value']:
+            applied_filters_parts.append(f"Date: {current_filters['date_filter_type']} {current_filters['date_filter_value']}")
+        if current_filters['viewdate_filter_type'] != 'aucun' and current_filters['viewdate_filter_value']:
+            applied_filters_parts.append(f"Date de visionnage: {current_filters['viewdate_filter_type']} {current_filters['viewdate_filter_value']}")
+        if current_filters['title_filter']:
+            applied_filters_parts.append(f"Titre contient: \"{current_filters['title_filter']}\"")
 
         filters_str = ", ".join(applied_filters_parts) if applied_filters_parts else "Aucun filtre spécifique"
-        sort_str = f"Trié par: {sort_key_attr} ({sort_direction})"
+        sort_str_display = f"Trié par: {sort_key_attr} ({sort_direction})"
 
-        flash_msg = f"Affichage de {num_items} élément(s) pour '{lib_names_str}' (Utilisateur: {user_title_in_session}). {filters_str}. {sort_str}."
-        if plex_error_message:
-            flash_msg += f" Erreurs rencontrées:\n{plex_error_message.strip()}"
-            flash(flash_msg, "warning" if num_items > 0 else "danger")
-        else:
-            flash(flash_msg, "info")
-
-    elif not plex_error_message: # Ni objets de bibliothèque, ni erreur -> probablement mauvaise sélection initiale
-        flash(f"Aucune bibliothèque à afficher pour '{template_library_name_display}'.", "info")
+        final_flash_message = f"Affichage de {num_items} élément(s) pour '{lib_names_str}' (Utilisateur: {user_title_in_session}). {filters_str}. {sort_str_display}."
+        if num_items == 0 and not applied_filters_parts:
+            final_flash_message = f"Aucun élément trouvé dans '{lib_names_str}' (Utilisateur: {user_title_in_session})."
+        elif num_items == 0:
+            final_flash_message = f"Aucun élément trouvé dans '{lib_names_str}' avec les filtres actifs (Utilisateur: {user_title_in_session}). {filters_str}."
 
 
-    # Détermine library_obj pour le template (premier de la liste ou None)
-    library_obj_for_template = processed_library_objects[0] if processed_library_objects else None
+    if final_flash_message:
+        flash(final_flash_message, flash_category)
 
-    # Prepare context for the template
-    template_context_vars = {
-        'title': f"Bibliothèque {page_title_lib_segment} - {user_title_in_session}",
-        'display_title': template_library_name_display,  # For H1 tag and general display
-        'library_obj': library_obj_for_template,    # Actual library object if single, else None
-        'items': items_filtered_final,
-        'current_filters': current_filters_from_url,
-        'plex_error': plex_error_message if plex_error_message else None, # Assure None si vide
-        'user_title': user_title_in_session,
-        'config': current_app.config,
-        'current_selected_libs': None # Initialize
-    }
+    # Page title for <title> tag
+    page_title = f"Bibliothèque: {display_title} - {user_title_in_session}"
 
-    # If library_name (path parameter) was None, it means selected_libs from query args were used.
-    # In this case, library_names (derived from selected_libs) should be passed as current_selected_libs.
-    # This is used by the template to repopulate hidden fields if submitting filters for multiple libraries.
-    if not library_name and library_names:
-        template_context_vars['current_selected_libs'] = library_names
-
-    return render_template('plex_editor/library.html', **template_context_vars)
+    return render_template('plex_editor/library.html',
+                           title=page_title, # For <title> tag in HTML
+                           display_title=display_title, # For H1 and general display in template body
+                           items=items_filtered,
+                           current_filters=current_filters,
+                           selected_libs=library_names,
+                           plex_error=plex_error_message, # Kept for potential direct error display in template
+                           user_title=user_title_in_session,
+                           config=current_app.config,
+                           library_obj=library_obj_for_template
+                           )
 
 @plex_editor_bp.route('/delete_item/<int:rating_key>', methods=['POST'])
 @login_required
