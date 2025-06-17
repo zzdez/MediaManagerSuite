@@ -169,26 +169,52 @@ def list_libraries():
                            libraries=libraries,
                            plex_error=plex_error_message,
                            user_title=user_title)
+
+# Nouvelle route pour gérer potentiellement plusieurs bibliothèques via query params
+@plex_editor_bp.route('/library')
+# Route existante modifiée pour accepter un nom de bibliothèque optionnel dans le chemin
 @plex_editor_bp.route('/library/<path:library_name>')
 @login_required
-def show_library(library_name):
+def show_library(library_name=None):
+    current_app.logger.info(f"DEBUG_SHOW_LIBRARY: Entry point. Path parameter library_name = '{library_name}'")
+    current_app.logger.info(f"DEBUG_SHOW_LIBRARY: request.args = {request.args}")
+    current_app.logger.info(f"DEBUG_SHOW_LIBRARY: request.args.getlist('selected_libs') = {request.args.getlist('selected_libs')}")
     if 'plex_user_id' not in session:
         flash("Veuillez sélectionner un utilisateur.", "info")
-    user_specific_plex_server = get_user_specific_plex_server()
-    if not user_specific_plex_server:
-        # Rediriger si la connexion échoue
         return redirect(url_for('plex_editor.index'))
 
-    user_id_in_session = session.get('plex_user_id')
+    user_specific_plex_server = get_user_specific_plex_server()
+    if not user_specific_plex_server:
+        return redirect(url_for('plex_editor.index'))
+
     user_title_in_session = session.get('plex_user_title', 'Utilisateur Inconnu')
-    final_context_user_title = user_title_in_session
 
-    plex_url = current_app.config.get('PLEX_URL')
-    admin_token = current_app.config.get('PLEX_TOKEN')
+    library_names = []
+    page_title_lib_segment = ""
 
-    items_from_plex_api = None
-    library_object = None
-    plex_error_message = None
+    if library_name: # Cas où une seule bibliothèque est passée par l'URL
+        library_names = [library_name]
+        page_title_lib_segment = library_name
+    else: # Cas où les bibliothèques sont passées en query parameters (checkboxes)
+        library_names = request.args.getlist('selected_libs')
+        if not library_names:
+            flash("Veuillez sélectionner au moins une bibliothèque.", "warning")
+            return redirect(url_for('plex_editor.list_libraries'))
+        if len(library_names) == 1:
+            page_title_lib_segment = library_names[0]
+        else:
+            page_title_lib_segment = "Sélection Multiple"
+
+    current_app.logger.info(f"DEBUG_SHOW_LIBRARY: Computed library_names before loop = {library_names}")
+    template_library_name_display = ", ".join(library_names) if len(library_names) > 1 else (library_names[0] if library_names else "Inconnue")
+
+    all_items = []
+    processed_library_objects = []
+    plex_error_message = "" # Initialiser comme chaîne vide pour concaténation
+
+    # Initialisation des indicateurs de filtrage Python
+    filter_fully_watched_shows_in_python = False
+    filter_for_non_notes_in_python = False
 
     current_filters_from_url = {
         'vu': request.args.get('vu', 'tous'),
@@ -198,261 +224,274 @@ def show_library(library_name):
         'date_filter_value': request.args.get('date_filter_value', ''),
         'viewdate_filter_type': request.args.get('viewdate_filter_type', 'aucun'),
         'viewdate_filter_value': request.args.get('viewdate_filter_value', ''),
-        'sort_by': request.args.get('sort_by', 'addedAt:desc')
+        'sort_by': request.args.get('sort_by', 'addedAt:desc') # Le tri sera géré en Python
     }
 
-    search_args = {}
-    filter_for_non_notes_in_python = False
+    # Préparation des arguments de recherche pour l'API Plex (sans le tri)
+    search_args_for_api = {}
 
-    if current_filters_from_url['vu'] == 'vu': search_args['unwatched'] = False
-    elif current_filters_from_url['vu'] == 'nonvu': search_args['unwatched'] = True
+    if current_filters_from_url['vu'] == 'vu':
+        search_args_for_api['unwatched'] = False
+        # La logique spécifique pour filter_fully_watched_shows_in_python sera activée par bibliothèque ci-dessous
+    elif current_filters_from_url['vu'] == 'nonvu':
+        search_args_for_api['unwatched'] = True
 
     note_type = current_filters_from_url['note_filter_type']
     note_value_from_form = current_filters_from_url['note_filter_value']
     if note_type == 'non_notes':
-        filter_for_non_notes_in_python = True
-        current_app.logger.info("Filtre de note: 'Non Notés Uniquement' activé (post-filtrage Python).")
+        filter_for_non_notes_in_python = True # Sera appliqué en Python après la récupération
+        current_app.logger.info("Filtre Python 'Non Notés Uniquement' activé.")
     elif note_type in ['note_exacte', 'note_min', 'note_max']:
-        if note_value_from_form is not None:
-            if note_type == 'note_exacte': search_args['userRating'] = note_value_from_form
-            elif note_type == 'note_min': search_args['userRating>>='] = note_value_from_form
-            elif note_type == 'note_max': search_args['userRating<<='] = note_value_from_form
-            current_app.logger.info(f"Filtre de note API: {note_type} = {note_value_from_form}")
-        else:
+        if note_value_from_form is not None: # Check if it's not an empty string
+            try:
+                # Make sure note_value can be converted to float if it's not empty
+                float_val = float(note_value_from_form)
+                if note_type == 'note_exacte': search_args_for_api['userRating'] = float_val
+                elif note_type == 'note_min': search_args_for_api['userRating>>='] = float_val
+                elif note_type == 'note_max': search_args_for_api['userRating<<='] = float_val
+                current_app.logger.info(f"Filtre de note API: {note_type} = {float_val}")
+            except ValueError:
+                flash(f"La valeur de note '{note_value_from_form}' est invalide. Filtre de note ignoré.", "warning")
+                current_filters_from_url['note_filter_type'] = 'toutes'
+                current_filters_from_url['note_filter_value'] = ''
+        else: # Value is None or empty string
             flash(f"Veuillez fournir une valeur de note pour le filtre '{note_type}'. Filtre ignoré.", "warning")
             current_filters_from_url['note_filter_type'] = 'toutes'
+            current_filters_from_url['note_filter_value'] = ''
+
 
     date_type_from_form = current_filters_from_url.get('date_filter_type', 'aucun')
     date_value_str_from_form = current_filters_from_url.get('date_filter_value', '')
-    current_app.logger.debug(f"Traitement filtre date flexible: type='{date_type_from_form}', value='{date_value_str_from_form}'")
+    current_app.logger.debug(f"Traitement filtre date: type='{date_type_from_form}', value='{date_value_str_from_form}'")
     try:
         if date_type_from_form == 'ajout_recent_jours':
             if date_value_str_from_form.isdigit() and int(date_value_str_from_form) > 0:
-                search_args['addedAt>>='] = f"{int(date_value_str_from_form)}d"
-                current_app.logger.info(f"Filtre date API: ajout_recent_jours = {search_args['addedAt>>=']}")
+                search_args_for_api['addedAt>>='] = f"{int(date_value_str_from_form)}d"
             elif date_value_str_from_form: raise ValueError("Nombre de jours invalide")
         elif date_type_from_form == 'ajout_avant_date':
             if date_value_str_from_form:
-                parsed_date = None
-                for fmt in ('%Y/%m/%d', '%Y-%m-%d'):
-                    try: parsed_date = datetime.strptime(date_value_str_from_form, fmt); break
-                    except ValueError: continue
-                if parsed_date: search_args['addedAt<<'] = parsed_date.strftime('%Y-%m-%d')
-                else: raise ValueError("Format de date non reconnu (YYYY/MM/DD ou YYYY-MM-DD)")
-                current_app.logger.info(f"Filtre date API: ajout_avant_date (addedAt<<) = {search_args['addedAt<<']}")
+                parsed_date = datetime.strptime(date_value_str_from_form, '%Y-%m-%d')
+                search_args_for_api['addedAt<<'] = parsed_date.strftime('%Y-%m-%d')
         elif date_type_from_form == 'ajout_apres_date':
             if date_value_str_from_form:
-                parsed_date = None
-                for fmt in ('%Y/%m/%d', '%Y-%m-%d'):
-                    try: parsed_date = datetime.strptime(date_value_str_from_form, fmt); break
-                    except ValueError: continue
-                if parsed_date: search_args['addedAt>>='] = parsed_date.strftime('%Y-%m-%d')
-                else: raise ValueError("Format de date non reconnu")
-                current_app.logger.info(f"Filtre date API: ajout_apres_date (addedAt>>=) = {search_args['addedAt>>=']}")
+                parsed_date = datetime.strptime(date_value_str_from_form, '%Y-%m-%d')
+                search_args_for_api['addedAt>>='] = parsed_date.strftime('%Y-%m-%d')
         elif date_type_from_form == 'sortie_annee':
             if date_value_str_from_form.isdigit() and len(date_value_str_from_form) == 4:
-                 search_args['year'] = int(date_value_str_from_form)
-                 current_app.logger.info(f"Filtre date API: sortie_annee (year) = {search_args['year']}")
+                 search_args_for_api['year'] = int(date_value_str_from_form)
             elif date_value_str_from_form: raise ValueError("Année invalide (YYYY)")
         elif date_type_from_form == 'sortie_avant_annee':
             if date_value_str_from_form.isdigit() and len(date_value_str_from_form) == 4:
-                search_args['year<<'] = int(date_value_str_from_form)
-                current_app.logger.info(f"Filtre date API: sortie_avant_annee (year<<) = {search_args['year<<']}")
+                search_args_for_api['year<<'] = int(date_value_str_from_form)
             elif date_value_str_from_form: raise ValueError("Année invalide")
         elif date_type_from_form == 'sortie_apres_annee':
             if date_value_str_from_form.isdigit() and len(date_value_str_from_form) == 4:
-                search_args['year>>='] = int(date_value_str_from_form)
-                current_app.logger.info(f"Filtre date API: sortie_apres_annee (year>>=) = {search_args['year>>=']}")
+                search_args_for_api['year>>='] = int(date_value_str_from_form)
             elif date_value_str_from_form: raise ValueError("Année invalide")
     except ValueError as e_date_flex:
          flash(f"Valeur invalide ('{date_value_str_from_form}') pour le filtre de date '{date_type_from_form}': {e_date_flex}. Filtre ignoré.", "warning")
          current_filters_from_url['date_filter_type'] = 'aucun'
          current_filters_from_url['date_filter_value'] = ''
-         current_app.logger.warning(f"Erreur de valeur pour filtre date flexible: {e_date_flex}")
+         current_app.logger.warning(f"Erreur de valeur pour filtre date: {e_date_flex}")
 
-    # ### NOUVELLE LOGIQUE POUR LA DATE DE VISIONNAGE (BLOC À INSÉRER) ###
     viewdate_type = current_filters_from_url.get('viewdate_filter_type')
     viewdate_value = current_filters_from_url.get('viewdate_filter_value')
-
     if viewdate_type and viewdate_type != 'aucun':
         try:
             if viewdate_type == 'viewed_recent_days':
                 if viewdate_value.isdigit() and int(viewdate_value) > 0:
-                    search_args['lastViewedAt>>='] = f"{int(viewdate_value)}d"
-                elif viewdate_value:
-                    raise ValueError("Nombre de jours invalide")
-
+                    search_args_for_api['lastViewedAt>>='] = f"{int(viewdate_value)}d"
+                elif viewdate_value: raise ValueError("Nombre de jours invalide")
             elif viewdate_type in ['viewed_before_date', 'viewed_after_date']:
                 if viewdate_value:
-                    # On est un peu plus flexible sur le format de date ici aussi
-                    parsed_date = None
-                    for fmt in ('%Y-%m-%d', '%Y/%m/%d', '%d-%m-%Y', '%d/%m/%Y'):
-                        try:
-                            parsed_date = datetime.strptime(viewdate_value, fmt)
-                            break
-                        except ValueError:
-                            continue
-
-                    if not parsed_date:
-                        raise ValueError("Format de date non reconnu")
-
+                    parsed_date = datetime.strptime(viewdate_value, '%Y-%m-%d')
                     date_str_for_api = parsed_date.strftime('%Y-%m-%d')
                     if viewdate_type == 'viewed_before_date':
-                        search_args['lastViewedAt<<='] = date_str_for_api
+                        search_args_for_api['lastViewedAt<<='] = date_str_for_api
                     else: # viewed_after_date
-                        search_args['lastViewedAt>>='] = date_str_for_api
-                else:
-                    raise ValueError("Date manquante")
-
+                        search_args_for_api['lastViewedAt>>='] = date_str_for_api
+                else: raise ValueError("Date manquante")
         except ValueError as e_viewdate:
             flash(f"Valeur pour date de visionnage invalide ('{viewdate_value}'): {e_viewdate}. Filtre ignoré.", "warning")
             current_filters_from_url['viewdate_filter_type'] = 'aucun'
             current_filters_from_url['viewdate_filter_value'] = ''
-    # ### FIN DU NOUVEAU BLOC ###
 
-    # Le tri est maintenant géré dynamiquement par le formulaire
-    search_args['sort'] = current_filters_from_url['sort_by']
-    current_app.logger.info(f"show_library: Arguments finaux pour API search(): {search_args}")
-    # ### NOUVELLE LOGIQUE DE FILTRAGE SPÉCIAL POUR LES SÉRIES VUES ###
-    filter_fully_watched_shows_in_python = False
-    if not plex_url or not admin_token:
-        flash('Erreur: Configuration Plex du serveur principal (URL/Token) manquante.', 'danger')
-        plex_error_message = "Configuration Plex manquante"
-    else:
+    current_app.logger.info(f"show_library: Arguments pour API search() (avant boucle libs): {search_args_for_api}")
+
+    for lib_name_iter in library_names:
+        current_app.logger.info(f"DEBUG_SHOW_LIBRARY: Top of loop, current lib_name_iter = '{lib_name_iter}'")
         try:
-            plex_server_admin_conn = PlexServer(plex_url, admin_token)
-            user_specific_plex_server = None
-            main_plex_account_obj = get_main_plex_account_object()
-            if not main_plex_account_obj:
-                 current_app.logger.error("show_library: Impossible de récupérer l'objet compte principal.")
-                 plex_error_message = plex_error_message or "Erreur compte principal Plex."
-            else:
-                main_account_id_str = str(main_plex_account_obj.id)
-                if user_id_in_session and user_id_in_session != main_account_id_str:
-                    user_to_impersonate_obj = next((u for u in main_plex_account_obj.users() if str(u.id) == user_id_in_session), None)
-                    if user_to_impersonate_obj:
-                        try:
-                            managed_user_token = user_to_impersonate_obj.get_token(plex_server_admin_conn.machineIdentifier)
-                            user_specific_plex_server = PlexServer(plex_url, managed_user_token)
-                            final_context_user_title = user_to_impersonate_obj.title
-                            current_app.logger.info(f"Emprunt d'identité réussi pour '{final_context_user_title}'.")
-                        except Exception as e_impersonate:
-                            current_app.logger.error(f"Échec emprunt d'identité pour '{user_title_in_session}': {e_impersonate}", exc_info=True)
-                            flash(f"Avertissement: Emprunt d'identité pour '{user_title_in_session}' échoué. Tentative de switchUser.", "warning")
-                            user_specific_plex_server = plex_server_admin_conn
-                            try:
-                                user_specific_plex_server.switchUser(user_to_impersonate_obj.title)
-                                final_context_user_title = user_to_impersonate_obj.title
-                                current_app.logger.info(f"Fallback sur switchUser pour '{final_context_user_title}' réussi.")
-                            except Exception as e_switch:
-                                current_app.logger.error(f"Échec du fallback switchUser pour '{user_title_in_session}': {e_switch}. Utilisation contexte admin.", exc_info=True)
-                                final_context_user_title = main_plex_account_obj.title
-                                flash(f"Basculement vers '{user_title_in_session}' échoué. Contexte admin utilisé.", "danger")
-                    else:
-                        current_app.logger.warning(f"Utilisateur géré ID {user_id_in_session} ('{user_title_in_session}') non trouvé. Contexte admin utilisé.")
-                        flash(f"Utilisateur '{user_title_in_session}' non trouvé. Contexte admin utilisé.", "warning")
-                        user_specific_plex_server = plex_server_admin_conn
-                        final_context_user_title = main_plex_account_obj.title
-                else:
-                    current_app.logger.info(f"Recherche dans le contexte du compte principal '{final_context_user_title}'.")
-                    user_specific_plex_server = plex_server_admin_conn
+            library_obj_iter = user_specific_plex_server.library.section(lib_name_iter)
+            processed_library_objects.append(library_obj_iter)
 
-            if user_specific_plex_server:
-                try:
-                    library_object = user_specific_plex_server.library.section(library_name)
+            # Activer le filtre Python pour les séries entièrement vues si cette bibliothèque est de type 'show'
+            # et que le filtre global 'vu' est activé.
+            if library_obj_iter.type == 'show' and current_filters_from_url['vu'] == 'vu':
+                filter_fully_watched_shows_in_python = True
+                # search_args_for_api['unwatched'] = False est déjà appliqué globalement si 'vu' est sélectionné.
+                current_app.logger.info(f"Filtre Python 'Séries entièrement vues' potentiellement activé pour la bibliothèque '{lib_name_iter}'.")
 
-                    # ### ON ACTIVE NOTRE FILTRE SI NÉCESSAIRE ###
-                    if library_object.type == 'show' and current_filters_from_url['vu'] == 'vu':
-                        filter_fully_watched_shows_in_python = True
-                        # Note: `search_args['unwatched'] = False` est déjà défini plus haut, c'est parfait.
-                        current_app.logger.info("Filtre spécial activé: Séries entièrement vues (post-filtrage Python).")
+            current_app.logger.info(f"Exécution de library.search sur '{library_obj_iter.title}' pour utilisateur '{user_title_in_session}' avec args: {search_args_for_api}")
+            items_this_lib = library_obj_iter.search(**search_args_for_api)
+            all_items.extend(items_this_lib)
+            current_app.logger.info(f"Récupéré {len(items_this_lib)} éléments de '{lib_name_iter}'. Total actuel: {len(all_items)}.")
 
-                    current_app.logger.info(f"Exécution de library.search sur '{library_object.title}' pour utilisateur '{final_context_user_title}' avec args: {search_args}")
-                    items_from_plex_api = library_object.search(**search_args)
-                except NotFound:
-                    plex_error_message = f"Bibliothèque '{library_name}' non trouvée."
-                    current_app.logger.warning(f"show_library: {plex_error_message}")
-                    items_from_plex_api = []
-                    library_object = None
-                except BadRequest as e_br:
-                    plex_error_message = f"Filtre invalide: {e_br}"
-                    current_app.logger.error(f"show_library: BadRequest lors de la recherche: {e_br}", exc_info=True)
-                    flash(f"Erreur dans les filtres: {e_br}", "danger")
-                    items_from_plex_api = []
-                except Exception as e_s:
-                    plex_error_message = f"Erreur de recherche: {e_s}"
-                    current_app.logger.error(f"show_library: Erreur pendant recherche: {e_s}", exc_info=True)
-                    flash("Erreur pendant la recherche.", "danger")
-                    items_from_plex_api = []
-            else:
-                plex_error_message = plex_error_message or "Erreur critique: Connexion Plex non préparée."
-                current_app.logger.critical("show_library: user_specific_plex_server est None avant recherche.")
-                items_from_plex_api = []
+        except NotFound:
+            err_msg = f"Bibliothèque '{lib_name_iter}' non trouvée."
+            plex_error_message += f"{err_msg}\n"
+            current_app.logger.warning(f"show_library: {err_msg}")
+        except BadRequest as e_br:
+            err_msg = f"Filtre invalide pour '{lib_name_iter}': {e_br}"
+            plex_error_message += f"{err_msg}\n"
+            current_app.logger.error(f"show_library: BadRequest pour '{lib_name_iter}': {e_br}", exc_info=True)
+            flash(f"Erreur dans les filtres pour '{lib_name_iter}': {e_br}", "danger")
+        except Exception as e_s:
+            err_msg = f"Erreur de recherche dans '{lib_name_iter}': {e_s}"
+            plex_error_message += f"{err_msg}\n"
+            current_app.logger.error(f"show_library: Erreur pendant recherche dans '{lib_name_iter}': {e_s}", exc_info=True)
+            flash(f"Erreur pendant la recherche dans '{lib_name_iter}'.", "danger")
 
-        except Unauthorized:
-            plex_error_message = "Token Plex principal invalide."
-            current_app.logger.error("show_library: Unauthorized (token admin). Redirection.", exc_info=True)
-            flash(plex_error_message, 'danger')
-            session.clear()
-            return redirect(url_for('plex_editor.index')) # (### MODIFICATION ICI ###) - Pointeur vers 'index'
-        except Exception as e_outer:
-            plex_error_message = f"Erreur majeure: {e_outer}"
-            current_app.logger.error(f"show_library: Erreur majeure inattendue: {e_outer}", exc_info=True)
-            flash("Erreur majeure inattendue.", 'danger')
-            items_from_plex_api = []
+    # Post-filtrage en Python
+    items_filtered_intermediate = list(all_items) # Commence avec tous les items récupérés
 
-        items_filtered_final = []
-        if items_from_plex_api is not None:
-            # On applique d'abord le filtre des séries vues si nécessaire
-            if filter_fully_watched_shows_in_python:
-                intermediate_list = [show for show in items_from_plex_api if show.leafCount == show.viewedLeafCount]
-                current_app.logger.info(f"Filtrage Python 'Séries Vues': {len(intermediate_list)}/{len(items_from_plex_api)} séries restantes.")
-            else:
-                intermediate_list = items_from_plex_api
+    if filter_fully_watched_shows_in_python:
+        temp_list_shows = []
+        original_count = len(items_filtered_intermediate)
+        for item in items_filtered_intermediate:
+            if item.type == 'show': # Appliquer seulement aux séries
+                # Ignorer les annotations de type ici car viewedLeafCount et leafCount peuvent ne pas être reconnus par le linter statique
+                if item.leafCount == item.viewedLeafCount: # type: ignore
+                    temp_list_shows.append(item)
+            else: # Conserver les éléments qui ne sont pas des séries
+                temp_list_shows.append(item)
+        items_filtered_intermediate = temp_list_shows
+        current_app.logger.info(f"Filtrage Python 'Séries Vues': {len(items_filtered_intermediate)}/{original_count} éléments restants.")
 
-        # Ensuite, on applique le filtre des notes sur la liste déjà filtrée
-        if filter_for_non_notes_in_python:
-            items_filtered_final = [item for item in intermediate_list if item.userRating is None]
-            current_app.logger.info(f"Filtrage Python 'Non Notés': {len(items_filtered_final)}/{len(intermediate_list)} éléments.")
+    if filter_for_non_notes_in_python:
+        original_count = len(items_filtered_intermediate)
+        items_filtered_intermediate = [item for item in items_filtered_intermediate if getattr(item, 'userRating', None) is None]
+        current_app.logger.info(f"Filtrage Python 'Non Notés': {len(items_filtered_intermediate)}/{original_count} éléments restants.")
+
+    items_filtered_final = items_filtered_intermediate
+
+    # Tri en Python
+    sort_param_str = current_filters_from_url.get('sort_by', 'addedAt:desc')
+    sort_key_attr = 'addedAt'
+    sort_direction = 'desc'
+
+    if ':' in sort_param_str:
+        parts = sort_param_str.split(':', 1)
+        sort_key_attr = parts[0]
+        if len(parts) > 1 and parts[1].lower() in ['asc', 'desc']:
+            sort_direction = parts[1].lower()
         else:
-            items_filtered_final = intermediate_list
+            flash(f"Direction de tri '{parts[1]}' non valide. Utilisation de 'desc'.", "warning")
+            sort_direction = 'desc' # Default direction if malformed
+    else: # Si pas de ':' on assume que c'est la clé et direction par défaut desc
+        sort_key_attr = sort_param_str
+        flash(f"Format de tri '{sort_param_str}' incomplet. Tri par '{sort_key_attr}' en direction descendante par défaut.", "warning")
 
-        if library_object:
-            applied_filters_str_parts = []
-            if 'unwatched' in search_args: applied_filters_str_parts.append(f"Vu/Non Vu: {'Non Vus' if search_args['unwatched'] else 'Vus'}")
-            else: applied_filters_str_parts.append("Vu/Non Vu: Tous")
-            if filter_for_non_notes_in_python: applied_filters_str_parts.append("Note: Non Notés Uniquement")
-            elif 'userRating' in search_args : applied_filters_str_parts.append(f"Note = {search_args['userRating']}")
-            elif 'userRating>>=' in search_args: applied_filters_str_parts.append(f"Note ≥ {search_args['userRating>>=']}")
-            elif 'userRating<<=' in search_args: applied_filters_str_parts.append(f"Note ≤ {search_args['userRating<<=']}")
-            else: applied_filters_str_parts.append("Note: Toutes")
-            if 'addedAt<<' in search_args: applied_filters_str_parts.append(f"Ajouté avant {search_args['addedAt<<']}")
-            if 'addedAt>>=' in search_args: applied_filters_str_parts.append(f"Ajouté depuis/après {search_args['addedAt>>=']}")
-            if 'year' in search_args: applied_filters_str_parts.append(f"Sorti en {search_args['year']}")
-            applied_filters_str = ", ".join(applied_filters_str_parts)
-            flash_message = f"Affichage de {len(items_filtered_final)} éléments de '{library_object.title}' pour '{final_context_user_title}'. Filtres: {applied_filters_str}."
-            if filter_for_non_notes_in_python and items_from_plex_api and len(items_from_plex_api) != len(items_filtered_final) :
-                flash_message += f" ({len(items_from_plex_api)} avant filtre 'Non Notés')."
-            flash(flash_message, 'info')
-        elif not plex_error_message and library_object:
-            flash(f"Aucun élément trouvé dans '{library_object.title}' pour '{final_context_user_title}' avec les filtres.", "info")
-        elif plex_error_message and not library_object :
-            if library_name and "Bibliothèque" not in plex_error_message :
-                flash(f"Erreur lors de l'accès à la bibliothèque '{library_name}'.", "danger")
+    sort_reverse_flag = (sort_direction == 'desc')
 
-# --- Ligne de débogage à ajouter ici ---
-    current_app.logger.info(f"DEBUG_TAG: La valeur de RADARR_TAG_ON_ARCHIVE est '{current_app.config.get('RADARR_TAG_ON_ARCHIVE')}'")
-    # --- Fin de la ligne de débogage ---
+    def sort_key_func(item):
+        val = None
+        if sort_key_attr == 'titleSort': # titleSort est généralement déjà en minuscule et normalisé
+            val = getattr(item, 'titleSort', getattr(item, 'title', ''))
+            return val.lower() if isinstance(val, str) else ''
 
-    return render_template('plex_editor/library.html',
-                           title=f"Bibliothèque {library_name or 'Inconnue'} - {user_title_in_session}",
-                           library_name=library_name,
-                           library_obj=library_object,
-                           items=items_filtered_final,
-                           current_filters=current_filters_from_url,
-                           plex_error=plex_error_message,
-                           user_title=user_title_in_session,
-                           config=current_app.config)
+        # Pour les dates, on veut s'assurer qu'on compare des objets datetime
+        # Si l'attribut est None, on utilise datetime.min pour qu'il soit au début en asc, à la fin en desc
+        if sort_key_attr in ['addedAt', 'lastViewedAt', 'originallyAvailableAt', 'updatedAt']:
+            val = getattr(item, sort_key_attr, None)
+            return val if isinstance(val, datetime) else datetime.min # datetime.min pour les None
+
+        elif sort_key_attr == 'userRating' or sort_key_attr == 'rating': # Note utilisateur ou critique
+            val = getattr(item, sort_key_attr, None)
+            return float(val) if val is not None else -1.0 # -1 pour les notes non définies
+
+        elif sort_key_attr == 'year':
+            val = getattr(item, sort_key_attr, None)
+            return int(val) if val is not None else 0 # 0 pour les années non définies
+
+        # Fallback pour d'autres attributs, potentiellement non numériques/dates
+        val = getattr(item, sort_key_attr, None)
+        if val is None: # Pour éviter les erreurs de comparaison entre types mixtes
+            if isinstance(sort_reverse_flag, bool) and sort_reverse_flag: # desc
+                 # Pour le tri descendant, les None peuvent être traités comme "les plus petits"
+                 # en retournant une valeur qui les placera en fin de liste.
+                 # Cela dépend du type attendu des autres valeurs.
+                 # Si on s'attend à des chaînes, '' est un bon défaut. Si des nombres, 0 ou float('-inf').
+                 # Étant donné que c'est un fallback, '' est un choix neutre.
+                return ''
+            else: # asc
+                # Pour le tri ascendant, les None peuvent être "les plus petits".
+                return ''
+        return val
+
+    if items_filtered_final:
+        try:
+            items_filtered_final.sort(key=sort_key_func, reverse=sort_reverse_flag)
+            current_app.logger.info(f"Trié {len(items_filtered_final)} éléments par '{sort_key_attr}' ({sort_direction}).")
+        except TypeError as e_sort_type:
+            current_app.logger.error(f"Erreur de tri (TypeError) sur la clé '{sort_key_attr}': {e_sort_type}. Les données sont peut-être mixtes ou non comparables.", exc_info=True)
+            flash(f"Erreur de tri pour '{sort_key_attr}': les données ne sont pas homogènes ou comparables. Le tri a peut-être échoué.", "warning")
+        except Exception as e_sort: # Attrape d'autres erreurs de tri potentielles
+            current_app.logger.error(f"Erreur de tri inattendue sur la clé '{sort_key_attr}': {e_sort}", exc_info=True)
+            flash(f"Erreur inattendue pendant le tri par '{sort_key_attr}'.", "warning")
+
+    # Construction du message Flash final
+    if processed_library_objects or plex_error_message:
+        num_items = len(items_filtered_final)
+        lib_names_str = template_library_name_display
+
+        applied_filters_parts = []
+        if current_filters_from_url['vu'] != 'tous':
+            applied_filters_parts.append(f"Vu: {current_filters_from_url['vu']}")
+        if filter_fully_watched_shows_in_python:
+             applied_filters_parts.append("Dont séries entièrement vues")
+        if filter_for_non_notes_in_python:
+            applied_filters_parts.append("Note: Non Notés")
+        elif current_filters_from_url['note_filter_type'] != 'toutes' and current_filters_from_url['note_filter_value']:
+            applied_filters_parts.append(f"Note: {current_filters_from_url['note_filter_type']} {current_filters_from_url['note_filter_value']}")
+        # Ajouter d'autres filtres actifs ici si nécessaire
+
+        filters_str = ", ".join(applied_filters_parts) if applied_filters_parts else "Aucun filtre spécifique"
+        sort_str = f"Trié par: {sort_key_attr} ({sort_direction})"
+
+        flash_msg = f"Affichage de {num_items} élément(s) pour '{lib_names_str}' (Utilisateur: {user_title_in_session}). {filters_str}. {sort_str}."
+        if plex_error_message:
+            flash_msg += f" Erreurs rencontrées:\n{plex_error_message.strip()}"
+            flash(flash_msg, "warning" if num_items > 0 else "danger")
+        else:
+            flash(flash_msg, "info")
+
+    elif not plex_error_message: # Ni objets de bibliothèque, ni erreur -> probablement mauvaise sélection initiale
+        flash(f"Aucune bibliothèque à afficher pour '{template_library_name_display}'.", "info")
+
+
+    # Détermine library_obj pour le template (premier de la liste ou None)
+    library_obj_for_template = processed_library_objects[0] if processed_library_objects else None
+
+    # Prepare context for the template
+    template_context_vars = {
+        'title': f"Bibliothèque {page_title_lib_segment} - {user_title_in_session}",
+        'display_title': template_library_name_display,  # For H1 tag and general display
+        'library_obj': library_obj_for_template,    # Actual library object if single, else None
+        'items': items_filtered_final,
+        'current_filters': current_filters_from_url,
+        'plex_error': plex_error_message if plex_error_message else None, # Assure None si vide
+        'user_title': user_title_in_session,
+        'config': current_app.config,
+        'current_selected_libs': None # Initialize
+    }
+
+    # If library_name (path parameter) was None, it means selected_libs from query args were used.
+    # In this case, library_names (derived from selected_libs) should be passed as current_selected_libs.
+    # This is used by the template to repopulate hidden fields if submitting filters for multiple libraries.
+    if not library_name and library_names:
+        template_context_vars['current_selected_libs'] = library_names
+
+    return render_template('plex_editor/library.html', **template_context_vars)
 
 @plex_editor_bp.route('/delete_item/<int:rating_key>', methods=['POST'])
 @login_required

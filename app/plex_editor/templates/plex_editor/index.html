@@ -156,18 +156,22 @@
         {% if plex_error %}
             <p class="alert alert-danger">Impossible de charger les bibliothèques. Erreur : {{ plex_error }}</p>
         {% elif libraries %}
-            <ul>
-                {% for library in libraries %}
-                    <li>
-                        {# Lien vers la page de la bibliothèque #}
-                        <a href="{{ url_for('plex_editor.show_library', library_name=library.title) }}">
-                            {{ library.title }}
-                        </a>
-                        {# Affiche le type de bibliothèque (movie, show, artist, photo) #}
-                        <span class="library-type">{{ library.type|capitalize }}</span>
-                    </li>
-                {% endfor %}
-            </ul>
+            <form action="{{ url_for('plex_editor.show_library') }}" method="GET">
+                <ul>
+                    {% for library in libraries %}
+                        <li>
+                            <input type="checkbox" name="selected_libs" value="{{ library.title }}">
+                            {# Lien vers la page de la bibliothèque #}
+                            <a href="{{ url_for('plex_editor.show_library', library_name=library.title) }}">
+                                {{ library.title }}
+                            </a>
+                            {# Affiche le type de bibliothèque (movie, show, artist, photo) #}
+                            <span class="library-type">{{ library.type|capitalize }}</span>
+                        </li>
+                    {% endfor %}
+                </ul>
+                <button type="submit">Parcourir la Sélection</button>
+            </form>
         {% else %}
             {# Si la liste est vide mais pas d'erreur Plex spécifique (connexion ok, mais 0 libs) #}
             <p class="alert alert-info">Aucune bibliothèque Plex n'a été trouvée sur le serveur.</p>

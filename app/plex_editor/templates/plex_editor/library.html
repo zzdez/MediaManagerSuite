@@ -200,7 +200,7 @@
     <div class="container">
         <p class="back-link"><a href="{{ url_for('plex_editor.index') }}">← Retour à la liste des bibliothèques</a></p>
 
-        <h1>{{ library_name }}</h1>
+        <h1>{{ display_title }}</h1>
         {% if user_title %}
             <p class="user-context">Affichage pour l'utilisateur : <strong>{{ user_title }}</strong></p>
         {% endif %}
@@ -214,8 +214,12 @@
         {% endwith %}
 
         {# --- Formulaire de Filtres (VERSION CORRIGÉE ET COMPLÈTE) --- #}
-        <form method="GET" action="{{ url_for('plex_editor.show_library', library_name=library_name) }}" class="filter-form">
-
+        <form method="GET" action="{{ url_for('plex_editor.show_library', library_name=library_obj.title if library_obj else None) }}" class="filter-form">
+            {% if not library_obj and current_selected_libs %}
+                {% for lib_title in current_selected_libs %}
+                    <input type="hidden" name="selected_libs" value="{{ lib_title }}">
+                {% endfor %}
+            {% endif %}
             <!-- Ligne de Tri -->
             <div class="form-row">
                 <div class="filter-group" style="flex-grow: 1;">
@@ -298,7 +302,7 @@
 
             <!-- Ligne des Boutons -->
             <div class="button-row">
-                <a href="{{ url_for('plex_editor.show_library', library_name=library_name) }}" class="button reset-button">Réinitialiser</a>
+                <a href="{{ url_for('plex_editor.show_library', library_name=library_obj.title if library_obj else None, selected_libs=current_selected_libs if not library_obj else None) }}" class="button reset-button">Réinitialiser</a>
                 <button type="submit" class="button">Appliquer les Filtres</button>
             </div>
         </form>
@@ -308,7 +312,7 @@
         {% elif items is not none %}
 
             <form id="bulk-delete-form" method="POST" action="{{ url_for('plex_editor.bulk_delete_items') }}">
-                <input type="hidden" name="current_library_name" value="{{ library_name }}">
+                <input type="hidden" name="current_library_name" value="{{ display_title }}">
 
                 {% if items %}
                 <div class="bulk-actions-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; padding: 10px; background-color: #f1f3f5; border-radius: 5px;">
@@ -341,7 +345,7 @@
                                 <form method="POST" action="{{ url_for('plex_editor.delete_item', rating_key=item.ratingKey) }}"
                                       onsubmit="return confirm('Êtes-vous sûr de vouloir supprimer définitivement : « {{ item.title }} » ?');"
                                       style="display: inline;">
-                                    <input type="hidden" name="current_library_name" value="{{ library_name }}">
+                                    <input type="hidden" name="current_library_name" value="{{ display_title }}">
                                     <button type="submit" class="action-button delete-button" title="Supprimer de Plex et du disque dur">
                                         <i class="fas fa-trash"></i>
                                     </button>
