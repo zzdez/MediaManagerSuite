@@ -214,8 +214,8 @@
         {% endwith %}
 
         {# --- Formulaire de Filtres (VERSION CORRIGÉE ET COMPLÈTE) --- #}
-        <form method="GET" action="{{ url_for('plex_editor.show_library', library_name=library_obj.title if library_obj else None) }}" class="filter-form">
-            {% if not library_obj and current_selected_libs %}
+        <form method="GET" action="{% if current_selected_libs %}{{ url_for('plex_editor.show_library') }}{% else %}{{ url_for('plex_editor.show_library', library_name=library_obj.title) }}{% endif %}" class="filter-form">
+            {% if current_selected_libs %}
                 {% for lib_title in current_selected_libs %}
                     <input type="hidden" name="selected_libs" value="{{ lib_title }}">
                 {% endfor %}
@@ -302,7 +302,7 @@
 
             <!-- Ligne des Boutons -->
             <div class="button-row">
-                <a href="{{ url_for('plex_editor.show_library', library_name=library_obj.title if library_obj else None, selected_libs=current_selected_libs if not library_obj else None) }}" class="button reset-button">Réinitialiser</a>
+                <a href="{% if current_selected_libs %}{{ url_for('plex_editor.show_library', selected_libs=current_selected_libs) }}{% else %}{{ url_for('plex_editor.show_library', library_name=library_obj.title if library_obj else None) }}{% endif %}" class="button reset-button">Réinitialiser</a>
                 <button type="submit" class="button">Appliquer les Filtres</button>
             </div>
         </form>
