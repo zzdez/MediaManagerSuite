@@ -239,6 +239,16 @@
                 </div>
             </div>
 
+            {# ### NOUVELLE LIGNE POUR LA RECHERCHE PAR TITRE ### #}
+            <div class="form-row">
+                <div class="filter-group" style="flex-grow: 1;">
+                    <label for="title_filter"><i class="fas fa-search"></i> Rechercher par Titre :</label>
+                    <input type="text" name="title_filter" id="title_filter" class="form-control" 
+                           value="{{ current_filters.title_filter or '' }}" 
+                           placeholder="Entrez une partie du titre...">
+                </div>
+            </div>
+
             <!-- Ligne Statut Vu & Note -->
             <div class="form-row">
                 <div class="filter-group">
