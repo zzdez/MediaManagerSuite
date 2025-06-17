@@ -197,7 +197,8 @@ def show_library(library_name):
         'date_filter_type': request.args.get('date_filter_type', 'aucun'),
         'date_filter_value': request.args.get('date_filter_value', ''),
         'viewdate_filter_type': request.args.get('viewdate_filter_type', 'aucun'),
-        'viewdate_filter_value': request.args.get('viewdate_filter_value', '')
+        'viewdate_filter_value': request.args.get('viewdate_filter_value', ''),
+        'sort_by': request.args.get('sort_by', 'addedAt:desc')
     }
 
     search_args = {}
@@ -309,8 +310,8 @@ def show_library(library_name):
             current_filters_from_url['viewdate_filter_value'] = ''
     # ### FIN DU NOUVEAU BLOC ###
 
-    sort_order = request.args.get('sort', 'addedAt:desc')
-    search_args['sort'] = sort_order
+    # Le tri est maintenant géré dynamiquement par le formulaire
+    search_args['sort'] = current_filters_from_url['sort_by']
     current_app.logger.info(f"show_library: Arguments finaux pour API search(): {search_args}")
     # ### NOUVELLE LOGIQUE DE FILTRAGE SPÉCIAL POUR LES SÉRIES VUES ###
     filter_fully_watched_shows_in_python = False

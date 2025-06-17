@@ -213,12 +213,33 @@
           {% endif %}
         {% endwith %}
 
-        {# --- Formulaire de Filtres (votre code existant) --- #}
+        {# --- Formulaire de Filtres (VERSION CORRIGÉE ET COMPLÈTE) --- #}
         <form method="GET" action="{{ url_for('plex_editor.show_library', library_name=library_name) }}" class="filter-form">
+
+            <!-- Ligne de Tri -->
+            <div class="form-row">
+                <div class="filter-group" style="flex-grow: 1;">
+                    <label for="sort_by">Trier par :</label>
+                    <select name="sort_by" id="sort_by" class="form-select">
+                        <option value="addedAt:desc" {% if current_filters.sort_by == 'addedAt:desc' %}selected{% endif %}>Date d'ajout (plus récent d'abord)</option>
+                        <option value="addedAt:asc" {% if current_filters.sort_by == 'addedAt:asc' %}selected{% endif %}>Date d'ajout (plus ancien d'abord)</option>
+                        <option value="lastViewedAt:desc" {% if current_filters.sort_by == 'lastViewedAt:desc' %}selected{% endif %}>Date de visionnage (plus récent d'abord)</option>
+                        <option value="lastViewedAt:asc" {% if current_filters.sort_by == 'lastViewedAt:asc' %}selected{% endif %}>Date de visionnage (plus ancien d'abord)</option>
+                        <option value="titleSort:asc" {% if current_filters.sort_by == 'titleSort:asc' %}selected{% endif %}>Titre (A-Z)</option>
+                        <option value="titleSort:desc" {% if current_filters.sort_by == 'titleSort:desc' %}selected{% endif %}>Titre (Z-A)</option>
+                        <option value="originallyAvailableAt:desc" {% if current_filters.sort_by == 'originallyAvailableAt:desc' %}selected{% endif %}>Date de sortie (plus récent d'abord)</option>
+                        <option value="originallyAvailableAt:asc" {% if current_filters.sort_by == 'originallyAvailableAt:asc' %}selected{% endif %}>Date de sortie (plus ancien d'abord)</option>
+                        <option value="userRating:desc" {% if current_filters.sort_by == 'userRating:desc' %}selected{% endif %}>Note (meilleure d'abord)</option>
+                        <option value="userRating:asc" {% if current_filters.sort_by == 'userRating:asc' %}selected{% endif %}>Note (moins bonne d'abord)</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Ligne Statut Vu & Note -->
             <div class="form-row">
                 <div class="filter-group">
                     <label for="vu">Statut Vu:</label>
-                    <select name="vu" id="vu">
+                    <select name="vu" id="vu" class="form-select">
                         <option value="tous" {% if current_filters.vu == 'tous' %}selected{% endif %}>Indifférent</option>
                         <option value="vu" {% if current_filters.vu == 'vu' %}selected{% endif %}>Vus Uniquement</option>
                         <option value="nonvu" {% if current_filters.vu == 'nonvu' %}selected{% endif %}>Non Vus Uniquement</option>
@@ -226,62 +247,59 @@
                 </div>
                 <div class="filter-group">
                     <label for="note_filter_type">Filtre Note:</label>
-                    <select name="note_filter_type" id="note_filter_type">
-                        <option value="toutes" {% if current_filters.note_filter_type == 'toutes' or not current_filters.note_filter_type %}selected{% endif %}>Toutes les notes</option>
-                        <option value="non_notes" {% if current_filters.note_filter_type == 'non_notes' %}selected{% endif %}>Non Notés Uniquement</option>
-                        <option value="note_exacte" {% if current_filters.note_filter_type == 'note_exacte' %}selected{% endif %}>Note Exacte Égale à</option>
-                        <option value="note_min" {% if current_filters.note_filter_type == 'note_min' %}selected{% endif %}>Note Supérieure ou Égale à</option>
-                        <option value="note_max" {% if current_filters.note_filter_type == 'note_max' %}selected{% endif %}>Note Inférieure ou Égale à</option>
+                    <select name="note_filter_type" id="note_filter_type" class="form-select">
+                        <option value="toutes" {% if not current_filters.note_filter_type or current_filters.note_filter_type == 'toutes' %}selected{% endif %}>Toutes les notes</option>
+                        <option value="non_notes" {% if current_filters.note_filter_type == 'non_notes' %}selected{% endif %}>Non Notés</option>
+                        <option value="note_exacte" {% if current_filters.note_filter_type == 'note_exacte' %}selected{% endif %}>Note Egale à</option>
+                        <option value="note_min" {% if current_filters.note_filter_type == 'note_min' %}selected{% endif %}>Note >= à</option>
+                        <option value="note_max" {% if current_filters.note_filter_type == 'note_max' %}selected{% endif %}>Note <= à</option>
                     </select>
                 </div>
                 <div class="filter-group">
-                    <label for="note_filter_value">Valeur Note (0-10):</label>
-                    <input type="number" name="note_filter_value" id="note_filter_value" min="0" max="10" step="0.5"
-                           value="{{ current_filters.note_filter_value if current_filters.note_filter_value is not none else '' }}"
-                           placeholder="Pour Exacte/Min/Max">
-                </div>
-            </div>
-            <div class="form-row">
-                <div class="filter-group">
-                    <label for="date_filter_type">Date:</label>
-                    <select name="date_filter_type" id="date_filter_type">
-                        <option value="aucun" {% if current_filters.date_filter_type == 'aucun' or not current_filters.date_filter_type %}selected{% endif %}>-- Date (Non Spécifié) --</option>
-                        <option value="ajout_recent_jours" {% if current_filters.date_filter_type == 'ajout_recent_jours' %}selected{% endif %}>Ajouté dans les X derniers jours</option>
-                        <option value="ajout_apres_date" {% if current_filters.date_filter_type == 'ajout_apres_date' %}selected{% endif %}>Ajouté après le (YYYY-MM-DD)</option>
-                        <option value="ajout_avant_date" {% if current_filters.date_filter_type == 'ajout_avant_date' %}selected{% endif %}>Ajouté avant le (YYYY-MM-DD)</option>
-                        <option value="sortie_annee" {% if current_filters.date_filter_type == 'sortie_annee' %}selected{% endif %}>Sorti en (YYYY)</option>
-                        <option value="sortie_apres_annee" {% if current_filters.date_filter_type == 'sortie_apres_annee' %}selected{% endif %}>Sorti après (YYYY)</option>
-                        <option value="sortie_avant_annee" {% if current_filters.date_filter_type == 'sortie_avant_annee' %}selected{% endif %}>Sorti avant (YYYY)</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label for="date_filter_value">Valeur Date:</label>
-                    <input type="text" name="date_filter_value" id="date_filter_value"
-                           value="{{ current_filters.date_filter_value or '' }}" placeholder="Ex: 30, 2023-10-25, 2022">
+                    <label for="note_filter_value">Valeur Note:</label>
+                    <input type="number" name="note_filter_value" id="note_filter_value" class="form-control" min="0" max="10" step="0.5" value="{{ current_filters.note_filter_value if current_filters.note_filter_value is not none else '' }}" placeholder="0-10">
                 </div>
             </div>
 
-            {# ### NOUVELLE LIGNE POUR LE FILTRE DE DATE DE VISIONNAGE ### #}
+            <!-- Ligne Date d'Ajout/Sortie -->
+            <div class="form-row">
+                <div class="filter-group">
+                    <label for="date_filter_type">Date Ajout/Sortie:</label>
+                    <select name="date_filter_type" id="date_filter_type" class="form-select">
+                        <option value="aucun" {% if not current_filters.date_filter_type or current_filters.date_filter_type == 'aucun' %}selected{% endif %}>-- Non Spécifié --</option>
+                        <option value="ajout_recent_jours" {% if current_filters.date_filter_type == 'ajout_recent_jours' %}selected{% endif %}>Ajouté (X derniers jours)</option>
+                        <option value="ajout_apres_date" {% if current_filters.date_filter_type == 'ajout_apres_date' %}selected{% endif %}>Ajouté après le...</option>
+                        <option value="ajout_avant_date" {% if current_filters.date_filter_type == 'ajout_avant_date' %}selected{% endif %}>Ajouté avant le...</option>
+                        <option value="sortie_annee" {% if current_filters.date_filter_type == 'sortie_annee' %}selected{% endif %}>Sorti en (YYYY)</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="date_filter_value">Valeur Date A/S:</label>
+                    <input type="text" name="date_filter_value" id="date_filter_value" class="form-control" value="{{ current_filters.date_filter_value or '' }}" placeholder="Ex: 30, 2024, 2024-05-20">
+                </div>
+            </div>
+
+            <!-- Ligne Date de Visionnage -->
             <div class="form-row">
                 <div class="filter-group">
                     <label for="viewdate_filter_type">Date de Visionnage:</label>
-                    <select name="viewdate_filter_type" id="viewdate_filter_type">
+                    <select name="viewdate_filter_type" id="viewdate_filter_type" class="form-select">
                         <option value="aucun" {% if not current_filters.viewdate_filter_type or current_filters.viewdate_filter_type == 'aucun' %}selected{% endif %}>-- Non Spécifié --</option>
-                        <option value="viewed_recent_days" {% if current_filters.viewdate_filter_type == 'viewed_recent_days' %}selected{% endif %}>Vu dans les X derniers jours</option>
-                        <option value="viewed_after_date" {% if current_filters.viewdate_filter_type == 'viewed_after_date' %}selected{% endif %}>Vu après le (YYYY-MM-DD)</option>
-                        <option value="viewed_before_date" {% if current_filters.viewdate_filter_type == 'viewed_before_date' %}selected{% endif %}>Vu avant le (YYYY-MM-DD)</option>
+                        <option value="viewed_recent_days" {% if current_filters.viewdate_filter_type == 'viewed_recent_days' %}selected{% endif %}>Vu (X derniers jours)</option>
+                        <option value="viewed_after_date" {% if current_filters.viewdate_filter_type == 'viewed_after_date' %}selected{% endif %}>Vu après le...</option>
+                        <option value="viewed_before_date" {% if current_filters.viewdate_filter_type == 'viewed_before_date' %}selected{% endif %}>Vu avant le...</option>
                     </select>
                 </div>
                 <div class="filter-group">
                     <label for="viewdate_filter_value">Valeur Date Visionnage:</label>
-                    <input type="text" name="viewdate_filter_value" id="viewdate_filter_value"
-                           value="{{ current_filters.viewdate_filter_value or '' }}" placeholder="Ex: 30, 2024-05-20">
+                    <input type="text" name="viewdate_filter_value" id="viewdate_filter_value" class="form-control" value="{{ current_filters.viewdate_filter_value or '' }}" placeholder="Ex: 30, 2024-05-20">
                 </div>
             </div>
 
+            <!-- Ligne des Boutons -->
             <div class="button-row">
                 <a href="{{ url_for('plex_editor.show_library', library_name=library_name) }}" class="button reset-button">Réinitialiser</a>
-                <button type="submit">Appliquer les Filtres</button>
+                <button type="submit" class="button">Appliquer les Filtres</button>
             </div>
         </form>
 
