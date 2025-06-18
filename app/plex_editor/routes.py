@@ -242,35 +242,61 @@ def show_library(library_name=None):
     # --- DÉTECTION DES FILTRES SPÉCIAUX ---
     special_filter = request.args.get('special_filter')
     if special_filter == 'ready_to_watch' and library_name:
-        # On appelle notre nouvelle fonction logique
         items_list = find_ready_to_watch_shows_in_library(library_name)
+        user_plex = get_user_specific_plex_server() # Get user_plex_server instance
+        lib_obj_for_special_filter = None
+        if user_plex:
+            try:
+                lib_obj_for_special_filter = user_plex.library.section(library_name)
+            except NotFound:
+                current_app.logger.warning(f"Special filter: Library '{library_name}' not found.")
+                flash(f"Bibliothèque '{library_name}' non trouvée pour le filtre spécial.", "warning")
+            except Exception as e_special_lib_fetch:
+                current_app.logger.error(f"Special filter: Error fetching library '{library_name}': {e_special_lib_fetch}")
+                flash(f"Erreur d'accès à la bibliothèque '{library_name}'.", "danger")
 
-        # On affiche les résultats en utilisant le même template
         return render_template('plex_editor/library.html',
-                               title=f"Séries Prêtes à Regarder",
+                               title=f"Séries Prêtes à Regarder dans {library_name}",
                                library_name=library_name,
                                items=items_list,
-                               current_filters={'sort_by': 'titleSort:asc'},
-                               selected_libs=[library_name],
-                               plex_error=None,
+                               current_filters={'sort_by': 'titleSort:asc'}, # Minimal filters for this view
+                               selected_libs=[library_name], # selected_libs is a list of names
+                               library_obj=lib_obj_for_special_filter, # Pass the fetched library object
+                               plex_error=None, # Errors handled with flash now
                                user_title=session.get('plex_user_title', ''),
                                config=current_app.config,
-                               view_mode='ready_to_watch') # La virgule est maintenant à l'intérieur
+                               view_mode='ready_to_watch')
+
     if 'plex_user_id' not in session:
         flash("Veuillez sélectionner un utilisateur.", "info")
         return redirect(url_for('plex_editor.index'))
 
-    # --- ÉTAPE 1: DÉTERMINER LES BIBLIOTHÈQUES À TRAITER ---
+    # --- ÉTAPE A.1: DÉTERMINER LES BIBLIOTHÈQUES À TRAITER (MODIFIED BLOCK) ---
+    library_names = []
     if library_name:
+        # Single library from URL path
         library_names = [library_name]
+        current_app.logger.info(f"show_library (A.1): Single library mode. Initial library from path: '{library_name}'")
     else:
-        library_names = request.args.getlist('selected_libs')
+        # Multiple libraries from query parameters
+        selected_libs_from_args = request.args.getlist('selected_libs')
+        if selected_libs_from_args:
+            library_names = selected_libs_from_args
+            current_app.logger.info(f"show_library (A.1): Multi-library mode. Libraries from args: {library_names}")
+        else:
+            current_app.logger.warning("show_library (A.1): No library specified in path and no 'selected_libs' in query arguments. Redirecting.")
+            flash("Aucune bibliothèque spécifiée. Veuillez sélectionner une ou plusieurs bibliothèques.", "warning")
+            return redirect(url_for('plex_editor.list_libraries'))
 
-    if not library_names:
-        flash("Veuillez sélectionner au moins une bibliothèque.", "warning")
+    if not library_names: # Final safeguard
+        current_app.logger.error("show_library (A.1): Critical error - library_names list is empty after determination logic. Redirecting.")
+        flash("Erreur critique : aucune bibliothèque à traiter n'a pu être déterminée.", "danger")
         return redirect(url_for('plex_editor.list_libraries'))
 
-    # --- ÉTAPE 2: RÉCUPÉRER TOUS LES FILTRES DE L'URL ---
+    current_app.logger.info(f"show_library (A.1): Final list of libraries to process: {library_names}")
+    # --- END OF MODIFIED BLOCK FOR STEP A.1 ---
+
+    # --- STEP A.2: UNIFIED FILTER RETRIEVAL (Placeholder - will be replaced by Step A.2 of the plan) ---
     current_filters = {
         'vu': request.args.get('vu', 'tous'),
         'note_filter_type': request.args.get('note_filter_type', 'toutes'),
@@ -282,22 +308,19 @@ def show_library(library_name=None):
         'sort_by': request.args.get('sort_by', 'addedAt:desc'),
         'title_filter': request.args.get('title_filter', '').strip()
     }
+    current_app.logger.debug(f"show_library (A.2 - Placeholder): Initial current_filters: {current_filters}")
 
-    # --- ÉTAPE 3: CONSTRUIRE LE DICTIONNAIRE DE RECHERCHE POUR L'API PLEX ---
+    # --- STEP A.3: BUILD PLEXAPI SEARCH ARGUMENTS (search_args) (Placeholder - will be replaced by Step A.3) ---
     search_args = {}
     filter_fully_watched_shows_in_python = False
     filter_for_non_notes_in_python = False
 
-    # Recherche par titre
     if current_filters['title_filter']:
         search_args['title__icontains'] = current_filters['title_filter']
-
-    # Statut de visionnage
     if current_filters['vu'] == 'vu': search_args['unwatched'] = False
     elif current_filters['vu'] == 'nonvu': search_args['unwatched'] = True
 
-    # Filtre de note
-    note_type = current_filters['note_filter_type']
+    note_type = current_filters['note_filter_type'] # Corrected Indentation
     if note_type == 'non_notes':
         filter_for_non_notes_in_python = True
     elif note_type in ['note_exacte', 'note_min', 'note_max'] and current_filters['note_filter_value']:
@@ -309,7 +332,6 @@ def show_library(library_name=None):
         except (ValueError, TypeError):
             flash(f"La valeur de note '{current_filters['note_filter_value']}' est invalide.", "warning")
 
-    # Filtre de date d'ajout/sortie
     date_type = current_filters['date_filter_type']
     date_value = current_filters['date_filter_value']
     if date_type != 'aucun' and date_value:
@@ -318,7 +340,6 @@ def show_library(library_name=None):
                 search_args['addedAt>>='] = f"{int(date_value)}d"
             elif date_type == 'sortie_annee':
                 search_args['year'] = int(date_value)
-            # ... (tu peux ajouter ici les autres cas 'sortie_avant_annee', etc.)
             else:
                 parsed_date = datetime.strptime(date_value, '%Y-%m-%d')
                 date_str = parsed_date.strftime('%Y-%m-%d')
@@ -327,7 +348,6 @@ def show_library(library_name=None):
         except (ValueError, TypeError):
             flash(f"Valeur de date '{date_value}' invalide pour le filtre '{date_type}'.", "warning")
 
-    # Filtre de date de visionnage
     viewdate_type = current_filters['viewdate_filter_type']
     viewdate_value = current_filters['viewdate_filter_value']
     if viewdate_type != 'aucun' and viewdate_value:
@@ -341,171 +361,118 @@ def show_library(library_name=None):
                 elif viewdate_type == 'viewed_after_date': search_args['lastViewedAt>>='] = date_str
         except (ValueError, TypeError):
             flash(f"Valeur de date de visionnage '{viewdate_value}' invalide.", "warning")
+    current_app.logger.debug(f"show_library (A.3 - Placeholder): Constructed search_args: {search_args}")
 
-    # --- ÉTAPE 4: EXÉCUTER LA RECHERCHE ---
+    # --- STEP A.4: Execute Search and Merge Results (Placeholder - will be replaced by Step A.4) ---
     all_items = []
     plex_error_message = None
-    user_specific_plex_server = get_user_specific_plex_server()
+    user_specific_plex_server = get_user_specific_plex_server() # Call once
     if not user_specific_plex_server:
         return redirect(url_for('plex_editor.index'))
 
-    library_obj_for_template = None # Initialize here as per A.4
+    processed_libs_objects = [] # For Step A.6
 
-    for i, lib_name in enumerate(library_names):
+    for i, lib_name_iter in enumerate(library_names):
         try:
-            library_object = user_specific_plex_server.library.section(lib_name)
+            library_object = user_specific_plex_server.library.section(lib_name_iter)
+            processed_libs_objects.append(library_object)
 
-            # Assign library_obj_for_template as per A.4
-            # If it's the first library in a (potentially multi) list, or the only one.
-            if i == 0:
-                library_obj_for_template = library_object
-
+            temp_search_args = search_args.copy()
             if library_object.type == 'show' and current_filters['vu'] == 'vu':
-                # This specific filter needs to be applied in Python after fetching all shows
-                # if we want to check for *fully* watched shows.
-                # Plex API's `unwatched=False` for shows returns shows with *any* watched episode.
-                # So, we fetch all (or based on other filters) and then filter in Python.
-                # We remove 'unwatched' from search_args if it was set for 'vu' status for shows
-                # to avoid conflicting filters if other types are mixed.
-                # However, the current logic seems to handle this by a Python post-filter flag, which is fine.
                 filter_fully_watched_shows_in_python = True
 
-            items_from_lib = library_object.search(**search_args)
+            items_from_lib = library_object.search(**temp_search_args)
             all_items.extend(items_from_lib)
+            current_app.logger.info(f"show_library (A.4 - Placeholder): Fetched {len(items_from_lib)} items from library '{lib_name_iter}'.")
         except NotFound:
-            plex_error_message = f"Bibliothèque '{lib_name}' non trouvée."
-            current_app.logger.warning(f"show_library: {plex_error_message}")
-            # Decide if we should continue with other libraries or break.
-            # For now, let's assume we skip this library and continue if multiple are selected.
-            if len(library_names) == 1: # If only one and not found, then break.
-                break
-            # If multiple, one not found might be acceptable, plex_error_message will be shown.
+            error_msg = f"Bibliothèque '{lib_name_iter}' non trouvée."
+            current_app.logger.warning(f"show_library (A.4 - Placeholder): {error_msg}")
+            if len(library_names) == 1:
+                flash(error_msg, "danger")
+                return redirect(url_for('plex_editor.list_libraries'))
+            else:
+                plex_error_message = (plex_error_message + f"; {error_msg}" if plex_error_message else error_msg)
         except Exception as e:
-            plex_error_message = f"Erreur lors de l'accès à '{lib_name}': {e}"
-            current_app.logger.error(plex_error_message, exc_info=True)
-            # Similar to NotFound, decide error handling strategy. Let's break for general errors.
-            break
+            error_msg = f"Erreur lors de l'accès à '{lib_name_iter}': {str(e)}"
+            current_app.logger.error(f"show_library (A.4 - Placeholder): {error_msg}", exc_info=True)
+            if i == 0 or len(library_names) == 1: # Corrected from if i == 0 or len(library_names) == 1:
+                flash(error_msg, "danger")
+                return redirect(url_for('plex_editor.list_libraries'))
+            else:
+                 plex_error_message = (plex_error_message + f"; {error_msg}" if plex_error_message else error_msg)
 
-    # --- ÉTAPE 5: POST-FILTRAGE ET TRI ---
+    # --- STEP A.5: Python Post-Filtering and Final Sort (Placeholder - will be replaced by Step A.5) ---
     items_filtered = all_items
     if filter_fully_watched_shows_in_python:
-        items_filtered = [s for s in items_filtered if s.type == 'show' and s.leafCount > 0 and s.leafCount == s.viewedLeafCount]
+        current_app.logger.debug("show_library (A.5 - Placeholder): Applying Python post-filter for 'fully watched shows'.")
+        items_filtered = [item for item in items_filtered if item.type != 'show' or (item.leafCount > 0 and item.viewedLeafCount == item.leafCount)]
+
     if filter_for_non_notes_in_python:
+        current_app.logger.debug("show_library (A.5 - Placeholder): Applying Python post-filter for 'non notés'.")
         items_filtered = [item for item in items_filtered if getattr(item, 'userRating', None) is None]
 
-    sort_key_attr, sort_direction = current_filters['sort_by'].split(':')
-    sort_reverse_flag = (sort_direction == 'desc')
+    if current_filters['sort_by']:
+        sort_key_attr, sort_direction = current_filters['sort_by'].split(':')
+        sort_reverse_flag = (sort_direction == 'desc')
+        def robust_sort_key_func(item_to_sort):
+            val = getattr(item_to_sort, sort_key_attr, None)
+            if val is None:
+                if sort_key_attr in ['addedAt', 'lastViewedAt', 'originallyAvailableAt', 'updatedAt', 'lastRatedAt']:
+                    return datetime.min
+                elif sort_key_attr in ['userRating', 'rating', 'year', 'index', 'parentIndex']:
+                    return float('-inf') if sort_reverse_flag else float('inf')
+                else: return ""
+            if isinstance(val, str): return val.lower()
+            return val
+        try:
+            items_filtered.sort(key=robust_sort_key_func, reverse=sort_reverse_flag)
+            current_app.logger.info(f"show_library (A.5 - Placeholder): Sorted {len(items_filtered)} items by '{sort_key_attr}' ({sort_direction}).")
+        except TypeError as e_sort_type:
+            current_app.logger.error(f"show_library (A.5 - Placeholder): Erreur de tri (TypeError) sur la clé '{sort_key_attr}': {e_sort_type}.", exc_info=True)
+            flash(f"Erreur de tri pour '{sort_key_attr}'. Tri par défaut appliqué.", "warning")
+            # Fallback sort might be needed if robust_sort_key_func isn't perfect
+            items_filtered.sort(key=lambda x: getattr(x, 'titleSort', '').lower(), reverse=False) # Basic fallback
+        except Exception as e_sort:
+            current_app.logger.error(f"show_library (A.5 - Placeholder): Erreur de tri inattendue sur la clé '{sort_key_attr}': {e_sort}", exc_info=True)
+            flash(f"Erreur inattendue pendant le tri par '{sort_key_attr}'.", "warning")
 
-    def robust_sort_key_func(item):
-        val = getattr(item, sort_key_attr, None)
+    # --- STEP A.6: Render Template with Consistent Context (Placeholder - will be refined by Step A.6) ---
+    display_title = ", ".join(library_names) # Will be updated in A.6 based on processed_libs_objects
+    library_obj_for_template = processed_libs_objects[0] if processed_libs_objects else None
+    processed_library_names = [lib.title for lib in processed_libs_objects] # Use processed_libs_objects
 
-        if val is None:
-            if sort_key_attr in ['addedAt', 'lastViewedAt', 'originallyAvailableAt', 'updatedAt']:
-                return datetime.min # For dates, None means "very old"
-            elif sort_key_attr in ['userRating', 'rating', 'year']:
-                return float('-inf') if sort_reverse_flag else float('inf') # Numerics, None is smallest or largest
-            else: # Primarily for strings like titleSort, title
-                return "" # For strings, None can be treated as an empty string
-
-        if isinstance(val, str):
-            return val.lower() # Case-insensitive sort for strings
-
-        # For datetime objects, no special handling needed if not None
-        # For numeric types (int, float), no special handling needed if not None
-        return val
-
-    try:
-        items_filtered.sort(key=robust_sort_key_func, reverse=sort_reverse_flag)
-        current_app.logger.info(f"Trié {len(items_filtered)} éléments par '{sort_key_attr}' ({sort_direction}).")
-    except TypeError as e_sort_type:
-        current_app.logger.error(f"Erreur de tri (TypeError) sur la clé '{sort_key_attr}': {e_sort_type}. Les données sont peut-être mixtes ou non comparables.", exc_info=True)
-        flash(f"Erreur de tri pour '{sort_key_attr}': les données ne sont pas homogènes ou comparables. Le tri a peut-être échoué.", "warning")
-    except Exception as e_sort:
-        current_app.logger.error(f"Erreur de tri inattendue sur la clé '{sort_key_attr}': {e_sort}", exc_info=True)
-        flash(f"Erreur inattendue pendant le tri par '{sort_key_attr}'.", "warning")
-
-    # --- ÉTAPE 6: RENDU DU TEMPLATE ---
-    display_title = ", ".join(library_names)
+    # Placeholder flash message logic (will be fully implemented in Step A.6)
     user_title_in_session = session.get('plex_user_title', 'Utilisateur Inconnu')
-
-    # Construction du message Flash consolidé
+    page_title = f"Bibliothèque: {display_title} - {user_title_in_session}" # title for <title> tag
     final_flash_message = ""
     flash_category = "info"
 
-    if plex_error_message:
-        final_flash_message = plex_error_message
+    if plex_error_message and not processed_libs_objects:
+        final_flash_message = plex_error_message + " Aucune bibliothèque n'a pu être chargée."
         flash_category = "danger"
-        # S'il y a une erreur majeure de bibliothèque, on n'affiche peut-être pas le nombre d'items etc.
-        # ou alors on l'ajoute au message d'erreur.
-        if not all_items and not items_filtered : # No items likely due to this error
-             final_flash_message += " Aucun élément ne peut être affiché."
-        else: # Some items might exist from other libraries if it's a multi-lib view
-             final_flash_message += f" Affichage de {len(items_filtered)} élément(s) potentiellement partiel."
-    else:
-        num_items = len(items_filtered)
-        lib_names_str = display_title # Already a comma-separated string of library names
+    elif plex_error_message: # Some errors, but some libs might have been processed
+        final_flash_message = f"Affichage de {len(items_filtered)} élément(s) pour '{', '.join(processed_library_names) if processed_library_names else 'bibliothèques sélectionnées'}'. "
+        final_flash_message += f"Erreurs rencontrées: {plex_error_message}"
+        flash_category = "warning"
+    elif not items_filtered and processed_libs_objects: # Successfully processed libs, but no items
+        final_flash_message = f"Aucun élément trouvé dans '{', '.join(processed_library_names)}' avec les filtres actuels."
+        flash_category = "info"
+    elif processed_libs_objects: # Success
+        final_flash_message = f"Affichage de {len(items_filtered)} élément(s) pour '{', '.join(processed_library_names)}'."
+        flash_category = "success" # Changed from info for successful display
 
-        applied_filters_parts = []
-        if current_filters['vu'] != 'tous':
-            applied_filters_parts.append(f"Vu: {current_filters['vu']}")
-        # Specific flags for Python-based filters
-        if filter_fully_watched_shows_in_python and library_obj_for_template and library_obj_for_template.type == 'show': # Check if relevant
-             applied_filters_parts.append("Séries entièrement vues")
-        if filter_for_non_notes_in_python: # This is a general filter
-            applied_filters_parts.append("Note: Non Notés")
-        # Note filter from form
-        elif current_filters['note_filter_type'] != 'toutes' and current_filters['note_filter_value']:
-            applied_filters_parts.append(f"Note: {current_filters['note_filter_type']} {current_filters['note_filter_value']}")
-
-        if current_filters['date_filter_type'] != 'aucun' and current_filters['date_filter_value']:
-            applied_filters_parts.append(f"Date: {current_filters['date_filter_type']} {current_filters['date_filter_value']}")
-        if current_filters['viewdate_filter_type'] != 'aucun' and current_filters['viewdate_filter_value']:
-            applied_filters_parts.append(f"Date de visionnage: {current_filters['viewdate_filter_type']} {current_filters['viewdate_filter_value']}")
-        if current_filters['title_filter']:
-            applied_filters_parts.append(f"Titre contient: \"{current_filters['title_filter']}\"")
-
-        filters_str = ", ".join(applied_filters_parts) if applied_filters_parts else "Aucun filtre spécifique"
-        sort_str_display = f"Trié par: {sort_key_attr} ({sort_direction})"
-
-        final_flash_message = f"Affichage de {num_items} élément(s) pour '{lib_names_str}' (Utilisateur: {user_title_in_session}). {filters_str}. {sort_str_display}."
-        if num_items == 0 and not applied_filters_parts:
-            final_flash_message = f"Aucun élément trouvé dans '{lib_names_str}' (Utilisateur: {user_title_in_session})."
-        elif num_items == 0:
-            final_flash_message = f"Aucun élément trouvé dans '{lib_names_str}' avec les filtres actifs (Utilisateur: {user_title_in_session}). {filters_str}."
-
-
-    if final_flash_message:
+    if final_flash_message: # Ensure flash is only called if there's a message
         flash(final_flash_message, flash_category)
 
-    # Page title for <title> tag
-    page_title = f"Bibliothèque: {display_title} - {user_title_in_session}"
-
-    # --- ÉTAPE 6: RENDU DU TEMPLATE ---
-    display_title = ", ".join(library_names)
-    
-    # On définit library_obj uniquement si on est en mode vue unique
-    library_obj_for_template = None
-    if len(library_names) == 1:
-        # On essaie de récupérer l'objet depuis la liste qu'on a déjà traitée
-        # (Cette variable n'existait pas, on va la créer)
-        # Pour l'instant, on le refait, c'est plus simple
-        try:
-            # On a besoin d'une connexion pour ça
-            if not user_specific_plex_server:
-                 user_specific_plex_server = get_user_specific_plex_server()
-            if user_specific_plex_server:
-                library_obj_for_template = user_specific_plex_server.library.section(library_names[0])
-        except Exception:
-            library_obj_for_template = None # On ne plante pas si ça échoue
-
     return render_template('plex_editor/library.html',
+                           title=page_title, # Pass page_title
                            items=items_filtered,
                            current_filters=current_filters,
-                           library_name=display_title,
-                           library_obj=library_obj_for_template, # ### La variable est maintenant correctement définie ###
-                           selected_libs=library_names,
-                           plex_error=plex_error_message,
-                           user_title=session.get('plex_user_title', 'Utilisateur Inconnu'),
+                           library_name=display_title, # Will be refined in A.6
+                           library_obj=library_obj_for_template, # Will be refined in A.6
+                           selected_libs=processed_library_names, # Use names of processed libs for template
+                           plex_error=plex_error_message, # For direct error display if needed by template
+                           user_title=user_title_in_session,
                            config=current_app.config,
                            view_mode='standard')
 

@@ -228,10 +228,12 @@
         {% endif %}
         {# ### FIN DU BLOC ### #}
         {# --- Formulaire de Filtres (VERSION CORRIGÉE ET COMPLÈTE) --- #}
-        <form method="GET" action="{% if current_selected_libs %}{{ url_for('plex_editor.show_library') }}{% else %}{{ url_for('plex_editor.show_library', library_name=library_obj.title if library_obj else None) }}{% endif %}" class="filter-form">
-            {% if current_selected_libs %}
-                {% for lib_title in current_selected_libs %}
-                    <input type="hidden" name="selected_libs" value="{{ lib_title }}">
+        {# B.2: Form action always points to show_library without path params #}
+        <form method="GET" action="{{ url_for('plex_editor.show_library') }}" class="filter-form">
+            {# B.2: Add hidden inputs for each selected library name #}
+            {% if selected_libs %} {# This variable is passed from the route (A.6) #}
+                {% for lib_name in selected_libs %}
+                    <input type="hidden" name="selected_libs" value="{{ lib_name }}">
                 {% endfor %}
             {% endif %}
             <!-- Ligne de Tri -->
@@ -326,7 +328,8 @@
 
             <!-- Ligne des Boutons -->
             <div class="button-row">
-                <a href="{% if current_selected_libs %}{{ url_for('plex_editor.show_library', selected_libs=current_selected_libs) }}{% else %}{{ url_for('plex_editor.show_library', library_name=library_obj.title if library_obj else None) }}{% endif %}" class="button reset-button">Réinitialiser</a>
+                {# B.2: Simplified Reset Link - passes current selected_libs as query parameters #}
+                <a href="{{ url_for('plex_editor.show_library', selected_libs=selected_libs if selected_libs else None) }}" class="button reset-button">Réinitialiser</a>
                 <button type="submit" class="button">Appliquer les Filtres</button>
             </div>
         </form>
