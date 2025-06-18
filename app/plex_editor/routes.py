@@ -249,14 +249,14 @@ def find_ready_to_watch_shows_in_library(library_name):
             s['tvdbId'] for s in all_sonarr_series
             if s.get('status') == 'ended' and s.get('statistics', {}).get('percentOfEpisodes', 0) == 100.0
         }
-        
+
         ready_to_watch_shows = []
         user_plex_server = get_user_specific_plex_server()
         if not user_plex_server: return []
 
         library = user_plex_server.library.section(library_name)
         if library.type != 'show': return []
-            
+
         for show in library.search(unwatched=True):
             if show.viewedLeafCount == 0:
                 plex_tvdb_id = next((int(g.id.split('//')[1]) for g in show.guids if 'tvdb' in g.id), None)
@@ -270,7 +270,7 @@ def find_ready_to_watch_shows_in_library(library_name):
     except Exception as e:
         current_app.logger.error(f"Erreur dans find_ready_to_watch_shows_in_library: {e}", exc_info=True)
         flash("Une erreur est survenue pendant la recherche complexe.", "danger")
-        return []        
+        return []
 # Route existante modifiée pour accepter un nom de bibliothèque optionnel dans le chemin
 @plex_editor_bp.route('/library')
 @plex_editor_bp.route('/library/<path:library_name>')
@@ -283,7 +283,7 @@ def show_library(library_name=None):
 
     if special_filter == 'ready_to_watch' and lib_name_for_special_filter:
         items_list = find_ready_to_watch_shows_in_library(lib_name_for_special_filter)
-        
+
         # On récupère l'objet bibliothèque pour l'affichage et les liens
         user_plex_server = get_user_specific_plex_server()
         library_obj = user_plex_server.library.section(lib_name_for_special_filter) if user_plex_server else None
@@ -1159,6 +1159,69 @@ def reject_show_route():
     except Exception as e:
         current_app.logger.error(f"Error rejecting show: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500
+# --- ROUTE API POUR RÉCUPÉRER LES DÉTAILS D'UN ITEM (VERSION FINALE) ---
+@plex_editor_bp.route('/details/<int:rating_key>')
+@login_required
+def get_item_details(rating_key):
+    # On récupère les deux contextes
+    admin_plex_server = get_plex_admin_server()
+    user_plex_server = get_user_specific_plex_server()
+    if not admin_plex_server or not user_plex_server:
+        return jsonify({'status': 'error', 'message': 'Plex server connection failed.'}), 500
+
+    try:
+        # On récupère l'objet dans le contexte ADMIN pour les métadonnées générales
+        item_admin = admin_plex_server.fetchItem(rating_key)
+        # On récupère le même objet dans le contexte UTILISATEUR pour les données personnelles
+        item_user = user_plex_server.fetchItem(rating_key)
+
+        if not item_admin:
+            abort(404)
+
+        # On construit le dictionnaire de base avec les infos de l'objet ADMIN
+        details = {
+            'type': item_admin.type,
+            'title': item_admin.title,
+            'year': item_admin.year,
+            'summary': item_admin.summary,
+            'rating': item_admin.rating,
+            'poster_url': admin_plex_server.url(item_admin.thumb, includeToken=True) if item_admin.thumb else None,
+            'genres': [genre.tag for genre in item_admin.genres[:4]],
+            'actors': [actor.tag for actor in item_admin.actors[:8]],
+            # On utilise les données de l'objet UTILISATEUR pour les infos personnelles
+            'user_rating': item_user.userRating,
+        }
+
+        if item_admin.type == 'movie':
+            details['duration_min'] = round(item_admin.duration / 60000) if item_admin.duration else None
+            details['directors'] = [director.tag for director in item_admin.directors]
+
+        elif item_admin.type == 'show':
+            details['duration_min'] = round(item_admin.duration / 60000) if item_admin.duration else None
+            details['directors'] = []
+            details['added_at'] = item_admin.addedAt.strftime('%d/%m/%Y') if item_admin.addedAt else 'N/A'
+            details['originally_available_at'] = item_admin.originallyAvailableAt.strftime('%Y-%m-%d') if item_admin.originallyAvailableAt else 'N/A'
+            # On utilise les données de l'objet UTILISATEUR pour les comptes d'épisodes
+            details['leaf_count'] = item_user.leafCount
+            details['viewed_leaf_count'] = item_user.viewedLeafCount
+
+            # Le reste (infos Sonarr) peut continuer d'utiliser les guids de l'objet admin
+            sonarr_series = next((s for g in item_admin.guids if 'tvdb' in g.id and (s := get_sonarr_series_by_guid(g.id))), None)
+            if sonarr_series:
+                details['sonarr_status'] = sonarr_series.get('status', 'N/A').capitalize()
+                stats = sonarr_series.get('statistics', {})
+                details['sonarr_season_count'] = stats.get('seasonCount', 0)
+            else:
+                details['sonarr_status'] = 'Non trouvé dans Sonarr'
+                details['sonarr_season_count'] = item_admin.childCount
+
+        return jsonify({'status': 'success', 'details': details})
+
+    except NotFound:
+        return jsonify({'status': 'error', 'message': 'Item not found in Plex.'}), 404
+    except Exception as e:
+        current_app.logger.error(f"Erreur dans get_item_details pour ratingKey {rating_key}: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': 'An internal error occurred.'}), 500
 # --- Gestionnaires d'erreur ---
 #@app.errorhandler(404)
 #def page_not_found(e):

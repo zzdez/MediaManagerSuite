@@ -193,7 +193,16 @@
         .archive-button { background-color: #ffc107; color: #000; } /* Jaune warning Bootstrap */
         .archive-button:hover { background-color: #e0a800; }
         .archive-button:disabled { background-color: #e9ecef; color: #6c757d; cursor: not-allowed; opacity: 0.7;}
-
+        .item-title-link {
+            font-weight: 500;
+            color: #343a40; /* Même couleur que le texte normal */
+            text-decoration: none; /* Pas de soulignement */
+            cursor: pointer; /* Change le curseur en main pour indiquer que c'est cliquable */
+            transition: color 0.2s;
+        }
+        .item-title-link:hover {
+            color: #007bff; /* Change de couleur au survol */
+        }
     </style>
 </head>
 <body>
@@ -363,9 +372,17 @@
                     {% for item in items %}
                         <li data-rating-key="{{ item.ratingKey }}"> {# Ajout d'un identifiant à la ligne #}
                             <input type="checkbox" name="selected_item_keys" value="{{ item.ratingKey }}" class="item-checkbox" style="flex-shrink: 0; margin-right: 15px;">
-
                             <div class="item-content" style="flex-grow: 1; display: flex; justify-content: space-between; align-items: center;">
-                                <span class="item-title">{{ item.title }} {% if item.year %}({{ item.year }}){% endif %}</span>
+                                                                {# ### Le titre est maintenant un lien cliquable ### #}
+                                <a href="#"
+                                   class="item-title-link"
+                                   data-bs-toggle="modal"
+                                   data-bs-target="#detailsModal"
+                                   data-rating-key="{{ item.ratingKey }}"
+                                   title="Afficher les détails de {{ item.title }}">
+                                    {{ item.title }} {% if item.year %}({{ item.year }}){% endif %}
+                                </a>
+                                {# ### Fin de la modification ### #}
                                 <span class="item-details">
                                     <span>Vu: <strong class="{{ 'watched-yes' if item.isWatched else 'watched-no' }}">{{ 'Oui' if item.isWatched else 'Non' }}</strong></span>
                                     <span>Note: <strong>{{ item.userRating if item.userRating is not none else 'N/A' }}</strong></span>
@@ -562,6 +579,70 @@
             </div>
         </div>
     </div>
+        <!-- ================================================================== -->
+    <!-- ### NOUVELLE MODALE POUR LES DÉTAILS D'UN ITEM ### -->
+    <!-- ================================================================== -->
+    <div class="modal fade" id="detailsModal" tabindex="-1" aria-labelledby="detailsModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered"> {# On utilise une modale plus grande #}
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="detailsModalLabel">Détails</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="detailsModalContent" style="display: none;">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <img id="detailsModalPoster" src="" class="img-fluid rounded" alt="Affiche">
+                            </div>
+                            <div class="col-md-8">
+                                <h3 id="detailsModalTitle"></h3>
+                                <p class="text-muted">
+                                    <span id="detailsModalYear"></span>
+                                    <span class="mx-2">|</span>
+                                    <span id="detailsModalDuration"></span>
+                                    <span class="mx-2">|</span>
+                                    <span id="detailsModalRating"></span>
+                                </p>
+                                <p><strong>Genres :</strong> <span id="detailsModalGenres"></span></p>
+                                <h5>Résumé</h5>
+                                <p id="detailsModalSummary"></p>
+                            </div>
+                        </div>
+
+                        <!-- ### NOUVEAU BLOC D'INFOS POUR SÉRIES (initialement caché) ### -->
+                        <div id="detailsShowInfo" style="display: none;">
+                            <hr>
+                            <h5>Détails de la Série</h5>
+                            <ul class="list-unstyled">
+                                <li><strong>Statut Sonarr :</strong> <span id="detailsSonarrStatus" class="badge bg-primary"></span></li>
+                                <li><strong>Saisons (connues par Sonarr) :</strong> <span id="detailsSonarrSeasonCount"></span></li>
+                                <li><strong>Progression (Plex) :</strong> <span id="detailsPlexProgress"></span></li>
+                                <li><strong>Ajouté le :</strong> <span id="detailsAddedAt"></span></li>
+                                <li><strong>Sortie initiale :</strong> <span id="detailsFirstAired"></span></li>
+                            </ul>
+                        </div>
+                        <!-- ### FIN DU NOUVEAU BLOC ### -->
+
+                        <hr>
+                        <div>
+                            <h5>Acteurs</h5>
+                            <p id="detailsModalActors"></p>
+                            <!-- On va mettre les réalisateurs dans un conteneur pour pouvoir le cacher -->
+                            <div id="detailsDirectorsBlock">
+                                <h5>Réalisateur(s)</h5>
+                                <p id="detailsModalDirectors"></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- ### FIN DE LA MODALE DE DÉTAILS ### -->
     {# Bootstrap 5 JS Bundle (pour la modale) #}
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     {# jQuery (si vous l'utilisez ailleurs, sinon on peut s'en passer) #}

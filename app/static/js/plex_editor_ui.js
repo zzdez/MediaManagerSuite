@@ -120,20 +120,20 @@ $(document).ready(function() {
             ratingKeyToShowArchive = null;
         });
     });
+    // =================================================================
     // ### LOGIQUE POUR REJETER UNE SÉRIE ###
+    // =================================================================
     let ratingKeyToShowReject = null;
 
     $('.reject-show-btn').on('click', function() {
         ratingKeyToShowReject = $(this).data('rating-key');
-        const showTitle = $(this).data('title');
-        $('#rejectShowModalTitle').text(showTitle);
+        $('#rejectShowModalTitle').text($(this).data('title'));
     });
 
     $('#confirmRejectShowBtn').on('click', function() {
         const btn = $(this);
         btn.prop('disabled', true).text('Suppression...');
-
-        fetch('/plex/reject_show', { // Nouvelle URL Backend
+        fetch('/plex/reject_show', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ratingKey: ratingKeyToShowReject })
@@ -147,11 +147,81 @@ $(document).ready(function() {
                 alert('Erreur: ' + data.message);
             }
         })
+        .catch(error => { alert('Erreur de communication avec le serveur.'); console.error('Fetch Error:', error); })
         .finally(() => {
             btn.prop('disabled', false).text('Oui, rejeter et supprimer');
-            const modal = bootstrap.Modal.getInstance(document.getElementById('rejectShowModal'));
-            modal.hide();
+            bootstrap.Modal.getInstance(document.getElementById('rejectShowModal')).hide();
+            ratingKeyToShowReject = null;
         });
+    });
+
+    // =================================================================
+    // ### LOGIQUE POUR LA MODALE DE DÉTAILS ###
+    // =================================================================
+    $('#item-list').on('click', '.item-title-link', function(e) {
+        e.preventDefault();
+        const ratingKey = $(this).data('rating-key');
+        const modal = $('#detailsModal');
+        const contentDiv = modal.find('#detailsModalContent');
+        const spinnerDiv = modal.find('#detailsModalSpinner');
+
+        contentDiv.hide();
+        spinnerDiv.show();
+        modal.find('#detailsModalTitle').text('Chargement...');
+        modal.find('#detailsModalPoster').attr('src', '');
+        modal.find('#detailsModalYear, #detailsModalDuration, #detailsModalRating, #detailsModalGenres, #detailsModalSummary, #detailsModalActors, #detailsModalDirectors').text('...');
+
+        fetch(`/plex/details/${ratingKey}`)
+            .then(response => {
+                if (!response.ok) { throw new Error(`Erreur réseau: ${response.statusText}`); }
+                return response.json();
+            })
+            .then(data => {
+                if (data.status === 'success') {
+                    const details = data.details;
+                    modal.find('#detailsModalTitle').text(details.title);
+                    modal.find('#detailsModalLabel').text(details.title);
+                    modal.find('#detailsModalPoster').attr('src', details.poster_url || 'https://via.placeholder.com/400x600.png?text=Pas+d\'affiche');
+                    modal.find('#detailsModalYear').text(details.year || 'N/A');
+                    modal.find('#detailsModalDuration').text(details.duration_min ? `${details.duration_min} min` : 'N/A');
+                    let ratingText = '';
+                    if (details.rating) ratingText += `Critique: ⭐ ${details.rating}`;
+                    if (details.user_rating) {
+                        if (ratingText) ratingText += ' | ';
+                        ratingText += `Ma Note: ❤️ ${details.user_rating}`;
+                    }
+                    modal.find('#detailsModalRating').text(ratingText || 'N/A');
+                    modal.find('#detailsModalGenres').text(details.genres.join(', ') || 'Non spécifiés');
+                    modal.find('#detailsModalSummary').text(details.summary || 'Aucun résumé.');
+                    modal.find('#detailsModalActors').text(details.actors.join(', ') || 'Non spécifiés');
+
+                    if (details.type === 'show') {
+                        $('#detailsShowInfo').show();
+                        $('#detailsDirectorsBlock').hide();
+                        $('#detailsSonarrStatus').text(details.sonarr_status || 'N/A');
+                        $('#detailsSonarrSeasonCount').text(details.sonarr_season_count !== undefined ? `${details.sonarr_season_count} saisons` : 'N/A');
+                        $('#detailsPlexProgress').text(`${details.viewed_leaf_count} / ${details.leaf_count} épisodes vus`);
+                        $('#detailsAddedAt').text(details.added_at || 'N/A');
+                        $('#detailsFirstAired').text(details.originally_available_at || 'N/A');
+                    } else {
+                        $('#detailsShowInfo').hide();
+                        $('#detailsDirectorsBlock').show();
+                        $('#detailsModalDirectors').text(details.directors.join(', ') || 'Non spécifié');
+                    }
+                } else {
+                    modal.find('#detailsModalTitle').text('Erreur');
+                    modal.find('#detailsModalSummary').text(data.message);
+                }
+            })
+            .catch(error => {
+                console.error("Fetch error for details:", error);
+                modal.find('#detailsModalTitle').text('Erreur de Communication');
+                modal.find('#detailsModalSummary').text('Impossible de contacter le serveur pour obtenir les détails.');
+            })
+            .finally(() => {
+                spinnerDiv.hide();
+                contentDiv.show();
+            });
     });
 
 });
