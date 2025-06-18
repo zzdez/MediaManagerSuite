@@ -234,38 +234,73 @@ def find_ready_to_watch_shows_in_library(library_name):
         current_app.logger.error(f"Erreur dans find_ready_to_watch_shows_in_library: {e}", exc_info=True)
         flash("Une erreur est survenue pendant la recherche complexe.", "danger")
         return []
-# Nouvelle route pour gérer potentiellement plusieurs bibliothèques via query params
+def find_ready_to_watch_shows_in_library(library_name):
+    """
+    Trouve les séries terminées, complètes et non vues dans une bibliothèque Plex.
+    """
+    current_app.logger.info(f"Filtre Spécial 'Prêtes à Regarder' pour la bibliothèque '{library_name}'.")
+    try:
+        all_sonarr_series = get_all_sonarr_series()
+        if not all_sonarr_series:
+            flash("Erreur de communication avec Sonarr.", "danger")
+            return []
+
+        candidate_tvdb_ids = {
+            s['tvdbId'] for s in all_sonarr_series
+            if s.get('status') == 'ended' and s.get('statistics', {}).get('percentOfEpisodes', 0) == 100.0
+        }
+        
+        ready_to_watch_shows = []
+        user_plex_server = get_user_specific_plex_server()
+        if not user_plex_server: return []
+
+        library = user_plex_server.library.section(library_name)
+        if library.type != 'show': return []
+            
+        for show in library.search(unwatched=True):
+            if show.viewedLeafCount == 0:
+                plex_tvdb_id = next((int(g.id.split('//')[1]) for g in show.guids if 'tvdb' in g.id), None)
+                if plex_tvdb_id in candidate_tvdb_ids:
+                    ready_to_watch_shows.append(show)
+
+        ready_to_watch_shows.sort(key=lambda s: s.titleSort.lower())
+        flash(f"{len(ready_to_watch_shows)} série(s) prête(s) à être commencée(s) trouvée(s) !", "success")
+        return ready_to_watch_shows
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur dans find_ready_to_watch_shows_in_library: {e}", exc_info=True)
+        flash("Une erreur est survenue pendant la recherche complexe.", "danger")
+        return []        
+# Route existante modifiée pour accepter un nom de bibliothèque optionnel dans le chemin
 @plex_editor_bp.route('/library')
 @plex_editor_bp.route('/library/<path:library_name>')
 @login_required
 def show_library(library_name=None):
     # --- DÉTECTION DES FILTRES SPÉCIAUX ---
     special_filter = request.args.get('special_filter')
-    if special_filter == 'ready_to_watch' and library_name:
-        items_list = find_ready_to_watch_shows_in_library(library_name)
-        user_plex = get_user_specific_plex_server() # Get user_plex_server instance
-        lib_obj_for_special_filter = None
-        if user_plex:
-            try:
-                lib_obj_for_special_filter = user_plex.library.section(library_name)
-            except NotFound:
-                current_app.logger.warning(f"Special filter: Library '{library_name}' not found.")
-                flash(f"Bibliothèque '{library_name}' non trouvée pour le filtre spécial.", "warning")
-            except Exception as e_special_lib_fetch:
-                current_app.logger.error(f"Special filter: Error fetching library '{library_name}': {e_special_lib_fetch}")
-                flash(f"Erreur d'accès à la bibliothèque '{library_name}'.", "danger")
+    # On gère le cas où le nom de la bibliothèque vient du chemin OU d'un paramètre (pour les filtres futurs)
+    lib_name_for_special_filter = library_name or request.args.get('library_name')
+
+    if special_filter == 'ready_to_watch' and lib_name_for_special_filter:
+        items_list = find_ready_to_watch_shows_in_library(lib_name_for_special_filter)
+        
+        # On récupère l'objet bibliothèque pour l'affichage et les liens
+        user_plex_server = get_user_specific_plex_server()
+        library_obj = user_plex_server.library.section(lib_name_for_special_filter) if user_plex_server else None
 
         return render_template('plex_editor/library.html',
-                               title=f"Séries Prêtes à Regarder dans {library_name}",
-                               library_name=library_name,
+                               title=f"Séries Prêtes à Regarder",
                                items=items_list,
-                               current_filters={'sort_by': 'titleSort:asc'}, # Minimal filters for this view
-                               selected_libs=[library_name], # selected_libs is a list of names
-                               library_obj=lib_obj_for_special_filter, # Pass the fetched library object
-                               plex_error=None, # Errors handled with flash now
+                               library_name=lib_name_for_special_filter,
+                               library_obj=library_obj,
+                               current_filters={'sort_by': 'titleSort:asc', 'title_filter': ''}, # Fournir tous les filtres attendus
+                               selected_libs=[lib_name_for_special_filter],
+                               view_mode='ready_to_watch', # Pour adapter l'affichage
+                               plex_error=None,
                                user_title=session.get('plex_user_title', ''),
-                               config=current_app.config,
-                               view_mode='ready_to_watch')
+                               config=current_app.config)
+
+    # --- SI PAS DE FILTRE SPÉCIAL, ON EXÉCUTE LA LOGIQUE NORMALE ---
 
     if 'plex_user_id' not in session:
         flash("Veuillez sélectionner un utilisateur.", "info")

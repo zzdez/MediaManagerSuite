@@ -212,21 +212,7 @@
             {% endfor %}
           {% endif %}
         {% endwith %}
-        {# ### BLOC POUR LES FILTRES INTELLIGENTS ### #}
-        {# On affiche ce bloc seulement si :
-           1. On n'est PAS déjà en train de voir un filtre spécial (view_mode != 'ready_to_watch')
-           2. On visualise UNE SEULE bibliothèque (selected_libs|length == 1)
-           3. L'objet de cette bibliothèque existe et est de type 'show'
-        #}
-        {% if view_mode != 'ready_to_watch' and selected_libs and selected_libs|length == 1 and library_obj and library_obj.type == 'show' %}
-        <div class="mb-4 p-3 bg-light border rounded shadow-sm">
-            <h5 class="mb-3">Filtres Intelligents</h5>
-            <a href="{{ url_for('plex_editor.show_library', library_name=library_obj.title, special_filter='ready_to_watch') }}" class="btn btn-success">
-                <i class="fas fa-magic"></i> Trouver une série terminée et non vue
-            </a>
-        </div>
-        {% endif %}
-        {# ### FIN DU BLOC ### #}
+
         {# --- Formulaire de Filtres (VERSION CORRIGÉE ET COMPLÈTE) --- #}
         {# B.2: Form action always points to show_library without path params #}
         <form method="GET" action="{{ url_for('plex_editor.show_library') }}" class="filter-form">
@@ -332,6 +318,24 @@
                 <a href="{{ url_for('plex_editor.show_library', selected_libs=selected_libs if selected_libs else None) }}" class="button reset-button">Réinitialiser</a>
                 <button type="submit" class="button">Appliquer les Filtres</button>
             </div>
+                    {# ### BLOC POUR LES FILTRES INTELLIGENTS ### #}
+        {# On affiche ce bloc seulement si :
+           1. On visualise UNE SEULE bibliothèque (selected_libs|length == 1)
+           2. L'objet de cette bibliothèque existe et est de type 'show'
+        #}
+        {% if selected_libs and selected_libs|length == 1 and library_obj and library_obj.type == 'show' %}
+        <div class="mb-4 p-3 bg-light border rounded shadow-sm">
+            <h5 class="mb-3">Filtres Intelligents</h5>
+            <a href="{{ url_for('plex_editor.show_library', library_name=library_obj.title, special_filter='ready_to_watch') }}" class="btn btn-success">
+                <i class="fas fa-magic"></i> Séries Prêtes à Regarder
+            </a>
+            {# On pourra ajouter d'autres boutons ici plus tard, comme "Séries à continuer" #}
+        </div>
+        {% endif %}
+        {# ### FIN DU BLOC ### #}
+
+        <form method="GET" action="..." class="filter-form">
+            ...
         </form>
 
 
