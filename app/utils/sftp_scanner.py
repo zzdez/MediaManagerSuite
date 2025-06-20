@@ -97,10 +97,55 @@ def _download_item(sftp, remote_item_path, local_staging_path, item_name):
             current_app.logger.info(f"Successfully downloaded file: {item_name}")
             return True
         elif sftp.isdir(remote_item_path):
-            current_app.logger.info(f"Downloading directory: {remote_item_path} to {local_item_path}")
-            sftp.get_r(remote_item_path, str(local_item_path))
-            current_app.logger.info(f"Successfully downloaded directory: {item_name}")
-            return True
+            current_app.logger.info(f"Attempting to download directory: {remote_item_path} to {local_item_path}")
+            try:
+                # Ensure the local target directory exists
+                os.makedirs(local_item_path, exist_ok=True)
+                current_app.logger.info(f"Ensured local directory exists for item '{item_name}': {local_item_path}")
+
+                original_cwd = sftp.pwd
+                
+                # Calculate remote parent path and ensure it uses forward slashes
+                remote_item_path_obj = Path(remote_item_path) # Assuming remote_item_path is initially a string with server's separators (usually /)
+                remote_parent_path_obj = remote_item_path_obj.parent
+                
+                # Convert to string and ensure forward slashes for SFTP server
+                # The remote_item_path string (e.g. '/downloads/Termines/sonarr_downloads/item') should already be using forward slashes
+                # if it comes directly from sftp.listdir_attr or similar. Path().parent should preserve this.
+                # The key is that the SFTP server expects forward slashes.
+                # Let's ensure the path given to sftp.cwd is in posix format.
+                remote_parent_dir_for_sftp = remote_parent_path_obj.as_posix()
+
+                item_basename = remote_item_path_obj.name # Get name from Path object
+
+                current_app.logger.info(f"Attempting to download directory '{item_basename}'. Remote original CWD: {original_cwd}. Target remote parent for SFTP: '{remote_parent_dir_for_sftp}'.")
+                
+                sftp.cwd(remote_parent_dir_for_sftp) # Use the posix-style path
+                current_app.logger.info(f"Changed remote CWD to: {sftp.pwd}. Downloading item (basename): '{item_basename}'")
+
+                # Perform the recursive get using the item's basename relative to the new CWD
+                sftp.get_r(item_basename, str(local_item_path), preserve_mtime=True)
+                
+                if original_cwd: # Restore original CWD
+                    sftp.cwd(original_cwd)
+                current_app.logger.info(f"Restored remote CWD to: {sftp.pwd if original_cwd else 'not changed'}")
+
+                current_app.logger.info(f"Successfully downloaded directory '{item_name}' from '{remote_item_path}' to '{local_item_path}' using CWD strategy.")
+                return True
+            except Exception as e_dir_download:
+                current_app.logger.error(f"Error during directory download for '{item_name}' from '{remote_item_path}' to '{local_item_path}': {e_dir_download}")
+                # Attempt to clean up partially created local directory if download failed
+                if local_item_path.exists(): # Check if directory was created by makedirs or partially by get_r
+                    current_app.logger.warning(f"Attempting to cleanup partially downloaded directory: {local_item_path}")
+                    try:
+                        import shutil
+                        shutil.rmtree(local_item_path)
+                        current_app.logger.info(f"Successfully cleaned up directory: {local_item_path}")
+                    except Exception as cleanup_e:
+                        current_app.logger.error(f"Error cleaning up directory {local_item_path}: {cleanup_e}")
+                else:
+                    current_app.logger.info(f"Local item path {local_item_path} does not exist, no cleanup needed for this path.")
+                return False
         else:
             current_app.logger.warning(f"Item {remote_item_path} is not a file or directory. Skipping.")
             return False
@@ -112,9 +157,9 @@ def _download_item(sftp, remote_item_path, local_staging_path, item_name):
                 if local_item_path.is_file():
                     local_item_path.unlink()
                 elif local_item_path.is_dir():
-                    # shutil.rmtree(local_item_path) # Requires import shutil
+                    # shutil.rmtree(local_item_path) # Requires import shutil - This is now handled in the directory download specific exception block
                     # For now, just log, or implement recursive delete if necessary for atomicity
-                    current_app.logger.warning(f"Partial download cleanup for directory {local_item_path} might be needed.")
+                    current_app.logger.warning(f"Partial download cleanup for directory {local_item_path} might be needed (this path should ideally not be hit if dir download fails).")
             except Exception as cleanup_e:
                 current_app.logger.error(f"Error cleaning up {local_item_path}: {cleanup_e}")
         return False
@@ -123,18 +168,18 @@ def _notify_arr_instance(arr_type, downloaded_item_name, local_staging_dir):
     """Notifies Sonarr or Radarr about the newly downloaded item."""
     # This function will call the new methods in arr_client
     # from . import arr_client # Ensure this is imported at the top level or passed in # This line is already handled by the import at the top of the file
-
+    
     # The path passed to Sonarr/Radarr should be the path of the item *within* the staging directory.
     # Sonarr/Radarr will then move it from there.
     item_path_in_staging = Path(local_staging_dir) / downloaded_item_name
-
+    
     current_app.logger.info(f"Notifying {arr_type} for item: {item_path_in_staging}")
     success = False
     if arr_type == "sonarr":
         success = arr_client.trigger_sonarr_scan(str(item_path_in_staging))
     elif arr_type == "radarr":
         success = arr_client.trigger_radarr_scan(str(item_path_in_staging))
-
+    
     # Placeholder until arr_client is updated - REMOVED
     # current_app.logger.warning(f"ARR notification for {arr_type} item {item_path_in_staging} is currently a placeholder.")
     # success = True # Assume success for now - REMOVED
@@ -148,7 +193,7 @@ def _notify_arr_instance(arr_type, downloaded_item_name, local_staging_dir):
 def scan_sftp_and_process_items():
     """Main function for the SFTP scanning task."""
     current_app.logger.info("SFTP Scanner Task: Starting scan and process cycle.")
-
+    
     sftp_config = current_app.config
     staging_dir = Path(sftp_config['STAGING_DIR'])
     log_file = sftp_config['PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT']
@@ -162,7 +207,7 @@ def scan_sftp_and_process_items():
             return
 
     processed_items = _load_processed_items(log_file)
-
+    
     sftp = _connect_sftp()
     if not sftp:
         current_app.logger.error("SFTP Scanner Task: Could not connect to SFTP server. Aborting.")
@@ -194,12 +239,12 @@ def scan_sftp_and_process_items():
             if remote_item_full_path in processed_items:
                 # current_app.logger.debug(f"Item {item_name} (from {remote_base_path}) already processed. Skipping.")
                 continue
-
+            
             current_app.logger.info(f"SFTP Scanner Task: Found new item '{item_name}' in {remote_base_path} for {arr_type}.")
-
+            
             # Construct the full remote path for download
             # remote_item_path_for_download = f"{remote_base_path.rstrip('/')}/{item_name}" # Already have as remote_item_full_path
-
+            
             if _download_item(sftp, remote_item_full_path, staging_dir, item_name):
                 # Notify Sonarr/Radarr
                 if _notify_arr_instance(arr_type, item_name, staging_dir):
@@ -217,7 +262,7 @@ def scan_sftp_and_process_items():
 
     if new_items_processed_this_run:
         _save_processed_items(log_file, processed_items)
-
+    
     current_app.logger.info("SFTP Scanner Task: Scan and process cycle finished.")
 
 if __name__ == '__main__':

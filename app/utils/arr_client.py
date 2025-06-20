@@ -16,7 +16,8 @@ def trigger_radarr_scan(download_path):
     current_app.logger.info(f"Radarr: Sending DownloadedMoviesScan command for path: {download_path}")
     response = _radarr_api_request('POST', 'command', json_data=command_payload)
     # Radarr's response for command execution usually includes an 'id' and 'status' or 'state'
-    if response and (response.get('status') == 'started' or response.get('state') == 'started' or response.get('status') == 'success'):
+    current_app.logger.debug(f"Radarr raw status check: response.get('status') is '{response.get('status')}', type is {type(response.get('status'))}")
+    if response and (response.get('status') == 'started' or response.get('state') == 'started' or response.get('status') == 'success' or response.get('status') == 'queued'):
         current_app.logger.info(f"Radarr: Successfully triggered DownloadedMoviesScan for {download_path}. Response: {response}")
         return True
     else:
@@ -99,7 +100,8 @@ def trigger_sonarr_scan(download_path):
     }
     current_app.logger.info(f"Sonarr: Sending DownloadedEpisodesScan command for path: {download_path}")
     response = _sonarr_api_request('POST', 'command', json_data=command_payload)
-    if response and (response.get('status') == 'started' or response.get('state') == 'started' or response.get('status') == 'success'): # Sonarr API can be inconsistent here
+    current_app.logger.debug(f"Sonarr raw status check: response.get('status') is '{response.get('status')}', type is {type(response.get('status'))}")
+    if response and (response.get('status') == 'started' or response.get('state') == 'started' or response.get('status') == 'success' or response.get('status') == 'queued'): # Sonarr API can be inconsistent here
         current_app.logger.info(f"Sonarr: Successfully triggered DownloadedEpisodesScan for {download_path}. Response: {response}")
         return True
     else:
