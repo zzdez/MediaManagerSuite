@@ -250,17 +250,21 @@ def scan_sftp_and_process_items():
 
             if guardrail_enabled:
                 current_app.logger.info(f"SFTP Scanner Task: Guardrail enabled. Parsing '{item_name}'.")
+                current_app.logger.info(f"SFTP Scanner Task: PRE-CALL arr_client.parse_media_name for item '{item_name}'")
                 parsed_media = arr_client.parse_media_name(item_name)
-                current_app.logger.info(f"SFTP Scanner Task: Parsed '{item_name}' as: {parsed_media}")
+                current_app.logger.info(f"SFTP Scanner Task: POST-CALL arr_client.parse_media_name. Result type: {parsed_media.get('type')}, Title: {parsed_media.get('title')}")
+                current_app.logger.info(f"SFTP Scanner Task: Parsed '{item_name}' as: {parsed_media}") # This line is somewhat redundant now but kept from original instruction
 
                 if parsed_media['type'] == 'tv' and parsed_media['title'] and parsed_media['season'] is not None and parsed_media['episode'] is not None:
                     current_app.logger.info(f"SFTP Scanner Task: Checking Sonarr for {parsed_media['title']} S{parsed_media['season']:02d}E{parsed_media['episode']:02d}.")
                     try:
+                        current_app.logger.info(f"SFTP Scanner Task: PRE-CALL arr_client.check_sonarr_episode_exists for {parsed_media.get('title')}")
                         media_exists_in_arr = arr_client.check_sonarr_episode_exists(
                             parsed_media['title'],
                             parsed_media['season'],
                             parsed_media['episode']
                         )
+                        current_app.logger.info(f"SFTP Scanner Task: POST-CALL arr_client.check_sonarr_episode_exists. Result: {media_exists_in_arr}")
                     except Exception as e:
                         current_app.logger.error(f"SFTP Scanner Task: Error checking Sonarr for '{item_name}': {e}. Assuming media does not exist locally.")
                         media_exists_in_arr = False # Default to false on error to allow download
@@ -268,10 +272,12 @@ def scan_sftp_and_process_items():
                 elif parsed_media['type'] == 'movie' and parsed_media['title']:
                     current_app.logger.info(f"SFTP Scanner Task: Checking Radarr for {parsed_media['title']} ({parsed_media.get('year', 'N/A')}).")
                     try:
+                        current_app.logger.info(f"SFTP Scanner Task: PRE-CALL arr_client.check_radarr_movie_exists for {parsed_media.get('title')}")
                         media_exists_in_arr = arr_client.check_radarr_movie_exists(
                             parsed_media['title'],
                             parsed_media.get('year')
                         )
+                        current_app.logger.info(f"SFTP Scanner Task: POST-CALL arr_client.check_radarr_movie_exists. Result: {media_exists_in_arr}")
                     except Exception as e:
                         current_app.logger.error(f"SFTP Scanner Task: Error checking Radarr for '{item_name}': {e}. Assuming media does not exist locally.")
                         media_exists_in_arr = False # Default to false on error to allow download
