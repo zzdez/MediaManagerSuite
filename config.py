@@ -73,6 +73,11 @@ class Config:
     PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT = os.environ.get('PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT')
     SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES = int(os.environ.get('SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES', 30))
 
+    # Enable or disable the SFTP scanner guardrail feature
+    # If True, the scanner will check if media already exists in Sonarr/Radarr
+    # before downloading from SFTP.
+    SFTP_SCANNER_GUARDFRAIL_ENABLED = os.environ.get('SFTP_SCANNER_GUARDFRAIL_ENABLED', 'True').lower() == 'true'
+
     # --- Configuration Interface de Configuration ---
     APP_PASSWORD = os.environ.get('APP_PASSWORD')
 

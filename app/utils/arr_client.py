@@ -1,7 +1,95 @@
 import requests
 from flask import current_app
+import re
+import logging
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # ==============================================================================
+# --- UTILITY FUNCTIONS ---
+# ==============================================================================
+
+def parse_media_name(item_name: str) -> dict:
+    """
+    Parses a media item name to determine if it's a TV show or a movie and extracts details.
+    """
+    # Regex patterns for TV shows
+    tv_patterns = [
+        re.compile(r"^(?P<title>.+?)[ ._]?S(?P<season>\d{1,2})E(?P<episode>\d{1,3})", re.IGNORECASE),
+        re.compile(r"^(?P<title>.+?)[ ._]?Season[ ._]?(?P<season>\d{1,2})[ ._]?Episode[ ._]?(?P<episode>\d{1,3})", re.IGNORECASE),
+        re.compile(r"^(?P<title>.+?)[ ._]?(?P<season>\d{1,2})x(?P<episode>\d{1,3})", re.IGNORECASE), # e.g. Show.Title.1x01
+        re.compile(r"^(?P<title>(?:[A-Za-z0-9._ ()-]+?)+)(?:[._\s]+S(?P<season>\d{1,2}))(?:[._\s]+E(?P<episode>\d{1,3}))",re.IGNORECASE), # General SxxExx with flexible separators
+        re.compile(r"^(?P<title>.+?)[ ._](?P<year>(?:19|20)\d{2})[ ._]S(?P<season>\d{1,2})E(?P<episode>\d{1,3})", re.IGNORECASE), # Title Year SxxExx
+        re.compile(r"^(?P<title>.+?)[ ._]S(?P<season>\d{1,2})[ ._]E(?P<episode>\d{1,3})[ ._](?P<year>(?:19|20)\d{2})", re.IGNORECASE), # Title SxxExx Year
+    ]
+
+    # Regex patterns for movies
+    movie_patterns = [
+        re.compile(r"^(?P<title>.+?)[ ._]\((?P<year>(?:19|20)\d{2})\)", re.IGNORECASE), # Movie Title (YYYY)
+        re.compile(r"^(?P<title>.+?)[ ._](?P<year>(?:19|20)\d{2})[ ._](?!S\d{2}E\d{2})", re.IGNORECASE), # Movie.Title.YYYY (ensure not a TV show year)
+        re.compile(r"^(?P<title>.+?)[ ._\[(](?P<year>(?:19|20)\d{2})[\])].*?(?<!S\d{1,2}E\d{1,3})$", re.IGNORECASE), # More flexible movie year, ensuring not followed by SxxExx
+    ]
+
+    result = {
+        "type": "unknown",
+        "title": None,
+        "year": None,
+        "season": None,
+        "episode": None,
+        "raw_name": item_name,
+    }
+
+    # Check for TV show patterns first
+    for pattern in tv_patterns:
+        match = pattern.match(item_name)
+        if match:
+            data = match.groupdict()
+            result["type"] = "tv"
+            result["title"] = data.get("title", "").replace('.', ' ').replace('_', ' ').strip()
+            result["season"] = int(data.get("season")) if data.get("season") else None
+            result["episode"] = int(data.get("episode")) if data.get("episode") else None
+            result["year"] = int(data.get("year")) if data.get("year") else None # Year can be part of TV show name
+            logger.info(f"Parsed as TV show: {item_name} -> {result}")
+            return result
+
+    # Check for movie patterns if not identified as TV show
+    for pattern in movie_patterns:
+        match = pattern.match(item_name)
+        if match:
+            data = match.groupdict()
+            # Avoid misinterpreting season/episode numbers as years if they are at the end
+            potential_year_str = data.get("year")
+            if potential_year_str:
+                try:
+                    year_val = int(potential_year_str)
+                    if 1900 <= year_val <= 2099: # Basic sanity check for year
+                        # If a year is found and it's not part of a clear TV pattern, assume movie
+                        result["type"] = "movie"
+                        result["title"] = data.get("title", "").replace('.', ' ').replace('_', ' ').strip()
+                        result["year"] = year_val
+                        logger.info(f"Parsed as movie: {item_name} -> {result}")
+                        return result
+                except ValueError:
+                    pass # Not a valid year
+
+    # If no pattern matched strongly
+    logger.info(f"Could not determine type for: {item_name}, returning as 'unknown'")
+    # Attempt to clean title even if unknown type
+    cleaned_title = re.sub(r'[\._]', ' ', item_name) # Replace dots/underscores with spaces
+    cleaned_title = re.sub(r'\s{2,}', ' ', cleaned_title).strip() # Remove multiple spaces
+    # Try to remove common tags like 1080p, WEB-DL etc. for a cleaner unknown title
+    common_tags_pattern = r'(1080p|720p|4K|WEB-DL|WEBRip|BluRay|x264|x265|AAC|DTS|HDRip|HDTV|XviD|DivX).*$'
+    cleaned_title = re.sub(common_tags_pattern, '', cleaned_title, flags=re.IGNORECASE).strip()
+    result["title"] = cleaned_title if cleaned_title else item_name
+
+    return result
+
+# ==============================================================================
+# --- RADARR CLIENT FUNCTIONS ---
+# ==============================================================================
+
+def trigger_radarr_scan(download_path):
 # --- RADARR CLIENT FUNCTIONS ---
 # ==============================================================================
 
@@ -85,6 +173,68 @@ def update_radarr_movie(movie_data):
     # Radarr's PUT endpoint requires the movie ID in the URL.
     return _radarr_api_request('PUT', f"movie/{movie_data['id']}", json_data=movie_data)
 
+def check_radarr_movie_exists(movie_title: str, movie_year: int = None) -> bool:
+    """
+    Checks if a movie exists in Radarr and has an associated, non-missing file.
+    """
+    logger.info(f"Radarr: Checking if movie exists: {movie_title} ({movie_year})")
+    # Fetch all movies from Radarr. This is simpler than 'lookup' for existing movies.
+    # In a very large library, this could be slow. Consider optimizations if performance issues arise.
+    all_movies = _radarr_api_request('GET', 'movie')
+    if not all_movies:
+        logger.error("Radarr: Failed to fetch movie list from Radarr.")
+        return False
+
+    found_movies = []
+    for movie in all_movies:
+        # Basic title match (case-insensitive, remove common punctuation)
+        cleaned_api_title = re.sub(r'[^\w\s]', '', movie.get('title', '')).lower()
+        cleaned_search_title = re.sub(r'[^\w\s]', '', movie_title).lower()
+
+        if cleaned_search_title == cleaned_api_title:
+            if movie_year:
+                if movie.get('year') == movie_year:
+                    found_movies.append(movie)
+            else:
+                found_movies.append(movie)
+
+    if not found_movies:
+        logger.info(f"Radarr: Movie '{movie_title}' ({movie_year if movie_year else 'Any Year'}) not found.")
+        return False
+
+    # If multiple movies match, prefer the one with a matching year or log ambiguity.
+    # For now, we'll check the first one found if no year is specified,
+    # or the one matching the year.
+    target_movie = None
+    if len(found_movies) == 1:
+        target_movie = found_movies[0]
+    elif len(found_movies) > 1:
+        if movie_year:
+            # Already filtered by year if movie_year was provided
+            target_movie = found_movies[0] # Pick first of year-matched
+            logger.info(f"Radarr: Multiple movies found for '{movie_title}' ({movie_year}). Using first match: ID {target_movie.get('id')}")
+        else:
+            # No year provided, multiple title matches. This is ambiguous.
+            # For now, take the first one and log. A more robust solution might involve other heuristics.
+            target_movie = found_movies[0]
+            logger.warning(f"Radarr: Multiple movies found for '{movie_title}' (no year specified). "
+                           f"Using first match: {target_movie.get('title')} ({target_movie.get('year')}), ID {target_movie.get('id')}. "
+                           f"Consider providing a year for accuracy.")
+
+    if not target_movie: # Should not happen if found_movies was populated, but as a safeguard.
+        logger.info(f"Radarr: Movie '{movie_title}' ({movie_year}) not conclusively found after filtering.")
+        return False
+
+    # Check if the movie has a file and is not missing
+    # 'hasFile' is a primary indicator. 'sizeOnDisk' > 0 confirms the file is not empty.
+    # 'status' can also be 'downloaded'
+    if target_movie.get('hasFile', False) and target_movie.get('sizeOnDisk', 0) > 0:
+        logger.info(f"Radarr: Movie '{target_movie.get('title')}' ({target_movie.get('year')}) exists and has a file. Size: {target_movie.get('sizeOnDisk')}")
+        return True
+    else:
+        logger.info(f"Radarr: Movie '{target_movie.get('title')}' ({target_movie.get('year')}) found, but has no file or sizeOnDisk is 0. "
+                    f"hasFile: {target_movie.get('hasFile')}, sizeOnDisk: {target_movie.get('sizeOnDisk')}")
+        return False
 
 # ==============================================================================
 # --- SONARR CLIENT FUNCTIONS ---
@@ -188,4 +338,87 @@ def delete_sonarr_episode_file(episode_file_id):
 def get_all_sonarr_series():
     """Fetches all series from Sonarr."""
     current_app.logger.info("Récupération de toutes les séries depuis l'API Sonarr.")
-    return _sonarr_api_request('GET', 'series') 
+    return _sonarr_api_request('GET', 'series')
+
+def check_sonarr_episode_exists(series_title: str, season_number: int, episode_number: int) -> bool:
+    """
+    Checks if a specific TV show episode exists in Sonarr and has a file.
+    """
+    logger.info(f"Sonarr: Checking if episode exists: {series_title} S{season_number:02d}E{episode_number:02d}")
+
+    all_series = get_all_sonarr_series() # Uses the existing function
+    if not all_series:
+        logger.error(f"Sonarr: Could not retrieve series list to find '{series_title}'.")
+        return False
+
+    found_series = None
+    # Normalize search title: lowercase and remove punctuation/special chars for robust matching.
+    normalized_search_title = re.sub(r'[^\w\s]', '', series_title).lower()
+
+    for series in all_series:
+        # Normalize API title similarly
+        normalized_api_title = re.sub(r'[^\w\s]', '', series.get('title', '')).lower()
+        if normalized_api_title == normalized_search_title:
+            found_series = series
+            break
+        # Fallback to checking titleSlug if direct title match fails
+        normalized_api_titleslug = series.get('titleSlug', '').lower()
+        if normalized_api_titleslug == normalized_search_title.replace(" ", "-"): # titleSlug uses dashes
+            found_series = series
+            logger.info(f"Sonarr: Matched '{series_title}' using titleSlug: '{series.get('title')}' (ID: {series.get('id')})")
+            break
+
+
+    if not found_series:
+        logger.warning(f"Sonarr: Series '{series_title}' not found in Sonarr.")
+        return False
+
+    series_id = found_series.get('id')
+    logger.info(f"Sonarr: Found series '{found_series.get('title')}' with ID {series_id}. Now checking for S{season_number:02d}E{episode_number:02d}.")
+
+    # Fetch all episodes for the series
+    # Sonarr's episode endpoint requires seriesId.
+    # We filter by season and episode number client-side.
+    episodes_data = _sonarr_api_request('GET', 'episode', params={'seriesId': series_id})
+    if not episodes_data: # This could be an empty list if series has no episodes, or None on API error
+        logger.error(f"Sonarr: Failed to fetch episodes for series ID {series_id} ('{found_series.get('title')}').")
+        return False
+
+    if not isinstance(episodes_data, list):
+        logger.error(f"Sonarr: Unexpected response format for episodes of series ID {series_id}. Expected list, got {type(episodes_data)}.")
+        return False
+
+
+    target_episode = None
+    for episode in episodes_data:
+        if episode.get('seasonNumber') == season_number and episode.get('episodeNumber') == episode_number:
+            target_episode = episode
+            break
+
+    if not target_episode:
+        logger.info(f"Sonarr: Episode S{season_number:02d}E{episode_number:02d} for series '{found_series.get('title')}' not found.")
+        return False
+
+    # Check if the episode has a file and is not missing
+    # 'hasFile' should be true, and 'episodeFileId' > 0 indicates a linked file.
+    # Also, the episode should be monitored, and its file should have a positive size.
+    if (target_episode.get('hasFile', False) and
+        target_episode.get('episodeFileId', 0) > 0 and
+        target_episode.get('monitored', False)): # Ensure episode is monitored
+
+        # Optionally, fetch episode file details to check size, though hasFile and episodeFileId are strong indicators.
+        # episode_file_details = _sonarr_api_request('GET', f'episodefile/{target_episode.get("episodeFileId")}')
+        # if episode_file_details and episode_file_details.get('size', 0) > 0:
+        #    logger.info(f"Sonarr: Episode S{season_number:02d}E{episode_number:02d} for '{found_series.get('title')}' exists, is monitored, and has a valid file. File ID: {target_episode.get('episodeFileId')}")
+        #    return True
+        # else:
+        #    logger.warning(f"Sonarr: Episode S{season_number:02d}E{episode_number:02d} for '{found_series.get('title')}' hasFile=True, but file details query failed or size is 0.")
+        #    return False
+
+        # Simpler check without fetching episode file details again if not strictly needed by requirements
+        logger.info(f"Sonarr: Episode S{season_number:02d}E{episode_number:02d} for '{found_series.get('title')}' exists, is monitored, and hasFile=True with episodeFileId > 0.")
+        return True
+    else:
+        logger.info(f"Sonarr: Episode S{season_number:02d}E{episode_number:02d} for '{found_series.get('title')}' found, but conditions not met: "
+                    f"hasFile: {target_episode.get('hasFile')}, episodeFileId: {target_episode.get('episodeFileId')}, monitored: {target_episode.get('monitored')}")
+        return False

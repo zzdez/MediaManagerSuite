@@ -242,6 +242,62 @@ def scan_sftp_and_process_items():
 
             current_app.logger.info(f"SFTP Scanner Task: Found new item '{item_name}' in {remote_base_path} for {arr_type}.")
 
+            # --- Media Existence Guardrail ---
+            # Get SFTP_SCANNER_GUARDFRAIL_ENABLED from config, default True
+            guardrail_enabled = current_app.config.get('SFTP_SCANNER_GUARDFRAIL_ENABLED', True)
+            media_exists_in_arr = False
+            parsed_media = None
+
+            if guardrail_enabled:
+                current_app.logger.info(f"SFTP Scanner Task: Guardrail enabled. Parsing '{item_name}'.")
+                parsed_media = arr_client.parse_media_name(item_name)
+                current_app.logger.info(f"SFTP Scanner Task: Parsed '{item_name}' as: {parsed_media}")
+
+                if parsed_media['type'] == 'tv' and parsed_media['title'] and parsed_media['season'] is not None and parsed_media['episode'] is not None:
+                    current_app.logger.info(f"SFTP Scanner Task: Checking Sonarr for {parsed_media['title']} S{parsed_media['season']:02d}E{parsed_media['episode']:02d}.")
+                    try:
+                        media_exists_in_arr = arr_client.check_sonarr_episode_exists(
+                            parsed_media['title'],
+                            parsed_media['season'],
+                            parsed_media['episode']
+                        )
+                    except Exception as e:
+                        current_app.logger.error(f"SFTP Scanner Task: Error checking Sonarr for '{item_name}': {e}. Assuming media does not exist locally.")
+                        media_exists_in_arr = False # Default to false on error to allow download
+
+                elif parsed_media['type'] == 'movie' and parsed_media['title']:
+                    current_app.logger.info(f"SFTP Scanner Task: Checking Radarr for {parsed_media['title']} ({parsed_media.get('year', 'N/A')}).")
+                    try:
+                        media_exists_in_arr = arr_client.check_radarr_movie_exists(
+                            parsed_media['title'],
+                            parsed_media.get('year')
+                        )
+                    except Exception as e:
+                        current_app.logger.error(f"SFTP Scanner Task: Error checking Radarr for '{item_name}': {e}. Assuming media does not exist locally.")
+                        media_exists_in_arr = False # Default to false on error to allow download
+                else:
+                    current_app.logger.info(f"SFTP Scanner Task: Could not reliably parse '{item_name}' for {arr_type} type or type unknown. Proceeding with download process as fallback.")
+            else:
+                current_app.logger.info("SFTP Scanner Task: Guardrail disabled. Proceeding with download.")
+
+
+            if guardrail_enabled and media_exists_in_arr:
+                # Determine arr_type string for logging, even if parsed_media['type'] was 'unknown' but somehow media_exists_in_arr became true (shouldn't happen with current logic)
+                log_arr_type = "Sonarr" if parsed_media and parsed_media['type'] == 'tv' else "Radarr" if parsed_media and parsed_media['type'] == 'movie' else arr_type.capitalize()
+                current_app.logger.info(f"SFTP Scanner Task: Guardrail - Item '{item_name}' (path: {remote_item_full_path}) found in {log_arr_type} library. Skipping download and marking as processed.")
+                processed_items.add(remote_item_full_path)
+                new_items_processed_this_run = True
+                continue # Skip to the next item
+            else:
+                if guardrail_enabled: # Only log this if guardrail was active
+                    log_arr_type_else = "Sonarr" if parsed_media and parsed_media['type'] == 'tv' else "Radarr" if parsed_media and parsed_media['type'] == 'movie' else arr_type.capitalize()
+                    if parsed_media and parsed_media['type'] != 'unknown':
+                        current_app.logger.info(f"SFTP Scanner Task: Guardrail - Item '{item_name}' not found in {log_arr_type_else} library. Proceeding with download.")
+                    # If parsing failed or unknown, specific message already logged. No need for redundant "not found" message here.
+                    elif not parsed_media or parsed_media['type'] == 'unknown':
+                         current_app.logger.info(f"SFTP Scanner Task: Guardrail - Parsing insufficient for '{item_name}'. Proceeding with download.")
+
+
             # Construct the full remote path for download
             # remote_item_path_for_download = f"{remote_base_path.rstrip('/')}/{item_name}" # Already have as remote_item_full_path
 
