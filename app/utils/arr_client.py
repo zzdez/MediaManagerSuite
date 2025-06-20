@@ -18,6 +18,7 @@ def parse_media_name(item_name: str) -> dict:
     # Regex patterns for TV shows
     tv_patterns = [
         re.compile(r"^(?P<title>.+?)[ ._]?S(?P<season>\d{1,2})E(?P<episode>\d{1,3})", re.IGNORECASE),
+        re.compile(r"^(?P<title>.+?)(?:[._\s](?P<year>(?:19|20)\d{2}))?.*?S(?P<season>\d{1,2})(?![E\d])", re.IGNORECASE), # New pattern for Season-only releases
         re.compile(r"^(?P<title>.+?)[ ._]?Season[ ._]?(?P<season>\d{1,2})[ ._]?Episode[ ._]?(?P<episode>\d{1,3})", re.IGNORECASE),
         re.compile(r"^(?P<title>.+?)[ ._]?(?P<season>\d{1,2})x(?P<episode>\d{1,3})", re.IGNORECASE), # e.g. Show.Title.1x01
         re.compile(r"^(?P<title>.+?)(?:[._\s]+S(?P<season>\d{1,2}))(?:[._\s]+E(?P<episode>\d{1,3}))",re.IGNORECASE), # General SxxExx with flexible separators - MODIFIED
@@ -234,17 +235,30 @@ def check_radarr_movie_exists(movie_title: str, movie_year: int = None) -> bool:
     # Check if the movie has a file and is not missing
     # 'hasFile' is a primary indicator. 'sizeOnDisk' > 0 confirms the file is not empty.
     # 'status' can also be 'downloaded'
-    movie_file_path = target_movie.get('movieFile', {}).get('path', 'N/A')
-    has_file = target_movie.get('hasFile', False)
-    size_on_disk = target_movie.get('sizeOnDisk', 0)
 
-    if has_file and size_on_disk > 0:
-        logger.debug(f"check_radarr_movie_exists: Condition for True met. Movie: '{target_movie.get('title')}', Year: {target_movie.get('year')}, hasFile: {has_file}, sizeOnDisk: {size_on_disk}, Path: {movie_file_path}")
-        logger.info(f"Radarr: Movie '{target_movie.get('title')}' ({target_movie.get('year')}) exists with file. Path: {movie_file_path}, Size: {size_on_disk}. Guardrail will consider it PRESENT.")
+    movie_has_file_flag = target_movie.get('hasFile', False)
+    size_on_disk = target_movie.get('sizeOnDisk', 0)
+    movie_file_obj = target_movie.get('movieFile') # Get the movieFile object
+
+    # Initialize path for logging, default to problematic values
+    movie_file_path = "N/A"
+
+    if movie_file_obj:
+        movie_file_path = movie_file_obj.get('path', 'N/A') # Path might still be None or empty
+
+    # Stricter condition
+    if (movie_has_file_flag and
+        size_on_disk > 0 and
+        movie_file_obj and # Ensure movieFile object exists
+        movie_file_path and movie_file_path != "N/A" and len(movie_file_path.strip()) > 0): # Ensure path is valid and non-empty
+
+        logger.debug(f"check_radarr_movie_exists: Condition for True met. Movie: '{target_movie.get('title')}', Year: {target_movie.get('year')}, hasFile: {movie_has_file_flag}, sizeOnDisk: {size_on_disk}, movieFile_exists: True, Path: {movie_file_path}")
+        logger.info(f"Radarr: Movie '{target_movie.get('title')}' ({target_movie.get('year')}) exists with valid file. Path: {movie_file_path}, Size: {size_on_disk}B. Guardrail will consider it PRESENT.")
         return True
     else:
-        logger.debug(f"check_radarr_movie_exists: Condition for True NOT met. Movie: '{target_movie.get('title')}', Year: {target_movie.get('year')}, hasFile: {has_file}, sizeOnDisk: {size_on_disk}, Path: {movie_file_path}")
-        logger.info(f"Radarr: Movie '{target_movie.get('title')}' ({target_movie.get('year')}) found, but no valid file. Path: {movie_file_path}, hasFile: {has_file}, sizeOnDisk: {size_on_disk}. Guardrail will consider it ABSENT/MISSING.")
+        logger.debug(f"check_radarr_movie_exists: Condition for True NOT met. Movie: '{target_movie.get('title')}', Year: {target_movie.get('year')}, hasFile: {movie_has_file_flag}, sizeOnDisk: {size_on_disk}, movieFile_exists: {movie_file_obj is not None}, Path: {movie_file_path}")
+        logger.info(f"Radarr: Movie '{target_movie.get('title')}' ({target_movie.get('year')}) found, but conditions for existing valid file not met. "
+                    f"hasFile: {movie_has_file_flag}, sizeOnDisk: {size_on_disk}B, Path: {movie_file_path}. Guardrail will consider it ABSENT/MISSING.")
         return False
 
 # ==============================================================================
@@ -422,36 +436,36 @@ def check_sonarr_episode_exists(series_title: str, season_number: int, episode_n
 
     # Check if the episode has a file and is not missing
     # 'hasFile' should be true, and 'episodeFileId' > 0 indicates a linked file.
-    # Also, the episode should be monitored, and its file should have a positive size.
-    if (target_episode.get('hasFile', False) and
-        target_episode.get('episodeFileId', 0) > 0 and
-        target_episode.get('monitored', False)): # Ensure episode is monitored
+    # Also, the episode should be monitored, and its file should have a positive size and a valid path.
 
-        # Optionally, fetch episode file details to check size, though hasFile and episodeFileId are strong indicators.
-        # episode_file_details = _sonarr_api_request('GET', f'episodefile/{target_episode.get("episodeFileId")}')
-        # if episode_file_details and episode_file_details.get('size', 0) > 0:
-        #    logger.info(f"Sonarr: Episode S{season_number:02d}E{episode_number:02d} for '{found_series.get('title')}' exists, is monitored, and has a valid file. File ID: {target_episode.get('episodeFileId')}")
-        #    return True
-        # else:
-        #    logger.warning(f"Sonarr: Episode S{season_number:02d}E{episode_number:02d} for '{found_series.get('title')}' hasFile=True, but file details query failed or size is 0.")
-        #    return False
+    episode_has_file_flag = target_episode.get('hasFile', False)
+    episode_file_id = target_episode.get('episodeFileId', 0)
+    episode_monitored = target_episode.get('monitored', False)
+    episode_file_obj = target_episode.get('episodeFile')
 
-        # Simpler check without fetching episode file details again if not strictly needed by requirements
-        episode_has_file = target_episode.get('hasFile', False)
-        episode_file_id = target_episode.get('episodeFileId', 0)
-        episode_monitored = target_episode.get('monitored', False)
+    # Initialize path and size for logging, default to problematic values
+    episode_file_path = "N/A"
+    episode_file_size = 0
 
-        episode_file_path_obj = target_episode.get('episodeFile', {})
-        episode_file_path = episode_file_path_obj.get('path', 'N/A') if episode_file_path_obj else 'N/A'
+    if episode_file_obj: # Check if episodeFile object exists
+        episode_file_path = episode_file_obj.get('path', 'N/A')
+        episode_file_size = episode_file_obj.get('size', 0)
 
-        logger.debug(f"check_sonarr_episode_exists: Condition for True met. Episode: S{season_number:02d}E{episode_number:02d} for '{found_series.get('title')}', hasFile: {episode_has_file}, episodeFileId: {episode_file_id}, monitored: {episode_monitored}, Path: {episode_file_path}")
-        logger.info(f"Sonarr: Episode S{season_number:02d}E{episode_number:02d} for '{found_series.get('title')}' exists with file. Path: {episode_file_path}. Guardrail will consider it PRESENT.")
+    # Stricter condition
+    if (episode_has_file_flag and
+        episode_file_id > 0 and
+        episode_monitored and
+        episode_file_obj and # Ensure episodeFile object exists
+        episode_file_path and episode_file_path != "N/A" and len(episode_file_path.strip()) > 0 and # Ensure path is valid and non-empty
+        episode_file_size > 0): # Ensure file has size
+
+        logger.debug(f"check_sonarr_episode_exists: Condition for True met. Episode: S{season_number:02d}E{episode_number:02d} for '{found_series.get('title')}', hasFile: {episode_has_file_flag}, episodeFileId: {episode_file_id}, monitored: {episode_monitored}, Path: {episode_file_path}, Size: {episode_file_size}")
+        logger.info(f"Sonarr: Episode S{season_number:02d}E{episode_number:02d} for '{found_series.get('title')}' exists with valid file. Path: {episode_file_path}, Size: {episode_file_size}B. Guardrail will consider it PRESENT.")
         return True
     else:
-        episode_has_file = target_episode.get('hasFile', False)
-        episode_file_id = target_episode.get('episodeFileId', 0)
-        episode_monitored = target_episode.get('monitored', False)
+        # Log with all gathered details, including potentially problematic ones for diagnostics
         logger.debug(f"check_sonarr_episode_exists: Condition for True NOT met for S{season_number:02d}E{episode_number:02d} of '{found_series.get('title')}': "
-                    f"hasFile: {episode_has_file}, episodeFileId: {episode_file_id}, monitored: {episode_monitored}")
-        logger.info(f"Sonarr: Episode S{season_number:02d}E{episode_number:02d} for '{found_series.get('title')}' found, but conditions for existing file not met. hasFile: {episode_has_file}, episodeFileId: {episode_file_id}, monitored: {episode_monitored}. Guardrail will consider it ABSENT/MISSING.")
+                    f"hasFile_flag: {episode_has_file_flag}, episodeFileId: {episode_file_id}, monitored: {episode_monitored}, episodeFile_obj_exists: {episode_file_obj is not None}, Path: {episode_file_path}, Size: {episode_file_size}")
+        logger.info(f"Sonarr: Episode S{season_number:02d}E{episode_number:02d} for '{found_series.get('title')}' found, but conditions for existing valid file not met. "
+                    f"hasFile: {episode_has_file_flag}, monitored: {episode_monitored}, Path: {episode_file_path}, Size: {episode_file_size}B. Guardrail will consider it ABSENT/MISSING.")
         return False
