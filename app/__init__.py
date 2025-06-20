@@ -116,6 +116,36 @@ def create_app(config_class=Config):
         flash('Vous avez été déconnecté.', 'info')
         return redirect(url_for('login'))
 
+    @app.route('/trigger-sftp-scan')
+    @login_required
+    def trigger_sftp_scan_manual():
+        global scheduler # To access the scheduler instance
+        if scheduler and scheduler.running:
+            job = scheduler.get_job('sftp_scan_job')
+            if job:
+                try:
+                    # Reschedule to run ASAP (e.g., in 1 second)
+                    # The job is scheduled with naive datetime, so use naive here too.
+                    new_next_run_time = datetime.datetime.now() + datetime.timedelta(seconds=1)
+                    job.modify(next_run_time=new_next_run_time)
+                    flash("Manual SFTP scan requested. It will start shortly.", "success")
+                    current_app.logger.info(f"Manual SFTP scan triggered for job {job.id}. New next run time: {new_next_run_time}")
+                except Exception as e:
+                    flash(f"Error triggering scan: {str(e)}", "danger") # Use str(e) for safer flash message
+                    current_app.logger.error(f"Error modifying SFTP scan job: {e}", exc_info=True)
+            else:
+                flash("SFTP scan job ('sftp_scan_job') not found.", "warning")
+                current_app.logger.warning("Manual SFTP scan trigger failed: Job 'sftp_scan_job' not found.")
+        else:
+            flash("Scheduler not running or not initialized.", "danger")
+            current_app.logger.error("Manual SFTP scan trigger failed: Scheduler not running or not initialized.")
+
+        # Try to redirect to referrer, otherwise to home.
+        if request.referrer and request.referrer != request.url:
+             return redirect(request.referrer)
+        else:
+             return redirect(url_for('home')) # Fallback to home
+
     # Gestionnaires d'erreurs HTTP globaux
     @app.errorhandler(404)
     def not_found_error(error):
