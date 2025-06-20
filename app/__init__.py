@@ -139,13 +139,21 @@ def create_app(config_class=Config):
         # Get interval from config
         sftp_scan_interval = app.config.get('SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES', 30)
 
-        # Add job to run at intervals
-        # APScheduler runs jobs in separate threads, so they need their own app context.
-        @scheduler.task('interval', id='sftp_scan_job', minutes=sftp_scan_interval, next_run_time=datetime.datetime.now() + datetime.timedelta(seconds=20))
-        def scheduled_sftp_scan():
-            with app.app_context():
-                app.logger.info(f"Scheduler: Triggering SFTP scan job. Interval: {sftp_scan_interval} mins.")
+        # Define the function that will be scheduled
+        def scheduled_sftp_scan_job(): # Renamed to avoid confusion
+            with app.app_context(): # Ensure app context is available
+                current_app.logger.info(f"Scheduler: Triggering SFTP scan job. Interval: {app.config.get('SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES', 30)} mins.")
                 scan_sftp_and_process_items()
+
+        # Add the job to the scheduler
+        scheduler.add_job(
+            func=scheduled_sftp_scan_job,
+            trigger='interval',
+            minutes=sftp_scan_interval,
+            id='sftp_scan_job',
+            next_run_time=datetime.datetime.now() + datetime.timedelta(seconds=20),
+            replace_existing=True # Good practice to avoid issues with reloader
+        )
 
         scheduler.start()
         app.logger.info(f"APScheduler started. SFTP scan job scheduled every {sftp_scan_interval} minutes, first run in 20 seconds.")
