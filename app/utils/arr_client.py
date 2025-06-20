@@ -14,6 +14,7 @@ def parse_media_name(item_name: str) -> dict:
     """
     Parses a media item name to determine if it's a TV show or a movie and extracts details.
     """
+    logger.debug(f"parse_media_name: Called with item_name='{item_name}'")
     # Regex patterns for TV shows
     tv_patterns = [
         re.compile(r"^(?P<title>.+?)[ ._]?S(?P<season>\d{1,2})E(?P<episode>\d{1,3})", re.IGNORECASE),
@@ -51,6 +52,7 @@ def parse_media_name(item_name: str) -> dict:
             result["episode"] = int(data.get("episode")) if data.get("episode") else None
             result["year"] = int(data.get("year")) if data.get("year") else None # Year can be part of TV show name
             logger.info(f"Parsed as TV show: {item_name} -> {result}")
+            logger.debug(f"parse_media_name: Returning: {result}")
             return result
 
     # Check for movie patterns if not identified as TV show
@@ -69,6 +71,7 @@ def parse_media_name(item_name: str) -> dict:
                         result["title"] = data.get("title", "").replace('.', ' ').replace('_', ' ').strip()
                         result["year"] = year_val
                         logger.info(f"Parsed as movie: {item_name} -> {result}")
+                        logger.debug(f"parse_media_name: Returning: {result}")
                         return result
                 except ValueError:
                     pass # Not a valid year
@@ -83,6 +86,7 @@ def parse_media_name(item_name: str) -> dict:
     cleaned_title = re.sub(common_tags_pattern, '', cleaned_title, flags=re.IGNORECASE).strip()
     result["title"] = cleaned_title if cleaned_title else item_name
 
+    logger.debug(f"parse_media_name: Returning: {result}")
     return result
 
 # ==============================================================================
@@ -173,12 +177,16 @@ def check_radarr_movie_exists(movie_title: str, movie_year: int = None) -> bool:
     """
     Checks if a movie exists in Radarr and has an associated, non-missing file.
     """
+    logger.debug(f"check_radarr_movie_exists: Called with title='{movie_title}', year={movie_year}")
     logger.info(f"Radarr: Checking if movie exists: {movie_title} ({movie_year})")
     # Fetch all movies from Radarr. This is simpler than 'lookup' for existing movies.
     # In a very large library, this could be slow. Consider optimizations if performance issues arise.
+    logger.debug("check_radarr_movie_exists: About to call _radarr_api_request('GET', 'movie')")
     all_movies = _radarr_api_request('GET', 'movie')
+    logger.debug(f"check_radarr_movie_exists: _radarr_api_request('GET', 'movie') returned (first 50 chars): {str(all_movies)[:50] if all_movies else 'None'}")
     if not all_movies:
         logger.error("Radarr: Failed to fetch movie list from Radarr.")
+        logger.debug(f"check_radarr_movie_exists: Returning {False}")
         return False
 
     found_movies = []
@@ -196,6 +204,7 @@ def check_radarr_movie_exists(movie_title: str, movie_year: int = None) -> bool:
 
     if not found_movies:
         logger.info(f"Radarr: Movie '{movie_title}' ({movie_year if movie_year else 'Any Year'}) not found.")
+        logger.debug(f"check_radarr_movie_exists: Returning {False}")
         return False
 
     # If multiple movies match, prefer the one with a matching year or log ambiguity.
@@ -219,17 +228,23 @@ def check_radarr_movie_exists(movie_title: str, movie_year: int = None) -> bool:
 
     if not target_movie: # Should not happen if found_movies was populated, but as a safeguard.
         logger.info(f"Radarr: Movie '{movie_title}' ({movie_year}) not conclusively found after filtering.")
+        logger.debug(f"check_radarr_movie_exists: Returning {False}")
         return False
 
     # Check if the movie has a file and is not missing
     # 'hasFile' is a primary indicator. 'sizeOnDisk' > 0 confirms the file is not empty.
     # 'status' can also be 'downloaded'
-    if target_movie.get('hasFile', False) and target_movie.get('sizeOnDisk', 0) > 0:
-        logger.info(f"Radarr: Movie '{target_movie.get('title')}' ({target_movie.get('year')}) exists and has a file. Size: {target_movie.get('sizeOnDisk')}")
+    movie_file_path = target_movie.get('movieFile', {}).get('path', 'N/A')
+    has_file = target_movie.get('hasFile', False)
+    size_on_disk = target_movie.get('sizeOnDisk', 0)
+
+    if has_file and size_on_disk > 0:
+        logger.debug(f"check_radarr_movie_exists: Condition for True met. Movie: '{target_movie.get('title')}', Year: {target_movie.get('year')}, hasFile: {has_file}, sizeOnDisk: {size_on_disk}, Path: {movie_file_path}")
+        logger.info(f"Radarr: Movie '{target_movie.get('title')}' ({target_movie.get('year')}) exists with file. Path: {movie_file_path}, Size: {size_on_disk}. Guardrail will consider it PRESENT.")
         return True
     else:
-        logger.info(f"Radarr: Movie '{target_movie.get('title')}' ({target_movie.get('year')}) found, but has no file or sizeOnDisk is 0. "
-                    f"hasFile: {target_movie.get('hasFile')}, sizeOnDisk: {target_movie.get('sizeOnDisk')}")
+        logger.debug(f"check_radarr_movie_exists: Condition for True NOT met. Movie: '{target_movie.get('title')}', Year: {target_movie.get('year')}, hasFile: {has_file}, sizeOnDisk: {size_on_disk}, Path: {movie_file_path}")
+        logger.info(f"Radarr: Movie '{target_movie.get('title')}' ({target_movie.get('year')}) found, but no valid file. Path: {movie_file_path}, hasFile: {has_file}, sizeOnDisk: {size_on_disk}. Guardrail will consider it ABSENT/MISSING.")
         return False
 
 # ==============================================================================
@@ -340,11 +355,15 @@ def check_sonarr_episode_exists(series_title: str, season_number: int, episode_n
     """
     Checks if a specific TV show episode exists in Sonarr and has a file.
     """
+    logger.debug(f"check_sonarr_episode_exists: Called with series='{series_title}', S{season_number}E{episode_number}")
     logger.info(f"Sonarr: Checking if episode exists: {series_title} S{season_number:02d}E{episode_number:02d}")
 
+    logger.debug("check_sonarr_episode_exists: About to call get_all_sonarr_series()")
     all_series = get_all_sonarr_series() # Uses the existing function
+    logger.debug(f"check_sonarr_episode_exists: get_all_sonarr_series() returned (first 50 chars): {str(all_series)[:50] if all_series else 'None'}")
     if not all_series:
         logger.error(f"Sonarr: Could not retrieve series list to find '{series_title}'.")
+        logger.debug(f"check_sonarr_episode_exists: Returning {False}")
         return False
 
     found_series = None
@@ -367,6 +386,7 @@ def check_sonarr_episode_exists(series_title: str, season_number: int, episode_n
 
     if not found_series:
         logger.warning(f"Sonarr: Series '{series_title}' not found in Sonarr.")
+        logger.debug(f"check_sonarr_episode_exists: Returning {False}")
         return False
 
     series_id = found_series.get('id')
@@ -375,13 +395,17 @@ def check_sonarr_episode_exists(series_title: str, season_number: int, episode_n
     # Fetch all episodes for the series
     # Sonarr's episode endpoint requires seriesId.
     # We filter by season and episode number client-side.
+    logger.debug(f"check_sonarr_episode_exists: About to call _sonarr_api_request('GET', 'episode') for series_id={series_id}")
     episodes_data = _sonarr_api_request('GET', 'episode', params={'seriesId': series_id})
+    logger.debug(f"check_sonarr_episode_exists: _sonarr_api_request('GET', 'episode') returned (first 50 chars): {str(episodes_data)[:50] if episodes_data else 'None'}")
     if not episodes_data: # This could be an empty list if series has no episodes, or None on API error
         logger.error(f"Sonarr: Failed to fetch episodes for series ID {series_id} ('{found_series.get('title')}').")
+        logger.debug(f"check_sonarr_episode_exists: Returning {False}")
         return False
 
     if not isinstance(episodes_data, list):
         logger.error(f"Sonarr: Unexpected response format for episodes of series ID {series_id}. Expected list, got {type(episodes_data)}.")
+        logger.debug(f"check_sonarr_episode_exists: Returning {False}")
         return False
 
 
@@ -393,6 +417,7 @@ def check_sonarr_episode_exists(series_title: str, season_number: int, episode_n
 
     if not target_episode:
         logger.info(f"Sonarr: Episode S{season_number:02d}E{episode_number:02d} for series '{found_series.get('title')}' not found.")
+        logger.debug(f"check_sonarr_episode_exists: Returning {False}")
         return False
 
     # Check if the episode has a file and is not missing
@@ -412,9 +437,21 @@ def check_sonarr_episode_exists(series_title: str, season_number: int, episode_n
         #    return False
 
         # Simpler check without fetching episode file details again if not strictly needed by requirements
-        logger.info(f"Sonarr: Episode S{season_number:02d}E{episode_number:02d} for '{found_series.get('title')}' exists, is monitored, and hasFile=True with episodeFileId > 0.")
+        episode_has_file = target_episode.get('hasFile', False)
+        episode_file_id = target_episode.get('episodeFileId', 0)
+        episode_monitored = target_episode.get('monitored', False)
+
+        episode_file_path_obj = target_episode.get('episodeFile', {})
+        episode_file_path = episode_file_path_obj.get('path', 'N/A') if episode_file_path_obj else 'N/A'
+
+        logger.debug(f"check_sonarr_episode_exists: Condition for True met. Episode: S{season_number:02d}E{episode_number:02d} for '{found_series.get('title')}', hasFile: {episode_has_file}, episodeFileId: {episode_file_id}, monitored: {episode_monitored}, Path: {episode_file_path}")
+        logger.info(f"Sonarr: Episode S{season_number:02d}E{episode_number:02d} for '{found_series.get('title')}' exists with file. Path: {episode_file_path}. Guardrail will consider it PRESENT.")
         return True
     else:
-        logger.info(f"Sonarr: Episode S{season_number:02d}E{episode_number:02d} for '{found_series.get('title')}' found, but conditions not met: "
-                    f"hasFile: {target_episode.get('hasFile')}, episodeFileId: {target_episode.get('episodeFileId')}, monitored: {target_episode.get('monitored')}")
+        episode_has_file = target_episode.get('hasFile', False)
+        episode_file_id = target_episode.get('episodeFileId', 0)
+        episode_monitored = target_episode.get('monitored', False)
+        logger.debug(f"check_sonarr_episode_exists: Condition for True NOT met for S{season_number:02d}E{episode_number:02d} of '{found_series.get('title')}': "
+                    f"hasFile: {episode_has_file}, episodeFileId: {episode_file_id}, monitored: {episode_monitored}")
+        logger.info(f"Sonarr: Episode S{season_number:02d}E{episode_number:02d} for '{found_series.get('title')}' found, but conditions for existing file not met. hasFile: {episode_has_file}, episodeFileId: {episode_file_id}, monitored: {episode_monitored}. Guardrail will consider it ABSENT/MISSING.")
         return False
