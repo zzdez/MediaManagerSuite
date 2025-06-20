@@ -28,7 +28,7 @@ def parse_media_name(item_name: str) -> dict:
     movie_patterns = [
         re.compile(r"^(?P<title>.+?)[ ._]\((?P<year>(?:19|20)\d{2})\)", re.IGNORECASE), # Movie Title (YYYY)
         re.compile(r"^(?P<title>.+?)[ ._](?P<year>(?:19|20)\d{2})[ ._](?!S\d{2}E\d{2})", re.IGNORECASE), # Movie.Title.YYYY (ensure not a TV show year)
-        re.compile(r"^(?P<title>.+?)[ ._\[(](?P<year>(?:19|20)\d{2})[\])].*?(?<!S\d{1,2}E\d{1,3})$", re.IGNORECASE), # More flexible movie year, ensuring not followed by SxxExx
+        re.compile(r"^(?P<title>.+?)[ ._\[(](?P<year>(?:19|20)\d{2})[\])].*$", re.IGNORECASE), # More flexible movie year, removed lookbehind
     ]
 
     result = {
