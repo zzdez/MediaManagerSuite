@@ -1,0 +1,254 @@
+# app/utils/sftp_scanner.py
+import os
+import json
+from pathlib import Path
+import pysftp # Assuming pysftp, may need to install or change later
+from flask import current_app
+from . import arr_client # Will uncomment once arr_client is updated
+
+# Configuration constants (placeholders, will be replaced by current_app.config)
+# SEEDBOX_SFTP_HOST = "sftp.example.com"
+# SEEDBOX_SFTP_PORT = 22
+# SEEDBOX_SFTP_USER = "user"
+# SEEDBOX_SFTP_PASSWORD = "password"
+# SEEDBOX_SONARR_FINISHED_PATH = "/remote/sonarr"
+# SEEDBOX_RADARR_FINISHED_PATH = "/remote/radarr"
+# STAGING_DIR = "/local/staging"
+# PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT = "processed_sftp_items.json"
+
+# FOLDERS_TO_SCAN_CONFIG = {
+# "sonarr_finished": {
+# "sftp_path_config_key": "SEEDBOX_SONARR_FINISHED_PATH",
+# "arr_type": "sonarr"
+#     },
+# "radarr_finished": {
+# "sftp_path_config_key": "SEEDBOX_RADARR_FINISHED_PATH",
+# "arr_type": "radarr"
+#     }
+# }
+
+def _load_processed_items(log_file_path):
+    """Loads the set of processed item paths from the log file."""
+    try:
+        with open(log_file_path, 'r') as f:
+            return set(json.load(f))
+    except FileNotFoundError:
+        return set()
+    except json.JSONDecodeError:
+        current_app.logger.error(f"Error decoding JSON from {log_file_path}. Starting with an empty set of processed items.")
+        return set()
+
+def _save_processed_items(log_file_path, processed_items):
+    """Saves the set of processed item paths to the log file."""
+    try:
+        with open(log_file_path, 'w') as f:
+            json.dump(list(processed_items), f, indent=4)
+    except IOError as e:
+        current_app.logger.error(f"Error saving processed items to {log_file_path}: {e}")
+
+def _connect_sftp():
+    """Establishes an SFTP connection using settings from current_app.config."""
+    cnopts = pysftp.CnOpts()
+    cnopts.hostkeys = None # Disable host key checking, consider security implications
+    sftp_host = current_app.config['SEEDBOX_SFTP_HOST']
+    sftp_port = current_app.config['SEEDBOX_SFTP_PORT']
+    sftp_user = current_app.config['SEEDBOX_SFTP_USER']
+    sftp_password = current_app.config['SEEDBOX_SFTP_PASSWORD']
+
+    try:
+        sftp = pysftp.Connection(
+            host=sftp_host,
+            username=sftp_user,
+            password=sftp_password,
+            port=sftp_port,
+            cnopts=cnopts
+        )
+        current_app.logger.info(f"Successfully connected to SFTP server: {sftp_host}")
+        return sftp
+    except Exception as e:
+        current_app.logger.error(f"SFTP connection failed for {sftp_user}@{sftp_host}:{sftp_port} - {e}")
+        return None
+
+def _list_remote_files(sftp, remote_path):
+    """Lists files and directories in a remote path, excluding '.' and '..'."""
+    items = []
+    try:
+        if sftp.exists(remote_path) and sftp.isdir(remote_path):
+            current_app.logger.info(f"Scanning remote path: {remote_path}")
+            for item_attr in sftp.listdir_attr(remote_path):
+                if item_attr.filename not in ['.', '..']:
+                    items.append(item_attr) # item_attr contains filename, st_mtime, st_size, etc.
+        else:
+            current_app.logger.warning(f"Remote path not found or not a directory: {remote_path}")
+    except Exception as e:
+        current_app.logger.error(f"Error listing files in {remote_path}: {e}")
+    return items
+
+def _download_item(sftp, remote_item_path, local_staging_path, item_name):
+    """
+    Downloads an item (file or directory) from SFTP server to local staging.
+    Returns True if download was successful, False otherwise.
+    """
+    local_item_path = Path(local_staging_path) / item_name
+    try:
+        if sftp.isfile(remote_item_path):
+            current_app.logger.info(f"Downloading file: {remote_item_path} to {local_item_path}")
+            sftp.get(remote_item_path, str(local_item_path))
+            current_app.logger.info(f"Successfully downloaded file: {item_name}")
+            return True
+        elif sftp.isdir(remote_item_path):
+            current_app.logger.info(f"Downloading directory: {remote_item_path} to {local_item_path}")
+            sftp.get_r(remote_item_path, str(local_item_path))
+            current_app.logger.info(f"Successfully downloaded directory: {item_name}")
+            return True
+        else:
+            current_app.logger.warning(f"Item {remote_item_path} is not a file or directory. Skipping.")
+            return False
+    except Exception as e:
+        current_app.logger.error(f"Error downloading {remote_item_path} to {local_item_path}: {e}")
+        # Clean up partially downloaded item if it exists
+        if local_item_path.exists():
+            try:
+                if local_item_path.is_file():
+                    local_item_path.unlink()
+                elif local_item_path.is_dir():
+                    # shutil.rmtree(local_item_path) # Requires import shutil
+                    # For now, just log, or implement recursive delete if necessary for atomicity
+                    current_app.logger.warning(f"Partial download cleanup for directory {local_item_path} might be needed.")
+            except Exception as cleanup_e:
+                current_app.logger.error(f"Error cleaning up {local_item_path}: {cleanup_e}")
+        return False
+
+def _notify_arr_instance(arr_type, downloaded_item_name, local_staging_dir):
+    """Notifies Sonarr or Radarr about the newly downloaded item."""
+    # This function will call the new methods in arr_client
+    # from . import arr_client # Ensure this is imported at the top level or passed in # This line is already handled by the import at the top of the file
+
+    # The path passed to Sonarr/Radarr should be the path of the item *within* the staging directory.
+    # Sonarr/Radarr will then move it from there.
+    item_path_in_staging = Path(local_staging_dir) / downloaded_item_name
+
+    current_app.logger.info(f"Notifying {arr_type} for item: {item_path_in_staging}")
+    success = False
+    if arr_type == "sonarr":
+        success = arr_client.trigger_sonarr_scan(str(item_path_in_staging))
+    elif arr_type == "radarr":
+        success = arr_client.trigger_radarr_scan(str(item_path_in_staging))
+
+    # Placeholder until arr_client is updated - REMOVED
+    # current_app.logger.warning(f"ARR notification for {arr_type} item {item_path_in_staging} is currently a placeholder.")
+    # success = True # Assume success for now - REMOVED
+
+    if success:
+        current_app.logger.info(f"Successfully notified {arr_type} for item: {downloaded_item_name}")
+    else:
+        current_app.logger.error(f"Failed to notify {arr_type} for item: {downloaded_item_name}")
+    return success
+
+def scan_sftp_and_process_items():
+    """Main function for the SFTP scanning task."""
+    current_app.logger.info("SFTP Scanner Task: Starting scan and process cycle.")
+
+    sftp_config = current_app.config
+    staging_dir = Path(sftp_config['STAGING_DIR'])
+    log_file = sftp_config['PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT']
+
+    if not staging_dir.exists():
+        try:
+            staging_dir.mkdir(parents=True, exist_ok=True)
+            current_app.logger.info(f"Created staging directory: {staging_dir}")
+        except OSError as e:
+            current_app.logger.error(f"Could not create staging directory {staging_dir}: {e}. Aborting SFTP scan.")
+            return
+
+    processed_items = _load_processed_items(log_file)
+
+    sftp = _connect_sftp()
+    if not sftp:
+        current_app.logger.error("SFTP Scanner Task: Could not connect to SFTP server. Aborting.")
+        return
+
+    # Define folders to scan using MMS config directly
+    folders_to_scan = {
+        "sonarr": sftp_config.get('SEEDBOX_SONARR_FINISHED_PATH'),
+        "radarr": sftp_config.get('SEEDBOX_RADARR_FINISHED_PATH'),
+    }
+
+    new_items_processed_this_run = False
+
+    for arr_type, remote_base_path in folders_to_scan.items():
+        if not remote_base_path:
+            current_app.logger.warning(f"SFTP Scanner Task: Remote path for {arr_type} is not configured. Skipping.")
+            continue
+
+        current_app.logger.info(f"SFTP Scanner Task: Scanning {arr_type} remote path: {remote_base_path}")
+        remote_items = _list_remote_files(sftp, remote_base_path)
+
+        for item_attr in remote_items:
+            item_name = item_attr.filename
+            # Create a unique identifier for the item based on its full remote path
+            # This helps if items with the same name exist in different scanned folders
+            # (though less likely with Sonarr/Radarr specific folders)
+            remote_item_full_path = f"{remote_base_path.rstrip('/')}/{item_name}"
+
+            if remote_item_full_path in processed_items:
+                # current_app.logger.debug(f"Item {item_name} (from {remote_base_path}) already processed. Skipping.")
+                continue
+
+            current_app.logger.info(f"SFTP Scanner Task: Found new item '{item_name}' in {remote_base_path} for {arr_type}.")
+
+            # Construct the full remote path for download
+            # remote_item_path_for_download = f"{remote_base_path.rstrip('/')}/{item_name}" # Already have as remote_item_full_path
+
+            if _download_item(sftp, remote_item_full_path, staging_dir, item_name):
+                # Notify Sonarr/Radarr
+                if _notify_arr_instance(arr_type, item_name, staging_dir):
+                    processed_items.add(remote_item_full_path)
+                    new_items_processed_this_run = True
+                    current_app.logger.info(f"SFTP Scanner Task: Successfully processed and logged '{item_name}'.")
+                else:
+                    current_app.logger.error(f"SFTP Scanner Task: Failed to notify {arr_type} for '{item_name}'. Item will be re-processed next cycle.")
+            else:
+                current_app.logger.error(f"SFTP Scanner Task: Failed to download '{item_name}'. It will be retried next cycle.")
+
+    if sftp:
+        sftp.close()
+        current_app.logger.info("SFTP connection closed.")
+
+    if new_items_processed_this_run:
+        _save_processed_items(log_file, processed_items)
+
+    current_app.logger.info("SFTP Scanner Task: Scan and process cycle finished.")
+
+if __name__ == '__main__':
+    # This section is for local testing if you run this script directly.
+    # It requires a mock Flask app context or similar setup for current_app.
+    print("This script is intended to be run within the Flask application context.")
+    # Example of how you might mock current_app for standalone testing (simplified):
+    # class MockConfig(dict):
+    #     pass
+    # class MockLogger:
+    #     def info(self, msg): print(f"INFO: {msg}")
+    #     def error(self, msg): print(f"ERROR: {msg}")
+    #     def warning(self, msg): print(f"WARNING: {msg}")
+    #     def debug(self, msg): print(f"DEBUG: {msg}")
+    # class MockApp:
+    #     def __init__(self):
+    #         self.config = MockConfig({
+    #             'SEEDBOX_SFTP_HOST': 'localhost', # Replace with your test SFTP server
+    #             'SEEDBOX_SFTP_PORT': 2222,        # Replace with your test SFTP server port
+    #             'SEEDBOX_SFTP_USER': 'testuser',  # Replace with your test SFTP user
+    #             'SEEDBOX_SFTP_PASSWORD': 'testpassword', # Replace
+    #             'SEEDBOX_SONARR_FINISHED_PATH': '/upload/sonarr_completed', # Test path
+    #             'SEEDBOX_RADARR_FINISHED_PATH': '/upload/radarr_completed', # Test path
+    #             'STAGING_DIR': './staging_test', # Local test staging dir
+    #             'PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT': './processed_sftp_test.json',
+    #             # SONARR_URL, SONARR_API_KEY, RADARR_URL, RADARR_API_KEY for _notify_arr_instance if testing that part
+    #         })
+    #         self.logger = MockLogger()
+    #
+    # current_app = MockApp()
+    # # Ensure staging_test directory exists
+    # if not os.path.exists(current_app.config['STAGING_DIR']):
+    #    os.makedirs(current_app.config['STAGING_DIR'])
+    # scan_sftp_and_process_items()

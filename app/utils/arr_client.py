@@ -5,6 +5,24 @@ from flask import current_app
 # --- RADARR CLIENT FUNCTIONS ---
 # ==============================================================================
 
+def trigger_radarr_scan(download_path):
+    """Triggers Radarr's DownloadedMoviesScan command for a specific path."""
+    command_payload = {
+        'name': 'DownloadedMoviesScan',
+        'path': download_path,
+        'importMode': 'Move', # Ensures the item is moved by Radarr
+        'downloadClientId': 'MediaManagerSuite_SFTP_Scanner' # Optional: for easier identification in Radarr logs
+    }
+    current_app.logger.info(f"Radarr: Sending DownloadedMoviesScan command for path: {download_path}")
+    response = _radarr_api_request('POST', 'command', json_data=command_payload)
+    # Radarr's response for command execution usually includes an 'id' and 'status' or 'state'
+    if response and (response.get('status') == 'started' or response.get('state') == 'started' or response.get('status') == 'success'):
+        current_app.logger.info(f"Radarr: Successfully triggered DownloadedMoviesScan for {download_path}. Response: {response}")
+        return True
+    else:
+        current_app.logger.error(f"Radarr: Failed to trigger DownloadedMoviesScan for {download_path}. Response: {response}")
+        return False
+
 def _radarr_api_request(method, endpoint, params=None, json_data=None):
     """Helper function to make requests to the Radarr API."""
     config = current_app.config
@@ -70,6 +88,23 @@ def update_radarr_movie(movie_data):
 # ==============================================================================
 # --- SONARR CLIENT FUNCTIONS ---
 # ==============================================================================
+
+def trigger_sonarr_scan(download_path):
+    """Triggers Sonarr's DownloadedEpisodesScan command for a specific path."""
+    command_payload = {
+        'name': 'DownloadedEpisodesScan',
+        'path': download_path,
+        'importMode': 'Move', # Ensures the item is moved by Sonarr
+        'downloadClientId': 'MediaManagerSuite_SFTP_Scanner' # Optional: for easier identification in Sonarr logs
+    }
+    current_app.logger.info(f"Sonarr: Sending DownloadedEpisodesScan command for path: {download_path}")
+    response = _sonarr_api_request('POST', 'command', json_data=command_payload)
+    if response and (response.get('status') == 'started' or response.get('state') == 'started' or response.get('status') == 'success'): # Sonarr API can be inconsistent here
+        current_app.logger.info(f"Sonarr: Successfully triggered DownloadedEpisodesScan for {download_path}. Response: {response}")
+        return True
+    else:
+        current_app.logger.error(f"Sonarr: Failed to trigger DownloadedEpisodesScan for {download_path}. Response: {response}")
+        return False
 
 def _sonarr_api_request(method, endpoint, params=None, json_data=None):
     """Helper function to make requests to the Sonarr API."""

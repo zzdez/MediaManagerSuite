@@ -10,7 +10,16 @@ from functools import wraps # Added for login_required decorator
 from flask import Flask, render_template, session, flash, request, redirect, url_for, current_app # Added current_app
 from config import Config # Correct car config.py est à la racine du projet
 
+# APScheduler imports
+from apscheduler.schedulers.background import BackgroundScheduler
+from app.utils.sftp_scanner import scan_sftp_and_process_items
+import datetime
+import atexit
+
 logger = logging.getLogger(__name__)
+
+# Global scheduler instance
+scheduler = None
 
 # Décorateur login_required
 def login_required(f):
@@ -120,4 +129,28 @@ def create_app(config_class=Config):
         return render_template('500.html', title="Erreur Interne du Serveur"), 500 # CHEMIN CORRIGÉ
 
     logger.info("Application MediaManagerSuite créée et configurée.")
+
+    # Initialize and start the scheduler only if it's not already running
+    # This is particularly important with Flask's reloader
+    global scheduler
+    if scheduler is None or not scheduler.running:
+        scheduler = BackgroundScheduler(daemon=True)
+
+        # Get interval from config
+        sftp_scan_interval = app.config.get('SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES', 30)
+
+        # Add job to run at intervals
+        # APScheduler runs jobs in separate threads, so they need their own app context.
+        @scheduler.task('interval', id='sftp_scan_job', minutes=sftp_scan_interval, next_run_time=datetime.datetime.now() + datetime.timedelta(seconds=20))
+        def scheduled_sftp_scan():
+            with app.app_context():
+                app.logger.info(f"Scheduler: Triggering SFTP scan job. Interval: {sftp_scan_interval} mins.")
+                scan_sftp_and_process_items()
+
+        scheduler.start()
+        app.logger.info(f"APScheduler started. SFTP scan job scheduled every {sftp_scan_interval} minutes, first run in 20 seconds.")
+
+        # Ensure scheduler shuts down cleanly when the app exits
+        atexit.register(lambda: scheduler.shutdown() if scheduler and scheduler.running else None)
+
     return app

@@ -71,6 +71,7 @@ class Config:
     SEEDBOX_RADARR_WORKING_PATH = os.environ.get('SEEDBOX_RADARR_WORKING_PATH')
 
     PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT = os.environ.get('PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT')
+    SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES = int(os.environ.get('SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES', 30))
 
     # --- Configuration Interface de Configuration ---
     APP_PASSWORD = os.environ.get('APP_PASSWORD')
