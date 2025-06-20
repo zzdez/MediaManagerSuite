@@ -87,7 +87,7 @@ def create_app(config_class=Config):
     @app.route('/')
     @login_required
     def home():
-        current_year = datetime.utcnow().year
+        current_year = datetime.datetime.now(datetime.timezone.utc).year
         return render_template('home_portal.html',
                                title="Portail Media Manager Suite",
                                current_year=current_year)
