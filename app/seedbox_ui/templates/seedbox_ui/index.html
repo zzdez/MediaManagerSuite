@@ -205,6 +205,14 @@
             </button>
             {# --- FIN NOUVEAU BOUTON --- #}
         </div>
+
+        {# --- Bouton pour déclencher le scan SFTP Manuel --- #}
+        <div class="btn-group ms-auto" role="group" aria-label="SFTP Scan group">
+             <a href="{{ url_for('trigger_sftp_scan_manual') }}" class="btn btn-info btn-sm">
+                <i class="fas fa-sync-alt"></i> Scan SFTP Manuel
+            </a>
+        </div>
+        {# --- Fin Bouton Scan SFTP Manuel --- #}
     </div>
     {# FIN DE LA BARRE D'OUTILS #}
 

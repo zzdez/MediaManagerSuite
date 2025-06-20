@@ -27,8 +27,13 @@
         </div>
 
         {% if session.logged_in %}
-            <a href="{{ url_for('config_ui.show_config') }}" class="btn btn-lg btn-info portal-link mt-3">Configuration Application</a>
-            <a href="{{ url_for('logout') }}" class="btn btn-danger btn-lg portal-link mt-3">Déconnexion</a>
+            <div class="d-grid gap-2 mt-3"> {# Grouping admin buttons #}
+                <a href="{{ url_for('config_ui.show_config') }}" class="btn btn-lg btn-info portal-link">Configuration Application</a>
+                <a href="{{ url_for('trigger_sftp_scan_manual') }}" class="btn btn-lg btn-outline-info portal-link"> <!-- Using outline for secondary action -->
+                    <i class="fas fa-sync-alt"></i> Lancer Scan SFTP Manuel
+                </a>
+                <a href="{{ url_for('logout') }}" class="btn btn-lg btn-danger portal-link">Déconnexion</a>
+            </div>
         {% endif %}
 
         <!-- LIGNE MODIFIÉE CI-DESSOUS -->
