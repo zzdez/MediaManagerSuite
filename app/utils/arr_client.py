@@ -20,7 +20,7 @@ def parse_media_name(item_name: str) -> dict:
         re.compile(r"^(?P<title>.+?)[ ._]?S(?P<season>\d{1,2})E(?P<episode>\d{1,3})", re.IGNORECASE),
         re.compile(r"^(?P<title>.+?)[ ._]?Season[ ._]?(?P<season>\d{1,2})[ ._]?Episode[ ._]?(?P<episode>\d{1,3})", re.IGNORECASE),
         re.compile(r"^(?P<title>.+?)[ ._]?(?P<season>\d{1,2})x(?P<episode>\d{1,3})", re.IGNORECASE), # e.g. Show.Title.1x01
-        re.compile(r"^(?P<title>(?:[A-Za-z0-9._ ()-]+?)+)(?:[._\s]+S(?P<season>\d{1,2}))(?:[._\s]+E(?P<episode>\d{1,3}))",re.IGNORECASE), # General SxxExx with flexible separators
+        re.compile(r"^(?P<title>.+?)(?:[._\s]+S(?P<season>\d{1,2}))(?:[._\s]+E(?P<episode>\d{1,3}))",re.IGNORECASE), # General SxxExx with flexible separators - MODIFIED
         re.compile(r"^(?P<title>.+?)[ ._](?P<year>(?:19|20)\d{2})[ ._]S(?P<season>\d{1,2})E(?P<episode>\d{1,3})", re.IGNORECASE), # Title Year SxxExx
         re.compile(r"^(?P<title>.+?)[ ._]S(?P<season>\d{1,2})[ ._]E(?P<episode>\d{1,3})[ ._](?P<year>(?:19|20)\d{2})", re.IGNORECASE), # Title SxxExx Year
     ]
