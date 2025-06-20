@@ -90,10 +90,6 @@ def parse_media_name(item_name: str) -> dict:
 # ==============================================================================
 
 def trigger_radarr_scan(download_path):
-# --- RADARR CLIENT FUNCTIONS ---
-# ==============================================================================
-
-def trigger_radarr_scan(download_path):
     """Triggers Radarr's DownloadedMoviesScan command for a specific path."""
     command_payload = {
         'name': 'DownloadedMoviesScan',
