@@ -198,141 +198,123 @@ def scan_sftp_and_process_items():
         return
     try:
         current_app.logger.info("SFTP Scanner Task: Lock acquired, starting scan and process cycle.")
-        # All the original code of scan_sftp_and_process_items goes here
-        # current_app.logger.info("SFTP Scanner Task: Starting scan and process cycle.") # This line is now covered by the log above
 
         sftp_config = current_app.config
         staging_dir = Path(sftp_config['STAGING_DIR'])
-    log_file = sftp_config['PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT']
+        log_file = sftp_config['PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT']
 
-    if not staging_dir.exists():
-        try:
-            staging_dir.mkdir(parents=True, exist_ok=True)
-            current_app.logger.info(f"Created staging directory: {staging_dir}")
-        except OSError as e:
-            current_app.logger.error(f"Could not create staging directory {staging_dir}: {e}. Aborting SFTP scan.")
+        if not staging_dir.exists():
+            try:
+                staging_dir.mkdir(parents=True, exist_ok=True)
+                current_app.logger.info(f"Created staging directory: {staging_dir}")
+            except OSError as e:
+                current_app.logger.error(f"Could not create staging directory {staging_dir}: {e}. Aborting SFTP scan.")
+                return
+
+        processed_items = _load_processed_items(log_file)
+
+        sftp = _connect_sftp()
+        if not sftp:
+            current_app.logger.error("SFTP Scanner Task: Could not connect to SFTP server. Aborting.")
             return
 
-    processed_items = _load_processed_items(log_file)
+        # Define folders to scan using MMS config directly
+        folders_to_scan = {
+            "sonarr": sftp_config.get('SEEDBOX_SONARR_FINISHED_PATH'),
+            "radarr": sftp_config.get('SEEDBOX_RADARR_FINISHED_PATH'),
+        }
 
-    sftp = _connect_sftp()
-    if not sftp:
-        current_app.logger.error("SFTP Scanner Task: Could not connect to SFTP server. Aborting.")
-        return
+        new_items_processed_this_run = False
 
-    # Define folders to scan using MMS config directly
-    folders_to_scan = {
-        "sonarr": sftp_config.get('SEEDBOX_SONARR_FINISHED_PATH'),
-        "radarr": sftp_config.get('SEEDBOX_RADARR_FINISHED_PATH'),
-    }
-
-    new_items_processed_this_run = False
-
-    for arr_type, remote_base_path in folders_to_scan.items():
-        if not remote_base_path:
-            current_app.logger.warning(f"SFTP Scanner Task: Remote path for {arr_type} is not configured. Skipping.")
-            continue
-
-        current_app.logger.info(f"SFTP Scanner Task: Scanning {arr_type} remote path: {remote_base_path}")
-        remote_items = _list_remote_files(sftp, remote_base_path)
-
-        for item_attr in remote_items:
-            item_name = item_attr.filename
-            # Create a unique identifier for the item based on its full remote path
-            # This helps if items with the same name exist in different scanned folders
-            # (though less likely with Sonarr/Radarr specific folders)
-            remote_item_full_path = f"{remote_base_path.rstrip('/')}/{item_name}"
-
-            if remote_item_full_path in processed_items:
-                # current_app.logger.debug(f"Item {item_name} (from {remote_base_path}) already processed. Skipping.")
+        for arr_type, remote_base_path in folders_to_scan.items():
+            if not remote_base_path:
+                current_app.logger.warning(f"SFTP Scanner Task: Remote path for {arr_type} is not configured. Skipping.")
                 continue
 
-            current_app.logger.info(f"SFTP Scanner Task: Found new item '{item_name}' in {remote_base_path} for {arr_type}.")
+            current_app.logger.info(f"SFTP Scanner Task: Scanning {arr_type} remote path: {remote_base_path}")
+            remote_items = _list_remote_files(sftp, remote_base_path)
 
-            # --- Media Existence Guardrail ---
-            # Get SFTP_SCANNER_GUARDFRAIL_ENABLED from config, default True
-            guardrail_enabled = current_app.config.get('SFTP_SCANNER_GUARDFRAIL_ENABLED', True)
-            media_exists_in_arr = False
-            parsed_media = None
+            for item_attr in remote_items:
+                item_name = item_attr.filename
+                remote_item_full_path = f"{remote_base_path.rstrip('/')}/{item_name}"
 
-            if guardrail_enabled:
-                current_app.logger.info(f"SFTP Scanner Task: Guardrail enabled. Parsing '{item_name}'.")
-                current_app.logger.info(f"SFTP Scanner Task: PRE-CALL arr_client.parse_media_name for item '{item_name}'")
-                parsed_media = arr_client.parse_media_name(item_name)
-                current_app.logger.info(f"SFTP Scanner Task: POST-CALL arr_client.parse_media_name. Result type: {parsed_media.get('type')}, Title: {parsed_media.get('title')}")
-                current_app.logger.info(f"SFTP Scanner Task: Parsed '{item_name}' as: {parsed_media}") # This line is somewhat redundant now but kept from original instruction
+                if remote_item_full_path in processed_items:
+                    continue
 
-                if parsed_media['type'] == 'tv' and parsed_media['title'] and parsed_media['season'] is not None and parsed_media['episode'] is not None:
-                    current_app.logger.info(f"SFTP Scanner Task: Checking Sonarr for {parsed_media['title']} S{parsed_media['season']:02d}E{parsed_media['episode']:02d}.")
-                    try:
-                        current_app.logger.info(f"SFTP Scanner Task: PRE-CALL arr_client.check_sonarr_episode_exists for {parsed_media.get('title')}")
-                        media_exists_in_arr = arr_client.check_sonarr_episode_exists(
-                            parsed_media['title'],
-                            parsed_media['season'],
-                            parsed_media['episode']
-                        )
-                        current_app.logger.info(f"SFTP Scanner Task: POST-CALL arr_client.check_sonarr_episode_exists. Result: {media_exists_in_arr}")
-                    except Exception as e:
-                        current_app.logger.error(f"SFTP Scanner Task: Error checking Sonarr for '{item_name}': {e}. Assuming media does not exist locally.")
-                        media_exists_in_arr = False # Default to false on error to allow download
+                current_app.logger.info(f"SFTP Scanner Task: Found new item '{item_name}' in {remote_base_path} for {arr_type}.")
 
-                elif parsed_media['type'] == 'movie' and parsed_media['title']:
-                    current_app.logger.info(f"SFTP Scanner Task: Checking Radarr for {parsed_media['title']} ({parsed_media.get('year', 'N/A')}).")
-                    try:
-                        current_app.logger.info(f"SFTP Scanner Task: PRE-CALL arr_client.check_radarr_movie_exists for {parsed_media.get('title')}")
-                        media_exists_in_arr = arr_client.check_radarr_movie_exists(
-                            parsed_media['title'],
-                            parsed_media.get('year')
-                        )
-                        current_app.logger.info(f"SFTP Scanner Task: POST-CALL arr_client.check_radarr_movie_exists. Result: {media_exists_in_arr}")
-                    except Exception as e:
-                        current_app.logger.error(f"SFTP Scanner Task: Error checking Radarr for '{item_name}': {e}. Assuming media does not exist locally.")
-                        media_exists_in_arr = False # Default to false on error to allow download
+                guardrail_enabled = current_app.config.get('SFTP_SCANNER_GUARDFRAIL_ENABLED', True)
+                media_exists_in_arr = False
+                parsed_media = None
+
+                if guardrail_enabled:
+                    current_app.logger.info(f"SFTP Scanner Task: Guardrail enabled. Parsing '{item_name}'.")
+                    current_app.logger.info(f"SFTP Scanner Task: PRE-CALL arr_client.parse_media_name for item '{item_name}'")
+                    parsed_media = arr_client.parse_media_name(item_name)
+                    current_app.logger.info(f"SFTP Scanner Task: POST-CALL arr_client.parse_media_name. Result type: {parsed_media.get('type')}, Title: {parsed_media.get('title')}")
+                    current_app.logger.info(f"SFTP Scanner Task: Parsed '{item_name}' as: {parsed_media}")
+
+                    if parsed_media['type'] == 'tv' and parsed_media['title'] and parsed_media['season'] is not None and parsed_media['episode'] is not None:
+                        current_app.logger.info(f"SFTP Scanner Task: Checking Sonarr for {parsed_media['title']} S{parsed_media['season']:02d}E{parsed_media['episode']:02d}.")
+                        try:
+                            current_app.logger.info(f"SFTP Scanner Task: PRE-CALL arr_client.check_sonarr_episode_exists for {parsed_media.get('title')}")
+                            media_exists_in_arr = arr_client.check_sonarr_episode_exists(
+                                parsed_media['title'],
+                                parsed_media['season'],
+                                parsed_media['episode']
+                            )
+                            current_app.logger.info(f"SFTP Scanner Task: POST-CALL arr_client.check_sonarr_episode_exists. Result: {media_exists_in_arr}")
+                        except Exception as e:
+                            current_app.logger.error(f"SFTP Scanner Task: Error checking Sonarr for '{item_name}': {e}. Assuming media does not exist locally.")
+                            media_exists_in_arr = False
+                    elif parsed_media['type'] == 'movie' and parsed_media['title']:
+                        current_app.logger.info(f"SFTP Scanner Task: Checking Radarr for {parsed_media['title']} ({parsed_media.get('year', 'N/A')}).")
+                        try:
+                            current_app.logger.info(f"SFTP Scanner Task: PRE-CALL arr_client.check_radarr_movie_exists for {parsed_media.get('title')}")
+                            media_exists_in_arr = arr_client.check_radarr_movie_exists(
+                                parsed_media['title'],
+                                parsed_media.get('year')
+                            )
+                            current_app.logger.info(f"SFTP Scanner Task: POST-CALL arr_client.check_radarr_movie_exists. Result: {media_exists_in_arr}")
+                        except Exception as e:
+                            current_app.logger.error(f"SFTP Scanner Task: Error checking Radarr for '{item_name}': {e}. Assuming media does not exist locally.")
+                            media_exists_in_arr = False
+                    else:
+                        current_app.logger.info(f"SFTP Scanner Task: Could not reliably parse '{item_name}' for {arr_type} type or type unknown. Proceeding with download process as fallback.")
                 else:
-                    current_app.logger.info(f"SFTP Scanner Task: Could not reliably parse '{item_name}' for {arr_type} type or type unknown. Proceeding with download process as fallback.")
-            else:
-                current_app.logger.info("SFTP Scanner Task: Guardrail disabled. Proceeding with download.")
+                    current_app.logger.info("SFTP Scanner Task: Guardrail disabled. Proceeding with download.")
 
-
-            if guardrail_enabled and media_exists_in_arr:
-                # Determine arr_type string for logging, even if parsed_media['type'] was 'unknown' but somehow media_exists_in_arr became true (shouldn't happen with current logic)
-                log_arr_type = "Sonarr" if parsed_media and parsed_media['type'] == 'tv' else "Radarr" if parsed_media and parsed_media['type'] == 'movie' else arr_type.capitalize()
-                current_app.logger.info(f"SFTP Scanner Task: Guardrail - Item '{item_name}' (path: {remote_item_full_path}) found in {log_arr_type} library. Skipping download and marking as processed.")
-                processed_items.add(remote_item_full_path)
-                new_items_processed_this_run = True
-                continue # Skip to the next item
-            else:
-                if guardrail_enabled: # Only log this if guardrail was active
-                    log_arr_type_else = "Sonarr" if parsed_media and parsed_media['type'] == 'tv' else "Radarr" if parsed_media and parsed_media['type'] == 'movie' else arr_type.capitalize()
-                    if parsed_media and parsed_media['type'] != 'unknown':
-                        current_app.logger.info(f"SFTP Scanner Task: Guardrail - Item '{item_name}' not found in {log_arr_type_else} library. Proceeding with download.")
-                    # If parsing failed or unknown, specific message already logged. No need for redundant "not found" message here.
-                    elif not parsed_media or parsed_media['type'] == 'unknown':
-                         current_app.logger.info(f"SFTP Scanner Task: Guardrail - Parsing insufficient for '{item_name}'. Proceeding with download.")
-
-
-            # Construct the full remote path for download
-            # remote_item_path_for_download = f"{remote_base_path.rstrip('/')}/{item_name}" # Already have as remote_item_full_path
-
-            if _download_item(sftp, remote_item_full_path, staging_dir, item_name):
-                # Notify Sonarr/Radarr
-                if _notify_arr_instance(arr_type, item_name, staging_dir):
+                if guardrail_enabled and media_exists_in_arr:
+                    log_arr_type = "Sonarr" if parsed_media and parsed_media['type'] == 'tv' else "Radarr" if parsed_media and parsed_media['type'] == 'movie' else arr_type.capitalize()
+                    current_app.logger.info(f"SFTP Scanner Task: Guardrail - Item '{item_name}' (path: {remote_item_full_path}) found in {log_arr_type} library. Skipping download and marking as processed.")
                     processed_items.add(remote_item_full_path)
                     new_items_processed_this_run = True
-                    current_app.logger.info(f"SFTP Scanner Task: Successfully processed and logged '{item_name}'.")
+                    continue
                 else:
-                    current_app.logger.error(f"SFTP Scanner Task: Failed to notify {arr_type} for '{item_name}'. Item will be re-processed next cycle.")
-            else:
-                current_app.logger.error(f"SFTP Scanner Task: Failed to download '{item_name}'. It will be retried next cycle.")
+                    if guardrail_enabled:
+                        log_arr_type_else = "Sonarr" if parsed_media and parsed_media['type'] == 'tv' else "Radarr" if parsed_media and parsed_media['type'] == 'movie' else arr_type.capitalize()
+                        if parsed_media and parsed_media['type'] != 'unknown':
+                            current_app.logger.info(f"SFTP Scanner Task: Guardrail - Item '{item_name}' not found in {log_arr_type_else} library. Proceeding with download.")
+                        elif not parsed_media or parsed_media['type'] == 'unknown':
+                             current_app.logger.info(f"SFTP Scanner Task: Guardrail - Parsing insufficient for '{item_name}'. Proceeding with download.")
 
-    if sftp:
-        sftp.close()
-        current_app.logger.info("SFTP connection closed.")
+                if _download_item(sftp, remote_item_full_path, staging_dir, item_name):
+                    if _notify_arr_instance(arr_type, item_name, staging_dir):
+                        processed_items.add(remote_item_full_path)
+                        new_items_processed_this_run = True
+                        current_app.logger.info(f"SFTP Scanner Task: Successfully processed and logged '{item_name}'.")
+                    else:
+                        current_app.logger.error(f"SFTP Scanner Task: Failed to notify {arr_type} for '{item_name}'. Item will be re-processed next cycle.")
+                else:
+                    current_app.logger.error(f"SFTP Scanner Task: Failed to download '{item_name}'. It will be retried next cycle.")
 
-    if new_items_processed_this_run:
-        _save_processed_items(log_file, processed_items)
+        if sftp:
+            sftp.close()
+            current_app.logger.info("SFTP connection closed.")
 
-        current_app.logger.info("SFTP Scanner Task: Scan and process cycle finished (before lock release).") # Modified log
+        if new_items_processed_this_run:
+            _save_processed_items(log_file, processed_items)
+            current_app.logger.info("SFTP Scanner Task: Scan and process cycle finished (before lock release).")
     finally:
         sftp_scan_lock.release()
         current_app.logger.info("SFTP Scanner Task: Lock released after scan cycle.")
