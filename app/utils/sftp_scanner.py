@@ -254,16 +254,17 @@ def scan_sftp_and_process_items():
                     current_app.logger.info(f"SFTP Scanner Task: POST-CALL arr_client.parse_media_name. Result type: {parsed_media.get('type')}, Title: {parsed_media.get('title')}")
                     current_app.logger.info(f"SFTP Scanner Task: Parsed '{item_name}' as: {parsed_media}")
 
-                    if parsed_media['type'] == 'tv' and parsed_media['title'] and parsed_media['season'] is not None and parsed_media['episode'] is not None:
-                        current_app.logger.info(f"SFTP Scanner Task: Checking Sonarr for {parsed_media['title']} S{parsed_media['season']:02d}E{parsed_media['episode']:02d}.")
+                    if parsed_media['type'] == 'tv' and parsed_media['title'] and parsed_media['season'] is not None: # Condition changed here
+                        episode_log_str = f"E{parsed_media.get('episode'):02d}" if parsed_media.get('episode') is not None else "(Season Check)"
+                        current_app.logger.info(f"SFTP Scanner Task: Checking Sonarr for {parsed_media['title']} S{parsed_media['season']:02d}{episode_log_str}.")
                         try:
-                            current_app.logger.info(f"SFTP Scanner Task: PRE-CALL arr_client.check_sonarr_episode_exists for {parsed_media.get('title')}")
+                            current_app.logger.info(f"SFTP Scanner Task: PRE-CALL arr_client.check_sonarr_episode_exists for {parsed_media.get('title')} S{parsed_media['season']:02d}{episode_log_str}") # Log updated
                             media_exists_in_arr = arr_client.check_sonarr_episode_exists(
                                 parsed_media['title'],
                                 parsed_media['season'],
-                                parsed_media['episode']
+                                parsed_media.get('episode') # Use .get() for episode
                             )
-                            current_app.logger.info(f"SFTP Scanner Task: POST-CALL arr_client.check_sonarr_episode_exists. Result: {media_exists_in_arr}")
+                            current_app.logger.info(f"SFTP Scanner Task: POST-CALL arr_client.check_sonarr_episode_exists for {parsed_media.get('title')} S{parsed_media['season']:02d}{episode_log_str}. Result: {media_exists_in_arr}") # Log updated
                         except Exception as e:
                             current_app.logger.error(f"SFTP Scanner Task: Error checking Sonarr for '{item_name}': {e}. Assuming media does not exist locally.")
                             media_exists_in_arr = False

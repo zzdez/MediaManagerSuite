@@ -414,58 +414,71 @@ def check_sonarr_episode_exists(series_title: str, season_number: int, episode_n
     logger.debug(f"check_sonarr_episode_exists: _sonarr_api_request('GET', 'episode') returned (first 50 chars): {str(episodes_data)[:50] if episodes_data else 'None'}")
     if not episodes_data: # This could be an empty list if series has no episodes, or None on API error
         logger.error(f"Sonarr: Failed to fetch episodes for series ID {series_id} ('{found_series.get('title')}').")
-        logger.debug(f"check_sonarr_episode_exists: Returning {False}")
+        logger.debug(f"check_sonarr_episode_exists: Returning {False} (failed to fetch episodes)")
         return False
 
     if not isinstance(episodes_data, list):
         logger.error(f"Sonarr: Unexpected response format for episodes of series ID {series_id}. Expected list, got {type(episodes_data)}.")
-        logger.debug(f"check_sonarr_episode_exists: Returning {False}")
+        logger.debug(f"check_sonarr_episode_exists: Returning {False} (unexpected episode data format)")
         return False
 
+    if episode_number is not None:
+        # Logic for checking a specific episode
+        target_episode = None
+        for episode_obj in episodes_data: # Renamed loop var
+            if episode_obj.get('seasonNumber') == season_number and episode_obj.get('episodeNumber') == episode_number:
+                target_episode = episode_obj
+                break
 
-    target_episode = None
-    for episode in episodes_data:
-        if episode.get('seasonNumber') == season_number and episode.get('episodeNumber') == episode_number:
-            target_episode = episode
-            break
+        if not target_episode:
+            logger.info(f"Sonarr: Specific episode S{season_number:02d}E{episode_number:02d} for series '{found_series.get('title')}' not found in fetched episode list.")
+            logger.debug(f"check_sonarr_episode_exists: Returning {False} (specific episode not in list)")
+            return False
 
-    if not target_episode:
-        logger.info(f"Sonarr: Episode S{season_number:02d}E{episode_number:02d} for series '{found_series.get('title')}' not found.")
-        logger.debug(f"check_sonarr_episode_exists: Returning {False}")
-        return False
+        # Perform strict file check on target_episode
+        episode_has_file_flag = target_episode.get('hasFile', False)
+        episode_file_id = target_episode.get('episodeFileId', 0)
+        episode_monitored = target_episode.get('monitored', False)
+        episode_file_obj = target_episode.get('episodeFile')
+        episode_file_path = "N/A"; episode_file_size = 0
+        if episode_file_obj:
+            episode_file_path = episode_file_obj.get('path', 'N/A')
+            episode_file_size = episode_file_obj.get('size', 0)
 
-    # Check if the episode has a file and is not missing
-    # 'hasFile' should be true, and 'episodeFileId' > 0 indicates a linked file.
-    # Also, the episode should be monitored, and its file should have a positive size and a valid path.
+        if (episode_has_file_flag and episode_file_id > 0 and episode_monitored and
+            episode_file_obj and episode_file_path and episode_file_path != "N/A" and len(episode_file_path.strip()) > 0 and
+            episode_file_size > 0):
+            logger.debug(f"check_sonarr_episode_exists: Condition for True met for specific episode. Episode: S{season_number:02d}E{episode_number:02d} for '{found_series.get('title')}', hasFile: {episode_has_file_flag}, episodeFileId: {episode_file_id}, monitored: {episode_monitored}, Path: {episode_file_path}, Size: {episode_file_size}")
+            logger.info(f"Sonarr: Episode S{season_number:02d}E{episode_number:02d} for '{found_series.get('title')}' exists with valid file. Path: {episode_file_path}, Size: {episode_file_size}B. Guardrail will consider it PRESENT.")
+            return True
+        else:
+            logger.debug(f"check_sonarr_episode_exists: Condition for True NOT met for specific episode S{season_number:02d}E{episode_number:02d} of '{found_series.get('title')}': "
+                        f"hasFile_flag: {episode_has_file_flag}, episodeFileId: {episode_file_id}, monitored: {episode_monitored}, episodeFile_obj_exists: {episode_file_obj is not None}, Path: {episode_file_path}, Size: {episode_file_size}")
+            logger.info(f"Sonarr: Episode S{season_number:02d}E{episode_number:02d} for '{found_series.get('title')}' found, but conditions for existing valid file not met. "
+                        f"hasFile: {episode_has_file_flag}, monitored: {episode_monitored}, Path: {episode_file_path}, Size: {episode_file_size}B. Guardrail will consider it ABSENT/MISSING.")
+            return False
 
-    episode_has_file_flag = target_episode.get('hasFile', False)
-    episode_file_id = target_episode.get('episodeFileId', 0)
-    episode_monitored = target_episode.get('monitored', False)
-    episode_file_obj = target_episode.get('episodeFile')
+    else: # episode_number is None, checking for season pack (any valid file in season)
+        logger.info(f"Sonarr: Checking for any valid files in S{season_number:02d} for series '{found_series.get('title')}' (season pack check).")
+        for episode_in_season in episodes_data:
+            if episode_in_season.get('seasonNumber') == season_number:
+                # Perform the full strict file presence check on episode_in_season
+                ep_has_file = episode_in_season.get('hasFile', False)
+                ep_file_id = episode_in_season.get('episodeFileId', 0)
+                ep_monitored = episode_in_season.get('monitored', False)
+                ep_file_obj = episode_in_season.get('episodeFile')
+                ep_file_path = "N/A"; ep_file_size = 0
+                if ep_file_obj:
+                    ep_file_path = ep_file_obj.get('path', 'N/A')
+                    ep_file_size = ep_file_obj.get('size', 0)
 
-    # Initialize path and size for logging, default to problematic values
-    episode_file_path = "N/A"
-    episode_file_size = 0
+                if (ep_has_file and ep_file_id > 0 and ep_monitored and
+                    ep_file_obj and ep_file_path and ep_file_path != "N/A" and len(ep_file_path.strip()) > 0 and
+                    ep_file_size > 0):
+                    logger.debug(f"check_sonarr_episode_exists: Valid file found for S{season_number:02d}E{episode_in_season.get('episodeNumber')} in season pack check. Path: {ep_file_path}, Size: {ep_file_size}")
+                    logger.info(f"Sonarr: Found at least one valid file in S{season_number:02d} (e.g., E{episode_in_season.get('episodeNumber')}) for '{found_series.get('title')}'. Guardrail will consider season PRESENT.")
+                    return True # Found a valid file in the season
 
-    if episode_file_obj: # Check if episodeFile object exists
-        episode_file_path = episode_file_obj.get('path', 'N/A')
-        episode_file_size = episode_file_obj.get('size', 0)
-
-    # Stricter condition
-    if (episode_has_file_flag and
-        episode_file_id > 0 and
-        episode_monitored and
-        episode_file_obj and # Ensure episodeFile object exists
-        episode_file_path and episode_file_path != "N/A" and len(episode_file_path.strip()) > 0 and # Ensure path is valid and non-empty
-        episode_file_size > 0): # Ensure file has size
-
-        logger.debug(f"check_sonarr_episode_exists: Condition for True met. Episode: S{season_number:02d}E{episode_number:02d} for '{found_series.get('title')}', hasFile: {episode_has_file_flag}, episodeFileId: {episode_file_id}, monitored: {episode_monitored}, Path: {episode_file_path}, Size: {episode_file_size}")
-        logger.info(f"Sonarr: Episode S{season_number:02d}E{episode_number:02d} for '{found_series.get('title')}' exists with valid file. Path: {episode_file_path}, Size: {episode_file_size}B. Guardrail will consider it PRESENT.")
-        return True
-    else:
-        # Log with all gathered details, including potentially problematic ones for diagnostics
-        logger.debug(f"check_sonarr_episode_exists: Condition for True NOT met for S{season_number:02d}E{episode_number:02d} of '{found_series.get('title')}': "
-                    f"hasFile_flag: {episode_has_file_flag}, episodeFileId: {episode_file_id}, monitored: {episode_monitored}, episodeFile_obj_exists: {episode_file_obj is not None}, Path: {episode_file_path}, Size: {episode_file_size}")
-        logger.info(f"Sonarr: Episode S{season_number:02d}E{episode_number:02d} for '{found_series.get('title')}' found, but conditions for existing valid file not met. "
-                    f"hasFile: {episode_has_file_flag}, monitored: {episode_monitored}, Path: {episode_file_path}, Size: {episode_file_size}B. Guardrail will consider it ABSENT/MISSING.")
+        logger.info(f"Sonarr: No valid files found for any episode in S{season_number:02d} for series '{found_series.get('title')}'. Guardrail will consider season ABSENT/MISSING.")
+        logger.debug(f"check_sonarr_episode_exists: Returning {False} (no valid files in season pack)")
         return False
