@@ -5,7 +5,7 @@ from pathlib import Path
 import pysftp # Assuming pysftp, may need to install or change later
 from flask import current_app
 from . import arr_client
-from app import sftp_scan_lock # Import the global lock
+# Removed: from app import sftp_scan_lock
 
 # Configuration constants (placeholders, will be replaced by current_app.config)
 # SEEDBOX_SFTP_HOST = "sftp.example.com"
@@ -193,7 +193,7 @@ def _notify_arr_instance(arr_type, downloaded_item_name, local_staging_dir):
 
 def scan_sftp_and_process_items():
     """Main function for the SFTP scanning task."""
-    if not sftp_scan_lock.acquire(blocking=False):
+    if not current_app.sftp_scan_lock.acquire(blocking=False): # Use current_app.sftp_scan_lock
         current_app.logger.info("SFTP Scan deferred: Another scan is already in progress (lock not acquired).")
         return
     try:
@@ -316,7 +316,7 @@ def scan_sftp_and_process_items():
             _save_processed_items(log_file, processed_items)
             current_app.logger.info("SFTP Scanner Task: Scan and process cycle finished (before lock release).")
     finally:
-        sftp_scan_lock.release()
+        current_app.sftp_scan_lock.release() # Use current_app.sftp_scan_lock
         current_app.logger.info("SFTP Scanner Task: Lock released after scan cycle.")
 
 if __name__ == '__main__':

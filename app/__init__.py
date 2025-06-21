@@ -37,6 +37,7 @@ def login_required(f):
 
 def create_app(config_class=Config):
     app = Flask(__name__)
+    app.sftp_scan_lock = sftp_scan_lock # Attach the global lock to the app instance
     app.config.from_object(config_class)
 
     # Configuration du logging de l'application
@@ -123,9 +124,9 @@ def create_app(config_class=Config):
     @login_required
     def trigger_sftp_scan_manual():
         global scheduler # To access the scheduler instance
-        global sftp_scan_lock # To access the lock instance
+        # global sftp_scan_lock # No longer needed as global in this function scope
 
-        if sftp_scan_lock.locked():
+        if current_app.sftp_scan_lock.locked(): # Use current_app.sftp_scan_lock
             flash("An SFTP scan is already in progress. Please wait for it to complete.", "warning")
             current_app.logger.info("Manual SFTP scan trigger aborted: scan already in progress (lock held).")
             if request.referrer and request.referrer != request.url:
