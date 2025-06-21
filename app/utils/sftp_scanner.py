@@ -283,7 +283,7 @@ def scan_sftp_and_process_items():
                             media_exists_in_arr = False
                     else:
                         current_app.logger.info(f"SFTP Scanner Task: Could not reliably parse '{item_name}' for {arr_type} type or type unknown. Proceeding with download process as fallback.")
-                else:
+        else: # Guardrail disabled
                     current_app.logger.info("SFTP Scanner Task: Guardrail disabled. Proceeding with download.")
 
                 if guardrail_enabled and media_exists_in_arr:
@@ -314,11 +314,13 @@ def scan_sftp_and_process_items():
                         manual_import_enabled = config.get('MMS_MANUAL_IMPORT_ATTEMPT_ENABLED', True)
                         set_unmonitored_enabled = config.get('MMS_SET_UNMONITORED_AFTER_IMPORT', True)
 
-                        torrent_hash_map_entry, media_map_info = mapping_manager.find_torrent_by_release_name(item_name)
+                        # Use item_name_on_sftp for map lookup, as that's the original release name.
+                        torrent_hash_map_entry, media_map_info = mapping_manager.find_torrent_by_release_name(item_name_on_sftp)
 
                         # --- Helper function for post-import verification and unmonitoring ---
-                        def _verify_file_and_set_unmonitored(app_type_to_check, item_id_to_check, release_name_for_log, thash_for_map):
-                            current_app.logger.info(f"POST_IMPORT_CHECK: Verifying file for {app_type_to_check} ID {item_id_to_check} ('{release_name_for_log}').")
+                        # release_name_for_arr_activity is item_name_for_arr_processing (folder name if wrapped)
+                        def _verify_file_and_set_unmonitored(app_type_to_check, item_id_to_check, release_name_for_arr_activity, thash_for_map):
+                            current_app.logger.info(f"POST_IMPORT_CHECK: Verifying file for {app_type_to_check} ID {item_id_to_check} (Arr Activity Name: '{release_name_for_arr_activity}').")
                             media_details_api = arr_client.get_expected_media_details(app_type_to_check, item_id_to_check)
                             file_is_present = False
 
@@ -396,16 +398,17 @@ def scan_sftp_and_process_items():
                             mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "processed_sftp_no_map_for_monitor", f"Notified {arr_type}, but no map entry for monitoring.")
                         elif monitoring_enabled and media_map_info:
                             target_id = media_map_info.get('target_id')
-                            current_app.logger.info(f"SFTP Scanner Task: Monitoring import of '{item_name}' for {arr_type} (ID: {target_id}), monitoring for {monitoring_duration_minutes} min.")
-                            mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "monitoring_arr_import", f"Awaiting import by {arr_type}.")
+                            # Use item_name_for_arr_processing for logging and queue checks related to *Arr activity
+                            current_app.logger.info(f"SFTP Scanner Task: Monitoring import of '{item_name_for_arr_processing}' (original SFTP name: '{item_name_on_sftp}') for {media_map_info['app_type']} (ID: {target_id}), monitoring for {monitoring_duration_minutes} min.")
+                            mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "monitoring_arr_import", f"Awaiting import by {media_map_info['app_type']}.")
 
                             start_time = time.time()
                             processed_successfully_or_intervention_attempted = False
 
                             while time.time() - start_time < monitoring_duration_minutes * 60:
                                 queue_status_result = arr_client.get_item_status_from_queue(
-                                    arr_type=media_map_info['app_type'], # Use app_type from map
-                                    release_name=item_name,
+                                    arr_type=media_map_info['app_type'],
+                                    release_name=item_name_for_arr_processing, # Name known by *Arr
                                     torrent_hash=torrent_hash_map_entry
                                 )
                                 status = queue_status_result.get("status")
@@ -419,7 +422,7 @@ def scan_sftp_and_process_items():
                                     file_really_present = _verify_file_and_set_unmonitored(
                                         media_map_info['app_type'],
                                         target_id,
-                                        item_name, # release_name
+                                        item_name_for_arr_processing, # Name known by *Arr
                                         torrent_hash_map_entry
                                     )
                                     if not file_really_present:
@@ -500,8 +503,8 @@ def scan_sftp_and_process_items():
                                             manual_import_success_nf = arr_client.trigger_manual_import(
                                                 arr_type=media_map_info['app_type'],
                                                 item_id=target_id,
-                                                file_path_in_staging=str(staging_dir / item_name),
-                                                release_name=item_name
+                                            file_path_in_staging=str(staging_dir / item_name_for_arr_processing), # Use the name known to *Arr
+                                            release_name=item_name_for_arr_processing # Use the name known to *Arr
                                             )
                                             if manual_import_success_nf:
                                                 current_app.logger.info(f"SFTP Scanner Task (from not_found_in_queue): Manual import for '{item_name}' sent. Verifying after {config.get('MMS_IMPORT_MONITORING_INTERVAL_SECONDS', 30)}s delay.")
@@ -537,7 +540,7 @@ def scan_sftp_and_process_items():
                                 final_file_check_after_timeout = _verify_file_and_set_unmonitored(
                                     media_map_info['app_type'],
                                     target_id,
-                                    item_name,
+                                                item_name_for_arr_processing, # Name known by *Arr
                                     torrent_hash_map_entry
                                 )
                                 if not final_file_check_after_timeout:
