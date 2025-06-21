@@ -236,13 +236,15 @@ def scan_sftp_and_process_items():
             remote_items = _list_remote_files(sftp, remote_base_path)
 
             for item_attr in remote_items:
-                item_name = item_attr.filename
-                remote_item_full_path = f"{remote_base_path.rstrip('/')}/{item_name}"
+                item_name = item_attr.filename # Nom original tel que listé sur SFTP
+                item_name_on_sftp = item_name  # Conserver le nom original pour le map et le log SFTP
+
+                remote_item_full_path = f"{remote_base_path.rstrip('/')}/{item_name_on_sftp}"
 
                 if remote_item_full_path in processed_items:
                     continue
 
-                current_app.logger.info(f"SFTP Scanner Task: Found new item '{item_name}' in {remote_base_path} for {arr_type}.")
+                current_app.logger.info(f"SFTP Scanner Task: Found new item '{item_name_on_sftp}' in {remote_base_path} for {arr_type}.")
 
                 guardrail_enabled = current_app.config.get('SFTP_SCANNER_GUARDFRAIL_ENABLED', True)
                 media_exists_in_arr = False
