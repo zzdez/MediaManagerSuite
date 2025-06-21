@@ -15,11 +15,14 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from app.utils.sftp_scanner import scan_sftp_and_process_items
 import datetime
 import atexit
+import threading
 
 logger = logging.getLogger(__name__)
 
 # Global scheduler instance
 scheduler = None
+# Global lock for SFTP scan
+sftp_scan_lock = threading.Lock()
 
 # Décorateur login_required
 def login_required(f):
@@ -34,6 +37,7 @@ def login_required(f):
 
 def create_app(config_class=Config):
     app = Flask(__name__)
+    app.sftp_scan_lock = sftp_scan_lock # Attach the global lock to the app instance
     app.config.from_object(config_class)
 
     # Configuration du logging de l'application
@@ -87,7 +91,7 @@ def create_app(config_class=Config):
     @app.route('/')
     @login_required
     def home():
-        current_year = datetime.utcnow().year
+        current_year = datetime.datetime.now(datetime.timezone.utc).year
         return render_template('home_portal.html',
                                title="Portail Media Manager Suite",
                                current_year=current_year)
@@ -115,6 +119,46 @@ def create_app(config_class=Config):
         session.pop('logged_in', None)
         flash('Vous avez été déconnecté.', 'info')
         return redirect(url_for('login'))
+
+    @app.route('/trigger-sftp-scan')
+    @login_required
+    def trigger_sftp_scan_manual():
+        global scheduler # To access the scheduler instance
+        # global sftp_scan_lock # No longer needed as global in this function scope
+
+        if current_app.sftp_scan_lock.locked(): # Use current_app.sftp_scan_lock
+            flash("An SFTP scan is already in progress. Please wait for it to complete.", "warning")
+            current_app.logger.info("Manual SFTP scan trigger aborted: scan already in progress (lock held).")
+            if request.referrer and request.referrer != request.url:
+                return redirect(request.referrer)
+            else:
+                return redirect(url_for('home'))
+
+        if scheduler and scheduler.running:
+            job = scheduler.get_job('sftp_scan_job')
+            if job:
+                try:
+                    # Reschedule to run ASAP (e.g., in 1 second)
+                    # The job is scheduled with naive datetime, so use naive here too.
+                    new_next_run_time = datetime.datetime.now() + datetime.timedelta(seconds=1)
+                    job.modify(next_run_time=new_next_run_time)
+                    flash("Manual SFTP scan requested. It will start shortly.", "success")
+                    current_app.logger.info(f"Manual SFTP scan triggered for job {job.id}. New next run time: {new_next_run_time}")
+                except Exception as e:
+                    flash(f"Error triggering scan: {str(e)}", "danger") # Use str(e) for safer flash message
+                    current_app.logger.error(f"Error modifying SFTP scan job: {e}", exc_info=True)
+            else:
+                flash("SFTP scan job ('sftp_scan_job') not found.", "warning")
+                current_app.logger.warning("Manual SFTP scan trigger failed: Job 'sftp_scan_job' not found.")
+        else:
+            flash("Scheduler not running or not initialized.", "danger")
+            current_app.logger.error("Manual SFTP scan trigger failed: Scheduler not running or not initialized.")
+
+        # Try to redirect to referrer, otherwise to home.
+        if request.referrer and request.referrer != request.url:
+             return redirect(request.referrer)
+        else:
+             return redirect(url_for('home')) # Fallback to home
 
     # Gestionnaires d'erreurs HTTP globaux
     @app.errorhandler(404)
