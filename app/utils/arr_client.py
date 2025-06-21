@@ -174,6 +174,285 @@ def update_radarr_movie(movie_data):
     # Radarr's PUT endpoint requires the movie ID in the URL.
     return _radarr_api_request('PUT', f"movie/{movie_data['id']}", json_data=movie_data)
 
+def get_radarr_queue(page=1, page_size=20, include_unknown_movie_items=False):
+    """
+    Fetches the Radarr queue.
+    Can be paginated.
+    """
+    params = {
+        'page': page,
+        'pageSize': page_size,
+        'includeUnknownMovieItems': str(include_unknown_movie_items).lower()
+        # Radarr v3 queue endpoint also supports:
+        # 'includeMovie': 'true' / 'false'
+    }
+    current_app.logger.debug(f"Radarr: Fetching queue with params: {params}")
+    return _radarr_api_request('GET', 'queue', params=params)
+
+def get_item_status_from_queue(arr_type: str, release_name: str, torrent_hash: str = None, unique_client_id: str = "MediaManagerSuite_SFTP_Scanner"):
+    """
+    Checks the status of a specific item in the Sonarr or Radarr queue.
+
+    Args:
+        arr_type (str): 'sonarr' or 'radarr'.
+        release_name (str): The release name (title) of the item as it would appear in the queue.
+                            This is often the folder name or main file name of the download.
+        torrent_hash (str, optional): The torrent hash, which might be used as 'downloadId' in the queue.
+        unique_client_id (str, optional): The unique client ID that might be part of the downloadId or a specific field.
+                                         Defaults to "MediaManagerSuite_SFTP_Scanner".
+
+    Returns:
+        dict: A dictionary with "status" and "messages" (list of error/info messages).
+              Possible statuses:
+              - "completed": Item imported successfully.
+              - "importing": Item is currently being imported.
+              - "pending": Item is in queue, waiting for import (e.g., "AwaitingImport").
+              - "failed": Import failed. Messages will contain details.
+              - "not_found_in_queue": Item not found in the queue.
+              - "api_error": Error communicating with the API.
+              - "unknown": Status could not be determined.
+    """
+    logger.debug(f"get_item_status_from_queue: Called for {arr_type}, release_name='{release_name}', torrent_hash='{torrent_hash}', client_id='{unique_client_id}'")
+
+    queue_data = None
+    if arr_type == 'sonarr':
+        # Fetch multiple pages if necessary, though usually recent items are on the first page.
+        # For simplicity, starting with the first page (e.g., 20-50 items).
+        # Adjust pageSize if a very active queue often pushes items off the first page quickly.
+        raw_queue_response = get_sonarr_queue(page=1, page_size=50)
+        if raw_queue_response and 'records' in raw_queue_response:
+            queue_data = raw_queue_response['records']
+    elif arr_type == 'radarr':
+        raw_queue_response = get_radarr_queue(page=1, page_size=50)
+        if raw_queue_response and 'records' in raw_queue_response: # Radarr's queue is not under 'records' key, it's a direct list.
+            queue_data = raw_queue_response # Radarr's queue is a direct list of items
+    else:
+        logger.error(f"Invalid arr_type: {arr_type}")
+        return {"status": "api_error", "messages": ["Invalid arr_type specified."]}
+
+    if queue_data is None:
+        logger.warning(f"{arr_type.capitalize()}: Queue data could not be fetched or was empty/invalid.")
+        return {"status": "api_error", "messages": [f"Failed to fetch or parse queue from {arr_type.capitalize()}."]}
+
+    logger.debug(f"{arr_type.capitalize()}: Checking {len(queue_data)} items from queue for release '{release_name}' or hash '{torrent_hash}'.")
+
+    for item in queue_data:
+        item_title = item.get('title', '').lower()
+        item_download_id = item.get('downloadId', '').lower() # This is often the torrent hash or unique ID from download client
+        item_status = item.get('status', '').lower()
+        # Sonarr specific: item.get('trackedDownloadState') can be 'importPending', 'importFailed'
+        # Radarr specific: item.get('trackedDownloadStatus') might be more detailed.
+
+        status_messages = item.get('statusMessages', [])
+        error_messages = []
+
+        # Compile error messages from statusMessages array
+        if status_messages:
+            for msg_group in status_messages:
+                if msg_group.get('messages'):
+                    error_messages.extend(msg_group.get('messages'))
+
+        # Normalize release_name for comparison (lowercase, replace dots/underscores with spaces)
+        normalized_release_name = release_name.lower().replace('.', ' ').replace('_', ' ')
+        normalized_item_title = item_title.replace('.', ' ').replace('_', ' ')
+
+        # --- Matching Logic ---
+        # Primary match: if torrent_hash is provided and it matches item_download_id
+        # Secondary match: if release_name is "similar enough" to item_title.
+        # Tertiary match: if unique_client_id is present in item_download_id (less reliable alone)
+
+        matched = False
+        if torrent_hash and item_download_id == torrent_hash.lower():
+            logger.info(f"{arr_type.capitalize()}: Matched item by torrent_hash: '{torrent_hash}' -> Title: '{item.get('title')}'")
+            matched = True
+        elif normalized_release_name in normalized_item_title or normalized_item_title in normalized_release_name : # Check for substring inclusion
+            logger.info(f"{arr_type.capitalize()}: Matched item by release_name (substring): '{release_name}' -> Title: '{item.get('title')}'")
+            matched = True
+        # Add more sophisticated matching if needed, e.g., Levenshtein distance or regex.
+
+        if matched:
+            logger.info(f"{arr_type.capitalize()}: Found matching item in queue: Title='{item.get('title', 'N/A')}', Status='{item_status}', DownloadID='{item_download_id}'")
+            logger.debug(f"Full matched item details: {item}")
+
+            # Interpreting status
+            # Sonarr: status: "Completed", "Downloading", "Warning", "Failed", "Queued"
+            #         trackedDownloadState: "downloading", "importPending", "importFailed"
+            # Radarr: status: "queued", "downloading", "completed", "failed", "warning"
+
+            if item_status == 'completed':
+                return {"status": "completed", "messages": ["Item successfully imported."]}
+            elif item_status in ['downloading', 'queued']: # Radarr 'queued', Sonarr 'Queued' or 'Downloading' (pre-import phase)
+                 # Sonarr specific: 'AwaitingImport' status in 'statusMessages' or 'trackedDownloadState' == 'importPending'
+                if arr_type == 'sonarr' and (item.get('trackedDownloadState', '').lower() == 'importpending' or any("awaitingimport" in msg.lower() for msg in error_messages)):
+                    return {"status": "pending", "messages": error_messages or ["Item is awaiting import."]}
+                return {"status": "pending", "messages": error_messages or ["Item is queued or still downloading."]}
+            elif item_status == 'warning': # Often means manual import needed or other issues
+                # Check for "No files found are eligible for import"
+                no_files_eligible = any("no files found are eligible for import" in msg.lower() for msg in error_messages)
+                if no_files_eligible:
+                    logger.warning(f"{arr_type.capitalize()}: Item '{item.get('title')}' has 'no files eligible' error.")
+                    return {"status": "failed", "messages": error_messages, "reason_code": "NO_FILES_ELIGIBLE"}
+                logger.warning(f"{arr_type.capitalize()}: Item '{item.get('title')}' has status 'warning'. Messages: {error_messages}")
+                return {"status": "failed", "messages": error_messages, "reason_code": "ARR_WARNING"} # Generic failure for warning
+            elif item_status == 'failed':
+                logger.warning(f"{arr_type.capitalize()}: Item '{item.get('title')}' has status 'failed'. Messages: {error_messages}")
+                # Check for "No files found are eligible for import" specifically for failed status too
+                no_files_eligible = any("no files found are eligible for import" in msg.lower() for msg in error_messages)
+                if no_files_eligible:
+                    return {"status": "failed", "messages": error_messages, "reason_code": "NO_FILES_ELIGIBLE"}
+                return {"status": "failed", "messages": error_messages, "reason_code": "ARR_FAILED"}
+
+            # Fallback for statuses not explicitly handled above but indicating an intermediate state
+            if arr_type == 'sonarr' and item.get('trackedDownloadState', '').lower() == 'importpending':
+                 return {"status": "pending", "messages": error_messages or ["Item is awaiting import."]}
+
+            logger.info(f"Item '{item.get('title')}' found with status '{item_status}', but not explicitly handled. Treating as 'unknown'. Errors: {error_messages}")
+            return {"status": "unknown", "messages": error_messages or [f"Unhandled status: {item_status}"]}
+
+    logger.info(f"{arr_type.capitalize()}: Item matching '{release_name}' or hash '{torrent_hash}' not found in the first {len(queue_data)} queue items.")
+    return {"status": "not_found_in_queue", "messages": ["Item not found in the current queue view."]}
+
+def trigger_manual_import(arr_type: str, item_id: int, file_path_in_staging: str, release_name: str):
+    """
+    Triggers a Manual Import command in Sonarr or Radarr.
+
+    Args:
+        arr_type (str): 'sonarr' or 'radarr'.
+        item_id (int): The seriesId (for Sonarr) or movieId (for Radarr).
+        file_path_in_staging (str): Absolute path to the file/folder in the staging directory.
+        release_name (str): The original release name, used for logging and potentially
+                            extracting additional metadata if needed in the future.
+
+    Returns:
+        bool: True if the command was successfully triggered, False otherwise.
+    """
+    logger.info(f"{arr_type.capitalize()}: Attempting ManualImport for item ID {item_id}, path '{file_path_in_staging}', release '{release_name}'.")
+
+    command_payload = {
+        'name': 'ManualImport',
+        'path': file_path_in_staging,
+        'importMode': 'Move'  # Ensure files are moved
+    }
+
+    # Add specific parameters based on arr_type
+    if arr_type == 'sonarr':
+        command_payload['seriesId'] = item_id
+        # Sonarr's ManualImport might also accept:
+        # downloadId: str (optional)
+        # quality: QualityModel (optional)
+        # language: LanguageModel (optional)
+        # releaseGroup: str (optional)
+        # sceneName: str (optional)
+        # TODO: Future enhancement: Extract quality/language from release_name if possible
+        # and if the API benefits from it for better matching during manual import.
+        # For now, relying on Sonarr to determine these from the files or series defaults.
+    elif arr_type == 'radarr':
+        command_payload['movieId'] = item_id
+        # Radarr's ManualImport might also accept:
+        # downloadId: str (optional)
+        # quality: QualityModel (optional)
+        # language: LanguageModel (optional)
+        # releaseGroup: str (optional)
+        # TODO: Similar to Sonarr, future enhancement for quality/language.
+    else:
+        logger.error(f"ManualImport: Invalid arr_type '{arr_type}' specified.")
+        return False
+
+    logger.debug(f"{arr_type.capitalize()}: ManualImport payload: {command_payload}")
+
+    response = None
+    if arr_type == 'sonarr':
+        response = _sonarr_api_request('POST', 'command', json_data=command_payload)
+    elif arr_type == 'radarr':
+        response = _radarr_api_request('POST', 'command', json_data=command_payload)
+
+    if response and (response.get('status') == 'started' or response.get('state') == 'started' or response.get('status') == 'queued' or response.get('id') is not None):
+        logger.info(f"{arr_type.capitalize()}: Successfully triggered ManualImport for ID {item_id}, path '{file_path_in_staging}'. Response: {response}")
+        return True
+    else:
+        logger.error(f"{arr_type.capitalize()}: Failed to trigger ManualImport for ID {item_id}, path '{file_path_in_staging}'. Response: {response}")
+        return False
+
+def trigger_rescan(arr_type: str, item_id: int):
+    """
+    Triggers a Rescan command for a specific series in Sonarr or movie in Radarr.
+
+    Args:
+        arr_type (str): 'sonarr' or 'radarr'.
+        item_id (int): The seriesId (for Sonarr) or movieId (for Radarr).
+
+    Returns:
+        bool: True if the command was successfully triggered, False otherwise.
+    """
+    logger.info(f"{arr_type.capitalize()}: Attempting Rescan for item ID {item_id}.")
+
+    command_payload = {}
+    command_name = ""
+
+    if arr_type == 'sonarr':
+        command_name = 'RescanSeries'
+        command_payload = {'name': command_name, 'seriesId': item_id}
+    elif arr_type == 'radarr':
+        command_name = 'RescanMovie'
+        command_payload = {'name': command_name, 'movieId': item_id}
+    else:
+        logger.error(f"Rescan: Invalid arr_type '{arr_type}' specified.")
+        return False
+
+    logger.debug(f"{arr_type.capitalize()}: Rescan payload: {command_payload}")
+    response = None
+    if arr_type == 'sonarr':
+        response = _sonarr_api_request('POST', 'command', json_data=command_payload)
+    elif arr_type == 'radarr':
+        response = _radarr_api_request('POST', 'command', json_data=command_payload)
+
+    if response and (response.get('status') == 'started' or response.get('state') == 'started' or response.get('status') == 'queued' or response.get('id') is not None):
+        logger.info(f"{arr_type.capitalize()}: Successfully triggered {command_name} for ID {item_id}. Response: {response}")
+        return True
+    else:
+        logger.error(f"{arr_type.capitalize()}: Failed to trigger {command_name} for ID {item_id}. Response: {response}")
+        return False
+
+def get_expected_media_details(arr_type: str, item_id: int):
+    """
+    Fetches detailed information for a specific movie (Radarr) or series (Sonarr).
+
+    Args:
+        arr_type (str): 'sonarr' or 'radarr'.
+        item_id (int): The seriesId (for Sonarr) or movieId (for Radarr).
+
+    Returns:
+        dict: A dictionary containing the media details from the API, or None if an error occurs.
+              For Sonarr, this returns series details. Episode-specific details might require another call.
+    """
+    logger.info(f"{arr_type.capitalize()}: Fetching details for item ID {item_id}.")
+
+    response = None
+    if arr_type == 'sonarr':
+        # This fetches series details. For episode naming patterns, further processing might be needed
+        # or analysis of the series object structure (e.g., series.path, series.tvShowAlias).
+        response = _sonarr_api_request('GET', f'series/{item_id}')
+    elif arr_type == 'radarr':
+        response = _radarr_api_request('GET', f'movie/{item_id}')
+    else:
+        logger.error(f"GetMediaDetails: Invalid arr_type '{arr_type}' specified.")
+        return None
+
+    if response:
+        # The response itself is the dictionary of details.
+        # Example details useful for renaming:
+        # Radarr: response.get('title'), response.get('year'), response.get('path')
+        # Sonarr: response.get('title'), response.get('year'), response.get('path'),
+        #         response.get('seasons'), response.get('seriesType'),
+        #         how Sonarr formats episode names (e.g. "Series Title - S01E01 - Episode Title.ext")
+        #         This might be inferred from 'path' structure or series settings if available via API.
+        logger.info(f"{arr_type.capitalize()}: Successfully fetched details for ID {item_id}.")
+        logger.debug(f"Details for {item_id}: {str(response)[:200]}...") # Log a snippet
+        return response
+    else:
+        logger.error(f"{arr_type.capitalize()}: Failed to fetch details for ID {item_id}.")
+        return None
+
 def check_radarr_movie_exists(movie_title: str, movie_year: int = None) -> bool:
     """
     Checks if a movie exists in Radarr and has an associated, non-missing file.
@@ -357,6 +636,22 @@ def get_sonarr_episode_files(series_id):
 def delete_sonarr_episode_file(episode_file_id):
     """Deletes a single episode file from Sonarr's database and from disk."""
     return _sonarr_api_request('DELETE', f'episodefile/{episode_file_id}')
+
+def get_sonarr_queue(page=1, page_size=20, include_unknown_series_items=False):
+    """
+    Fetches the Sonarr queue.
+    Can be paginated.
+    """
+    params = {
+        'page': page,
+        'pageSize': page_size,
+        'includeUnknownSeriesItems': str(include_unknown_series_items).lower()
+        # Sonarr v3 queue endpoint also supports:
+        # 'includeSeries': 'true' / 'false'
+        # 'includeEpisode': 'true' / 'false'
+    }
+    current_app.logger.debug(f"Sonarr: Fetching queue with params: {params}")
+    return _sonarr_api_request('GET', 'queue', params=params)
 
 # ... (après les autres fonctions sonarr)
 

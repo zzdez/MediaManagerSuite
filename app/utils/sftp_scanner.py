@@ -3,8 +3,9 @@ import os
 import json
 from pathlib import Path
 import pysftp # Assuming pysftp, may need to install or change later
+import time
 from flask import current_app
-from . import arr_client
+from . import arr_client, mapping_manager # Added mapping_manager
 # Removed: from app import sftp_scan_lock
 
 # Configuration constants (placeholders, will be replaced by current_app.config)
@@ -300,14 +301,121 @@ def scan_sftp_and_process_items():
                              current_app.logger.info(f"SFTP Scanner Task: Guardrail - Parsing insufficient for '{item_name}'. Proceeding with download.")
 
                 if _download_item(sftp, remote_item_full_path, staging_dir, item_name):
-                    if _notify_arr_instance(arr_type, item_name, staging_dir):
+                    notification_successful = _notify_arr_instance(arr_type, item_name, staging_dir)
+
+                    if notification_successful:
+                        current_app.logger.info(f"SFTP Scanner Task: Notification sent to {arr_type} for '{item_name}'. Beginning import monitoring if enabled.")
+
+                        # --- Import Monitoring and Intervention Logic ---
+                        config = current_app.config
+                        monitoring_enabled = config.get('MMS_IMPORT_MONITORING_ENABLED', True)
+                        monitoring_duration_minutes = config.get('MMS_IMPORT_MONITORING_DURATION_MINUTES', 5)
+                        monitoring_interval_seconds = config.get('MMS_IMPORT_MONITORING_INTERVAL_SECONDS', 30)
+                        manual_import_enabled = config.get('MMS_MANUAL_IMPORT_ATTEMPT_ENABLED', True)
+
+                        torrent_hash_map_entry, media_map_info = mapping_manager.find_torrent_by_release_name(item_name)
+
+                        if not media_map_info:
+                            current_app.logger.warning(f"SFTP Scanner Task: No pre-association found in mapping_manager for release '{item_name}'. Skipping import monitoring and intervention.")
+                            # Mark as processed to avoid re-download, but status in map won't be updated beyond initial.
+                            processed_items.add(remote_item_full_path)
+                            new_items_processed_this_run = True
+                            mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "processed_sftp_no_map_for_monitor", f"Notified {arr_type}, but no map entry for monitoring.")
+                        elif monitoring_enabled and media_map_info:
+                            target_id = media_map_info.get('target_id')
+                            current_app.logger.info(f"SFTP Scanner Task: Monitoring import of '{item_name}' for {arr_type} (ID: {target_id}), monitoring for {monitoring_duration_minutes} min.")
+                            mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "monitoring_arr_import", f"Awaiting import by {arr_type}.")
+
+                            start_time = time.time()
+                            processed_successfully_or_intervention_attempted = False
+
+                            while time.time() - start_time < monitoring_duration_minutes * 60:
+                                queue_status_result = arr_client.get_item_status_from_queue(
+                                    arr_type=media_map_info['app_type'], # Use app_type from map
+                                    release_name=item_name,
+                                    torrent_hash=torrent_hash_map_entry
+                                )
+                                status = queue_status_result.get("status")
+                                messages = queue_status_result.get("messages", [])
+                                reason_code = queue_status_result.get("reason_code") # e.g. NO_FILES_ELIGIBLE
+
+                                current_app.logger.debug(f"SFTP Scanner Task: Queue check for '{item_name}': Status='{status}', Reason='{reason_code}', Msgs='{messages}'")
+
+                                if status == "completed":
+                                    current_app.logger.info(f"SFTP Scanner Task: Import of '{item_name}' confirmed as COMPLETED by {arr_type}.")
+                                    mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "imported_by_arr", f"{arr_type} reported import complete.")
+                                    processed_successfully_or_intervention_attempted = True
+                                    break
+                                elif status == "pending" or status == "importing":
+                                    current_app.logger.info(f"SFTP Scanner Task: Import of '{item_name}' is '{status}'. Waiting...")
+                                    mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, f"arr_import_{status}", f"{arr_type} import is {status}.")
+                                elif status == "failed" and reason_code == "NO_FILES_ELIGIBLE":
+                                    current_app.logger.warning(f"SFTP Scanner Task: Import of '{item_name}' FAILED in {arr_type} with NO_FILES_ELIGIBLE. Messages: {messages}")
+                                    mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "arr_import_failed_no_files", "; ".join(messages))
+                                    if manual_import_enabled:
+                                        current_app.logger.info(f"SFTP Scanner Task: Attempting manual import for '{item_name}' into {arr_type} ID {target_id}.")
+                                        manual_import_success = arr_client.trigger_manual_import(
+                                            arr_type=media_map_info['app_type'],
+                                            item_id=target_id,
+                                            file_path_in_staging=str(staging_dir / item_name),
+                                            release_name=item_name
+                                        )
+                                        if manual_import_success:
+                                            current_app.logger.info(f"SFTP Scanner Task: Manual import command for '{item_name}' sent successfully. Status updated, further monitoring might be needed or rescan.")
+                                            # Consider a brief re-monitoring or a rescan call here. For now, just log.
+                                            # arr_client.trigger_rescan(media_map_info['app_type'], target_id) # Optional rescan
+                                            mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "mms_manual_import_sent", f"Manual import command sent to {arr_type}.")
+                                        else:
+                                            current_app.logger.error(f"SFTP Scanner Task: Manual import command for '{item_name}' FAILED to send.")
+                                            mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "mms_manual_import_failed_to_send", f"Failed to send manual import command to {arr_type}.")
+                                    else:
+                                        current_app.logger.info(f"SFTP Scanner Task: Manual import disabled. '{item_name}' remains failed in {arr_type}.")
+                                        mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "arr_import_failed_no_intervention", "Manual import disabled.")
+                                    processed_successfully_or_intervention_attempted = True # Intervention was attempted or decided against
+                                    break
+                                elif status == "failed": # Other failure reason
+                                    current_app.logger.error(f"SFTP Scanner Task: Import of '{item_name}' FAILED in {arr_type}. Reason: {reason_code}, Msgs: {messages}")
+                                    mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, f"arr_import_failed_{reason_code or 'other'}", "; ".join(messages))
+                                    processed_successfully_or_intervention_attempted = True
+                                    break
+                                elif status == "not_found_in_queue":
+                                    # If not found early, it might have processed very fast. If late, it's an issue.
+                                    if (time.time() - start_time) < monitoring_interval_seconds * 2: # e.g. within first minute
+                                        current_app.logger.info(f"SFTP Scanner Task: '{item_name}' not found in queue shortly after notification. Assuming already processed or name mismatch for queue lookup.")
+                                        # Could be success, could be an issue. To be safe, don't assume success without 'completed' status.
+                                        # Check if media exists as a final confirmation? For now, log and break.
+                                        mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "arr_import_not_found_in_queue_early", "Not found in queue shortly after notification.")
+                                    else:
+                                        current_app.logger.warning(f"SFTP Scanner Task: '{item_name}' not found in {arr_type} queue after monitoring. Status uncertain.")
+                                        mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "arr_import_vanished_from_queue", "Vanished from queue during monitoring.")
+                                    processed_successfully_or_intervention_attempted = True # End monitoring for this item
+                                    break
+                                elif status == "api_error" or status == "unknown":
+                                    current_app.logger.error(f"SFTP Scanner Task: API error or unknown status for '{item_name}' from {arr_type} queue. Msgs: {messages}")
+                                    mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "arr_import_monitoring_error", "; ".join(messages))
+                                    processed_successfully_or_intervention_attempted = True
+                                    break
+
+                                time.sleep(monitoring_interval_seconds)
+
+                            if not processed_successfully_or_intervention_attempted: # Loop timed out
+                                current_app.logger.warning(f"SFTP Scanner Task: Import monitoring for '{item_name}' timed out after {monitoring_duration_minutes} minutes. Status uncertain.")
+                                mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "arr_import_monitoring_timeout", f"Monitoring timed out for {arr_type}.")
+
+                        # Regardless of monitoring outcome, if initial notification was ok, mark sftp item as processed
                         processed_items.add(remote_item_full_path)
                         new_items_processed_this_run = True
-                        current_app.logger.info(f"SFTP Scanner Task: Successfully processed and logged '{item_name}'.")
-                    else:
+                        current_app.logger.info(f"SFTP Scanner Task: Finished processing (including monitoring/intervention if any) for '{item_name}'. Marked as processed for SFTP.")
+
+                    else: # Notification failed
                         current_app.logger.error(f"SFTP Scanner Task: Failed to notify {arr_type} for '{item_name}'. Item will be re-processed next cycle.")
-                else:
+                        # Do not add to processed_items, it will be picked up again.
+                        if torrent_hash_map_entry: # If we found it in map
+                             mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "arr_notification_failed", f"Failed to notify {arr_type}.")
+                else: # Download failed
                     current_app.logger.error(f"SFTP Scanner Task: Failed to download '{item_name}'. It will be retried next cycle.")
+                    if torrent_hash_map_entry: # If we found it in map, update status
+                        mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "sftp_download_failed", f"Failed to download {item_name} from SFTP.")
 
         if sftp:
             sftp.close()

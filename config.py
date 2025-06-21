@@ -78,6 +78,12 @@ class Config:
     # before downloading from SFTP.
     SFTP_SCANNER_GUARDFRAIL_ENABLED = os.environ.get('SFTP_SCANNER_GUARDFRAIL_ENABLED', 'True').lower() == 'true'
 
+    # --- Configuration pour la Surveillance et Intervention d'Importation MMS ---
+    MMS_IMPORT_MONITORING_ENABLED = os.environ.get('MMS_IMPORT_MONITORING_ENABLED', 'True').lower() == 'true'
+    MMS_IMPORT_MONITORING_DURATION_MINUTES = int(os.environ.get('MMS_IMPORT_MONITORING_DURATION_MINUTES', 5))
+    MMS_IMPORT_MONITORING_INTERVAL_SECONDS = int(os.environ.get('MMS_IMPORT_MONITORING_INTERVAL_SECONDS', 30))
+    MMS_MANUAL_IMPORT_ATTEMPT_ENABLED = os.environ.get('MMS_MANUAL_IMPORT_ATTEMPT_ENABLED', 'True').lower() == 'true'
+
     # --- Configuration Interface de Configuration ---
     APP_PASSWORD = os.environ.get('APP_PASSWORD')
 
