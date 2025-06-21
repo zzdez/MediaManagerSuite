@@ -504,8 +504,8 @@ def scan_sftp_and_process_items():
                                                 release_name=item_name
                                             )
                                             if manual_import_success_nf:
-                                                current_app.logger.info(f"SFTP Scanner Task (from not_found_in_queue): Manual import for '{item_name}' sent. Verifying after short delay.")
-                                                time.sleep(config.get('MMS_IMPORT_MONITORING_INTERVAL_SECONDS', 30) / 2)
+                                                current_app.logger.info(f"SFTP Scanner Task (from not_found_in_queue): Manual import for '{item_name}' sent. Verifying after {config.get('MMS_IMPORT_MONITORING_INTERVAL_SECONDS', 30)}s delay.")
+                                                time.sleep(config.get('MMS_IMPORT_MONITORING_INTERVAL_SECONDS', 30))
 
                                                 _verify_file_and_set_unmonitored( # Call verify again
                                                     media_map_info['app_type'],
