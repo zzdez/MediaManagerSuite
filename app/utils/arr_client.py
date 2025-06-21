@@ -224,8 +224,12 @@ def get_item_status_from_queue(arr_type: str, release_name: str, torrent_hash: s
             queue_data = raw_queue_response['records']
     elif arr_type == 'radarr':
         raw_queue_response = get_radarr_queue(page=1, page_size=50)
-        if raw_queue_response and 'records' in raw_queue_response: # Radarr's queue is not under 'records' key, it's a direct list.
-            queue_data = raw_queue_response # Radarr's queue is a direct list of items
+        # Radarr's queue response IS structured like Sonarr's, with a 'records' key.
+        if raw_queue_response and 'records' in raw_queue_response:
+            queue_data = raw_queue_response['records']
+        elif isinstance(raw_queue_response, list): # Fallback if API ever changes to direct list (unlikely for /queue)
+            current_app.logger.warning("Radarr queue response was a direct list, not a dict with 'records'. This is unexpected for /api/v3/queue.")
+            queue_data = raw_queue_response
     else:
         logger.error(f"Invalid arr_type: {arr_type}")
         return {"status": "api_error", "messages": ["Invalid arr_type specified."]}
