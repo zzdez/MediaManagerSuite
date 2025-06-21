@@ -15,11 +15,14 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from app.utils.sftp_scanner import scan_sftp_and_process_items
 import datetime
 import atexit
+import threading
 
 logger = logging.getLogger(__name__)
 
 # Global scheduler instance
 scheduler = None
+# Global lock for SFTP scan
+sftp_scan_lock = threading.Lock()
 
 # Décorateur login_required
 def login_required(f):
@@ -120,6 +123,16 @@ def create_app(config_class=Config):
     @login_required
     def trigger_sftp_scan_manual():
         global scheduler # To access the scheduler instance
+        global sftp_scan_lock # To access the lock instance
+
+        if sftp_scan_lock.locked():
+            flash("An SFTP scan is already in progress. Please wait for it to complete.", "warning")
+            current_app.logger.info("Manual SFTP scan trigger aborted: scan already in progress (lock held).")
+            if request.referrer and request.referrer != request.url:
+                return redirect(request.referrer)
+            else:
+                return redirect(url_for('home'))
+
         if scheduler and scheduler.running:
             job = scheduler.get_job('sftp_scan_job')
             if job:

@@ -4,7 +4,8 @@ import json
 from pathlib import Path
 import pysftp # Assuming pysftp, may need to install or change later
 from flask import current_app
-from . import arr_client # Will uncomment once arr_client is updated
+from . import arr_client
+from app import sftp_scan_lock # Import the global lock
 
 # Configuration constants (placeholders, will be replaced by current_app.config)
 # SEEDBOX_SFTP_HOST = "sftp.example.com"
@@ -192,10 +193,16 @@ def _notify_arr_instance(arr_type, downloaded_item_name, local_staging_dir):
 
 def scan_sftp_and_process_items():
     """Main function for the SFTP scanning task."""
-    current_app.logger.info("SFTP Scanner Task: Starting scan and process cycle.")
+    if not sftp_scan_lock.acquire(blocking=False):
+        current_app.logger.info("SFTP Scan deferred: Another scan is already in progress (lock not acquired).")
+        return
+    try:
+        current_app.logger.info("SFTP Scanner Task: Lock acquired, starting scan and process cycle.")
+        # All the original code of scan_sftp_and_process_items goes here
+        # current_app.logger.info("SFTP Scanner Task: Starting scan and process cycle.") # This line is now covered by the log above
 
-    sftp_config = current_app.config
-    staging_dir = Path(sftp_config['STAGING_DIR'])
+        sftp_config = current_app.config
+        staging_dir = Path(sftp_config['STAGING_DIR'])
     log_file = sftp_config['PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT']
 
     if not staging_dir.exists():
@@ -325,7 +332,10 @@ def scan_sftp_and_process_items():
     if new_items_processed_this_run:
         _save_processed_items(log_file, processed_items)
 
-    current_app.logger.info("SFTP Scanner Task: Scan and process cycle finished.")
+        current_app.logger.info("SFTP Scanner Task: Scan and process cycle finished (before lock release).") # Modified log
+    finally:
+        sftp_scan_lock.release()
+        current_app.logger.info("SFTP Scanner Task: Lock released after scan cycle.")
 
 if __name__ == '__main__':
     # This section is for local testing if you run this script directly.
