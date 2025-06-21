@@ -481,22 +481,48 @@ def scan_sftp_and_process_items():
                                     break
 
                                 elif status == "not_found_in_queue":
-                                    current_app.logger.warning(f"SFTP Scanner Task: '{item_name}' not found in {media_map_info['app_type']} queue. Attempting final file verification.")
-                                    # If not found, it might have processed very fast or there's a matching issue.
-                                    # Perform a final verification.
-                                    file_present_after_notfound = _verify_file_and_set_unmonitored(
+                                    current_app.logger.warning(f"SFTP Scanner Task: '{item_name}' not found in {media_map_info['app_type']} queue. Waiting {config.get('MMS_POST_NOTIFY_FAST_QUEUE_CHECK_DELAY_SECONDS')}s before final file verification and potential intervention.")
+                                    time.sleep(config.get('MMS_POST_NOTIFY_FAST_QUEUE_CHECK_DELAY_SECONDS', 15))
+
+                                    file_present_after_notfound_delay = _verify_file_and_set_unmonitored(
                                         media_map_info['app_type'],
                                         target_id,
                                         item_name,
                                         torrent_hash_map_entry
                                     )
-                                    if file_present_after_notfound:
-                                        current_app.logger.info(f"SFTP Scanner Task: '{item_name}' was not in queue, but file IS present. Assuming successful import.")
-                                    else:
-                                        current_app.logger.warning(f"SFTP Scanner Task: '{item_name}' was not in queue AND file is NOT present. Import likely failed silently or name mismatch.")
-                                        # Status updated by helper if file still missing
+                                    if file_present_after_notfound_delay:
+                                        current_app.logger.info(f"SFTP Scanner Task: '{item_name}' was not in queue, but file IS present after delay. Assuming successful import and unmonitored if configured.")
+                                        # Status already updated by _verify_file_and_set_unmonitored
+                                    else: # File NOT present after delay, proceed to intervention
+                                        current_app.logger.warning(f"SFTP Scanner Task: '{item_name}' still not found in queue AND file is NOT present after delay. Triggering manual import logic if enabled.")
+                                        if manual_import_enabled:
+                                            current_app.logger.info(f"SFTP Scanner Task (from not_found_in_queue): Attempting manual import for '{item_name}' into {media_map_info['app_type']} ID {target_id}.")
+                                            manual_import_success_nf = arr_client.trigger_manual_import(
+                                                arr_type=media_map_info['app_type'],
+                                                item_id=target_id,
+                                                file_path_in_staging=str(staging_dir / item_name),
+                                                release_name=item_name
+                                            )
+                                            if manual_import_success_nf:
+                                                current_app.logger.info(f"SFTP Scanner Task (from not_found_in_queue): Manual import for '{item_name}' sent. Verifying after short delay.")
+                                                time.sleep(config.get('MMS_IMPORT_MONITORING_INTERVAL_SECONDS', 30) / 2)
+
+                                                _verify_file_and_set_unmonitored( # Call verify again
+                                                    media_map_info['app_type'],
+                                                    target_id,
+                                                    item_name,
+                                                    torrent_hash_map_entry
+                                                )
+                                                # Log messages inside _verify_file_and_set_unmonitored will indicate final state
+                                            else:
+                                                current_app.logger.error(f"SFTP Scanner Task (from not_found_in_queue): Manual import command for '{item_name}' FAILED to send.")
+                                                mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "mms_manual_import_cmd_failed_nf", f"Failed to send manual import (after not_found_in_queue) to {media_map_info['app_type']}.")
+                                        else:
+                                            current_app.logger.info(f"SFTP Scanner Task (from not_found_in_queue): Manual import disabled. '{item_name}' remains not imported.")
+                                            mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "arr_import_failed_nf_no_intervention", "Item not in queue, file missing, manual import disabled.")
+
                                     processed_successfully_or_intervention_attempted = True
-                                    break
+                                    break # Exit monitoring loop
 
                                 elif status == "api_error" or status == "unknown":
                                     current_app.logger.error(f"SFTP Scanner Task: API error or unknown status for '{item_name}' from {media_map_info['app_type']} queue. Msgs: {messages}")
