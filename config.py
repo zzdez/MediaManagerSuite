@@ -83,6 +83,7 @@ class Config:
     MMS_IMPORT_MONITORING_DURATION_MINUTES = int(os.environ.get('MMS_IMPORT_MONITORING_DURATION_MINUTES', 5))
     MMS_IMPORT_MONITORING_INTERVAL_SECONDS = int(os.environ.get('MMS_IMPORT_MONITORING_INTERVAL_SECONDS', 30))
     MMS_MANUAL_IMPORT_ATTEMPT_ENABLED = os.environ.get('MMS_MANUAL_IMPORT_ATTEMPT_ENABLED', 'True').lower() == 'true'
+    MMS_SET_UNMONITORED_AFTER_IMPORT = os.environ.get('MMS_SET_UNMONITORED_AFTER_IMPORT', 'True').lower() == 'true'
 
     # --- Configuration Interface de Configuration ---
     APP_PASSWORD = os.environ.get('APP_PASSWORD')

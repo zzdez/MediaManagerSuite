@@ -312,8 +312,81 @@ def scan_sftp_and_process_items():
                         monitoring_duration_minutes = config.get('MMS_IMPORT_MONITORING_DURATION_MINUTES', 5)
                         monitoring_interval_seconds = config.get('MMS_IMPORT_MONITORING_INTERVAL_SECONDS', 30)
                         manual_import_enabled = config.get('MMS_MANUAL_IMPORT_ATTEMPT_ENABLED', True)
+                        set_unmonitored_enabled = config.get('MMS_SET_UNMONITORED_AFTER_IMPORT', True)
 
                         torrent_hash_map_entry, media_map_info = mapping_manager.find_torrent_by_release_name(item_name)
+
+                        # --- Helper function for post-import verification and unmonitoring ---
+                        def _verify_file_and_set_unmonitored(app_type_to_check, item_id_to_check, release_name_for_log, thash_for_map):
+                            current_app.logger.info(f"POST_IMPORT_CHECK: Verifying file for {app_type_to_check} ID {item_id_to_check} ('{release_name_for_log}').")
+                            media_details_api = arr_client.get_expected_media_details(app_type_to_check, item_id_to_check)
+                            file_is_present = False
+
+                            if media_details_api:
+                                if app_type_to_check == 'radarr':
+                                    if media_details_api.get('hasFile', False) and media_details_api.get('movieFile', {}).get('sizeOnDisk', 0) > 0:
+                                        file_is_present = True
+                                elif app_type_to_check == 'sonarr':
+                                    # Check based on series statistics or specific episode files if logic is enhanced later
+                                    stats = media_details_api.get('statistics')
+                                    if stats and stats.get('episodeFileCount', 0) > 0 and stats.get('percentOfEpisodes', 0) > 0 : # Ensure some episodes are present
+                                        # A more robust check would involve parsing release_name_for_log for season/episode
+                                        # and checking those specific episodes. For now, episodeFileCount > 0 is a basic check.
+                                        current_app.logger.debug(f"Sonarr series {item_id_to_check} stats: {stats}")
+                                        file_is_present = True
+                                        # If percentOfEpisodes is 100, it's even better.
+                                        # If it's a season pack, this check might not be enough to confirm *this specific pack* was imported.
+
+                            if file_is_present:
+                                current_app.logger.info(f"POST_IMPORT_CHECK: File CONFIRMED present for {app_type_to_check} ID {item_id_to_check} ('{release_name_for_log}').")
+                                mapping_manager.update_torrent_status_in_map(thash_for_map, f"imported_verified_file_present", f"File presence verified for {release_name_for_log}.")
+
+                                if set_unmonitored_enabled:
+                                    current_app.logger.info(f"POST_IMPORT_CHECK: Attempting to set item {app_type_to_check} ID {item_id_to_check} to UNMONITORED.")
+                                    original_monitored_status = media_details_api.get('monitored', True) # Default to True if not found
+
+                                    if app_type_to_check == 'radarr':
+                                        if original_monitored_status: # Only update if it's currently monitored
+                                            media_details_api['monitored'] = False
+                                            if arr_client.update_radarr_movie(media_details_api):
+                                                current_app.logger.info(f"POST_IMPORT_CHECK: Radarr movie ID {item_id_to_check} successfully set to UNMONITORED.")
+                                                mapping_manager.update_torrent_status_in_map(thash_for_map, f"imported_verified_unmonitored", f"File present; Radarr movie ID {item_id_to_check} set unmonitored.")
+                                            else:
+                                                current_app.logger.warning(f"POST_IMPORT_CHECK: FAILED to set Radarr movie ID {item_id_to_check} to unmonitored.")
+                                        else:
+                                            current_app.logger.info(f"POST_IMPORT_CHECK: Radarr movie ID {item_id_to_check} was already unmonitored.")
+                                            mapping_manager.update_torrent_status_in_map(thash_for_map, f"imported_verified_already_unmonitored", f"File present; Radarr movie ID {item_id_to_check} already unmonitored.")
+
+                                    elif app_type_to_check == 'sonarr':
+                                        series_monitored_changed = False
+                                        if original_monitored_status: # Check series monitored status
+                                            media_details_api['monitored'] = False
+                                            series_monitored_changed = True
+
+                                        # Set seasons to unmonitored - this is how Sonarr API expects it for series PUT
+                                        # if they were monitored.
+                                        seasons_monitored_changed = False
+                                        if media_details_api.get('seasons'):
+                                            for season_api in media_details_api['seasons']:
+                                                if season_api.get('monitored', False): # Only change if it was true
+                                                    season_api['monitored'] = False
+                                                    seasons_monitored_changed = True
+
+                                        if series_monitored_changed or seasons_monitored_changed:
+                                            if arr_client.update_sonarr_series(media_details_api):
+                                                current_app.logger.info(f"POST_IMPORT_CHECK: Sonarr series ID {item_id_to_check} (and/or its seasons) successfully set to UNMONITORED.")
+                                                mapping_manager.update_torrent_status_in_map(thash_for_map, f"imported_verified_unmonitored", f"File present; Sonarr series ID {item_id_to_check} set unmonitored.")
+                                            else:
+                                                current_app.logger.warning(f"POST_IMPORT_CHECK: FAILED to set Sonarr series ID {item_id_to_check} to unmonitored.")
+                                        else:
+                                            current_app.logger.info(f"POST_IMPORT_CHECK: Sonarr series ID {item_id_to_check} (and its seasons) were already unmonitored.")
+                                            mapping_manager.update_torrent_status_in_map(thash_for_map, f"imported_verified_already_unmonitored", f"File present; Sonarr series ID {item_id_to_check} already unmonitored.")
+                                return True # File is present
+                            else: # File not present
+                                current_app.logger.warning(f"POST_IMPORT_CHECK: File NOT CONFIRMED present for {app_type_to_check} ID {item_id_to_check} ('{release_name_for_log}') after API check.")
+                                mapping_manager.update_torrent_status_in_map(thash_for_map, f"imported_api_file_still_missing", f"File still missing for {release_name_for_log} after API check.")
+                                return False
+                        # --- End Helper ---
 
                         if not media_map_info:
                             current_app.logger.warning(f"SFTP Scanner Task: No pre-association found in mapping_manager for release '{item_name}'. Skipping import monitoring and intervention.")
@@ -342,18 +415,34 @@ def scan_sftp_and_process_items():
                                 current_app.logger.debug(f"SFTP Scanner Task: Queue check for '{item_name}': Status='{status}', Reason='{reason_code}', Msgs='{messages}'")
 
                                 if status == "completed":
-                                    current_app.logger.info(f"SFTP Scanner Task: Import of '{item_name}' confirmed as COMPLETED by {arr_type}.")
-                                    mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "imported_by_arr", f"{arr_type} reported import complete.")
-                                    processed_successfully_or_intervention_attempted = True
-                                    break
-                                elif status == "pending" or status == "importing":
+                                    current_app.logger.info(f"SFTP Scanner Task: Import of '{item_name}' reported as COMPLETED by {media_map_info['app_type']}. Verifying file presence...")
+                                    file_really_present = _verify_file_and_set_unmonitored(
+                                        media_map_info['app_type'],
+                                        target_id,
+                                        item_name, # release_name
+                                        torrent_hash_map_entry
+                                    )
+                                    if not file_really_present:
+                                        current_app.logger.warning(f"SFTP Scanner Task: '{item_name}' reported COMPLETED by queue, but file not found/verified. Simulating 'NO_FILES_ELIGIBLE' to trigger intervention.")
+                                        status = "failed"
+                                        reason_code = "NO_FILES_ELIGIBLE"
+                                        messages.append("MMS: Item reported completed by queue, but file presence verification failed.")
+                                        # Fall through to the 'failed' and 'NO_FILES_ELIGIBLE' logic
+                                    else: # File is present and verified
+                                        processed_successfully_or_intervention_attempted = True
+                                        break # Genuine success
+
+                                # This 'if' must be separate from the one above, because 'status' might have been changed
+                                if status == "pending" or status == "importing":
                                     current_app.logger.info(f"SFTP Scanner Task: Import of '{item_name}' is '{status}'. Waiting...")
-                                    mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, f"arr_import_{status}", f"{arr_type} import is {status}.")
+                                    mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, f"arr_import_{status}", f"{media_map_info['app_type']} import is {status}.")
+
                                 elif status == "failed" and reason_code == "NO_FILES_ELIGIBLE":
-                                    current_app.logger.warning(f"SFTP Scanner Task: Import of '{item_name}' FAILED in {arr_type} with NO_FILES_ELIGIBLE. Messages: {messages}")
+                                    current_app.logger.warning(f"SFTP Scanner Task: Import of '{item_name}' FAILED in {media_map_info['app_type']} with NO_FILES_ELIGIBLE. Messages: {messages}")
                                     mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "arr_import_failed_no_files", "; ".join(messages))
+
                                     if manual_import_enabled:
-                                        current_app.logger.info(f"SFTP Scanner Task: Attempting manual import for '{item_name}' into {arr_type} ID {target_id}.")
+                                        current_app.logger.info(f"SFTP Scanner Task: Attempting manual import for '{item_name}' into {media_map_info['app_type']} ID {target_id}.")
                                         manual_import_success = arr_client.trigger_manual_import(
                                             arr_type=media_map_info['app_type'],
                                             item_id=target_id,
@@ -361,37 +450,56 @@ def scan_sftp_and_process_items():
                                             release_name=item_name
                                         )
                                         if manual_import_success:
-                                            current_app.logger.info(f"SFTP Scanner Task: Manual import command for '{item_name}' sent successfully. Status updated, further monitoring might be needed or rescan.")
-                                            # Consider a brief re-monitoring or a rescan call here. For now, just log.
-                                            # arr_client.trigger_rescan(media_map_info['app_type'], target_id) # Optional rescan
-                                            mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "mms_manual_import_sent", f"Manual import command sent to {arr_type}.")
-                                        else:
+                                            current_app.logger.info(f"SFTP Scanner Task: Manual import command for '{item_name}' sent. Verifying file and setting unmonitored after short delay.")
+                                            time.sleep(config.get('MMS_IMPORT_MONITORING_INTERVAL_SECONDS', 30) / 2) # Wait a bit for import to process
+
+                                            file_present_after_manual = _verify_file_and_set_unmonitored(
+                                                media_map_info['app_type'],
+                                                target_id,
+                                                item_name,
+                                                torrent_hash_map_entry
+                                            )
+                                            if file_present_after_manual:
+                                                # Status already updated by _verify_file_and_set_unmonitored to "imported_verified_file_present" or "imported_verified_unmonitored"
+                                                current_app.logger.info(f"SFTP Scanner Task: Manual import for '{item_name}' appears successful and file verified.")
+                                            else:
+                                                current_app.logger.warning(f"SFTP Scanner Task: Manual import command for '{item_name}' sent, but file still not verified.")
+                                                # Status "imported_api_file_still_missing" set by helper
+                                        else: # Manual import command failed to send
                                             current_app.logger.error(f"SFTP Scanner Task: Manual import command for '{item_name}' FAILED to send.")
-                                            mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "mms_manual_import_failed_to_send", f"Failed to send manual import command to {arr_type}.")
-                                    else:
-                                        current_app.logger.info(f"SFTP Scanner Task: Manual import disabled. '{item_name}' remains failed in {arr_type}.")
+                                            mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "mms_manual_import_failed_to_send", f"Failed to send manual import command to {media_map_info['app_type']}.")
+                                    else: # Manual import disabled
+                                        current_app.logger.info(f"SFTP Scanner Task: Manual import disabled. '{item_name}' remains failed in {media_map_info['app_type']}.")
                                         mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "arr_import_failed_no_intervention", "Manual import disabled.")
-                                    processed_successfully_or_intervention_attempted = True # Intervention was attempted or decided against
+                                    processed_successfully_or_intervention_attempted = True
                                     break
+
                                 elif status == "failed": # Other failure reason
-                                    current_app.logger.error(f"SFTP Scanner Task: Import of '{item_name}' FAILED in {arr_type}. Reason: {reason_code}, Msgs: {messages}")
+                                    current_app.logger.error(f"SFTP Scanner Task: Import of '{item_name}' FAILED in {media_map_info['app_type']}. Reason: {reason_code}, Msgs: {messages}")
                                     mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, f"arr_import_failed_{reason_code or 'other'}", "; ".join(messages))
                                     processed_successfully_or_intervention_attempted = True
                                     break
+
                                 elif status == "not_found_in_queue":
-                                    # If not found early, it might have processed very fast. If late, it's an issue.
-                                    if (time.time() - start_time) < monitoring_interval_seconds * 2: # e.g. within first minute
-                                        current_app.logger.info(f"SFTP Scanner Task: '{item_name}' not found in queue shortly after notification. Assuming already processed or name mismatch for queue lookup.")
-                                        # Could be success, could be an issue. To be safe, don't assume success without 'completed' status.
-                                        # Check if media exists as a final confirmation? For now, log and break.
-                                        mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "arr_import_not_found_in_queue_early", "Not found in queue shortly after notification.")
+                                    current_app.logger.warning(f"SFTP Scanner Task: '{item_name}' not found in {media_map_info['app_type']} queue. Attempting final file verification.")
+                                    # If not found, it might have processed very fast or there's a matching issue.
+                                    # Perform a final verification.
+                                    file_present_after_notfound = _verify_file_and_set_unmonitored(
+                                        media_map_info['app_type'],
+                                        target_id,
+                                        item_name,
+                                        torrent_hash_map_entry
+                                    )
+                                    if file_present_after_notfound:
+                                        current_app.logger.info(f"SFTP Scanner Task: '{item_name}' was not in queue, but file IS present. Assuming successful import.")
                                     else:
-                                        current_app.logger.warning(f"SFTP Scanner Task: '{item_name}' not found in {arr_type} queue after monitoring. Status uncertain.")
-                                        mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "arr_import_vanished_from_queue", "Vanished from queue during monitoring.")
-                                    processed_successfully_or_intervention_attempted = True # End monitoring for this item
+                                        current_app.logger.warning(f"SFTP Scanner Task: '{item_name}' was not in queue AND file is NOT present. Import likely failed silently or name mismatch.")
+                                        # Status updated by helper if file still missing
+                                    processed_successfully_or_intervention_attempted = True
                                     break
+
                                 elif status == "api_error" or status == "unknown":
-                                    current_app.logger.error(f"SFTP Scanner Task: API error or unknown status for '{item_name}' from {arr_type} queue. Msgs: {messages}")
+                                    current_app.logger.error(f"SFTP Scanner Task: API error or unknown status for '{item_name}' from {media_map_info['app_type']} queue. Msgs: {messages}")
                                     mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "arr_import_monitoring_error", "; ".join(messages))
                                     processed_successfully_or_intervention_attempted = True
                                     break
@@ -399,8 +507,16 @@ def scan_sftp_and_process_items():
                                 time.sleep(monitoring_interval_seconds)
 
                             if not processed_successfully_or_intervention_attempted: # Loop timed out
-                                current_app.logger.warning(f"SFTP Scanner Task: Import monitoring for '{item_name}' timed out after {monitoring_duration_minutes} minutes. Status uncertain.")
-                                mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "arr_import_monitoring_timeout", f"Monitoring timed out for {arr_type}.")
+                                current_app.logger.warning(f"SFTP Scanner Task: Import monitoring for '{item_name}' timed out after {monitoring_duration_minutes} minutes. Performing final file check.")
+                                final_file_check_after_timeout = _verify_file_and_set_unmonitored(
+                                    media_map_info['app_type'],
+                                    target_id,
+                                    item_name,
+                                    torrent_hash_map_entry
+                                )
+                                if not final_file_check_after_timeout:
+                                     mapping_manager.update_torrent_status_in_map(torrent_hash_map_entry, "arr_import_monitoring_timeout_file_missing", f"Monitoring timed out for {media_map_info['app_type']}, file not verified.")
+                                # Else, status updated by helper if file was found.
 
                         # Regardless of monitoring outcome, if initial notification was ok, mark sftp item as processed
                         processed_items.add(remote_item_full_path)
