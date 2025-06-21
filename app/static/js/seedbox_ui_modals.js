@@ -737,18 +737,23 @@ function updateSubmitAddTorrentButtonState() {
 
     if (mediaId) {
         if (isNew) {
-            let rootFolderSelected = false, qualityProfileSelected = false;
-            let availabilitySelected = (appType === 'radarr'); // Default true for Sonarr
+            let rootFolderSelected = false;
+            let qualityProfileSelected = false;
+            let availabilityConditionMet = true; // Default to true (covers Sonarr or cases where dropdown might be missing)
+
             if (appType === 'sonarr') {
                 rootFolderSelected = !!document.getElementById('sonarrRootFolderSelectForAdd')?.value;
                 qualityProfileSelected = !!document.getElementById('sonarrQualityProfileSelectForAdd')?.value;
+                // For Sonarr, availabilityConditionMet remains true as there is no specific dropdown for it in this context.
             } else if (appType === 'radarr') {
                 rootFolderSelected = !!document.getElementById('radarrRootFolderSelectForAdd')?.value;
                 qualityProfileSelected = !!document.getElementById('radarrQualityProfileSelectForAdd')?.value;
-                availabilitySelected = !!document.getElementById('radarrMinimumAvailabilitySelectForAdd')?.value;
+                availabilityConditionMet = !!document.getElementById('radarrMinimumAvailabilitySelectForAdd')?.value;
             }
-            allRequiredOptionsSelected = rootFolderSelected && qualityProfileSelected && availabilitySelected;
-        } else { allRequiredOptionsSelected = true; }
+            allRequiredOptionsSelected = rootFolderSelected && qualityProfileSelected && availabilityConditionMet;
+        } else {
+            allRequiredOptionsSelected = true; // For existing media, no extra options needed to enable submit
+        }
     }
     const sourceProvided = !!(document.getElementById('torrentMagnetLink').value.trim() || document.getElementById('torrentFileUpload').files[0]);
     submitButton.disabled = !(allRequiredOptionsSelected && sourceProvided && appType);
