@@ -281,11 +281,12 @@ def scan_sftp_and_process_items():
                         except Exception as e:
                             current_app.logger.error(f"SFTP Scanner Task: Error checking Radarr for '{item_name}': {e}. Assuming media does not exist locally.")
                             media_exists_in_arr = False
-                    else:
+                    else: # type unknown
                         current_app.logger.info(f"SFTP Scanner Task: Could not reliably parse '{item_name}' for {arr_type} type or type unknown. Proceeding with download process as fallback.")
-        else: # Guardrail disabled
+                else: # Guardrail disabled
                     current_app.logger.info("SFTP Scanner Task: Guardrail disabled. Proceeding with download.")
 
+                # Suite du code après le bloc if/else guardrail_enabled
                 if guardrail_enabled and media_exists_in_arr:
                     log_arr_type = "Sonarr" if parsed_media and parsed_media['type'] == 'tv' else "Radarr" if parsed_media and parsed_media['type'] == 'movie' else arr_type.capitalize()
                     current_app.logger.info(f"SFTP Scanner Task: Guardrail - Item '{item_name}' (path: {remote_item_full_path}) found in {log_arr_type} library. Skipping download and marking as processed.")
