@@ -3853,6 +3853,12 @@ def queue_manager_view():
 def delete_sonarr_queue_items():
     logger.info("Demande de suppression d'items de la file d'attente Sonarr.")
     selected_ids = request.form.getlist('selected_item_ids')
+    # Récupérer l'état de la case à cocher. Si elle n'est pas cochée, la clé ne sera pas dans request.form.
+    remove_from_client_flag_str = request.form.get('removeFromClientSonarr', 'false') # défaut à 'false' string si non présent
+    remove_from_client = remove_from_client_flag_str.lower() == 'true'
+
+    logger.info(f"Suppression items Sonarr. IDs: {selected_ids}, removeFromClient: {remove_from_client}")
+
     sonarr_url = current_app.config.get('SONARR_URL')
     sonarr_api_key = current_app.config.get('SONARR_API_KEY')
 
@@ -3868,14 +3874,13 @@ def delete_sonarr_queue_items():
     error_count = 0
 
     for item_id in selected_ids:
-        # Sonarr API DELETE /api/v3/queue/{id}
-        # Paramètres optionnels: removeFromClient (bool), blocklist (bool)
-        # Pour cette tâche: removeFromClient=false, blocklist=false
         api_endpoint = f"{sonarr_url.rstrip('/')}/api/v3/queue/{item_id}"
-        params = {'removeFromClient': 'false', 'blocklist': 'false'}
-
-        # _make_arr_request pour DELETE ne retourne pas de données JSON significatives en cas de succès (souvent 200 OK vide)
-        # Il faut vérifier la réponse. Si c'est True (pour succès sans JSON) ou un dict non vide, c'est bon.
+        # Convertir le booléen Python en chaîne 'true'/'false' pour l'API
+        params = {
+            'removeFromClient': str(remove_from_client).lower(),
+            'blocklist': 'false'
+        }
+        logger.debug(f"Appel DELETE Sonarr: {api_endpoint} avec params: {params}")
         response_status, error_msg = _make_arr_request('DELETE', api_endpoint, sonarr_api_key, params=params)
 
         if error_msg: # S'il y a une erreur de communication ou une réponse 4xx/5xx gérée par _make_arr_request
@@ -3903,6 +3908,11 @@ def delete_sonarr_queue_items():
 def delete_radarr_queue_items():
     logger.info("Demande de suppression d'items de la file d'attente Radarr.")
     selected_ids = request.form.getlist('selected_item_ids')
+    remove_from_client_flag_str = request.form.get('removeFromClientRadarr', 'false')
+    remove_from_client = remove_from_client_flag_str.lower() == 'true'
+
+    logger.info(f"Suppression items Radarr. IDs: {selected_ids}, removeFromClient: {remove_from_client}")
+
     radarr_url = current_app.config.get('RADARR_URL')
     radarr_api_key = current_app.config.get('RADARR_API_KEY')
 
@@ -3918,12 +3928,12 @@ def delete_radarr_queue_items():
     error_count = 0
 
     for item_id in selected_ids:
-        # Radarr API DELETE /api/v3/queue/{id}
-        # Paramètres optionnels: removeFromClient (bool), blacklist (bool)
-        # Pour cette tâche: removeFromClient=false, blacklist=false
         api_endpoint = f"{radarr_url.rstrip('/')}/api/v3/queue/{item_id}"
-        params = {'removeFromClient': 'false', 'blacklist': 'false'}
-
+        params = {
+            'removeFromClient': str(remove_from_client).lower(),
+            'blacklist': 'false'  # Radarr utilise 'blacklist' et non 'blocklist'
+        }
+        logger.debug(f"Appel DELETE Radarr: {api_endpoint} avec params: {params}")
         response_status, error_msg = _make_arr_request('DELETE', api_endpoint, radarr_api_key, params=params)
 
         if error_msg:
