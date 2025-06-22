@@ -170,7 +170,7 @@
                                 <td>
                                     <input type="checkbox" class="form-check-input radarr-item-checkbox" name="selected_item_ids" value="{{ item.id }}" onchange="updateDeleteButtonState('radarr')">
                                 </td>
-                                <td title="{{ item.movie.title if item.movie else item.title }}">{{ (item.movie.title if item.movie else item.title) | truncate(70) }}</td>
+                                <td title="{{ item.movie.title if item.movie and item.movie.title else item.title }}">{{ (item.movie.title if item.movie and item.movie.title else item.title) | truncate(70) }}</td>
                                 <td>
                                     <span class="badge bg-{{ 'warning text-dark' if item.status == 'Warning' or item.status == 'Delay' else ('danger' if item.status == 'Failed' else ('success' if item.status == 'Completed' else 'secondary')) }}">
                                         {{ item.status }}
@@ -191,7 +191,7 @@
                                 </td>
                                 <td>{{ item.size | filesizeformat if item.size is defined else 'N/A' }}</td>
                                 <td>{{ item.indexer | default('N/A') }}</td>
-                                <td>{{ item.quality.quality.name | default('N/A') if item.quality and item.quality.quality else 'N/A' }}</td>
+                                 <td>{{ item.quality.quality.name | default('N/A') if item.quality and item.quality.quality and item.quality.quality.name else (item.quality.name | default('N/A') if item.quality and item.quality.name else 'N/A') }}</td>
                             </tr>
                             {% endfor %}
                         </tbody>

@@ -3827,7 +3827,7 @@ def queue_manager_view():
     if radarr_url and radarr_api_key:
         radarr_api_endpoint = f"{radarr_url.rstrip('/')}/api/v3/queue"
         # Similaire à Sonarr, Radarr V3 retourne aussi un objet avec "records".
-        params_radarr = {'pageSize': 200, 'includeMovie': 'true'}
+        params_radarr = {'pageSize': 200, 'includeMovie': 'true', 'includeUnknownMovieItems': 'true'}
         data, error = _make_arr_request('GET', radarr_api_endpoint, radarr_api_key, params=params_radarr)
         if error:
             radarr_error = f"Erreur Radarr: {error}"
