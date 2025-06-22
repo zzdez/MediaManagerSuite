@@ -121,10 +121,10 @@
                                 <td>{{ item.series.title | default('N/A') if item.series else 'N/A' }}</td>
                                 <td>
                                     {% if item.episode %}
-                                        S{{ item.episode.seasonNumber | stringformat('%02d') }}E{{ item.episode.episodeNumber | stringformat('%02d') }} - {{ item.episode.title | default('') }}
+                                        S{{ '%02d' % item.episode.seasonNumber }}E{{ '%02d' % item.episode.episodeNumber }} - {{ item.episode.title | default('') }}
                                     {% elif item.episodes %} {# Pour les packs #}
                                         {% for ep in item.episodes %}
-                                            S{{ ep.seasonNumber | stringformat('%02d') }}E{{ ep.episodeNumber | stringformat('%02d') }}<br>
+                                            S{{ '%02d' % ep.seasonNumber }}E{{ '%02d' % ep.episodeNumber }}<br>
                                         {% endfor %}
                                     {% else %}
                                         N/A
