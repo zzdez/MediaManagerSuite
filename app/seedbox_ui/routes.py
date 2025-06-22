@@ -3781,139 +3781,165 @@ def sftp_batch_download_action():
         "mms_notifications_sent": mms_notifications_sent,
         "mms_notifications_failed": mms_notifications_failed
     }), 200
+
+
 # ==============================================================================
-# ROUTE POUR LE RAPATRIEMENT SFTP GROUPÉ ET PRÉ-MAPPING SONARR DIRECT
+# --- ROUTES POUR LA GESTION DES FILES D'ATTENTE SONARR/RADARR ---
 # ==============================================================================
-@seedbox_ui_bp.route('/sftp-batch-retrieve-and-premap-sonarr', methods=['POST'])
+
+@seedbox_ui_bp.route('/queue-manager')
 @login_required
-def sftp_batch_retrieve_and_premap_sonarr_action():
-    logger = current_app.logger
-    data = request.get_json()
+def queue_manager_view():
+    logger.info("Accès à la page de gestion des files d'attente Sonarr/Radarr.")
+    sonarr_queue_data = None
+    radarr_queue_data = None
+    sonarr_error = None
+    radarr_error = None
 
-    if not data:
-        logger.error("SFTP Batch Retrieve & Premap Sonarr: Aucune donnée JSON reçue.")
-        return jsonify({"success": False, "error": "Aucune donnée JSON reçue."}), 400
+    # Récupération file d'attente Sonarr
+    sonarr_url = current_app.config.get('SONARR_URL')
+    sonarr_api_key = current_app.config.get('SONARR_API_KEY')
+    if sonarr_url and sonarr_api_key:
+        sonarr_api_endpoint = f"{sonarr_url.rstrip('/')}/api/v3/queue"
+        # Le endpoint /api/v3/queue de Sonarr peut prendre des paramètres comme page, pageSize, includeUnknownSeriesItems, includeSeries, includeEpisode
+        # Par défaut, il retourne une page. Pour tout avoir, il faudrait paginer ou augmenter pageSize.
+        # Sonarr V3 retourne un objet avec une clé "records" qui est la liste.
+        # Ex: {'page': 1, 'pageSize': 10, 'sortKey': 'timeleft', 'sortDirection': 'ascending', 'totalRecords': 5, 'records': [...]}
+        # On va essayer de récupérer plus d'items par défaut.
+        params_sonarr = {'pageSize': 200, 'includeSeries': 'true', 'includeEpisode': 'true'} # Augmenter pageSize
+        data, error = _make_arr_request('GET', sonarr_api_endpoint, sonarr_api_key, params=params_sonarr)
+        if error:
+            sonarr_error = f"Erreur Sonarr: {error}"
+            logger.error(f"QueueManager: {sonarr_error}")
+        elif data and isinstance(data, dict) and 'records' in data:
+            sonarr_queue_data = data # On passe tout l'objet, le template accédera à .records
+            logger.info(f"QueueManager: {len(sonarr_queue_data.get('records', []))} items récupérés de la file d'attente Sonarr.")
+        else:
+            sonarr_error = "Réponse inattendue de l'API Sonarr (pas de clé 'records' ou format incorrect)."
+            logger.error(f"QueueManager: {sonarr_error} - Données reçues: {data}")
+    else:
+        sonarr_error = "Sonarr n'est pas configuré."
+        logger.warning(f"QueueManager: {sonarr_error}")
 
-    remote_paths_to_download = data.get('remote_paths')
-    series_id_target_str = data.get('series_id')
-    app_type_context = data.get('app_type_context') # 'sonarr' ou 'sonarr_working'
+    # Récupération file d'attente Radarr
+    radarr_url = current_app.config.get('RADARR_URL')
+    radarr_api_key = current_app.config.get('RADARR_API_KEY')
+    if radarr_url and radarr_api_key:
+        radarr_api_endpoint = f"{radarr_url.rstrip('/')}/api/v3/queue"
+        # Similaire à Sonarr, Radarr V3 retourne aussi un objet avec "records".
+        params_radarr = {'pageSize': 200, 'includeMovie': 'true'}
+        data, error = _make_arr_request('GET', radarr_api_endpoint, radarr_api_key, params=params_radarr)
+        if error:
+            radarr_error = f"Erreur Radarr: {error}"
+            logger.error(f"QueueManager: {radarr_error}")
+        elif data and isinstance(data, dict) and 'records' in data:
+            radarr_queue_data = data
+            logger.info(f"QueueManager: {len(radarr_queue_data.get('records', []))} items récupérés de la file d'attente Radarr.")
+        else:
+            radarr_error = "Réponse inattendue de l'API Radarr (pas de clé 'records' ou format incorrect)."
+            logger.error(f"QueueManager: {radarr_error} - Données reçues: {data}")
+    else:
+        radarr_error = "Radarr n'est pas configuré."
+        logger.warning(f"QueueManager: {radarr_error}")
 
-    if not isinstance(remote_paths_to_download, list) or not remote_paths_to_download:
-        logger.error(f"SFTP Batch R&P Sonarr: 'remote_paths' manquants ou invalides. Reçu: {remote_paths_to_download}")
-        return jsonify({"success": False, "error": "'remote_paths' est requis (liste non vide)."}), 400
+    return render_template('seedbox_ui/queue_manager.html',
+                           sonarr_queue_data=sonarr_queue_data,
+                           radarr_queue_data=radarr_queue_data,
+                           sonarr_error=sonarr_error,
+                           radarr_error=radarr_error)
 
-    if not series_id_target_str:
-        logger.error("SFTP Batch R&P Sonarr: 'series_id' manquant.")
-        return jsonify({"success": False, "error": "'series_id' pour Sonarr est requis."}), 400
+@seedbox_ui_bp.route('/queue/sonarr/delete', methods=['POST'])
+@login_required
+def delete_sonarr_queue_items():
+    logger.info("Demande de suppression d'items de la file d'attente Sonarr.")
+    selected_ids = request.form.getlist('selected_item_ids')
+    sonarr_url = current_app.config.get('SONARR_URL')
+    sonarr_api_key = current_app.config.get('SONARR_API_KEY')
 
-    if app_type_context not in ['sonarr', 'sonarr_working']:
-        logger.warning(f"SFTP Batch R&P Sonarr: Contexte d'application '{app_type_context}' inattendu pour une action Sonarr.")
-        # On pourrait continuer ou retourner une erreur. Pour l'instant, on continue.
+    if not sonarr_url or not sonarr_api_key:
+        flash("Sonarr n'est pas configuré.", 'danger')
+        return redirect(url_for('seedbox_ui.queue_manager_view', _anchor='sonarr-tab'))
 
-    try:
-        series_id_target = int(series_id_target_str)
-    except ValueError:
-        logger.error(f"SFTP Batch R&P Sonarr: 'series_id' invalide: {series_id_target_str}.")
-        return jsonify({"success": False, "error": "Format de series_id invalide."}), 400
+    if not selected_ids:
+        flash("Aucun item Sonarr sélectionné pour la suppression.", 'warning')
+        return redirect(url_for('seedbox_ui.queue_manager_view', _anchor='sonarr-tab'))
 
-    logger.info(f"SFTP Batch R&P Sonarr: Rapatriement & Pré-mappage pour {len(remote_paths_to_download)} items vers Série Sonarr ID {series_id_target}.")
+    success_count = 0
+    error_count = 0
 
-    # Récupérer les configurations SFTP et Staging
-    sftp_host = current_app.config.get('SEEDBOX_SFTP_HOST')
-    sftp_port_str = current_app.config.get('SEEDBOX_SFTP_PORT')
-    sftp_user = current_app.config.get('SEEDBOX_SFTP_USER')
-    sftp_password = current_app.config.get('SEEDBOX_SFTP_PASSWORD')
-    local_staging_dir_str = current_app.config.get('STAGING_DIR')
+    for item_id in selected_ids:
+        # Sonarr API DELETE /api/v3/queue/{id}
+        # Paramètres optionnels: removeFromClient (bool), blocklist (bool)
+        # Pour cette tâche: removeFromClient=false, blocklist=false
+        api_endpoint = f"{sonarr_url.rstrip('/')}/api/v3/queue/{item_id}"
+        params = {'removeFromClient': 'false', 'blocklist': 'false'}
 
-    if not all([sftp_host, sftp_port_str, sftp_user, sftp_password, local_staging_dir_str]):
-        logger.error("SFTP Batch R&P Sonarr: Configuration SFTP ou staging_dir manquante.")
-        return jsonify({"success": False, "error": "Configuration serveur incomplète."}), 500
-    try:
-        sftp_port = int(sftp_port_str)
-    except (ValueError, TypeError):
-        logger.error(f"SFTP Batch R&P Sonarr: Port SFTP invalide '{sftp_port_str}'.")
-        return jsonify({"success": False, "error": "Configuration du port SFTP invalide."}), 500
+        # _make_arr_request pour DELETE ne retourne pas de données JSON significatives en cas de succès (souvent 200 OK vide)
+        # Il faut vérifier la réponse. Si c'est True (pour succès sans JSON) ou un dict non vide, c'est bon.
+        response_status, error_msg = _make_arr_request('DELETE', api_endpoint, sonarr_api_key, params=params)
 
-    local_staging_dir_pathobj = Path(local_staging_dir_str)
-    sftp_client = None
-    transport = None
-    successful_operations = 0
-    failed_operations = 0
-    operation_details = [] # Pour stocker le résultat de chaque item
+        if error_msg: # S'il y a une erreur de communication ou une réponse 4xx/5xx gérée par _make_arr_request
+            logger.error(f"Erreur suppression item Sonarr ID {item_id}: {error_msg}")
+            error_count += 1
+        elif response_status is True or (isinstance(response_status, dict) and response_status.get('status') == 'success'): # Succès
+            # Sonarr DELETE /queue/{id} retourne 200 OK avec un corps vide en cas de succès.
+            # _make_arr_request retourne True dans ce cas.
+            logger.info(f"Item Sonarr ID {item_id} supprimé de la file d'attente avec succès.")
+            success_count += 1
+        else: # Cas inattendu où response_status n'est ni True ni une erreur gérée
+            logger.error(f"Réponse inattendue lors de la suppression de l'item Sonarr ID {item_id}. Statut/Réponse: {response_status}")
+            error_count += 1
 
-    try:
-        logger.debug(f"SFTP Batch R&P Sonarr: Connexion à {sftp_host}:{sftp_port}")
-        transport = paramiko.Transport((sftp_host, sftp_port))
-        transport.set_keepalive(60)
-        transport.connect(username=sftp_user, password=sftp_password)
-        sftp_client = paramiko.SFTPClient.from_transport(transport)
-        logger.info(f"SFTP Batch R&P Sonarr: Connecté à {sftp_host}.")
+    if success_count > 0:
+        flash(f"{success_count} item(s) supprimé(s) de la file d'attente Sonarr.", 'success')
+    if error_count > 0:
+        flash(f"Échec de la suppression de {error_count} item(s) de la file d'attente Sonarr. Consultez les logs.", 'danger')
 
-        for remote_path_posix in remote_paths_to_download:
-            item_basename_on_seedbox = Path(remote_path_posix).name # Deviendra item_name_in_staging
-            local_staged_item_pathobj = local_staging_dir_pathobj / item_basename_on_seedbox
-            item_status = {"item": item_basename_on_seedbox, "downloaded": False, "imported": False, "message": ""}
+    return redirect(url_for('seedbox_ui.queue_manager_view', _anchor='sonarr-tab'))
 
-            logger.info(f"SFTP Batch R&P Sonarr: Traitement de '{remote_path_posix}'.")
 
-            # 1. Rapatriement SFTP
-            if not _download_sftp_item_recursive_local(sftp_client, remote_path_posix, local_staged_item_pathobj, logger):
-                item_status["message"] = "Échec du téléchargement SFTP."
-                logger.error(f"SFTP Batch R&P Sonarr: {item_status['message']} pour {remote_path_posix}")
-                failed_operations += 1
-                # Nettoyer si partiellement téléchargé
-                if local_staged_item_pathobj.exists():
-                    if local_staged_item_pathobj.is_dir() and not any(local_staged_item_pathobj.iterdir()):
-                        try: shutil.rmtree(local_staged_item_pathobj)
-                        except Exception as e_rm: logger.warning(f"SFTP Batch R&P Sonarr: Échec nettoyage partiel {local_staged_item_pathobj}: {e_rm}")
-                    elif local_staged_item_pathobj.is_file() and local_staged_item_pathobj.stat().st_size == 0:
-                        try: local_staged_item_pathobj.unlink()
-                        except Exception as e_rm: logger.warning(f"SFTP Batch R&P Sonarr: Échec nettoyage partiel {local_staged_item_pathobj}: {e_rm}")
-                operation_details.append(item_status)
-                continue # Passer à l'item suivant
+@seedbox_ui_bp.route('/queue/radarr/delete', methods=['POST'])
+@login_required
+def delete_radarr_queue_items():
+    logger.info("Demande de suppression d'items de la file d'attente Radarr.")
+    selected_ids = request.form.getlist('selected_item_ids')
+    radarr_url = current_app.config.get('RADARR_URL')
+    radarr_api_key = current_app.config.get('RADARR_API_KEY')
 
-            item_status["downloaded"] = True
-            logger.info(f"SFTP Batch R&P Sonarr: Téléchargement de '{item_basename_on_seedbox}' réussi.")
+    if not radarr_url or not radarr_api_key:
+        flash("Radarr n'est pas configuré.", 'danger')
+        return redirect(url_for('seedbox_ui.queue_manager_view', _anchor='radarr-tab'))
 
-            # 2. Appel direct à _handle_staged_sonarr_item (pas de création d'entrée dans pending_torrents_map)
-            # C'est un import direct post-rapatriement.
-            result_handle = _handle_staged_sonarr_item(
-                item_name_in_staging=item_basename_on_seedbox,
-                series_id_target=series_id_target, # Déjà un int
-                path_to_cleanup_in_staging_after_success=str(local_staged_item_pathobj),
-                user_chosen_season=None, # Pour le batch, on laisse Sonarr/parsing de nom faire
-                automated_import=False, # C'est une action manuelle mais on veut le retour JSON
-                torrent_hash_for_status_update=None # Pas d'association préalable à mettre à jour/supprimer ici
-            )
+    if not selected_ids:
+        flash("Aucun item Radarr sélectionné pour la suppression.", 'warning')
+        return redirect(url_for('seedbox_ui.queue_manager_view', _anchor='radarr-tab'))
 
-            if result_handle.get("success"):
-                item_status["imported"] = True
-                item_status["message"] = result_handle.get("message", "Importé avec succès.")
-                successful_operations += 1
-                logger.info(f"SFTP Batch R&P Sonarr: Succès de l'import pour '{item_basename_on_seedbox}'.")
-            else:
-                item_status["message"] = result_handle.get("message", "Échec de l'import par le handler Sonarr.")
-                logger.error(f"SFTP Batch R&P Sonarr: {item_status['message']} pour '{item_basename_on_seedbox}'.")
-                failed_operations += 1
-            operation_details.append(item_status)
+    success_count = 0
+    error_count = 0
 
-    except paramiko.ssh_exception.AuthenticationException as e_auth:
-        logger.error(f"SFTP Batch R&P Sonarr: Erreur d'authentification SFTP: {e_auth}")
-        return jsonify({"success": False, "error": "Erreur d'authentification SFTP."}), 401
-    except Exception as e_sftp_main:
-        logger.error(f"SFTP Batch R&P Sonarr: Erreur SFTP principale: {e_sftp_main}", exc_info=True)
-        return jsonify({"success": False, "error": f"Erreur SFTP: {str(e_sftp_main)}"}), 500
-    finally:
-        if sftp_client: sftp_client.close()
-        if transport: transport.close()
-        logger.debug("SFTP Batch R&P Sonarr: Connexion SFTP fermée.")
+    for item_id in selected_ids:
+        # Radarr API DELETE /api/v3/queue/{id}
+        # Paramètres optionnels: removeFromClient (bool), blacklist (bool)
+        # Pour cette tâche: removeFromClient=false, blacklist=false
+        api_endpoint = f"{radarr_url.rstrip('/')}/api/v3/queue/{item_id}"
+        params = {'removeFromClient': 'false', 'blacklist': 'false'}
 
-    final_message = f"Rapatriement & Pré-mappage Sonarr terminé. {successful_operations} item(s) traité(s) avec succès, {failed_operations} échec(s)."
-    logger.info(f"SFTP Batch R&P Sonarr: Fin. {final_message}")
-    return jsonify({
-        "success": True, # La route elle-même a fonctionné
-        "message": final_message,
-        "successful_ops": successful_operations,
-        "failed_ops": failed_operations,
-        "details": operation_details # Pour un logging plus fin côté JS si besoin
-    }), 200
+        response_status, error_msg = _make_arr_request('DELETE', api_endpoint, radarr_api_key, params=params)
+
+        if error_msg:
+            logger.error(f"Erreur suppression item Radarr ID {item_id}: {error_msg}")
+            error_count += 1
+        elif response_status is True or (isinstance(response_status, dict) and response_status.get('status') == 'success'): # Succès
+            # Radarr DELETE /queue/{id} retourne 200 OK avec un corps vide.
+            logger.info(f"Item Radarr ID {item_id} supprimé de la file d'attente avec succès.")
+            success_count += 1
+        else:
+            logger.error(f"Réponse inattendue lors de la suppression de l'item Radarr ID {item_id}. Statut/Réponse: {response_status}")
+            error_count += 1
+
+    if success_count > 0:
+        flash(f"{success_count} item(s) supprimé(s) de la file d'attente Radarr.", 'success')
+    if error_count > 0:
+        flash(f"Échec de la suppression de {error_count} item(s) de la file d'attente Radarr. Consultez les logs.", 'danger')
+
+    return redirect(url_for('seedbox_ui.queue_manager_view', _anchor='radarr-tab'))
