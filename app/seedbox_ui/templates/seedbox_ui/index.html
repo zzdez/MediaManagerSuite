@@ -173,6 +173,10 @@
             <a href="{{ url_for('seedbox_ui.rtorrent_list_view') }}" class="btn btn-info btn-sm">
                 <i class="fas fa-list-alt"></i> Torrents rTorrent
             </a>
+            {# NOUVEAU LIEN POUR LA GESTION DES FILES D'ATTENTE #}
+            <a href="{{ url_for('seedbox_ui.queue_manager_view') }}" class="btn btn-warning btn-sm">
+                <i class="fas fa-tasks"></i> Gestion Files *Arr
+            </a>
         </div>
 
         <div class="btn-group me-2" role="group" aria-label="Seedbox views group">
