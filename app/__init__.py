@@ -47,10 +47,11 @@ def create_app(config_class=Config):
             stream_handler.setLevel(logging.INFO)
             app.logger.addHandler(stream_handler)
         else:
-            if not os.path.exists('logs'): # Crée un dossier logs à la racine du projet
+            if not os.path.exists('logs'):
                 os.mkdir('logs')
             file_handler = RotatingFileHandler('logs/mediamanager.log',
-                                               maxBytes=10240, backupCount=10)
+                                               maxBytes=10240, backupCount=10,
+                                               encoding='utf-8') # <--- AJOUTER encoding='utf-8'
             file_handler.setFormatter(logging.Formatter(
                 '%(asctime)s %(levelname)s: %(message)s '
                 '[in %(pathname)s:%(lineno)d]'))
