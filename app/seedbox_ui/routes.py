@@ -25,13 +25,16 @@ from requests.exceptions import RequestException # Pour gérer les erreurs de co
 import paramiko
 # --- Imports spécifiques à l'application MediaManagerSuite ---
 
-# Client rTorrent (assurez-vous que ce chemin est correct pour votre projet)
+# Client rTorrent
 from app.utils.rtorrent_client import (
-    list_torrents as rtorrent_list_torrents_api,
+    list_torrents as rtorrent_list_torrents_api,  # Renommé pour clarté
     add_magnet as rtorrent_add_magnet_httprpc,
     add_torrent_file as rtorrent_add_torrent_file_httprpc,
     get_torrent_hash_by_name as rtorrent_get_hash_by_name
 )
+
+# Clients Sonarr/Radarr (pour l'ajout de nouveaux médias)
+from app.utils.arr_client import add_new_series_to_sonarr, add_new_movie_to_radarr
 
 # Gestionnaire de la map des torrents (NOUVELLE FAÇON D'IMPORTER)
 # Ceci suppose que le fichier app/utils/mapping_manager.py contient le NOUVEAU code que je vous ai fourni.
@@ -4121,3 +4124,185 @@ def delete_radarr_queue_items():
         flash(f"Échec de la suppression de {error_count} item(s) de la file d'attente Radarr. Consultez les logs.", 'danger')
 
     return redirect(url_for('seedbox_ui.queue_manager_view', _anchor='radarr-tab'))
+
+# ==============================================================================
+# --- ROUTE POUR SFTP -> AJOUT ARR -> RAPATRIEMENT -> IMPORT MMS ---
+# ==============================================================================
+@seedbox_ui_bp.route('/api/sftp-add-and-import-arr-item', methods=['POST'])
+@login_required
+def sftp_add_and_import_arr_item_action():
+    logger = current_app.logger
+    data = request.get_json()
+
+    if not data:
+        logger.error("SFTP Add&Import: Aucune donnée JSON reçue.")
+        return jsonify({"success": False, "error": "Aucune donnée JSON reçue."}), 400
+
+    sftp_details = data.get('sftp_details')
+    media_to_add = data.get('media_to_add') # Contient tvdbId/tmdbId, title, year etc.
+    user_choices = data.get('user_choices') # Contient rootFolderPath, qualityProfileId etc.
+    arr_type = data.get('arr_type') # 'sonarr' ou 'radarr'
+
+    if not all([sftp_details, media_to_add, user_choices, arr_type]):
+        logger.error(f"SFTP Add&Import: Données POST manquantes. Reçu: sftp_details={sftp_details is not None}, media_to_add={media_to_add is not None}, user_choices={user_choices is not None}, arr_type={arr_type is not None}")
+        return jsonify({"success": False, "error": "Données POST manquantes pour l'opération."}), 400
+
+    logger.info(f"SFTP Add&Import: Début pour item distant '{sftp_details.get('item_name')}' vers {arr_type.upper()}. Média à ajouter: '{media_to_add.get('title')}'")
+
+    # --- Étape 1: Ajouter le média à Sonarr/Radarr ---
+    newly_added_media_obj = None
+    if arr_type == 'sonarr':
+        if not media_to_add.get('tvdbId'):
+            return jsonify({"success": False, "error": "tvdbId manquant pour l'ajout à Sonarr."}), 400
+
+        newly_added_media_obj = add_new_series_to_sonarr(
+            tvdb_id=int(media_to_add['tvdbId']),
+            title=media_to_add.get('title'),
+            quality_profile_id=int(user_choices['qualityProfileId']),
+            language_profile_id=int(user_choices.get('languageProfileId', 1)), # Default à 1 si non fourni
+            root_folder_path=user_choices['rootFolderPath'],
+            season_folder=user_choices.get('seasonFolder', True),
+            monitored=user_choices.get('monitored', True),
+            search_for_missing_episodes=user_choices.get('addOptions', {}).get('searchForMissingEpisodes', False)
+        )
+    elif arr_type == 'radarr':
+        if not media_to_add.get('tmdbId'):
+            return jsonify({"success": False, "error": "tmdbId manquant pour l'ajout à Radarr."}), 400
+
+        newly_added_media_obj = add_new_movie_to_radarr(
+            tmdb_id=int(media_to_add['tmdbId']),
+            title=media_to_add.get('title'),
+            quality_profile_id=int(user_choices['qualityProfileId']),
+            root_folder_path=user_choices['rootFolderPath'],
+            minimum_availability=user_choices.get('minimumAvailability', 'announced'),
+            monitored=user_choices.get('monitored', True),
+            search_for_movie=user_choices.get('addOptions', {}).get('searchForMovie', False)
+        )
+    else:
+        return jsonify({"success": False, "error": f"Type d'application '{arr_type}' non supporté."}), 400
+
+    if not newly_added_media_obj or not newly_added_media_obj.get('id'):
+        logger.error(f"SFTP Add&Import: Échec de l'ajout de '{media_to_add.get('title')}' à {arr_type.upper()}. Réponse API: {newly_added_media_obj}")
+        return jsonify({"success": False, "error": f"Échec de l'ajout du média à {arr_type.upper()}. Vérifiez les logs {arr_type.upper()}."}), 502 # Bad Gateway
+
+    new_internal_id = newly_added_media_obj.get('id')
+    logger.info(f"SFTP Add&Import: Média '{media_to_add.get('title')}' ajouté à {arr_type.upper()} avec ID interne: {new_internal_id}")
+
+    # --- Étape 2: Rapatriement SFTP ---
+    sftp_host = current_app.config.get('SEEDBOX_SFTP_HOST')
+    sftp_port = int(current_app.config.get('SEEDBOX_SFTP_PORT', 22))
+    sftp_user = current_app.config.get('SEEDBOX_SFTP_USER')
+    sftp_password = current_app.config.get('SEEDBOX_SFTP_PASSWORD')
+    local_staging_dir_pathobj = Path(current_app.config.get('STAGING_DIR'))
+
+    if not all([sftp_host, sftp_user, sftp_password, local_staging_dir_pathobj.exists()]):
+        logger.error("SFTP Add&Import: Configuration SFTP ou staging_dir manquante/invalide pour le rapatriement.")
+        # On pourrait vouloir supprimer le média ajouté à *Arr ici, mais c'est complexe.
+        return jsonify({"success": False, "error": "Configuration serveur incomplète pour le rapatriement SFTP."}), 500
+
+    remote_path_posix = sftp_details.get('remote_path')
+    item_basename_on_seedbox = Path(remote_path_posix).name # Nom de l'item sur la seedbox
+    local_staged_item_path_obj = local_staging_dir_pathobj / item_basename_on_seedbox
+
+    sftp_client = None
+    transport = None
+    success_download = False
+    try:
+        logger.debug(f"SFTP Add&Import: Connexion SFTP à {sftp_host}:{sftp_port} pour '{remote_path_posix}'")
+        transport = paramiko.Transport((sftp_host, sftp_port))
+        transport.set_keepalive(60)
+        transport.connect(username=sftp_user, password=sftp_password)
+        sftp_client = paramiko.SFTPClient.from_transport(transport)
+
+        success_download = _download_sftp_item_recursive_local(sftp_client, remote_path_posix, local_staged_item_path_obj, logger)
+
+        if success_download:
+            logger.info(f"SFTP Add&Import: Téléchargement de '{item_basename_on_seedbox}' réussi vers '{local_staged_item_path_obj}'.")
+            # Mise à jour de processed_sftp_items.json
+            processed_log_file_str = current_app.config.get('PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT')
+            if processed_log_file_str:
+                try:
+                    base_scan_folder_name_on_seedbox = Path(sftp_details.get('app_type_of_remote_folder', 'unknown_remote_folder')).name # Utiliser le type de dossier distant
+                    processed_item_identifier_for_log = f"{base_scan_folder_name_on_seedbox}/{item_basename_on_seedbox}"
+
+                    current_processed_set = set()
+                    processed_log_file = Path(processed_log_file_str)
+                    if processed_log_file.exists() and processed_log_file.stat().st_size > 0:
+                        try:
+                            with open(processed_log_file, 'r', encoding='utf-8') as f_log_read:
+                                data_log = json.load(f_log_read)
+                                if isinstance(data_log, list): current_processed_set = set(data_log)
+                        except (json.JSONDecodeError, Exception): logger.error(f"Erreur lecture/décodage de {processed_log_file}. Sera écrasé si ajout.")
+
+                    if processed_item_identifier_for_log not in current_processed_set:
+                        current_processed_set.add(processed_item_identifier_for_log)
+                        processed_log_file.parent.mkdir(parents=True, exist_ok=True)
+                        with open(processed_log_file, 'w', encoding='utf-8') as f_log_write:
+                            json.dump(sorted(list(current_processed_set)), f_log_write, indent=4)
+                        logger.info(f"SFTP Add&Import: '{processed_item_identifier_for_log}' ajouté à {processed_log_file}.")
+                except Exception as e_proc_log:
+                    logger.error(f"SFTP Add&Import: Erreur gestion log items traités: {e_proc_log}", exc_info=True)
+        else:
+            logger.error(f"SFTP Add&Import: Échec du téléchargement SFTP de '{remote_path_posix}'.")
+            # Nettoyage partiel si nécessaire
+            if local_staged_item_path_obj.exists():
+                if local_staged_item_path_obj.is_dir() and not any(local_staged_item_path_obj.iterdir()): shutil.rmtree(local_staged_item_path_obj)
+                elif local_staged_item_path_obj.is_file() and local_staged_item_path_obj.stat().st_size == 0: local_staged_item_path_obj.unlink()
+            return jsonify({"success": False, "error": f"Échec du téléchargement SFTP de '{item_basename_on_seedbox}'."}), 500
+
+    except Exception as e_sftp:
+        logger.error(f"SFTP Add&Import: Erreur SFTP: {e_sftp}", exc_info=True)
+        return jsonify({"success": False, "error": f"Erreur SFTP: {e_sftp}"}), 500
+    finally:
+        if sftp_client: sftp_client.close()
+        if transport: transport.close()
+
+    # --- Étape 3: Import MMS ---
+    if success_download:
+        logger.info(f"SFTP Add&Import: Rapatriement terminé. Import MMS de '{item_basename_on_seedbox}' vers ID {arr_type.upper()} {new_internal_id}.")
+
+        import_result_dict = None
+        # original_release_folder_name_in_staging est le nom de l'item tel qu'il a été téléchargé à la racine du staging
+        original_folder_to_cleanup = item_basename_on_seedbox
+
+        if arr_type == 'sonarr':
+            import_result_dict = _execute_mms_sonarr_import(
+                item_name_in_staging=item_basename_on_seedbox,
+                series_id_target=new_internal_id,
+                original_release_folder_name_in_staging=original_folder_to_cleanup,
+                is_automated_flow=True # Considéré comme automatisé après l'ajout initial
+            )
+        elif arr_type == 'radarr':
+            import_result_dict = _execute_mms_radarr_import(
+                item_name_in_staging=item_basename_on_seedbox,
+                movie_id_target=new_internal_id,
+                original_release_folder_name_in_staging=original_folder_to_cleanup,
+                is_automated_flow=True
+            )
+
+        if import_result_dict and import_result_dict.get("success"):
+            final_msg = f"'{media_to_add.get('title')}' ajouté à {arr_type.upper()} (ID: {new_internal_id}), rapatrié et importé avec succès. {import_result_dict.get('message', '')}"
+            logger.info(f"SFTP Add&Import: {final_msg}")
+            return jsonify({"success": True, "message": final_msg})
+        else:
+            error_msg_import = f"Échec de l'import MMS après ajout et rapatriement. {import_result_dict.get('message', 'Erreur inconnue du handler MMS.') if import_result_dict else 'Handler MMS non exécuté.'}"
+            logger.error(f"SFTP Add&Import: {error_msg_import}")
+            # L'item est dans le staging, le média est dans *Arr. L'utilisateur devra peut-être mapper manuellement.
+            return jsonify({"success": False, "error": error_msg_import, "details": "L'item est dans le staging, mais l'import final a échoué."}), 500
+    else: # Ne devrait pas être atteint si la logique de retour en cas d'échec de DL est correcte
+        return jsonify({"success": False, "error": "Échec du téléchargement SFTP, import MMS non tenté."}), 500
+
+
+@seedbox_ui_bp.route('/api/sftp-add-and-import-arr-item-placeholder', methods=['POST'])
+@login_required
+def sftp_add_and_import_arr_item_placeholder():
+    # Cette route est un placeholder pour éviter les erreurs 404 tant que la vraie n'est pas testée.
+    # Elle devrait être remplacée par la vraie logique ou supprimée une fois que
+    # '/api/sftp-add-and-import-arr-item' est pleinement fonctionnelle et testée.
+    logger.warning("ROUTE PLACEHOLDER '/api/sftp-add-and-import-arr-item-placeholder' APPELÉE. Implémentez la vraie route.")
+    time.sleep(2) # Simuler un traitement
+    return jsonify({
+        "success": False,
+        "error": "Fonctionnalité non entièrement implémentée. La route /api/sftp-add-and-import-arr-item doit être finalisée.",
+        "message": "Placeholder: L'ajout, le rapatriement et l'import pour un nouvel item SFTP ne sont pas encore complètement fonctionnels."
+    }), 501 # 501 Not Implemented

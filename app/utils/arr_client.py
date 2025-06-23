@@ -482,3 +482,100 @@ def check_sonarr_episode_exists(series_title: str, season_number: int, episode_n
         logger.info(f"Sonarr: No valid files found for any episode in S{season_number:02d} for series '{found_series.get('title')}'. Guardrail will consider season ABSENT/MISSING.")
         logger.debug(f"check_sonarr_episode_exists: Returning {False} (no valid files in season pack)")
         return False
+
+# ==============================================================================
+# --- SONARR/RADARR - ADD NEW MEDIA FUNCTIONS ---
+# ==============================================================================
+
+def add_new_series_to_sonarr(tvdb_id: int, title: str, quality_profile_id: int, language_profile_id: int, root_folder_path: str, season_folder: bool = True, monitored: bool = True, search_for_missing_episodes: bool = False):
+    """
+    Adds a new series to Sonarr.
+    Returns the new series object from Sonarr API if successful, else None.
+    """
+    logger.info(f"SONARR_CLIENT: Attempting to add new series: '{title}' (TVDB ID: {tvdb_id})")
+
+    # Construct the payload as per Sonarr API v3 documentation
+    # https://sonarr.tv/docs/api/#/Series/post_series
+    payload = {
+        "tvdbId": tvdb_id,
+        "title": title, # Sonarr usually gets this from tvdbId, but good to provide
+        "qualityProfileId": quality_profile_id,
+        "languageProfileId": language_profile_id,
+        "rootFolderPath": root_folder_path,
+        "seasonFolder": season_folder,
+        "monitored": monitored,
+        "addOptions": {
+            "searchForMissingEpisodes": search_for_missing_episodes,
+            # "monitor": "all" or "future" etc. can be specified if needed,
+            # but 'monitored' at series level usually suffices.
+        }
+        # You might need to pass 'seasons' array if you want specific monitoring per season initially
+        # For example: "seasons": [{ "seasonNumber": 1, "monitored": True }, ...]
+        # If not provided, Sonarr typically monitors all seasons by default if series is monitored.
+    }
+
+    # The series endpoint for adding is just /api/v3/series
+    response_data = _sonarr_api_request('POST', 'series', json_data=payload)
+
+    if response_data and isinstance(response_data, dict) and response_data.get("id"):
+        logger.info(f"SONARR_CLIENT: Series '{title}' added successfully. Sonarr ID: {response_data.get('id')}")
+        return response_data # Return the full series object from Sonarr
+    else:
+        error_details = "Unknown error or invalid response from Sonarr."
+        if isinstance(response_data, list) and response_data: # Sonarr can return a list of error messages
+            try:
+                error_details = ", ".join([err.get('errorMessage', str(err)) for err in response_data])
+            except: # Fallback if parsing fails
+                 error_details = str(response_data)
+        elif isinstance(response_data, dict) and response_data.get('message'): # Single error message
+            error_details = response_data.get('message')
+        elif response_data is None: # _sonarr_api_request returned None due to connection/HTTP error
+            error_details = "Failed to communicate with Sonarr API or API key issue."
+
+        logger.error(f"SONARR_CLIENT: Failed to add series '{title}'. Response/Error: {error_details}")
+        # You could raise an exception here or return a more specific error object
+        return None
+
+
+def add_new_movie_to_radarr(tmdb_id: int, title: str, quality_profile_id: int, root_folder_path: str, minimum_availability: str = "announced", monitored: bool = True, search_for_movie: bool = False):
+    """
+    Adds a new movie to Radarr.
+    Returns the new movie object from Radarr API if successful, else None.
+    """
+    logger.info(f"RADARR_CLIENT: Attempting to add new movie: '{title}' (TMDB ID: {tmdb_id})")
+
+    # Construct the payload as per Radarr API v3 documentation
+    # https://radarr.video/docs/api/#/Movie/post_movie
+    payload = {
+        "tmdbId": tmdb_id,
+        "title": title, # Radarr usually gets this from tmdbId
+        "qualityProfileId": quality_profile_id,
+        "rootFolderPath": root_folder_path,
+        "minimumAvailability": minimum_availability, # e.g., "announced", "inCinemas", "released"
+        "monitored": monitored,
+        "addOptions": {
+            "searchForMovie": search_for_movie
+        }
+    }
+
+    # The movie endpoint for adding is /api/v3/movie
+    response_data = _radarr_api_request('POST', 'movie', json_data=payload)
+
+    if response_data and isinstance(response_data, dict) and response_data.get("id"):
+        logger.info(f"RADARR_CLIENT: Movie '{title}' added successfully. Radarr ID: {response_data.get('id')}")
+        return response_data # Return the full movie object from Radarr
+    else:
+        error_details = "Unknown error or invalid response from Radarr."
+        if isinstance(response_data, list) and response_data: # Radarr can return a list of error messages
+            try:
+                error_details = ", ".join([err.get('errorMessage', str(err)) for err in response_data])
+            except:
+                error_details = str(response_data)
+
+        elif isinstance(response_data, dict) and response_data.get('message'):
+            error_details = response_data.get('message')
+        elif response_data is None:
+             error_details = "Failed to communicate with Radarr API or API key issue."
+
+        logger.error(f"RADARR_CLIENT: Failed to add movie '{title}'. Response/Error: {error_details}")
+        return None
