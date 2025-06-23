@@ -2050,6 +2050,118 @@ def get_radarr_qualityprofiles_api():
         logger.warning("API Get Radarr Quality Profiles: Aucune donnée ou format inattendu reçu de Radarr pour les profils.")
         return jsonify([]), 200
 
+# ==============================================================================
+# --- ROUTE API POUR AJOUTER UN ITEM À *ARR ET RÉCUPÉRER SON ID ---
+# ==============================================================================
+@seedbox_ui_bp.route('/api/add-arr-item-and-get-id', methods=['POST'])
+@login_required
+def add_arr_item_and_get_id():
+    logger = current_app.logger
+    data = request.get_json()
+
+    if not data:
+        logger.error("API Add *Arr Item: Aucune donnée JSON reçue.")
+        return jsonify({"success": False, "error": "Aucune donnée JSON reçue."}), 400
+
+    app_type = data.get('app_type') # 'sonarr' ou 'radarr'
+    external_id = data.get('external_id') # tvdbId pour Sonarr, tmdbId pour Radarr
+    title = data.get('title')
+    # year = data.get('year', 0) # L'année n'est pas toujours directement utilisée par les fonctions add_new_*
+                                # car elles la récupèrent souvent via l'ID externe.
+                                # Mais elle pourrait être utile pour des logs ou validations futures.
+    root_folder_path = data.get('root_folder_path')
+    quality_profile_id_str = data.get('quality_profile_id')
+    monitored = data.get('monitored', True) # booléen
+
+    logger.info(f"API Add *Arr Item: Tentative d'ajout pour '{title}' (ID externe: {external_id}) à {app_type}. Options: Root='{root_folder_path}', QP ID='{quality_profile_id_str}', Monitored='{monitored}'")
+
+    if not all([app_type, external_id is not None, title, root_folder_path, quality_profile_id_str]):
+        missing_fields = [
+            f for f, v in {
+                "app_type": app_type, "external_id": external_id, "title": title,
+                "root_folder_path": root_folder_path, "quality_profile_id": quality_profile_id_str
+            }.items() if not v and v is not None # external_id peut être 0, donc vérifier "is not None"
+        ]
+        logger.error(f"API Add *Arr Item: Données POST manquantes. Requis: app_type, external_id, title, root_folder_path, quality_profile_id. Manquant(s): {missing_fields}")
+        return jsonify({"success": False, "error": f"Données POST manquantes: {', '.join(missing_fields)}"}), 400
+
+    try:
+        external_id = int(external_id)
+        quality_profile_id = int(quality_profile_id_str)
+    except ValueError:
+        logger.error(f"API Add *Arr Item: external_id ('{external_id}') ou quality_profile_id ('{quality_profile_id_str}') n'est pas un entier valide.")
+        return jsonify({"success": False, "error": "ID externe ou ID de profil de qualité invalide (doit être numérique)."}), 400
+
+    newly_added_media_obj = None
+    error_message = None
+
+    if app_type == 'sonarr':
+        # Paramètres spécifiques à Sonarr depuis le payload JS
+        language_profile_id = int(data.get('language_profile_id', 1)) # Default à 1 si non fourni
+        season_folder = data.get('use_season_folder', True) # Default
+        search_for_missing_episodes = data.get('search_for_missing_episodes', False) # Default
+
+        logger.debug(f"API Add *Arr Item (Sonarr): LangID={language_profile_id}, SeasonFolder={season_folder}, SearchMissing={search_for_missing_episodes}")
+
+        newly_added_media_obj = add_new_series_to_sonarr(
+            tvdb_id=external_id,
+            title=title,
+            quality_profile_id=quality_profile_id,
+            language_profile_id=language_profile_id,
+            root_folder_path=root_folder_path,
+            season_folder=season_folder,
+            monitored=monitored,
+            search_for_missing_episodes=search_for_missing_episodes
+        )
+        if not newly_added_media_obj: # add_new_series_to_sonarr retourne None en cas d'échec
+             # Essayer de construire un message d'erreur plus précis si possible, sinon un générique
+             error_message = f"Échec de l'ajout de la série '{title}' à Sonarr. Vérifiez les logs de Sonarr et de MediaManagerSuite."
+
+
+    elif app_type == 'radarr':
+        # Paramètres spécifiques à Radarr
+        minimum_availability = data.get('minimum_availability', 'announced') # Default
+        search_for_movie = data.get('search_for_movie', False) # Default
+
+        logger.debug(f"API Add *Arr Item (Radarr): MinAvail={minimum_availability}, SearchMovie={search_for_movie}")
+
+        newly_added_media_obj = add_new_movie_to_radarr(
+            tmdb_id=external_id,
+            title=title,
+            quality_profile_id=quality_profile_id,
+            root_folder_path=root_folder_path,
+            minimum_availability=minimum_availability,
+            monitored=monitored,
+            search_for_movie=search_for_movie
+        )
+        if not newly_added_media_obj:
+            error_message = f"Échec de l'ajout du film '{title}' à Radarr. Vérifiez les logs de Radarr et de MediaManagerSuite."
+
+    else:
+        logger.error(f"API Add *Arr Item: Type d'application '{app_type}' non supporté.")
+        return jsonify({"success": False, "error": f"Type d'application '{app_type}' non supporté."}), 400
+
+    if newly_added_media_obj and newly_added_media_obj.get('id'):
+        new_media_internal_id = newly_added_media_obj.get('id')
+        # Le titre peut être différent après ajout (ex: Sonarr/Radarr le corrige via TVDB/TMDB)
+        new_media_title_from_arr = newly_added_media_obj.get('title', title)
+        logger.info(f"API Add *Arr Item: Média '{new_media_title_from_arr}' ajouté à {app_type.upper()} avec ID interne: {new_media_internal_id}")
+        return jsonify({
+            "success": True,
+            "new_media_id": new_media_internal_id,
+            "new_media_title": new_media_title_from_arr,
+            "message": f"'{new_media_title_from_arr}' ajouté avec succès à {app_type.capitalize()}."
+        }), 201 # 201 Created
+    else:
+        # Si error_message a été défini par les blocs Sonarr/Radarr, l'utiliser.
+        # Sinon, c'est que newly_added_media_obj était None ou n'avait pas d'ID.
+        final_error = error_message if error_message else f"Échec de l'ajout de '{title}' à {app_type.capitalize()}. Réponse API invalide ou ID manquant."
+        logger.error(f"API Add *Arr Item: {final_error}. Réponse brute de la fonction add_new_*: {newly_added_media_obj}")
+        # Il est possible que l'item existe déjà. La fonction add_new_* pourrait le détecter et retourner l'existant.
+        # Si c'est le cas, newly_added_media_obj pourrait contenir l'item existant.
+        # Pour l'instant, on considère l'absence d'un nouvel ID comme un échec de cette route spécifique.
+        return jsonify({"success": False, "error": final_error}), 502 # Bad Gateway, car l'erreur vient de l'API *Arr
+
 # ------------------------------------------------------------------------------
 # ROUTE POUR AFFICHER LE CONTENU D'UN DOSSIER DISTANT DE LA SEEDBOX
 # ------------------------------------------------------------------------------
