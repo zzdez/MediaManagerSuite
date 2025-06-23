@@ -137,6 +137,13 @@ function openRadarrSearchModal(itemPathForAction, itemType) {
     const radarrModalElement = document.getElementById('radarrSearchModal');
     if (!radarrModalElement) { console.error("Modal Radarr (ID: radarrSearchModal) non trouvé!"); return; }
 
+    radarrModalElement.setAttribute('data-current-action', 'mapIndividualStaging'); // AJOUT DE CETTE LIGNE
+    radarrModalElement.removeAttribute('data-is-new-media'); // Assurer la cohérence avec Sonarr
+    radarrModalElement.removeAttribute('data-selected-media-id'); // Assurer la cohérence
+    radarrModalElement.removeAttribute('data-selected-media-title'); // Assurer la cohérence
+    radarrModalElement.removeAttribute('data-selected-media-year'); // Assurer la cohérence
+    radarrModalElement.removeAttribute('data-problem-torrent-hash'); // Assurer la cohérence
+
     document.getElementById('radarrItemToMap').textContent = itemNameForDisplay;
     document.getElementById('radarrOriginalItemName').value = itemPathForAction;
     document.getElementById('radarrOriginalItemType').value = itemType;
