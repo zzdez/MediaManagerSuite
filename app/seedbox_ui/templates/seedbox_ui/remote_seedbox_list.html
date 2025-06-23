@@ -184,8 +184,11 @@
             // URLs specific to remote_seedbox_list.html actions that might be modalized later or called from global JS
             manualSftpDownload: "{{ url_for('seedbox_ui.manual_sftp_download_action') }}",
             sftpRetrieveAndProcess: "{{ url_for('seedbox_ui.sftp_retrieve_and_process_action') }}",
-            sftpBatchDownload: "{{ url_for('seedbox_ui.sftp_batch_download_action') }}",
-            sftpBatchRetrieveAndPremapSonarr: "{{ url_for('seedbox_ui.sftp_batch_retrieve_and_premap_sonarr_action') }}"
+            {# sftpBatchDownload: "{{ url_for('seedbox_ui.sftp_batch_download_action') }}", #}
+            {# sftpBatchRetrieveAndPremapSonarr: "{{ url_for('seedbox_ui.sftp_batch_retrieve_and_premap_sonarr_action') }}", #}
+            
+            sftpAddAndImportArrItem: "{{ url_for('seedbox_ui.sftp_add_and_import_arr_item_action') }}",
+            sftpAddAndImportArrItemPlaceholder: "{{ url_for('seedbox_ui.sftp_add_and_import_arr_item_placeholder') }}"
         };
     </script>
     <script src="{{ url_for('static', filename='js/seedbox_ui_modals.js') }}"></script>
@@ -247,16 +250,30 @@
 
             const modalMapButton = document.getElementById('sonarrModalMapButton');
             if (modalMapButton) {
-                modalMapButton.innerHTML = `<i class="fas fa-link"></i> Rapatrier & Mapper`;
-                modalMapButton.disabled = true;
-                modalMapButton.onclick = function() {
-                    const selectedMediaId = document.getElementById('sonarrSelectedSeriesId').value;
-                    const selectedMediaTitle = document.getElementById('sonarrSelectedSeriesTitle').innerText.replace('Série sélectionnée : ','');
+                // Le texte et l'icône du bouton sont maintenant gérés par handleGenericSonarrSeriesSelection
+                modalMapButton.disabled = true; // Désactivé jusqu'à sélection
+                modalMapButton.onclick = function() { // Cet onclick sera reconfiguré par handleGeneric...
+                    const sonarrModalElem = document.getElementById('sonarrSearchModal');
+                    const isNew = sonarrModalElem.getAttribute('data-is-new-media') === 'true';
+                    const selectedMediaId = document.getElementById('sonarrSelectedSeriesId').value; // Peut être TVDB ID si nouveau
+                    const selectedMediaTitle = sonarrModalElem.getAttribute('data-selected-media-title'); // Titre stocké
                     const userForcedSeason = document.getElementById('sonarrManualSeasonInput').value;
-                    console.log('[SFTP Map Modal] Map button clicked. Media ID:', selectedMediaId, 'Title:', selectedMediaTitle);
-                    if (selectedMediaId) {
+
+                    if (!selectedMediaId) { alert("Veuillez sélectionner une série."); return; }
+
+                    if (isNew) {
+                        console.log('[SFTP Map Modal] Action: Nouveau média Sonarr. ID (TVDB):', selectedMediaId, 'Titre:', selectedMediaTitle);
+                        // Préparer les données pour promptAndExecuteSftpNewMediaAddAndMap
+                        const searchResultData = { // Simule l'objet searchResultData attendu
+                            tvdbId: selectedMediaId, // ou l'ID externe approprié
+                            title: selectedMediaTitle,
+                            // Ajouter d'autres champs si nécessaire depuis la sélection (year, etc.)
+                        };
+                        promptAndExecuteSftpNewMediaAddAndMap(searchResultData, targetArrAppType);
+                    } else {
+                        console.log('[SFTP Map Modal] Action: Média Sonarr existant. ID (Sonarr):', selectedMediaId, 'Titre:', selectedMediaTitle);
                         executeSftpRetrieveAndProcess(selectedMediaId, selectedMediaTitle, targetArrAppType, userForcedSeason);
-                    } else { alert("Veuillez sélectionner une série."); }
+                    }
                 };
             }
             console.log('[SFTP Map Modal] About to show Sonarr modal.');
@@ -268,6 +285,7 @@
             if (!radarrModalElement) { console.error("Modal Radarr non trouvé!"); return; }
 
             radarrModalElement.setAttribute('data-current-action', 'sftpRetrieveAndMapIndividual');
+            // ... (configuration initiale de la modale Radarr comme avant) ...
             document.getElementById('radarrItemToMap').textContent = sftpItemForDirectMap.itemNameForDisplay;
             document.getElementById('radarrOriginalItemName').value = sftpItemForDirectMap.remotePath;
             document.getElementById('radarrItemType').textContent = sftpItemForDirectMap.itemTypeForDisplay === 'directory' ? 'Dossier (Distant)' : 'Fichier (Distant)';
@@ -279,15 +297,26 @@
             
             const modalMapButton = document.getElementById('radarrModalMapButton');
             if (modalMapButton) {
-                modalMapButton.innerHTML = `<i class="fas fa-link"></i> Rapatrier & Mapper`;
-                modalMapButton.disabled = true;
+                modalMapButton.disabled = true; // Désactivé jusqu'à sélection
                 modalMapButton.onclick = function() {
-                    const selectedMediaId = document.getElementById('radarrSelectedMovieId').value;
-                    const selectedMediaTitle = document.getElementById('radarrSelectedMovieTitle').innerText.replace('Film sélectionné : ','');
-                    console.log('[SFTP Map Modal] Map button clicked. Media ID:', selectedMediaId, 'Title:', selectedMediaTitle);
-                    if (selectedMediaId) {
+                    const radarrModalElem = document.getElementById('radarrSearchModal');
+                    const isNew = radarrModalElem.getAttribute('data-is-new-media') === 'true';
+                    const selectedMediaId = document.getElementById('radarrSelectedMovieId').value; // Peut être TMDB ID si nouveau
+                    const selectedMediaTitle = radarrModalElem.getAttribute('data-selected-media-title'); // Titre stocké
+
+                    if (!selectedMediaId) { alert("Veuillez sélectionner un film."); return; }
+
+                    if (isNew) {
+                        console.log('[SFTP Map Modal] Action: Nouveau média Radarr. ID (TMDB):', selectedMediaId, 'Titre:', selectedMediaTitle);
+                        const searchResultData = {
+                            tmdbId: selectedMediaId, // ou l'ID externe approprié
+                            title: selectedMediaTitle,
+                        };
+                        promptAndExecuteSftpNewMediaAddAndMap(searchResultData, targetArrAppType);
+                    } else {
+                        console.log('[SFTP Map Modal] Action: Média Radarr existant. ID (Radarr):', selectedMediaId, 'Titre:', selectedMediaTitle);
                         executeSftpRetrieveAndProcess(selectedMediaId, selectedMediaTitle, targetArrAppType, null); 
-                    } else { alert("Veuillez sélectionner un film."); }
+                    }
                 };
             }
             console.log('[SFTP Map Modal] About to show Radarr modal.');
@@ -296,10 +325,10 @@
         }
     }
 
-    async function executeSftpRetrieveAndProcess(targetMediaId, targetMediaTitleForDisplay, arrAppType, userForcedSeason = null) {
-        console.log('[SFTP Map Modal] executeSftpRetrieveAndProcess called. Target ID:', targetMediaId, 'Title:', targetMediaTitleForDisplay, 'sftpItem:', JSON.stringify(sftpItemForDirectMap));
+    async function executeSftpRetrieveAndProcess(targetInternalMediaId, targetMediaTitleForDisplay, arrAppType, userForcedSeason = null) {
+        console.log('[SFTP Map Modal] executeSftpRetrieveAndProcess called. Target Internal ID:', targetInternalMediaId, 'Title:', targetMediaTitleForDisplay, 'sftpItem:', JSON.stringify(sftpItemForDirectMap));
         const modalId = (arrAppType === 'sonarr') ? 'sonarrSearchModal' : 'radarrSearchModal';
-        const resultsDiv = document.getElementById((arrAppType === 'sonarr') ? 'sonarrSearchResults' : 'radarrSearchResults');
+        const resultsDiv = document.getElementById((arrAppType === 'sonarr') ? 'sonarrSearchResults' : 'radarrSearchResults'); // Ou le feedback div
         const modalMapButton = document.getElementById((arrAppType === 'sonarr') ? 'sonarrModalMapButton' : 'radarrModalMapButton');
 
         if (!sftpItemForDirectMap.remotePath) {
@@ -312,18 +341,18 @@
         try {
             const payload = {
                 remote_path: sftpItemForDirectMap.remotePath,
-                app_type_of_remote_folder: sftpItemForDirectMap.appType, 
+                app_type_of_remote_folder: sftpItemForDirectMap.appType, // sonarr, radarr, sonarr_working etc.
             };
             if (arrAppType === 'sonarr') {
-                payload.target_series_id = targetMediaId;
+                payload.target_series_id = targetInternalMediaId; // Doit être l'ID interne Sonarr
                 if (userForcedSeason && userForcedSeason.trim() !== '') {
                     payload.user_forced_season = parseInt(userForcedSeason);
                 }
             } else { 
-                payload.target_movie_id = targetMediaId;
+                payload.target_movie_id = targetInternalMediaId; // Doit être l'ID interne Radarr
             }
 
-            console.log('[SFTP Map Modal] executeSftpRetrieveAndProcess: About to fetch sftpRetrieveAndProcess.');
+            console.log('[SFTP Map Modal] executeSftpRetrieveAndProcess: About to fetch /seedbox/sftp-retrieve-and-process with payload:', JSON.stringify(payload));
             const response = await fetch(window.appUrls.sftpRetrieveAndProcess, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
             });
@@ -333,7 +362,6 @@
                 if(resultsDiv) resultsDiv.innerHTML = `<div class="alert alert-success">${escapeJsString(result.message)}</div>`;
                 flashMessageGlobally(result.message || "Rapatriement et mappage réussis.", 'success'); 
                 setTimeout(() => {
-                    console.log('[SFTP Map Modal] executeSftpRetrieveAndProcess: Success, scheduling page reload.');
                     var modalInstance = bootstrap.Modal.getInstance(document.getElementById(modalId));
                     if (modalInstance) modalInstance.hide();
                     window.location.reload();
@@ -344,13 +372,145 @@
         } catch (error) {
             console.error('[SFTP Map Modal] executeSftpRetrieveAndProcess: Error caught:', error);
             if(resultsDiv) resultsDiv.innerHTML = `<div class="alert alert-danger">Erreur: ${escapeJsString(error.message)}</div>`;
+            flashMessageGlobally(`Erreur R&P: ${escapeJsString(error.message)}`, 'danger');
         } finally {
-            console.log('[SFTP Map Modal] executeSftpRetrieveAndProcess: Finally block.');
             if(modalMapButton) modalMapButton.disabled = false;
         }
     }
+
+    async function promptAndExecuteSftpNewMediaAddAndMap(searchResultData, arrAppType) {
+        console.log('[SFTP Map Modal] promptAndExecuteSftpNewMediaAddAndMap for new media.', searchResultData, arrAppType);
+        const modalElementId = (arrAppType === 'sonarr') ? 'sonarrSearchModal' : 'radarrSearchModal';
+        const modalElement = document.getElementById(modalElementId);
+        const feedbackDiv = document.getElementById((arrAppType === 'sonarr') ? 'sonarrSearchModalFeedbackZone' : 'radarrSearchModalFeedbackZone');
+        const mainButton = document.getElementById((arrAppType === 'sonarr') ? 'sonarrModalMapButton' : 'radarrModalMapButton');
+
+        const optionsContainerId = (arrAppType === 'sonarr') ? 'sftpSonarrNewSeriesOptionsContainer' : 'sftpRadarrNewMovieOptionsContainer';
+        const optionsContainer = document.getElementById(optionsContainerId);
+
+        if (!modalElement || !optionsContainer || !mainButton || !feedbackDiv) {
+            console.error("Éléments de la modale manquants pour l'ajout SFTP.");
+            alert("Erreur interne: Impossible d'afficher les options d'ajout.");
+            return;
+        }
+
+        // Cacher les résultats de recherche et afficher les options d'ajout
+        const searchResultsDivId = (arrAppType === 'sonarr') ? 'sonarrSearchResults' : 'radarrSearchResults';
+        const searchResultsDiv = document.getElementById(searchResultsDivId);
+        if(searchResultsDiv) searchResultsDiv.style.display = 'none';
+        optionsContainer.style.display = 'block';
+        feedbackDiv.innerHTML = `<p class="alert alert-info">Veuillez configurer les options pour ajouter <strong>${searchResultData.title}</strong> à ${arrAppType.charAt(0).toUpperCase() + arrAppType.slice(1)}.</p>`;
+
+        // Peupler les selects
+        if (arrAppType === 'sonarr') {
+            populateSelectFromServer(window.appUrls.getSonarrRootfolders, 'sftpSonarrRootFolderSelect', 'path', 'path', 'Dossier Racine Sonarr');
+            populateSelectFromServer(window.appUrls.getSonarrQualityprofiles, 'sftpSonarrQualityProfileSelect', 'id', 'name', 'Profil Qualité Sonarr');
+            // populateSelectFromServer pour Language Profile si nécessaire
+        } else { // radarr
+            populateSelectFromServer(window.appUrls.getRadarrRootfolders, 'sftpRadarrRootFolderSelect', 'path', 'path', 'Dossier Racine Radarr');
+            populateSelectFromServer(window.appUrls.getRadarrQualityprofiles, 'sftpRadarrQualityProfileSelect', 'id', 'name', 'Profil Qualité Radarr');
+            const minAvailabilitySelect = document.getElementById('sftpRadarrMinimumAvailabilitySelect');
+            if (minAvailabilitySelect) minAvailabilitySelect.disabled = false;
+        }
+
+        // Reconfigurer le bouton principal pour confirmer l'ajout
+        mainButton.innerHTML = `<i class="fas fa-check-circle"></i> Confirmer Ajout & Rapatrier`;
+        mainButton.disabled = false; // Activer car l'utilisateur doit choisir des options
+        mainButton.onclick = async function() {
+            await confirmSftpNewMediaAddAndMap(searchResultData, arrAppType);
+        };
+    }
+
+    async function confirmSftpNewMediaAddAndMap(searchResultData, arrAppType) {
+        console.log('[SFTP Map Modal] confirmSftpNewMediaAddAndMap called.', searchResultData, arrAppType);
+        const feedbackDiv = document.getElementById((arrAppType === 'sonarr') ? 'sonarrSearchModalFeedbackZone' : 'radarrSearchModalFeedbackZone');
+        const mainButton = document.getElementById((arrAppType === 'sonarr') ? 'sonarrModalMapButton' : 'radarrModalMapButton');
+        if(mainButton) mainButton.disabled = true;
+        if(feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-info"><i class="fas fa-spinner fa-spin"></i> Ajout à ${arrAppType}, rapatriement et import en cours...</div>`;
+
+        const userChoicesForAdd = {};
+        if (arrAppType === 'sonarr') {
+            userChoicesForAdd.rootFolderPath = document.getElementById('sftpSonarrRootFolderSelect').value;
+            userChoicesForAdd.qualityProfileId = parseInt(document.getElementById('sftpSonarrQualityProfileSelect').value);
+            // userChoicesForAdd.languageProfileId = parseInt(document.getElementById('sftpSonarrLanguageProfileSelect').value) || 1; // Exemple
+            userChoicesForAdd.languageProfileId = 1; // Defaulting to 1 for now
+            userChoicesForAdd.monitored = true;
+            userChoicesForAdd.seasonFolder = true;
+            userChoicesForAdd.addOptions = { searchForMissingEpisodes: false };
+        } else { // radarr
+            userChoicesForAdd.rootFolderPath = document.getElementById('sftpRadarrRootFolderSelect').value;
+            userChoicesForAdd.qualityProfileId = parseInt(document.getElementById('sftpRadarrQualityProfileSelect').value);
+            userChoicesForAdd.minimumAvailability = document.getElementById('sftpRadarrMinimumAvailabilitySelect').value;
+            userChoicesForAdd.monitored = true;
+            userChoicesForAdd.addOptions = { searchForMovie: false };
+        }
+
+        if (!userChoicesForAdd.rootFolderPath || !userChoicesForAdd.qualityProfileId) {
+            if(feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-danger">Erreur: Dossier racine et profil de qualité sont requis.</div>`;
+            if(mainButton) mainButton.disabled = false;
+            return;
+        }
+
+        const payload = {
+            sftp_details: {
+                remote_path: sftpItemForDirectMap.remotePath,
+                app_type_of_remote_folder: sftpItemForDirectMap.appType,
+                item_name: sftpItemForDirectMap.itemNameForDisplay,
+                item_type: sftpItemForDirectMap.itemTypeForDisplay
+            },
+            media_to_add: searchResultData,
+            user_choices: userChoicesForAdd,
+            arr_type: arrAppType
+        };
+
+        try {
+            console.log('[SFTP Map Modal] confirmSftpNewMediaAddAndMap: About to fetch /api/sftp-add-and-import-arr-item with payload:', JSON.stringify(payload));
+            const response = await fetch(window.appUrls.sftpAddAndImportArrItem, { // Utilise la nouvelle URL
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+            });
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                if(feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-success">${escapeJsString(result.message)}</div>`;
+                flashMessageGlobally(result.message || "Opération réussie.", 'success');
+                setTimeout(() => {
+                    const modalId = (arrAppType === 'sonarr') ? 'sonarrSearchModal' : 'radarrSearchModal';
+                    var modalInstance = bootstrap.Modal.getInstance(document.getElementById(modalId));
+                    if (modalInstance) modalInstance.hide();
+                    window.location.reload();
+                }, 3000);
+            } else {
+                throw new Error(result.error || `Erreur HTTP ${response.status}`);
+            }
+        } catch (error) {
+            console.error('[SFTP Map Modal] confirmSftpNewMediaAddAndMap: Error caught:', error);
+            if(feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-danger">Erreur: ${escapeJsString(error.message)}</div>`;
+            flashMessageGlobally(`Erreur: ${escapeJsString(error.message)}`, 'danger');
+        } finally {
+            if(mainButton) mainButton.disabled = false;
+             // Réinitialiser l'affichage pour une future sélection
+            const optionsContainerId = (arrAppType === 'sonarr') ? 'sftpSonarrNewSeriesOptionsContainer' : 'sftpRadarrNewMovieOptionsContainer';
+            const optionsContainer = document.getElementById(optionsContainerId);
+            if(optionsContainer) optionsContainer.style.display = 'none';
+            const searchResultsDivId = (arrAppType === 'sonarr') ? 'sonarrSearchResults' : 'radarrSearchResults';
+            const searchResultsDiv = document.getElementById(searchResultsDivId);
+            if(searchResultsDiv) searchResultsDiv.style.display = 'block'; // Réafficher les résultats de recherche
+        }
+    }
     
-    function clearSftpContext() { 
+    function clearSftpContext() {
+        console.log("[SFTP Context] Clearing SFTP context.");
+        // Réinitialiser les conteneurs d'options SFTP
+        const sonarrSftpOptions = document.getElementById('sftpSonarrNewSeriesOptionsContainer');
+        if(sonarrSftpOptions) sonarrSftpOptions.style.display = 'none';
+        const radarrSftpOptions = document.getElementById('sftpRadarrNewMovieOptionsContainer');
+        if(radarrSftpOptions) radarrSftpOptions.style.display = 'none';
+        // Réafficher les résultats de recherche par défaut
+        const sonarrSearchResults = document.getElementById('sonarrSearchResults');
+        if(sonarrSearchResults) sonarrSearchResults.style.display = 'block';
+        const radarrSearchResults = document.getElementById('radarrSearchResults');
+        if(radarrSearchResults) radarrSearchResults.style.display = 'block';
+
         sftpItemForDirectMap.remotePath = null;
         sftpItemForDirectMap.appType = null;
         sftpItemForDirectMap.itemNameForDisplay = null;

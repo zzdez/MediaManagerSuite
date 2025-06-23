@@ -337,67 +337,106 @@ async function executeRadarrSearch() {
     }
 }
 
-function handleGenericSonarrSeriesSelection(mediaId, seriesTitle, isAddedBoolean) {
+function handleGenericSonarrSeriesSelection(mediaId, seriesTitle, isAlreadyInArr) {
     const sonarrModalElement = document.getElementById('sonarrSearchModal');
     if (!sonarrModalElement) return;
 
-    document.getElementById('sonarrSelectedSeriesId').value = mediaId;
+    // mediaId ici est l'ID Sonarr si isAlreadyInArr est true, sinon c'est tvdbId pour un nouveau média.
+    document.getElementById('sonarrSelectedSeriesId').value = mediaId; // Stocke l'ID pertinent (Sonarr ID ou TVDB ID)
     document.getElementById('sonarrSelectedSeriesTitle').innerText = `Série sélectionnée : ${seriesTitle}`;
-    currentlySelectedSonarrSeriesIdInModal = mediaId;
+    currentlySelectedSonarrSeriesIdInModal = mediaId; // Peut-être renommer ou clarifier son usage
 
-    sonarrModalElement.setAttribute('data-selected-is-new', !isAddedBoolean ? 'true' : 'false');
-    sonarrModalElement.setAttribute('data-selected-media-id', mediaId);
+    sonarrModalElement.setAttribute('data-selected-media-id', mediaId); // ID Sonarr ou TVDB ID
     sonarrModalElement.setAttribute('data-selected-media-title', seriesTitle);
+    sonarrModalElement.setAttribute('data-is-new-media', !isAlreadyInArr); // true si nouveau, false si existant
 
     const modalMapButton = document.getElementById('sonarrModalMapButton');
+    const currentAction = sonarrModalElement.getAttribute('data-current-action');
+
     if (modalMapButton) {
         modalMapButton.disabled = !mediaId;
-        if (!isAddedBoolean && sonarrModalElement.getAttribute('data-current-action') === 'mapIndividualStaging') {
+        if (!isAlreadyInArr && currentAction === 'sftpRetrieveAndMapIndividual') {
+            modalMapButton.innerHTML = '<i class="fas fa-plus-download"></i> Rapatrier, Ajouter & Mapper';
+            modalMapButton.className = 'btn btn-info'; // Ou une autre couleur pour distinguer
+        } else if (currentAction === 'sftpRetrieveAndMapIndividual') { // Média existant pour SFTP
+            modalMapButton.innerHTML = '<i class="fas fa-link"></i> Rapatrier & Mapper';
+            modalMapButton.className = 'btn btn-primary';
+        } else if (!isAlreadyInArr && currentAction === 'mapIndividualStaging') { // Nouveau média pour staging local
             modalMapButton.innerHTML = '<i class="fas fa-plus-circle"></i> Ajouter & Mapper';
-            modalMapButton.classList.remove('btn-primary'); modalMapButton.classList.add('btn-info');
-        } else {
-            modalMapButton.classList.remove('btn-info'); modalMapButton.classList.add('btn-primary');
+            modalMapButton.className = 'btn btn-info';
+        } else { // Cas par défaut (ex: staging local, média existant)
+            modalMapButton.innerHTML = '<i class="fas fa-link"></i> Mapper à cette Série';
+            modalMapButton.className = 'btn btn-primary';
         }
     }
-    const resultsDiv = document.getElementById('sonarrSearchResults');
-    if (resultsDiv) { // Keep search results visible, show selection confirmation in feedback zone
-        const feedbackDiv = document.getElementById('sonarrSearchModalFeedbackZone');
-        if (feedbackDiv) {
-            feedbackDiv.innerHTML = `<p class="alert alert-info mt-2">Série sélectionnée : <strong>${seriesTitle}</strong> (ID: ${mediaId}).<br>
-            ${isAddedBoolean ? 'Cette série est déjà gérée.' : 'Cette série sera ajoutée (si le backend le supporte pour cette action).'}<br>
-            Cliquez sur le bouton d'action.</p>`;
-        }
+
+    const feedbackDiv = document.getElementById('sonarrSearchModalFeedbackZone');
+    if (feedbackDiv) {
+        feedbackDiv.innerHTML = `<p class="alert alert-info mt-2">Série sélectionnée : <strong>${seriesTitle}</strong> (ID: ${mediaId}).<br>
+        ${isAlreadyInArr ? 'Cette série est déjà gérée par Sonarr.' : 'Cette série n\'est pas encore dans Sonarr.'}<br>
+        Cliquez sur le bouton d'action.</p>`;
     }
+
     const manualSeasonDiv = document.getElementById('sonarrManualSeasonDiv');
     if (manualSeasonDiv) {
-        const currentAction = sonarrModalElement.getAttribute('data-current-action');
-        if (isAddedBoolean && (currentAction === 'mapIndividualStaging' || currentAction === 'mapProblemItem' || currentAction === 'sftpRetrieveAndMapIndividual')) {
+        // Afficher la sélection de saison si c'est un média existant et l'action le permet
+        if (isAlreadyInArr && (currentAction === 'mapIndividualStaging' || currentAction === 'mapProblemItem' || currentAction === 'sftpRetrieveAndMapIndividual')) {
             manualSeasonDiv.style.display = 'block';
-        } else { manualSeasonDiv.style.display = 'none'; }
-    }
-}
-
-function handleGenericRadarrMovieSelection(movieId, movieTitle, isAddedBoolean) {
-    document.getElementById('radarrSelectedMovieId').value = movieId;
-    document.getElementById('radarrSelectedMovieTitle').innerText = `Film sélectionné : ${movieTitle}`;
-    const modalMapButton = document.getElementById('radarrModalMapButton');
-    if (modalMapButton) {
-        modalMapButton.disabled = !movieId;
-        if (!isAddedBoolean) {
-            modalMapButton.innerHTML = '<i class="fas fa-plus-circle"></i> Ajouter & Mapper';
-            modalMapButton.classList.remove('btn-primary'); modalMapButton.classList.add('btn-info');
         } else {
-            modalMapButton.classList.remove('btn-info'); modalMapButton.classList.add('btn-primary');
+            manualSeasonDiv.style.display = 'none';
         }
     }
-    // Keep search results visible, show selection confirmation in feedback zone
-    const feedbackDiv = document.getElementById('radarrSearchModalFeedbackZone'); // Assuming similar ID
-    if (feedbackDiv) {
-        feedbackDiv.innerHTML = `<p class="alert alert-info mt-2">Film sélectionné : <strong>${movieTitle}</strong> (ID: ${movieId}).<br>Cliquez sur le bouton "Mapper..."</p>`;
-    }
+
+    // Les options d'ajout (Root Folder, Quality Profile) pour un *nouveau* média SFTP
+    // seront gérées par promptAndExecuteSftpNewMediaAddAndMap
+    // Ici, on s'assure juste que le bouton et le feedback sont corrects.
 }
 
-async function triggerSonarrManualImportWithSeason(mediaIdFromSelection, seriesTitleForDisplay, userForcedSeason, isNewSeries, mediaTitleForAdd) {
+function handleGenericRadarrMovieSelection(mediaId, movieTitle, isAlreadyInArr) {
+    const radarrModalElement = document.getElementById('radarrSearchModal');
+    if (!radarrModalElement) return;
+
+    // mediaId ici est l'ID Radarr si isAlreadyInArr est true, sinon c'est tmdbId pour un nouveau média.
+    document.getElementById('radarrSelectedMovieId').value = mediaId; // Stocke l'ID pertinent
+    document.getElementById('radarrSelectedMovieTitle').innerText = `Film sélectionné : ${movieTitle}`;
+
+    radarrModalElement.setAttribute('data-selected-media-id', mediaId); // Radarr ID ou TMDB ID
+    radarrModalElement.setAttribute('data-selected-media-title', movieTitle);
+    radarrModalElement.setAttribute('data-is-new-media', !isAlreadyInArr); // true si nouveau, false si existant
+
+    const modalMapButton = document.getElementById('radarrModalMapButton');
+    const currentAction = radarrModalElement.getAttribute('data-current-action');
+
+    if (modalMapButton) {
+        modalMapButton.disabled = !mediaId;
+        if (!isAlreadyInArr && currentAction === 'sftpRetrieveAndMapIndividual') {
+            modalMapButton.innerHTML = '<i class="fas fa-plus-download"></i> Rapatrier, Ajouter & Mapper';
+            modalMapButton.className = 'btn btn-info';
+        } else if (currentAction === 'sftpRetrieveAndMapIndividual') { // Média existant pour SFTP
+            modalMapButton.innerHTML = '<i class="fas fa-link"></i> Rapatrier & Mapper';
+            modalMapButton.className = 'btn btn-primary';
+        } else if (!isAlreadyInArr && currentAction === 'mapIndividualStaging') { // Nouveau média pour staging local
+            modalMapButton.innerHTML = '<i class="fas fa-plus-circle"></i> Ajouter & Mapper';
+            modalMapButton.className = 'btn btn-info';
+        } else { // Cas par défaut
+            modalMapButton.innerHTML = '<i class="fas fa-link"></i> Mapper à ce Film';
+            modalMapButton.className = 'btn btn-primary';
+        }
+    }
+
+    const feedbackDiv = document.getElementById('radarrSearchModalFeedbackZone');
+    if (feedbackDiv) {
+        feedbackDiv.innerHTML = `<p class="alert alert-info mt-2">Film sélectionné : <strong>${movieTitle}</strong> (ID: ${mediaId}).<br>
+        ${isAlreadyInArr ? 'Ce film est déjà géré par Radarr.' : 'Ce film n\'est pas encore dans Radarr.'}<br>
+        Cliquez sur le bouton d'action.</p>`;
+    }
+
+    // Les options d'ajout (Root Folder, Quality Profile) pour un *nouveau* média SFTP
+    // seront gérées par promptAndExecuteSftpNewMediaAddAndMap
+}
+
+
+async function triggerSonarrManualImportWithSeason(mediaIdFromSelection, seriesTitleForDisplay, userForcedSeason, isNewSeries_OBSOLETE, mediaTitleForAdd_OBSOLETE) {
     const originalItemName = document.getElementById('sonarrOriginalItemName').value;
     const feedbackDiv = document.getElementById('sonarrSearchModalFeedbackZone'); // Use dedicated feedback zone
     const sonarrModalElement = document.getElementById('sonarrSearchModal');

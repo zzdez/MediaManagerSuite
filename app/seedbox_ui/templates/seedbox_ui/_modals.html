@@ -141,9 +141,32 @@
                     <input type="number" class="form-control form-control-sm" id="sonarrManualSeasonInput" placeholder="Ex: 1">
                 </div>
 
-                {# PAS de addTorrentSonarrNewSeriesOptions ici, car ce modal n'ajoute pas de NOUVELLE série à Sonarr. #}
-                {# S'il faut ajouter une série qui n'existe pas, l'utilisateur doit passer par "Ajouter Torrent". #}
-                {# Ou alors, on complexifie ce modal pour qu'il gère aussi l'ajout, mais c'est l'étape d'après. #}
+                <!-- Section pour les options d'ajout d'une nouvelle série (pour SFTP) -->
+                <div id="sftpSonarrNewSeriesOptionsContainer" class="mt-3 p-3 border rounded" style="display:none;">
+                    <h6>Options pour l'ajout de la nouvelle série :</h6>
+                    <div class="mb-2">
+                        <label for="sftpSonarrRootFolderSelect" class="form-label form-label-sm">Dossier Racine Sonarr:</label>
+                        <select id="sftpSonarrRootFolderSelect" class="form-select form-select-sm">
+                            <option value="" selected disabled>Chargement...</option>
+                        </select>
+                        <small id="sftpSonarrRootFolderError" class="text-danger"></small>
+                    </div>
+                    <div class="mb-2">
+                        <label for="sftpSonarrQualityProfileSelect" class="form-label form-label-sm">Profil de Qualité Sonarr:</label>
+                        <select id="sftpSonarrQualityProfileSelect" class="form-select form-select-sm">
+                            <option value="" selected disabled>Chargement...</option>
+                        </select>
+                        <small id="sftpSonarrQualityProfileError" class="text-danger"></small>
+                    </div>
+                    <!-- Language Profile (Sonarr) - Peut être ajouté si nécessaire -->
+                    <!-- <div class="mb-2">
+                        <label for="sftpSonarrLanguageProfileSelect" class="form-label">Profil de Langue:</label>
+                        <select id="sftpSonarrLanguageProfileSelect" class="form-select form-select-sm">
+                            <option value="1" selected>English (par défaut)</option>
+                        </select>
+                    </div> -->
+                </div>
+                <!-- Fin Section options d'ajout Sonarr -->
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
@@ -181,7 +204,35 @@
                 <input type="hidden" id="radarrSelectedMovieId"> {# Stocke l'ID Radarr (interne ou TMDB) #}
                 <p id="radarrSelectedMovieTitle" class="fw-bold mt-2">Aucun film sélectionné</p>
 
-                {# PAS de addTorrentRadarrNewMovieOptions ici #}
+                <!-- Section pour les options d'ajout d'un nouveau film (pour SFTP) -->
+                <div id="sftpRadarrNewMovieOptionsContainer" class="mt-3 p-3 border rounded" style="display:none;">
+                    <h6>Options pour l'ajout du nouveau film :</h6>
+                    <div class="mb-2">
+                        <label for="sftpRadarrRootFolderSelect" class="form-label form-label-sm">Dossier Racine Radarr:</label>
+                        <select id="sftpRadarrRootFolderSelect" class="form-select form-select-sm">
+                            <option value="" selected disabled>Chargement...</option>
+                        </select>
+                        <small id="sftpRadarrRootFolderError" class="text-danger"></small>
+                    </div>
+                    <div class="mb-2">
+                        <label for="sftpRadarrQualityProfileSelect" class="form-label form-label-sm">Profil de Qualité Radarr:</label>
+                        <select id="sftpRadarrQualityProfileSelect" class="form-select form-select-sm">
+                            <option value="" selected disabled>Chargement...</option>
+                        </select>
+                        <small id="sftpRadarrQualityProfileError" class="text-danger"></small>
+                    </div>
+                    <div class="mb-2">
+                        <label for="sftpRadarrMinimumAvailabilitySelect" class="form-label form-label-sm">Disponibilité Minimale:</label>
+                        <select id="sftpRadarrMinimumAvailabilitySelect" class="form-select form-select-sm">
+                            <option value="announced" selected>Announced</option>
+                            <option value="inCinemas">In Cinemas</option>
+                            <option value="released">Released</option>
+                            <option value="preDB">PreDB</option>
+                        </select>
+                    </div>
+                    <!-- Ajouter d'autres options Radarr si nécessaire -->
+                </div>
+                <!-- Fin Section options d'ajout Radarr -->
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
