@@ -159,10 +159,10 @@ function openRadarrSearchModal(itemPathForAction, itemType) {
             const isNewMedia = radarrModalElement.getAttribute('data-is-new-media') === 'true';
             const mediaIdForPayload = radarrModalElement.getAttribute('data-selected-media-id'); // This is tmdbId for new media
             const mediaTitleForAdd = radarrModalElement.getAttribute('data-selected-media-title');
-            const currentAction = radarrModalElement.getAttribute('data-current-action');
+            let currentAction = radarrModalElement.getAttribute('data-current-action'); // Déclaré une seule fois
             console.log("radarrModalMapButton onclick - data-is-new-media (attr):", radarrModalElement.getAttribute('data-is-new-media'), "isNewMedia (boolean eval):", isNewMedia, "currentAction:", currentAction); // AJOUT CONSOLE.LOG
 
-            const currentAction = radarrModalElement.getAttribute('data-current-action');
+            // const currentAction = radarrModalElement.getAttribute('data-current-action'); // Suppression de la re-déclaration
 
             if (!mediaIdForPayload) {
                 alert("Veuillez sélectionner un film.");
