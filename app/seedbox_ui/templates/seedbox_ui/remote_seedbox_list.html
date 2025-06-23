@@ -184,10 +184,10 @@
             // URLs specific to remote_seedbox_list.html actions that might be modalized later or called from global JS
             manualSftpDownload: "{{ url_for('seedbox_ui.manual_sftp_download_action') }}",
             sftpRetrieveAndProcess: "{{ url_for('seedbox_ui.sftp_retrieve_and_process_action') }}",
-            sftpBatchDownload: "{{ url_for('seedbox_ui.sftp_batch_download_action') }}",
-            sftpBatchRetrieveAndPremapSonarr: "{{ url_for('seedbox_ui.sftp_batch_retrieve_and_premap_sonarr_action') }}",
-            sftpAddAndImportArrItem: "{{ url_for('seedbox_ui.sftp_add_and_import_arr_item_action') }}", // Corrigé pour pointer vers la vraie route
-            sftpAddAndImportArrItemPlaceholder: "{{ url_for('seedbox_ui.sftp_add_and_import_arr_item_placeholder') }}" // Garder le placeholder au cas où pour debug
+            // sftpBatchDownload: "{{ url_for('seedbox_ui.sftp_batch_download_action') }}", // Commenté car route non définie
+            // sftpBatchRetrieveAndPremapSonarr: "{{ url_for('seedbox_ui.sftp_batch_retrieve_and_premap_sonarr_action') }}", // Commenté car route non définie
+            sftpAddAndImportArrItem: "{{ url_for('seedbox_ui.sftp_add_and_import_arr_item_action') }}",
+            sftpAddAndImportArrItemPlaceholder: "{{ url_for('seedbox_ui.sftp_add_and_import_arr_item_placeholder') }}"
         };
     </script>
     <script src="{{ url_for('static', filename='js/seedbox_ui_modals.js') }}"></script>
