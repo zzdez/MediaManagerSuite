@@ -104,13 +104,28 @@ function openSonarrSearchModal(itemPathForAction, itemType) {
         modalMapButton.onclick = function() {
             const seriesTitle = document.getElementById('sonarrSelectedSeriesTitle').innerText.replace('Série sélectionnée : ', '');
             const userForcedSeason = document.getElementById('sonarrManualSeasonInput').value;
-            const isNewSeries = sonarrModalElement.getAttribute('data-is-new-series') === 'true';
+            const isNewMedia = sonarrModalElement.getAttribute('data-is-new-media') === 'true';
             const mediaIdForPayload = sonarrModalElement.getAttribute('data-selected-media-id');
-            const mediaTitleForAdd = sonarrModalElement.getAttribute('data-selected-media-title');
+            const mediaTitleForAdd = sonarrModalElement.getAttribute('data-selected-media-title'); // Used by promptAndAddArrItemForLocalStaging
+            const currentAction = sonarrModalElement.getAttribute('data-current-action');
 
-            if (mediaIdForPayload) {
-                triggerSonarrManualImportWithSeason(mediaIdForPayload, seriesTitle, userForcedSeason, isNewSeries, mediaTitleForAdd);
-            } else { alert("Veuillez sélectionner une série."); }
+            if (!mediaIdForPayload) {
+                alert("Veuillez sélectionner une série.");
+                return;
+            }
+
+            if (currentAction === 'mapIndividualStaging' && isNewMedia) {
+                const mediaYear = sonarrModalElement.getAttribute('data-selected-media-year');
+                const searchResultData = {
+                    id: mediaIdForPayload, // This is tvdbId for new media
+                    title: mediaTitleForAdd,
+                    year: parseInt(mediaYear) || 0 // Assurer que c'est un nombre
+                };
+                promptAndAddArrItemForLocalStaging(searchResultData, 'sonarr', sonarrModalElement);
+            } else {
+                // Fallback to existing logic for existing media or other actions
+                triggerSonarrManualImportWithSeason(mediaIdForPayload, seriesTitle, userForcedSeason);
+            }
         };
     }
     var modal = new bootstrap.Modal(sonarrModalElement);
@@ -121,6 +136,13 @@ function openRadarrSearchModal(itemPathForAction, itemType) {
     const itemNameForDisplay = itemPathForAction.split(/[\\/]/).pop();
     const radarrModalElement = document.getElementById('radarrSearchModal');
     if (!radarrModalElement) { console.error("Modal Radarr (ID: radarrSearchModal) non trouvé!"); return; }
+
+    radarrModalElement.setAttribute('data-current-action', 'mapIndividualStaging'); // AJOUT DE CETTE LIGNE
+    radarrModalElement.removeAttribute('data-is-new-media'); // Assurer la cohérence avec Sonarr
+    radarrModalElement.removeAttribute('data-selected-media-id'); // Assurer la cohérence
+    radarrModalElement.removeAttribute('data-selected-media-title'); // Assurer la cohérence
+    radarrModalElement.removeAttribute('data-selected-media-year'); // Assurer la cohérence
+    radarrModalElement.removeAttribute('data-problem-torrent-hash'); // Assurer la cohérence
 
     document.getElementById('radarrItemToMap').textContent = itemNameForDisplay;
     document.getElementById('radarrOriginalItemName').value = itemPathForAction;
@@ -140,10 +162,32 @@ function openRadarrSearchModal(itemPathForAction, itemType) {
         modalMapButton.disabled = true;
         modalMapButton.className = 'btn btn-primary';
         modalMapButton.onclick = function() {
-            const movieId = document.getElementById('radarrSelectedMovieId').value;
-            const movieTitle = document.getElementById('radarrSelectedMovieTitle').innerText.replace('Film sélectionné : ', '');
-            if (movieId) { triggerRadarrManualImport(movieId, movieTitle); }
-            else { alert("Veuillez sélectionner un film."); }
+            const radarrModalElement = document.getElementById('radarrSearchModal'); // Ensure we have the modal element
+            const isNewMedia = radarrModalElement.getAttribute('data-is-new-media') === 'true';
+            const mediaIdForPayload = radarrModalElement.getAttribute('data-selected-media-id'); // This is tmdbId for new media
+            const mediaTitleForAdd = radarrModalElement.getAttribute('data-selected-media-title');
+            let currentAction = radarrModalElement.getAttribute('data-current-action'); // Déclaré une seule fois
+            console.log("radarrModalMapButton onclick - data-is-new-media (attr):", radarrModalElement.getAttribute('data-is-new-media'), "isNewMedia (boolean eval):", isNewMedia, "currentAction:", currentAction); // AJOUT CONSOLE.LOG
+
+            // const currentAction = radarrModalElement.getAttribute('data-current-action'); // Suppression de la re-déclaration
+
+            if (!mediaIdForPayload) {
+                alert("Veuillez sélectionner un film.");
+                return;
+            }
+
+            if (currentAction === 'mapIndividualStaging' && isNewMedia) {
+                const mediaYear = radarrModalElement.getAttribute('data-selected-media-year');
+                const searchResultData = {
+                    id: mediaIdForPayload, // This is tmdbId for new media
+                    title: mediaTitleForAdd,
+                    year: parseInt(mediaYear) || 0 // Assurer que c'est un nombre
+                };
+                promptAndAddArrItemForLocalStaging(searchResultData, 'radarr', radarrModalElement);
+            } else {
+                // Fallback to existing logic for existing media or other actions
+                triggerRadarrManualImport(mediaIdForPayload, mediaTitleForAdd);
+            }
         };
     }
     var modal = new bootstrap.Modal(radarrModalElement);
@@ -310,6 +354,7 @@ async function executeRadarrSearch() {
             let posterUrl = movie.remotePoster || (movie.images && movie.images.length > 0 ? movie.images.find(img => img.coverType === 'poster')?.remoteUrl : 'https://via.placeholder.com/60x90?text=N/A');
             const escapedMovieTitle = escapeJsString(movie.title);
             const isAlreadyInRadarr = movie.id && movie.id > 0;
+            console.log("executeRadarrSearch - movie.id:", movie.id, "isAlreadyInRadarr:", isAlreadyInRadarr); // AJOUT CONSOLE.LOG
             const idForHandler = isAlreadyInRadarr ? movie.id : movie.tmdbId;
             let buttonText = isAlreadyInRadarr ? "Sélectionner" : "Ajouter & Sélectionner";
             let buttonIcon = "fas fa-check-circle";
@@ -324,7 +369,7 @@ async function executeRadarrSearch() {
                 <li class="list-group-item"><div class="row align-items-center">
                     <div class="col-auto"><img src="${posterUrl}" alt="Poster" class="img-fluid rounded" style="max-height: 90px;" onerror="this.onerror=null; this.src='https://via.placeholder.com/60x90?text=ImgErr';"></div>
                     <div class="col"><strong>${movie.title}</strong> (${movie.year || 'N/A'})<br><small class="text-muted">Statut: ${movie.status || 'N/A'} | TMDB ID: ${movie.tmdbId || 'N/A'} ${isAlreadyInRadarr ? `| Radarr ID: ${movie.id}` : ''}</small><p class="mb-0 small">${(movie.overview || '').substring(0, 120)}${(movie.overview || '').length > 120 ? '...' : ''}</p></div>
-                    <div class="col-auto"><button class="btn ${buttonClass} btn-sm" onclick="handleGenericRadarrMovieSelection(${idForHandler || 0}, '${escapedMovieTitle}', ${isAlreadyInRadarr})" title="${buttonTitle}" ${idForHandler ? '' : 'disabled title="ID manquant"'}><i class="${buttonIcon}"></i> ${buttonText}</button></div>
+                    <div class="col-auto"><button class="btn ${buttonClass} btn-sm" onclick="handleGenericRadarrMovieSelection(${idForHandler || 0}, '${escapedMovieTitle}', ${isAlreadyInRadarr}, ${movie.year || 0})" title="${buttonTitle}" ${idForHandler ? '' : 'disabled title="ID manquant"'}><i class="${buttonIcon}"></i> ${buttonText}</button></div>
                 </div></li>`;
         });
         html += '</ul>';
@@ -337,7 +382,7 @@ async function executeRadarrSearch() {
     }
 }
 
-function handleGenericSonarrSeriesSelection(mediaId, seriesTitle, isAlreadyInArr) {
+function handleGenericSonarrSeriesSelection(mediaId, seriesTitle, isAlreadyInArr, seriesYear) {
     const sonarrModalElement = document.getElementById('sonarrSearchModal');
     if (!sonarrModalElement) return;
 
@@ -349,6 +394,7 @@ function handleGenericSonarrSeriesSelection(mediaId, seriesTitle, isAlreadyInArr
     sonarrModalElement.setAttribute('data-selected-media-id', mediaId); // ID Sonarr ou TVDB ID
     sonarrModalElement.setAttribute('data-selected-media-title', seriesTitle);
     sonarrModalElement.setAttribute('data-is-new-media', !isAlreadyInArr); // true si nouveau, false si existant
+    sonarrModalElement.setAttribute('data-selected-media-year', seriesYear || 0); // Stocker l'année
 
     const modalMapButton = document.getElementById('sonarrModalMapButton');
     const currentAction = sonarrModalElement.getAttribute('data-current-action');
@@ -392,7 +438,8 @@ function handleGenericSonarrSeriesSelection(mediaId, seriesTitle, isAlreadyInArr
     // Ici, on s'assure juste que le bouton et le feedback sont corrects.
 }
 
-function handleGenericRadarrMovieSelection(mediaId, movieTitle, isAlreadyInArr) {
+function handleGenericRadarrMovieSelection(mediaId, movieTitle, isAlreadyInArr, movieYear) {
+    console.log("handleGenericRadarrMovieSelection - isAlreadyInArr:", isAlreadyInArr, "Setting data-is-new-media to:", !isAlreadyInArr); // AJOUT CONSOLE.LOG
     const radarrModalElement = document.getElementById('radarrSearchModal');
     if (!radarrModalElement) return;
 
@@ -403,6 +450,8 @@ function handleGenericRadarrMovieSelection(mediaId, movieTitle, isAlreadyInArr) 
     radarrModalElement.setAttribute('data-selected-media-id', mediaId); // Radarr ID ou TMDB ID
     radarrModalElement.setAttribute('data-selected-media-title', movieTitle);
     radarrModalElement.setAttribute('data-is-new-media', !isAlreadyInArr); // true si nouveau, false si existant
+    radarrModalElement.setAttribute('data-selected-media-year', movieYear || 0); // Stocker l'année
+    console.log("Attribute data-is-new-media set to:", radarrModalElement.getAttribute('data-is-new-media')); // AJOUT CONSOLE.LOG
 
     const modalMapButton = document.getElementById('radarrModalMapButton');
     const currentAction = radarrModalElement.getAttribute('data-current-action');
@@ -867,5 +916,186 @@ function readFileAsBase64(file) {
         reader.readAsDataURL(file);
     });
 }
+
+// --- Function for Local Staging: Add to *Arr then Map ---
+async function promptAndAddArrItemForLocalStaging(searchResultData, arrAppType, originalSearchModalElement) {
+    // searchResultData is expected to have at least: id (tvdbId/tmdbId), title
+    // originalSearchModalElement is the Sonarr/Radarr search modal (sonarrSearchModal or radarrSearchModal)
+
+    const isSonarr = arrAppType === 'sonarr';
+    const actionVerb = isSonarr ? "Ajouter la Série" : "Ajouter le Film";
+    const itemTitle = searchResultData.title;
+    const externalId = searchResultData.id; // tvdbId for Sonarr, tmdbId for Radarr
+
+    // 1. Identify and prepare the option containers (assuming they exist in _modals.html)
+    //    We'll use the IDs from the 'addTorrentModal' for now as placeholders,
+    //    hoping the actual _modals.html has similar structures within sonarrSearchModal/radarrSearchModal,
+    //    or we will need to adjust these IDs later.
+    //    The plan mentioned sftpSonarrNewSeriesOptionsContainer / sftpRadarrNewMovieOptionsContainer.
+    //    Let's assume these are the correct IDs for now.
+
+    const optionsContainerId = isSonarr ? 'sftpSonarrNewSeriesOptionsContainer' : 'sftpRadarrNewMovieOptionsContainer';
+    const rootFolderSelectId = isSonarr ? 'sftpSonarrRootFolderSelect' : 'sftpRadarrRootFolderSelect';
+    const qualityProfileSelectId = isSonarr ? 'sftpSonarrQualityProfileSelect' : 'sftpRadarrQualityProfileSelect';
+    const monitoredCheckboxId = isSonarr ? 'sftpSonarrMonitoredCheckbox' : 'sftpRadarrMonitoredCheckbox'; // Assuming these exist
+    const seasonFolderCheckboxId = isSonarr ? 'sftpSonarrSeasonFolderCheckbox' : null; // Sonarr specific
+    const minimumAvailabilitySelectId = isSonarr ? null : 'sftpRadarrMinimumAvailabilitySelect'; // Radarr specific
+
+    const optionsContainer = document.getElementById(optionsContainerId);
+    const feedbackZone = document.getElementById(isSonarr ? 'sonarrSearchModalFeedbackZone' : 'radarrSearchModalFeedbackZone');
+
+    if (!optionsContainer) {
+        const msg = `Conteneur d'options (ID: ${optionsContainerId}) non trouvé dans la modale de recherche. Vérifiez _modals.html.`;
+        console.error(msg);
+        if (feedbackZone) feedbackZone.innerHTML = `<div class="alert alert-danger">${escapeJsString(msg)}</div>`;
+        return;
+    }
+
+    // Hide search results, show options
+    const searchResultsDivId = isSonarr ? 'sonarrSearchResults' : 'radarrSearchResults';
+    const searchResultsDiv = document.getElementById(searchResultsDivId);
+    if (searchResultsDiv) searchResultsDiv.style.display = 'none';
+    optionsContainer.style.display = 'block';
+    if (feedbackZone) feedbackZone.innerHTML = `<p class="alert alert-info">Configuration pour l'ajout de : <strong>${escapeJsString(itemTitle)}</strong></p>`;
+
+    // 2. Populate select fields
+    if (isSonarr) {
+        populateSelectFromServer(window.appUrls.getSonarrRootfolders, rootFolderSelectId, 'path', 'path', 'Dossier Racine Sonarr');
+        populateSelectFromServer(window.appUrls.getSonarrQualityprofiles, qualityProfileSelectId, 'id', 'name', 'Profil Qualité Sonarr');
+        // Checkboxes: ensure they are visible and set to default (e.g., checked)
+        const monitoredCb = document.getElementById(monitoredCheckboxId);
+        if (monitoredCb) { monitoredCb.checked = true; monitoredCb.disabled = false; }
+        const seasonFolderCb = document.getElementById(seasonFolderCheckboxId);
+        if (seasonFolderCb) { seasonFolderCb.checked = true; seasonFolderCb.disabled = false; }
+
+    } else { // Radarr
+        populateSelectFromServer(window.appUrls.getRadarrRootfolders, rootFolderSelectId, 'path', 'path', 'Dossier Racine Radarr');
+        populateSelectFromServer(window.appUrls.getRadarrQualityprofiles, qualityProfileSelectId, 'id', 'name', 'Profil Qualité Radarr');
+        const minAvailabilitySelect = document.getElementById(minimumAvailabilitySelectId);
+        if (minAvailabilitySelect) { /* Populate or ensure it's enabled if pre-filled in HTML */ minAvailabilitySelect.disabled = false; }
+         // Checkboxes: ensure they are visible and set to default (e.g., checked)
+        const monitoredCb = document.getElementById(monitoredCheckboxId);
+        if (monitoredCb) { monitoredCb.checked = true; monitoredCb.disabled = false; }
+    }
+
+    // 3. Reconfigure the main modal button for this "Add and then Map" step.
+    const modalMapButtonId = isSonarr ? 'sonarrModalMapButton' : 'radarrModalMapButton';
+    const modalMapButton = document.getElementById(modalMapButtonId);
+
+    if (modalMapButton) {
+        modalMapButton.innerHTML = `<i class="fas fa-plus"></i> ${actionVerb} & Procéder au Map`;
+        modalMapButton.className = 'btn btn-success'; // Or another distinct class
+        modalMapButton.disabled = false; // Should be enabled once options are populated / validated
+
+        modalMapButton.onclick = async function() {
+            modalMapButton.disabled = true;
+            if(feedbackZone) feedbackZone.innerHTML = `<div class="alert alert-info">Tentative d'ajout à ${arrAppType}...</div>`;
+
+            const rootFolderPath = document.getElementById(rootFolderSelectId).value;
+            const qualityProfileId = document.getElementById(qualityProfileSelectId).value;
+            const monitored = document.getElementById(monitoredCheckboxId) ? document.getElementById(monitoredCheckboxId).checked : true; // Default to true if not found
+
+            let seasonFolder = true; // Sonarr specific, default true
+            if (isSonarr && document.getElementById(seasonFolderCheckboxId)) {
+                seasonFolder = document.getElementById(seasonFolderCheckboxId).checked;
+            }
+
+            let minimumAvailability = 'announced'; // Radarr specific, default
+            if (!isSonarr && document.getElementById(minimumAvailabilitySelectId)) {
+                minimumAvailability = document.getElementById(minimumAvailabilitySelectId).value;
+            }
+
+
+            if (!rootFolderPath || !qualityProfileId) {
+                const msg = "Veuillez sélectionner un dossier racine et un profil de qualité.";
+                if(feedbackZone) feedbackZone.innerHTML = `<div class="alert alert-warning">${escapeJsString(msg)}</div>`;
+                alert(msg);
+                modalMapButton.disabled = false;
+                return;
+            }
+
+            const payload = {
+                external_id: externalId, // tvdbId or tmdbId
+                title: itemTitle,
+                year: searchResultData.year || 0, // Pass year if available, else 0. Backend might need to handle this.
+                root_folder_path: rootFolderPath,
+                quality_profile_id: parseInt(qualityProfileId),
+                monitored: monitored,
+                app_type: arrAppType
+            };
+
+            if (isSonarr) {
+                payload.use_season_folder = seasonFolder;
+                // Any other Sonarr specific params for add_new_series_to_sonarr
+            } else { // Radarr
+                payload.minimum_availability = minimumAvailability;
+                // Any other Radarr specific params for add_new_movie_to_radarr
+            }
+
+            try {
+                // This is the new backend route we'll create in Phase B
+                const apiUrl = `${window.appUrls.seedboxBase}/api/add-arr-item-and-get-id`; // Utiliser une base URL si possible, ou hardcoder.
+                // Si window.appUrls.seedboxBase n'est pas défini, il faudra le hardcoder ou le rendre disponible.
+                // Pour l'instant, je vais utiliser une URL relative qui suppose que seedbox_ui_modals.js est servi depuis une page sous /seedbox/
+                // ou que window.appUrls.seedboxBase est défini comme '/seedbox' ou ''.
+                // Alternative plus sûre pour l'instant si window.appUrls.seedboxBase n'est pas garanti :
+                const response = await fetch('/seedbox/api/add-arr-item-and-get-id', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    if(feedbackZone) feedbackZone.innerHTML = `<div class="alert alert-success">${arrAppType === 'sonarr' ? 'Série' : 'Film'} '${escapeJsString(result.new_media_title)}' ajouté avec ID: ${result.new_media_id}. Préparation du mappage...</div>`;
+
+                    // Hide the options container again
+                    if (optionsContainer) optionsContainer.style.display = 'none';
+                    if (searchResultsDiv) searchResultsDiv.style.display = 'block'; // Or clear it
+
+
+                    // NOW, proceed to trigger the manual import using the NEWLY created media ID
+                    const newMediaId = result.new_media_id;
+                    const newMediaTitle = result.new_media_title; // Title as returned by *Arr
+                    const originalItemPath = document.getElementById(isSonarr ? 'sonarrOriginalItemName' : 'radarrOriginalItemName').value;
+
+                    if (isSonarr) {
+                        // Potentially show season input again if it was hidden by options
+                        const manualSeasonDiv = document.getElementById('sonarrManualSeasonDiv');
+                        if (manualSeasonDiv) manualSeasonDiv.style.display = 'block';
+                        const userForcedSeason = document.getElementById('sonarrManualSeasonInput').value;
+
+                        // Update modal attributes to reflect the newly added (now existing) media
+                        originalSearchModalElement.setAttribute('data-selected-media-id', newMediaId);
+                        originalSearchModalElement.setAttribute('data-is-new-media', 'false'); // It's no longer new
+
+                        triggerSonarrManualImportWithSeason(newMediaId, newMediaTitle, userForcedSeason);
+                    } else { // Radarr
+                         // Update modal attributes
+                        originalSearchModalElement.setAttribute('data-selected-media-id', newMediaId);
+                        originalSearchModalElement.setAttribute('data-is-new-media', 'false');
+
+                        triggerRadarrManualImport(newMediaId, newMediaTitle);
+                    }
+                    // The trigger functions will handle hiding the modal and reloading on success.
+                    // No need to hide originalSearchModalElement here directly unless trigger functions fail early.
+
+                } else {
+                    throw new Error(result.error || `Erreur lors de l'ajout à ${arrAppType}.`);
+                }
+            } catch (error) {
+                console.error(`Erreur dans promptAndAddArrItemForLocalStaging pour ${arrAppType}:`, error);
+                if(feedbackZone) feedbackZone.innerHTML = `<div class="alert alert-danger">Erreur: ${escapeJsString(error.message)}</div>`;
+                modalMapButton.disabled = false; // Re-enable button on error
+            }
+        };
+    } else {
+        const msg = `Bouton principal de la modale (ID: ${modalMapButtonId}) non trouvé.`;
+        console.error(msg);
+        if(feedbackZone) feedbackZone.innerHTML = `<div class="alert alert-danger">${escapeJsString(msg)}</div>`;
+    }
+}
+
 console.log("seedbox_ui_modals.js loaded successfully and completely.");
 // [end of app/static/js/seedbox_ui_modals.js]
