@@ -1034,7 +1034,12 @@ async function promptAndAddArrItemForLocalStaging(searchResultData, arrAppType, 
 
             try {
                 // This is the new backend route we'll create in Phase B
-                const response = await fetch('/api/add-arr-item-and-get-id', {
+                const apiUrl = `${window.appUrls.seedboxBase}/api/add-arr-item-and-get-id`; // Utiliser une base URL si possible, ou hardcoder.
+                // Si window.appUrls.seedboxBase n'est pas défini, il faudra le hardcoder ou le rendre disponible.
+                // Pour l'instant, je vais utiliser une URL relative qui suppose que seedbox_ui_modals.js est servi depuis une page sous /seedbox/
+                // ou que window.appUrls.seedboxBase est défini comme '/seedbox' ou ''.
+                // Alternative plus sûre pour l'instant si window.appUrls.seedboxBase n'est pas garanti :
+                const response = await fetch('/seedbox/api/add-arr-item-and-get-id', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
