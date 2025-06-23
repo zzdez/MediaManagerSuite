@@ -160,6 +160,9 @@ function openRadarrSearchModal(itemPathForAction, itemType) {
             const mediaIdForPayload = radarrModalElement.getAttribute('data-selected-media-id'); // This is tmdbId for new media
             const mediaTitleForAdd = radarrModalElement.getAttribute('data-selected-media-title');
             const currentAction = radarrModalElement.getAttribute('data-current-action');
+            console.log("radarrModalMapButton onclick - data-is-new-media (attr):", radarrModalElement.getAttribute('data-is-new-media'), "isNewMedia (boolean eval):", isNewMedia, "currentAction:", currentAction); // AJOUT CONSOLE.LOG
+
+            const currentAction = radarrModalElement.getAttribute('data-current-action');
 
             if (!mediaIdForPayload) {
                 alert("Veuillez sélectionner un film.");
@@ -344,6 +347,7 @@ async function executeRadarrSearch() {
             let posterUrl = movie.remotePoster || (movie.images && movie.images.length > 0 ? movie.images.find(img => img.coverType === 'poster')?.remoteUrl : 'https://via.placeholder.com/60x90?text=N/A');
             const escapedMovieTitle = escapeJsString(movie.title);
             const isAlreadyInRadarr = movie.id && movie.id > 0;
+            console.log("executeRadarrSearch - movie.id:", movie.id, "isAlreadyInRadarr:", isAlreadyInRadarr); // AJOUT CONSOLE.LOG
             const idForHandler = isAlreadyInRadarr ? movie.id : movie.tmdbId;
             let buttonText = isAlreadyInRadarr ? "Sélectionner" : "Ajouter & Sélectionner";
             let buttonIcon = "fas fa-check-circle";
@@ -428,6 +432,7 @@ function handleGenericSonarrSeriesSelection(mediaId, seriesTitle, isAlreadyInArr
 }
 
 function handleGenericRadarrMovieSelection(mediaId, movieTitle, isAlreadyInArr, movieYear) {
+    console.log("handleGenericRadarrMovieSelection - isAlreadyInArr:", isAlreadyInArr, "Setting data-is-new-media to:", !isAlreadyInArr); // AJOUT CONSOLE.LOG
     const radarrModalElement = document.getElementById('radarrSearchModal');
     if (!radarrModalElement) return;
 
@@ -439,6 +444,7 @@ function handleGenericRadarrMovieSelection(mediaId, movieTitle, isAlreadyInArr, 
     radarrModalElement.setAttribute('data-selected-media-title', movieTitle);
     radarrModalElement.setAttribute('data-is-new-media', !isAlreadyInArr); // true si nouveau, false si existant
     radarrModalElement.setAttribute('data-selected-media-year', movieYear || 0); // Stocker l'année
+    console.log("Attribute data-is-new-media set to:", radarrModalElement.getAttribute('data-is-new-media')); // AJOUT CONSOLE.LOG
 
     const modalMapButton = document.getElementById('radarrModalMapButton');
     const currentAction = radarrModalElement.getAttribute('data-current-action');
