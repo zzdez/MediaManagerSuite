@@ -583,7 +583,7 @@ def add_new_movie_to_radarr(tmdb_id: int, title: str, quality_profile_id: int, r
 def get_radarr_manual_import(folder_path_in_staging: str):
     """
     Calls Radarr's GET /api/v3/manualimport endpoint for a given folder.
-    'folder_path_in_staging' is the absolute path to the item in the staging directory (e.g., r'X:\seedbox_staging\Movie Title (Year)\').
+    'folder_path_in_staging' is the absolute path to the item in the staging directory (e.g., r'X:/seedbox_staging/Movie Title (Year)/').
     Returns the JSON response from Radarr (typically a list of parsed media items) or None on failure.
     """
     logger.info(f"Radarr: Getting manual import data for folder: {folder_path_in_staging}")
@@ -614,7 +614,7 @@ def get_radarr_manual_import(folder_path_in_staging: str):
 def get_sonarr_manual_import(folder_path_in_staging: str):
     """
     Calls Sonarr's GET /api/v3/manualimport endpoint for a given folder.
-    'folder_path_in_staging' is the absolute path to the item in the staging directory (e.g., r'X:\seedbox_staging\Series Title (Year)\Season 01\').
+    'folder_path_in_staging' is the absolute path to the item in the staging directory (e.g., r'X:/seedbox_staging/Series Title (Year)/Season 01/').
     Returns the JSON response from Sonarr (typically a list of parsed media items) or None on failure.
     """
     logger.info(f"Sonarr: Getting manual import data for folder: {folder_path_in_staging}")
