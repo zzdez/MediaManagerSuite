@@ -579,3 +579,57 @@ def add_new_movie_to_radarr(tmdb_id: int, title: str, quality_profile_id: int, r
 
         logger.error(f"RADARR_CLIENT: Failed to add movie '{title}'. Response/Error: {error_details}")
         return None
+
+def get_radarr_manual_import(folder_path_in_staging: str):
+    """
+    Calls Radarr's GET /api/v3/manualimport endpoint for a given folder.
+    'folder_path_in_staging' is the absolute path to the item in the staging directory.
+    Returns the JSON response from Radarr (typically a list of parsed media items) or None on failure.
+    """
+    logger.info(f"Radarr: Getting manual import data for folder: {folder_path_in_staging}")
+    params = {
+        'folder': folder_path_in_staging,
+        'filterExistingFiles': 'false' # To ensure we see info for all files, even if Radarr thinks they are already imported or not needed
+    }
+    # movieId is intentionally NOT provided for this initial scan.
+    response = _radarr_api_request('GET', 'manualimport', params=params)
+
+    if response is not None: # _radarr_api_request returns None on error
+        logger.info(f"Radarr: Successfully fetched manual import data for '{folder_path_in_staging}'. Found {len(response)} items.")
+        logger.debug(f"Radarr: Manual import response for '{folder_path_in_staging}': {response}")
+        return response
+    else:
+        logger.error(f"Radarr: Failed to fetch manual import data for '{folder_path_in_staging}'.")
+        return None
+
+# ==============================================================================
+# --- SONARR CLIENT FUNCTIONS ---
+# ==============================================================================
+# (Existing Sonarr functions like trigger_sonarr_scan, _sonarr_api_request, etc. are here)
+# ...
+# Add the new function get_sonarr_manual_import before or after existing Sonarr functions,
+# maintaining logical grouping. For this example, adding it after check_sonarr_episode_exists.
+
+# (after check_sonarr_episode_exists)
+def get_sonarr_manual_import(folder_path_in_staging: str):
+    """
+    Calls Sonarr's GET /api/v3/manualimport endpoint for a given folder.
+    'folder_path_in_staging' is the absolute path to the item in the staging directory.
+    Returns the JSON response from Sonarr (typically a list of parsed media items) or None on failure.
+    """
+    logger.info(f"Sonarr: Getting manual import data for folder: {folder_path_in_staging}")
+    params = {
+        'folder': folder_path_in_staging,
+        'filterExistingFiles': 'false', # To see info for all files
+        # seriesId is intentionally NOT provided for this initial scan.
+        # 'downloadId': "MMS_SFTP_ManualScan" # Optional: helps identify in Sonarr logs/history if needed
+    }
+    response = _sonarr_api_request('GET', 'manualimport', params=params)
+
+    if response is not None: # _sonarr_api_request returns None on error
+        logger.info(f"Sonarr: Successfully fetched manual import data for '{folder_path_in_staging}'. Found {len(response)} items.")
+        logger.debug(f"Sonarr: Manual import response for '{folder_path_in_staging}': {response}")
+        return response
+    else:
+        logger.error(f"Sonarr: Failed to fetch manual import data for '{folder_path_in_staging}'.")
+        return None
