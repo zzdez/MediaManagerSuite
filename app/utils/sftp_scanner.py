@@ -153,12 +153,12 @@ def get_radarr_movie_by_guid(plex_guid):
         id_key = 'imdbId'
         id_value = plex_guid.split('//')[-1]
     elif 'tmdb' in plex_guid:
-            id_key = 'tmdbId'
-            try:
-                id_value = int(plex_guid.split('//')[-1])
-            except (ValueError, IndexError):
-                current_app.logger.error(f"Impossible d'extraire un entier du tmdb_guid: {plex_guid}")
-                return None
+        id_key = 'tmdbId'
+        try:
+            id_value = int(plex_guid.split('//')[-1])
+        except (ValueError, IndexError):
+            current_app.logger.error(f"Impossible d'extraire un entier du tmdb_guid: {plex_guid}")
+            return None
     else:
         return None
 
@@ -526,7 +526,7 @@ def add_new_series_to_sonarr(tvdb_id: int, title: str, quality_profile_id: int, 
             try:
                 error_details = ", ".join([err.get('errorMessage', str(err)) for err in response_data])
             except: # Fallback if parsing fails
-                 error_details = str(response_data)
+                error_details = str(response_data)
         elif isinstance(response_data, dict) and response_data.get('message'): # Single error message
             error_details = response_data.get('message')
         elif response_data is None: # _sonarr_api_request returned None due to connection/HTTP error
