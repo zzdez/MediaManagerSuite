@@ -6,16 +6,21 @@ def _prowlarr_api_request(params):
     """Helper function to make requests to the Prowlarr API."""
     config = current_app.config
     api_key = config.get('PROWLARR_API_KEY')
-    base_url = config.get('PROWLARR_URL', '').rstrip('/')
+    # On récupère l'URL et on la traite de manière sûre
+    base_url_from_config = config.get('PROWLARR_URL')
 
-    if not api_key or not base_url:
+    # On vérifie AVANT d'essayer de manipuler la chaîne
+    if not api_key or not base_url_from_config:
         current_app.logger.error("Prowlarr URL or API Key is not configured.")
         return None
 
+    # On enlève le / final seulement si la chaîne existe
+    base_url = base_url_from_config.rstrip('/')
+    
     # L'endpoint de recherche est /api/v1/search pour Prowlarr
     url = f"{base_url}/api/v1/search"
-
-    # Prowlarr utilise les paramètres directement, y compris l'apikey
+    
+    # Le reste de la fonction est inchangé...
     request_params = {'apikey': api_key}
     request_params.update(params)
 
