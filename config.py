@@ -81,6 +81,10 @@ class Config:
     # --- Configuration Interface de Configuration ---
     APP_PASSWORD = os.environ.get('APP_PASSWORD')
 
+    # --- Prowlarr API Configuration ---
+    PROWLARR_URL = os.environ.get('PROWLARR_URL')
+    PROWLARR_API_KEY = os.environ.get('PROWLARR_API_KEY')
+
 # --- FIN DE LA CLASSE CONFIG ---
 
 
@@ -103,6 +107,8 @@ def check_and_print_startup_info():
     if not Config.SONARR_API_KEY: _missing_configs.append("SONARR_API_KEY")
     if not Config.RADARR_URL: _missing_configs.append("RADARR_URL")
     if not Config.RADARR_API_KEY: _missing_configs.append("RADARR_API_KEY")
+    if not Config.PROWLARR_URL: _missing_configs.append("PROWLARR_URL")
+    if not Config.PROWLARR_API_KEY: _missing_configs.append("PROWLARR_API_KEY")
 
     if _missing_configs:
         print("-" * 70)
