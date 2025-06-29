@@ -79,7 +79,8 @@ def search_page():
 from flask import jsonify # Ajouté pour la nouvelle route
 # Correction de l'import: rTorrentClient n'existe pas, utiliser les fonctions directement
 from app.utils.rtorrent_client import add_magnet, get_torrent_hash_by_name
-from app.utils.mapping_manager import MappingManager
+# Correction de l'import: MappingManager n'existe pas comme classe, utiliser les fonctions directement
+from app.utils.mapping_manager import add_or_update_torrent_in_map
 
 @search_ui_bp.route('/download-and-map', methods=['POST'])
 @login_required
@@ -116,10 +117,35 @@ def download_and_map():
              return jsonify({'status': 'success', 'message': 'Ajouté mais non mappé.'})
 
         # 2. Sauvegarder le mapping
-        mapping_manager = MappingManager(current_app.config['PENDING_TORRENTS_MAP_FILE'])
-        mapping_manager.add_mapping(torrent_hash, release_name, instance_type, media_id)
+        # Utiliser add_or_update_torrent_in_map directement.
+        # Définir les arguments nécessaires pour add_or_update_torrent_in_map:
+        map_label = f"mms-search-{instance_type}-{media_id}"
+        # Pour seedbox_download_path, nous supposons un chemin par défaut combiné avec release_name.
+        # Idéalement, rTorrent devrait nous dire où il le met, ou cela devrait être configurable.
+        # Exemple: /downloads/torrents/mms-sonarr-123/Release Name
+        # Pour l'instant, utilisons une convention simple.
+        # Si RUTORRENT_DOWNLOAD_DIR est configuré, utilisons-le comme base.
+        base_download_dir = current_app.config.get('RUTORRENT_DOWNLOAD_DIR', '/downloads/torrents') # Valeur par défaut si non configuré
+        seedbox_dl_path = f"{base_download_dir.rstrip('/')}/{label_for_rtorrent}/{release_name}"
 
-        flash(f"'{release_name}' ajouté à rTorrent et pré-associé avec succès !", "success")
+        original_torrent_name = release_name # Au mieux, c'est ce que nous avons
+
+        map_success = add_or_update_torrent_in_map(
+            torrent_hash=torrent_hash,
+            release_name=release_name,
+            app_type=instance_type,
+            target_id=str(media_id), # Assurer que c'est une chaîne si la fonction l'attend ainsi
+            label=map_label,
+            seedbox_download_path=seedbox_dl_path,
+            original_torrent_name=original_torrent_name
+            # initial_status est par défaut "pending_download_on_seedbox"
+        )
+
+        if not map_success:
+            flash(f"'{release_name}' ajouté à rTorrent, mais l'écriture du mapping a échoué. Veuillez vérifier les logs.", "danger")
+            return jsonify({'status': 'error', 'message': 'Ajouté à rTorrent, mais échec du mapping.'}), 500
+
+        flash(f"'{release_name}' ajouté à rTorrent (label: {label_for_rtorrent}) et pré-associé (hash: {torrent_hash[:8]}...) avec succès !", "success")
         return jsonify({'status': 'success', 'message': 'Téléchargement lancé et mappé.'})
 
     except Exception as e:
