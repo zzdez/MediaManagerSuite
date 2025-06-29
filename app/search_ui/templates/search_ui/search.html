@@ -11,30 +11,36 @@
         <h1><i class="fas fa-search"></i> Recherche Unifiée de Média</h1>
         <p class="lead">Recherchez du contenu sur tous vos indexers via Prowlarr.</p>
 
-        <form method="GET" action="{{ url_for('search_ui.search_results') }}">
+        <form method="GET" action="{{ url_for('search_ui.search_page') }}">
             <div class="input-group mb-3">
                 <input type="text" class="form-control" name="query" placeholder="Ex: Dune Part Two 2024" value="{{ query or '' }}" required>
                 <button class="btn btn-primary" type="submit">Rechercher</button>
             </div>
         </form>
 
-        {% if results is not none %}
+        {% if query and results is not none %} {# Afficher les résultats seulement si une recherche a été effectuée #}
             <hr>
             <h3>Résultats pour "{{ query }}" ({{ results|length }})</h3>
             {% if results %}
                 <ul class="list-group">
                     {% for result in results %}
-                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <li class="list-group-item d-flex justify-content-between align-items-start"> {# Changé align-items-center à align-items-start pour mieux aligner si le contenu du div de gauche est plus grand #}
                             <div>
                                 <strong>{{ result.title }}</strong><br>
-                                <small class="text-muted">Indexer: {{ result.indexer }} | Taille: {{ (result.size / 1024**3)|round(2) }} GB</small>
+                                <small class="text-muted">Indexer: {{ result.indexer }} | Taille: {{ (result.size / 1024**3)|round(2) }} GB</small><br>
+
+                                {# ### NOUVEAU BADGE DE STATUT ### #}
+                                {% if result.status_info %}
+                                    <span class="badge bg-{{ result.status_info.badge_color }}">{{ result.status_info.status }}</span>
+                                    <span class="text-muted fst-italic ms-1">{{ result.status_info.details }}</span>
+                                {% endif %}
                             </div>
-                            <a href="{{ result.downloadUrl }}" class="btn btn-sm btn-success">Télécharger</a>
+                            <a href="{{ result.downloadUrl }}" class="btn btn-sm btn-success ms-3">Télécharger</a> {# Ajout d'une marge à gauche pour le bouton #}
                         </li>
                     {% endfor %}
                 </ul>
             {% else %}
-                <div class="alert alert-warning">Aucun résultat trouvé.</div>
+                <div class="alert alert-warning">Aucun résultat trouvé pour "{{ query }}".</div>
             {% endif %}
         {% endif %}
     </div>
