@@ -174,6 +174,10 @@ def update_radarr_movie(movie_data):
     # Radarr's PUT endpoint requires the movie ID in the URL.
     return _radarr_api_request('PUT', f"movie/{movie_data['id']}", json_data=movie_data)
 
+def search_radarr_by_title(title):
+    """Searches for movies in Radarr by title."""
+    return _radarr_api_request('GET', 'movie/lookup', params={'term': title})
+
 def check_radarr_movie_exists(movie_title: str, movie_year: int = None) -> bool:
     """
     Checks if a movie exists in Radarr and has an associated, non-missing file.
