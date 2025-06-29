@@ -75,3 +75,45 @@ def search_page():
 #         results = raw_results
 
 #     return render_template('search_ui/search.html', title=f"Résultats pour \"{query}\"", results=results, query=query)
+
+from flask import jsonify # Ajouté pour la nouvelle route
+from app.utils.rtorrent_client import rTorrentClient
+from app.utils.mapping_manager import MappingManager
+
+@search_ui_bp.route('/download-and-map', methods=['POST'])
+@login_required
+def download_and_map():
+    data = request.get_json()
+    release_name = data.get('releaseName')
+    download_link = data.get('downloadLink')
+    instance_type = data.get('instanceType') # 'sonarr' ou 'radarr'
+    media_id = data.get('mediaId')
+
+    if not all([release_name, download_link, instance_type, media_id]):
+        return jsonify({'status': 'error', 'message': 'Données manquantes.'}), 400
+
+    try:
+        # 1. Ajouter le torrent à rTorrent
+        rt_client = rTorrentClient(current_app.config)
+        add_result = rt_client.add_torrent(download_link)
+
+        if not add_result or not add_result.get('success'):
+            error_msg = add_result.get('message', 'Erreur inconnue avec rTorrent.')
+            return jsonify({'status': 'error', 'message': error_msg}), 500
+
+        torrent_hash = add_result.get('info_hash')
+        if not torrent_hash:
+             # Si on ne peut pas obtenir le hash, on ne peut pas mapper. C'est un succès partiel.
+             flash(f"'{release_name}' ajouté à rTorrent, mais le pré-mapping a échoué (hash non récupéré).", "warning")
+             return jsonify({'status': 'success', 'message': 'Ajouté mais non mappé.'})
+
+        # 2. Sauvegarder le mapping
+        mapping_manager = MappingManager(current_app.config['PENDING_TORRENTS_MAP_FILE'])
+        mapping_manager.add_mapping(torrent_hash, release_name, instance_type, media_id)
+
+        flash(f"'{release_name}' ajouté à rTorrent et pré-associé avec succès !", "success")
+        return jsonify({'status': 'success', 'message': 'Téléchargement lancé et mappé.'})
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur dans download-and-map: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': 'Erreur interne du serveur.'}), 500
