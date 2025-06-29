@@ -8,6 +8,7 @@ from .arr_client import search_radarr_by_title, search_sonarr_by_title, get_sona
 from .plex_client import get_user_specific_plex_server # Correction de la dépendance circulaire
 
 def check_media_status(release_title):
+    current_app.logger.info(f"--- Check Status pour: {release_title} ---")
     """
     Parses a release title using guessit and checks its status in Plex/Sonarr/Radarr.
     """

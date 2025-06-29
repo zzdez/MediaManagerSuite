@@ -44,6 +44,7 @@ def get_plex_admin_server():
         return None
 
 def get_user_specific_plex_server():
+    current_app.logger.debug("--- Appel de get_user_specific_plex_server ---")
     """
     Returns a PlexServer instance connected as the user in session.
     Handles impersonation for managed users. Returns None on failure.

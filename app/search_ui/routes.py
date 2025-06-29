@@ -1,4 +1,4 @@
-from flask import render_template, request, flash, redirect, url_for # Ajout de redirect et url_for
+from flask import render_template, request, flash, redirect, url_for, current_app # Ajout de redirect et url_for ET current_app
 from . import search_ui_bp
 from app.utils.prowlarr_client import search_prowlarr
 from app.utils.media_status_checker import check_media_status # Ajout de l'import
@@ -8,6 +8,7 @@ from app import login_required
 @search_ui_bp.route('/')
 @login_required
 def search_page():
+    current_app.logger.warning("<<<<< ENTRÉE DANS search_page >>>>>")
     """Affiche la page de recherche initiale."""
     query = request.args.get('query', '').strip() # Récupérer la query ici aussi
     results = [] # Initialiser results à une liste vide
@@ -30,6 +31,7 @@ def search_page():
     # Le titre de la page est conditionnel à la présence d'une requête
     page_title = f"Résultats pour \"{query}\"" if query else "Recherche"
 
+    current_app.logger.warning("<<<<< SORTIE DE search_page, RENDU DU TEMPLATE >>>>>")
     return render_template('search_ui/search.html', title=page_title, results=results, query=query)
 
 
