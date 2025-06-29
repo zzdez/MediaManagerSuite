@@ -2,54 +2,95 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>Recherche de Média</title>
-    <!-- Inclure Bootstrap CSS -->
+    <title>{{ title }} - MediaManagerSuite</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
+    <style>
+        .nav-tabs .nav-link { color: #6c757d; }
+        .nav-tabs .nav-link.active { color: #000; font-weight: bold; }
+    </style>
 </head>
 <body>
     <div class="container mt-4">
-        <h1><i class="fas fa-search"></i> Recherche Unifiée de Média</h1>
-        <p class="lead">Recherchez du contenu sur tous vos indexers via Prowlarr.</p>
+        <h1><i class="fas fa-search-plus"></i> Découverte de Contenu</h1>
+        <p class="lead">Recherchez des nouveautés ou complétez votre bibliothèque existante.</p>
+        
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="alert alert-{{ category }} mt-3">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
 
-        <!-- Assurer que le formulaire a un ID et que le bouton est de type submit -->
-        <form method="GET" action="{{ url_for('search_ui.search_page') }}" id="prowlarr-search-form">
-            <div class="input-group mb-3">
-                <input type="text" class="form-control" name="query" placeholder="Ex: Dune Part Two 2024" value="{{ query or '' }}" required>
-                <button class="btn btn-primary" type="submit" id="search-button">Rechercher</button>
+        <ul class="nav nav-tabs mt-4" id="searchTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link {% if not request.args.get('mode') or request.args.get('mode') == 'complete' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#complete" type="button">
+                    <i class="fas fa-puzzle-piece"></i> Compléter un Média
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link {% if request.args.get('mode') == 'free_search' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#free-search" type="button">
+                    <i class="fas fa-search"></i> Recherche Libre
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content border border-top-0 p-3 rounded-bottom">
+            <div class="tab-pane fade {% if not request.args.get('mode') or request.args.get('mode') == 'complete' %}show active{% endif %}" id="complete" role="tabpanel">
+                <p><strong>Prochainement :</strong> Recherchez un média de votre bibliothèque pour trouver les épisodes ou versions manquantes.</p>
             </div>
-        </form>
 
-        {% if query and results is not none %} {# Afficher les résultats seulement si une recherche a été effectuée #}
-            <hr>
-            <h3>Résultats pour "{{ query }}" ({{ results|length }})</h3>
-            {% if results %}
-                <ul class="list-group">
-                    {% for result in results %}
-                        <li class="list-group-item d-flex justify-content-between align-items-start"> {# Changé align-items-center à align-items-start pour mieux aligner si le contenu du div de gauche est plus grand #}
-                            <div>
-                                <strong>{{ result.title }}</strong><br>
-                                <small class="text-muted">Indexer: {{ result.indexer }} | Taille: {{ (result.size / 1024**3)|round(2) }} GB</small><br>
-
-                                {# ### NOUVEAU BADGE DE STATUT ### #}
-                                {% if result.status_info %}
-                                    <span class="badge bg-{{ result.status_info.badge_color }}">{{ result.status_info.status }}</span>
-                                    <span class="text-muted fst-italic ms-1">{{ result.status_info.details }}</span>
-                                {% endif %}
-                            </div>
-                            <a href="{{ result.downloadUrl }}" class="btn btn-sm btn-success ms-3">Télécharger</a> {# Ajout d'une marge à gauche pour le bouton #}
-                        </li>
-                    {% endfor %}
-                </ul>
-            {% else %}
-                <div class="alert alert-warning">Aucun résultat trouvé pour "{{ query }}".</div>
-            {% endif %}
-        {% endif %}
+            <div class="tab-pane fade {% if request.args.get('mode') == 'free_search' %}show active{% endif %}" id="free-search" role="tabpanel">
+                <p>Recherchez n'importe quel terme sur vos indexers.</p>
+                <form method="GET" action="{{ url_for('search_ui.search_page') }}">
+                    <div class="input-group mb-3">
+                        <input type="text" class="form-control" name="query" placeholder="Ex: Dune Part Two 2024" value="{{ query or '' }}">
+                        <input type="hidden" name="mode" value="free_search">
+                        <button class="btn btn-primary" type="submit" id="search-button">
+                            <i class="fas fa-search"></i> Lancer la Recherche Libre
+                        </button>
+                    </div>
+                </form>
+                
+                {% if results is not none and request.args.get('mode') == 'free_search' %}
+                    <hr>
+                    <h3>Résultats pour "{{ query }}" ({{ results|length }})</h3>
+                    {% if results %}
+                        <ul class="list-group">
+                            {% for result in results %}
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <div style="flex-grow: 1; margin-right: 15px;">
+                                    <strong>{{ result.title }}</strong><br>
+                                    <small class="text-muted">Indexer: {{ result.indexer }} | Taille: {{ (result.size / 1024**3)|round(2) }} GB</small><br>
+                                    {% if result.status_info %}
+                                        <span class="badge bg-{{ result.status_info.badge_color }}">{{ result.status_info.status }}</span>
+                                        <span class="text-muted fst-italic ms-1">{{ result.status_info.details }}</span>
+                                    {% endif %}
+                                </div>
+                                <div class="flex-shrink-0">
+                                    {% if result.status_info.status != 'Déjà Présent' %}
+                                        <a href="#" class="btn btn-sm btn-success download-and-map-btn" 
+                                           data-release-title="{{ result.title|e }}"
+                                           data-download-link="{{ result.downloadUrl }}">
+                                            <i class="fas fa-download"></i> & Mapper
+                                        </a>
+                                    {% endif %}
+                                </div>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    {% else %}
+                        <div class="alert alert-warning mt-3">Aucun résultat trouvé pour cette recherche.</div>
+                    {% endif %}
+                {% endif %}
+            </div>
+        </div>
     </div>
-    <!-- Inclure Font Awesome pour les icônes -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
 
-<!-- À la fin de search.html, avant </body> -->
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="{{ url_for('search_ui.static', filename='js/search.js') }}"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Le script JS spécifique à cette page n'est pas encore créé, mais on peut le prévoir -->
+    <!-- <script src="{{ url_for('search_ui.static', filename='js/search.js') }}"></script> -->
 </body>
 </html>
