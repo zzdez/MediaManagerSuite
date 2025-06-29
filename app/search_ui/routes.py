@@ -77,7 +77,8 @@ def search_page():
 #     return render_template('search_ui/search.html', title=f"Résultats pour \"{query}\"", results=results, query=query)
 
 from flask import jsonify # Ajouté pour la nouvelle route
-from app.utils.rtorrent_client import rTorrentClient
+# Correction de l'import: rTorrentClient n'existe pas, utiliser les fonctions directement
+from app.utils.rtorrent_client import add_magnet, get_torrent_hash_by_name
 from app.utils.mapping_manager import MappingManager
 
 @search_ui_bp.route('/download-and-map', methods=['POST'])
@@ -94,17 +95,24 @@ def download_and_map():
 
     try:
         # 1. Ajouter le torrent à rTorrent
-        rt_client = rTorrentClient(current_app.config)
-        add_result = rt_client.add_torrent(download_link)
+        # Utiliser add_magnet directement. Supposons que download_link est un lien magnet.
+        # La fonction add_magnet retourne (True/False, message)
+        # Pour obtenir le hash, nous devrons appeler get_torrent_hash_by_name APRÈS l'ajout.
+        # Le label pourrait être 'sonarr' ou 'radarr' en fonction de instance_type pour un suivi.
+        label_for_rtorrent = f"mms-{instance_type}-{media_id}" # Exemple de label: mms-sonarr-123
 
-        if not add_result or not add_result.get('success'):
-            error_msg = add_result.get('message', 'Erreur inconnue avec rTorrent.')
-            return jsonify({'status': 'error', 'message': error_msg}), 500
+        success, message = add_magnet(download_link, label=label_for_rtorrent)
 
-        torrent_hash = add_result.get('info_hash')
+        if not success:
+            return jsonify({'status': 'error', 'message': message or 'Erreur inconnue avec rTorrent lors de l\'ajout du magnet.'}), 500
+
+        # Essayer de récupérer le hash du torrent. Cela peut prendre quelques secondes.
+        # Le nom de la release est utilisé pour la recherche du hash.
+        torrent_hash = get_torrent_hash_by_name(release_name)
+
         if not torrent_hash:
              # Si on ne peut pas obtenir le hash, on ne peut pas mapper. C'est un succès partiel.
-             flash(f"'{release_name}' ajouté à rTorrent, mais le pré-mapping a échoué (hash non récupéré).", "warning")
+             flash(f"'{release_name}' ajouté à rTorrent (label: {label_for_rtorrent}), mais le pré-mapping a échoué (hash non récupéré après ajout). Veuillez vérifier manuellement dans rTorrent et mapper si nécessaire.", "warning")
              return jsonify({'status': 'success', 'message': 'Ajouté mais non mappé.'})
 
         # 2. Sauvegarder le mapping
