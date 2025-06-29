@@ -11,10 +11,11 @@
         <h1><i class="fas fa-search"></i> Recherche Unifiée de Média</h1>
         <p class="lead">Recherchez du contenu sur tous vos indexers via Prowlarr.</p>
 
-        <form method="GET" action="{{ url_for('search_ui.search_page') }}">
+        <!-- Assurer que le formulaire a un ID et que le bouton est de type submit -->
+        <form method="GET" action="{{ url_for('search_ui.search_page') }}" id="prowlarr-search-form">
             <div class="input-group mb-3">
                 <input type="text" class="form-control" name="query" placeholder="Ex: Dune Part Two 2024" value="{{ query or '' }}" required>
-                <button class="btn btn-primary" type="submit">Rechercher</button>
+                <button class="btn btn-primary" type="submit" id="search-button">Rechercher</button>
             </div>
         </form>
 
@@ -46,5 +47,9 @@
     </div>
     <!-- Inclure Font Awesome pour les icônes -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
+
+<!-- À la fin de search.html, avant </body> -->
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="{{ url_for('search_ui.static', filename='js/search.js') }}"></script>
 </body>
 </html>
