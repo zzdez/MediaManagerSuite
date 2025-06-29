@@ -12,14 +12,15 @@ from .arr_client import search_radarr_by_title, search_sonarr_by_title, get_sona
 from .plex_client import get_user_specific_plex_server
 
 
-# La fonction accepte maintenant le cache en paramètre
-def check_media_status(release_title, plex_show_cache=None):
-    if plex_show_cache is None:
-        plex_show_cache = {}
-    current_app.logger.info(f"--- Check Status pour: {release_title} (Cache: {len(plex_show_cache)} items) ---")
+# La fonction accepte maintenant les deux caches
+def check_media_status(release_title, plex_show_cache=None, plex_episode_cache=None):
+    if plex_show_cache is None: plex_show_cache = {}
+    if plex_episode_cache is None: plex_episode_cache = {}
+
+    current_app.logger.info(f"--- Check Status pour: {release_title} (Show Cache: {len(plex_show_cache)}, Episode Cache: {sum(len(v) for v in plex_episode_cache.values())} items) ---")
     """
     Parses a release title using guessit and checks its status in Plex/Sonarr/Radarr.
-    Uses a pre-loaded cache for Plex show lookups.
+    Uses pre-loaded caches for Plex show and episode lookups.
     """
     status_info = {'status': 'Indéterminé', 'details': release_title, 'badge_color': 'secondary'}
     
@@ -71,35 +72,31 @@ def check_media_status(release_title, plex_show_cache=None):
                 return status_info.update({'status': 'Série non trouvée', 'badge_color': 'dark'}) or status_info
 
             sonarr_series = sonarr_results[0]
-            tvdb_id_sonarr = sonarr_series.get('tvdbId') # Renamed to avoid clash if we parse tvdb_id from release_title
+            # Attempt to get tvdb_id from Sonarr result and convert to int
+            try:
+                tvdb_id = int(sonarr_series.get('tvdbId'))
+            except (ValueError, TypeError):
+                current_app.logger.warning(f"Could not parse or invalid TVDB ID from Sonarr for series '{title}': {sonarr_series.get('tvdbId')}")
+                # If TVDB ID is missing or invalid from Sonarr, we cannot reliably check Plex.
+                # Fallback to Sonarr's monitored status.
+                if sonarr_series.get('monitored'):
+                    return status_info.update({'status': 'Manquant (Surveillé)', 'badge_color': 'warning'}) or status_info
+                else:
+                    return status_info.update({'status': 'Non Surveillé', 'badge_color': 'secondary'}) or status_info
 
-            # Ensure tvdb_id_sonarr is an integer for cache lookup
-            if tvdb_id_sonarr:
-                try:
-                    tvdb_id_lookup = int(tvdb_id_sonarr)
-                except ValueError:
-                    current_app.logger.warning(f"Invalid TVDB ID from Sonarr: {tvdb_id_sonarr} for {title}")
-                    tvdb_id_lookup = None
-            else:
-                tvdb_id_lookup = None
-
-            # On utilise le CACHE au lieu de faire une nouvelle recherche Plex !
-            plex_series = plex_show_cache.get(tvdb_id_lookup) if tvdb_id_lookup else None
-
-            if plex_series:
-                current_app.logger.debug(f"Found '{plex_series.title}' in Plex cache for TVDB ID {tvdb_id_lookup}.")
-                try:
-                    # Check if the specific episode exists
-                    plex_series.episode(season=season_num, episode=episode_num)
-                    current_app.logger.debug(f"Episode S{season_num:02d}E{episode_num:02d} for '{plex_series.title}' found in Plex.")
+            # On vérifie si l'épisode est dans notre cache d'épisodes
+            # Ensure season_num and episode_num are not None before creating the tuple for lookup
+            if season_num is not None and episode_num is not None:
+                episode_key = (season_num, episode_num)
+                if tvdb_id in plex_episode_cache and episode_key in plex_episode_cache[tvdb_id]:
+                    current_app.logger.debug(f"Episode S{season_num:02d}E{episode_num:02d} for TVDB ID {tvdb_id} ('{title}') found in Plex episode cache.")
                     return status_info.update({'status': 'Déjà Présent', 'badge_color': 'success'}) or status_info
-                except NotFound:
-                    current_app.logger.debug(f"Episode S{season_num:02d}E{episode_num:02d} for '{plex_series.title}' NOT found in Plex (show was in cache).")
-                    pass # L'épisode n'est pas dans Plex, on continue la logique ci-dessous
-            elif tvdb_id_lookup:
-                current_app.logger.debug(f"Show with TVDB ID {tvdb_id_lookup} ('{title}') not found in Plex cache.")
+                else:
+                    current_app.logger.debug(f"Episode S{season_num:02d}E{episode_num:02d} for TVDB ID {tvdb_id} ('{title}') NOT found in Plex episode cache.")
+            else:
+                current_app.logger.warning(f"Season or episode number missing for '{title}' from guessit. Cannot check Plex episode cache.")
 
-
+            # Si non présent dans le cache Plex, on se base sur le statut Sonarr
             if sonarr_series.get('monitored'):
                 return status_info.update({'status': 'Manquant (Surveillé)', 'badge_color': 'warning'}) or status_info
             else:

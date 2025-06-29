@@ -16,35 +16,42 @@ def search_page():
 
     if query:
         # --- ÉTAPE 1 : PRÉ-CHARGEMENT DES DONNÉES PLEX ---
-        plex_show_cache = {} # Cache pour les séries : {tvdb_id: plex_show_object}
+        plex_show_cache = {}  # {tvdb_id: plex_show_object}
+        plex_episode_cache = {} # {tvdb_id: set((saison, episode))}
+
         user_plex = get_user_specific_plex_server()
         if user_plex:
             show_libraries = [lib for lib in user_plex.library.sections() if lib.type == 'show']
             for lib in show_libraries:
-                current_app.logger.info(f"Pre-loading Plex shows from library: {lib.title}")
-                for show in lib.all():
-                    # Extract tvdb_id from guids
-                    tvdb_id_str = None
+                current_app.logger.info(f"Pré-chargement des séries et épisodes de '{lib.title}'...")
+                # Using lib.all() to fetch all shows, then show.episodes() for each.
+                # This is the part that can be slow if a library has many shows,
+                # and each show.episodes() call fetches detailed episode info.
+                for show in lib.all(): # This fetches all shows in the library
+                    tvdb_id_val = None # Initialize tvdb_id_val for each show
                     for guid_obj in show.guids:
                         if 'tvdb' in guid_obj.id:
                             try:
-                                tvdb_id_str = guid_obj.id.split('//')[1]
-                                break
-                            except IndexError:
-                                current_app.logger.warning(f"Could not parse TVDB ID from guid: {guid_obj.id} for show {show.title}")
-                                continue
+                                tvdb_id_val = int(guid_obj.id.split('//')[1])
+                                break # Found TVDB ID, no need to check other GUIDs for this show
+                            except (IndexError, ValueError) as e_parse:
+                                current_app.logger.warning(f"Could not parse TVDB ID from guid '{guid_obj.id}' for show '{show.title}': {e_parse}")
+                                continue # Try next guid if current one is malformed
 
-                    if tvdb_id_str:
+                    if tvdb_id_val:
+                        plex_show_cache[tvdb_id_val] = show
+                        # On peuple le cache des épisodes pour cette série
+                        # This show.episodes() call is the one that can be very expensive.
+                        # It fetches all episode objects for the show.
                         try:
-                            tvdb_id = int(tvdb_id_str)
-                            plex_show_cache[tvdb_id] = show
-                        except ValueError:
-                            current_app.logger.warning(f"Invalid TVDB ID format: {tvdb_id_str} for show {show.title}")
+                            plex_episode_cache[tvdb_id_val] = {(e.seasonNumber, e.index) for e in show.episodes()}
+                        except Exception as e_episodes:
+                            current_app.logger.error(f"Error fetching episodes for show '{show.title}' (TVDB ID: {tvdb_id_val}): {e_episodes}", exc_info=True)
+                            plex_episode_cache[tvdb_id_val] = set() # Initialize with empty set on error
                     # else:
-                        # current_app.logger.debug(f"No TVDB ID found for show: {show.title} in library {lib.title}")
+                        # current_app.logger.debug(f"No valid TVDB ID found for show '{show.title}' in library '{lib.title}'. Skipping episode caching for this show.")
 
-
-        current_app.logger.info(f"Cache Plex créé avec {len(plex_show_cache)} séries.")
+        current_app.logger.info(f"Cache Plex créé: {len(plex_show_cache)} séries, contenant {sum(len(v) for v in plex_episode_cache.values())} épisodes.")
         # (On fera la même chose pour les films plus tard)
 
         # --- ÉTAPE 2 : TRAITEMENT DES RÉSULTATS PROWLARR ---
@@ -59,8 +66,8 @@ def search_page():
         else:
             # Enrichir chaque résultat avec les informations de statut
             for result in raw_results:
-                # On passe le cache à la fonction de vérification
-                result['status_info'] = check_media_status(result['title'], plex_show_cache)
+                # On passe les deux caches à la fonction de vérification
+                result['status_info'] = check_media_status(result['title'], plex_show_cache, plex_episode_cache)
             results = raw_results
 
     # Le titre de la page est conditionnel à la présence d'une requête
