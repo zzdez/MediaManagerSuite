@@ -5,7 +5,7 @@ from plexapi.exceptions import NotFound
 
 # On importe tout ce dont on a besoin pour les films ET les séries
 from .arr_client import search_radarr_by_title, search_sonarr_by_title, get_sonarr_episode_files
-from app.plex_editor.routes import get_user_specific_plex_server
+from .plex_client import get_user_specific_plex_server # Correction de la dépendance circulaire
 
 def check_media_status(release_title):
     """
