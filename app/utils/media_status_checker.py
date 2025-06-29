@@ -5,12 +5,21 @@ from plexapi.exceptions import NotFound
 
 # On importe tout ce dont on a besoin pour les films ET les séries
 from .arr_client import search_radarr_by_title, search_sonarr_by_title, get_sonarr_episode_files
-from .plex_client import get_user_specific_plex_server # Correction de la dépendance circulaire
+# Remove direct import of get_user_specific_plex_server as it's no longer called directly for shows
+# from .plex_client import get_user_specific_plex_server
+# For movies, we might still need it, or adapt movies to use a cache too.
+# For now, let's keep it if movies logic is untouched regarding direct Plex calls.
+from .plex_client import get_user_specific_plex_server
 
-def check_media_status(release_title):
-    current_app.logger.info(f"--- Check Status pour: {release_title} ---")
+
+# La fonction accepte maintenant le cache en paramètre
+def check_media_status(release_title, plex_show_cache=None):
+    if plex_show_cache is None:
+        plex_show_cache = {}
+    current_app.logger.info(f"--- Check Status pour: {release_title} (Cache: {len(plex_show_cache)} items) ---")
     """
     Parses a release title using guessit and checks its status in Plex/Sonarr/Radarr.
+    Uses a pre-loaded cache for Plex show lookups.
     """
     status_info = {'status': 'Indéterminé', 'details': release_title, 'badge_color': 'secondary'}
     
@@ -62,17 +71,34 @@ def check_media_status(release_title):
                 return status_info.update({'status': 'Série non trouvée', 'badge_color': 'dark'}) or status_info
 
             sonarr_series = sonarr_results[0]
-            tvdb_id = sonarr_series.get('tvdbId')
+            tvdb_id_sonarr = sonarr_series.get('tvdbId') # Renamed to avoid clash if we parse tvdb_id from release_title
 
-            user_plex = get_user_specific_plex_server()
-            if user_plex and tvdb_id:
-                plex_series = next((s for lib in user_plex.library.sections() if lib.type == 'show' for s in lib.search(guid=f"tvdb://{tvdb_id}")), None)
-                if plex_series:
-                    try:
-                        plex_series.episode(season=season_num, episode=episode_num)
-                        return status_info.update({'status': 'Déjà Présent', 'badge_color': 'success'}) or status_info
-                    except NotFound:
-                        pass # L'épisode n'est pas dans Plex, on continue la logique ci-dessous
+            # Ensure tvdb_id_sonarr is an integer for cache lookup
+            if tvdb_id_sonarr:
+                try:
+                    tvdb_id_lookup = int(tvdb_id_sonarr)
+                except ValueError:
+                    current_app.logger.warning(f"Invalid TVDB ID from Sonarr: {tvdb_id_sonarr} for {title}")
+                    tvdb_id_lookup = None
+            else:
+                tvdb_id_lookup = None
+
+            # On utilise le CACHE au lieu de faire une nouvelle recherche Plex !
+            plex_series = plex_show_cache.get(tvdb_id_lookup) if tvdb_id_lookup else None
+
+            if plex_series:
+                current_app.logger.debug(f"Found '{plex_series.title}' in Plex cache for TVDB ID {tvdb_id_lookup}.")
+                try:
+                    # Check if the specific episode exists
+                    plex_series.episode(season=season_num, episode=episode_num)
+                    current_app.logger.debug(f"Episode S{season_num:02d}E{episode_num:02d} for '{plex_series.title}' found in Plex.")
+                    return status_info.update({'status': 'Déjà Présent', 'badge_color': 'success'}) or status_info
+                except NotFound:
+                    current_app.logger.debug(f"Episode S{season_num:02d}E{episode_num:02d} for '{plex_series.title}' NOT found in Plex (show was in cache).")
+                    pass # L'épisode n'est pas dans Plex, on continue la logique ci-dessous
+            elif tvdb_id_lookup:
+                current_app.logger.debug(f"Show with TVDB ID {tvdb_id_lookup} ('{title}') not found in Plex cache.")
+
 
             if sonarr_series.get('monitored'):
                 return status_info.update({'status': 'Manquant (Surveillé)', 'badge_color': 'warning'}) or status_info
