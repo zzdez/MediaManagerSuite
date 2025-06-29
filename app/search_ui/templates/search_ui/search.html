@@ -91,8 +91,8 @@
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 
-    {# On inclut la logique partagée de la modale #}
-    <script src="{{ url_for('seedbox_ui.static', filename='js/seedbox_ui_modals.js') }}"></script>
+    {# On inclut la logique partagée de la modale - Correction: utiliser 'static' pour le dossier statique global #}
+    <script src="{{ url_for('static', filename='js/seedbox_ui_modals.js') }}"></script>
     {# On inclut le nouveau script pour les actions de cette page #}
     <script src="{{ url_for('search_ui.static', filename='js/search_actions.js') }}"></script>
 
