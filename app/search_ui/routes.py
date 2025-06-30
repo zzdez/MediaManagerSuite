@@ -1,6 +1,7 @@
-from flask import render_template, request, flash, redirect, url_for, current_app # Ajout de redirect et url_for ET current_app
+from flask import render_template, request, flash, redirect, url_for, current_app, jsonify # Ajout de redirect et url_for ET current_app ET jsonify
 from . import search_ui_bp
 from app.utils.prowlarr_client import search_prowlarr
+from app.utils.arr_client import search_sonarr_by_title, search_radarr_by_title
 from app.utils.media_status_checker import check_media_status # Ajout de l'import
 from app.utils.plex_client import get_user_specific_plex_server # MOVED IMPORT HERE
 # Utiliser le login_required défini dans app/__init__.py pour la cohérence
@@ -151,3 +152,25 @@ def download_and_map():
     except Exception as e:
         current_app.logger.error(f"Erreur dans download-and-map: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': 'Erreur interne du serveur.'}), 500
+
+@search_ui_bp.route('/api/search-arr', methods=['GET'])
+def search_arr_proxy():
+    query = request.args.get('query')
+    media_type = request.args.get('type') # 'sonarr' ou 'radarr'
+
+    if not query:
+        return jsonify({'error': 'Le terme de recherche est manquant'}), 400
+
+    results = []
+    try:
+        if media_type == 'sonarr':
+            results = search_sonarr_by_title(query)
+        elif media_type == 'radarr':
+            results = search_radarr_by_title(query)
+        else:
+            return jsonify({'error': 'Type de média invalide'}), 400
+    except Exception as e:
+        current_app.logger.error(f"Erreur lors de la recherche {media_type} pour '{query}': {e}")
+        return jsonify({'error': f'Erreur de communication avec {media_type.capitalize()}'}), 500
+
+    return jsonify(results)
