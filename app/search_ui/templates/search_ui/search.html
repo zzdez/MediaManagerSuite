@@ -70,11 +70,12 @@
                                 </div>
                                 <div class="flex-shrink-0">
                                     {% if result.status_info.status != 'Déjà Présent' %}
-                                        <a href="#" class="btn btn-sm btn-success download-and-map-btn" 
-                                           data-release-title="{{ result.title|e }}"
-                                           data-download-link="{{ result.downloadUrl }}">
-                                            <i class="fas fa-download"></i> & Mapper
-                                        </a>
+                                    <a href="#" class="btn btn-sm btn-success download-and-map-btn"
+                                       data-release-title="{{ result.title|e }}"
+                                       data-download-link="{{ result.downloadUrl }}"
+                                       data-parsed-title="{{ result.status_info.parsed_title|e }}">
+                                        <i class="fas fa-download"></i> & Mapper
+                                    </a>
                                     {% endif %}
                                 </div>
                             </li>
@@ -88,15 +89,49 @@
         </div>
     </div>
 
+    <!-- ================================================================== -->
+    <!-- ### MODALE POUR LE MAPPING SONARR/RADARR (AJOUTÉE ICI) ### -->
+    <!-- ================================================================== -->
+    <div class="modal fade" id="sonarrRadarrSearchModal" tabindex="-1" aria-labelledby="sonarrRadarrModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="sonarrRadarrModalLabel">Mapper et Télécharger</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Recherchez la série ou le film correspondant à la release sélectionnée.</p>
+                    
+                    <div class="mb-3 text-center">
+                        <input type="radio" class="btn-check" name="mapInstanceType" id="mapSonarrRadio" value="sonarr" autocomplete="off" checked>
+                        <label class="btn btn-outline-primary" for="mapSonarrRadio">Sonarr (Série)</label>
+
+                        <input type="radio" class="btn-check" name="mapInstanceType" id="mapRadarrRadio" value="radarr" autocomplete="off">
+                        <label class="btn btn-outline-secondary" for="mapRadarrRadio">Radarr (Film)</label>
+                    </div>
+
+                    <div class="input-group mb-3">
+                        <input type="text" class="form-control" id="sonarrRadarrQuery" placeholder="Titre de la série/film...">
+                        <button class="btn btn-info" type="button" id="executeSonarrRadarrSearch">Rechercher</button>
+                    </div>
+
+                    <div id="sonarrRadarrResults" class="list-group" style="max-height: 300px; overflow-y: auto;">
+                        <!-- Les résultats de la recherche Sonarr/Radarr s'afficheront ici -->
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- ### FIN DE LA MODALE ### -->
+
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-
-    {# On inclut la logique partagée de la modale - Correction: utiliser 'static' pour le dossier statique global #}
+    
     <script src="{{ url_for('static', filename='js/seedbox_ui_modals.js') }}"></script>
-    {# On inclut le nouveau script pour les actions de cette page #}
-    <script src="{{ url_for('search_ui.static', filename='js/search_actions.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/search_actions.js') }}"></script>
 
-    {# On inclut le template de la modale elle-même #}
-    {% include 'seedbox_ui/_modals.html' %}
 </body>
 </html>
