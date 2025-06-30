@@ -17,7 +17,8 @@ $(document).ready(function() {
 
         // Réinitialiser les résultats et le titre
         modalElement.find('#sonarrRadarrModalLabel').text(`Mapper : ${$(this).data('release-title')}`);
-        modalElement.find('#sonarrRadarrResults').empty().html('<p class="text-muted text-center">Effectuez une recherche pour trouver un média à associer.</p>');
+        // IMPORTANT: The HTML for sonarrRadarrSearchModal must have its results div ID changed to 'prowlarrModalSearchResults'
+        modalElement.find('#prowlarrModalSearchResults').empty().html('<p class="text-muted text-center">Effectuez une recherche pour trouver un média à associer.</p>');
 
         modalElement.modal('show'); // Use Bootstrap 3/4 style
     });
@@ -29,7 +30,8 @@ $(document).ready(function() {
 
         const query = $('#sonarrRadarrQuery').val();
         const mediaType = $('input[name="mapInstanceType"]:checked').val();
-        const resultsContainer = $('#sonarrRadarrResults');
+        // IMPORTANT: Ensure the modal HTML's results div ID is updated to 'prowlarrModalSearchResults'
+        const resultsContainer = $('#prowlarrModalSearchResults');
 
         if (!query) {
             resultsContainer.html('<p class="text-danger text-center">Veuillez entrer un terme de recherche.</p>');
@@ -54,8 +56,8 @@ $(document).ready(function() {
                         const itemHtml = `
                             <button type="button" class="list-group-item list-group-item-action map-select-item-btn"
                                     data-media-id="${id}"
-                                    data-media-title="${title.replace(/"/g, '"')}"
-                                    data-media-type="${mediaType}"
+                                    data-media-title="${title.replace(/"/g, '&quot;')}"
+                                    data-instance-type="${mediaType}"
                                     data-year="${year}">
                                 <strong>${title}</strong> (${year})
                             </button>`;
