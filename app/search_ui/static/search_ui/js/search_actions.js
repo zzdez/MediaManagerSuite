@@ -1,22 +1,33 @@
 $(document).ready(function() {
-    // Utiliser la délégation d'événement sur un conteneur parent stable
-    $('#free-search').on('click', '.download-and-map-btn', function() {
-        const releaseTitle = $(this).data('release-title');
-        const downloadLink = $(this).data('download-link');
+    console.log("Search actions script loaded.");
 
-        // On stocke ces infos dans la modale pour les récupérer plus tard
-        $('#sonarrRadarrSearchModal').data('releaseTitle', releaseTitle);
-        $('#sonarrRadarrSearchModal').data('downloadLink', downloadLink);
+    // --- [1] Logique pour le bouton "Télécharger & Mapper" (Ouvre la modale) ---
+    $('body').on('click', '.download-and-map-btn', function(e) {
+        e.preventDefault();
+        console.log("Bouton 'Télécharger & Mapper' cliqué !");
 
-        // On réinitialise et on ouvre la modale de recherche (qui existe déjà)
-        $('#sonarrRadarrSearchModal').modal('show');
-        $('#sonarrRadarrQuery').val('').focus();
-        $('#sonarrRadarrResults').empty();
-        $('#sonarrRadarrModalLabel').text(`Mapper et Télécharger : ${releaseTitle}`);
+        const modalElement = document.getElementById('sonarrRadarrSearchModal');
+        const modalInstance = new bootstrap.Modal(modalElement);
+
+        // Stocker les données sur la modale pour les retrouver plus tard
+        $(modalElement).data('releaseTitle', $(this).data('release-title'));
+        $(modalElement).data('downloadLink', $(this).data('download-link'));
+
+        // Pré-remplir le champ de recherche
+        $(modalElement).find('#sonarrRadarrQuery').val($(this).data('parsed-title') || '');
+
+        // Réinitialiser les résultats et le titre
+        $(modalElement).find('#sonarrRadarrModalLabel').text(`Mapper : ${$(this).data('release-title')}`);
+        $(modalElement).find('#sonarrRadarrResults').empty().html('<p class="text-muted text-center">Effectuez une recherche pour trouver un média à associer.</p>');
+
+        modalInstance.show();
     });
 
-    // Nouveau gestionnaire d'événements pour le bouton #executeSonarrRadarrSearch
-    $('body').on('click', '#executeSonarrRadarrSearch', function() {
+    // --- [2] Logique pour le bouton "Rechercher" DANS la modale ---
+    $('body').on('click', '#executeSonarrRadarrSearch', function(e) {
+        e.stopPropagation();
+        console.log("Recherche dans la modale DÉCLENCHÉE !");
+
         const query = $('#sonarrRadarrQuery').val();
         const mediaType = $('input[name="mapInstanceType"]:checked').val();
         const resultsContainer = $('#sonarrRadarrResults');
@@ -26,15 +37,12 @@ $(document).ready(function() {
             return;
         }
 
-        resultsContainer.html('<div class="d-flex justify-content-center align-items-center"><div class="spinner-border text-info" role="status"><span class="visually-hidden">Loading...</span></div><strong class="ms-2">Recherche en cours...</strong></div>');
+        resultsContainer.html('<div class="d-flex justify-content-center align-items-center"><div class="spinner-border text-info" role="status"></div><strong class="ms-2">Recherche...</strong></div>');
 
         $.ajax({
             url: '/search/api/search-arr',
             type: 'GET',
-            data: {
-                query: query,
-                type: mediaType
-            },
+            data: { query: query, type: mediaType },
             success: function(data) {
                 resultsContainer.empty();
                 if (data && data.length > 0) {
@@ -47,11 +55,11 @@ $(document).ready(function() {
                         const itemHtml = `
                             <button type="button" class="list-group-item list-group-item-action map-select-item-btn"
                                     data-media-id="${id}"
-                                    data-media-title="${title.replace(/"/g, '&quot;')}"
-                                    data-media-type="${mediaType}">
+                                    data-media-title="${title.replace(/"/g, '"')}"
+                                    data-media-type="${mediaType}"
+                                    data-year="${year}">
                                 <strong>${title}</strong> (${year})
-                            </button>
-                        `;
+                            </button>`;
                         list.append(itemHtml);
                     });
                     resultsContainer.append(list);
@@ -59,36 +67,34 @@ $(document).ready(function() {
                     resultsContainer.html('<p class="text-warning text-center">Aucun résultat trouvé.</p>');
                 }
             },
-            error: function(jqXHR, textStatus, errorThrown) {
-                console.error("Erreur AJAX:", textStatus, errorThrown);
-                const errorMsg = jqXHR.responseJSON ? jqXHR.responseJSON.error : "Une erreur est survenue.";
+            error: function(jqXHR) {
+                const errorMsg = jqXHR.responseJSON ? jqXHR.responseJSON.error : "Erreur de communication.";
                 resultsContainer.html(`<p class="text-danger text-center">Erreur: ${errorMsg}</p>`);
             }
         });
     });
 
-    // Ajoute ce bloc dans $(document).ready(...)
+    // --- [3] Logique pour le clic sur un résultat DANS la modale ---
     $('body').on('click', '.map-select-item-btn', function() {
         const button = $(this);
         const mediaId = button.data('media-id');
         const mediaType = button.data('media-type');
-        const mediaTitle = button.data('media-title'); // Already escaped with &quot; if needed
+        const mediaTitle = button.data('media-title');
+        const mediaYear = button.data('year');
 
         const modal = $('#sonarrRadarrSearchModal');
         const releaseTitle = modal.data('releaseTitle');
         const downloadLink = modal.data('downloadLink');
 
         if (!mediaId || !mediaType || !releaseTitle || !downloadLink) {
-            alert("Erreur critique : une information essentielle est manquante pour le mapping et téléchargement.");
-            console.error("Données manquantes:", { mediaId, mediaType, mediaTitle, releaseTitle, downloadLink });
+            alert("Erreur critique : une information essentielle est manquante.");
             return;
         }
 
-        // Disable all buttons in the list and show spinner on the clicked one
         button.closest('.list-group').find('.map-select-item-btn').prop('disabled', true);
-        button.html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Lancement...');
+        button.html('<span class="spinner-border spinner-border-sm" role="status"></span> Lancement...');
 
-        fetch('/search/download-and-map', { // Corrected URL from your initial prompt
+        fetch('/search/download-and-map', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -101,23 +107,20 @@ $(document).ready(function() {
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success') {
-                alert(data.message); // Or use a more sophisticated notification
+                alert(data.message);
                 modal.modal('hide');
             } else {
-                alert('Erreur: ' + (data.message || "Une erreur inconnue est survenue."));
-                // Re-enable buttons and restore text only on error
+                alert('Erreur: ' + data.message);
                 button.closest('.list-group').find('.map-select-item-btn').prop('disabled', false);
-                // Restore original button text (important: use the stored mediaTitle)
-                // The original HTML was <strong>${title}</strong> (${year}), but we only have mediaTitle here.
-                // For simplicity, just using mediaTitle. If year is needed, it should also be stored or passed.
-                button.html(`<strong>${mediaTitle}</strong>`);
+                button.html(`<strong>${mediaTitle}</strong> (${mediaYear})`); // Restaurer le texte
             }
         })
         .catch(error => {
             console.error('Erreur Fetch:', error);
-            alert('Erreur de communication avec le serveur lors du lancement du téléchargement.');
+            alert('Erreur de communication avec le serveur.');
             button.closest('.list-group').find('.map-select-item-btn').prop('disabled', false);
-            button.html(`<strong>${mediaTitle}</strong>`);
+            button.html(`<strong>${mediaTitle}</strong> (${mediaYear})`); // Restaurer le texte
         });
     });
+
 });
