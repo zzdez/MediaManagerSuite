@@ -6,7 +6,7 @@ from app.utils.media_status_checker import check_media_status # Ajout de l'impor
 from app.utils.plex_client import get_user_specific_plex_server # MOVED IMPORT HERE
 # Utiliser le login_required défini dans app/__init__.py pour la cohérence
 from app import login_required
-from datetime import datetime
+
 @search_ui_bp.route('/', methods=['GET'])
 @login_required
 def search_page():
@@ -87,71 +87,76 @@ from app.utils.mapping_manager import add_or_update_torrent_in_map
 @login_required
 def download_and_map():
     data = request.get_json()
-    release_name = data.get('releaseName')
-    download_link = data.get('downloadLink')
-    instance_type = data.get('instanceType') # 'sonarr' ou 'radarr'
-    media_id = data.get('mediaId')
+    release_name = data.get('releaseName') # Correspond à 'releaseName' du JS
+    download_link = data.get('downloadLink') # Correspond à 'downloadLink' du JS
+    instance_type = data.get('instanceType') # Correspond à 'instanceType' du JS ('sonarr' ou 'radarr')
+    media_id = data.get('mediaId') # Correspond à 'mediaId' du JS
 
     if not all([release_name, download_link, instance_type, media_id]):
-        return jsonify({'status': 'error', 'message': 'Données manquantes.'}), 400
+        return jsonify({'status': 'error', 'message': 'Données manquantes dans la requête.'}), 400
 
     try:
         # 1. Ajouter le torrent à rTorrent
-        # Utiliser add_magnet directement. Supposons que download_link est un lien magnet.
-        # La fonction add_magnet retourne (True/False, message)
-        # Pour obtenir le hash, nous devrons appeler get_torrent_hash_by_name APRÈS l'ajout.
-        # Le label pourrait être 'sonarr' ou 'radarr' en fonction de instance_type pour un suivi.
-        label_for_rtorrent = f"mms-{instance_type}-{media_id}" # Exemple de label: mms-sonarr-123
+        label_for_rtorrent = f"mms-{instance_type}-{media_id}"
+        current_app.logger.info(f"Tentative d'ajout du torrent '{release_name}' via le lien '{download_link}' avec le label rTorrent '{label_for_rtorrent}'.")
 
-        success, message = add_magnet(download_link, label=label_for_rtorrent)
+        success, rtorrent_message = add_magnet(download_link, label=label_for_rtorrent)
 
         if not success:
-            return jsonify({'status': 'error', 'message': message or 'Erreur inconnue avec rTorrent lors de l\'ajout du magnet.'}), 500
+            current_app.logger.error(f"Échec de l'ajout du magnet à rTorrent pour '{release_name}'. Message: {rtorrent_message}")
+            # Utiliser le message de rtorrent_client s'il existe, sinon un message générique
+            error_msg = rtorrent_message or "Erreur inconnue avec rTorrent lors de l'ajout du magnet."
+            return jsonify({'status': 'error', 'message': error_msg}), 500
 
-        # Essayer de récupérer le hash du torrent. Cela peut prendre quelques secondes.
-        # Le nom de la release est utilisé pour la recherche du hash.
+        current_app.logger.info(f"Magnet pour '{release_name}' ajouté avec succès à rTorrent (label: {label_for_rtorrent}). Récupération du hash...")
+
+        # Essayer de récupérer le hash du torrent.
         torrent_hash = get_torrent_hash_by_name(release_name)
 
         if not torrent_hash:
-             # Si on ne peut pas obtenir le hash, on ne peut pas mapper. C'est un succès partiel.
-             flash(f"'{release_name}' ajouté à rTorrent (label: {label_for_rtorrent}), mais le pré-mapping a échoué (hash non récupéré après ajout). Veuillez vérifier manuellement dans rTorrent et mapper si nécessaire.", "warning")
-             return jsonify({'status': 'success', 'message': 'Ajouté mais non mappé.'})
+            # Si on ne peut pas obtenir le hash immédiatement, ce n'est pas nécessairement une erreur fatale pour l'ajout,
+            # mais le mapping ne pourra pas se faire. Le message doit être clair.
+            current_app.logger.warning(f"Torrent '{release_name}' ajouté à rTorrent, mais le hash n'a pas pu être récupéré immédiatement. Le mapping automatique ne sera pas effectué.")
+            # Le message au client doit refléter que l'ajout a eu lieu mais le mapping a échoué.
+            # C'est un succès partiel du point de vue de l'utilisateur qui voulait mapper.
+            # Cependant, pour la réponse AJAX, il est plus simple de traiter cela comme une erreur de l'opération "download-and-map".
+            return jsonify({'status': 'error', 'message': f"Torrent '{release_name}' ajouté, mais le hash n'a pas pu être trouvé pour le mapping. Vérifiez rTorrent."}), 500
 
+
+        current_app.logger.info(f"Hash '{torrent_hash}' trouvé pour '{release_name}'. Tentative de mapping.")
         # 2. Sauvegarder le mapping
-        # Utiliser add_or_update_torrent_in_map directement.
-        # Définir les arguments nécessaires pour add_or_update_torrent_in_map:
         map_label = f"mms-search-{instance_type}-{media_id}"
-        # Pour seedbox_download_path, nous supposons un chemin par défaut combiné avec release_name.
-        # Idéalement, rTorrent devrait nous dire où il le met, ou cela devrait être configurable.
-        # Exemple: /downloads/torrents/mms-sonarr-123/Release Name
-        # Pour l'instant, utilisons une convention simple.
-        # Si RUTORRENT_DOWNLOAD_DIR est configuré, utilisons-le comme base.
-        base_download_dir = current_app.config.get('RUTORRENT_DOWNLOAD_DIR', '/downloads/torrents') # Valeur par défaut si non configuré
+        base_download_dir = current_app.config.get('RUTORRENT_DOWNLOAD_DIR', '/downloads/torrents')
+        # Le chemin de téléchargement sur le seedbox est souvent <base_dir>/<label_rtorrent>/<nom_release>
+        # ou <base_dir>/<nom_release> si rTorrent n'est pas configuré pour créer des sous-dossiers par label.
+        # Pour la cohérence avec le comportement précédent où le label était utilisé dans le path:
         seedbox_dl_path = f"{base_download_dir.rstrip('/')}/{label_for_rtorrent}/{release_name}"
-
-        original_torrent_name = release_name # Au mieux, c'est ce que nous avons
+        # original_torrent_name est le nom du fichier .torrent original, ici on utilise release_name comme fallback.
+        original_torrent_name_for_map = release_name
 
         map_success = add_or_update_torrent_in_map(
             torrent_hash=torrent_hash,
-            release_name=release_name,
+            release_name=release_name, # Nom de la release (dossier/fichier principal)
             app_type=instance_type,
-            target_id=str(media_id), # Assurer que c'est une chaîne si la fonction l'attend ainsi
-            label=map_label,
-            seedbox_download_path=seedbox_dl_path,
-            original_torrent_name=original_torrent_name
-            # initial_status est par défaut "pending_download_on_seedbox"
+            target_id=str(media_id), # Assurer que c'est une chaîne
+            label=map_label, # Label spécifique au mapping MMS
+            seedbox_download_path=seedbox_dl_path, # Chemin complet sur le seedbox
+            original_torrent_name=original_torrent_name_for_map
+            # initial_status est géré par défaut par add_or_update_torrent_in_map
         )
 
         if not map_success:
-            flash(f"'{release_name}' ajouté à rTorrent, mais l'écriture du mapping a échoué. Veuillez vérifier les logs.", "danger")
-            return jsonify({'status': 'error', 'message': 'Ajouté à rTorrent, mais échec du mapping.'}), 500
+            current_app.logger.error(f"Torrent '{release_name}' (hash: {torrent_hash}) ajouté à rTorrent, mais l'écriture du mapping a échoué.")
+            return jsonify({'status': 'error', 'message': f"Torrent '{release_name}' ajouté, mais le mapping a échoué. Vérifiez les logs."}), 500
 
-        flash(f"'{release_name}' ajouté à rTorrent (label: {label_for_rtorrent}) et pré-associé (hash: {torrent_hash[:8]}...) avec succès !", "success")
-        return jsonify({'status': 'success', 'message': 'Téléchargement lancé et mappé.'})
+        final_message = f"Téléchargement pour '{release_name}' (hash: {torrent_hash[:8]}...) lancé et mappé avec succès !"
+        current_app.logger.info(final_message)
+        return jsonify({'status': 'success', 'message': final_message})
 
     except Exception as e:
-        current_app.logger.error(f"Erreur dans download-and-map: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'message': 'Erreur interne du serveur.'}), 500
+        current_app.logger.error(f"Erreur majeure dans download_and_map pour '{release_name}': {e}", exc_info=True)
+        # Renvoyer un message d'erreur générique mais informatif
+        return jsonify({'status': 'error', 'message': f"Erreur serveur lors du traitement de '{release_name}': {str(e)}"}), 500
 
 @search_ui_bp.route('/api/search-arr', methods=['GET'])
 def search_arr_proxy():

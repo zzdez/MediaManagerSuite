@@ -66,4 +66,58 @@ $(document).ready(function() {
             }
         });
     });
+
+    // Ajoute ce bloc dans $(document).ready(...)
+    $('body').on('click', '.map-select-item-btn', function() {
+        const button = $(this);
+        const mediaId = button.data('media-id');
+        const mediaType = button.data('media-type');
+        const mediaTitle = button.data('media-title'); // Already escaped with &quot; if needed
+
+        const modal = $('#sonarrRadarrSearchModal');
+        const releaseTitle = modal.data('releaseTitle');
+        const downloadLink = modal.data('downloadLink');
+
+        if (!mediaId || !mediaType || !releaseTitle || !downloadLink) {
+            alert("Erreur critique : une information essentielle est manquante pour le mapping et téléchargement.");
+            console.error("Données manquantes:", { mediaId, mediaType, mediaTitle, releaseTitle, downloadLink });
+            return;
+        }
+
+        // Disable all buttons in the list and show spinner on the clicked one
+        button.closest('.list-group').find('.map-select-item-btn').prop('disabled', true);
+        button.html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Lancement...');
+
+        fetch('/search/download-and-map', { // Corrected URL from your initial prompt
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                releaseName: releaseTitle,
+                downloadLink: downloadLink,
+                instanceType: mediaType,
+                mediaId: mediaId
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                alert(data.message); // Or use a more sophisticated notification
+                modal.modal('hide');
+            } else {
+                alert('Erreur: ' + (data.message || "Une erreur inconnue est survenue."));
+                // Re-enable buttons and restore text only on error
+                button.closest('.list-group').find('.map-select-item-btn').prop('disabled', false);
+                // Restore original button text (important: use the stored mediaTitle)
+                // The original HTML was <strong>${title}</strong> (${year}), but we only have mediaTitle here.
+                // For simplicity, just using mediaTitle. If year is needed, it should also be stored or passed.
+                button.html(`<strong>${mediaTitle}</strong>`);
+            }
+        })
+        .catch(error => {
+            console.error('Erreur Fetch:', error);
+            alert('Erreur de communication avec le serveur lors du lancement du téléchargement.');
+            button.closest('.list-group').find('.map-select-item-btn').prop('disabled', false);
+            button.html(`<strong>${mediaTitle}</strong>`);
+        });
+    });
 });
