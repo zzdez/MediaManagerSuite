@@ -1114,7 +1114,7 @@ $(document).ready(function() {
     // alors $(document).on('click', '#sonarrRadarrSearchModal .list-group-item', function() { ... })
     // ou $('#sonarrRadarrSearchModal').on('click', '.list-group-item', function() { ... }) serait plus robuste.
 
-    $('#sonarrRadarrResults').on('click', '.list-group-item', function() {
+    $('#sonarrSearchModal #sonarrRadarrResults, #radarrSearchModal #sonarrRadarrResults').on('click', '.list-group-item', function() {
         const mediaId = $(this).data('media-id');
         const instanceType = $(this).data('instance-type'); // 'sonarr' ou 'radarr'
 

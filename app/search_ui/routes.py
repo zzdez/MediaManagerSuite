@@ -6,7 +6,7 @@ from app.utils.media_status_checker import check_media_status # Ajout de l'impor
 from app.utils.plex_client import get_user_specific_plex_server # MOVED IMPORT HERE
 # Utiliser le login_required défini dans app/__init__.py pour la cohérence
 from app import login_required
-
+from datetime import datetime
 @search_ui_bp.route('/', methods=['GET'])
 @login_required
 def search_page():
