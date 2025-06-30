@@ -88,6 +88,13 @@ def create_app(config_class=Config):
         logger.error(f"Erreur lors de l'import ou de l'enregistrement du blueprint config_ui: {e}")
     # FIN DE L'AJOUT
 
+    try:
+        from app.search_ui import search_ui_bp
+        app.register_blueprint(search_ui_bp, url_prefix='/search')
+        logger.info("Blueprint 'search_ui' enregistré avec succès.")
+    except ImportError as e:
+        logger.error(f"Erreur lors de l'import ou de l'enregistrement du blueprint search_ui: {e}")
+
     # Route pour la page d'accueil/portail
     @app.route('/')
     @login_required

@@ -300,8 +300,10 @@ async function executeSonarrSearch() {
             let buttonTitle = isAlreadyInSonarr ? `Mapper à la série existante : ${series.title}` : `Ajouter la série '${series.title}' à Sonarr et la sélectionner`;
             let disabledReason = !idForHandler ? "ID externe/interne manquant ou invalide" : "";
 
+            // Ajout des data-attributes pour le nouveau handler sur #sonarrRadarrResults
             html += `
-                <li class="list-group-item"><div class="row align-items-center">
+                <li class="list-group-item" data-media-id="${idForHandler || 0}" data-instance-type="sonarr" style="cursor: pointer;">
+                    <div class="row align-items-center">
                     <div class="col-auto"><img src="${posterUrl}" alt="${escapedSeriesTitle}" class="img-fluid rounded" style="max-height: 90px;" onerror="this.onerror=null; this.src='https://via.placeholder.com/60x90?text=ImgErr';"></div>
                     <div class="col">
                         <strong>${series.title}</strong> (${series.year || 'N/A'})<br>
@@ -365,8 +367,10 @@ async function executeRadarrSearch() {
                  buttonTitle = `Ajouter le film '${movie.title}' à Radarr et le sélectionner`;
             }
 
+            // Ajout des data-attributes pour le nouveau handler sur #sonarrRadarrResults
             html += `
-                <li class="list-group-item"><div class="row align-items-center">
+                <li class="list-group-item" data-media-id="${idForHandler || 0}" data-instance-type="radarr" style="cursor: pointer;">
+                    <div class="row align-items-center">
                     <div class="col-auto"><img src="${posterUrl}" alt="Poster" class="img-fluid rounded" style="max-height: 90px;" onerror="this.onerror=null; this.src='https://via.placeholder.com/60x90?text=ImgErr';"></div>
                     <div class="col"><strong>${movie.title}</strong> (${movie.year || 'N/A'})<br><small class="text-muted">Statut: ${movie.status || 'N/A'} | TMDB ID: ${movie.tmdbId || 'N/A'} ${isAlreadyInRadarr ? `| Radarr ID: ${movie.id}` : ''}</small><p class="mb-0 small">${(movie.overview || '').substring(0, 120)}${(movie.overview || '').length > 120 ? '...' : ''}</p></div>
                     <div class="col-auto"><button class="btn ${buttonClass} btn-sm" onclick="handleGenericRadarrMovieSelection(${idForHandler || 0}, '${escapedMovieTitle}', ${isAlreadyInRadarr}, ${movie.year || 0})" title="${buttonTitle}" ${idForHandler ? '' : 'disabled title="ID manquant"'}><i class="${buttonIcon}"></i> ${buttonText}</button></div>
@@ -1096,6 +1100,94 @@ async function promptAndAddArrItemForLocalStaging(searchResultData, arrAppType, 
         if(feedbackZone) feedbackZone.innerHTML = `<div class="alert alert-danger">${escapeJsString(msg)}</div>`;
     }
 }
+
+// Quand on clique sur un résultat dans la modale de recherche générique sonarrRadarrSearchModal
+// Ce gestionnaire est spécifiquement pour le workflow "Télécharger & Mapper" de la page de recherche.
+$(document).ready(function() {
+    // Assurez-vous que le sélecteur est correct pour les résultats dans sonarrRadarrSearchModal
+    // Si la modale est partagée et son contenu dynamiquement chargé, la délégation d'événement
+    // doit être attachée à un élément parent stable qui existe au chargement de la page,
+    // ou à la modale elle-même si elle est toujours dans le DOM.
+    // Pour l'instant, on attache directement à #sonarrRadarrResults,
+    // en supposant qu'il est présent lors de l'initialisation.
+    // Si les résultats sont dans un conteneur qui est lui-même #sonarrRadarrSearchModal,
+    // alors $(document).on('click', '#sonarrRadarrSearchModal .list-group-item', function() { ... })
+    // ou $('#sonarrRadarrSearchModal').on('click', '.list-group-item', function() { ... }) serait plus robuste.
+
+    $('#sonarrRadarrResults').on('click', '.list-group-item', function() {
+        const mediaId = $(this).data('media-id');
+        const instanceType = $(this).data('instance-type'); // 'sonarr' ou 'radarr'
+
+        // On récupère les infos stockées lors de l'ouverture de la modale par search_actions.js
+        const releaseTitle = $('#sonarrRadarrSearchModal').data('releaseTitle');
+        const downloadLink = $('#sonarrRadarrSearchModal').data('downloadLink');
+
+        // On vérifie qu'on a bien toutes les infos avant d'appeler le backend
+        if (!releaseTitle || !downloadLink) {
+            alert("Erreur: Impossible de retrouver les informations de la release stockées dans la modale. Veuillez réessayer.");
+            console.error("Erreur: releaseTitle ou downloadLink non trouvés dans les data de #sonarrRadarrSearchModal.");
+            return;
+        }
+
+        if (!mediaId || !instanceType) {
+            alert("Erreur: Impossible de récupérer l'ID du média ou le type d'instance depuis l'élément cliqué. Vérifiez les attributs data-.");
+            console.error("Erreur: mediaId ou instanceType non trouvés sur l'élément cliqué.");
+            return;
+        }
+
+        // Appel à la nouvelle route backend /search/download-and-map
+        // Le préfixe /search est important car la route est dans le blueprint search_ui
+        fetch('/search/download-and-map', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                releaseName: releaseTitle,
+                downloadLink: downloadLink,
+                instanceType: instanceType,
+                mediaId: mediaId
+            })
+        })
+        .then(response => {
+            if (!response.ok) {
+                // Essayer de lire le message d'erreur du JSON si possible
+                return response.json().then(errData => {
+                    throw new Error(errData.message || `Erreur HTTP ${response.status}`);
+                }).catch(() => {
+                    // Si le corps n'est pas JSON ou si .json() échoue
+                    throw new Error(`Erreur HTTP ${response.status} et impossible de parser le message d'erreur.`);
+                });
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.status === 'success') {
+                // Utiliser flashMessageGlobally si disponible et pertinent, sinon alert.
+                if (typeof flashMessageGlobally === 'function') {
+                    flashMessageGlobally(data.message || 'Téléchargement lancé et mappé avec succès !', 'success');
+                } else {
+                    alert(data.message || 'Téléchargement lancé et mappé avec succès !');
+                }
+                $('#sonarrRadarrSearchModal').modal('hide');
+                // Optionnel: rafraîchir la page ou une partie de la page si nécessaire
+                // window.location.reload();
+            } else {
+                if (typeof flashMessageGlobally === 'function') {
+                    flashMessageGlobally('Erreur: ' + (data.message || 'Erreur inconnue.'), 'danger');
+                } else {
+                    alert('Erreur: ' + (data.message || 'Erreur inconnue.'));
+                }
+            }
+        })
+        .catch(err => {
+            console.error("Erreur lors de l'appel à /search/download-and-map:", err);
+            if (typeof flashMessageGlobally === 'function') {
+                flashMessageGlobally('Erreur de communication avec le serveur: ' + err.message, 'danger');
+            } else {
+                alert('Erreur de communication avec le serveur: ' + err.message);
+            }
+        });
+    });
+});
 
 console.log("seedbox_ui_modals.js loaded successfully and completely.");
 // [end of app/static/js/seedbox_ui_modals.js]
