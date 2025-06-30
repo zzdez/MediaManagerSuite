@@ -411,3 +411,86 @@ def get_torrent_hash_by_name(torrent_name, max_retries=3, delay_seconds=2):
         else:
             current_app.logger.warning(f"Could not find hash for torrent name '{torrent_name}' after {max_retries} attempts.")
     return None
+
+def add_magnet_and_get_hash_robustly(magnet_link, label=None):
+    """
+    Ajoute un torrent (via magnet) à rTorrent et retourne son hash de manière fiable.
+    Utilise la comparaison de listes de hash avant et après l'ajout.
+    Inclut la possibilité d'ajouter un label.
+    Retourne un tuple (hash, error_message). hash est None si une erreur se produit.
+    """
+    current_app.logger.info(f"Début de add_magnet_and_get_hash_robustly pour: {magnet_link[:100]}...")
+
+    try:
+        # 1. Obtenir la liste des hash AVANT l'ajout.
+        torrents_before_raw, error_before_get = _send_xmlrpc_request("d.multicall2", ["", "main", "d.hash="])
+        if error_before_get:
+            msg = f"Erreur XML-RPC lors de la récupération des hashes avant l'ajout: {error_before_get}"
+            current_app.logger.error(msg)
+            return None, msg
+
+        hashes_before = set()
+        if torrents_before_raw is not None:
+            hashes_before = {item[0] for item in torrents_before_raw if item and len(item) > 0}
+        current_app.logger.debug(f"Hashes avant ajout: {hashes_before}")
+
+        # 2. Ajouter le torrent en arrière-plan.
+        params_for_load = ["", magnet_link]
+        if label and isinstance(label, str) and label.strip():
+            params_for_load.append(f"d.custom1.set={label.strip()}")
+            current_app.logger.info(f"Application du label '{label}' lors de l'ajout du magnet.")
+
+        result_load, error_load = _send_xmlrpc_request("load.start_background", params_for_load)
+
+        if error_load:
+            msg = f"Erreur XML-RPC lors de l'appel à load.start_background: {error_load}"
+            current_app.logger.error(msg)
+            return None, msg
+        if result_load != 0:
+            # Ce n'est pas nécessairement une erreur fatale pour la recherche de hash, mais c'est inhabituel.
+            current_app.logger.warning(f"load.start_background pour {magnet_link[:100]} a retourné {result_load} (attendu 0). Poursuite de la recherche de hash.")
+
+        current_app.logger.info(f"Magnet '{magnet_link[:100]}...' envoyé à rTorrent. Attente et sondage pour nouveau hash...")
+
+        # 3. Attendre et sonder pour trouver le nouveau hash.
+        max_retries = 10
+        retry_delay = 3  # secondes
+
+        for i in range(max_retries):
+            time.sleep(retry_delay)
+            current_app.logger.info(f"Tentative {i+1}/{max_retries} de trouver le nouveau hash...")
+
+            torrents_after_raw, error_after_get = _send_xmlrpc_request("d.multicall2", ["", "main", "d.hash="])
+            if error_after_get:
+                current_app.logger.warning(f"Erreur XML-RPC lors de la récupération des hashes après l'ajout (tentative {i+1}): {error_after_get}. On continue les tentatives.")
+                if i == max_retries - 1: # Si c'est la dernière tentative
+                    msg = f"Erreur XML-RPC persistante lors de la recherche du nouveau hash: {error_after_get}"
+                    current_app.logger.error(msg)
+                    return None, msg
+                continue
+
+            hashes_after = set()
+            if torrents_after_raw is not None:
+                hashes_after = {item[0] for item in torrents_after_raw if item and len(item) > 0}
+            current_app.logger.debug(f"Tentative {i+1}: Hashes après ajout: {hashes_after}")
+
+            new_hashes = hashes_after - hashes_before
+            if new_hashes:
+                new_hash = new_hashes.pop()
+                if new_hashes: # S'il en reste plus d'un
+                     current_app.logger.warning(f"Plusieurs nouveaux hashes trouvés: {new_hashes} en plus de {new_hash}. Utilisation de {new_hash}. Cela peut indiquer que plusieurs torrents ont été ajoutés simultanément ou très rapidement.")
+                current_app.logger.info(f"Nouveau hash trouvé : {new_hash} (Tentative {i+1})")
+                return new_hash, None # (hash, error_message=None)
+
+        msg = f"Impossible de trouver le nouveau hash pour {magnet_link[:100]} après {max_retries} tentatives."
+        current_app.logger.error(msg)
+        return None, msg
+
+    except xmlrpc.client.Fault as e_fault:
+        msg = f"Fault XML-RPC dans add_magnet_and_get_hash_robustly: {e_fault.faultString}"
+        current_app.logger.error(f"{msg} pour {magnet_link[:100]}", exc_info=True)
+        return None, msg
+    except Exception as e:
+        msg = f"Erreur inattendue dans add_magnet_and_get_hash_robustly: {str(e)}"
+        current_app.logger.error(f"{msg} pour {magnet_link[:100]}", exc_info=True)
+        return None, msg

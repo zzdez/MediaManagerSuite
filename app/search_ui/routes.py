@@ -79,7 +79,7 @@ def search_page():
 
 from flask import jsonify # Ajouté pour la nouvelle route
 # Correction de l'import: rTorrentClient n'existe pas, utiliser les fonctions directement
-from app.utils.rtorrent_client import add_magnet, get_torrent_hash_by_name
+from app.utils.rtorrent_client import add_magnet_and_get_hash_robustly # MODIFIED IMPORT
 # Correction de l'import: MappingManager n'existe pas comme classe, utiliser les fonctions directement
 from app.utils.mapping_manager import add_or_update_torrent_in_map
 
@@ -96,34 +96,20 @@ def download_and_map():
         return jsonify({'status': 'error', 'message': 'Données manquantes dans la requête.'}), 400
 
     try:
-        # 1. Ajouter le torrent à rTorrent
+        # 1. Ajouter le torrent à rTorrent et récupérer son hash de manière robuste
         label_for_rtorrent = f"mms-{instance_type}-{media_id}"
-        current_app.logger.info(f"Tentative d'ajout du torrent '{release_name}' via le lien '{download_link}' avec le label rTorrent '{label_for_rtorrent}'.")
+        current_app.logger.info(f"Tentative d'ajout du torrent '{release_name}' via le lien '{download_link}' avec le label rTorrent '{label_for_rtorrent}' et récupération robuste du hash.")
 
-        success, rtorrent_message = add_magnet(download_link, label=label_for_rtorrent)
+        torrent_hash, error_msg_add = add_magnet_and_get_hash_robustly(download_link, label=label_for_rtorrent)
 
-        if not success:
-            current_app.logger.error(f"Échec de l'ajout du magnet à rTorrent pour '{release_name}'. Message: {rtorrent_message}")
-            # Utiliser le message de rtorrent_client s'il existe, sinon un message générique
-            error_msg = rtorrent_message or "Erreur inconnue avec rTorrent lors de l'ajout du magnet."
-            return jsonify({'status': 'error', 'message': error_msg}), 500
+        if error_msg_add or not torrent_hash:
+            current_app.logger.error(f"Échec de l'ajout du magnet ou de la récupération du hash pour '{release_name}'. Message: {error_msg_add}")
+            # Utiliser le message d'erreur de la fonction robuste, sinon un message générique
+            final_error_msg = error_msg_add or "Erreur inconnue lors de l'ajout du torrent ou de la récupération du hash."
+            return jsonify({'status': 'error', 'message': final_error_msg}), 500
 
-        current_app.logger.info(f"Magnet pour '{release_name}' ajouté avec succès à rTorrent (label: {label_for_rtorrent}). Récupération du hash...")
+        current_app.logger.info(f"Torrent '{release_name}' ajouté avec succès. Hash '{torrent_hash}' récupéré. Tentative de mapping.")
 
-        # Essayer de récupérer le hash du torrent.
-        torrent_hash = get_torrent_hash_by_name(release_name)
-
-        if not torrent_hash:
-            # Si on ne peut pas obtenir le hash immédiatement, ce n'est pas nécessairement une erreur fatale pour l'ajout,
-            # mais le mapping ne pourra pas se faire. Le message doit être clair.
-            current_app.logger.warning(f"Torrent '{release_name}' ajouté à rTorrent, mais le hash n'a pas pu être récupéré immédiatement. Le mapping automatique ne sera pas effectué.")
-            # Le message au client doit refléter que l'ajout a eu lieu mais le mapping a échoué.
-            # C'est un succès partiel du point de vue de l'utilisateur qui voulait mapper.
-            # Cependant, pour la réponse AJAX, il est plus simple de traiter cela comme une erreur de l'opération "download-and-map".
-            return jsonify({'status': 'error', 'message': f"Torrent '{release_name}' ajouté, mais le hash n'a pas pu être trouvé pour le mapping. Vérifiez rTorrent."}), 500
-
-
-        current_app.logger.info(f"Hash '{torrent_hash}' trouvé pour '{release_name}'. Tentative de mapping.")
         # 2. Sauvegarder le mapping
         map_label = f"mms-search-{instance_type}-{media_id}"
         base_download_dir = current_app.config.get('RUTORRENT_DOWNLOAD_DIR', '/downloads/torrents')

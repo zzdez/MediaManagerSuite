@@ -6,26 +6,25 @@ $(document).ready(function() {
         e.preventDefault();
         console.log("Bouton 'Télécharger & Mapper' cliqué !");
 
-        const modalElement = document.getElementById('sonarrRadarrSearchModal');
-        const modalInstance = new bootstrap.Modal(modalElement);
+        const modalElement = $('#sonarrRadarrSearchModal'); // Use jQuery selector
 
         // Stocker les données sur la modale pour les retrouver plus tard
-        $(modalElement).data('releaseTitle', $(this).data('release-title'));
-        $(modalElement).data('downloadLink', $(this).data('download-link'));
+        modalElement.data('releaseTitle', $(this).data('release-title'));
+        modalElement.data('downloadLink', $(this).data('download-link'));
 
         // Pré-remplir le champ de recherche
-        $(modalElement).find('#sonarrRadarrQuery').val($(this).data('parsed-title') || '');
+        modalElement.find('#sonarrRadarrQuery').val($(this).data('parsed-title') || '');
 
         // Réinitialiser les résultats et le titre
-        $(modalElement).find('#sonarrRadarrModalLabel').text(`Mapper : ${$(this).data('release-title')}`);
-        $(modalElement).find('#sonarrRadarrResults').empty().html('<p class="text-muted text-center">Effectuez une recherche pour trouver un média à associer.</p>');
+        modalElement.find('#sonarrRadarrModalLabel').text(`Mapper : ${$(this).data('release-title')}`);
+        modalElement.find('#sonarrRadarrResults').empty().html('<p class="text-muted text-center">Effectuez une recherche pour trouver un média à associer.</p>');
 
-        modalInstance.show();
+        modalElement.modal('show'); // Use Bootstrap 3/4 style
     });
 
     // --- [2] Logique pour le bouton "Rechercher" DANS la modale ---
     $('body').on('click', '#executeSonarrRadarrSearch', function(e) {
-        e.stopPropagation();
+        // e.stopPropagation(); // Temporarily removed for testing
         console.log("Recherche dans la modale DÉCLENCHÉE !");
 
         const query = $('#sonarrRadarrQuery').val();
@@ -75,7 +74,9 @@ $(document).ready(function() {
     });
 
     // --- [3] Logique pour le clic sur un résultat DANS la modale ---
-    $('body').on('click', '.map-select-item-btn', function() {
+    $('body').on('click', '.map-select-item-btn', function(e) {
+        e.stopPropagation(); // <-- AJOUTER CETTE LIGNE
+
         const button = $(this);
         const mediaId = button.data('media-id');
         const mediaType = button.data('media-type');
