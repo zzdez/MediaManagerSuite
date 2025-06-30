@@ -9,8 +9,13 @@ $(document).ready(function() {
         const modalElement = $('#sonarrRadarrSearchModal'); // Use jQuery selector
 
         // Stocker les données sur la modale pour les retrouver plus tard
-        modalElement.data('releaseTitle', $(this).data('release-title'));
-        modalElement.data('downloadLink', $(this).data('download-link'));
+        const releaseTitleToStore = $(this).data('release-title');
+        const downloadLinkToStore = $(this).data('download-link');
+        console.log("[Handler 1] Storing on modal: releaseTitle =", releaseTitleToStore, ", downloadLink =", downloadLinkToStore);
+        modalElement.data('releaseTitle', releaseTitleToStore);
+        modalElement.data('downloadLink', downloadLinkToStore);
+        // Verification log immediately after storing
+        console.log("[Handler 1] Data stored: releaseTitle on modal is now", modalElement.data('releaseTitle'), ", downloadLink on modal is now", modalElement.data('downloadLink'));
 
         // Pré-remplir le champ de recherche
         modalElement.find('#sonarrRadarrQuery').val($(this).data('parsed-title') || '');
@@ -46,6 +51,8 @@ $(document).ready(function() {
             data: { query: query, type: mediaType },
             success: function(data) {
                 resultsContainer.empty();
+                // Log mediaType's value as seen by the success callback's closure
+                console.log("[Handler 2 AJAX Success] Value of mediaType from closure:", mediaType);
                 if (data && data.length > 0) {
                     const list = $('<div class="list-group"></div>');
                     data.forEach(function(item) {
@@ -81,16 +88,26 @@ $(document).ready(function() {
 
         const button = $(this);
         const mediaId = button.data('media-id');
-        const mediaType = button.data('media-type');
+        const mediaType = button.data('instance-type'); // Use .data() as it's now working.
         const mediaTitle = button.data('media-title');
         const mediaYear = button.data('year');
 
+        // Removed diagnostic logs for mediaTypeFromData and mediaTypeFromAttr here
+
         const modal = $('#sonarrRadarrSearchModal');
-        const releaseTitle = modal.data('releaseTitle');
-        const downloadLink = modal.data('downloadLink');
+        const retrievedReleaseTitle = modal.data('releaseTitle');
+        const retrievedDownloadLink = modal.data('downloadLink');
+        // Keeping this log for now as it confirms modal data, can be removed later if desired.
+        console.log("[Handler 3] Retrieving from modal: releaseTitle =", retrievedReleaseTitle, ", downloadLink =", retrievedDownloadLink);
+
+        // Use the retrieved values for the check and subsequent operations
+        const releaseTitle = retrievedReleaseTitle;
+        const downloadLink = retrievedDownloadLink;
 
         if (!mediaId || !mediaType || !releaseTitle || !downloadLink) {
             alert("Erreur critique : une information essentielle est manquante.");
+            // Simplified error log
+            console.error("[Handler 3] Missing data check failed:", { mediaId, mediaType, releaseTitle, downloadLink });
             return;
         }
 
