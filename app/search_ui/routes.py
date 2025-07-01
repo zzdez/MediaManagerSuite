@@ -302,119 +302,82 @@ def search_arr_proxy():
 
     return jsonify(results)
 
-from flask import send_file
-import io
+# Imports nécessaires pour la nouvelle route download_torrent
+from flask import Response, stream_with_context
+# requests est déjà importé plus haut dans le fichier
+# current_app est déjà importé
+# login_required est déjà importé
 
-@search_ui_bp.route('/download-torrent-file', methods=['GET'])
+@search_ui_bp.route('/download-torrent')
 @login_required
-def download_torrent_file_route():
-    download_link = request.args.get('download_link')
-    release_name = request.args.get('release_name', 'downloaded.torrent') # Default filename if not provided
+def download_torrent():
+    """
+    Acts as a proxy to download a .torrent file from a URL provided by Prowlarr.
+    """
+    torrent_url = request.args.get('url')
+    release_name_arg = request.args.get('release_name')
 
-    if not download_link:
-        return jsonify({'status': 'error', 'message': 'Le paramètre download_link est manquant.'}), 400
+    if not torrent_url:
+        return "URL de téléchargement manquante.", 400 # Devrait être une réponse Flask, ex: Response("...", status=400) ou jsonify
 
-    if download_link.startswith("magnet:"):
-        return jsonify({'status': 'error', 'message': 'Les liens magnets ne peuvent pas être téléchargés comme des fichiers.'}), 400
+    # Construire le nom de fichier
+    if release_name_arg:
+        filename = release_name_arg if release_name_arg.lower().endswith('.torrent') else f"{release_name_arg}.torrent"
+    else:
+        # Essayer d'extraire de l'URL Prowlarr si 'file=' est présent, sinon nom par défaut
+        # Exemple d'URL Prowlarr: http://...&file=MonFichier.torrent
+        if 'file=' in torrent_url:
+            try:
+                filename = torrent_url.split('file=')[1].split('&')[0]
+                if not filename.lower().endswith('.torrent'):
+                    filename += ".torrent"
+            except Exception:
+                filename = "downloaded.torrent"
+        else:
+            filename = "downloaded.torrent"
 
-    current_app.logger.info(f"Tentative de téléchargement du fichier .torrent depuis: {download_link} pour la release '{release_name}'")
-
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-    torrent_content_bytes = None
-    final_content_type = None
-    error_message = None
+    current_app.logger.info(f"Proxying .torrent download from: {torrent_url} as filename: {filename}")
 
     try:
-        # Logique similaire à download_and_map pour récupérer le contenu du .torrent
-        # Suivi des redirections HTTP, mais pas des magnets.
-        current_url_to_fetch = download_link
-        max_redirects = 5
-        for i in range(max_redirects):
-            response = requests.get(current_url_to_fetch, timeout=20, allow_redirects=False, headers=headers, stream=True)
+        # On utilise stream=True pour ne pas charger tout le fichier en mémoire sur le serveur
+        # allow_redirects=True est le défaut, ce qui est bien ici.
+        # requests gérera les redirections HTTP. S'il rencontre un schéma non supporté (magnet) après redirection, il lèvera une erreur.
+        req = requests.get(torrent_url, stream=True, timeout=30) # Augmentation du timeout pour être sûr
+        req.raise_for_status() # Lève une exception si le statut n'est pas 200-299
 
-            if response.status_code >= 400:
-                # Essayer de lire le corps pour un message d'erreur plus détaillé
-                try:
-                    error_body = response.json()
-                    error_detail = error_body.get('error', str(error_body))
-                except: # noqa E722
-                    error_detail = response.text[:200] # Premiers 200 caractères si pas JSON
-                response.raise_for_status() # Lèvera une HTTPError
+        # Vérifier si le Content-Type de la réponse finale est bien un torrent
+        # Ceci est une protection supplémentaire. Si Prowlarr/indexer renvoie du HTML/JSON d'erreur avec un statut 200, on le bloque.
+        content_type_final = req.headers.get('Content-Type', '').lower()
+        if not ('application/x-bittorrent' in content_type_final or
+                'application/octet-stream' in content_type_final or # Certains serveurs utilisent octet-stream
+                filename.endswith('.torrent')): # Si le nom de fichier final (après extraction) se termine par .torrent
+            current_app.logger.warning(f"Proxy download: Content-Type inattendu '{content_type_final}' pour {torrent_url} (filename: {filename}). Arrêt.")
+            # On pourrait essayer de lire un peu pour voir si c'est une erreur JSON/HTML connue, mais pour l'instant, on est strict.
+            return Response(f"Contenu inattendu reçu de l'URL distante. Type: {content_type_final}", status=502) # Bad Gateway
 
-            if response.is_redirect or response.is_permanent_redirect:
-                location = response.headers.get('Location')
-                current_app.logger.info(f"Redirection de {current_url_to_fetch} vers {location}")
-                if not location:
-                    raise ValueError("Redirection sans en-tête 'Location'.")
-                if location.startswith("magnet:"):
-                    # Si on tombe sur un magnet, on ne peut pas télécharger de fichier.
-                    raise ValueError("Le lien redirige vers un magnet, pas un fichier .torrent téléchargeable.")
-                current_url_to_fetch = location # Continuer avec la nouvelle URL HTTP/S
-            else:
-                # Pas de redirection, cette réponse devrait être le fichier .torrent
-                final_content_type = response.headers.get('Content-Type', '').lower()
-                # Vérification plus stricte du content type pour un téléchargement direct de fichier
-                if not ('application/x-bittorrent' in final_content_type or
-                        '.torrent' in response.headers.get('Content-Disposition', '').lower() or
-                        current_url_to_fetch.endswith('.torrent')): # Accepter aussi si l'URL finit par .torrent
-                    # Si le type n'est pas clairement un torrent, on vérifie si c'est une erreur JSON de Prowlarr
-                    # (Certains indexers peuvent retourner des erreurs JSON même pour des liens de dl de fichiers)
-                    first_chunk = next(response.iter_content(chunk_size=1024, decode_unicode=False), None)
-                    if first_chunk and first_chunk.strip().startswith(b"{"):
-                        full_body_str = first_chunk.decode('utf-8', errors='replace')
-                        for next_chunk in response.iter_content(chunk_size=1024*1024, decode_unicode=False):
-                            full_body_str += next_chunk.decode('utf-8', errors='replace')
-                        try:
-                            potential_error = json.loads(full_body_str)
-                            if potential_error.get("error"):
-                                raise ValueError(f"Le serveur a retourné une erreur JSON: {potential_error.get('error')}")
-                        except json.JSONDecodeError: # N'était pas JSON
-                            pass # On continue pour lever l'erreur de type de contenu
-
-                    current_app.logger.warning(f"Type de contenu inattendu ('{final_content_type}') pour {current_url_to_fetch}. Attendu 'application/x-bittorrent'.")
-                    # On pourrait être moins strict ici si on veut, mais pour un téléchargement de fichier direct, c'est mieux d'être sûr.
-                    # Pour l'instant, on va quand même essayer de lire le contenu si l'alerte précédente n'a pas levé d'erreur.
-                    # La logique ci-dessus avec `first_chunk` doit être améliorée si on veut la garder.
-                    # Simplifions : si ce n'est pas application/x-bittorrent, on rejette SAUF si l'URL finit par .torrent explicitement.
-                    if not ('application/x-bittorrent' in final_content_type or current_url_to_fetch.endswith('.torrent')):
-                         raise ValueError(f"Type de contenu ('{final_content_type}') ou nom de fichier inattendu pour un .torrent. URL: {current_url_to_fetch}")
-
-
-                torrent_content_bytes = response.content # Lire le contenu complet
-                if not torrent_content_bytes:
-                    raise ValueError("Le contenu du fichier .torrent téléchargé est vide.")
-
-                current_app.logger.info(f"Fichier .torrent ({len(torrent_content_bytes)} octets) récupéré avec succès depuis {current_url_to_fetch}.")
-                break # Sortir de la boucle for des redirections
-        else: # Si la boucle for se termine sans break (trop de redirections)
-            raise ValueError("Trop de redirections lors de la tentative de téléchargement du fichier .torrent.")
-
-    except requests.exceptions.Timeout:
-        error_message = f"Timeout lors du téléchargement du fichier .torrent depuis {download_link}."
-    except requests.exceptions.RequestException as e_req:
-        error_message = f"Erreur de communication lors du téléchargement: {e_req}"
-    except ValueError as e_val: # Attrape nos ValueErrors personnalisées
-        error_message = str(e_val)
-    except Exception as e: # Attrape toute autre exception
-        current_app.logger.error(f"Erreur inattendue lors du téléchargement du fichier .torrent: {e}", exc_info=True)
-        error_message = f"Erreur serveur inattendue: {e}"
-
-    if error_message:
-        current_app.logger.error(f"Échec du téléchargement du fichier .torrent depuis {download_link}: {error_message}")
-        return jsonify({'status': 'error', 'message': error_message}), 500 # Internal Server Error ou Bad Gateway si approprié
-
-    if torrent_content_bytes:
-        # S'assurer que le nom de fichier a bien .torrent à la fin
-        if not release_name.lower().endswith(".torrent"):
-            release_name += ".torrent"
-
-        return send_file(
-            io.BytesIO(torrent_content_bytes),
-            mimetype='application/x-bittorrent',
-            as_attachment=True,
-            download_name=release_name
+        # On renvoie la réponse au navigateur
+        return Response(
+            stream_with_context(req.iter_content(chunk_size=1024)),
+            headers={
+                'Content-Type': 'application/x-bittorrent', # On force le type pour le client
+                'Content-Disposition': f'attachment; filename="{filename}"'
+            }
         )
-    else:
-        # Ce cas ne devrait pas être atteint si error_message est bien géré
-        current_app.logger.error(f"Échec du téléchargement du fichier .torrent depuis {download_link}: contenu vide sans erreur explicite.")
-        return jsonify({'status': 'error', 'message': 'Impossible de récupérer le contenu du fichier .torrent.'}), 500
+
+    except requests.exceptions.InvalidSchema as e_schema:
+        # Spécifiquement pour les cas où une redirection mène à un magnet:
+        current_app.logger.error(f"Erreur de schéma (souvent magnet) lors du téléchargement du .torrent depuis {torrent_url}: {e_schema}")
+        return Response(f"Impossible de télécharger : le lien pointe vers un type non supporté (ex: magnet) : {e_schema}", status=400)
+    except requests.exceptions.RequestException as e:
+        current_app.logger.error(f"Erreur lors du téléchargement du .torrent depuis {torrent_url}: {e}")
+        # Renvoyer l'erreur de manière plus structurée, peut-être en fonction du type d'erreur 'e'
+        status_code = 502 # Bad Gateway par défaut pour les erreurs de requête vers un autre serveur
+        if isinstance(e, requests.exceptions.HTTPError):
+            status_code = e.response.status_code if e.response is not None else 500
+        elif isinstance(e, requests.exceptions.ConnectTimeout) or isinstance(e, requests.exceptions.ReadTimeout):
+            status_code = 504 # Gateway Timeout
+
+        return Response(f"Impossible de télécharger le fichier .torrent : {e}", status=status_code)
+    except Exception as ex_generic:
+        current_app.logger.error(f"Erreur générique inattendue lors du téléchargement du .torrent {torrent_url}: {ex_generic}", exc_info=True)
+        return Response(f"Erreur serveur inattendue lors de la tentative de téléchargement.", status=500)
