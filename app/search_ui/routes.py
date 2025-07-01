@@ -99,10 +99,27 @@ def download_and_map():
     error_msg_add = None
     label_for_rtorrent = f"mms-{instance_type}-{media_id}"
 
+    # Déterminer le chemin de destination en fonction de instance_type
+    target_download_path = None
+    if instance_type == 'sonarr':
+        target_download_path = current_app.config.get('SEEDBOX_SONARR_FINISHED_PATH')
+    elif instance_type == 'radarr':
+        target_download_path = current_app.config.get('SEEDBOX_RADARR_FINISHED_PATH')
+
+    if not target_download_path:
+        current_app.logger.warning(f"Aucun chemin de destination configuré pour instanceType '{instance_type}'. Le torrent sera téléchargé dans le répertoire par défaut de rTorrent.")
+        # Optionnel: Renvoyer une erreur ou juste logger et continuer avec le défaut rTorrent
+        # return jsonify({'status': 'error', 'message': f"Configuration manquante pour le chemin de destination de {instance_type}."}), 500
+
+
     try:
         if download_link.startswith("magnet:"):
             current_app.logger.info(f"Traitement direct du lien magnet pour '{release_name}': {download_link}")
-            torrent_hash, error_msg_add = add_magnet_and_get_hash_robustly(download_link, label=label_for_rtorrent)
+            torrent_hash, error_msg_add = add_magnet_and_get_hash_robustly(
+                download_link,
+                label=label_for_rtorrent,
+                destination_path=target_download_path
+            )
         else: # Supposé être une URL HTTP/S
             current_app.logger.info(f"Traitement de l'URL HTTP/S: {download_link} pour '{release_name}'.")
             try:
@@ -121,7 +138,11 @@ def download_and_map():
                     location_header = initial_response.headers.get('Location')
                     current_app.logger.info(f"L'URL Prowlarr a redirigé vers: {location_header}")
                     if location_header and location_header.startswith("magnet:"):
-                        torrent_hash, error_msg_add = add_magnet_and_get_hash_robustly(location_header, label=label_for_rtorrent)
+                        torrent_hash, error_msg_add = add_magnet_and_get_hash_robustly(
+                            location_header,
+                            label=label_for_rtorrent,
+                            destination_path=target_download_path
+                        )
                     elif location_header:
                         # Si c'est une autre redirection HTTP, la suivre une fois.
                         current_app.logger.info(f"Suivi de la redirection HTTP vers: {location_header}")
@@ -140,7 +161,13 @@ def download_and_map():
                         if not torrent_content_bytes:
                             raise ValueError("Le contenu du fichier .torrent téléchargé (après redirection) est vide.")
                         current_app.logger.info(f"Fichier .torrent téléchargé après redirection ({len(torrent_content_bytes)} octets).")
-                        torrent_hash, error_msg_add = add_torrent_data_and_get_hash_robustly(torrent_content_bytes, release_name, label=label_for_rtorrent)
+                        current_app.logger.info(f"Contenu du torrent (après redir) envoyé à rtorrent (premiers 500 octets): {torrent_content_bytes[:500]}")
+                        torrent_hash, error_msg_add = add_torrent_data_and_get_hash_robustly(
+                            torrent_content_bytes,
+                            release_name,
+                            label=label_for_rtorrent,
+                            destination_path=target_download_path
+                        )
                     else:
                         raise ValueError("Redirection sans en-tête 'Location'.")
 
@@ -193,7 +220,13 @@ def download_and_map():
                     if not torrent_content_bytes: # Vérification finale
                         raise ValueError("Le contenu du fichier .torrent téléchargé est vide.")
                     current_app.logger.info(f"Fichier .torrent téléchargé directement ({len(torrent_content_bytes)} octets).")
-                    torrent_hash, error_msg_add = add_torrent_data_and_get_hash_robustly(torrent_content_bytes, release_name, label=label_for_rtorrent)
+                    current_app.logger.info(f"Contenu du torrent (direct) envoyé à rtorrent (premiers 500 octets): {torrent_content_bytes[:500]}")
+                    torrent_hash, error_msg_add = add_torrent_data_and_get_hash_robustly(
+                        torrent_content_bytes,
+                        release_name,
+                        label=label_for_rtorrent,
+                        destination_path=target_download_path
+                    )
 
             except requests.exceptions.Timeout:
                 error_msg_add = f"Timeout lors de la communication avec Prowlarr/URL pour '{release_name}'."
