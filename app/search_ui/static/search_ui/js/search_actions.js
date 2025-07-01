@@ -143,4 +143,6 @@ $(document).ready(function() {
         });
     });
 
+    // Le Handler [4] pour .download-torrent-file-btn a été supprimé car
+    // le téléchargement sera géré par un lien direct <a> vers une route backend.
 });

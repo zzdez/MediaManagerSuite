@@ -76,7 +76,16 @@
                                        data-parsed-title="{{ result.status_info.parsed_title|e }}">
                                         <i class="fas fa-download"></i> & Mapper
                                     </a>
+                                    {# Nouveau bouton pour télécharger le fichier .torrent directement (approche lien direct) #}
+                                    {% if not result.downloadUrl.startswith('magnet:') %}
+                                    <a href="{{ url_for('search_ui.download_torrent', url=result.downloadUrl, release_name=result.title) }}"
+                                       class="btn btn-sm btn-outline-secondary ms-2"
+                                       title="Télécharger le fichier .torrent"
+                                       target="_blank"> {# target="_blank" pour ouvrir dans un nouvel onglet/télécharger sans quitter la page #}
+                                        <i class="fas fa-file-arrow-down"></i>
+                                    </a>
                                     {% endif %}
+                                    {% endif %} {# Fin du if result.status_info.status != 'Déjà Présent' #}
                                 </div>
                             </li>
                             {% endfor %}

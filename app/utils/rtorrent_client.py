@@ -412,7 +412,7 @@ def get_torrent_hash_by_name(torrent_name, max_retries=3, delay_seconds=2):
             current_app.logger.warning(f"Could not find hash for torrent name '{torrent_name}' after {max_retries} attempts.")
     return None
 
-def add_magnet_and_get_hash_robustly(magnet_link, label=None):
+def add_magnet_and_get_hash_robustly(magnet_link, label=None, destination_path=None):
     """
     Ajoute un torrent (via magnet) à rTorrent et retourne son hash de manière fiable.
     Utilise la comparaison de listes de hash avant et après l'ajout.
@@ -439,6 +439,10 @@ def add_magnet_and_get_hash_robustly(magnet_link, label=None):
         if label and isinstance(label, str) and label.strip():
             params_for_load.append(f"d.custom1.set={label.strip()}")
             current_app.logger.info(f"Application du label '{label}' lors de l'ajout du magnet.")
+
+        if destination_path and isinstance(destination_path, str) and destination_path.strip():
+            params_for_load.append(f"d.directory.set={destination_path.strip()}")
+            current_app.logger.info(f"Application du chemin de destination '{destination_path.strip()}' lors de l'ajout du magnet.")
 
         # Utiliser load.start au lieu de load.start_background
         result_load, error_load = _send_xmlrpc_request("load.start", params_for_load)
@@ -496,7 +500,7 @@ def add_magnet_and_get_hash_robustly(magnet_link, label=None):
         current_app.logger.error(f"{msg} pour {magnet_link[:100]}", exc_info=True)
         return None, msg
 
-def add_torrent_data_and_get_hash_robustly(torrent_content_bytes, filename_for_rtorrent, label=None):
+def add_torrent_data_and_get_hash_robustly(torrent_content_bytes, filename_for_rtorrent, label=None, destination_path=None):
     """
     Ajoute un torrent (via son contenu binaire) à rTorrent et retourne son hash de manière fiable.
     Utilise la comparaison de listes de hash avant et après l'ajout.
@@ -545,6 +549,10 @@ def add_torrent_data_and_get_hash_robustly(torrent_content_bytes, filename_for_r
         if label and isinstance(label, str) and label.strip():
             params_for_load_raw.append(f"d.custom1.set={label.strip()}")
             current_app.logger.info(f"Application du label '{label}' lors de l'ajout du torrent (raw_start).")
+
+        if destination_path and isinstance(destination_path, str) and destination_path.strip():
+            params_for_load_raw.append(f"d.directory.set={destination_path.strip()}")
+            current_app.logger.info(f"Application du chemin de destination '{destination_path.strip()}' lors de l'ajout du torrent (raw_start).")
 
         # load.raw_start devrait retourner 0 en cas de succès.
         result_load, error_load = _send_xmlrpc_request("load.raw_start", params_for_load_raw)
