@@ -301,3 +301,120 @@ def search_arr_proxy():
         return jsonify({'error': f'Erreur de communication avec {media_type.capitalize()}'}), 500
 
     return jsonify(results)
+
+from flask import send_file
+import io
+
+@search_ui_bp.route('/download-torrent-file', methods=['GET'])
+@login_required
+def download_torrent_file_route():
+    download_link = request.args.get('download_link')
+    release_name = request.args.get('release_name', 'downloaded.torrent') # Default filename if not provided
+
+    if not download_link:
+        return jsonify({'status': 'error', 'message': 'Le paramètre download_link est manquant.'}), 400
+
+    if download_link.startswith("magnet:"):
+        return jsonify({'status': 'error', 'message': 'Les liens magnets ne peuvent pas être téléchargés comme des fichiers.'}), 400
+
+    current_app.logger.info(f"Tentative de téléchargement du fichier .torrent depuis: {download_link} pour la release '{release_name}'")
+
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+    torrent_content_bytes = None
+    final_content_type = None
+    error_message = None
+
+    try:
+        # Logique similaire à download_and_map pour récupérer le contenu du .torrent
+        # Suivi des redirections HTTP, mais pas des magnets.
+        current_url_to_fetch = download_link
+        max_redirects = 5
+        for i in range(max_redirects):
+            response = requests.get(current_url_to_fetch, timeout=20, allow_redirects=False, headers=headers, stream=True)
+
+            if response.status_code >= 400:
+                # Essayer de lire le corps pour un message d'erreur plus détaillé
+                try:
+                    error_body = response.json()
+                    error_detail = error_body.get('error', str(error_body))
+                except: # noqa E722
+                    error_detail = response.text[:200] # Premiers 200 caractères si pas JSON
+                response.raise_for_status() # Lèvera une HTTPError
+
+            if response.is_redirect or response.is_permanent_redirect:
+                location = response.headers.get('Location')
+                current_app.logger.info(f"Redirection de {current_url_to_fetch} vers {location}")
+                if not location:
+                    raise ValueError("Redirection sans en-tête 'Location'.")
+                if location.startswith("magnet:"):
+                    # Si on tombe sur un magnet, on ne peut pas télécharger de fichier.
+                    raise ValueError("Le lien redirige vers un magnet, pas un fichier .torrent téléchargeable.")
+                current_url_to_fetch = location # Continuer avec la nouvelle URL HTTP/S
+            else:
+                # Pas de redirection, cette réponse devrait être le fichier .torrent
+                final_content_type = response.headers.get('Content-Type', '').lower()
+                # Vérification plus stricte du content type pour un téléchargement direct de fichier
+                if not ('application/x-bittorrent' in final_content_type or
+                        '.torrent' in response.headers.get('Content-Disposition', '').lower() or
+                        current_url_to_fetch.endswith('.torrent')): # Accepter aussi si l'URL finit par .torrent
+                    # Si le type n'est pas clairement un torrent, on vérifie si c'est une erreur JSON de Prowlarr
+                    # (Certains indexers peuvent retourner des erreurs JSON même pour des liens de dl de fichiers)
+                    first_chunk = next(response.iter_content(chunk_size=1024, decode_unicode=False), None)
+                    if first_chunk and first_chunk.strip().startswith(b"{"):
+                        full_body_str = first_chunk.decode('utf-8', errors='replace')
+                        for next_chunk in response.iter_content(chunk_size=1024*1024, decode_unicode=False):
+                            full_body_str += next_chunk.decode('utf-8', errors='replace')
+                        try:
+                            potential_error = json.loads(full_body_str)
+                            if potential_error.get("error"):
+                                raise ValueError(f"Le serveur a retourné une erreur JSON: {potential_error.get('error')}")
+                        except json.JSONDecodeError: # N'était pas JSON
+                            pass # On continue pour lever l'erreur de type de contenu
+
+                    current_app.logger.warning(f"Type de contenu inattendu ('{final_content_type}') pour {current_url_to_fetch}. Attendu 'application/x-bittorrent'.")
+                    # On pourrait être moins strict ici si on veut, mais pour un téléchargement de fichier direct, c'est mieux d'être sûr.
+                    # Pour l'instant, on va quand même essayer de lire le contenu si l'alerte précédente n'a pas levé d'erreur.
+                    # La logique ci-dessus avec `first_chunk` doit être améliorée si on veut la garder.
+                    # Simplifions : si ce n'est pas application/x-bittorrent, on rejette SAUF si l'URL finit par .torrent explicitement.
+                    if not ('application/x-bittorrent' in final_content_type or current_url_to_fetch.endswith('.torrent')):
+                         raise ValueError(f"Type de contenu ('{final_content_type}') ou nom de fichier inattendu pour un .torrent. URL: {current_url_to_fetch}")
+
+
+                torrent_content_bytes = response.content # Lire le contenu complet
+                if not torrent_content_bytes:
+                    raise ValueError("Le contenu du fichier .torrent téléchargé est vide.")
+
+                current_app.logger.info(f"Fichier .torrent ({len(torrent_content_bytes)} octets) récupéré avec succès depuis {current_url_to_fetch}.")
+                break # Sortir de la boucle for des redirections
+        else: # Si la boucle for se termine sans break (trop de redirections)
+            raise ValueError("Trop de redirections lors de la tentative de téléchargement du fichier .torrent.")
+
+    except requests.exceptions.Timeout:
+        error_message = f"Timeout lors du téléchargement du fichier .torrent depuis {download_link}."
+    except requests.exceptions.RequestException as e_req:
+        error_message = f"Erreur de communication lors du téléchargement: {e_req}"
+    except ValueError as e_val: # Attrape nos ValueErrors personnalisées
+        error_message = str(e_val)
+    except Exception as e: # Attrape toute autre exception
+        current_app.logger.error(f"Erreur inattendue lors du téléchargement du fichier .torrent: {e}", exc_info=True)
+        error_message = f"Erreur serveur inattendue: {e}"
+
+    if error_message:
+        current_app.logger.error(f"Échec du téléchargement du fichier .torrent depuis {download_link}: {error_message}")
+        return jsonify({'status': 'error', 'message': error_message}), 500 # Internal Server Error ou Bad Gateway si approprié
+
+    if torrent_content_bytes:
+        # S'assurer que le nom de fichier a bien .torrent à la fin
+        if not release_name.lower().endswith(".torrent"):
+            release_name += ".torrent"
+
+        return send_file(
+            io.BytesIO(torrent_content_bytes),
+            mimetype='application/x-bittorrent',
+            as_attachment=True,
+            download_name=release_name
+        )
+    else:
+        # Ce cas ne devrait pas être atteint si error_message est bien géré
+        current_app.logger.error(f"Échec du téléchargement du fichier .torrent depuis {download_link}: contenu vide sans erreur explicite.")
+        return jsonify({'status': 'error', 'message': 'Impossible de récupérer le contenu du fichier .torrent.'}), 500

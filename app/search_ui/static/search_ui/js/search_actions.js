@@ -143,4 +143,73 @@ $(document).ready(function() {
         });
     });
 
+    // --- [4] Logique pour le bouton "Télécharger .torrent" ---
+    $('body').on('click', '.download-torrent-file-btn', function(e) {
+        e.preventDefault();
+        console.log("Bouton 'Télécharger .torrent' cliqué !");
+
+        const downloadLink = $(this).data('download-link');
+        const releaseName = $(this).data('release-name'); // Devrait inclure .torrent
+
+        if (!downloadLink || !releaseName) {
+            alert("Erreur: Lien de téléchargement ou nom de fichier manquant.");
+            console.error("Missing data for .torrent download:", { downloadLink, releaseName });
+            return;
+        }
+
+        // Afficher un indicateur de chargement sur le bouton peut-être ?
+        const originalButtonHtml = $(this).html();
+        $(this).html('<span class="spinner-border spinner-border-sm" role="status"></span> Chargement...');
+        $(this).prop('disabled', true);
+
+        // Construire l'URL pour la requête GET vers le backend
+        const backendUrl = `/search/download-torrent-file?download_link=${encodeURIComponent(downloadLink)}&release_name=${encodeURIComponent(releaseName)}`;
+
+        fetch(backendUrl)
+            .then(response => {
+                if (!response.ok) {
+                    return response.json()
+                        .then(errData => {
+                            let detailedMessage = `Erreur HTTP ${response.status}`;
+                            if (errData && errData.message) {
+                                detailedMessage = errData.message;
+                            } else if (errData) {
+                                try { detailedMessage = JSON.stringify(errData); } catch (e) { /* ignore */ }
+                            }
+                            throw new Error(detailedMessage);
+                        })
+                        .catch(jsonParsingError => {
+                            // Cette erreur se produit si le corps de la réponse n'est pas du JSON valide.
+                            throw new Error(`Erreur HTTP ${response.status} (impossible de lire le détail de l'erreur depuis la réponse).`);
+                        });
+                }
+                // Vérifier le content-type pour s'assurer que c'est bien un fichier torrent
+                // Bien que le backend devrait déjà s'en charger, une double vérification ici peut être utile.
+                // Pour l'instant, on fait confiance au backend pour envoyer les bons headers si succès.
+                return response.blob(); // Obtenir la réponse comme un Blob
+            })
+            .then(blob => {
+                // Créer un lien pour télécharger le blob
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = releaseName; // Le nom de fichier est déjà dans releaseName
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+
+                // Restaurer le bouton
+                $(this).html(originalButtonHtml);
+                $(this).prop('disabled', false);
+            })
+            .catch(error => {
+                console.error('Erreur lors du téléchargement du fichier .torrent:', error);
+                alert(`Erreur: ${error.message}`);
+                // Restaurer le bouton
+                $(this).html(originalButtonHtml);
+                $(this).prop('disabled', false);
+            });
+    });
 });

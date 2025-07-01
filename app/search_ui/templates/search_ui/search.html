@@ -76,7 +76,15 @@
                                        data-parsed-title="{{ result.status_info.parsed_title|e }}">
                                         <i class="fas fa-download"></i> & Mapper
                                     </a>
+                                    {# Nouveau bouton pour télécharger le fichier .torrent directement #}
+                                    {% if not result.downloadUrl.startswith('magnet:') %}
+                                    <a href="#" class="btn btn-sm btn-info download-torrent-file-btn ms-2"
+                                       data-download-link="{{ result.downloadUrl }}"
+                                       data-release-name="{{ result.title|e }}.torrent">
+                                        <i class="fas fa-file-download"></i> .torrent
+                                    </a>
                                     {% endif %}
+                                    {% endif %} {# Fin du if result.status_info.status != 'Déjà Présent' #}
                                 </div>
                             </li>
                             {% endfor %}
