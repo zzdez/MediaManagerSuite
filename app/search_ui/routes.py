@@ -312,56 +312,50 @@ from flask import Response, stream_with_context
 @search_ui_bp.route('/download_torrent_proxy')
 @login_required
 def download_torrent_proxy():
-    url = request.args.get('url')
-    release_name = request.args.get('release_name', 'download.torrent')
+    # On ignore tous les paramètres pour ce test et on hardcode les valeurs
+    # comme dans notre script main.py
 
-    if not url:
-        return "Erreur: URL manquante.", 400
-
-    current_app.logger.info(f"Forçage de la méthode YGG pour l'URL : {url}")
+    current_app.logger.info("--- DÉBUT DU TEST DE L'INTRUS ---")
 
     try:
-        ygg_cookie = current_app.config.get('YGG_COOKIE')
-        ygg_user_agent = current_app.config.get('YGG_USER_AGENT')
+        # On redéfinit TOUT ici, localement, pour éviter toute interférence
+        import requests
 
-        if not ygg_cookie:
-            raise ValueError("Le cookie YGG_COOKIE n'est pas configuré dans le fichier .env")
+        YGG_BASE_URL = current_app.config.get('YGG_BASE_URL')
+        YGG_COOKIE = current_app.config.get('YGG_COOKIE')
+        YGG_USER_AGENT = current_app.config.get('YGG_USER_AGENT')
+        TEST_RELEASE_ID = "1332633" # L'ID du torrent qui marchait
+
+        download_url = f"{YGG_BASE_URL.rstrip('/')}/engine/download_torrent?id={TEST_RELEASE_ID}"
+        current_app.logger.info(f"Appel de l'URL de test : {download_url}")
 
         headers = {
-            'User-Agent': ygg_user_agent,
-            'Cookie': ygg_cookie,
+            'User-Agent': YGG_USER_AGENT,
+            'Cookie': YGG_COOKIE,
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
             'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
         }
 
-        response = requests.get(url, headers=headers, timeout=45, allow_redirects=True)
+        response = requests.get(download_url, headers=headers, timeout=45, allow_redirects=True)
+        current_app.logger.info(f"Réponse reçue. Statut: {response.status_code}. URL Finale: {response.url}")
         response.raise_for_status()
 
         content_type = response.headers.get('Content-Type', '').lower()
         if 'application/x-bittorrent' not in content_type and 'application/octet-stream' not in content_type:
-            raise ValueError(f"La réponse n'est pas un fichier .torrent valide. Content-Type: '{content_type}'")
+            raise ValueError(f"La réponse n'est PAS un fichier .torrent. Content-Type: '{content_type}'")
 
         torrent_data = response.content
-        current_app.logger.info(f"Fichier .torrent de {len(torrent_data)} bytes téléchargé avec succès.")
-
-        # Préparer et envoyer la réponse pour déclencher le téléchargement dans le navigateur
-        # Assurer que release_name n'a pas déjà .torrent pour éviter .torrent.torrent
-        if release_name.lower().endswith('.torrent'):
-            base_name = release_name[:-len('.torrent')]
-        else:
-            base_name = release_name
-        filename = f"{base_name}.torrent"
+        current_app.logger.info(f"SUCCÈS : Fichier .torrent ({len(torrent_data)} bytes) téléchargé depuis l'environnement Flask.")
 
         return Response(
             torrent_data,
             mimetype='application/x-bittorrent',
-            headers={'Content-Disposition': f'attachment;filename="{filename}"'}
+            headers={'Content-Disposition': 'attachment;filename="test_depuis_flask.torrent"'}
         )
 
     except Exception as e:
-        current_app.logger.error(f"Erreur dans le proxy de téléchargement YGG : {e}", exc_info=True)
-        # Retourner une page d'erreur claire à l'utilisateur
-        return f"Impossible de télécharger via proxy : {e}", 502
+        current_app.logger.error(f"ÉCHEC du Test de l'Intrus : {e}", exc_info=True)
+        return f"Erreur pendant le test : {e}", 500
 
 @search_ui_bp.route('/download-torrent')
 @login_required
