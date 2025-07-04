@@ -307,36 +307,162 @@ from flask import Response, stream_with_context
 # requests est déjà importé plus haut dans le fichier
 # current_app est déjà importé
 # login_required est déjà importé
+# request est déjà importé via 'from flask import ..., request, ...'
+
+@search_ui_bp.route('/download_torrent_proxy')
+@login_required
+def download_torrent_proxy():
+    url = request.args.get('url') # C'est le 'downloadLink' de Prowlarr
+    release_name = request.args.get('release_name', 'download.torrent')
+    indexer_id = request.args.get('indexer_id')
+    guid = request.args.get('guid') # On a besoin du GUID maintenant
+
+    if not all([url, release_name, indexer_id, guid]):
+        current_app.logger.error(f"Proxy download: Paramètres manquants. Reçu: url='{url}', release_name='{release_name}', indexer_id='{indexer_id}', guid='{guid}'")
+        return "Erreur: Paramètres manquants (url, release_name, indexer_id, guid).", 400
+
+    ygg_indexer_id = current_app.config.get('YGG_INDEXER_ID')
+
+    # S'assurer que release_name n'a pas déjà .torrent pour éviter .torrent.torrent
+    if release_name.lower().endswith('.torrent'):
+        base_name = release_name[:-len('.torrent')]
+    else:
+        base_name = release_name
+    # Nettoyer le nom de base pour les caractères invalides et remplacer les espaces
+    clean_base_name = "".join(c if c.isalnum() or c in [' ', '.', '_', '-'] else '_' for c in base_name)
+    final_filename = f"{clean_base_name.replace(' ', '_')}.torrent"
+
+
+    try:
+        # STRATÉGIE D'AIGUILLAGE BASÉE SUR L'ID DE L'INDEXER
+        if str(ygg_indexer_id) == str(indexer_id):
+            # --- CAS SPÉCIAL YGG ---
+            current_app.logger.info(f"Proxy download: Détection de YGG (ID: {indexer_id}). Utilisation de la méthode de téléchargement directe via GUID.")
+
+            ygg_cookie = current_app.config.get('YGG_COOKIE')
+            ygg_user_agent = current_app.config.get('YGG_USER_AGENT')
+            ygg_base_url = current_app.config.get('YGG_BASE_URL') # Doit être https://www.yggtorrent.top par défaut
+
+            if not all([ygg_cookie, ygg_user_agent, ygg_base_url]):
+                missing_configs = []
+                if not ygg_cookie: missing_configs.append("YGG_COOKIE")
+                if not ygg_user_agent: missing_configs.append("YGG_USER_AGENT")
+                if not ygg_base_url: missing_configs.append("YGG_BASE_URL")
+                error_msg = f"Configuration YGG manquante pour {', '.join(missing_configs)}."
+                current_app.logger.error(f"Proxy download (YGG): {error_msg}")
+                raise ValueError(error_msg)
+
+            # Extraire l'ID de la release depuis le GUID
+            # Exemple de GUID YGG: https://yggapi.eu/torrent?id=1234567 ou yggtorrent.com/torrent?id=12345
+            # On cherche "?id="
+            try:
+                # Simple split, pourrait être rendu plus robuste avec regex si les formats de GUID varient beaucoup
+                split_guid = guid.split('?id=')
+                if len(split_guid) > 1:
+                    release_id_ygg = split_guid[1].split('&')[0] # Prend ce qui suit id= et avant un éventuel &
+                else:
+                    raise IndexError("Format de GUID YGG inattendu, '?id=' non trouvé.")
+                current_app.logger.info(f"Proxy download (YGG): ID de release extrait du GUID '{guid}': '{release_id_ygg}'")
+            except IndexError:
+                current_app.logger.error(f"Proxy download (YGG): Impossible d'extraire l'ID de la release depuis le GUID YGG : {guid}")
+                raise ValueError(f"Impossible d'extraire l'ID de la release depuis le GUID YGG : {guid}")
+
+            # Construire l'URL de téléchargement directe
+            # S'assurer que ygg_base_url se termine par / et que engine ne commence pas par /
+            # ou l'inverse, pour éviter double // ou absence de /
+            final_ygg_download_url = f"{ygg_base_url.rstrip('/')}/engine/download_torrent?id={release_id_ygg}"
+
+            headers = {
+                'User-Agent': ygg_user_agent,
+                'Cookie': ygg_cookie
+                # Les en-têtes Accept et Accept-Language du test précédent peuvent être ajoutés si nécessaire,
+                # mais souvent pour un téléchargement direct de fichier, ils ne sont pas cruciaux.
+            }
+
+            current_app.logger.info(f"Proxy download (YGG): Appel de l'URL YGG directe : {final_ygg_download_url}")
+            response = requests.get(final_ygg_download_url, headers=headers, timeout=45, allow_redirects=True) # allow_redirects=True est important
+
+        else:
+            # --- CAS STANDARD POUR LES AUTRES INDEXERS ---
+            current_app.logger.info(f"Proxy download: Indexer standard (ID: {indexer_id}). Utilisation du lien Prowlarr direct: {url}")
+            # Utiliser un User-Agent générique mais standard pour les autres
+            standard_user_agent = current_app.config.get('YGG_USER_AGENT', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36')
+            headers = {
+                'User-Agent': standard_user_agent
+            }
+            response = requests.get(url, headers=headers, timeout=45, allow_redirects=True)
+
+        # --- TRAITEMENT COMMUN DE LA RÉPONSE ---
+        current_app.logger.info(f"Proxy download: Réponse reçue. Statut: {response.status_code}. URL Finale (après redirections éventuelles): {response.url}")
+        response.raise_for_status() # Lève une exception pour les statuts HTTP 4xx/5xx
+
+        content_type = response.headers.get('Content-Type', '').lower()
+        current_app.logger.info(f"Proxy download: Content-Type de la réponse: '{content_type}'")
+
+        # Vérification du Content-Type. Certains indexers peuvent retourner application/octet-stream.
+        if 'application/x-bittorrent' not in content_type and 'application/octet-stream' not in content_type:
+            preview = response.text[:500] if response.content else ""
+            current_app.logger.error(f"Proxy download: La réponse n'est pas un fichier .torrent valide. Content-Type: '{content_type}'. Début du contenu: '{preview}'")
+            raise ValueError(f"La réponse n'est pas un fichier .torrent valide. Content-Type: '{content_type}'. Vérifiez les logs pour un aperçu du contenu.")
+
+        torrent_data = response.content
+        current_app.logger.info(f"Proxy download: Fichier .torrent de {len(torrent_data)} bytes téléchargé avec succès.")
+
+        return Response(
+            torrent_data,
+            mimetype='application/x-bittorrent',
+            headers={'Content-Disposition': f'attachment;filename="{final_filename}"'}
+        )
+
+    except requests.exceptions.RequestException as req_e:
+        current_app.logger.error(f"Proxy download: Erreur de requête ({type(req_e).__name__}) : {req_e}", exc_info=True)
+        return Response(f"Erreur de réseau ou du serveur distant lors de la tentative de téléchargement: {req_e}", status=502) # Bad Gateway
+    except ValueError as val_e: # Pour les erreurs de configuration ou de contenu invalide, ou GUID
+        current_app.logger.error(f"Proxy download: Erreur de valeur ({type(val_e).__name__}) : {val_e}", exc_info=True)
+        return Response(f"Erreur de configuration, de données invalides ou de GUID: {val_e}", status=400) # Bad Request
+    except Exception as e:
+        current_app.logger.error(f"Proxy download: Erreur inattendue ({type(e).__name__}) : {e}", exc_info=True)
+        return Response(f"Une erreur serveur inattendue est survenue: {e}", status=500)
 
 @search_ui_bp.route('/download-torrent')
 @login_required
 def download_torrent():
     """
     Acts as a proxy to download a .torrent file from a URL provided by Prowlarr.
+    NOTE: This is the OLDER version, kept for reference or specific use cases if any.
+    The new '/download_torrent_proxy' is generally preferred.
     """
     torrent_url = request.args.get('url')
     release_name_arg = request.args.get('release_name')
 
     if not torrent_url:
-        return "URL de téléchargement manquante.", 400 # Devrait être une réponse Flask, ex: Response("...", status=400) ou jsonify
+        # Devrait être une réponse Flask, ex: Response("...", status=400) ou jsonify
+        return Response("URL de téléchargement manquante.", status=400)
 
     # Construire le nom de fichier
     if release_name_arg:
-        filename = release_name_arg if release_name_arg.lower().endswith('.torrent') else f"{release_name_arg}.torrent"
+        # Nettoyer et s'assurer que le nom se termine par .torrent
+        filename_base = "".join(c if c.isalnum() or c in [' ', '.', '_', '-'] else '_' for c in release_name_arg)
+        if filename_base.lower().endswith('.torrent'):
+            filename_base = filename_base[:-len('.torrent')]
+        filename = f"{filename_base}.torrent".replace(' ', '_')
     else:
         # Essayer d'extraire de l'URL Prowlarr si 'file=' est présent, sinon nom par défaut
         # Exemple d'URL Prowlarr: http://...&file=MonFichier.torrent
         if 'file=' in torrent_url:
             try:
-                filename = torrent_url.split('file=')[1].split('&')[0]
-                if not filename.lower().endswith('.torrent'):
-                    filename += ".torrent"
+                extracted_name = torrent_url.split('file=')[1].split('&')[0]
+                # Nettoyer et s'assurer que le nom se termine par .torrent
+                filename_base = "".join(c if c.isalnum() or c in [' ', '.', '_', '-'] else '_' for c in extracted_name)
+                if filename_base.lower().endswith('.torrent'):
+                    filename_base = filename_base[:-len('.torrent')]
+                filename = f"{filename_base}.torrent".replace(' ', '_')
             except Exception:
                 filename = "downloaded.torrent"
         else:
             filename = "downloaded.torrent"
 
-    current_app.logger.info(f"Proxying .torrent download from: {torrent_url} as filename: {filename}")
+    current_app.logger.info(f"Proxying .torrent download (old route) from: {torrent_url} as filename: {filename}")
 
     try:
         # On utilise stream=True pour ne pas charger tout le fichier en mémoire sur le serveur
@@ -351,7 +477,7 @@ def download_torrent():
         if not ('application/x-bittorrent' in content_type_final or
                 'application/octet-stream' in content_type_final or # Certains serveurs utilisent octet-stream
                 filename.endswith('.torrent')): # Si le nom de fichier final (après extraction) se termine par .torrent
-            current_app.logger.warning(f"Proxy download: Content-Type inattendu '{content_type_final}' pour {torrent_url} (filename: {filename}). Arrêt.")
+            current_app.logger.warning(f"Proxy download (old route): Content-Type inattendu '{content_type_final}' pour {torrent_url} (filename: {filename}). Arrêt.")
             # On pourrait essayer de lire un peu pour voir si c'est une erreur JSON/HTML connue, mais pour l'instant, on est strict.
             return Response(f"Contenu inattendu reçu de l'URL distante. Type: {content_type_final}", status=502) # Bad Gateway
 
@@ -366,10 +492,10 @@ def download_torrent():
 
     except requests.exceptions.InvalidSchema as e_schema:
         # Spécifiquement pour les cas où une redirection mène à un magnet:
-        current_app.logger.error(f"Erreur de schéma (souvent magnet) lors du téléchargement du .torrent depuis {torrent_url}: {e_schema}")
+        current_app.logger.error(f"Erreur de schéma (souvent magnet) lors du téléchargement du .torrent (old route) depuis {torrent_url}: {e_schema}")
         return Response(f"Impossible de télécharger : le lien pointe vers un type non supporté (ex: magnet) : {e_schema}", status=400)
     except requests.exceptions.RequestException as e:
-        current_app.logger.error(f"Erreur lors du téléchargement du .torrent depuis {torrent_url}: {e}")
+        current_app.logger.error(f"Erreur lors du téléchargement du .torrent (old route) depuis {torrent_url}: {e}")
         # Renvoyer l'erreur de manière plus structurée, peut-être en fonction du type d'erreur 'e'
         status_code = 502 # Bad Gateway par défaut pour les erreurs de requête vers un autre serveur
         if isinstance(e, requests.exceptions.HTTPError):
@@ -379,5 +505,5 @@ def download_torrent():
 
         return Response(f"Impossible de télécharger le fichier .torrent : {e}", status=status_code)
     except Exception as ex_generic:
-        current_app.logger.error(f"Erreur générique inattendue lors du téléchargement du .torrent {torrent_url}: {ex_generic}", exc_info=True)
+        current_app.logger.error(f"Erreur générique inattendue lors du téléchargement du .torrent (old route) {torrent_url}: {ex_generic}", exc_info=True)
         return Response(f"Erreur serveur inattendue lors de la tentative de téléchargement.", status=500)
