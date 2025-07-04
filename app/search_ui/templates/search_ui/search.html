@@ -78,8 +78,8 @@
                                     </a>
                                     {# Bouton pour télécharger le fichier .torrent via le nouveau proxy intelligent #}
                                     {% if not result.downloadUrl.startswith('magnet:') %}
-                                    {# Assumant que result.indexerId est disponible. S'il s'appelle autrement (ex: result.indexerEngineId), adapter ici #}
-                                    <a href="{{ url_for('search_ui.download_torrent_proxy', url=result.downloadUrl, indexer_id=result.indexerId, release_name=result.title) }}"
+                                    {# Assumant que result.indexerId et result.guid sont disponibles. #}
+                                    <a href="{{ url_for('search_ui.download_torrent_proxy', url=result.downloadUrl, indexer_id=result.indexerId, release_name=result.title, guid=result.guid) }}"
                                        class="btn btn-sm btn-outline-secondary ms-2"
                                        title="Télécharger le fichier .torrent (via Proxy)"
                                        target="_blank"> {# target="_blank" pour ouvrir dans un nouvel onglet/télécharger sans quitter la page #}
