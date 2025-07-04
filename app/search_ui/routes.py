@@ -303,10 +303,158 @@ def search_arr_proxy():
     return jsonify(results)
 
 # Imports nécessaires pour la nouvelle route download_torrent
-from flask import Response, stream_with_context
+from flask import Response, stream_with_context # stream_with_context might not be needed for the new proxy
 # requests est déjà importé plus haut dans le fichier
 # current_app est déjà importé
 # login_required est déjà importé
+# request est déjà importé via 'from flask import ..., request, ...'
+
+@search_ui_bp.route('/download_torrent_proxy')
+@login_required
+def download_torrent_proxy():
+    """
+    Acts as an intelligent proxy to download a .torrent file.
+    Uses special handling for YGGTorrent (cookies, user-agent) and standard requests for others.
+    """
+    torrent_download_url = request.args.get('url')
+    indexer_id_arg = request.args.get('indexer_id')
+    # release_name_arg = request.args.get('release_name', 'downloaded') # Optionnel, pour nommer le fichier
+
+    if not torrent_download_url or not indexer_id_arg:
+        current_app.logger.error("Proxy download: 'url' ou 'indexer_id' manquant dans les arguments.")
+        return Response("Arguments 'url' et 'indexer_id' manquants.", status=400)
+
+    # Construire le nom de fichier (peut être amélioré plus tard si besoin)
+    filename = "downloaded.torrent"
+    # Tentative d'extraire un nom de fichier plus pertinent de l'URL si possible
+    # Ceci est une heuristique simple et pourrait être affinée
+    try:
+        if 'title=' in torrent_download_url.lower(): # Souvent utilisé par Prowlarr
+            extracted_name = torrent_download_url.split('title=')[1].split('&')[0]
+            # Nettoyer un peu le nom et s'assurer qu'il finit par .torrent
+            # Éviter les caractères invalides pour les noms de fichiers si nécessaire (non fait ici pour la simplicité)
+            filename = "".join(c if c.isalnum() or c in ['.', '_', '-'] else '_' for c in extracted_name)
+            if not filename.lower().endswith('.torrent'):
+                filename += ".torrent"
+            if len(filename) > 60: # Limiter la longueur
+                 filename = filename[:56] + ".torrent"
+
+        elif '/' in torrent_download_url:
+            potential_name = torrent_download_url.split('/')[-1]
+            if potential_name and ('.torrent' in potential_name.lower() or not '.' in potential_name): # s'il semble être un nom de fichier
+                 # Nettoyage simple
+                potential_name_cleaned = "".join(c if c.isalnum() or c in ['.', '_', '-'] else '_' for c in potential_name)
+                if not potential_name_cleaned.lower().endswith('.torrent'):
+                    potential_name_cleaned += ".torrent"
+                if len(potential_name_cleaned) > 4 and len(potential_name_cleaned) < 60 : # simple validation
+                    filename = potential_name_cleaned
+    except Exception as e_filename:
+        current_app.logger.warning(f"Proxy download: Erreur lors de l'extraction du nom de fichier depuis {torrent_download_url}: {e_filename}. Utilisation de '{filename}'.")
+
+
+    ygg_indexer_id_conf = current_app.config.get('YGG_INDEXER_ID')
+    torrent_data = None
+    error_message = None
+    status_code = 500
+
+    current_app.logger.info(f"Proxy download request for indexer_id: {indexer_id_arg}, url: {torrent_download_url}")
+
+    if ygg_indexer_id_conf and str(indexer_id_arg) == str(ygg_indexer_id_conf):
+        current_app.logger.info(f"Proxy download: YGG indexer ({indexer_id_arg}) detected. Using special download method.")
+        ygg_cookie = current_app.config.get('YGG_COOKIE')
+        ygg_user_agent = current_app.config.get('YGG_USER_AGENT')
+        ygg_base_url = current_app.config.get('YGG_BASE_URL')
+
+        if not ygg_cookie:
+            error_message = "Configuration YGG_COOKIE manquante pour le téléchargement YGG."
+            current_app.logger.error(error_message)
+            status_code = 503 # Service Unavailable (configuration issue)
+        else:
+            headers = {
+                'User-Agent': ygg_user_agent,
+                'Cookie': ygg_cookie
+            }
+            # S'assurer que l'URL est absolue
+            if not torrent_download_url.startswith(('http://', 'https://')):
+                if not ygg_base_url:
+                    error_message = "Proxy download: URL relative pour YGG mais YGG_BASE_URL non configuré."
+                    current_app.logger.error(error_message)
+                    return Response(error_message, status=503)
+                # Supposons que torrent_download_url pourrait commencer par / si c'est un chemin relatif
+                torrent_full_url = ygg_base_url.rstrip('/') + '/' + torrent_download_url.lstrip('/')
+                current_app.logger.info(f"Proxy download: URL YGG relative convertie en: {torrent_full_url}")
+            else:
+                torrent_full_url = torrent_download_url
+
+            try:
+                current_app.logger.info(f"Proxy download: Attempting YGG download from {torrent_full_url} with User-Agent and Cookie.")
+                response = requests.get(torrent_full_url, headers=headers, timeout=30, allow_redirects=True)
+                response.raise_for_status()
+
+                # Vérification du Content-Type pour YGG (peut être différent)
+                content_type_ygg = response.headers.get('Content-Type', '').lower()
+                current_app.logger.info(f"Proxy download: YGG response Content-Type: {content_type_ygg}")
+                if not ('application/x-bittorrent' in content_type_ygg or
+                        'application/octet-stream' in content_type_ygg): # Octet-stream est souvent utilisé aussi
+                    # YGG pourrait retourner du HTML/JSON même avec un statut 200 si le cookie est mauvais/expiré
+                    # Essayer de détecter cela si possible, mais c'est complexe sans connaître la structure exacte des erreurs YGG.
+                    # Pour l'instant, on logue un avertissement si le type n'est pas celui attendu.
+                    current_app.logger.warning(f"Proxy download: YGG Content-Type inattendu '{content_type_ygg}' pour {torrent_full_url}. Le fichier pourrait ne pas être un torrent valide.")
+                    # On pourrait décider de rejeter ici, mais pour l'instant, on continue et on laisse le client torrent décider.
+
+                torrent_data = response.content
+                current_app.logger.info(f"Proxy download: YGG download successful, {len(torrent_data)} bytes received.")
+            except requests.exceptions.RequestException as e_ygg:
+                error_message = f"Erreur lors du téléchargement spécial YGG depuis {torrent_full_url}: {e_ygg}"
+                current_app.logger.error(error_message)
+                status_code = 502 # Bad Gateway
+            except Exception as e_gen_ygg:
+                error_message = f"Erreur générique inattendue (YGG) {torrent_full_url}: {e_gen_ygg}"
+                current_app.logger.error(error_message, exc_info=True)
+                status_code = 500
+    else:
+        current_app.logger.info(f"Proxy download: Standard indexer ({indexer_id_arg}). Using standard download method for {torrent_download_url}.")
+        try:
+            # Utilisation d'un User-Agent standard pour les autres, au cas où.
+            headers_standard = {'User-Agent': current_app.config.get('YGG_USER_AGENT', 'Mozilla/5.0')}
+            response = requests.get(torrent_download_url, timeout=30, allow_redirects=True, headers=headers_standard, stream=True)
+            response.raise_for_status()
+
+            content_type_standard = response.headers.get('Content-Type', '').lower()
+            current_app.logger.info(f"Proxy download: Standard response Content-Type: {content_type_standard}")
+            if not ('application/x-bittorrent' in content_type_standard or
+                    'application/octet-stream' in content_type_standard):
+                current_app.logger.warning(f"Proxy download: Standard Content-Type inattendu '{content_type_standard}' pour {torrent_download_url}. Le fichier pourrait ne pas être un torrent valide.")
+                # On pourrait arrêter ici, mais pour l'instant, on continue.
+
+            # Lire le contenu en chunks pour les fichiers potentiellement volumineux (même si les .torrent sont petits)
+            # Mais comme on doit le stocker en mémoire pour `torrent_data` avant Response, on peut utiliser .content
+            # Sauf si on veut streamer directement vers le client, ce qui est plus complexe avec la logique conditionnelle.
+            # Pour la simplicité et vu que les .torrent sont petits, .content est ok.
+            torrent_data = response.content # Si stream=True était utilisé, il faudrait itérer avec response.iter_content()
+            current_app.logger.info(f"Proxy download: Standard download successful, {len(torrent_data)} bytes received.")
+        except requests.exceptions.RequestException as e_std:
+            error_message = f"Erreur lors du téléchargement standard depuis {torrent_download_url}: {e_std}"
+            current_app.logger.error(error_message)
+            status_code = 502 # Bad Gateway
+        except Exception as e_gen_std:
+            error_message = f"Erreur générique inattendue (Standard) {torrent_download_url}: {e_gen_std}"
+            current_app.logger.error(error_message, exc_info=True)
+            status_code = 500
+
+    if error_message:
+        return Response(error_message, status=status_code)
+
+    if torrent_data:
+        return Response(
+            torrent_data,
+            mimetype='application/x-bittorrent',
+            headers={'Content-Disposition': f'attachment;filename="{filename}"'}
+        )
+    else:
+        # Ce cas ne devrait pas être atteint si error_message est bien géré
+        return Response("Impossible de récupérer les données du torrent.", status=500)
+
 
 @search_ui_bp.route('/download-torrent')
 @login_required

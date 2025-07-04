@@ -85,6 +85,12 @@ class Config:
     PROWLARR_URL = os.environ.get('PROWLARR_URL')
     PROWLARR_API_KEY = os.environ.get('PROWLARR_API_KEY')
 
+    # --- YGGTorrent Specific Configuration ---
+    YGG_INDEXER_ID = os.environ.get('YGG_INDEXER_ID')
+    YGG_BASE_URL = os.environ.get('YGG_BASE_URL', 'https://www.yggtorrent.top')
+    YGG_COOKIE = os.environ.get('YGG_COOKIE')
+    YGG_USER_AGENT = os.environ.get('YGG_USER_AGENT', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36')
+
 # --- FIN DE LA CLASSE CONFIG ---
 
 
