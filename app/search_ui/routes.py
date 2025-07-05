@@ -269,121 +269,139 @@ from flask import Response, stream_with_context
 # current_app est déjà importé
 # login_required est déjà importé
 # request est déjà importé via 'from flask import ..., request, ...'
+from .utils import get_content_with_flaresolverr # Ajout de l'import pour FlareSolverr
+from urllib.parse import unquote # Pour décoder le nom de fichier si besoin
 
 @search_ui_bp.route('/download_torrent_proxy')
 @login_required
 def download_torrent_proxy():
-    url = request.args.get('url') # C'est le 'downloadLink' de Prowlarr
+    download_url = request.args.get('url') # C'est le 'downloadLink' de Prowlarr
     release_name = request.args.get('release_name', 'download.torrent')
     indexer_id = request.args.get('indexer_id')
-    guid = request.args.get('guid') # On a besoin du GUID maintenant
+    guid = request.args.get('guid')
 
-    if not all([url, release_name, indexer_id, guid]):
-        current_app.logger.error(f"Proxy download: Paramètres manquants. Reçu: url='{url}', release_name='{release_name}', indexer_id='{indexer_id}', guid='{guid}'")
-        return "Erreur: Paramètres manquants (url, release_name, indexer_id, guid).", 400
+    if not all([download_url, release_name, indexer_id, guid]):
+        current_app.logger.error(f"Proxy download: Paramètres manquants. Reçu: url='{download_url}', release_name='{release_name}', indexer_id='{indexer_id}', guid='{guid}'")
+        # Retourner une réponse JSON pour les erreurs d'API est une bonne pratique
+        return jsonify({"status": "error", "message": "Paramètres manquants (url, release_name, indexer_id, guid)."}), 400
 
     ygg_indexer_id = current_app.config.get('YGG_INDEXER_ID')
 
-    # S'assurer que release_name n'a pas déjà .torrent pour éviter .torrent.torrent
-    if release_name.lower().endswith('.torrent'):
-        base_name = release_name[:-len('.torrent')]
+    # Nettoyage du nom de fichier (similaire à avant, mais on peut utiliser unquote)
+    # On décode d'abord au cas où il y aurait des %20 etc.
+    decoded_release_name = unquote(release_name)
+    if decoded_release_name.lower().endswith('.torrent'):
+        base_name = decoded_release_name[:-len('.torrent')]
     else:
-        base_name = release_name
-    # Nettoyer le nom de base pour les caractères invalides et remplacer les espaces
+        base_name = decoded_release_name
     clean_base_name = "".join(c if c.isalnum() or c in [' ', '.', '_', '-'] else '_' for c in base_name)
     final_filename = f"{clean_base_name.replace(' ', '_')}.torrent"
 
+    torrent_content = None
 
     try:
-        # STRATÉGIE D'AIGUILLAGE BASÉE SUR L'ID DE L'INDEXER
         if str(ygg_indexer_id) == str(indexer_id):
-            # --- CAS SPÉCIAL YGG ---
-            current_app.logger.info(f"Proxy download: Détection de YGG (ID: {indexer_id}). Utilisation de la méthode de téléchargement directe via GUID.")
+            current_app.logger.info(f"Proxy download: YGG (ID: {indexer_id}). Tentative de téléchargement.")
 
-            ygg_cookie = current_app.config.get('YGG_COOKIE')
-            ygg_user_agent = current_app.config.get('YGG_USER_AGENT')
-            ygg_base_url = current_app.config.get('YGG_BASE_URL') # Doit être https://www.yggtorrent.top par défaut
-
-            if not all([ygg_cookie, ygg_user_agent, ygg_base_url]):
-                missing_configs = []
-                if not ygg_cookie: missing_configs.append("YGG_COOKIE")
-                if not ygg_user_agent: missing_configs.append("YGG_USER_AGENT")
-                if not ygg_base_url: missing_configs.append("YGG_BASE_URL")
-                error_msg = f"Configuration YGG manquante pour {', '.join(missing_configs)}."
-                current_app.logger.error(f"Proxy download (YGG): {error_msg}")
-                raise ValueError(error_msg)
-
-            # Extraire l'ID de la release depuis le GUID
-            # Exemple de GUID YGG: https://yggapi.eu/torrent?id=1234567 ou yggtorrent.com/torrent?id=12345
-            # On cherche "?id="
-            try:
-                # Simple split, pourrait être rendu plus robuste avec regex si les formats de GUID varient beaucoup
-                split_guid = guid.split('?id=')
-                if len(split_guid) > 1:
-                    release_id_ygg = split_guid[1].split('&')[0] # Prend ce qui suit id= et avant un éventuel &
+            # Priorité N°1 : Essayer avec FlareSolverr si configuré
+            if current_app.config.get('FLARESOLVERR_URL'):
+                current_app.logger.info("Proxy download (YGG): Tentative de téléchargement via FlareSolverr.")
+                # Pour YGG, FlareSolverr doit cibler l'URL de la page de description du torrent,
+                # car le lien de téléchargement direct est souvent protégé.
+                # Le 'guid' pour YGG est généralement l'URL de la page de description.
+                # Si 'download_url' est déjà le lien direct (engine/download_torrent), FlareSolverr pourrait ne pas être utile
+                # ou il faudrait lui donner la page de description (guid).
+                # Assumons que 'download_url' est le lien que Prowlarr donne, qui pourrait être direct ou nécessiter des cookies.
+                # Et que 'guid' est la page de description si on a besoin de la "résoudre" d'abord.
+                # Pour YGG, le 'download_url' fourni par Prowlarr est souvent le lien direct qui nécessite des cookies.
+                # Donc on passe ce 'download_url' à FlareSolverr.
+                torrent_content = get_content_with_flaresolverr(download_url)
+                if torrent_content:
+                    current_app.logger.info("Proxy download (YGG): Contenu du torrent obtenu via FlareSolverr.")
                 else:
-                    raise IndexError("Format de GUID YGG inattendu, '?id=' non trouvé.")
-                current_app.logger.info(f"Proxy download (YGG): ID de release extrait du GUID '{guid}': '{release_id_ygg}'")
-            except IndexError:
-                current_app.logger.error(f"Proxy download (YGG): Impossible d'extraire l'ID de la release depuis le GUID YGG : {guid}")
-                raise ValueError(f"Impossible d'extraire l'ID de la release depuis le GUID YGG : {guid}")
+                    current_app.logger.warning("Proxy download (YGG): Échec avec FlareSolverr ou FlareSolverr non configuré. Passage à la méthode manuelle.")
 
-            # Construire l'URL de téléchargement directe
-            # S'assurer que ygg_base_url se termine par / et que engine ne commence pas par /
-            # ou l'inverse, pour éviter double // ou absence de /
-            final_ygg_download_url = f"{ygg_base_url.rstrip('/')}/engine/download_torrent?id={release_id_ygg}"
+            # Plan de secours : Méthode manuelle si FlareSolverr a échoué ou n'est pas configuré
+            if not torrent_content:
+                ygg_cookie = current_app.config.get('YGG_COOKIE')
+                ygg_user_agent = current_app.config.get('YGG_USER_AGENT')
+                # L'URL de téléchargement direct pour YGG est généralement construite avec l'ID du torrent.
+                # Prowlarr fournit souvent déjà cette URL directe dans 'download_url'.
+                # Si 'download_url' n'est pas le lien direct de téléchargement, il faudrait le construire ici
+                # en utilisant 'guid' et 'YGG_BASE_URL' comme dans la version précédente.
+                # Mais si Prowlarr donne le lien direct, on l'utilise.
+                # Pour l'instant, on suppose que 'download_url' est le bon lien à utiliser avec le cookie.
 
-            headers = {
-                'User-Agent': ygg_user_agent,
-                'Cookie': ygg_cookie
-                # Les en-têtes Accept et Accept-Language du test précédent peuvent être ajoutés si nécessaire,
-                # mais souvent pour un téléchargement direct de fichier, ils ne sont pas cruciaux.
-            }
+                if not ygg_cookie: # User-Agent est moins critique ici si on a le cookie
+                    current_app.logger.error("Proxy download (YGG): Cookie YGG non configuré et FlareSolverr a échoué/n'est pas dispo.")
+                    return jsonify({"status": "error", "message": "Cookie YGG non configuré et FlareSolverr indisponible/échec."}), 500
 
-            current_app.logger.info(f"Proxy download (YGG): Appel de l'URL YGG directe : {final_ygg_download_url}")
-            response = requests.get(final_ygg_download_url, headers=headers, timeout=45, allow_redirects=True) # allow_redirects=True est important
+                current_app.logger.info(f"Proxy download (YGG): Tentative avec le cookie manuel sur l'URL: {download_url}")
+                headers = {'User-Agent': ygg_user_agent or current_app.config.get('YGG_USER_AGENT'), 'Cookie': ygg_cookie}
+
+                try:
+                    response = requests.get(download_url, headers=headers, timeout=45, allow_redirects=True)
+                    response.raise_for_status()
+                    torrent_content = response.content
+                    current_app.logger.info("Proxy download (YGG): Contenu du torrent obtenu via cookie manuel.")
+                except requests.exceptions.RequestException as e:
+                    current_app.logger.error(f"Proxy download (YGG): Échec du téléchargement avec le cookie manuel : {e}")
+                    # Ne pas retourner ici, laisser la chance à la logique commune d'erreur plus bas si torrent_content est None
+                    torrent_content = None # S'assurer qu'il est None
 
         else:
             # --- CAS STANDARD POUR LES AUTRES INDEXERS ---
-            current_app.logger.info(f"Proxy download: Indexer standard (ID: {indexer_id}). Utilisation du lien Prowlarr direct: {url}")
-            # Utiliser un User-Agent générique mais standard pour les autres
-            standard_user_agent = current_app.config.get('YGG_USER_AGENT', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36')
-            headers = {
-                'User-Agent': standard_user_agent
-            }
-            response = requests.get(url, headers=headers, timeout=45, allow_redirects=True)
+            current_app.logger.info(f"Proxy download: Indexer standard (ID: {indexer_id}). Utilisation du lien Prowlarr direct: {download_url}")
+            # Pour les autres, FlareSolverr pourrait aussi être utile si le site est protégé par Cloudflare.
+            # On peut ajouter une tentative FlareSolverr ici aussi.
+            if current_app.config.get('FLARESOLVERR_URL'):
+                current_app.logger.info(f"Proxy download (Standard Indexer {indexer_id}): Tentative de téléchargement via FlareSolverr.")
+                torrent_content = get_content_with_flaresolverr(download_url)
+                if torrent_content:
+                    current_app.logger.info(f"Proxy download (Standard Indexer {indexer_id}): Contenu du torrent obtenu via FlareSolverr.")
+                else:
+                    current_app.logger.warning(f"Proxy download (Standard Indexer {indexer_id}): Échec avec FlareSolverr. Passage à la méthode directe.")
 
-        # --- TRAITEMENT COMMUN DE LA RÉPONSE ---
-        current_app.logger.info(f"Proxy download: Réponse reçue. Statut: {response.status_code}. URL Finale (après redirections éventuelles): {response.url}")
-        response.raise_for_status() # Lève une exception pour les statuts HTTP 4xx/5xx
+            if not torrent_content:
+                standard_user_agent = current_app.config.get('YGG_USER_AGENT', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36')
+                headers = {'User-Agent': standard_user_agent}
+                try:
+                    response = requests.get(download_url, headers=headers, timeout=45, allow_redirects=True)
+                    response.raise_for_status()
+                    torrent_content = response.content
+                    current_app.logger.info(f"Proxy download (Standard Indexer {indexer_id}): Contenu du torrent obtenu via requête directe.")
+                except requests.exceptions.RequestException as e:
+                    current_app.logger.error(f"Proxy download (Standard Indexer {indexer_id}): Échec du téléchargement direct : {e}")
+                    torrent_content = None
 
-        content_type = response.headers.get('Content-Type', '').lower()
-        current_app.logger.info(f"Proxy download: Content-Type de la réponse: '{content_type}'")
 
-        # Vérification du Content-Type. Certains indexers peuvent retourner application/octet-stream.
-        if 'application/x-bittorrent' not in content_type and 'application/octet-stream' not in content_type:
-            preview = response.text[:500] if response.content else ""
-            current_app.logger.error(f"Proxy download: La réponse n'est pas un fichier .torrent valide. Content-Type: '{content_type}'. Début du contenu: '{preview}'")
-            raise ValueError(f"La réponse n'est pas un fichier .torrent valide. Content-Type: '{content_type}'. Vérifiez les logs pour un aperçu du contenu.")
+        # --- TRAITEMENT COMMUN APRÈS AVOIR OBTENU (OU NON) LE CONTENU DU TORRENT ---
+        if torrent_content:
+            # Vérification supplémentaire du contenu (peut-être redondant si get_content_with_flaresolverr le fait déjà)
+            if not torrent_content.startswith(b'd') or not b'info' in torrent_content:
+                current_app.logger.error(f"Proxy download: Le contenu téléchargé pour '{final_filename}' ne semble pas être un fichier .torrent valide (vérification finale).")
+                # On pourrait inspecter response.headers.get('Content-Type') ici aussi si disponible
+                return jsonify({"status": "error", "message": "Le contenu téléchargé ne semble pas être un fichier torrent valide."}), 502 # Bad Gateway
 
-        torrent_data = response.content
-        current_app.logger.info(f"Proxy download: Fichier .torrent de {len(torrent_data)} bytes téléchargé avec succès.")
-
-        return Response(
-            torrent_data,
-            mimetype='application/x-bittorrent',
-            headers={'Content-Disposition': f'attachment;filename="{final_filename}"'}
-        )
+            current_app.logger.info(f"Proxy download: Fichier .torrent de {len(torrent_content)} bytes téléchargé avec succès pour '{final_filename}'. Envoi au client.")
+            return Response(
+                torrent_content,
+                mimetype='application/x-bittorrent',
+                headers={'Content-Disposition': f'attachment;filename="{final_filename}"'}
+            )
+        else:
+            current_app.logger.error(f"Proxy download: Impossible de récupérer le contenu du torrent pour '{final_filename}' par toutes les méthodes disponibles.")
+            return jsonify({"status": "error", "message": "Impossible de récupérer le contenu du torrent après toutes les tentatives."}), 500
 
     except requests.exceptions.RequestException as req_e:
         current_app.logger.error(f"Proxy download: Erreur de requête ({type(req_e).__name__}) : {req_e}", exc_info=True)
-        return Response(f"Erreur de réseau ou du serveur distant lors de la tentative de téléchargement: {req_e}", status=502) # Bad Gateway
-    except ValueError as val_e: # Pour les erreurs de configuration ou de contenu invalide, ou GUID
+        return jsonify({"status": "error", "message": f"Erreur réseau ou du serveur distant: {req_e}"}), 502
+    except ValueError as val_e:
         current_app.logger.error(f"Proxy download: Erreur de valeur ({type(val_e).__name__}) : {val_e}", exc_info=True)
-        return Response(f"Erreur de configuration, de données invalides ou de GUID: {val_e}", status=400) # Bad Request
+        return jsonify({"status": "error", "message": f"Erreur de configuration ou de données invalides: {val_e}"}), 400
     except Exception as e:
         current_app.logger.error(f"Proxy download: Erreur inattendue ({type(e).__name__}) : {e}", exc_info=True)
-        return Response(f"Une erreur serveur inattendue est survenue: {e}", status=500)
+        return jsonify({"status": "error", "message": f"Erreur serveur inattendue: {e}"}), 500
 
 @search_ui_bp.route('/download-torrent')
 @login_required
