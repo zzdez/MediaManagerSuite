@@ -134,53 +134,92 @@ def download_and_map():
 
             ygg_indexer_id_config = current_app.config.get('YGG_INDEXER_ID')
 
-            # Logique de téléchargement unifiée (similaire à download_torrent_proxy)
-            if str(ygg_indexer_id_config) == str(indexer_id):
-                # --- CAS SPÉCIAL YGG ---
-                current_app.logger.info(f"Download&Map: Détection de YGG (ID: {indexer_id}). Utilisation de la méthode de téléchargement directe via GUID.")
-                ygg_cookie = current_app.config.get('YGG_COOKIE')
-                ygg_user_agent = current_app.config.get('YGG_USER_AGENT')
-                ygg_base_url = current_app.config.get('YGG_BASE_URL')
+            # --- DÉBUT DU BLOC DE REMPLACEMENT ---
+            torrent_content = None # Renommé de torrent_data à torrent_content pour cohérence avec le nouveau bloc
 
-                if not all([ygg_cookie, ygg_user_agent, ygg_base_url]):
-                    raise ValueError("Configuration YGG manquante (YGG_COOKIE, YGG_USER_AGENT, ou YGG_BASE_URL).")
+            # Correction: 'download_link' est le bon nom de variable pour l'URL ici, pas 'download_url' qui est utilisé dans l'autre route
+            current_app.logger.info(f"Téléchargement du fichier torrent depuis {download_link} pour mapping.")
 
-                try:
-                    split_guid = guid.split('?id=')
-                    if len(split_guid) > 1:
-                        release_id_ygg = split_guid[1].split('&')[0]
+            ygg_indexer_id_config = current_app.config.get('YGG_INDEXER_ID') # Récupérer l'ID YGG de la config
+
+            # Logique unifiée : YGG ou autre indexer protégé
+            if str(indexer_id) == str(ygg_indexer_id_config): # Comparer avec l'ID YGG de la config
+                # Étape 1 : Tentative avec FlareSolverr
+                if current_app.config.get('FLARESOLVERR_URL'):
+                    current_app.logger.info("Tentative de téléchargement via FlareSolverr pour mapping.")
+                    torrent_content = get_content_with_flaresolverr(download_link)
+
+                # Étape 2 : Plan de secours avec le cookie manuel si FlareSolverr a échoué/n'est pas là
+                if not torrent_content:
+                    if current_app.config.get('FLARESOLVERR_URL'):
+                        current_app.logger.warning("Échec de FlareSolverr. Basculement vers la méthode du cookie manuel pour mapping.")
                     else:
-                        raise IndexError("Format de GUID YGG inattendu, '?id=' non trouvé.")
-                except IndexError:
-                    raise ValueError(f"Impossible d'extraire l'ID de la release depuis le GUID YGG : {guid}")
+                        current_app.logger.info("FlareSolverr non configuré. Utilisation de la méthode du cookie manuel pour mapping.")
 
-                final_ygg_download_url = f"{ygg_base_url.rstrip('/')}/engine/download_torrent?id={release_id_ygg}"
-                headers = {'User-Agent': ygg_user_agent, 'Cookie': ygg_cookie}
+                    ygg_cookie_str = current_app.config.get('YGG_COOKIE')
+                    if not ygg_cookie_str:
+                        # Retourner une réponse JSON ici car nous sommes dans une route d'API
+                        return jsonify({"status": "error", "message": "Cookie YGG non configuré pour la méthode manuelle."}), 500
 
-                current_app.logger.info(f"Download&Map (YGG): Appel de l'URL YGG directe : {final_ygg_download_url}")
-                response = requests.get(final_ygg_download_url, headers=headers, timeout=45, allow_redirects=True)
+                    try:
+                        # Utiliser l'User-Agent de la config ou un fallback
+                        ygg_user_agent = current_app.config.get('YGG_USER_AGENT', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+                        headers = {'User-Agent': ygg_user_agent}
+                        # La logique de parsing du cookie YGG doit être robuste
+                        cookies = {}
+                        for part in ygg_cookie_str.split(';'):
+                            if '=' in part:
+                                name, value = part.split('=', 1)
+                                cookies[name.strip()] = value.strip()
+                            else: # Gérer les cookies sans valeur (ex: 'HttpOnly') si nécessaire, bien que peu probable pour le cookie de session YGG
+                                cookies[part.strip()] = None
+
+
+                        # Prowlarr devrait déjà fournir l'URL de téléchargement direct pour YGG dans download_link
+                        # Il n'est donc pas nécessaire de reconstruire final_ygg_download_url à partir du GUID ici.
+                        response = requests.get(download_link, headers=headers, cookies=cookies, timeout=30)
+                        response.raise_for_status()
+                        torrent_content = response.content
+                    except requests.exceptions.RequestException as e:
+                        return jsonify({"status": "error", "message": f"Échec du téléchargement manuel pour mapping : {e}"}), 500
+
+            else: # Indexers standards (non-YGG)
+                # Pour les indexers non-YGG, on essaie aussi FlareSolverr en premier si configuré
+                if current_app.config.get('FLARESOLVERR_URL'):
+                    current_app.logger.info(f"Tentative de téléchargement via FlareSolverr pour mapping (Indexer ID: {indexer_id}).")
+                    torrent_content = get_content_with_flaresolverr(download_link)
+
+                if not torrent_content: # Si FlareSolverr a échoué ou n'est pas configuré
+                    if current_app.config.get('FLARESOLVERR_URL'):
+                         current_app.logger.warning(f"Échec de FlareSolverr pour Indexer ID: {indexer_id}. Basculement vers la méthode directe.")
+                    else:
+                        current_app.logger.info(f"FlareSolverr non configuré pour Indexer ID: {indexer_id}. Utilisation de la méthode directe.")
+                    try:
+                        # Utiliser un User-Agent générique pour les requêtes directes
+                        standard_user_agent = current_app.config.get('YGG_USER_AGENT', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36')
+                        headers = {'User-Agent': standard_user_agent}
+                        response = requests.get(download_link, headers=headers, timeout=30, allow_redirects=True)
+                        response.raise_for_status()
+                        torrent_content = response.content
+                    except requests.exceptions.RequestException as e:
+                        return jsonify({"status": "error", "message": f"Échec du téléchargement standard pour mapping (Indexer ID: {indexer_id}) : {e}"}), 500
+
+            # Vérification du contenu du torrent après l'une des méthodes de téléchargement
+            if torrent_content:
+                if not torrent_content.startswith(b'd') or not b'info' in torrent_content:
+                    current_app.logger.error(f"Le contenu téléchargé pour '{release_name}' ne semble pas être un fichier .torrent valide.")
+                    return jsonify({"status": "error", "message": "Le contenu téléchargé ne semble pas être un fichier torrent valide."}), 502
+                current_app.logger.info(f"Download&Map: Fichier .torrent de {len(torrent_content)} bytes téléchargé avec succès pour '{release_name}'.")
             else:
-                # --- CAS STANDARD POUR LES AUTRES INDEXERS ---
-                current_app.logger.info(f"Download&Map: Indexer standard (ID: {indexer_id}). Utilisation du lien Prowlarr direct: {download_link}")
-                standard_user_agent = current_app.config.get('YGG_USER_AGENT', 'Mozilla/5.0') # Fallback User-Agent
-                headers = {'User-Agent': standard_user_agent}
-                response = requests.get(download_link, headers=headers, timeout=45, allow_redirects=True)
+                # Si torrent_content est toujours None ici, toutes les méthodes ont échoué
+                current_app.logger.error(f"Impossible de télécharger le torrent '{release_name}' par toutes les méthodes disponibles pour mapping.")
+                return jsonify({"status": "error", "message": "Impossible de récupérer le contenu du torrent par toutes les méthodes disponibles pour mapping."}), 500
+            # --- FIN DU BLOC DE REMPLACEMENT ---
 
-            response.raise_for_status() # Lève une exception pour les statuts HTTP 4xx/5xx
-            content_type = response.headers.get('Content-Type', '').lower()
-            if 'application/x-bittorrent' not in content_type and 'application/octet-stream' not in content_type:
-                preview = response.text[:200] if response.content else ""
-                raise ValueError(f"La réponse n'est pas un fichier .torrent valide. Content-Type: '{content_type}'. Contenu: '{preview}...'")
-
-            torrent_data = response.content
-            if not torrent_data:
-                raise ValueError("Le contenu du fichier .torrent téléchargé est vide.")
-            current_app.logger.info(f"Download&Map: Fichier .torrent de {len(torrent_data)} bytes téléchargé avec succès pour '{release_name}'.")
-
-            # Ajout à rTorrent en utilisant les données du torrent
+            # Ajout à rTorrent en utilisant les données du torrent (maintenant `torrent_content`)
             torrent_hash, error_msg_add = add_torrent_data_and_get_hash_robustly(
-                torrent_data,
-                release_name, # filename_for_rtorrent
+                torrent_content, # Utiliser la variable qui contient les données du torrent
+                release_name,
                 label=label_for_rtorrent,
                 destination_path=target_download_path_rtorrent
             )
