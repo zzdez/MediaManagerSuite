@@ -73,6 +73,8 @@
                                     <a href="#" class="btn btn-sm btn-success download-and-map-btn"
                                        data-release-title="{{ result.title|e }}"
                                        data-download-link="{{ result.downloadUrl }}"
+                                       data-guid="{{ result.guid }}" {# Ajouté #}
+                                       data-indexer-id="{{ result.indexerId }}" {# Ajouté #}
                                        data-parsed-title="{{ result.status_info.parsed_title|e }}">
                                         <i class="fas fa-download"></i> & Mapper
                                     </a>

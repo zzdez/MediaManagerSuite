@@ -12,11 +12,19 @@ $(document).ready(function() {
         // Stocker les données sur la modale pour les retrouver plus tard
         const releaseTitleToStore = $(this).data('release-title');
         const downloadLinkToStore = $(this).data('download-link');
-        console.log("[Handler 1] Storing on modal: releaseTitle =", releaseTitleToStore, ", downloadLink =", downloadLinkToStore);
+        const guidToStore = $(this).data('guid');
+        const indexerIdToStore = $(this).data('indexer-id');
+
+        console.log("[Handler 1] Storing on modal: releaseTitle =", releaseTitleToStore, ", downloadLink =", downloadLinkToStore, ", guid =", guidToStore, ", indexerId =", indexerIdToStore);
         modalElement.data('releaseTitle', releaseTitleToStore);
         modalElement.data('downloadLink', downloadLinkToStore);
+        modalElement.data('guid', guidToStore);
+        modalElement.data('indexerId', indexerIdToStore);
         // Verification log immediately after storing
-        console.log("[Handler 1] Data stored: releaseTitle on modal is now", modalElement.data('releaseTitle'), ", downloadLink on modal is now", modalElement.data('downloadLink'));
+        console.log("[Handler 1] Data stored: releaseTitle on modal is now", modalElement.data('releaseTitle'),
+                    ", downloadLink on modal is now", modalElement.data('downloadLink'),
+                    ", guid on modal is now", modalElement.data('guid'),
+                    ", indexerId on modal is now", modalElement.data('indexerId'));
         
         // Pré-remplir le champ de recherche
         modalElement.find('#sonarrRadarrQuery').val($(this).data('parsed-title') || '');
@@ -100,17 +108,25 @@ $(document).ready(function() {
         const modal = $('#sonarrRadarrSearchModal');
         const retrievedReleaseTitle = modal.data('releaseTitle');
         const retrievedDownloadLink = modal.data('downloadLink');
+        const retrievedGuid = modal.data('guid');
+        const retrievedIndexerId = modal.data('indexerId');
+
         // Keeping this log for now as it confirms modal data, can be removed later if desired.
-        console.log("[Handler 3] Retrieving from modal: releaseTitle =", retrievedReleaseTitle, ", downloadLink =", retrievedDownloadLink);
+        console.log("[Handler 3] Retrieving from modal: releaseTitle =", retrievedReleaseTitle,
+                    ", downloadLink =", retrievedDownloadLink,
+                    ", guid =", retrievedGuid,
+                    ", indexerId =", retrievedIndexerId);
 
         // Use the retrieved values for the check and subsequent operations
         const releaseTitle = retrievedReleaseTitle;
         const downloadLink = retrievedDownloadLink;
+        const guid = retrievedGuid;
+        const indexerId = retrievedIndexerId;
 
-        if (!mediaId || !mediaType || !releaseTitle || !downloadLink) {
-            alert("Erreur critique : une information essentielle est manquante.");
+        if (!mediaId || !mediaType || !releaseTitle || !downloadLink || !guid || !indexerId) {
+            alert("Erreur critique : une information essentielle est manquante (mediaId, mediaType, releaseTitle, downloadLink, guid, ou indexerId).");
             // Simplified error log
-            console.error("[Handler 3] Missing data check failed:", { mediaId, mediaType, releaseTitle, downloadLink });
+            console.error("[Handler 3] Missing data check failed:", { mediaId, mediaType, releaseTitle, downloadLink, guid, indexerId });
             return;
         }
     
@@ -123,6 +139,8 @@ $(document).ready(function() {
             body: JSON.stringify({
                 releaseName: releaseTitle,
                 downloadLink: downloadLink,
+                indexerId: indexerId, // Ajouté
+                guid: guid,           // Ajouté
                 instanceType: mediaType,
                 mediaId: mediaId
             })
