@@ -89,196 +89,157 @@ def download_and_map():
     data = request.get_json()
     release_name = data.get('releaseName')
     download_link = data.get('downloadLink') # Peut être une URL HTTP/S ou un lien magnet:
+    indexer_id = data.get('indexerId') # Nouveau
+    guid = data.get('guid')             # Nouveau
     instance_type = data.get('instanceType')
     media_id = data.get('mediaId')
 
-    if not all([release_name, download_link, instance_type, media_id]):
-        return jsonify({'status': 'error', 'message': 'Données manquantes dans la requête.'}), 400
+    if not all([release_name, download_link, indexer_id, guid, instance_type, media_id]):
+        missing_params = [p for p, v in {
+            "releaseName": release_name, "downloadLink": download_link,
+            "indexerId": indexer_id, "guid": guid,
+            "instanceType": instance_type, "mediaId": media_id
+        }.items() if not v]
+        return jsonify({'status': 'error', 'message': f'Données manquantes dans la requête: {", ".join(missing_params)}'}), 400
 
     torrent_hash = None
     error_msg_add = None
-    label_for_rtorrent = f"mms-{instance_type}-{media_id}"
+    torrent_data = None # Pour stocker les bytes du .torrent si ce n'est pas un magnet
 
-    # Déterminer le chemin de destination en fonction de instance_type
-    target_download_path = None
+    label_for_rtorrent = f"mms-{instance_type}-{media_id}" # Label pour rTorrent
+
+    # Déterminer le chemin de destination pour rTorrent en fonction de instance_type
+    target_download_path_rtorrent = None
     if instance_type == 'sonarr':
-        target_download_path = current_app.config.get('SEEDBOX_SONARR_FINISHED_PATH')
+        target_download_path_rtorrent = current_app.config.get('RTORRENT_DOWNLOAD_DIR_SONARR') # Updated config key
     elif instance_type == 'radarr':
-        target_download_path = current_app.config.get('SEEDBOX_RADARR_FINISHED_PATH')
+        target_download_path_rtorrent = current_app.config.get('RTORRENT_DOWNLOAD_DIR_RADARR') # Updated config key
 
-    if not target_download_path:
-        current_app.logger.warning(f"Aucun chemin de destination configuré pour instanceType '{instance_type}'. Le torrent sera téléchargé dans le répertoire par défaut de rTorrent.")
-        # Optionnel: Renvoyer une erreur ou juste logger et continuer avec le défaut rTorrent
-        # return jsonify({'status': 'error', 'message': f"Configuration manquante pour le chemin de destination de {instance_type}."}), 500
-
+    if not target_download_path_rtorrent:
+        current_app.logger.warning(f"Aucun chemin de destination rTorrent configuré pour instanceType '{instance_type}' via RTORRENT_DOWNLOAD_DIR_SONARR/RADARR. Le torrent sera téléchargé dans le répertoire par défaut de rTorrent.")
+        # Pas besoin de retourner une erreur, rTorrent utilisera son défaut.
 
     try:
+        # CAS 1: Lien Magnet
         if download_link.startswith("magnet:"):
-            current_app.logger.info(f"Traitement direct du lien magnet pour '{release_name}': {download_link}")
+            current_app.logger.info(f"Download&Map: Traitement direct du lien magnet pour '{release_name}': {download_link}")
             torrent_hash, error_msg_add = add_magnet_and_get_hash_robustly(
                 download_link,
                 label=label_for_rtorrent,
-                destination_path=target_download_path
+                destination_path=target_download_path_rtorrent
             )
-        else: # Supposé être une URL HTTP/S
-            current_app.logger.info(f"Traitement de l'URL HTTP/S: {download_link} pour '{release_name}'.")
-            try:
-                # Première requête sans suivre les redirections pour inspecter
-                # Utilisation d'un User-Agent commun pour éviter blocages potentiels
-                headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-                initial_response = requests.get(download_link, timeout=15, allow_redirects=False, headers=headers)
+        # CAS 2: Lien de téléchargement de fichier .torrent (HTTP/S)
+        else:
+            current_app.logger.info(f"Download&Map: Téléchargement du fichier .torrent pour '{release_name}' depuis URL: {download_link}, IndexerID: {indexer_id}, GUID: {guid}")
 
-                # Ne pas lever d'exception immédiatement pour pouvoir inspecter les redirections vers magnet
-                if initial_response.status_code >= 400:
-                     # Si c'est une erreur client/serveur directe, lever l'exception
-                    initial_response.raise_for_status()
+            ygg_indexer_id_config = current_app.config.get('YGG_INDEXER_ID')
 
+            # Logique de téléchargement unifiée (similaire à download_torrent_proxy)
+            if str(ygg_indexer_id_config) == str(indexer_id):
+                # --- CAS SPÉCIAL YGG ---
+                current_app.logger.info(f"Download&Map: Détection de YGG (ID: {indexer_id}). Utilisation de la méthode de téléchargement directe via GUID.")
+                ygg_cookie = current_app.config.get('YGG_COOKIE')
+                ygg_user_agent = current_app.config.get('YGG_USER_AGENT')
+                ygg_base_url = current_app.config.get('YGG_BASE_URL')
 
-                if initial_response.is_redirect or initial_response.is_permanent_redirect:
-                    location_header = initial_response.headers.get('Location')
-                    current_app.logger.info(f"L'URL Prowlarr a redirigé vers: {location_header}")
-                    if location_header and location_header.startswith("magnet:"):
-                        torrent_hash, error_msg_add = add_magnet_and_get_hash_robustly(
-                            location_header,
-                            label=label_for_rtorrent,
-                            destination_path=target_download_path
-                        )
-                    elif location_header:
-                        # Si c'est une autre redirection HTTP, la suivre une fois.
-                        current_app.logger.info(f"Suivi de la redirection HTTP vers: {location_header}")
-                        final_response = requests.get(location_header, timeout=20, headers=headers, stream=True) # stream=True ici aussi
-                        final_response.raise_for_status()
-                        # Traiter le contenu de final_response
-                        content_type = final_response.headers.get('Content-Type', '').lower()
-                        content_disposition = final_response.headers.get('Content-Disposition', '')
-                        is_torrent_content_type = 'application/x-bittorrent' in content_type or 'application/octet-stream' in content_type
-                        is_torrent_filename = '.torrent' in content_disposition.lower()
+                if not all([ygg_cookie, ygg_user_agent, ygg_base_url]):
+                    raise ValueError("Configuration YGG manquante (YGG_COOKIE, YGG_USER_AGENT, ou YGG_BASE_URL).")
 
-                        if not (is_torrent_content_type or is_torrent_filename):
-                            raise ValueError(f"Après redirection, Content-Type ('{content_type}') ou nom de fichier ('{content_disposition}') inattendu pour un .torrent.")
-
-                        torrent_content_bytes = final_response.content
-                        if not torrent_content_bytes:
-                            raise ValueError("Le contenu du fichier .torrent téléchargé (après redirection) est vide.")
-                        current_app.logger.info(f"Fichier .torrent téléchargé après redirection ({len(torrent_content_bytes)} octets).")
-                        current_app.logger.info(f"Contenu du torrent (après redir) envoyé à rtorrent (premiers 500 octets): {torrent_content_bytes[:500]}")
-                        torrent_hash, error_msg_add = add_torrent_data_and_get_hash_robustly(
-                            torrent_content_bytes,
-                            release_name,
-                            label=label_for_rtorrent,
-                            destination_path=target_download_path
-                        )
+                try:
+                    split_guid = guid.split('?id=')
+                    if len(split_guid) > 1:
+                        release_id_ygg = split_guid[1].split('&')[0]
                     else:
-                        raise ValueError("Redirection sans en-tête 'Location'.")
+                        raise IndexError("Format de GUID YGG inattendu, '?id=' non trouvé.")
+                except IndexError:
+                    raise ValueError(f"Impossible d'extraire l'ID de la release depuis le GUID YGG : {guid}")
 
-                else: # Pas de redirection, la réponse initiale devrait être le fichier .torrent
-                    content_type = initial_response.headers.get('Content-Type', '').lower()
-                    content_disposition = initial_response.headers.get('Content-Disposition', '')
-                    is_torrent_content_type = 'application/x-bittorrent' in content_type or 'application/octet-stream' in content_type
-                    is_torrent_filename = '.torrent' in content_disposition.lower()
+                final_ygg_download_url = f"{ygg_base_url.rstrip('/')}/engine/download_torrent?id={release_id_ygg}"
+                headers = {'User-Agent': ygg_user_agent, 'Cookie': ygg_cookie}
 
-                    if not (is_torrent_content_type or is_torrent_filename):
-                        # Essayer de lire une petite partie pour voir si c'est une erreur JSON de Prowlarr
-                        # Important: response.content ne doit être lu qu'une fois. Si stream=True, iter_content est mieux.
-                        first_chunk_content = b""
-                        try:
-                            # Lire le premier chunk pour l'inspection
-                            chunk_iterator = initial_response.iter_content(chunk_size=1024)
-                            first_chunk = next(chunk_iterator)
-                            first_chunk_content = first_chunk
+                current_app.logger.info(f"Download&Map (YGG): Appel de l'URL YGG directe : {final_ygg_download_url}")
+                response = requests.get(final_ygg_download_url, headers=headers, timeout=45, allow_redirects=True)
+            else:
+                # --- CAS STANDARD POUR LES AUTRES INDEXERS ---
+                current_app.logger.info(f"Download&Map: Indexer standard (ID: {indexer_id}). Utilisation du lien Prowlarr direct: {download_link}")
+                standard_user_agent = current_app.config.get('YGG_USER_AGENT', 'Mozilla/5.0') # Fallback User-Agent
+                headers = {'User-Agent': standard_user_agent}
+                response = requests.get(download_link, headers=headers, timeout=45, allow_redirects=True)
 
-                            if first_chunk.strip().startswith(b"{"):
-                                # Tenter de reconstituer le corps pour l'analyse JSON
-                                full_body_str = first_chunk.decode('utf-8', errors='replace')
-                                for next_chunk in chunk_iterator:
-                                    full_body_str += next_chunk.decode('utf-8', errors='replace')
+            response.raise_for_status() # Lève une exception pour les statuts HTTP 4xx/5xx
+            content_type = response.headers.get('Content-Type', '').lower()
+            if 'application/x-bittorrent' not in content_type and 'application/octet-stream' not in content_type:
+                preview = response.text[:200] if response.content else ""
+                raise ValueError(f"La réponse n'est pas un fichier .torrent valide. Content-Type: '{content_type}'. Contenu: '{preview}...'")
 
-                                potential_error = json.loads(full_body_str)
-                                if potential_error.get("error"):
-                                    raise ValueError(f"Prowlarr (ou le lien direct) a retourné une erreur JSON: {potential_error.get('error')}")
-                                # Si ce n'est pas une erreur JSON structurée, mais que le type de contenu est mauvais
-                                raise ValueError(f"Content-Type ('{content_type}') ou nom de fichier ('{content_disposition}') inattendu pour un .torrent direct.")
-                            else: # Pas JSON, mais mauvais type de contenu
-                                raise ValueError(f"Content-Type ('{content_type}') ou nom de fichier ('{content_disposition}') inattendu pour un .torrent direct. Début du contenu: {first_chunk[:100]}")
-                        except StopIteration: # Fichier vide
-                             raise ValueError("Le contenu du fichier .torrent téléchargé est vide (StopIteration lors de la vérification).")
-                        except ValueError as ve: # Relancer l'erreur ValueError (soit JSON error, soit type inattendu, soit vide)
-                            raise ve
-                        except Exception as e_chunk: # Autre erreur lors de la lecture du chunk
-                            current_app.logger.warning(f"Problème lors de la vérification du Content-Type/nom de fichier pour {download_link}: {e_chunk}. Tentative de traitement comme .torrent quand même.")
-                            # Si une erreur se produit ici, response.content pourrait déjà être lu ou partiellement lu.
-                            # Il est plus sûr de lire response.content après ce bloc si on ne l'a pas déjà fait.
-                            # Pour être sûr, on reconstruit si on a lu des chunks
-                            if first_chunk_content:
-                                torrent_content_bytes = first_chunk_content + b"".join(initial_response.iter_content(chunk_size=1024*1024))
-                            else: # Si iter_content n'a pas été appelé
-                                torrent_content_bytes = initial_response.content
-                    else: # Type de contenu ou nom de fichier OK
-                        torrent_content_bytes = initial_response.content
+            torrent_data = response.content
+            if not torrent_data:
+                raise ValueError("Le contenu du fichier .torrent téléchargé est vide.")
+            current_app.logger.info(f"Download&Map: Fichier .torrent de {len(torrent_data)} bytes téléchargé avec succès pour '{release_name}'.")
 
+            # Ajout à rTorrent en utilisant les données du torrent
+            torrent_hash, error_msg_add = add_torrent_data_and_get_hash_robustly(
+                torrent_data,
+                release_name, # filename_for_rtorrent
+                label=label_for_rtorrent,
+                destination_path=target_download_path_rtorrent
+            )
 
-                    if not torrent_content_bytes: # Vérification finale
-                        raise ValueError("Le contenu du fichier .torrent téléchargé est vide.")
-                    current_app.logger.info(f"Fichier .torrent téléchargé directement ({len(torrent_content_bytes)} octets).")
-                    current_app.logger.info(f"Contenu du torrent (direct) envoyé à rtorrent (premiers 500 octets): {torrent_content_bytes[:500]}")
-                    torrent_hash, error_msg_add = add_torrent_data_and_get_hash_robustly(
-                        torrent_content_bytes,
-                        release_name,
-                        label=label_for_rtorrent,
-                        destination_path=target_download_path
-                    )
-
-            except requests.exceptions.Timeout:
-                error_msg_add = f"Timeout lors de la communication avec Prowlarr/URL pour '{release_name}'."
-            except requests.exceptions.RequestException as e_req:
-                error_msg_add = f"Erreur de communication avec Prowlarr/URL pour '{release_name}': {e_req}"
-            except ValueError as e_val:
-                error_msg_add = f"Erreur de traitement du lien Prowlarr pour '{release_name}': {str(e_val)}"
-
-            if error_msg_add:
-                 current_app.logger.error(error_msg_add)
-
-        # Traitement commun après tentative d'ajout (magnet ou données)
+        # --- Traitement commun après tentative d'ajout (magnet ou données) ---
         if error_msg_add or not torrent_hash:
-            final_error_msg = error_msg_add or f"Erreur inconnue lors de l'ajout du torrent '{release_name}' ou de la récupération du hash."
-            current_app.logger.error(f"Échec final de l'ajout/récupération hash pour '{release_name}'. Message: {final_error_msg}")
+            final_error_msg = error_msg_add or f"Erreur inconnue lors de l'ajout du torrent '{release_name}' à rTorrent ou de la récupération du hash."
+            current_app.logger.error(f"Download&Map: Échec final de l'ajout/récupération hash pour '{release_name}'. Message: {final_error_msg}")
             return jsonify({'status': 'error', 'message': final_error_msg}), 500
 
-        current_app.logger.info(f"Torrent '{release_name}' ajouté. Hash '{torrent_hash}' récupéré. Tentative de mapping.")
+        current_app.logger.info(f"Download&Map: Torrent '{release_name}' ajouté à rTorrent. Hash '{torrent_hash}' récupéré. Tentative de mapping.")
 
-        # Suite du mapping (inchangée)
-        map_label = f"mms-search-{instance_type}-{media_id}"
-        base_download_dir = current_app.config.get('RUTORRENT_DOWNLOAD_DIR', '/downloads/torrents')
-        # Le chemin de téléchargement sur le seedbox est souvent <base_dir>/<label_rtorrent>/<nom_release>
-        # ou <base_dir>/<nom_release> si rTorrent n'est pas configuré pour créer des sous-dossiers par label.
-        # Pour la cohérence avec le comportement précédent où le label était utilisé dans le path:
-        seedbox_dl_path = f"{base_download_dir.rstrip('/')}/{label_for_rtorrent}/{release_name}"
-        # original_torrent_name est le nom du fichier .torrent original, ici on utilise release_name comme fallback.
-        original_torrent_name_for_map = release_name
+        # --- Suite du mapping ---
+        map_label_mms = f"mms-search-{instance_type}-{media_id}" # Label spécifique pour le mapping MMS
+
+        # Le chemin de téléchargement sur le seedbox pour le mapping.
+        # Si target_download_path_rtorrent a été défini, rTorrent devrait l'utiliser comme base.
+        # Sinon, rTorrent utilise son chemin par défaut. Le mapping doit refléter cela.
+        # Pour être robuste, on ne peut pas toujours prédire le chemin exact si rTorrent a des règles complexes (ex: via label).
+        # On utilise une convention : <rTorrent_configured_path_for_type>/<release_name> ou <rTorrent_default_path>/<release_name>
+        # Il est crucial que `add_or_update_torrent_in_map` enregistre un `seedbox_download_path` qui sera scannable par le SeedboxImporter.
+
+        # Tentative de construction du seedbox_dl_path pour le mapping:
+        # Si RTORRENT_DOWNLOAD_DIR_SONARR/RADARR est défini, on l'utilise comme base.
+        # Sinon, on utilise le RUTORRENT_DOWNLOAD_DIR général.
+        # Et on ajoute le nom de la release. rTorrent peut ajouter un sous-dossier avec le nom de la release.
+        base_map_path = target_download_path_rtorrent if target_download_path_rtorrent else current_app.config.get('RUTORRENT_DOWNLOAD_DIR', '/downloads/torrents')
+        seedbox_dl_path_for_map = f"{base_map_path.rstrip('/')}/{release_name}"
+
+        current_app.logger.info(f"Download&Map: Chemin de téléchargement estimé pour le mapping: '{seedbox_dl_path_for_map}'")
 
         map_success = add_or_update_torrent_in_map(
             torrent_hash=torrent_hash,
-            release_name=release_name, # Nom de la release (dossier/fichier principal)
+            release_name=release_name,
             app_type=instance_type,
-            target_id=str(media_id), # Assurer que c'est une chaîne
-            label=map_label, # Label spécifique au mapping MMS
-            seedbox_download_path=seedbox_dl_path, # Chemin complet sur le seedbox
-            original_torrent_name=original_torrent_name_for_map
-            # initial_status est géré par défaut par add_or_update_torrent_in_map
+            target_id=str(media_id),
+            label=map_label_mms,
+            seedbox_download_path=seedbox_dl_path_for_map, # Chemin sur le seedbox où le contenu sera
+            original_torrent_name=f"{release_name}.torrent" # Nom du fichier .torrent (ou une approximation)
         )
 
         if not map_success:
-            current_app.logger.error(f"Torrent '{release_name}' (hash: {torrent_hash}) ajouté à rTorrent, mais l'écriture du mapping a échoué.")
-            return jsonify({'status': 'error', 'message': f"Torrent '{release_name}' ajouté, mais le mapping a échoué. Vérifiez les logs."}), 500
+            current_app.logger.error(f"Download&Map: Torrent '{release_name}' (hash: {torrent_hash}) ajouté à rTorrent, mais l'écriture du mapping a échoué.")
+            # Le torrent est dans rTorrent, mais le mapping a échoué. L'utilisateur doit être informé.
+            return jsonify({'status': 'warning', 'message': f"Torrent '{release_name}' ajouté à rTorrent, mais le mapping a échoué. Le téléchargement démarrera mais le post-traitement automatique pourrait ne pas fonctionner."}), 200 # OK, mais avec un avertissement
 
-        final_message = f"Téléchargement pour '{release_name}' (hash: {torrent_hash[:8]}...) lancé et mappé avec succès !"
-        current_app.logger.info(final_message)
+        final_message = f"Torrent '{release_name}' (hash: {torrent_hash[:8]}...) ajouté à rTorrent et mappé avec succès pour {instance_type} ID {media_id} !"
+        current_app.logger.info(f"Download&Map: {final_message}")
         return jsonify({'status': 'success', 'message': final_message})
 
+    except requests.exceptions.RequestException as req_e:
+        current_app.logger.error(f"Download&Map: Erreur de requête ({type(req_e).__name__}) lors du téléchargement du .torrent pour '{release_name}': {req_e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': f"Erreur réseau ou du serveur distant lors du téléchargement du .torrent: {req_e}"}), 502
+    except ValueError as val_e: # Pour les erreurs de configuration, de contenu invalide, ou GUID
+        current_app.logger.error(f"Download&Map: Erreur de valeur ({type(val_e).__name__}) pour '{release_name}': {val_e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': f"Erreur de configuration, de données invalides ou de GUID: {val_e}"}), 400
     except Exception as e:
-        current_app.logger.error(f"Erreur majeure dans download_and_map pour '{release_name}': {e}", exc_info=True)
-        # Renvoyer un message d'erreur générique mais informatif
-        return jsonify({'status': 'error', 'message': f"Erreur serveur lors du traitement de '{release_name}': {str(e)}"}), 500
+        current_app.logger.error(f"Download&Map: Erreur majeure pour '{release_name}': {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': f"Erreur serveur inattendue lors du traitement de '{release_name}': {str(e)}"}), 500
 
 @search_ui_bp.route('/api/search-arr', methods=['GET'])
 def search_arr_proxy():
