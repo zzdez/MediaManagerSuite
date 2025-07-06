@@ -1,3 +1,5 @@
+#app/search_ui/routes.py
+
 from flask import render_template, request, flash, redirect, url_for, current_app, jsonify # Ajout de redirect et url_for ET current_app ET jsonify
 from . import search_ui_bp
 from app.utils.prowlarr_client import search_prowlarr
