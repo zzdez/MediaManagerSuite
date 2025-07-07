@@ -165,7 +165,7 @@
     <div class="btn-toolbar mb-3" role="toolbar" aria-label="Toolbar with button groups">
         <div class="btn-group me-2" role="group" aria-label="Navigation group">
             {# Bouton pour retourner au Portail Principal - ASSUMANT 'home' COMME ENDPOINT #}
-            <a href="{{ url_for('main.home') }}" class="btn btn-secondary btn-sm"> {# Updated url_for #}
+            <a href="{{ url_for('home') }}" class="btn btn-secondary btn-sm"> {# Corrected url_for for main app route #}
                 <i class="fas fa-home"></i> Portail
             </a>
             {# Bouton pour la Vue Liste rTorrent #}
