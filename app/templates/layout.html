@@ -11,12 +11,12 @@
 </head>
 <body>
     <div class="sidebar">
-        <a href="{{ url_for('main.home') }}" class="sidebar-header-link">
+        <a href="{{ url_for('home') }}" class="sidebar-header-link">
             <h3 class="sidebar-header">MMS</h3>
         </a>
         <ul class="nav flex-column">
             <li class="nav-item">
-                <a class="nav-link" href="{{ url_for('main.home') }}"><i class="bi bi-house-door-fill"></i> Portail</a>
+                <a class="nav-link" href="{{ url_for('home') }}"><i class="bi bi-house-door-fill"></i> Portail</a>
             </li>
             <li class="nav-item">
                 <a class="nav-link" href="{{ url_for('search_ui.search_page') }}"><i class="bi bi-search"></i> Recherche</a>
@@ -33,7 +33,7 @@
         </ul>
         <div class="sidebar-footer">
             <!-- Vérifier si la route 'main.logout' existe, sinon l'adapter -->
-            <a class="nav-link" href="{{ url_for('main.logout') }}"><i class="bi bi-box-arrow-left"></i> Déconnexion</a>
+            <a class="nav-link" href="{{ url_for('logout') }}"><i class="bi bi-box-arrow-left"></i> Déconnexion</a>
         </div>
     </div>
 

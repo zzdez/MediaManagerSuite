@@ -20,8 +20,8 @@ def show_config():
     if not params_list:
         flash("Attention : Le fichier .env.template n'a pas pu être lu ou est vide. Impossible d'afficher la configuration.", "warning")
 
-    # Rend le template 'configuration.html' en lui passant les paramètres.
-    return render_template('configuration.html',
+    # Rend le template 'config_ui/configuration.html' en lui passant les paramètres.
+    return render_template('config_ui/configuration.html',
                            title="Configuration de l'Application",
                            params=params_list)
 
