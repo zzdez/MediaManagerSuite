@@ -1,3 +1,4 @@
+import os # Ajout de l'import os
 import secrets
 from flask import render_template, request, redirect, url_for, session, flash, current_app, get_flashed_messages
 from . import config_ui_bp
@@ -16,26 +17,38 @@ def show_config():
     """
     # DOTENV_PATH est défini dans app/config_ui/utils.py et importé
     # S'assurer que DOTENV_PATH pointe bien vers le fichier .env actuel
-    env_file_path = DOTENV_PATH
-    env_template_file_path = '.env.template' # Supposons qu'il est à la racine
+    # env_file_path = DOTENV_PATH
+    # env_template_file_path = '.env.template' # Supposons qu'il est à la racine
 
-    try:
-        # Charger les valeurs actuelles du fichier .env pour les pré-remplir
-        env_values = dotenv_values(env_file_path)
-        if not os.path.exists(env_file_path):
-            flash(f"Fichier .env non trouvé à '{env_file_path}'. Les valeurs actuelles ne peuvent pas être chargées. Les valeurs par défaut du template seront affichées.", "warning")
-            current_app.logger.warning(f"Fichier .env non trouvé à '{env_file_path}' lors de l'affichage de la configuration.")
-            env_values = {} # Utiliser un dictionnaire vide si .env n'existe pas
-    except Exception as e:
-        flash(f"Erreur lors de la lecture du fichier .env ({env_file_path}): {e}. Les valeurs par défaut du template seront affichées.", "danger")
-        current_app.logger.error(f"Erreur lors de la lecture de {env_file_path}: {e}")
-        env_values = {}
+    # Construire les chemins de manière robuste
+    env_file_path = os.path.join(current_app.root_path, '..', '.env')
+    env_template_file_path = os.path.join(current_app.root_path, '..', '.env.template')
+
+    current_app.logger.info(f"Chemin .env déterminé : {env_file_path}")
+    current_app.logger.info(f"Chemin .env.template déterminé : {env_template_file_path}")
+
+    env_values = {}
+    if os.path.exists(env_file_path):
+        try:
+            env_values = dotenv_values(env_file_path)
+        except Exception as e:
+            flash(f"Erreur lors de la lecture du fichier .env ({env_file_path}): {e}. Les valeurs par défaut du template seront affichées.", "danger")
+            current_app.logger.error(f"Erreur lors de la lecture de {env_file_path}: {e}")
+            env_values = {} # S'assurer que c'est un dict vide en cas d'erreur
+    else:
+        flash(f"Fichier .env non trouvé à '{env_file_path}'. Les valeurs actuelles ne peuvent pas être chargées. Les valeurs par défaut du template seront affichées.", "warning")
+        current_app.logger.warning(f"Fichier .env non trouvé à '{env_file_path}' lors de l'affichage de la configuration.")
+        # env_values est déjà {}
 
     config_items = []
-    try:
-        with open(env_template_file_path, 'r') as f:
-            for line_number, line_content in enumerate(f, 1):
-                line = line_content.strip()
+    if not os.path.exists(env_template_file_path):
+        flash(f"Erreur critique : Le fichier .env.template est introuvable à '{env_template_file_path}'. Impossible d'afficher la configuration.", "danger")
+        current_app.logger.error(f".env.template non trouvé à '{env_template_file_path}'")
+    else:
+        try:
+            with open(env_template_file_path, 'r', encoding='utf-8') as f:
+                for line_number, line_content in enumerate(f, 1):
+                    line = line_content.strip()
 
                 if not line:
                     config_items.append({'type': 'spacer'})
