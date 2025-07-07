@@ -8,103 +8,56 @@ from app import login_required # Added import
 
 from dotenv import dotenv_values # Ajout de l'import
 
-@config_ui_bp.route('/')
+@config_ui_bp.route('/configure', methods=['GET'])
 @login_required
 def show_config():
-    """
-    Affiche la page principale de l'interface de configuration.
-    Lit .env.template et .env pour construire une liste d'items pour le template.
-    """
-    # DOTENV_PATH est défini dans app/config_ui/utils.py et importé
-    # S'assurer que DOTENV_PATH pointe bien vers le fichier .env actuel
-    # env_file_path = DOTENV_PATH
-    # env_template_file_path = '.env.template' # Supposons qu'il est à la racine
-
-    # Construire les chemins de manière robuste
-    env_file_path = os.path.join(current_app.root_path, '..', '.env')
-    env_template_file_path = os.path.join(current_app.root_path, '..', '.env.template')
-
-    current_app.logger.info(f"Chemin .env déterminé : {env_file_path}")
-    current_app.logger.info(f"Chemin .env.template déterminé : {env_template_file_path}")
-
-    env_values = {}
-    if os.path.exists(env_file_path):
-        try:
-            env_values = dotenv_values(env_file_path)
-        except Exception as e:
-            flash(f"Erreur lors de la lecture du fichier .env ({env_file_path}): {e}. Les valeurs par défaut du template seront affichées.", "danger")
-            current_app.logger.error(f"Erreur lors de la lecture de {env_file_path}: {e}")
-            env_values = {} # S'assurer que c'est un dict vide en cas d'erreur
-    else:
-        flash(f"Fichier .env non trouvé à '{env_file_path}'. Les valeurs actuelles ne peuvent pas être chargées. Les valeurs par défaut du template seront affichées.", "warning")
-        current_app.logger.warning(f"Fichier .env non trouvé à '{env_file_path}' lors de l'affichage de la configuration.")
-        # env_values est déjà {}
-
+    """Affiche la page de configuration en se basant sur .env.template."""
     config_items = []
-    if not os.path.exists(env_template_file_path):
-        flash(f"Erreur critique : Le fichier .env.template est introuvable à '{env_template_file_path}'. Impossible d'afficher la configuration.", "danger")
-        current_app.logger.error(f".env.template non trouvé à '{env_template_file_path}'")
-    else:
-        try:
-            with open(env_template_file_path, 'r', encoding='utf-8') as f:
-                for line_number, line_content in enumerate(f, 1):
-                    line = line_content.strip()
+    env_values = {}
+    
+    try:
+        # Construire les chemins de manière robuste à partir de la racine de l'app
+        dotenv_path = os.path.join(current_app.root_path, '..', '.env')
+        template_path = os.path.join(current_app.root_path, '..', '.env.template')
 
-                if not line:
-                    config_items.append({'type': 'spacer'})
-                    continue
+        # Charger les valeurs actuelles du fichier .env pour les pré-remplir
+        if os.path.exists(dotenv_path):
+            env_values = dotenv_values(dotenv_path)
+        
+        # Parser le template pour construire la page
+        if not os.path.exists(template_path):
+            flash('Fichier .env.template introuvable ! Impossible de charger la page de configuration.', 'danger')
+        else:
+            with open(template_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    
+                    if not line:
+                        continue # Ignore les lignes vides pour un meilleur espacement
+                    
+                    if line.startswith('---') and line.endswith('---'):
+                        header_text = line.strip('- ').strip()
+                        config_items.append({'type': 'header', 'text': header_text})
+                    elif line.startswith('#'):
+                        comment_text = line.strip('# ').strip()
+                        config_items.append({'type': 'comment', 'text': comment_text})
+                    elif '=' in line:
+                        key, default_value = line.split('=', 1)
+                        key = key.strip()
+                        current_value = env_values.get(key, default_value.strip())
+                        config_items.append({
+                            'type': 'variable', 
+                            'key': key, 
+                            'value': current_value,
+                            'is_password': 'PASSWORD' in key.upper() or 'SECRET' in key.upper() or 'TOKEN' in key.upper() or 'API_KEY' in key.upper()
+                        })
+                    else:
+                        # Gère les lignes de description qui ne sont ni des commentaires, ni des variables
+                        config_items.append({'type': 'description', 'text': line})
 
-                if line.startswith('---') and line.endswith('---'):
-                    header_text = line.strip('- ').strip()
-                    config_items.append({'type': 'header', 'text': header_text})
-                elif line.startswith('#'):
-                    comment_text = line.strip('# ')
-                    # Distinguer les commentaires pleine ligne des commentaires en fin de variable (non géré ici car on lit .env.template)
-                    config_items.append({'type': 'comment', 'text': comment_text})
-                elif '=' in line:
-                    key, default_value_template = line.split('=', 1)
-                    key = key.strip()
-                    default_value_template = default_value_template.strip()
-
-                    # Utilise la valeur du .env actuel si elle existe, sinon la valeur du template
-                    current_value = env_values.get(key, default_value_template)
-
-                    # Gérer les commentaires en fin de ligne pour les variables
-                    description_comment = ""
-                    if '#' in default_value_template:
-                        parts = default_value_template.split('#', 1)
-                        default_value_template = parts[0].strip()
-                        description_comment = parts[1].strip()
-                        # Si current_value vient de env_values, il n'aura pas le commentaire.
-                        # Si current_value est default_value_template, il faut aussi enlever le commentaire pour la valeur du champ.
-                        if current_value == (parts[0].strip() + " # " + description_comment): # Si c'était la valeur par défaut avec commentaire
-                             current_value = parts[0].strip()
-
-
-                    config_items.append({
-                        'type': 'variable',
-                        'key': key,
-                        'value': current_value, # Valeur à afficher dans le champ
-                        'default_template_value': default_value_template, # Pour référence si besoin
-                        'description': description_comment, # Commentaire descriptif
-                        'is_password': 'PASSWORD' in key.upper() or 'SECRET_KEY' in key.upper() or 'TOKEN' in key.upper() or 'API_KEY' in key.upper()
-                    })
-                else:
-                    # Gère les lignes de description qui ne sont ni des commentaires, ni des variables
-                    # (Peu probable dans un .env.template standard, mais pour être complet)
-                    config_items.append({'type': 'description', 'text': line})
-
-        if not config_items: # Si le template était vide
-             flash(f"Le fichier .env.template à '{env_template_file_path}' est vide ou n'a pas pu être parsé correctement.", "warning")
-
-    except FileNotFoundError:
-        flash(f"Erreur critique : Le fichier .env.template est introuvable à '{env_template_file_path}'. Impossible d'afficher la configuration.", "danger")
-        current_app.logger.error(f".env.template non trouvé à '{env_template_file_path}'")
-        return render_template('config_ui/index.html', config_items=[], title="Erreur de Configuration")
     except Exception as e:
-        flash(f"Erreur inattendue lors de la lecture de .env.template : {e}", "danger")
-        current_app.logger.error(f"Erreur inattendue lecture .env.template : {e}", exc_info=True)
-        return render_template('config_ui/index.html', config_items=[], title="Erreur de Configuration")
+        logger.error(f"Erreur critique lors de la construction de la page de configuration : {e}")
+        flash(f"Une erreur est survenue lors de la lecture des fichiers de configuration : {e}", "danger")
 
     return render_template('config_ui/index.html',
                            config_items=config_items,
