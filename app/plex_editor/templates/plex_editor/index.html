@@ -1,42 +1,45 @@
-<!doctype html>
-<html lang="fr">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    {# Afficher le titre de la page incluant l'utilisateur si disponible #}
-    <title>{{ title }} - Editeur Plex</title>
+{% extends "layout.html" %}
+
+{% block title %}{{ title }} - Editeur Plex{% endblock %}
+
+{% block head_styles %}
     <style>
-        /* Styles généraux */
-        body {
+        /* Styles généraux - Specific to plex_editor/index.html */
+        /* body adjustments (font, margin, padding, bg-color, color, line-height) might conflict or be redundant with main.css.
+           Review and integrate into main.css if these are desired globally or adjust if only for this page.
+           For now, keeping them here but commented out parts that are likely handled by main.css or body data-bs-theme */
+
+        /* body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             margin: 0;
             padding: 20px;
             background-color: #f8f9fa;
             color: #343a40;
             line-height: 1.6;
-        }
-        .container {
-             max-width: 900px; /* Limiter la largeur pour meilleure lisibilité */
-             margin: 20px auto; /* Centrer le conteneur */
-             background-color: #fff;
-             padding: 25px 30px;
+        } */
+
+        .plex-editor-container { /* Renamed from .container to avoid conflict with Bootstrap's .container if styles differ significantly */
+             max-width: 900px;
+             margin: 0 auto; /* Centering within main-content area, padding already on main-content */
+             /* background-color: #fff; */ /* Handled by dark theme or specific card backgrounds if needed */
+             padding: 25px 30px; /* This padding might be excessive if main-content already has padding */
              border-radius: 8px;
-             box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+             /* box-shadow: 0 2px 10px rgba(0,0,0,0.08); */ /* Consider if shadow is needed with dark theme */
         }
 
-        /* Messages Flash */
-        .alert {
+        /* Flash messages are styled by Bootstrap and layout.html, custom styling here might be redundant or conflict. */
+        /* .alert {
             padding: 1rem;
             margin-bottom: 1.5rem;
             border: 1px solid transparent;
-            border-radius: .375rem; /* Bootstrap 5 style radius */
+            border-radius: .375rem;
             font-size: 0.95rem;
             display: flex;
             align-items: center;
-            gap: 0.75rem; /* Espace entre icone et texte */
+            gap: 0.75rem;
         }
-        .alert::before { /* Ajouter une icone (exemple simple) */
-            content: "ℹ️"; /* Placeholder, mieux avec SVG/FontAwesome */
+        .alert::before {
+            content: "ℹ️";
             font-size: 1.2em;
         }
         .alert-success { color: #0f5132; background-color: #d1e7dd; border-color: #badbcc; }
@@ -46,7 +49,7 @@
         .alert-info { color: #055160; background-color: #cff4fc; border-color: #b6effb; }
         .alert-info::before { content: "ℹ️"; }
         .alert-warning { color: #664d03; background-color: #fff3cd; border-color: #ffecb5; }
-        .alert-warning::before { content: "⚠️"; }
+        .alert-warning::before { content: "⚠️"; } */
 
 
         /* Informations Utilisateur */
@@ -54,82 +57,84 @@
             text-align: right;
             margin-bottom: 1rem;
             padding-bottom: 0.5rem;
-            border-bottom: 1px solid #e9ecef;
+            border-bottom: 1px solid #495057; /* Adjusted for dark theme */
             font-size: 0.9em;
-            color: #6c757d;
+            /* color: #6c757d; */ /* Will inherit from body or main.css */
         }
-        .user-info strong { color: #343a40; }
+        .user-info strong { /* color: #343a40; */ } /* Will inherit */
         .user-info a {
             font-weight: normal;
             margin-left: 10px;
-            color: #007bff;
+            color: #0d6efd; /* Bootstrap primary blue, good for links */
             text-decoration: none;
             transition: color 0.2s;
         }
-        .user-info a:hover { color: #0056b3; text-decoration: underline; }
+        .user-info a:hover { color: #3b82f6; text-decoration: underline; }
 
         /* Titres */
-        h1 {
-             color: #212529;
+        .plex-editor-container h1 { /* Scoped to this container */
+             /* color: #212529; */ /* Will inherit */
              margin-bottom: 1rem;
              text-align: center;
              font-weight: 500;
          }
-        h2 {
-             color: #495057;
+        .plex-editor-container h2 { /* Scoped to this container */
+             /* color: #495057; */ /* Will inherit */
              margin-top: 2rem;
              margin-bottom: 1rem;
              padding-bottom: 0.5rem;
-             border-bottom: 2px solid #dee2e6;
+             border-bottom: 2px solid #495057; /* Adjusted for dark theme */
              font-weight: 500;
              font-size: 1.5rem;
          }
 
         /* Liste des bibliothèques */
-        ul {
+        .plex-editor-container ul {
             list-style: none;
             padding: 0;
             margin: 0;
         }
-        li {
+        .plex-editor-container li {
             margin-bottom: 10px;
             padding: 12px 18px;
-            border: 1px solid #e0e0e0;
+            border: 1px solid #30363d; /* Darker border for dark theme */
             border-radius: 5px;
-            background-color: #fff;
+            /* background-color: #fff; */ /* Remove for dark theme, or use a dark card-like bg */
+            background-color: var(--sidebar-hover-bg-color); /* Using a variable for consistency */
             transition: background-color 0.2s ease, box-shadow 0.2s ease;
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
-        li:hover {
-             background-color: #f1f3f5;
-             box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+        .plex-editor-container li:hover {
+             background-color: #212529; /* Slightly lighter dark for hover */
+             /* box-shadow: 0 1px 4px rgba(0,0,0,0.06); */ /* Shadow might not be visible or desired in dark theme */
         }
-        li a {
+        .plex-editor-container li a {
             text-decoration: none;
-            color: #007bff;
-            font-weight: 500; /* Moins gras que bold */
+            color: #3b82f6; /* Link color */
+            font-weight: 500;
             font-size: 1.1rem;
             transition: color 0.2s;
         }
-        li a:hover {
-            color: #0056b3;
+        .plex-editor-container li a:hover {
+            color: #5fa2ff; /* Lighter blue for hover */
             text-decoration: underline;
         }
         .library-type {
             font-size: 0.9em;
-            color: #6c757d;
+            /* color: #6c757d; */ /* Inherit or use a light color for dark theme */
+            color: var(--sidebar-text-color);
             margin-left: 15px;
-            background-color: #e9ecef; /* Petit badge */
+            background-color: #30363d; /* Darker badge background */
             padding: 3px 8px;
             border-radius: 3px;
         }
-
     </style>
-</head>
-<body>
-    <div class="container">
+{% endblock %}
+
+{% block content %}
+    <div class="plex-editor-container">
         {# Affiche l'utilisateur connecté et lien pour changer #}
         {% if user_title %}
         <div class="user-info">
@@ -140,14 +145,14 @@
 
         <h1>Éditeur Web pour Plex</h1>
 
-        {# Affichage des messages flash (erreurs, succès, infos) #}
-        {% with messages = get_flashed_messages(with_categories=true) %}
+        {# Flash messages are handled by layout.html #}
+        {# {% with messages = get_flashed_messages(with_categories=true) %}
           {% if messages %}
             {% for category, message in messages %}
               <div class="alert alert-{{ category }}">{{ message }}</div>
             {% endfor %}
           {% endif %}
-        {% endwith %}
+        {% endwith %} #}
 
         {# Titre de la section mis à jour pour inclure l'utilisateur #}
         <h2>Bibliothèques Plex pour {{ user_title if user_title else 'vous' }} :</h2>
@@ -160,7 +165,7 @@
                 <ul>
                     {% for library in libraries %}
                         <li>
-                            <input type="checkbox" name="selected_libs" value="{{ library.title }}">
+                            <input type="checkbox" name="selected_libs" value="{{ library.title }}" class="form-check-input me-2"> {# Added Bootstrap class #}
                             {# Lien vers la page de la bibliothèque #}
                             <a href="{{ url_for('plex_editor.show_library', library_name=library.title) }}">
                                 {{ library.title }}
@@ -170,13 +175,16 @@
                         </li>
                     {% endfor %}
                 </ul>
-                <button type="submit">Parcourir la Sélection</button>
+                <button type="submit" class="btn btn-primary mt-3">Parcourir la Sélection</button> {# Added Bootstrap class #}
             </form>
         {% else %}
             {# Si la liste est vide mais pas d'erreur Plex spécifique (connexion ok, mais 0 libs) #}
             <p class="alert alert-info">Aucune bibliothèque Plex n'a été trouvée sur le serveur.</p>
         {% endif %}
 
-    </div> {# Fin .container #}
-</body>
-</html>
+    </div> {# Fin .plex-editor-container #}
+{% endblock %}
+
+{% block scripts %}
+{# No page-specific scripts were present in the original file #}
+{% endblock %}
