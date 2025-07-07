@@ -191,17 +191,35 @@ def _notify_arr_instance(arr_type, downloaded_item_name, local_staging_dir):
         current_app.logger.error(f"Failed to notify {arr_type} for item: {downloaded_item_name}")
     return success
 
+import logging # Ajout de l'import logging
+
 def scan_sftp_and_process_items():
     """Main function for the SFTP scanning task."""
-    if not current_app.sftp_scan_lock.acquire(blocking=False): # Use current_app.sftp_scan_lock
-        current_app.logger.info("SFTP Scan deferred: Another scan is already in progress (lock not acquired).")
+    logger = logging.getLogger(__name__) # Utiliser le logger standard au lieu de current_app.logger au début
+    config = current_app.config
+    required_vars = [
+        'LOCAL_STAGING_PATH', 'SEEDBOX_SFTP_HOST', 'SEEDBOX_SFTP_USER',
+        'SEEDBOX_SFTP_PASSWORD', 'LOCAL_PROCESSED_LOG_PATH',
+        'SEEDBOX_SCANNER_TARGET_SONARR_PATH', 'SEEDBOX_SCANNER_TARGET_RADARR_PATH'
+    ]
+
+    missing_vars = [var for var in required_vars if not config.get(var)]
+    if missing_vars:
+        logger.error(f"Scan SFTP annulé. Variables manquantes dans .env: {', '.join(missing_vars)}")
+        # Pas besoin de libérer le verrou ici car on ne l'a pas encore acquis
         return
+
+    if not current_app.sftp_scan_lock.acquire(blocking=False): # Use current_app.sftp_scan_lock
+        current_app.logger.info("SFTP Scan deferred: Another scan is already in progress (lock not acquired).") # current_app.logger est ok ici
+        return
+
+    # À partir d'ici, on peut utiliser current_app.logger car on est dans le contexte de l'app et le verrou est acquis
     try:
         current_app.logger.info("SFTP Scanner Task: Lock acquired, starting scan and process cycle.")
 
-        sftp_config = current_app.config
-        staging_dir = Path(sftp_config['LOCAL_STAGING_PATH'])
-        log_file = sftp_config['LOCAL_PROCESSED_LOG_PATH']
+        sftp_config = current_app.config # Peut être remplacé par config déjà défini
+        staging_dir = Path(config['LOCAL_STAGING_PATH']) # Utiliser config
+        log_file = config['LOCAL_PROCESSED_LOG_PATH'] # Utiliser config
 
         if not staging_dir.exists():
             try:

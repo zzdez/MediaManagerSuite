@@ -1,158 +1,42 @@
+<!-- Extrait du nouveau template config_ui/index.html -->
 {% extends "layout.html" %}
 
-{% block title %}{{ title }} - MediaManagerSuite{% endblock %}
-
-{% block head_styles %}
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
-    {# Font Awesome is linked but icons like fas fa-eye are used in JS, so it's a style dependency for potential visibility #}
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <style>
-        .description-text {
-            font-size: 0.875em;
-            /* color: #6c757d; */ /* Will inherit or be styled by Bootstrap's form-text muted */
-        }
-        .card-header h3 {
-            margin-bottom: 0;
-            font-size: 1.25rem;
-        }
-        .comment-block {
-            font-style: italic;
-            /* color: #495057; */ /* Will inherit or be styled by Bootstrap text-muted */
-            margin-bottom: 0.5rem;
-            margin-top: 1rem;
-        }
-        .form-check-input[type=checkbox] { /* Style for Bootstrap switch */
-            width: 1.25em;
-            height: 1.25em;
-        }
-        /* Ensure cards adapt to dark theme if not automatically handled by Bootstrap version/theme */
-        .card {
-            background-color: var(--sidebar-hover-bg-color); /* Example: use a variable from main.css */
-            border-color: #30363d;
-        }
-        .card-header {
-            background-color: var(--sidebar-bg-color); /* Example */
-            border-bottom-color: #30363d;
-        }
-    </style>
-{% endblock %}
-
 {% block content %}
-    <div class="container mt-4"> {# Keep .container for content structure, but not the old navbar/footer #}
-        <h1 class="mb-4">{{ title }}</h1>
+<div class="container">
+    <h1>Configuration de l'Application</h1>
+    <p class="text-muted">Modifiez les valeurs ci-dessous et sauvegardez pour mettre à jour votre fichier <code>.env</code>.</p>
 
-        {# Flash messages are handled by layout.html #}
-        {# {% with messages = get_flashed_messages(with_categories=true) %}
-            ...
-        {% endwith %} #}
+    <form method="post" action="{{ url_for('config_ui.save_config') }}"> {# Corrigé pour pointer vers save_config #}
+        {% for item in config_items %}
+            {% if item.type == 'header' %}
+                <h3 class="mt-4 mb-3">{{ item.text }}</h3>
 
-        {% if not params %}
-            <div class="alert alert-warning" role="alert">
-                Aucun paramètre de configuration n'a été trouvé ou le fichier <code>.env.template</code> est manquant/inaccessible.
-            </div>
-        {% else %}
-            <form method="POST" action="{{ url_for('config_ui.save_config') }}">
-                {% set card_open = false %} {# Initialisation du flag #}
-
-                {% for param in params %}
-                    {% if param.is_separator %}
-                        {% if card_open %} {# Fermer la carte précédente si elle existe #}
-                            </div> {# fin card-body #}
-                        </div> {# fin card #}
-                        {% endif %}
-                        {# Ouvrir une nouvelle carte #}
-                        <div class="card mb-4">
-                            <div class="card-header"><h3>{{ param.text }}</h3></div>
-                            <div class="card-body">
-                        {% set card_open = true %}
-                    {% elif param.is_comment_general %}
-                        {# Les commentaires généraux peuvent être avant la première carte ou au début d'une nouvelle carte #}
-                        {% if not card_open %}
-                            {# Si aucune carte n'est ouverte, ce commentaire est en dehors/avant les cartes #}
-                            <p class="comment-block fst-italic text-muted">{{ param.text }}</p>
-                        {% else %}
-                            {# Si une carte est ouverte, le commentaire général est à l'intérieur #}
-                            <p class="comment-block">{{ param.text }}</p>
-                        {% endif %}
-                    {% elif card_open %} {# Assurer qu'une carte est ouverte pour les champs et commentaires de bloc #}
-                        {% if param.is_comment_block %}
-                            <p class="comment-block">{{ param.text }}</p>
-                        {% else %} {# C'est un champ de formulaire normal #}
-                            <div class="mb-3 row">
-                                <label for="{{ param.name }}" class="col-sm-4 col-form-label">
-                                    {{ param.name }}
-                                    {% if param.description %}
-                                        <small class="form-text text-muted d-block">{{ param.description }}</small>
-                                    {% endif %}
-                                </label>
-                                <div class="col-sm-8">
-                                    {% if param.type == 'bool' %}
-                                        <div class="form-check form-switch pt-2">
-                                            <input class="form-check-input" type="checkbox" role="switch" id="{{ param.name }}" name="{{ param.name }}" value="True" {% if param.current_value == 'True' %}checked{% endif %}>
-                                            <label class="form-check-label" for="{{ param.name }}">
-                                                Activé (si coché) / Désactivé (si décoché)
-                                            </label>
-                                        </div>
-                                        <input type="hidden" name="{{ param.name }}_hidden_bool_marker" value="False">
-                                    {% elif param.type == 'int' %}
-                                        <input type="number" class="form-control" id="{{ param.name }}" name="{{ param.name }}" value="{{ param.current_value }}" placeholder="{{ param.default_value }}">
-                                    {% elif param.type == 'password' %}
-                                        <div class="input-group">
-                                            <input type="password" class="form-control" id="{{ param.name }}" name="{{ param.name }}" value="{{ param.current_value }}" placeholder="{{ param.default_value }}">
-                                            <button class="btn btn-outline-secondary" type="button" onclick="togglePasswordVisibility('{{ param.name }}')">
-                                                <i class="fas fa-eye"></i>
-                                            </button>
-                                        </div>
-                                    {% elif param.type == 'list_str' %}
-                                         <input type="text" class="form-control" id="{{ param.name }}" name="{{ param.name }}" value="{{ param.current_value }}" placeholder="{{ param.default_value }}">
-                                         <small class="form-text text-muted">Les valeurs doivent être séparées par des virgules. Ex: val1,val2,val3</small>
-                                    {% else %} {# string par défaut #}
-                                        <input type="text" class="form-control" id="{{ param.name }}" name="{{ param.name }}" value="{{ param.current_value }}" placeholder="{{ param.default_value }}">
-                                    {% endif %}
-                                </div>
-                            </div>
-                        {% endif %}
-                    {% elif param.is_comment_block %} {# Commentaire de bloc avant la première carte #}
-                        <p class="comment-block fst-italic text-muted">{{ param.text }}</p>
+            {% elif item.type == 'variable' %}
+                <div class="mb-3">
+                    <label for="{{ item.key }}" class="form-label"><code>{{ item.key }}</code></label>
+                    <input type="{{ 'password' if item.is_password else 'text' }}"
+                           class="form-control"
+                           id="{{ item.key }}"
+                           name="{{ item.key }}"
+                           value="{{ item.value }}">
+                    {% if item.description %}
+                        <div class="form-text text-muted fst-italic">{{ item.description }}</div>
                     {% endif %}
-                {% endfor %}
-
-                {% if card_open %} {# Fermer la dernière carte ouverte #}
-                    </div> {# fin card-body #}
-                    </div> {# fin card #}
-                {% set card_open = false %}{# Réinitialiser le flag, bien que la boucle soit finie #}
-                {% endif %}
-
-                <hr class="mt-4">
-                <div class="my-4"> {# Changé mb-5 en my-4 pour un espacement uniforme #}
-                    <button type="submit" class="btn btn-primary btn-lg">Sauvegarder les Modifications</button>
-                    <a href="{{ url_for('config_ui.show_config') }}" class="btn btn-secondary btn-lg ms-2">Annuler / Rafraîchir</a>
                 </div>
-            </form>
-        {% endif %}
-    </div>
-{% endblock %}
 
-{% block scripts %}
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL" crossorigin="anonymous"></script>
-    <script>
-        // Script JS togglePasswordVisibility
-        function togglePasswordVisibility(fieldId) {
-            const passwordField = document.getElementById(fieldId);
-            // Ensure event is passed or fallback for robust querySelector
-            const buttonElement = event ? event.currentTarget : document.querySelector(`button[onclick*="${fieldId}"]`);
-            if (buttonElement) {
-                const icon = buttonElement.querySelector('i');
-                if (passwordField.type === "password") {
-                    passwordField.type = "text";
-                    icon.classList.remove('fa-eye');
-                    icon.classList.add('fa-eye-slash');
-                } else {
-                    passwordField.type = "password";
-                    icon.classList.remove('fa-eye-slash');
-                    icon.classList.add('fa-eye');
-                }
-            }
-        }
-    </script>
+            {% elif item.type == 'comment' %}
+                <p class="text-muted fst-italic">{{ item.text }}</p>
+
+            {% elif item.type == 'description' %} {# Distinguer description de comment si besoin #}
+                 <p class="text-muted">{{ item.text }}</p>
+
+            {% elif item.type == 'spacer' %}
+                <hr class="my-4">
+
+            {% endif %}
+        {% endfor %}
+
+        <button type="submit" class="btn btn-primary mt-3">Sauvegarder la Configuration</button>
+    </form>
+</div>
 {% endblock %}
