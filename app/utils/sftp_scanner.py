@@ -12,18 +12,18 @@ from . import arr_client
 # SEEDBOX_SFTP_PORT = 22
 # SEEDBOX_SFTP_USER = "user"
 # SEEDBOX_SFTP_PASSWORD = "password"
-# SEEDBOX_SONARR_FINISHED_PATH = "/remote/sonarr"
-# SEEDBOX_RADARR_FINISHED_PATH = "/remote/radarr"
-# STAGING_DIR = "/local/staging"
+# SEEDBOX_SCANNER_TARGET_SONARR_PATH = "/remote/sonarr" # Renamed
+# SEEDBOX_SCANNER_TARGET_RADARR_PATH = "/remote/radarr" # Renamed
+# LOCAL_STAGING_PATH = "/local/staging"
 # PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT = "processed_sftp_items.json"
 
 # FOLDERS_TO_SCAN_CONFIG = {
 # "sonarr_finished": {
-# "sftp_path_config_key": "SEEDBOX_SONARR_FINISHED_PATH",
+# "sftp_path_config_key": "SEEDBOX_SCANNER_TARGET_SONARR_PATH", # Renamed
 # "arr_type": "sonarr"
 #     },
 # "radarr_finished": {
-# "sftp_path_config_key": "SEEDBOX_RADARR_FINISHED_PATH",
+# "sftp_path_config_key": "SEEDBOX_SCANNER_TARGET_RADARR_PATH", # Renamed
 # "arr_type": "radarr"
 #     }
 # }
@@ -200,8 +200,8 @@ def scan_sftp_and_process_items():
         current_app.logger.info("SFTP Scanner Task: Lock acquired, starting scan and process cycle.")
 
         sftp_config = current_app.config
-        staging_dir = Path(sftp_config['STAGING_DIR'])
-        log_file = sftp_config['PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT']
+        staging_dir = Path(sftp_config['LOCAL_STAGING_PATH'])
+        log_file = sftp_config['LOCAL_PROCESSED_LOG_PATH']
 
         if not staging_dir.exists():
             try:
@@ -220,8 +220,8 @@ def scan_sftp_and_process_items():
 
         # Define folders to scan using MMS config directly
         folders_to_scan = {
-            "sonarr": sftp_config.get('SEEDBOX_SONARR_FINISHED_PATH'),
-            "radarr": sftp_config.get('SEEDBOX_RADARR_FINISHED_PATH'),
+            "sonarr": sftp_config.get('SEEDBOX_SCANNER_TARGET_SONARR_PATH'),
+            "radarr": sftp_config.get('SEEDBOX_SCANNER_TARGET_RADARR_PATH'),
         }
 
         new_items_processed_this_run = False
@@ -339,16 +339,16 @@ if __name__ == '__main__':
     #             'SEEDBOX_SFTP_PORT': 2222,        # Replace with your test SFTP server port
     #             'SEEDBOX_SFTP_USER': 'testuser',  # Replace with your test SFTP user
     #             'SEEDBOX_SFTP_PASSWORD': 'testpassword', # Replace
-    #             'SEEDBOX_SONARR_FINISHED_PATH': '/upload/sonarr_completed', # Test path
-    #             'SEEDBOX_RADARR_FINISHED_PATH': '/upload/radarr_completed', # Test path
-    #             'STAGING_DIR': './staging_test', # Local test staging dir
-    #             'PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT': './processed_sftp_test.json',
+    #             'SEEDBOX_SCANNER_TARGET_SONARR_PATH': '/upload/sonarr_completed', # Test path
+    #             'SEEDBOX_SCANNER_TARGET_RADARR_PATH': '/upload/radarr_completed', # Test path
+    #             'LOCAL_STAGING_PATH': './staging_test', # Local test staging dir
+    #             'LOCAL_PROCESSED_LOG_PATH': './processed_sftp_test.json',
     #             # SONARR_URL, SONARR_API_KEY, RADARR_URL, RADARR_API_KEY for _notify_arr_instance if testing that part
     #         })
     #         self.logger = MockLogger()
     #
     # current_app = MockApp()
     # # Ensure staging_test directory exists
-    # if not os.path.exists(current_app.config['STAGING_DIR']):
-    #    os.makedirs(current_app.config['STAGING_DIR'])
+    # if not os.path.exists(current_app.config['LOCAL_STAGING_PATH']):
+    #    os.makedirs(current_app.config['LOCAL_STAGING_PATH'])
     # scan_sftp_and_process_items()

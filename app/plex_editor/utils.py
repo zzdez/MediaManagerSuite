@@ -8,7 +8,7 @@ def _is_dry_run_mode():
     return not current_app.config.get('PERFORM_ACTUAL_DELETION', False)
 
 def _get_orphan_extensions():
-    return current_app.config.get('ORPHAN_EXTENSIONS', [])
+    return current_app.config.get('ORPHAN_CLEANER_EXTENSIONS', [])
 
 
 # --- Fonctions de vérification du contenu ---
