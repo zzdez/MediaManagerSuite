@@ -527,6 +527,62 @@
             if (batchMapButton) {
                  updateBatchActionButtonState();
             }
+
+            // Helper function to load content for maintenance sections
+            function loadMaintenanceContent(buttonId, containerId, loaderId, url) {
+                const button = document.getElementById(buttonId);
+                const container = document.getElementById(containerId);
+                const loader = document.getElementById(loaderId);
+
+                if (!button || !container || !loader) {
+                    console.error(`Missing elements for maintenance loader: ${buttonId}, ${containerId}, ${loaderId}`);
+                    return;
+                }
+
+                button.addEventListener('click', function() {
+                    loader.style.display = 'block';
+                    container.innerHTML = ''; // Clear previous content
+
+                    fetch(url)
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error(`Erreur réseau ${response.status} lors du chargement de ${url}`);
+                            }
+                            return response.text();
+                        })
+                        .then(html => {
+                            container.innerHTML = html;
+                        })
+                        .catch(error => {
+                            console.error('Erreur chargement contenu maintenance:', error);
+                            container.innerHTML = `<div class="alert alert-danger mt-2">Impossible de charger le contenu: ${error.message}</div>`;
+                        })
+                        .finally(() => {
+                            loader.style.display = 'none';
+                        });
+                });
+            }
+
+            // Loaders for Maintenance Tab sections
+            loadMaintenanceContent(
+                'load-arr-queue-btn',
+                'arr-queue-container',
+                'arr-queue-loader',
+                "{{ url_for('seedbox_ui.queue_manager_view') }}"
+            );
+            loadMaintenanceContent(
+                'load-sonarr-workdir-btn',
+                'workdir-container', // Both Sonarr and Radarr workdir buttons load into the same container
+                'workdir-loader',
+                "{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='sonarr_working') }}"
+            );
+            loadMaintenanceContent(
+                'load-radarr-workdir-btn',
+                'workdir-container', // Both Sonarr and Radarr workdir buttons load into the same container
+                'workdir-loader',
+                "{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='radarr_working') }}"
+            );
+
         });
         // END: Page-specific JavaScript for index.html
     </script>
