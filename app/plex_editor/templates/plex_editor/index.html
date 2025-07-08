@@ -56,5 +56,110 @@
 {% endblock %}
 
 {% block scripts %}
-    {# On ajoutera le JS pour dynamiser tout ça plus tard #}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const userSelect = document.getElementById('user-select');
+    const librarySelect = document.getElementById('library-select');
+    const applyBtn = document.getElementById('apply-filters-btn');
+    const loader = document.getElementById('plex-items-loader');
+    const itemsContainer = document.getElementById('plex-items-container');
+
+    // --- 1. Charger les utilisateurs au démarrage ---
+    fetch("{{ url_for('plex_editor.get_plex_users') }}")
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(users => {
+            userSelect.innerHTML = '<option value="" selected disabled>Choisir un utilisateur...</option>';
+            if (users && users.length > 0) {
+                users.forEach(user => {
+                    const option = new Option(user.text, user.id);
+                    userSelect.add(option);
+                });
+            } else {
+                 userSelect.innerHTML = '<option selected>Aucun utilisateur trouvé</option>';
+            }
+        })
+        .catch(error => {
+            console.error("Erreur lors du chargement des utilisateurs:", error);
+            userSelect.innerHTML = '<option selected>Erreur de chargement des utilisateurs</option>';
+            // Optionnel: afficher l'erreur dans la console ou une alerte
+            itemsContainer.innerHTML = `<p class="text-danger text-center">Erreur chargement utilisateurs: ${error.message}</p>`;
+        });
+
+    // --- 2. Charger les bibliothèques quand un utilisateur est choisi ---
+    userSelect.addEventListener('change', function () {
+        const userId = this.value;
+        librarySelect.innerHTML = '<option>Chargement...</option>';
+        librarySelect.disabled = true;
+        itemsContainer.innerHTML = '<p class="text-center text-muted">Veuillez sélectionner une ou plusieurs bibliothèques.</p>';
+
+
+        if (!userId) {
+            librarySelect.innerHTML = '';
+            librarySelect.disabled = true;
+            return;
+        }
+
+        // Construction de l'URL pour get_user_libraries
+        const libraryUrl = "{{ url_for('plex_editor.get_user_libraries', user_id='USER_ID_PLACEHOLDER') }}".replace('USER_ID_PLACEHOLDER', userId);
+
+        fetch(libraryUrl)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(libraries => {
+                librarySelect.innerHTML = ''; // Vide la liste
+                if (libraries && libraries.length > 0) {
+                    libraries.forEach(lib => {
+                        const option = new Option(lib.text, lib.id);
+                        librarySelect.add(option);
+                    });
+                    librarySelect.disabled = false;
+                } else {
+                    librarySelect.innerHTML = '<option selected>Aucune bibliothèque trouvée</option>';
+                    itemsContainer.innerHTML = '<p class="text-center text-muted">Aucune bibliothèque trouvée pour cet utilisateur.</p>';
+                }
+            })
+            .catch(error => {
+                console.error("Erreur lors du chargement des bibliothèques:", error);
+                librarySelect.innerHTML = '<option selected>Erreur de chargement des bibliothèques</option>';
+                itemsContainer.innerHTML = `<p class="text-danger text-center">Erreur chargement bibliothèques: ${error.message}</p>`;
+            });
+    });
+
+    // --- 3. Logique du bouton "Appliquer" (pour plus tard) ---
+    applyBtn.addEventListener('click', function() {
+        // Pour l'instant, on ne fait rien, mais le branchement est là
+        console.log('Bouton Appliquer cliqué');
+        console.log('Utilisateur choisi:', userSelect.value);
+        // Pour obtenir les valeurs d'un select multiple:
+        const selectedLibraries = Array.from(librarySelect.selectedOptions).map(opt => opt.value);
+        console.log('Bibliothèques choisies:', selectedLibraries);
+
+        itemsContainer.innerHTML = ''; // Vide les anciens résultats
+        loader.style.display = 'block'; // Affiche le loader
+
+        // Simulation d'un appel API et traitement
+        // Remplacer ceci par le véritable appel pour charger les médias plus tard
+        setTimeout(() => {
+            loader.style.display = 'none';
+            if (userSelect.value && selectedLibraries.length > 0) {
+                itemsContainer.innerHTML = `<p class="text-success text-center">Chargement des médias pour l'utilisateur ${userSelect.options[userSelect.selectedIndex].text} et la/les bibliothèque(s) ${selectedLibraries.join(', ')}...</p>`;
+                // Ici, vous feriez l'appel fetch pour obtenir les médias et les afficher
+            } else if (!userSelect.value) {
+                 itemsContainer.innerHTML = '<p class="text-center text-warning">Veuillez d'abord sélectionner un utilisateur.</p>';
+            } else {
+                 itemsContainer.innerHTML = '<p class="text-center text-warning">Veuillez sélectionner au moins une bibliothèque.</p>';
+            }
+        }, 1500);
+    });
+});
+</script>
 {% endblock %}

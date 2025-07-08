@@ -27,6 +27,90 @@ from app.utils.arr_client import (
 
 # --- Routes du Blueprint ---
 
+@plex_editor_bp.route('/api/users')
+@login_required
+def get_plex_users():
+    """Retourne la liste des utilisateurs du compte Plex principal."""
+    try:
+        users_list = []
+        main_plex_account = get_main_plex_account_object()
+        if not main_plex_account:
+            current_app.logger.error("API get_plex_users: Impossible de récupérer le compte Plex principal.")
+            return jsonify({'error': "Impossible de récupérer le compte Plex principal."}), 500
+
+        # Ajouter l'utilisateur principal
+        main_title = main_plex_account.title or main_plex_account.username or f"Principal (ID: {main_plex_account.id})"
+        users_list.append({'id': str(main_plex_account.id), 'text': main_title})
+
+        # Ajouter les utilisateurs gérés
+        for user in main_plex_account.users():
+            managed_title = user.title or f"Géré (ID: {user.id})" # Utiliser user.title comme source principale
+            users_list.append({'id': str(user.id), 'text': managed_title})
+
+        return jsonify(users_list)
+    except Exception as e:
+        current_app.logger.error(f"Erreur API lors de la récupération des utilisateurs Plex : {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+@plex_editor_bp.route('/api/libraries/<user_id>')
+@login_required
+def get_user_libraries(user_id):
+    """Retourne les bibliothèques pour un utilisateur Plex donné."""
+    try:
+        plex_url = current_app.config.get('PLEX_URL')
+        admin_token = current_app.config.get('PLEX_TOKEN')
+
+        if not plex_url or not admin_token:
+            current_app.logger.error("API get_user_libraries: Configuration Plex (URL/Token) manquante.")
+            return jsonify({'error': "Configuration Plex manquante."}), 500
+
+        main_plex_account = get_main_plex_account_object()
+        if not main_plex_account:
+            current_app.logger.error("API get_user_libraries: Impossible de récupérer le compte Plex principal.")
+            return jsonify({'error': "Impossible de récupérer le compte Plex principal."}), 500
+
+        target_plex_server = None
+
+        if str(main_plex_account.id) == user_id:
+            # L'utilisateur est l'admin/compte principal
+            target_plex_server = PlexServer(plex_url, admin_token)
+            current_app.logger.info(f"API get_user_libraries: Accès aux bibliothèques pour l'admin (ID: {user_id}).")
+        else:
+            # L'utilisateur est un utilisateur géré, il faut emprunter son identité
+            admin_plex_server_for_setup = PlexServer(plex_url, admin_token) # Nécessaire pour machineIdentifier
+            user_to_impersonate = next((u for u in main_plex_account.users() if str(u.id) == user_id), None)
+
+            if user_to_impersonate:
+                try:
+                    managed_user_token = user_to_impersonate.get_token(admin_plex_server_for_setup.machineIdentifier)
+                    target_plex_server = PlexServer(plex_url, managed_user_token)
+                    current_app.logger.info(f"API get_user_libraries: Accès aux bibliothèques pour l'utilisateur géré '{user_to_impersonate.title}' (ID: {user_id}).")
+                except Exception as e_impersonate:
+                    current_app.logger.error(f"API get_user_libraries: Échec de l'emprunt d'identité pour {user_to_impersonate.title} (ID: {user_id}): {e_impersonate}", exc_info=True)
+                    return jsonify({'error': f"Impossible d'emprunter l'identité de l'utilisateur {user_id}."}), 500
+            else:
+                current_app.logger.warning(f"API get_user_libraries: Utilisateur géré avec ID {user_id} non trouvé.")
+                return jsonify({'error': f"Utilisateur avec ID {user_id} non trouvé."}), 404
+
+        if not target_plex_server:
+            # Ce cas ne devrait pas être atteint si la logique ci-dessus est correcte, mais c'est une sécurité.
+            current_app.logger.error(f"API get_user_libraries: Impossible d'établir une connexion Plex pour l'utilisateur {user_id}.")
+            return jsonify({'error': f"Impossible d'établir une connexion Plex pour l'utilisateur {user_id}."}), 500
+
+        libraries = target_plex_server.library.sections()
+        library_list = [{'id': lib.key, 'text': lib.title} for lib in libraries]
+        return jsonify(library_list)
+
+    except Unauthorized:
+        current_app.logger.error(f"API get_user_libraries: Autorisation refusée pour l'utilisateur {user_id}. Token invalide ?", exc_info=True)
+        return jsonify({'error': "Autorisation refusée par le serveur Plex."}), 401
+    except NotFound:
+        current_app.logger.warning(f"API get_user_libraries: Ressource non trouvée pour l'utilisateur {user_id} (ex: bibliothèques).", exc_info=True)
+        return jsonify({'error': "Ressource non trouvée sur le serveur Plex."}), 404
+    except Exception as e:
+        current_app.logger.error(f"Erreur API lors de la récupération des bibliothèques pour l'utilisateur {user_id} : {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
 @plex_editor_bp.route('/')
 @login_required
 def index():
