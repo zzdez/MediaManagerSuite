@@ -67,13 +67,6 @@ document.addEventListener('DOMContentLoaded', function () {
     const LAST_USER_KEY = 'mms_last_plex_user_id';
 
     // --- 1. Charger les utilisateurs au démarrage ---
-    const applyBtn = document.getElementById('apply-filters-btn');
-    const loader = document.getElementById('plex-items-loader');
-    const itemsContainer = document.getElementById('plex-items-container');
-
-    const LAST_USER_KEY = 'mms_last_plex_user_id';
-
-    // --- 1. Charger les utilisateurs au démarrage ---
     fetch("{{ url_for('plex_editor.get_plex_users') }}")
         .then(response => {
             if (!response.ok) {
