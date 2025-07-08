@@ -1,0 +1,56 @@
+<table class="table table-dark table-striped table-hover mt-4 align-middle">
+    <thead>
+        <tr>
+            <th scope="col" style="width: 5%;"><input type="checkbox" class="form-check-input"></th>
+            <th scope="col">Titre</th>
+            <th scope="col" style="width: 15%;">Bibliothèque</th>
+            <th scope="col" style="width: 10%;">Date d'Ajout</th>
+            <th scope="col" style="width: 10%;">Statut</th>
+            <th scope="col" style="width: 20%;">Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for item in items %}
+        <tr>
+            <td><input type="checkbox" class="form-check-input item-checkbox"></td>
+            <td>
+                {{ item.title }}
+                <small class="d-block text-muted">Année: {{ item.year }}</small>
+            </td>
+            <td><span class="badge bg-secondary">{{ item.library_name }}</span></td>
+            <td>{{ item.addedAt.strftime('%Y-%m-%d') if item.addedAt else 'N/A' }}</td>
+            <td class="media-status-cell" data-rating-key="{{ item.ratingKey }}">
+                {% if item.isWatched %}
+                    <span class="badge bg-success">Vu</span>
+                {% else %}
+                    <span class="badge bg-warning text-dark">Non Vu</span>
+                {% endif %}
+            </td>
+            <td>
+                {# Recrée ici les boutons d'action pertinents de l'ancienne interface #}
+                <button class="btn btn-sm btn-light toggle-watched-btn"
+                        title="Marquer comme vu/non vu"
+                        data-rating-key="{{ item.ratingKey }}">
+                    <i class="bi bi-eye-fill"></i>
+                </button>
+                <button class="btn btn-sm btn-primary" title="Archiver">
+                    <i class="bi bi-archive-fill"></i>
+                </button>
+                 <button class="btn btn-sm btn-info" title="Oublier (Forget)">
+                    <i class="bi bi-eraser-fill"></i>
+                </button>
+                <button class="btn btn-sm btn-danger delete-item-btn"
+                        title="Supprimer"
+                        data-rating-key="{{ item.ratingKey }}"
+                        data-item-title="{{ item.title }}">
+                    <i class="bi bi-trash-fill"></i>
+                </button>
+            </td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="6" class="text-center">Aucun média trouvé pour les filtres sélectionnés.</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>

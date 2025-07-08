@@ -27,74 +27,330 @@ from app.utils.arr_client import (
 
 # --- Routes du Blueprint ---
 
-@plex_editor_bp.route('/', methods=['GET', 'POST'])
+@plex_editor_bp.route('/api/users')
 @login_required
-def index(): # (### MODIFICATION ICI ###) - Le nom de la fonction est maintenant 'index'
-    """Page d'accueil du module, pour sélectionner l'utilisateur Plex."""
-    users_list = []
-    plex_error_message = None
-    main_plex_account = get_main_plex_account_object()
-    if not main_plex_account:
-        return render_template('plex_editor/select_user.html', title="Sélectionner l'Utilisateur", users=users_list, plex_error=plex_error_message or "Impossible de charger les utilisateurs.")
+def get_plex_users():
+    """Retourne la liste des utilisateurs du compte Plex principal."""
+    try:
+        users_list = []
+        main_plex_account = get_main_plex_account_object()
+        if not main_plex_account:
+            current_app.logger.error("API get_plex_users: Impossible de récupérer le compte Plex principal.")
+            return jsonify({'error': "Impossible de récupérer le compte Plex principal."}), 500
 
-    if request.method == 'POST':
-        user_id_selected = request.form.get('user_id')
-        user_title_selected = request.form.get('user_title_hidden')
-        if user_id_selected and user_title_selected:
-            session['plex_user_id'] = user_id_selected
-            session['plex_user_title'] = user_title_selected
-            current_app.logger.info(f"Utilisateur '{user_title_selected}' (ID: {user_id_selected}) sélectionné.")
-            flash(f"Utilisateur '{user_title_selected}' sélectionné avec succès.", 'success')
-            return redirect(url_for('plex_editor.list_libraries'))
+        # Ajouter l'utilisateur principal
+        main_title = main_plex_account.title or main_plex_account.username or f"Principal (ID: {main_plex_account.id})"
+        users_list.append({'id': str(main_plex_account.id), 'text': main_title})
+
+        # Ajouter les utilisateurs gérés
+        for user in main_plex_account.users():
+            managed_title = user.title or f"Géré (ID: {user.id})" # Utiliser user.title comme source principale
+            users_list.append({'id': str(user.id), 'text': managed_title})
+
+        return jsonify(users_list)
+    except Exception as e:
+        current_app.logger.error(f"Erreur API lors de la récupération des utilisateurs Plex : {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+@plex_editor_bp.route('/api/libraries/<user_id>')
+@login_required
+def get_user_libraries(user_id):
+    """Retourne les bibliothèques pour un utilisateur Plex donné."""
+    try:
+        plex_url = current_app.config.get('PLEX_URL')
+        admin_token = current_app.config.get('PLEX_TOKEN')
+
+        if not plex_url or not admin_token:
+            current_app.logger.error("API get_user_libraries: Configuration Plex (URL/Token) manquante.")
+            return jsonify({'error': "Configuration Plex manquante."}), 500
+
+        main_plex_account = get_main_plex_account_object()
+        if not main_plex_account:
+            current_app.logger.error("API get_user_libraries: Impossible de récupérer le compte Plex principal.")
+            return jsonify({'error': "Impossible de récupérer le compte Plex principal."}), 500
+
+        target_plex_server = None
+
+        if str(main_plex_account.id) == user_id:
+            # L'utilisateur est l'admin/compte principal
+            target_plex_server = PlexServer(plex_url, admin_token)
+            current_app.logger.info(f"API get_user_libraries: Accès aux bibliothèques pour l'admin (ID: {user_id}).")
         else:
-            flash("Sélection invalide. Veuillez choisir un utilisateur.", 'warning')
-            current_app.logger.warning("index: Soumission du formulaire avec données manquantes.") # (### MODIFICATION ICI ###) - Log mis à jour
+            # L'utilisateur est un utilisateur géré, il faut emprunter son identité
+            admin_plex_server_for_setup = PlexServer(plex_url, admin_token) # Nécessaire pour machineIdentifier
+            user_to_impersonate = next((u for u in main_plex_account.users() if str(u.id) == user_id), None)
+
+            if user_to_impersonate:
+                try:
+                    managed_user_token = user_to_impersonate.get_token(admin_plex_server_for_setup.machineIdentifier)
+                    target_plex_server = PlexServer(plex_url, managed_user_token)
+                    current_app.logger.info(f"API get_user_libraries: Accès aux bibliothèques pour l'utilisateur géré '{user_to_impersonate.title}' (ID: {user_id}).")
+                except Exception as e_impersonate:
+                    current_app.logger.error(f"API get_user_libraries: Échec de l'emprunt d'identité pour {user_to_impersonate.title} (ID: {user_id}): {e_impersonate}", exc_info=True)
+                    return jsonify({'error': f"Impossible d'emprunter l'identité de l'utilisateur {user_id}."}), 500
+            else:
+                current_app.logger.warning(f"API get_user_libraries: Utilisateur géré avec ID {user_id} non trouvé.")
+                return jsonify({'error': f"Utilisateur avec ID {user_id} non trouvé."}), 404
+
+        if not target_plex_server:
+            # Ce cas ne devrait pas être atteint si la logique ci-dessus est correcte, mais c'est une sécurité.
+            current_app.logger.error(f"API get_user_libraries: Impossible d'établir une connexion Plex pour l'utilisateur {user_id}.")
+            return jsonify({'error': f"Impossible d'établir une connexion Plex pour l'utilisateur {user_id}."}), 500
+
+        libraries = target_plex_server.library.sections()
+        library_list = [{'id': lib.key, 'text': lib.title} for lib in libraries]
+        return jsonify(library_list)
+
+    except Unauthorized:
+        current_app.logger.error(f"API get_user_libraries: Autorisation refusée pour l'utilisateur {user_id}. Token invalide ?", exc_info=True)
+        return jsonify({'error': "Autorisation refusée par le serveur Plex."}), 401
+    except NotFound:
+        current_app.logger.warning(f"API get_user_libraries: Ressource non trouvée pour l'utilisateur {user_id} (ex: bibliothèques).", exc_info=True)
+        return jsonify({'error': "Ressource non trouvée sur le serveur Plex."}), 404
+    except Exception as e:
+        current_app.logger.error(f"Erreur API lors de la récupération des bibliothèques pour l'utilisateur {user_id} : {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+@plex_editor_bp.route('/api/media_items', methods=['POST'])
+@login_required
+def get_media_items():
+    """
+    Récupère les médias en fonction des filtres (utilisateur, bibliothèques, statut)
+    et retourne un template HTML partiel.
+    """
+    data = request.json
+    user_id = data.get('userId')
+    library_keys = data.get('libraryKeys', [])
+    status_filter = data.get('statusFilter', 'all')  # 'all', 'unwatched', 'watched'
+
+    if not user_id or not library_keys:
+        # Retourner un fragment HTML d'erreur ou un JSON, selon la gestion d'erreur préférée côté client
+        # Pour l'instant, un JSON pour que le client puisse afficher une alerte.
+        return jsonify({'error': 'ID utilisateur et au moins une clé de bibliothèque sont requis.'}), 400
 
     try:
-        main_title = main_plex_account.title or main_plex_account.username or f"Principal (ID: {main_plex_account.id})"
-        users_list.append({'id': str(main_plex_account.id), 'title': main_title})
-        for user in main_plex_account.users():
-            managed_title = user.title or f"Géré (ID: {user.id})"
-            users_list.append({'id': str(user.id), 'title': managed_title})
+        plex_url = current_app.config.get('PLEX_URL')
+        admin_token = current_app.config.get('PLEX_TOKEN')
+        if not plex_url or not admin_token:
+            current_app.logger.error("API get_media_items: Configuration Plex (URL/Token) manquante.")
+            return jsonify({'error': "Configuration Plex manquante."}), 500 # Ou render_template avec message d'erreur
+
+        main_plex_account = get_main_plex_account_object()
+        if not main_plex_account:
+            current_app.logger.error("API get_media_items: Impossible de récupérer le compte Plex principal.")
+            return jsonify({'error': "Impossible de récupérer le compte Plex principal."}), 500
+
+        target_plex_server = None
+        if str(main_plex_account.id) == user_id:
+            target_plex_server = PlexServer(plex_url, admin_token)
+            current_app.logger.info(f"API get_media_items: Accès admin pour userID {user_id}.")
+        else:
+            admin_plex_server_for_setup = PlexServer(plex_url, admin_token)
+            user_to_impersonate = next((u for u in main_plex_account.users() if str(u.id) == user_id), None)
+            if user_to_impersonate:
+                managed_user_token = user_to_impersonate.get_token(admin_plex_server_for_setup.machineIdentifier)
+                target_plex_server = PlexServer(plex_url, managed_user_token)
+                current_app.logger.info(f"API get_media_items: Accès emprunté pour user '{user_to_impersonate.title}' (ID: {user_id}).")
+            else:
+                current_app.logger.warning(f"API get_media_items: Utilisateur {user_id} non trouvé pour impersonnalisation.")
+                return jsonify({'error': f"Utilisateur {user_id} non trouvé."}), 404
+
+        if not target_plex_server:
+             return jsonify({'error': f"Impossible d'établir la connexion Plex pour l'utilisateur {user_id}."}), 500
+
+        all_items = []
+        search_args = {}
+        if status_filter == 'unwatched':
+            search_args['unwatched'] = True
+        elif status_filter == 'watched':
+            search_args['unwatched'] = False
+        # 'all' ne nécessite pas d'argument 'unwatched' spécifique
+
+        for lib_key in library_keys:
+            try:
+                # lib_key est l'ID de la section (ex: '1', '23'). sectionByID attend un int.
+                library = target_plex_server.library.sectionByID(int(lib_key))
+                current_app.logger.info(f"API get_media_items: Recherche dans la bibliothèque '{library.title}' (Key: {lib_key}) avec filtres: {search_args}")
+
+                # Utiliser search() pour appliquer les filtres directement via l'API Plex
+                items = library.search(**search_args)
+
+                for item in items:
+                    item.library_name = library.title # Ajout pour le template
+                all_items.extend(items)
+            except NotFound:
+                current_app.logger.warning(f"API get_media_items: Bibliothèque avec clé {lib_key} non trouvée pour l'utilisateur {user_id}.")
+                # On continue avec les autres bibliothèques si certaines ne sont pas trouvées
+            except Exception as e_lib:
+                current_app.logger.error(f"API get_media_items: Erreur lors de l'accès à la bibliothèque {lib_key} pour {user_id}: {e_lib}", exc_info=True)
+                # On pourrait choisir de retourner une erreur ici ou de continuer
+
+        # Tri basique par titre pour l'instant. Pourra être amélioré.
+        all_items.sort(key=lambda x: getattr(x, 'titleSort', x.title).lower())
+
+        return render_template('plex_editor/_media_table.html', items=all_items)
+
+    except Unauthorized:
+        current_app.logger.error(f"API get_media_items: Autorisation refusée pour {user_id}.", exc_info=True)
+        return jsonify({'error': "Autorisation refusée par le serveur Plex."}), 401 # Ou template d'erreur
     except Exception as e:
-        current_app.logger.error(f"index: Erreur lors de la construction de la liste des utilisateurs: {e}", exc_info=True) # (### MODIFICATION ICI ###) - Log mis à jour
-        plex_error_message = "Erreur lors de la récupération de la liste des utilisateurs."
-        flash(plex_error_message, "danger")
+        current_app.logger.error(f"Erreur API lors de la récupération des médias pour {user_id} et bibliothèques {library_keys}: {e}", exc_info=True)
+        # En cas d'erreur majeure, on peut aussi rendre un fragment HTML d'erreur
+        # return render_template('plex_editor/_error_message.html', message=str(e)), 500
+        return jsonify({'error': str(e)}), 500
 
-    return render_template('plex_editor/select_user.html',
-                           title="Sélectionner l'Utilisateur Plex",
-                           users=users_list,
-                           plex_error=plex_error_message)
-
-@plex_editor_bp.route('/libraries')
+@plex_editor_bp.route('/api/media_item/<int:rating_key>', methods=['DELETE'])
 @login_required
-def list_libraries():
-    """Affiche la liste des bibliothèques Plex disponibles."""
-    if 'plex_user_id' not in session:
-        flash("Veuillez d'abord sélectionner un utilisateur Plex.", "info")
-        return redirect(url_for('plex_editor.index')) # (### MODIFICATION ICI ###) - Pointeur vers la nouvelle fonction 'index'
+def delete_media_item_api(rating_key): # Renommé pour éviter conflit avec la non-API delete_item
+    """Supprime un média en utilisant sa ratingKey (via API)."""
+    try:
+        admin_plex_server = get_plex_admin_server()
+        if not admin_plex_server:
+            current_app.logger.error(f"API delete_media_item: Impossible d'obtenir une connexion admin Plex.")
+            return jsonify({'status': 'error', 'message': 'Connexion au serveur Plex admin échouée.'}), 500
 
-    user_title = session.get('plex_user_title', 'Utilisateur Inconnu')
-    plex_server = get_plex_admin_server()
-    libraries = []
-    plex_error_message = None
+        item_to_delete = admin_plex_server.fetchItem(rating_key)
 
-    if plex_server:
-        try:
-            libraries = plex_server.library.sections()
-            flash(f'Connecté au serveur Plex: {plex_server.friendlyName} (Utilisateur actuel: {user_title})', 'success')
-        except Exception as e:
-            plex_error_message = str(e)
-            current_app.logger.error(f"list_libraries: Erreur de récupération des bibliothèques: {e}", exc_info=True)
-            flash(f"Erreur de récupération des bibliothèques : {e}", 'danger')
-    else:
-        plex_error_message = "Impossible de se connecter au serveur Plex."
+        if item_to_delete:
+            item_title = item_to_delete.title
+            current_app.logger.info(f"API delete_media_item: Tentative de suppression du média '{item_title}' (ratingKey: {rating_key}).")
+            item_to_delete.delete()
+            # La suppression des fichiers du disque est omise ici pour la version API.
+            # cleanup_parent_directory_recursively etc. ne sont pas appelés.
+            current_app.logger.info(f"API delete_media_item: Média '{item_title}' (ratingKey: {rating_key}) supprimé de Plex.")
+            return jsonify({'status': 'success', 'message': f"'{item_title}' a été supprimé de Plex."})
+        else:
+            # Ce cas est techniquement couvert par l'exception NotFound ci-dessous, mais une vérification explicite est possible.
+            current_app.logger.warning(f"API delete_media_item: Média avec ratingKey {rating_key} non trouvé (avant exception).")
+            return jsonify({'status': 'error', 'message': f'Média avec ratingKey {rating_key} non trouvé.'}), 404
 
-    return render_template('plex_editor/index.html',
-                           title=f'Bibliothèques - {user_title}',
-                           libraries=libraries,
-                           plex_error=plex_error_message,
-                           user_title=user_title)
+    except NotFound:
+        current_app.logger.warning(f"API delete_media_item: Média avec ratingKey {rating_key} non trouvé (NotFound Exception).")
+        return jsonify({'status': 'error', 'message': f'Média avec ratingKey {rating_key} non trouvé.'}), 404
+    except Unauthorized:
+        current_app.logger.error(f"API delete_media_item: Autorisation refusée pour supprimer {rating_key}. Token admin invalide ?")
+        return jsonify({'status': 'error', 'message': 'Autorisation refusée par le serveur Plex.'}), 401
+    except BadRequest: # Au cas où l'item ne peut pas être supprimé pour une raison de requête
+        current_app.logger.error(f"API delete_media_item: Requête incorrecte pour la suppression de {rating_key}.", exc_info=True)
+        return jsonify({'status': 'error', 'message': 'Requête de suppression incorrecte vers Plex.'}), 400
+    except Exception as e:
+        current_app.logger.error(f"API delete_media_item: Erreur lors de la suppression du média {rating_key}: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': f'Erreur serveur: {str(e)}'}), 500
+
+@plex_editor_bp.route('/api/media_item/<int:rating_key>/toggle_watched', methods=['POST'])
+@login_required
+def toggle_watched_status_api(rating_key): # Nom de fonction unique
+    """Bascule le statut 'vu' d'un média pour un utilisateur donné."""
+    data = request.json
+    user_id = data.get('userId')
+
+    if not user_id:
+        return jsonify({'status': 'error', 'message': 'userId manquant dans la requête.'}), 400
+
+    try:
+        plex_url = current_app.config.get('PLEX_URL')
+        admin_token = current_app.config.get('PLEX_TOKEN')
+        if not plex_url or not admin_token:
+            current_app.logger.error("API toggle_watched: Configuration Plex manquante.")
+            return jsonify({'status': 'error', 'message': 'Configuration Plex serveur manquante.'}), 500
+
+        main_plex_account = get_main_plex_account_object()
+        if not main_plex_account:
+            current_app.logger.error("API toggle_watched: Compte Plex principal non récupérable.")
+            return jsonify({'status': 'error', 'message': 'Compte Plex principal non accessible.'}), 500
+
+        user_plex_server = None
+        user_context_description = ""
+
+        if str(main_plex_account.id) == user_id:
+            user_plex_server = PlexServer(plex_url, admin_token)
+            user_context_description = f"admin (ID: {user_id})"
+        else:
+            admin_plex_server_for_token = PlexServer(plex_url, admin_token) # Pour machineIdentifier
+            user_to_impersonate = next((u for u in main_plex_account.users() if str(u.id) == user_id), None)
+            if user_to_impersonate:
+                managed_user_token = user_to_impersonate.get_token(admin_plex_server_for_token.machineIdentifier)
+                user_plex_server = PlexServer(plex_url, managed_user_token)
+                user_context_description = f"utilisateur géré '{user_to_impersonate.title}' (ID: {user_id})"
+            else:
+                current_app.logger.warning(f"API toggle_watched: Utilisateur {user_id} non trouvé pour impersonnalisation.")
+                return jsonify({'status': 'error', 'message': f'Utilisateur {user_id} non trouvé.'}), 404
+
+        if not user_plex_server:
+            # Devrait être couvert par la logique ci-dessus, mais par sécurité.
+            return jsonify({'status': 'error', 'message': f'Impossible d_établir la connexion Plex pour l_utilisateur {user_id}.'}), 500
+
+        item = user_plex_server.fetchItem(rating_key)
+        if not item: # fetchItem lève NotFound, mais double vérification
+            return jsonify({'status': 'error', 'message': 'Média non trouvé.'}), 404
+
+        current_status_is_watched = item.isWatched
+        new_status_str = ''
+
+        if current_status_is_watched:
+            item.markUnwatched()
+            new_status_str = 'Non Vu'
+        else:
+            item.markWatched()
+            new_status_str = 'Vu'
+
+        # Re-fetch ou vérifier l'état après action si l'API ne met pas à jour l'objet local immédiatement.
+        # Pour PlexAPI, l'objet local `item` devrait refléter le changement.
+        # Donc `item.isWatched` après l'action devrait être le nouvel état.
+        final_is_watched_status = item.isWatched
+
+        current_app.logger.info(f"API toggle_watched: Statut du média '{item.title}' (ratingKey: {rating_key}) changé à '{new_status_str}' pour {user_context_description}.")
+        return jsonify({
+            'status': 'success',
+            'new_status_str': new_status_str,
+            'is_watched': final_is_watched_status # Renvoie le statut après l'action
+        })
+
+    except NotFound:
+        current_app.logger.warning(f"API toggle_watched: Média {rating_key} non trouvé (contexte {user_context_description}).")
+        return jsonify({'status': 'error', 'message': 'Média non trouvé.'}), 404
+    except Unauthorized:
+        current_app.logger.error(f"API toggle_watched: Non autorisé pour média {rating_key} (contexte {user_context_description}).")
+        return jsonify({'status': 'error', 'message': 'Action non autorisée par le serveur Plex.'}), 401
+    except Exception as e:
+        current_app.logger.error(f"API toggle_watched: Erreur pour média {rating_key} (contexte {user_context_description}): {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@plex_editor_bp.route('/')
+@login_required
+def index():
+    """Affiche le nouveau tableau de bord unifié."""
+    return render_template('plex_editor/index.html')
+
+# @plex_editor_bp.route('/libraries')
+# @login_required
+# def list_libraries():
+#     """Affiche la liste des bibliothèques Plex disponibles."""
+#     if 'plex_user_id' not in session:
+#         flash("Veuillez d'abord sélectionner un utilisateur Plex.", "info")
+#         return redirect(url_for('plex_editor.index')) # (### MODIFICATION ICI ###) - Pointeur vers la nouvelle fonction 'index'
+#
+#     user_title = session.get('plex_user_title', 'Utilisateur Inconnu')
+#     plex_server = get_plex_admin_server()
+#     libraries = []
+#     plex_error_message = None
+#
+#     if plex_server:
+#         try:
+#             libraries = plex_server.library.sections()
+#             flash(f'Connecté au serveur Plex: {plex_server.friendlyName} (Utilisateur actuel: {user_title})', 'success')
+#         except Exception as e:
+#             plex_error_message = str(e)
+#             current_app.logger.error(f"list_libraries: Erreur de récupération des bibliothèques: {e}", exc_info=True)
+#             flash(f"Erreur de récupération des bibliothèques : {e}", 'danger')
+#     else:
+#         plex_error_message = "Impossible de se connecter au serveur Plex."
+#
+#     return render_template('plex_editor/index.html',
+#                            title=f'Bibliothèques - {user_title}',
+#                            libraries=libraries,
+#                            plex_error=plex_error_message,
+#                            user_title=user_title)
 def find_ready_to_watch_shows_in_library(library_name):
     """
     Fonction helper qui trouve les séries terminées, complètes et non vues
