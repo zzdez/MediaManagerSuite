@@ -495,7 +495,8 @@
             var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
             tooltipTriggerList.map(function (tooltipTriggerEl) { return new bootstrap.Tooltip(tooltipTriggerEl); });
             
-            // Logic for initializing addTorrentModal
+            // Logic for initializing addTorrentModal - COMMENTED OUT TO PREVENT DUPLICATE DECLARATION
+            /*
             const addTorrentModalEl = document.getElementById('addTorrentModal');
             if (addTorrentModalEl) { // Check if modal exists on this page
                 if (typeof initializeAddTorrentModal === 'function') {
@@ -505,6 +506,7 @@
                     console.error('initializeAddTorrentModal function not found by index.html. Check seedbox_ui_modals.js loading.');
                 }
             }
+            */
 
             // Fonction générique pour charger le contenu d'un onglet
             function loadTabContent(tabSelector, contentContainerSelector, loaderSelector, url) {
