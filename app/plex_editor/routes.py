@@ -1484,8 +1484,19 @@ def get_series_details_for_management(rating_key):
                     'isWatched': episode.isWatched,
                     'size_on_disk': size_on_disk
                 }
-                season_data['episodes'].append(episode_data)
-            series_data['seasons'].append(season_data)
+                season_item_data['episodes'].append(episode_data) # Correction ici
+            seasons_list.append(season_item_data) # Assurer que c'est season_item_data qui est ajouté à la liste
+
+        series_data = {
+            'title': series.title,
+            'ratingKey': series.ratingKey,
+            'plex_status': getattr(series, 'status', 'unknown'),
+            'total_seasons_plex': series.childCount,
+            'viewed_seasons_plex': viewed_seasons_count,
+            'is_monitored_global': is_monitored_global_status,
+            'sonarr_series_id': sonarr_series_id_val,
+            'seasons': seasons_list # seasons_list contient maintenant les season_item_data corrigés
+        }
 
         # Rendre un template partiel avec ces données
         return render_template('plex_editor/_series_management_modal_content.html', series=series_data)
