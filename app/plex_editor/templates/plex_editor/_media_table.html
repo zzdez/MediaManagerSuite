@@ -37,7 +37,10 @@
                  <button class="btn btn-sm btn-info" title="Oublier (Forget)">
                     <i class="bi bi-eraser-fill"></i>
                 </button>
-                <button class="btn btn-sm btn-danger" title="Supprimer">
+                <button class="btn btn-sm btn-danger delete-item-btn"
+                        title="Supprimer"
+                        data-rating-key="{{ item.ratingKey }}"
+                        data-item-title="{{ item.title }}">
                     <i class="bi bi-trash-fill"></i>
                 </button>
             </td>

@@ -184,6 +184,62 @@ document.addEventListener('DOMContentLoaded', function () {
             console.error('Erreur lors du chargement des médias:', error);
         });
     });
+
+    // --- Gestionnaire d'événements pour les actions sur les items (dont suppression) ---
+    itemsContainer.addEventListener('click', function(event) {
+        const deleteButton = event.target.closest('.delete-item-btn');
+
+        if (deleteButton) {
+            event.preventDefault(); // Empêche toute action par défaut du bouton
+            const ratingKey = deleteButton.dataset.ratingKey;
+            const itemTitle = deleteButton.dataset.itemTitle || 'cet élément'; // Fallback title
+
+            if (confirm(`Êtes-vous sûr de vouloir supprimer définitivement "${itemTitle}" de Plex ?`)) {
+
+                deleteButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+                deleteButton.disabled = true;
+
+                // Construction de l'URL pour delete_media_item_api
+                // Note: 'plex_editor.delete_media_item_api' est le nom de la fonction Python de la route
+                const deleteUrl = "{{ url_for('plex_editor.delete_media_item_api', rating_key='RATING_KEY_PLACEHOLDER') }}".replace('RATING_KEY_PLACEHOLDER', ratingKey);
+
+                fetch(deleteUrl, {
+                    method: 'DELETE',
+                    headers: {
+                        // Si CSRF est nécessaire pour les requêtes DELETE API, l'ajouter ici
+                        // 'X-CSRFToken': '{{ csrf_token() }}' // Exemple
+                    }
+                })
+                .then(response => response.json()) // Attend une réponse JSON du backend
+                .then(data => {
+                    if (data.status === 'success') {
+                        deleteButton.closest('tr').remove(); // Supprime la ligne du tableau
+                        // Afficher une notification plus discrète si possible (toast)
+                        // Pour l'instant, une simple alerte.
+                        // alert(data.message); // Peut-être un peu intrusif, à voir
+                        console.log(data.message); // Log pour confirmation
+
+                        // Optionnel: Mettre à jour un compteur ou un message si le tableau devient vide
+                        if (itemsContainer.querySelectorAll('tbody tr').length === 0) {
+                            itemsContainer.innerHTML = '<p class="text-center text-muted">Aucun média trouvé pour les filtres sélectionnés.</p>';
+                        }
+                    } else {
+                        throw new Error(data.message || 'Erreur inconnue lors de la suppression.');
+                    }
+                })
+                .catch(error => {
+                    alert(`Erreur lors de la suppression : ${error.message}`);
+                    console.error('Erreur de suppression:', error);
+                    // Réactive le bouton en cas d'erreur pour permettre une nouvelle tentative
+                    deleteButton.innerHTML = '<i class="bi bi-trash-fill"></i>';
+                    deleteButton.disabled = false;
+                });
+            }
+        }
+        // Ici, on pourrait ajouter des 'else if' pour d'autres boutons d'action (archiver, etc.)
+        // const archiveButton = event.target.closest('.archive-item-btn');
+        // if (archiveButton) { ... }
+    });
 });
 </script>
 {% endblock %}

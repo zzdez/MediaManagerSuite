@@ -199,6 +199,44 @@ def get_media_items():
         # return render_template('plex_editor/_error_message.html', message=str(e)), 500
         return jsonify({'error': str(e)}), 500
 
+@plex_editor_bp.route('/api/media_item/<int:rating_key>', methods=['DELETE'])
+@login_required
+def delete_media_item_api(rating_key): # Renommé pour éviter conflit avec la non-API delete_item
+    """Supprime un média en utilisant sa ratingKey (via API)."""
+    try:
+        admin_plex_server = get_plex_admin_server()
+        if not admin_plex_server:
+            current_app.logger.error(f"API delete_media_item: Impossible d'obtenir une connexion admin Plex.")
+            return jsonify({'status': 'error', 'message': 'Connexion au serveur Plex admin échouée.'}), 500
+
+        item_to_delete = admin_plex_server.fetchItem(rating_key)
+
+        if item_to_delete:
+            item_title = item_to_delete.title
+            current_app.logger.info(f"API delete_media_item: Tentative de suppression du média '{item_title}' (ratingKey: {rating_key}).")
+            item_to_delete.delete()
+            # La suppression des fichiers du disque est omise ici pour la version API.
+            # cleanup_parent_directory_recursively etc. ne sont pas appelés.
+            current_app.logger.info(f"API delete_media_item: Média '{item_title}' (ratingKey: {rating_key}) supprimé de Plex.")
+            return jsonify({'status': 'success', 'message': f"'{item_title}' a été supprimé de Plex."})
+        else:
+            # Ce cas est techniquement couvert par l'exception NotFound ci-dessous, mais une vérification explicite est possible.
+            current_app.logger.warning(f"API delete_media_item: Média avec ratingKey {rating_key} non trouvé (avant exception).")
+            return jsonify({'status': 'error', 'message': f'Média avec ratingKey {rating_key} non trouvé.'}), 404
+
+    except NotFound:
+        current_app.logger.warning(f"API delete_media_item: Média avec ratingKey {rating_key} non trouvé (NotFound Exception).")
+        return jsonify({'status': 'error', 'message': f'Média avec ratingKey {rating_key} non trouvé.'}), 404
+    except Unauthorized:
+        current_app.logger.error(f"API delete_media_item: Autorisation refusée pour supprimer {rating_key}. Token admin invalide ?")
+        return jsonify({'status': 'error', 'message': 'Autorisation refusée par le serveur Plex.'}), 401
+    except BadRequest: # Au cas où l'item ne peut pas être supprimé pour une raison de requête
+        current_app.logger.error(f"API delete_media_item: Requête incorrecte pour la suppression de {rating_key}.", exc_info=True)
+        return jsonify({'status': 'error', 'message': 'Requête de suppression incorrecte vers Plex.'}), 400
+    except Exception as e:
+        current_app.logger.error(f"API delete_media_item: Erreur lors de la suppression du média {rating_key}: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': f'Erreur serveur: {str(e)}'}), 500
+
 @plex_editor_bp.route('/')
 @login_required
 def index():
