@@ -1449,19 +1449,14 @@ def get_series_details_for_management(rating_key):
         else:
             current_app.logger.warning(f"API get_series_details: Aucun TVDB ID trouvé pour la série Plex '{series.title}'. Impossible de récupérer l'état Sonarr.")
 
-        series_data = {
-            'title': series.title,
-            'ratingKey': series.ratingKey, # ratingKey de la série Plex
-            'plex_status': getattr(series, 'status', 'unknown'), # Utilisation de getattr pour la sécurité
-            'total_seasons_plex': series.childCount, # Nombre de saisons dans Plex
-            'viewed_seasons_plex': series.viewedChildCount, # Nombre de saisons vues dans Plex
-            'is_monitored_global': is_monitored_global_status,
-            'sonarr_series_id': sonarr_series_id_val, # Peut être None
-            'seasons': []
-        }
-
         seasons_list = []
-        for season in series.seasons():
+        viewed_seasons_count = 0
+        plex_seasons_objects = series.seasons() # Obtenir les saisons une fois
+
+        for season in plex_seasons_objects:
+            if season.isWatched:
+                viewed_seasons_count += 1
+
             sonarr_season_monitored_status = False
             if sonarr_series_full_details and 'seasons' in sonarr_series_full_details:
                 for sonarr_s_detail in sonarr_series_full_details['seasons']:
@@ -1469,21 +1464,17 @@ def get_series_details_for_management(rating_key):
                         sonarr_season_monitored_status = sonarr_s_detail.get('monitored', False)
                         break
 
-            season_item_data = { # Renommé pour éviter confusion avec la variable 'season_data' externe si jamais
+            season_item_data = {
                 'title': season.title,
-                # 'isWatched': season.isWatched, # Déjà couvert par viewed_episodes == total_episodes
                 'viewed_episodes': season.viewedLeafCount,
                 'total_episodes': season.leafCount,
                 'ratingKey': season.ratingKey,
                 'seasonNumber': season.seasonNumber,
-                'is_monitored_season': sonarr_season_monitored_status, # Nouveau nom pour clarté
-                'episodes': [] # Gardé pour la structure, même si non utilisé dans le nouveau template
+                'is_monitored_season': sonarr_season_monitored_status,
+                'episodes': []
             }
-            # La boucle des épisodes reste pour la structure de données, même si le nouveau template ne les affiche plus individuellement.
-            # Si on voulait les ré-afficher, ce serait ici.
+
             for episode in season.episodes():
-                # Le statut isWatched pour un épisode est directement un attribut de l'objet Episode
-                # Pour la taille, il faut vérifier la présence de media et parts
                 size_on_disk = 0
                 if episode.media and len(episode.media) > 0 and episode.media[0].parts and len(episode.media[0].parts) > 0:
                     size_on_disk = episode.media[0].parts[0].size
