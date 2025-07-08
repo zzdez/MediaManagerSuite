@@ -154,8 +154,6 @@ document.addEventListener('DOMContentLoaded', function () {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                // Si CSRF est activé et nécessaire pour les POST API (Flask-WTF), il faudrait ajouter le token ici.
-                // 'X-CSRFToken': '{{ csrf_token() }}' // Exemple si CSRF est géré globalement
             },
             body: JSON.stringify({
                 userId: userId,
