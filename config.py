@@ -16,6 +16,7 @@ else:
 
 class Config:
     # --- FLASK CORE ---
+    FLASK_APP = os.getenv('FLASK_APP', 'run.py')
     SECRET_KEY = os.getenv('SECRET_KEY', 'une-cle-secrete-tres-forte-et-aleatoire-a-definir-absolument')
     FLASK_DEBUG = os.getenv('FLASK_DEBUG', 'False').lower() in ('true', '1', 't')
     APP_PASSWORD = os.getenv('APP_PASSWORD')
@@ -29,6 +30,7 @@ class Config:
     SONARR_API_KEY = os.getenv('SONARR_API_KEY')
     RADARR_URL = os.getenv('RADARR_URL')
     RADARR_API_KEY = os.getenv('RADARR_API_KEY')
+    RADARR_TAG_ON_ARCHIVE = os.getenv('RADARR_TAG_ON_ARCHIVE', 'vu')
     PROWLARR_URL = os.getenv('PROWLARR_URL')
     PROWLARR_API_KEY = os.getenv('PROWLARR_API_KEY')
 
@@ -71,19 +73,17 @@ class Config:
     _default_orphan_extensions_str = ".nfo,.jpg,.jpeg,.png,.txt,.srt,.sub,.idx,.lnk,.exe,.vsmeta,.edl"
     _orphan_extensions_env = os.getenv('ORPHAN_CLEANER_EXTENSIONS', _default_orphan_extensions_str)
     ORPHAN_CLEANER_EXTENSIONS = [ext.strip().lower() for ext in _orphan_extensions_env.split(',') if ext.strip()]
+    MMS_API_PROCESS_STAGING_URL = os.getenv('MMS_API_PROCESS_STAGING_URL', f"http://127.0.0.1:{os.getenv('FLASK_RUN_PORT', 5001)}/seedbox/process-staging-item")
+    SFTP_SCANNER_GUARDFRAIL_ENABLED = os.getenv('SFTP_SCANNER_GUARDFRAIL_ENABLED', 'True').lower() in ('true', '1', 't')
+
 
     # --- Anciennes variables (à supprimer/migrer après vérification que plus rien ne les utilise) ---
-    # MMS_API_PROCESS_STAGING_URL = os.getenv(
-    #     'MMS_API_PROCESS_STAGING_URL',
-    #     f"http://127.0.0.1:{os.getenv('FLASK_RUN_PORT', 5001)}/seedbox/process-staging-item"
-    # ) # Remplacé par une logique interne si besoin, ou à supprimer
-    RADARR_TAG_ON_ARCHIVE = os.getenv('RADARR_TAG_ON_ARCHIVE', 'vu') # Semble spécifique à Radarr, garder si pertinent pour une logique Radarr
     PENDING_TORRENTS_MAP_FILE = os.getenv(
         'PENDING_TORRENTS_MAP_FILE',
         os.path.join(INSTANCE_FOLDER_PATH, 'pending_torrents_map.json')
     ) # Si utilisé, vérifier sa pertinence ou migrer vers LOCAL_PROCESSED_LOG_PATH si fonction similaire
     RTORRENT_POST_ADD_DELAY_SECONDS = int(os.getenv('RTORRENT_POST_ADD_DELAY_SECONDS', 3)) # Spécifique à rTorrent, garder si pertinent
-    SFTP_SCANNER_GUARDFRAIL_ENABLED = os.getenv('SFTP_SCANNER_GUARDFRAIL_ENABLED', 'True').lower() == 'true' # Garder si cette logique est toujours utilisée
+    # SFTP_SCANNER_GUARDFRAIL_ENABLED = os.getenv('SFTP_SCANNER_GUARDFRAIL_ENABLED', 'True').lower() == 'true' # Garder si cette logique est toujours utilisée
 
 
 # --- FIN DE LA CLASSE CONFIG ---
@@ -111,6 +111,7 @@ def check_and_print_startup_info():
     if not Config.PROWLARR_API_KEY: _missing_configs.append("PROWLARR_API_KEY")
     if not Config.RTORRENT_API_URL: _missing_configs.append("RTORRENT_API_URL")
     if not Config.SEEDBOX_SFTP_HOST: _missing_configs.append("SEEDBOX_SFTP_HOST")
+    if not Config.MMS_API_PROCESS_STAGING_URL: _missing_configs.append("MMS_API_PROCESS_STAGING_URL")
 
 
     if _missing_configs:
