@@ -237,6 +237,85 @@ def delete_media_item_api(rating_key): # Renommé pour éviter conflit avec la n
         current_app.logger.error(f"API delete_media_item: Erreur lors de la suppression du média {rating_key}: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': f'Erreur serveur: {str(e)}'}), 500
 
+@plex_editor_bp.route('/api/media_item/<int:rating_key>/toggle_watched', methods=['POST'])
+@login_required
+def toggle_watched_status_api(rating_key): # Nom de fonction unique
+    """Bascule le statut 'vu' d'un média pour un utilisateur donné."""
+    data = request.json
+    user_id = data.get('userId')
+
+    if not user_id:
+        return jsonify({'status': 'error', 'message': 'userId manquant dans la requête.'}), 400
+
+    try:
+        plex_url = current_app.config.get('PLEX_URL')
+        admin_token = current_app.config.get('PLEX_TOKEN')
+        if not plex_url or not admin_token:
+            current_app.logger.error("API toggle_watched: Configuration Plex manquante.")
+            return jsonify({'status': 'error', 'message': 'Configuration Plex serveur manquante.'}), 500
+
+        main_plex_account = get_main_plex_account_object()
+        if not main_plex_account:
+            current_app.logger.error("API toggle_watched: Compte Plex principal non récupérable.")
+            return jsonify({'status': 'error', 'message': 'Compte Plex principal non accessible.'}), 500
+
+        user_plex_server = None
+        user_context_description = ""
+
+        if str(main_plex_account.id) == user_id:
+            user_plex_server = PlexServer(plex_url, admin_token)
+            user_context_description = f"admin (ID: {user_id})"
+        else:
+            admin_plex_server_for_token = PlexServer(plex_url, admin_token) # Pour machineIdentifier
+            user_to_impersonate = next((u for u in main_plex_account.users() if str(u.id) == user_id), None)
+            if user_to_impersonate:
+                managed_user_token = user_to_impersonate.get_token(admin_plex_server_for_token.machineIdentifier)
+                user_plex_server = PlexServer(plex_url, managed_user_token)
+                user_context_description = f"utilisateur géré '{user_to_impersonate.title}' (ID: {user_id})"
+            else:
+                current_app.logger.warning(f"API toggle_watched: Utilisateur {user_id} non trouvé pour impersonnalisation.")
+                return jsonify({'status': 'error', 'message': f'Utilisateur {user_id} non trouvé.'}), 404
+
+        if not user_plex_server:
+            # Devrait être couvert par la logique ci-dessus, mais par sécurité.
+            return jsonify({'status': 'error', 'message': f'Impossible d_établir la connexion Plex pour l_utilisateur {user_id}.'}), 500
+
+        item = user_plex_server.fetchItem(rating_key)
+        if not item: # fetchItem lève NotFound, mais double vérification
+            return jsonify({'status': 'error', 'message': 'Média non trouvé.'}), 404
+
+        current_status_is_watched = item.isWatched
+        new_status_str = ''
+
+        if current_status_is_watched:
+            item.markUnwatched()
+            new_status_str = 'Non Vu'
+        else:
+            item.markWatched()
+            new_status_str = 'Vu'
+
+        # Re-fetch ou vérifier l'état après action si l'API ne met pas à jour l'objet local immédiatement.
+        # Pour PlexAPI, l'objet local `item` devrait refléter le changement.
+        # Donc `item.isWatched` après l'action devrait être le nouvel état.
+        final_is_watched_status = item.isWatched
+
+        current_app.logger.info(f"API toggle_watched: Statut du média '{item.title}' (ratingKey: {rating_key}) changé à '{new_status_str}' pour {user_context_description}.")
+        return jsonify({
+            'status': 'success',
+            'new_status_str': new_status_str,
+            'is_watched': final_is_watched_status # Renvoie le statut après l'action
+        })
+
+    except NotFound:
+        current_app.logger.warning(f"API toggle_watched: Média {rating_key} non trouvé (contexte {user_context_description}).")
+        return jsonify({'status': 'error', 'message': 'Média non trouvé.'}), 404
+    except Unauthorized:
+        current_app.logger.error(f"API toggle_watched: Non autorisé pour média {rating_key} (contexte {user_context_description}).")
+        return jsonify({'status': 'error', 'message': 'Action non autorisée par le serveur Plex.'}), 401
+    except Exception as e:
+        current_app.logger.error(f"API toggle_watched: Erreur pour média {rating_key} (contexte {user_context_description}): {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 @plex_editor_bp.route('/')
 @login_required
 def index():

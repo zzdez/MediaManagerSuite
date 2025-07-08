@@ -19,7 +19,7 @@
             </td>
             <td><span class="badge bg-secondary">{{ item.library_name }}</span></td>
             <td>{{ item.addedAt.strftime('%Y-%m-%d') if item.addedAt else 'N/A' }}</td>
-            <td>
+            <td class="media-status-cell" data-rating-key="{{ item.ratingKey }}">
                 {% if item.isWatched %}
                     <span class="badge bg-success">Vu</span>
                 {% else %}
@@ -28,7 +28,9 @@
             </td>
             <td>
                 {# Recrée ici les boutons d'action pertinents de l'ancienne interface #}
-                <button class="btn btn-sm btn-light" title="Marquer comme vu/non vu">
+                <button class="btn btn-sm btn-light toggle-watched-btn"
+                        title="Marquer comme vu/non vu"
+                        data-rating-key="{{ item.ratingKey }}">
                     <i class="bi bi-eye-fill"></i>
                 </button>
                 <button class="btn btn-sm btn-primary" title="Archiver">

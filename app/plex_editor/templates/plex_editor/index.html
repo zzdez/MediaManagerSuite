@@ -239,6 +239,56 @@ document.addEventListener('DOMContentLoaded', function () {
         // Ici, on pourrait ajouter des 'else if' pour d'autres boutons d'action (archiver, etc.)
         // const archiveButton = event.target.closest('.archive-item-btn');
         // if (archiveButton) { ... }
+
+        // Cible spécifiquement le bouton de bascule du statut "vu"
+        const toggleButton = event.target.closest('.toggle-watched-btn');
+
+        if (toggleButton) {
+            event.preventDefault();
+            const ratingKey = toggleButton.dataset.ratingKey;
+            const currentUserId = userSelect.value; // Important: prendre l'ID de l'utilisateur sélectionné
+
+            if (!currentUserId) {
+                alert("Veuillez d'abord sélectionner un utilisateur dans la liste déroulante principale.");
+                return;
+            }
+
+            toggleButton.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+            toggleButton.disabled = true;
+
+            const toggleUrl = `{{ url_for('plex_editor.index') }}api/media_item/${ratingKey}/toggle_watched`;
+
+            fetch(toggleUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ userId: currentUserId }) // Envoyer l'ID utilisateur
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    const statusCell = document.querySelector(`.media-status-cell[data-rating-key="${ratingKey}"]`);
+                    if (statusCell) {
+                        if (data.is_watched) { // Utilise la valeur 'is_watched' retournée par l'API
+                            statusCell.innerHTML = '<span class="badge bg-success">Vu</span>';
+                        } else {
+                            statusCell.innerHTML = '<span class="badge bg-warning text-dark">Non Vu</span>';
+                        }
+                    }
+                } else {
+                    throw new Error(data.message || 'Erreur inconnue lors du changement de statut.');
+                }
+            })
+            .catch(error => {
+                alert(`Erreur lors du changement de statut : ${error.message}`);
+                console.error('Erreur de bascule du statut vu/non vu:', error);
+            })
+            .finally(() => {
+                toggleButton.innerHTML = '<i class="bi bi-eye-fill"></i>';
+                toggleButton.disabled = false;
+            });
+        }
     });
 });
 </script>
