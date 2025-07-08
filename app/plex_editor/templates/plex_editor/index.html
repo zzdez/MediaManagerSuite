@@ -199,11 +199,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 deleteButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
                 deleteButton.disabled = true;
 
-                // Construction de l'URL pour delete_media_item_api
-                // Note: 'plex_editor.delete_media_item_api' est le nom de la fonction Python de la route
-                const deleteUrl = "{{ url_for('plex_editor.delete_media_item_api', rating_key='RATING_KEY_PLACEHOLDER') }}".replace('RATING_KEY_PLACEHOLDER', ratingKey);
+                // --- NOUVELLE LOGIQUE DE CONSTRUCTION D'URL ---
+                // 'plex_editor.index' donne '/plex_editor/'
+                // On concatène avec 'api/media_item/' et ratingKey
+                const finalUrl = `{{ url_for('plex_editor.index') }}api/media_item/${ratingKey}`;
 
-                fetch(deleteUrl, {
+                fetch(finalUrl, { // Utilise la nouvelle URL
                     method: 'DELETE',
                     headers: {
                         // Si CSRF est nécessaire pour les requêtes DELETE API, l'ajouter ici
