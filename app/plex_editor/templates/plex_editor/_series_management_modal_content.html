@@ -1,0 +1,52 @@
+<div class="accordion" id="seasons-accordion">
+    {% for season in series.seasons %}
+    <div class="accordion-item bg-secondary">
+        <h2 class="accordion-header" id="heading-season-{{ season.title | replace(' ', '-') | lower }}-{{ loop.index }}">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-season-{{ season.title | replace(' ', '-') | lower }}-{{ loop.index }}" aria-expanded="false" aria-controls="collapse-season-{{ season.title | replace(' ', '-') | lower }}-{{ loop.index }}">
+                <div class="d-flex justify-content-between w-100 align-items-center">
+                    <span>{{ season.title }}</span>
+                    <span class="ms-auto me-3"> <!-- Aligné à droite -->
+                        {% if season.total_episodes > 0 %}
+                            {% if season.viewed_episodes == 0 %}
+                                <span class="badge bg-warning text-dark">Non commencée</span>
+                            {% elif season.viewed_episodes == season.total_episodes %}
+                                <span class="badge bg-success">Terminée</span>
+                            {% else %}
+                                <span class="badge bg-info">En cours</span>
+                            {% endif %}
+                            <small class="text-muted ms-1">{{ season.viewed_episodes }} / {{ season.total_episodes }} ép.</small>
+                        {% elif season.isWatched %} {# Cas d'une saison marquée vue mais sans décompte d'épisodes (moins probable mais sécurité) #}
+                             <span class="badge bg-success">Vue</span>
+                        {% else %}
+                             <span class="badge bg-secondary">Info N/A</span>
+                        {% endif %}
+                    </span>
+                </div>
+            </button>
+        </h2>
+        <div id="collapse-season-{{ season.title | replace(' ', '-') | lower }}-{{ loop.index }}" class="accordion-collapse collapse" aria-labelledby="heading-season-{{ season.title | replace(' ', '-') | lower }}-{{ loop.index }}" data-bs-parent="#seasons-accordion">
+            <div class="accordion-body p-2"> {# Reduced padding for a denser look #}
+                {% if season.episodes %}
+                <ul class="list-group list-group-flush">
+                    {% for episode in season.episodes %}
+                    <li class="list-group-item {% if episode.isWatched %}list-group-item-success{% else %}list-group-item-dark{% endif %} d-flex justify-content-between align-items-center">
+                        <small>
+                            {{ episode.title }}
+                            {% if episode.isWatched %}
+                                <span class="badge bg-success ms-1 visually-hidden-unless-narrow">Vu</span>
+                            {% endif %}
+                        </small>
+                        <small class="text-muted">{{ (episode.size_on_disk / (1024*1024)) | round(1) }} MB</small>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-muted p-2">Aucun épisode trouvé pour cette saison.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="alert alert-info">Aucune saison trouvée pour cette série.</div>
+    {% endfor %}
+</div>

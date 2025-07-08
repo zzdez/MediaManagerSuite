@@ -25,27 +25,75 @@
             <td><span class="badge bg-secondary">{{ item.library_name }}</span></td>
             <td>{{ item.addedAt.strftime('%Y-%m-%d') if item.addedAt else 'N/A' }}</td>
             <td class="media-status-cell" data-rating-key="{{ item.ratingKey }}">
-                {% if item.isWatched %}
+                {% if item.type == 'show' %}
+                    {% if item.viewed_episodes == 0 and item.total_episodes > 0 %} {# Ajout de item.total_episodes > 0 pour éviter "Non commencé" pour des séries sans épisodes listés #}
+                        <span class="badge bg-warning text-dark">Non commencé</span>
+                    {% elif item.viewed_episodes == item.total_episodes and item.total_episodes > 0 %}
+                        <span class="badge bg-success">Terminé</span>
+                    {% elif item.total_episodes > 0 %} {# S'il y a des épisodes, mais pas 0% ou 100% vus #}
+                        <span class="badge bg-info">En cours</span>
+                    {% else %} {# Cas où total_episodes pourrait être 0 ou non défini #}
+                        <span class="badge bg-secondary">Inconnu</span>
+                    {% endif %}
+                    {% if item.total_episodes > 0 %}
+                    <small class="d-block text-muted">{{ item.viewed_episodes }} / {{ item.total_episodes }} ép.</small>
+                    {% endif %}
+                {% elif item.isWatched %}
                     <span class="badge bg-success">Vu</span>
                 {% else %}
                     <span class="badge bg-warning text-dark">Non Vu</span>
                 {% endif %}
             </td>
             <td>
-                {# Recrée ici les boutons d'action pertinents de l'ancienne interface #}
-                <button class="btn btn-sm btn-light toggle-watched-btn"
-                        title="Marquer comme vu/non vu"
+                <button class="btn btn-sm btn-outline-light toggle-watched-btn"
+                        title="Basculer Vu/Non Vu"
                         data-rating-key="{{ item.ratingKey }}">
                     <i class="bi bi-eye-fill"></i>
                 </button>
-                <button class="btn btn-sm btn-primary" title="Archiver">
-                    <i class="bi bi-archive-fill"></i>
+
+                {% if item.type == 'movie' %}
+                <button class="btn btn-sm btn-outline-primary archive-movie-btn"
+                        title="Archiver le film"
+                        data-bs-toggle="modal" data-bs-target="#archiveMovieModal"
+                        data-rating-key="{{ item.ratingKey }}"
+                        data-title="{{ item.title }}">
+                    <i class="bi bi-archive-fill"></i> <span class="d-none d-md-inline">Archiver</span>
                 </button>
-                 <button class="btn btn-sm btn-info" title="Oublier (Forget)">
-                    <i class="bi bi-eraser-fill"></i>
+                {% elif item.type == 'show' %}
+                <button class="btn btn-sm btn-outline-primary archive-show-btn"
+                        title="Archiver la série"
+                        data-bs-toggle="modal" data-bs-target="#archiveShowModal"
+                        data-rating-key="{{ item.ratingKey }}"
+                        data-title="{{ item.title }}"
+                        data-leaf-count="{{ item.leafCount }}"
+                        data-viewed-leaf-count="{{ item.viewedLeafCount }}">
+                    <i class="bi bi-archive-fill"></i> <span class="d-none d-md-inline">Archiver</span>
                 </button>
-                <button class="btn btn-sm btn-danger delete-item-btn"
-                        title="Supprimer"
+                <button class="btn btn-sm btn-outline-warning reject-show-btn"
+                        title="Rejeter la série (Oublier)"
+                        data-bs-toggle="modal" data-bs-target="#rejectShowModal"
+                        data-rating-key="{{ item.ratingKey }}"
+                        data-title="{{ item.title }}">
+                    <i class="bi bi-eraser-fill"></i> <span class="d-none d-md-inline">Rejeter</span>
+                </button>
+                {# Bouton Gérer les Saisons obsolète remplacé par le bouton Gérer ci-dessous #}
+                {# <a href="{{ url_for('plex_editor.manage_seasons', rating_key=item.ratingKey) }}"
+                   class="btn btn-sm btn-outline-info"
+                   title="Gérer les saisons">
+                    <i class="bi bi-list-task"></i> <span class="d-none d-md-inline">Saisons</span>
+                </a> #}
+                <button class="btn btn-sm btn-outline-success manage-series-btn"
+                        title="Gérer la série et les saisons"
+                        data-bs-toggle="modal"
+                        data-bs-target="#series-management-modal"
+                        data-rating-key="{{ item.ratingKey }}"
+                        data-title="{{ item.title }}">
+                    <i class="bi bi-gear-fill"></i> <span class="d-none d-md-inline">Gérer</span>
+                </button>
+                {% endif %}
+
+                <button class="btn btn-sm btn-outline-danger delete-item-btn"
+                        title="Supprimer définitivement de Plex"
                         data-rating-key="{{ item.ratingKey }}"
                         data-item-title="{{ item.title }}">
                     <i class="bi bi-trash-fill"></i>

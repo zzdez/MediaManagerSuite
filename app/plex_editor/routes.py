@@ -158,37 +158,60 @@ def get_media_items():
         if not target_plex_server:
              return jsonify({'error': f"Impossible d'établir la connexion Plex pour l'utilisateur {user_id}."}), 500
 
-        all_items = []
-        search_args = {}
-        if status_filter == 'unwatched':
-            search_args['unwatched'] = True
-        elif status_filter == 'watched':
-            search_args['unwatched'] = False
-        # 'all' ne nécessite pas d'argument 'unwatched' spécifique
-
+        all_media_from_plex = []
         for lib_key in library_keys:
             try:
-                # lib_key est l'ID de la section (ex: '1', '23'). sectionByID attend un int.
                 library = target_plex_server.library.sectionByID(int(lib_key))
-                current_app.logger.info(f"API get_media_items: Recherche dans la bibliothèque '{library.title}' (Key: {lib_key}) avec filtres: {search_args}")
+                current_app.logger.info(f"API get_media_items: Récupération de tous les items de la bibliothèque '{library.title}' (Key: {lib_key}) pour l'utilisateur {user_id}.")
+                items_from_lib = library.all() # Récupère tous les items, le filtrage se fera en Python
 
-                # Utiliser search() pour appliquer les filtres directement via l'API Plex
-                items = library.search(**search_args)
-
-                for item in items:
-                    item.library_name = library.title # Ajout pour le template
-                all_items.extend(items)
+                for item_from_lib in items_from_lib:
+                    item_from_lib.library_name = library.title
+                    if item_from_lib.type == 'show':
+                        item_from_lib.viewed_episodes = item_from_lib.viewedLeafCount
+                        item_from_lib.total_episodes = item_from_lib.leafCount
+                    all_media_from_plex.append(item_from_lib)
             except NotFound:
                 current_app.logger.warning(f"API get_media_items: Bibliothèque avec clé {lib_key} non trouvée pour l'utilisateur {user_id}.")
-                # On continue avec les autres bibliothèques si certaines ne sont pas trouvées
             except Exception as e_lib:
                 current_app.logger.error(f"API get_media_items: Erreur lors de l'accès à la bibliothèque {lib_key} pour {user_id}: {e_lib}", exc_info=True)
-                # On pourrait choisir de retourner une erreur ici ou de continuer
 
-        # Tri basique par titre pour l'instant. Pourra être amélioré.
-        all_items.sort(key=lambda x: getattr(x, 'titleSort', x.title).lower())
+        # --- Nouvelle Logique de Filtrage en Python ---
+        filtered_items = []
+        if status_filter == 'all':
+            filtered_items = all_media_from_plex
+        else:
+            for item in all_media_from_plex:
+                if item.type == 'show':
+                    # Assurer que total_episodes est non nul pour éviter division par zéro ou logique incorrecte
+                    total_episodes = getattr(item, 'total_episodes', 0)
+                    viewed_episodes = getattr(item, 'viewed_episodes', 0)
 
-        return render_template('plex_editor/_media_table.html', items=all_items)
+                    is_watched_series = total_episodes > 0 and viewed_episodes == total_episodes
+                    is_unwatched_series = total_episodes > 0 and viewed_episodes == 0
+                    # Pour 'in_progress', on s'assure qu'il y a des épisodes, sinon ce n'est pas applicable.
+                    is_in_progress_series = total_episodes > 0 and viewed_episodes > 0 and viewed_episodes < total_episodes
+
+                    if status_filter == 'watched' and is_watched_series:
+                        filtered_items.append(item)
+                    elif status_filter == 'unwatched' and is_unwatched_series:
+                        filtered_items.append(item)
+                    elif status_filter == 'in_progress' and is_in_progress_series:
+                        filtered_items.append(item)
+
+                elif item.type == 'movie':
+                    # Pour les films, la logique existante de item.isWatched est suffisante
+                    if status_filter == 'watched' and item.isWatched:
+                        filtered_items.append(item)
+                    elif status_filter == 'unwatched' and not item.isWatched:
+                        filtered_items.append(item)
+                    # Les films ne peuvent pas être 'in_progress' dans ce contexte
+            current_app.logger.info(f"API get_media_items: Filtrage appliqué. Avant: {len(all_media_from_plex)} items, Après: {len(filtered_items)} items pour le statut '{status_filter}'.")
+
+        # Tri basique par titre.
+        filtered_items.sort(key=lambda x: getattr(x, 'titleSort', x.title).lower())
+
+        return render_template('plex_editor/_media_table.html', items=filtered_items)
 
     except Unauthorized:
         current_app.logger.error(f"API get_media_items: Autorisation refusée pour {user_id}.", exc_info=True)
@@ -1384,6 +1407,64 @@ def get_media_details_for_modal(rating_key): # Renommé pour clarté, bien que l
     except Exception as e:
         current_app.logger.error(f"Erreur API lors de la récupération des détails pour {rating_key}: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
+
+@plex_editor_bp.route('/api/series_details/<int:rating_key>')
+@login_required
+def get_series_details_for_management(rating_key):
+    """Récupère les détails complets d'une série pour la modale de gestion."""
+    try:
+        # Utiliser le serveur Plex spécifique à l'utilisateur pour les statuts 'isWatched'
+        user_plex_server = get_user_specific_plex_server()
+        if not user_plex_server:
+            current_app.logger.error(f"API get_series_details: Impossible d'obtenir une connexion Plex spécifique à l'utilisateur.")
+            return f'<div class="alert alert-danger">Erreur: Connexion au serveur Plex utilisateur échouée.</div>', 500
+
+        series = user_plex_server.fetchItem(rating_key)
+
+        if not series or series.type != 'show':
+            return f'<div class="alert alert-warning">Série non trouvée ou type incorrect.</div>', 404
+
+        series_data = {
+            'title': series.title,
+            'ratingKey': series.ratingKey,
+            'seasons': []
+        }
+
+        for season in series.seasons():
+            # Le statut isWatched pour une saison est directement un attribut de l'objet Season
+            season_data = {
+                'title': season.title,
+                'isWatched': season.isWatched,
+                'viewed_episodes': season.viewedLeafCount, # Nombre d'épisodes vus dans cette saison
+                'total_episodes': season.leafCount,     # Nombre total d'épisodes dans cette saison
+                'episodes': []
+            }
+            for episode in season.episodes():
+                # Le statut isWatched pour un épisode est directement un attribut de l'objet Episode
+                # Pour la taille, il faut vérifier la présence de media et parts
+                size_on_disk = 0
+                if episode.media and len(episode.media) > 0 and episode.media[0].parts and len(episode.media[0].parts) > 0:
+                    size_on_disk = episode.media[0].parts[0].size
+
+                episode_data = {
+                    'title': episode.title,
+                    'isWatched': episode.isWatched,
+                    'size_on_disk': size_on_disk
+                }
+                season_data['episodes'].append(episode_data)
+            series_data['seasons'].append(season_data)
+
+        # Rendre un template partiel avec ces données
+        return render_template('plex_editor/_series_management_modal_content.html', series=series_data)
+
+    except NotFound:
+        current_app.logger.warning(f"API get_series_details: Série avec ratingKey {rating_key} non trouvée.")
+        return f'<div class="alert alert-warning">Série avec ratingKey {rating_key} non trouvée.</div>', 404
+    except Exception as e:
+        current_app.logger.error(f"Erreur API lors de la récupération des détails de la série {rating_key}: {e}", exc_info=True)
+        # Renvoyer une erreur HTML simple qui peut être affichée directement dans la modale
+        return f'<div class="alert alert-danger">Erreur serveur: {str(e)}</div>', 500
+
 # --- Gestionnaires d'erreur ---
 #@app.errorhandler(404)
 #def page_not_found(e):
