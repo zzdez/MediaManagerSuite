@@ -289,7 +289,15 @@
 
         <!-- Onglet 4 : Vue rTorrent -->
         <div class="tab-pane fade" id="rtorrent-view" role="tabpanel" aria-labelledby="rtorrent-view-tab">
-            <p class="mt-3">Ici viendra la liste des torrents de rTorrent...</p>
+            <div class="text-center mt-3" id="rtorrent-loader">
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p>Chargement des torrents...</p>
+            </div>
+            <div id="rtorrent-content-container">
+                <!-- Le contenu de la liste des torrents sera chargé ici -->
+            </div>
         </div>
     </div>
 
@@ -300,6 +308,7 @@
 {% endblock %}
 
 {% block scripts %}
+    {{ super() }} {# Conserve les scripts du parent s'il y en a #}
     <!-- jQuery -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <!-- Bootstrap Bundle JS (Popper.js included) -->
@@ -490,6 +499,42 @@
                 }
             }
 
+            // Script pour charger dynamiquement la vue rTorrent
+            const rtorrentTab = document.querySelector('#rtorrent-view-tab');
+            const contentContainer = document.querySelector('#rtorrent-content-container');
+            const loader = document.querySelector('#rtorrent-loader');
+            let isContentLoaded = false; // Pour ne charger le contenu qu'une seule fois
+
+            if (rtorrentTab) { // S'assurer que l'onglet existe avant d'ajouter l'écouteur
+                rtorrentTab.addEventListener('shown.bs.tab', function(event) {
+                    // Si le contenu n'a pas encore été chargé
+                    if (!isContentLoaded) {
+                        if(loader) loader.style.display = 'block'; // Affiche le spinner
+                        if(contentContainer) contentContainer.innerHTML = ''; // Vide le conteneur
+
+                        // Utilise l'URL de la route existante
+                        const url = "{{ url_for('seedbox_ui.rtorrent_list_view') }}";
+
+                        fetch(url)
+                            .then(response => {
+                                if (!response.ok) {
+                                    throw new Error('La réponse du réseau était incorrecte.');
+                                }
+                                return response.text();
+                            })
+                            .then(html => {
+                                if(loader) loader.style.display = 'none'; // Cache le spinner
+                                if(contentContainer) contentContainer.innerHTML = html; // Injecte le HTML
+                                isContentLoaded = true; // Marque le contenu comme chargé
+                            })
+                            .catch(error => {
+                                if(loader) loader.style.display = 'none'; // Cache le spinner
+                                if(contentContainer) contentContainer.innerHTML = `<div class="alert alert-danger mt-3">Erreur lors du chargement des torrents: ${error.message}</div>`;
+                                console.error('Erreur lors de la récupération des torrents:', error);
+                            });
+                    }
+                });
+            }
         });
     </script>
 {% endblock %}
