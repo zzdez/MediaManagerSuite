@@ -65,6 +65,22 @@ document.addEventListener('DOMContentLoaded', function () {
     const itemsContainer = document.getElementById('plex-items-container');
 
     const LAST_USER_KEY = 'mms_last_plex_user_id';
+    const LIBS_CACHE_KEY_PREFIX = 'mms_plex_libs_for_user_'; // Préfixe pour les clés de cache
+
+    // --- FONCTION UTILITAIRE pour peupler la liste des bibliothèques ---
+    function populateLibraries(libraries) {
+        librarySelect.innerHTML = '';
+        if (libraries && libraries.length > 0) {
+            libraries.forEach(lib => {
+                const option = new Option(lib.text, lib.id);
+                librarySelect.add(option);
+            });
+            librarySelect.disabled = false;
+        } else {
+            librarySelect.innerHTML = '<option selected disabled>Aucune bibliothèque trouvée</option>'; // Modifié pour être disabled
+            librarySelect.disabled = true;
+        }
+    }
 
     // --- 1. Charger les utilisateurs au démarrage ---
     fetch("{{ url_for('plex_editor.get_plex_users') }}")
@@ -116,43 +132,54 @@ document.addEventListener('DOMContentLoaded', function () {
             localStorage.removeItem(LAST_USER_KEY);
         }
 
-        librarySelect.innerHTML = '<option>Chargement...</option>';
+        // Réinitialiser l'affichage des items et le sélecteur de bibliothèques
+        itemsContainer.innerHTML = '<p class="text-center text-muted">Veuillez sélectionner une ou plusieurs bibliothèques et appliquer les filtres.</p>';
+        librarySelect.innerHTML = '<option selected disabled>Chargement...</option>';
         librarySelect.disabled = true;
-        itemsContainer.innerHTML = '<p class="text-center text-muted">Veuillez sélectionner une ou plusieurs bibliothèques.</p>';
 
-        if (!userId) {
-            librarySelect.innerHTML = '';
-            librarySelect.disabled = true;
+        if (!userId) { // Si "Choisir un utilisateur..." est sélectionné
+            populateLibraries([]); // Vide et désactive le sélecteur de bibliothèques
             return;
         }
 
-        const libraryUrl = "{{ url_for('plex_editor.get_user_libraries', user_id='USER_ID_PLACEHOLDER') }}".replace('USER_ID_PLACEHOLDER', userId);
+        // --- NOUVELLE LOGIQUE DE CACHE ---
+        const cacheKey = LIBS_CACHE_KEY_PREFIX + userId;
+        const cachedLibs = localStorage.getItem(cacheKey);
 
-        fetch(libraryUrl)
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(libraries => {
-                librarySelect.innerHTML = '';
-                if (libraries && libraries.length > 0) {
-                    libraries.forEach(lib => {
-                        const option = new Option(lib.text, lib.id);
-                        librarySelect.add(option);
-                    });
-                    librarySelect.disabled = false;
-                } else {
-                    librarySelect.innerHTML = '<option selected>Aucune bibliothèque trouvée</option>';
-                    itemsContainer.innerHTML = '<p class="text-center text-muted">Aucune bibliothèque trouvée pour cet utilisateur.</p>';
-                }
-            })
-            .catch(error => {
-                console.error("Erreur lors du chargement des bibliothèques:", error);
-                librarySelect.innerHTML = '<option selected>Erreur de chargement des bibliothèques</option>';
-                itemsContainer.innerHTML = `<p class="text-danger text-center">Erreur chargement bibliothèques: ${error.message}</p>`;
-            });
+        if (cachedLibs) {
+            console.log(`Bibliothèques pour l'utilisateur ${userId} chargées depuis le cache.`);
+            populateLibraries(JSON.parse(cachedLibs));
+        } else {
+            console.log(`Cache vide pour l'utilisateur ${userId}, appel de l'API pour les bibliothèques.`);
+            // librarySelect est déjà en mode "Chargement..." et disabled
+
+            const libraryUrl = "{{ url_for('plex_editor.get_user_libraries', user_id='USER_ID_PLACEHOLDER') }}".replace('USER_ID_PLACEHOLDER', userId);
+
+            fetch(libraryUrl)
+                .then(response => {
+                    if (!response.ok) {
+                        // Si l'API renvoie une erreur JSON, essayer de la parser
+                        return response.json().then(errData => {
+                            throw new Error(`HTTP error! status: ${response.status}, message: ${errData.error || 'Unknown API error'}`);
+                        }).catch(() => {
+                            // Fallback si le corps n'est pas JSON ou si response.json() échoue
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        });
+                    }
+                    return response.json();
+                })
+                .then(libraries => {
+                    localStorage.setItem(cacheKey, JSON.stringify(libraries));
+                    populateLibraries(libraries);
+                })
+                .catch(error => {
+                    console.error("Erreur lors du chargement des bibliothèques:", error);
+                    librarySelect.innerHTML = '<option selected disabled>Erreur de chargement</option>';
+                    librarySelect.disabled = true;
+                    // Afficher l'erreur aussi dans la zone des items peut être une bonne idée
+                    itemsContainer.innerHTML = `<p class="text-danger text-center">Erreur lors du chargement des bibliothèques: ${error.message}</p>`;
+                });
+        }
     });
 
     // --- 3. Logique du bouton "Appliquer" ---
