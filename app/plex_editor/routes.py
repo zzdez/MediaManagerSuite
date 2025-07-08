@@ -177,6 +177,9 @@ def get_media_items():
 
                 for item in items:
                     item.library_name = library.title # Ajout pour le template
+                    if item.type == 'show':
+                        item.viewed_episodes = item.viewedLeafCount
+                        item.total_episodes = item.leafCount
                 all_items.extend(items)
             except NotFound:
                 current_app.logger.warning(f"API get_media_items: Bibliothèque avec clé {lib_key} non trouvée pour l'utilisateur {user_id}.")
@@ -1412,6 +1415,8 @@ def get_series_details_for_management(rating_key):
             season_data = {
                 'title': season.title,
                 'isWatched': season.isWatched,
+                'viewed_episodes': season.viewedLeafCount, # Nombre d'épisodes vus dans cette saison
+                'total_episodes': season.leafCount,     # Nombre total d'épisodes dans cette saison
                 'episodes': []
             }
             for episode in season.episodes():
