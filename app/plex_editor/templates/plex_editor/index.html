@@ -53,6 +53,27 @@
     </div>
 
 </div>
+
+<!-- Modale d'Information -->
+<div class="modal fade" id="item-details-modal" tabindex="-1" aria-labelledby="itemDetailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content bg-dark text-white">
+            <div class="modal-header">
+                <h5 class="modal-title" id="itemDetailsModalLabel">Détails du Média</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Le contenu sera injecté ici par JavaScript -->
+                <div class="text-center" id="modal-loader">
+                    <div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div>
+                </div>
+                <div id="modal-content-container" class="d-none">
+                    <!-- Structure du contenu détaillé -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -230,6 +251,7 @@ document.addEventListener('DOMContentLoaded', function () {
     itemsContainer.addEventListener('click', function(event) {
         const deleteButton = event.target.closest('.delete-item-btn');
         const toggleButton = event.target.closest('.toggle-watched-btn');
+        const titleLink = event.target.closest('.item-title-link');
 
         if (deleteButton) {
             event.preventDefault();
@@ -239,7 +261,8 @@ document.addEventListener('DOMContentLoaded', function () {
             if (confirm(`Êtes-vous sûr de vouloir supprimer définitivement "${itemTitle}" de Plex ?`)) {
                 deleteButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
                 deleteButton.disabled = true;
-                const finalUrl = `{{ url_for('plex_editor.index') }}api/media_item/${ratingKey}`;
+                const finalUrl = `{{ url_for('plex_editor.delete_media_item_api', rating_key=0) }}`.replace('0', ratingKey);
+
 
                 fetch(finalUrl, { method: 'DELETE' })
                 .then(response => response.json())
@@ -259,7 +282,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     deleteButton.disabled = false;
                 });
             }
-        } else if (toggleButton) { // Modifié pour être un 'else if'
+        } else if (toggleButton) {
             event.preventDefault();
             const ratingKey = toggleButton.dataset.ratingKey;
             const currentUserId = userSelect.value;
@@ -271,7 +294,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             toggleButton.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
             toggleButton.disabled = true;
-            const toggleUrl = `{{ url_for('plex_editor.index') }}api/media_item/${ratingKey}/toggle_watched`;
+            const toggleUrl = `{{ url_for('plex_editor.toggle_watched_status_api', rating_key=0) }}`.replace('0', ratingKey);
 
             fetch(toggleUrl, {
                 method: 'POST',
@@ -283,8 +306,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (data.status === 'success') {
                     const statusCell = document.querySelector(`.media-status-cell[data-rating-key="${ratingKey}"]`);
                     if (statusCell) {
-                        // Correction ici: Utiliser data.new_status_str comme demandé
-                        if (data.new_status_str === 'Vu') {
+                        if (data.is_watched) { // Utiliser data.is_watched qui est un booléen
                             statusCell.innerHTML = `<span class="badge bg-success">Vu</span>`;
                         } else {
                             statusCell.innerHTML = `<span class="badge bg-warning text-dark">Non Vu</span>`;
@@ -297,9 +319,74 @@ document.addEventListener('DOMContentLoaded', function () {
                 console.error('Erreur de bascule du statut vu/non vu:', error);
             })
             .finally(() => {
+                // Rétablir l'icône correcte, peut-être en fonction du nouvel état si nécessaire
+                const statusCell = document.querySelector(`.media-status-cell[data-rating-key="${ratingKey}"]`);
+                // Pour l'instant, on remet l'icône 'eye' par défaut. Une logique plus fine pourrait être ajoutée.
                 toggleButton.innerHTML = '<i class="bi bi-eye-fill"></i>';
                 toggleButton.disabled = false;
             });
+        } else if (titleLink) {
+            event.preventDefault(); // Empêche le lien de remonter en haut de la page
+            const ratingKey = titleLink.dataset.ratingKey;
+
+            const modalLoader = document.getElementById('modal-loader');
+            const modalContentContainer = document.getElementById('modal-content-container'); // Corrigé ici
+            const modalTitle = document.getElementById('itemDetailsModalLabel');
+
+            // Réinitialise et affiche le loader
+            modalTitle.textContent = 'Chargement des détails...';
+            modalLoader.style.display = 'block';
+            modalContentContainer.innerHTML = ''; // Vide le contenu précédent
+            modalContentContainer.classList.add('d-none');
+
+            // Fait l'appel API
+            // Assurez-vous que `plex_editor.get_media_details_for_modal` est le nom correct de la fonction de la route
+            fetch(`{{ url_for('plex_editor.get_media_details_for_modal', rating_key=0) }}`.replace('0', ratingKey))
+                .then(response => {
+                    if (!response.ok) {
+                        // Essayer de parser le JSON d'erreur si possible
+                        return response.json().then(errData => {
+                            throw new Error(errData.error || `Erreur HTTP ${response.status}`);
+                        }).catch(() => {
+                            // Fallback si le corps n'est pas JSON ou si response.json() échoue
+                            throw new Error(`Erreur HTTP ${response.status}`);
+                        });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.error) throw new Error(data.error); // Si l'API retourne une erreur dans un JSON valide
+
+                    // Remplit la modale avec les nouvelles données
+                    modalTitle.textContent = data.title || 'Détails du Média';
+                    let posterHtml = data.poster_url ? `<img src="${data.poster_url}" class="img-fluid rounded mb-3">` : '<p class_text-muted">Aucune affiche disponible.</p>';
+
+                    modalContentContainer.innerHTML = `
+                        <div class="row">
+                            <div class="col-md-4">
+                                ${posterHtml}
+                            </div>
+                            <div class="col-md-8">
+                                <h4>${data.title || 'Titre inconnu'} ${data.year ? `(${data.year})` : ''}</h4>
+                                <p class="fst-italic text-muted">${data.tagline || ''}</p>
+                                <p>${data.summary || 'Aucun résumé.'}</p>
+                                <p><strong>Genres:</strong> ${data.genres && data.genres.length > 0 ? data.genres.join(', ') : 'Non spécifiés'}</p>
+                                <p><strong>Note:</strong> ${data.rating ? `${data.rating} / 10` : 'Non noté'}</p>
+                            </div>
+                        </div>
+                    `;
+
+                    // Affiche le contenu et cache le loader
+                    modalLoader.style.display = 'none';
+                    modalContentContainer.classList.remove('d-none');
+                })
+                .catch(error => {
+                    modalLoader.style.display = 'none';
+                    modalTitle.textContent = 'Erreur';
+                    modalContentContainer.innerHTML = `<div class="alert alert-danger">${error.message}</div>`;
+                    modalContentContainer.classList.remove('d-none');
+                    console.error("Erreur lors du chargement des détails du média:", error);
+                });
         }
     });
 });
