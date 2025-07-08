@@ -155,116 +155,102 @@
     </div>
 
     <!-- Nouvelle Navigation à Onglets -->
-    <ul class="nav nav-tabs" id="seedboxTab" role="tablist">
+    <ul class="nav nav-tabs mb-3" id="mainTabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link active" id="dashboard-tab" data-bs-toggle="tab" data-bs-target="#dashboard-content" type="button" role="tab" aria-controls="dashboard-content" aria-selected="true">Tableau de Bord & Actions</button>
+            <button class="nav-link active" id="dashboard-tab" data-bs-toggle="tab" data-bs-target="#dashboard-content" type="button" role="tab" aria-controls="dashboard-content" aria-selected="true">
+                <i class="bi bi-speedometer2"></i> Tableau de Bord
+            </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link" id="sonarr-pending-tab" data-bs-toggle="tab" data-bs-target="#sonarr-pending" type="button" role="tab" aria-controls="sonarr-pending" aria-selected="false">Fichiers Sonarr</button>
+            <button class="nav-link" id="finished-files-tab" data-bs-toggle="tab" data-bs-target="#finished-files-content" type="button" role="tab" aria-controls="finished-files-content" aria-selected="false">
+                <i class="bi bi-check-circle-fill"></i> Fichiers Terminés
+            </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link" id="radarr-pending-tab" data-bs-toggle="tab" data-bs-target="#radarr-pending" type="button" role="tab" aria-controls="radarr-pending" aria-selected="false">Fichiers Radarr</button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link" id="rtorrent-view-tab" data-bs-toggle="tab" data-bs-target="#rtorrent-view" type="button" role="tab" aria-controls="rtorrent-view" aria-selected="false">Vue rTorrent</button>
+            <button class="nav-link" id="maintenance-tab" data-bs-toggle="tab" data-bs-target="#maintenance-content" type="button" role="tab" aria-controls="maintenance-content" aria-selected="false">
+                <i class="bi bi-tools"></i> Maintenance
+            </button>
         </li>
     </ul>
 
     <!-- Contenu des Onglets -->
-    <div class="tab-content" id="seedboxTabContent">
-        <!-- Onglet 1 (Défaut): Tableau de Bord & Actions -->
+    <div class="tab-content" id="mainTabsContent">
+        <!-- Onglet 1 : Tableau de Bord (Staging Local & Items en Attente) -->
         <div class="tab-pane fade show active" id="dashboard-content" role="tabpanel" aria-labelledby="dashboard-tab">
-            {# Contenu du staging déplacé ici #}
-            <hr class="my-4"> {# Séparateur avant le contenu du staging local #}
-            <h1>Contenu du Staging Local</h1>
-
-            {# AFFICHAGE EN ARBORESCENCE (votre code existant) #}
+            {# Contenu du staging local #}
+            <div class="d-flex justify-content-between align-items-center mt-3 mb-3">
+                <h3><i class="bi bi-folder2-open"></i> Staging Local MediaManagerSuite : <code>{{ staging_dir_display or 'Non configuré' }}</code></h3>
+                <div>
+                    <button id="batchMapToSonarrBtn" class="btn btn-sm btn-primary me-2" onclick="openBatchSonarrMapModal()" title="Mapper les items sélectionnés du staging à une série Sonarr" disabled>
+                        <i class="fas fa-object-group"></i> Mapper Sélection vers Sonarr
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary" onclick="location.reload()">
+                        <i class="bi bi-arrow-clockwise"></i> Actualiser Staging
+                    </button>
+                </div>
+            </div>
             {% if items_tree %}
-                {% if staging_dir_display %}
-                <p class="text-muted mb-2">Dossier du Staging Local : <code>{{ staging_dir_display }}</code></p>
-                {% endif %}
                 <ul class="file-tree">
                     {% for root_node in items_tree %}
                         {{ render_tree_node(root_node, can_scan_sonarr, can_scan_radarr, 0) }}
                     {% endfor %}
                 </ul>
-            {% elif not get_flashed_messages(category_filter=['danger']) %} {# Évite d'afficher "vide" s'il y a déjà une erreur #}
-                <div class="alert alert-info mt-3" role="alert">
-                    Le dossier de staging local est vide ou non accessible.
+            {% elif not get_flashed_messages(category_filter=['danger']) %}
+                <div class="alert alert-info mt-3 text-center" role="alert">
+                    <i class="bi bi-info-circle-fill"></i> Le dossier de staging est vide, non configuré, ou inaccessible.
                 </div>
             {% endif %}
-            {# FIN DE L'AFFICHAGE EN ARBORESCENCE #}
 
-            {# SECTION POUR LES ITEMS EN ATTENTE / ERREUR (déplacée ici aussi) #}
+            {# SECTION POUR LES ITEMS EN ATTENTE / ERREUR #}
+            <hr class="my-4">
+            <h4><i class="bi bi-exclamation-triangle-fill text-warning"></i> Items en Attente / Nécessitant Attention</h4>
             {% if items_requiring_attention %}
-                <hr class="my-4">
-                <h2><i class="fas fa-exclamation-triangle text-warning"></i> Torrents en Attente / Nécessitant Attention</h2>
                 <div class="table-responsive">
-                    <table class="table table-sm table-hover">
+                    <table class="table table-dark table-striped table-hover mt-3 align-middle caption-top">
+                        <caption>Liste des items en attente d'association ou en erreur.</caption>
                         <thead>
                             <tr>
-                                <th>Release Name</th>
-                                <th>Type</th>
-                                <th>ID Cible</th>
-                                <th>Statut Actuel</th>
-                                <th>Message</th>
-                                <th>MàJ</th>
-                                <th>Actions</th>
+                                <th scope="col" style="width: 25%;">Nom de la Release (Staging/Torrent)</th>
+                                <th scope="col" style="width: 10%;">Type</th>
+                                <th scope="col" style="width: 20%;">Média Associé (*Arr ID)</th>
+                                <th scope="col" style="width: 15%;">Statut Actuel</th>
+                                <th scope="col" style="width: 15%;">Dernière MàJ</th>
+                                <th scope="col" style="width: 15%;">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for item in items_requiring_attention %}
                             <tr>
-                                <td title="{{ item.release_name }}">{{ item.release_name | truncate(60) }}</td>
+                                <td><code>{{ item.release_name }}</code></td>
                                 <td>
-                                    <span class="badge {% if item.app_type == 'sonarr' %}bg-primary{% elif item.app_type == 'radarr' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
-                                        {{ item.app_type | capitalize if item.app_type else 'N/A' }}
+                                    {% if item.app_type == 'sonarr' %}<span class="badge bg-primary fs-6">Série</span>
+                                    {% elif item.app_type == 'radarr' %}<span class="badge bg-success fs-6">Film</span>
+                                    {% else %}<span class="badge bg-secondary fs-6">N/A</span>{% endif %}
+                                </td>
+                                <td>
+                                    {{ item.target_title or 'Non défini' }}
+                                    {% if item.target_id %}<small class="text-muted d-block">ID: {{ item.target_id }}</small>{% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge
+                                        {% if item.status and 'error' in item.status.lower() %} bg-danger
+                                        {% elif item.status and 'processing' in item.status.lower() %} bg-info text-dark
+                                        {% elif item.status and 'downloading' in item.status.lower() %} bg-primary
+                                        {% elif item.status and 'pending_mms_import' in item.status.lower() %} bg-warning text-dark
+                                        {% else %} bg-secondary
+                                        {% endif %} fs-6">
+                                        {{ item.status_display or item.status or 'Inconnu' }}
                                     </span>
+                                    {% if item.status_message %}<small class="text-muted d-block fst-italic" title="{{ item.status_message }}">{{ item.status_message | truncate(50, True) }}</small>{% endif %}
                                 </td>
-                                <td>{{ item.target_id if item.target_id is not none else 'N/A' }}</td>
-                                <td><span class="badge bg-info text-dark">{{ item.status | replace('_', ' ') | capitalize }}</span></td>
-                                <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ item.status_message }}">{{ item.status_message | truncate(50) if item.status_message else '-' }}</td>
-                                <td title="{{ item.updated_at if item.updated_at else item.added_at }}">
-                                    {{ (item.updated_at if item.updated_at else item.added_at).split('.')[0].replace('T', ' ') if (item.updated_at or item.added_at) else 'N/A' }}
-                                </td>
+                                <td>{{ item.updated_at_human or item.added_at_human or 'N/A' }}</td>
                                 <td>
-                                    {# Bouton Réessayer l'Import (si l'item est dans le staging) #}
-                                    {% if item.is_in_staging and item.status != 'processing_by_mms_api' %} {# Évite de relancer si déjà en cours #}
-                                    <form action="{{ url_for('seedbox_ui.retry_problematic_import_action', torrent_hash=item.torrent_hash) }}" method="POST" style="display: inline-block;" onsubmit="return confirm('Réessayer l\'import automatique pour \'{{ item.release_name | e }}\' ?');">
-                                        <button type="submit" class="btn btn-sm btn-outline-success mb-1" title="Réessayer l'import automatique">
-                                            <i class="fas fa-redo"></i> Réessayer
-                                        </button>
-                                    </form>
-                                    {% elif item.status == 'processing_by_mms_api' %}
-                                        <button class="btn btn-sm btn-outline-secondary mb-1" disabled title="Traitement déjà en cours ou bloqué.">
-                                            <i class="fas fa-spinner fa-spin"></i> En cours...
-                                        </button>
+                                    {% if item.is_in_staging and item.target_id %}
+                                        <button class="btn btn-sm btn-success retry-import-btn mb-1 w-100" data-torrent-hash="{{ item.torrent_hash }}" title="Relancer l'import MMS."><i class="bi bi-play-fill"></i> Réessayer Import</button>
+                                    {% elif item.is_in_staging and not item.target_id %}
+                                         <button class="btn btn-sm btn-warning map-problematic-item-btn mb-1 w-100" data-torrent-hash="{{ item.torrent_hash }}" data-release-name="{{ item.release_name }}" data-app-type="{{ item.app_type }}" title="Mapper cet item."><i class="bi bi-link-45deg"></i> Mapper Item</button>
                                     {% endif %}
-
-                                    {# Bouton Mapper Manuellement (si applicable) #}
-                                    {% if item.is_in_staging and item.app_type and item.target_id %}
-                                        {# Ouvre le modal existant. Le JS devra être adapté pour pré-remplir. #}
-                                        {% if item.app_type == 'sonarr' %}
-                                        <button class="btn btn-sm btn-outline-primary mb-1"
-                                                onclick='openSonarrSearchModalForProblemItem({{ item.release_name | tojson | safe }}, {{ item.target_id }}, {{ item.torrent_hash | tojson | safe }})'
-                                                title="Mapper manuellement avec Sonarr (corriger l'association)">
-                                            <i class="fas fa-edit"></i> Mapper Sonarr
-                                        </button>
-                                        {% elif item.app_type == 'radarr' %}
-                                        <button class="btn btn-sm btn-outline-warning text-dark mb-1"
-                                                onclick='openRadarrSearchModalForProblemItem({{ item.release_name | tojson | safe }}, {{ item.target_id }}, {{ item.torrent_hash | tojson | safe }})'
-                                                title="Mapper manuellement avec Radarr (corriger l'association)">
-                                            <i class="fas fa-edit"></i> Mapper Radarr
-                                        </button>
-                                        {% endif %}
-                                    {% endif %}
-
-                                    {# Bouton Supprimer l'Association #}
-                                    <form action="{{ url_for('seedbox_ui.delete_problematic_association_action', torrent_hash=item.torrent_hash) }}" method="POST" style="display: inline-block;" onsubmit="return confirm('Supprimer cette association en attente pour \'{{ item.release_name | e }}\' ? L\'item physique (s\'il existe) ne sera pas touché.');">
-                                        <button type="submit" class="btn btn-sm btn-outline-danger mb-1" title="Supprimer cette association de la liste des items en attente">
-                                            <i class="fas fa-times-circle"></i> Oublier
-                                        </button>
-                                    </form>
+                                    <button class="btn btn-sm btn-danger delete-association-btn w-100" data-torrent-hash="{{ item.torrent_hash }}" title="Supprimer cette association."><i class="bi bi-trash-fill"></i> Oublier Assoc.</button>
                                 </td>
                             </tr>
                             {% endfor %}
@@ -272,39 +258,52 @@
                     </table>
                 </div>
             {% else %}
-                <p class="text-muted">Aucun torrent ne nécessite une attention particulière actuellement.</p>
+                <div class="alert alert-success text-center mt-3" role="alert">
+                    <i class="bi bi-check-circle-fill"></i> Aucun item en attente ou en erreur nécessitant une action.
+                </div>
             {% endif %}
-            {# FIN DE LA SECTION POUR LES ITEMS EN ATTENTE / ERREUR #}
         </div>
 
-        <!-- Onglet 2 : Fichiers Sonarr -->
-        <div class="tab-pane fade" id="sonarr-pending" role="tabpanel" aria-labelledby="sonarr-pending-tab">
-            <div class="text-center mt-3" id="sonarr-loader">
-                <div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div>
-                <p>Chargement des fichiers Sonarr...</p>
-            </div>
-            <div id="sonarr-content-container"></div>
-        </div>
-
-        <!-- Onglet 3 : Fichiers Radarr -->
-        <div class="tab-pane fade" id="radarr-pending" role="tabpanel" aria-labelledby="radarr-pending-tab">
-            <div class="text-center mt-3" id="radarr-loader">
-                <div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div>
-                <p>Chargement des fichiers Radarr...</p>
-            </div>
-            <div id="radarr-content-container"></div>
-        </div>
-
-        <!-- Onglet 4 : Vue rTorrent -->
-        <div class="tab-pane fade" id="rtorrent-view" role="tabpanel" aria-labelledby="rtorrent-view-tab">
-            <div class="text-center mt-3" id="rtorrent-loader">
-                <div class="spinner-border" role="status">
+        <!-- Onglet 2 : Fichiers Terminés (Nouvelle Vue Unifiée) -->
+        <div class="tab-pane fade" id="finished-files-content" role="tabpanel" aria-labelledby="finished-files-tab">
+            <div class="text-center mt-5" id="finished-files-loader">
+                <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status">
                     <span class="visually-hidden">Loading...</span>
                 </div>
-                <p>Chargement des torrents...</p>
+                <p class="mt-2">Chargement de la liste des fichiers terminés...</p>
             </div>
-            <div id="rtorrent-content-container">
-                <!-- Le contenu de la liste des torrents sera chargé ici -->
+            <div id="finished-files-container">
+                <!-- Le contenu de _unified_file_list.html sera chargé ici -->
+            </div>
+        </div>
+
+        <!-- Onglet 3 : Maintenance (Contenu Placeholder) -->
+        <div class="tab-pane fade" id="maintenance-content" role="tabpanel" aria-labelledby="maintenance-tab">
+            <div class="container mt-4">
+                <div class="row">
+                    <div class="col-md-12">
+                        <div class="card">
+                            <div class="card-header bg-secondary text-white">
+                                <h4><i class="bi bi-tools"></i> Outils de Maintenance</h4>
+                            </div>
+                            <div class="card-body">
+                                <p>Cette section est réservée pour les futurs outils de maintenance et de configuration avancée de MediaManagerSuite.</p>
+                                <p>Idées pour fonctionnalités futures :</p>
+                                <ul class="list-group list-group-flush">
+                                    <li class="list-group-item">Gestionnaire de configuration de l'application.</li>
+                                    <li class="list-group-item">Visualiseur de logs avancé.</li>
+                                    <li class="list-group-item">Outils de nettoyage (ex: anciennes associations, fichiers temporaires).</li>
+                                    <li class="list-group-item">Test de connexion aux services (*Arr, rTorrent, SFTP).</li>
+                                    <li class="list-group-item">Gestion des tâches planifiées (si applicable).</li>
+                                    <li class="list-group-item">Réintégration optionnelle de vues spécifiques (ex: Vue rTorrent détaillée, Files d'attente *Arr) si non accessibles ailleurs.</li>
+                                </ul>
+                                <div class="alert alert-info mt-3" role="alert">
+                                    <i class="bi bi-info-circle-fill"></i> Pour l'instant, cette section est un placeholder.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -542,27 +541,186 @@
                 }
             }
 
-            // Configuration pour chaque onglet
+            // Configuration du chargement pour l'onglet "Fichiers Terminés"
             loadTabContent(
-                '#rtorrent-view-tab',
-                '#rtorrent-content-container',
-                '#rtorrent-loader',
-                "{{ url_for('seedbox_ui.rtorrent_list_view') }}"
+                '#finished-files-tab',
+                '#finished-files-container', // ID du conteneur pour le contenu
+                '#finished-files-loader',  // ID du loader pour cet onglet
+                "{{ url_for('seedbox_ui.unified_finished_list') }}"
             );
 
-            loadTabContent(
-                '#sonarr-pending-tab',
-                '#sonarr-content-container',
-                '#sonarr-loader',
-                "{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='sonarr_working') }}"
-            );
+            // Scripts spécifiques à la page index.html (arbre de fichiers, batch mapping, etc.)
+            // (Conservez ici le JS de l'ancien fichier index.html qui est pertinent pour le premier onglet "Tableau de Bord")
 
-            loadTabContent(
-                '#radarr-pending-tab',
-                '#radarr-content-container',
-                '#radarr-loader',
-                "{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='radarr_working') }}"
-            );
+            document.querySelectorAll('.file-tree .toggle-children').forEach(toggler => {
+                toggler.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    const childrenList = this.closest('li').querySelector('.children-list');
+                    const icon = this.querySelector('i');
+                    if (childrenList) {
+                        if (childrenList.style.display === 'none' || childrenList.style.display === '') {
+                            childrenList.style.display = 'block';
+                            icon.classList.remove('fa-plus-square');
+                            icon.classList.add('fa-minus-square');
+                        } else {
+                            childrenList.style.display = 'none';
+                            icon.classList.remove('fa-minus-square');
+                            icon.classList.add('fa-plus-square');
+                        }
+                    }
+                });
+            });
+
+            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            tooltipTriggerList.map(function (tooltipTriggerEl) { return new bootstrap.Tooltip(tooltipTriggerEl); });
+
+            const addTorrentModalEl = document.getElementById('addTorrentModal');
+            if (addTorrentModalEl) {
+                if (typeof initializeAddTorrentModal === 'function') {
+                    addTorrentModalEl.addEventListener('show.bs.modal', initializeAddTorrentModal);
+                } else {
+                    console.error('initializeAddTorrentModal function not found. Check seedbox_ui_modals.js loading.');
+                }
+            }
+
+            const batchMapButton = document.getElementById('batchMapToSonarrBtn');
+            const stagingItemCheckboxes = document.querySelectorAll('.staging-item-checkbox');
+            let selectedStagingItemsForBatch = []; // Déclarer ici pour être accessible par les deux fonctions
+
+            function updateBatchActionButtonState() {
+                selectedStagingItemsForBatch = []; // Réinitialiser/mettre à jour la liste
+                stagingItemCheckboxes.forEach(checkbox => {
+                    if (checkbox.checked) {
+                        selectedStagingItemsForBatch.push(checkbox.value);
+                    }
+                });
+                if (batchMapButton) {
+                    batchMapButton.disabled = selectedStagingItemsForBatch.length === 0;
+                }
+            }
+
+            stagingItemCheckboxes.forEach(checkbox => {
+                checkbox.addEventListener('change', updateBatchActionButtonState);
+            });
+
+            if (batchMapButton) { // S'assurer que le bouton existe avant d'appeler la fonction
+                 updateBatchActionButtonState(); // Initial state
+            }
         });
+
+        // Ces fonctions doivent être dans la portée globale ou accessibles par `onclick`
+        // Si elles sont dans DOMContentLoaded, assurez-vous qu'elles sont attachées correctement
+        // ou déplacez-les en dehors si elles sont appelées directement par des attributs onclick HTML.
+        // Pour l'instant, en les laissant ici, elles devraient être définies avant que le HTML ne les appelle.
+        var selectedStagingItemsForBatch = []; // Assurez-vous que cette variable est accessible si utilisée par les fonctions ci-dessous
+
+        function openBatchSonarrMapModal() {
+            // Mettre à jour selectedStagingItemsForBatch avant de vérifier sa longueur
+            selectedStagingItemsForBatch = [];
+            document.querySelectorAll('.staging-item-checkbox:checked').forEach(checkbox => {
+                selectedStagingItemsForBatch.push(checkbox.value);
+            });
+
+            if (selectedStagingItemsForBatch.length === 0) {
+                alert("Veuillez sélectionner au moins un item du staging.");
+                return;
+            }
+            const sonarrModalElement = document.getElementById('sonarrSearchModal');
+            if (!sonarrModalElement) {
+                console.error("Modal Sonarr (ID: sonarrSearchModal) non trouvé !");
+                return;
+            }
+            sonarrModalElement.setAttribute('data-current-action', 'batchMapStaging');
+            document.getElementById('sonarrSearchQuery').value = '';
+            document.getElementById('sonarrSearchResults').innerHTML = `<p class="text-muted">Recherchez une série Sonarr pour mapper les <strong>${selectedStagingItemsForBatch.length} items</strong> sélectionnés du staging.</p>`;
+            document.getElementById('sonarrSelectedSeriesId').value = '';
+            document.getElementById('sonarrSelectedSeriesTitle').innerText = 'Aucune série sélectionnée';
+            document.getElementById('sonarrManualSeasonDiv').style.display = 'none';
+            // Assurez-vous que 'currentlySelectedSonarrSeriesIdInModal' est défini globalement ou passé correctement
+            // S'il est défini dans seedbox_ui_modals.js, il devrait être accessible.
+            if (typeof currentlySelectedSonarrSeriesIdInModal !== 'undefined') {
+                 currentlySelectedSonarrSeriesIdInModal = null;
+            }
+            const modalMapButton = document.getElementById('sonarrModalMapButton');
+            if (modalMapButton) {
+                modalMapButton.innerHTML = '<i class="fas fa-object-group"></i> Mapper Sélection à cette Série';
+                modalMapButton.disabled = true;
+                modalMapButton.className = 'btn btn-primary'; // Réinitialiser la classe
+                modalMapButton.onclick = function() { // Attacher l'événement ici
+                    const seriesId = document.getElementById('sonarrSelectedSeriesId').value;
+                    if (seriesId) {
+                        triggerBatchSonarrMapAction(seriesId);
+                    } else {
+                        alert("Veuillez d'abord rechercher et sélectionner une série Sonarr.");
+                    }
+                };
+            }
+            var modal = new bootstrap.Modal(sonarrModalElement);
+            modal.show();
+        }
+
+        async function triggerBatchSonarrMapAction(selectedSeriesIdForBatch) {
+            if (!selectedSeriesIdForBatch) {
+                alert("Aucune série Sonarr n'a été sélectionnée.");
+                return;
+            }
+             // Mettre à jour selectedStagingItemsForBatch juste avant l'action
+            selectedStagingItemsForBatch = [];
+            document.querySelectorAll('.staging-item-checkbox:checked').forEach(checkbox => {
+                selectedStagingItemsForBatch.push(checkbox.value);
+            });
+            if (selectedStagingItemsForBatch.length === 0) {
+                alert("Aucun item du staging n'est sélectionné pour le mappage groupé.");
+                return;
+            }
+
+            const payload = {
+                item_names: selectedStagingItemsForBatch,
+                series_id: parseInt(selectedSeriesIdForBatch)
+            };
+            const resultsDivInModal = document.getElementById('sonarrSearchResults');
+            if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-info">Traitement groupé pour le staging en cours (${selectedStagingItemsForBatch.length} items)...</div>`;
+            const modalMapButton = document.getElementById('sonarrModalMapButton');
+            if(modalMapButton) modalMapButton.disabled = true;
+            try {
+                const response = await fetch(window.appUrls.batchMapToSonarrSeries, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+                if (response.ok && result.success) {
+                    let message = `Traitement groupé du staging terminé. ${result.processed_count || 0} items traités.`;
+                    if (result.errors_count && result.errors_count > 0) {
+                        message += ` ${result.errors_count} items ont échoué ou nécessité une attention.`;
+                    }
+                    if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-${(result.errors_count && result.errors_count > 0) ? 'warning' : 'success'}">${escapeJsString(message)}</div>`;
+                    // Assurez-vous que flashMessageGlobally et escapeJsString sont définis (probablement dans seedbox_ui_modals.js)
+                    if (typeof flashMessageGlobally === "function" && typeof escapeJsString === "function") {
+                        flashMessageGlobally(message, (result.errors_count && result.errors_count > 0) ? 'warning' : 'success');
+                    } else {
+                        alert(message); // Fallback si les fonctions ne sont pas là
+                    }
+                    setTimeout(() => {
+                        const modalInstance = bootstrap.Modal.getInstance(document.getElementById('sonarrSearchModal'));
+                        if (modalInstance) modalInstance.hide();
+                        window.location.reload(); // Recharger pour voir les changements
+                    }, 3500);
+                } else {
+                    throw new Error(result.error || `Erreur HTTP ${response.status}`);
+                }
+            } catch (error) {
+                const errorMessage = (typeof escapeJsString === "function") ? escapeJsString(error.message) : error.message;
+                if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-danger">Erreur: ${errorMessage}</div>`;
+                if (typeof flashMessageGlobally === "function") {
+                    flashMessageGlobally(`Erreur lors du mapping groupé du staging: ${errorMessage}`, 'danger');
+                } else {
+                     alert(`Erreur lors du mapping groupé du staging: ${errorMessage}`);
+                }
+            } finally {
+                 if(modalMapButton) modalMapButton.disabled = false;
+            }
+        }
+
     </script>
 {% endblock %}

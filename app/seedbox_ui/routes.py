@@ -2880,6 +2880,114 @@ def force_sonarr_import_action():
 # trigger_radarr_import (MODIFIÉE POUR UTILISER _execute_mms_radarr_import)
 # ------------------------------------------------------------------------------
 
+def list_local_directory_items(directory_path):
+    """
+    Scanne un répertoire local et retourne une liste d'items (fichiers et dossiers)
+    avec leur nom, taille et type. Ne fonctionne pas récursivement.
+    """
+    items = []
+    # Utiliser current_app.logger si disponible, sinon le logger du module.
+    # Cela est utile si la fonction est appelée en dehors d'un contexte d'application Flask.
+    try:
+        logger_instance = current_app.logger
+    except RuntimeError: # Pas de contexte d'application Flask
+        logger_instance = logger # Utiliser le logger du module défini en haut du fichier
+
+    if not directory_path:
+        logger_instance.warning(f"Chemin du répertoire non fourni à list_local_directory_items.")
+        return items
+
+    if not os.path.exists(directory_path):
+        logger_instance.warning(f"Le chemin du répertoire n'existe pas: {directory_path}")
+        return items
+
+    if not os.path.isdir(directory_path):
+        logger_instance.warning(f"Le chemin n'est pas un répertoire: {directory_path}")
+        return items
+
+    for item_name in os.listdir(directory_path):
+        item_path = os.path.join(directory_path, item_name)
+        try:
+            stat_info = os.stat(item_path)
+            is_dir = os.path.isdir(item_path)
+            size_bytes = stat_info.st_size
+            size_readable = "N/A (dossier)"
+            if not is_dir:
+                if size_bytes == 0:
+                    size_readable = "0 B"
+                else:
+                    s_name = ("B", "KB", "MB", "GB", "TB")
+                    s_idx = 0
+                    s_temp = float(size_bytes)
+                    while s_temp >= 1024 and s_idx < len(s_name) - 1:
+                        s_temp /= 1024.0
+                        s_idx += 1
+                    size_readable = f"{s_temp:.2f} {s_name[s_idx]}"
+
+            items.append({
+                'name': item_name,
+                'is_dir': is_dir,
+                'size_bytes': size_bytes,
+                'size_human': size_readable, # This matches item.size_human for the template
+                'last_modified_timestamp': stat_info.st_mtime,
+                'last_modified': datetime.fromtimestamp(stat_info.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+            })
+        except Exception as e:
+            logger_instance.error(f"Erreur lors du traitement de l'item {item_path} dans list_local_directory_items: {e}", exc_info=True)
+
+    # Trier les items par nom, sensible à la casse par défaut (os.listdir n'a pas d'ordre garanti)
+    items.sort(key=lambda x: x['name'].lower())
+    return items
+
+@seedbox_ui_bp.route('/unified_finished_list')
+# Pas besoin de @login_required ici car la page qui l'appelle (index) l'est déjà
+def unified_finished_list():
+    """
+    Scanne les dossiers terminés de Sonarr et Radarr (configurés localement),
+    fusionne les résultats (fichiers uniquement) et les retourne via un template partiel.
+    """
+    all_finished_files = []
+    logger_instance = current_app.logger # Assurer l'utilisation du logger de Flask
+
+    try:
+        # 1. Récupérer les fichiers Sonarr terminés
+        sonarr_path = current_app.config.get('SEEDBOX_SCANNER_TARGET_SONARR_PATH')
+        logger_instance.info(f"Scan du dossier Sonarr terminé: {sonarr_path}")
+        if sonarr_path:
+            sonarr_items_raw = list_local_directory_items(sonarr_path)
+            for item in sonarr_items_raw:
+                if not item['is_dir']: # On ne liste que les fichiers
+                    item['app_type'] = 'sonarr'
+                    all_finished_files.append(item)
+        else:
+            logger_instance.warning("SEEDBOX_SCANNER_TARGET_SONARR_PATH n'est pas configuré.")
+
+        # 2. Récupérer les fichiers Radarr terminés
+        radarr_path = current_app.config.get('SEEDBOX_SCANNER_TARGET_RADARR_PATH')
+        logger_instance.info(f"Scan du dossier Radarr terminé: {radarr_path}")
+        if radarr_path:
+            radarr_items_raw = list_local_directory_items(radarr_path)
+            for item in radarr_items_raw:
+                if not item['is_dir']: # On ne liste que les fichiers
+                    item['app_type'] = 'radarr'
+                    all_finished_files.append(item)
+        else:
+            logger_instance.warning("SEEDBOX_SCANNER_TARGET_RADARR_PATH n'est pas configuré.")
+
+        # 3. Fusionner et trier la liste par nom (déjà fait par list_local_directory_items, mais refaire au cas où et pour la fusion)
+        all_finished_files.sort(key=lambda x: x.get('name', '').lower())
+
+    except Exception as e:
+        logger_instance.error(f"Erreur lors de la création de la liste unifiée : {e}", exc_info=True)
+        # Retourne un message d'erreur dans le template en cas de problème
+        # Assurez-vous que _error_display.html existe ou créez-le.
+        return render_template('seedbox_ui/_error_display.html', error_message=str(e))
+
+    # 4. Rendre un nouveau template partiel avec les données
+    # Le template s'appellera _unified_file_list.html
+    return render_template('seedbox_ui/_unified_file_list.html', items=all_finished_files)
+
+
 @seedbox_ui_bp.route('/trigger-radarr-import', methods=['POST'])
 @login_required
 def trigger_radarr_import():
