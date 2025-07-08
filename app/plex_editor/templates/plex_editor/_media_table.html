@@ -14,7 +14,12 @@
         <tr>
             <td><input type="checkbox" class="form-check-input item-checkbox"></td>
             <td>
-                {{ item.title }}
+                <a href="#" class="text-white item-title-link"
+                   data-bs-toggle="modal"
+                   data-bs-target="#item-details-modal"
+                   data-rating-key="{{ item.ratingKey }}">
+                    {{ item.title }}
+                </a>
                 <small class="d-block text-muted">Année: {{ item.year }}</small>
             </td>
             <td><span class="badge bg-secondary">{{ item.library_name }}</span></td>

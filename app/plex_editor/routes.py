@@ -1340,69 +1340,50 @@ def reject_show_route():
     except Exception as e:
         current_app.logger.error(f"Error rejecting show: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500
-# --- ROUTE API POUR RÉCUPÉRER LES DÉTAILS D'UN ITEM (VERSION FINALE) ---
-@plex_editor_bp.route('/details/<int:rating_key>')
+# --- ROUTE API POUR RÉCUPÉRER LES DÉTAILS D'UN ITEM POUR LA MODALE ---
+@plex_editor_bp.route('/api/media_details/<int:rating_key>')
 @login_required
-def get_item_details(rating_key):
-    # On récupère les deux contextes
-    admin_plex_server = get_plex_admin_server()
-    user_plex_server = get_user_specific_plex_server()
-    if not admin_plex_server or not user_plex_server:
-        return jsonify({'status': 'error', 'message': 'Plex server connection failed.'}), 500
-
+def get_media_details_for_modal(rating_key): # Renommé pour clarté, bien que le nom de la route soit le plus important
+    """Récupère et retourne les détails d'un média pour la modale."""
     try:
-        # On récupère l'objet dans le contexte ADMIN pour les métadonnées générales
-        item_admin = admin_plex_server.fetchItem(rating_key)
-        # On récupère le même objet dans le contexte UTILISATEUR pour les données personnelles
-        item_user = user_plex_server.fetchItem(rating_key)
+        # Utilisation de get_plex_admin_server() car il est probable qu'il soit déjà configuré et utilisé ailleurs.
+        # Si une instance PlexClient dédiée est nécessaire, il faudrait l'implémenter.
+        # Pour l'instant, on part du principe que get_plex_admin_server() retourne une instance PlexServer compatible.
+        plex_server_instance = get_plex_admin_server()
+        if not plex_server_instance:
+            current_app.logger.error(f"API get_media_details: Impossible d'obtenir une connexion admin Plex.")
+            return jsonify({'error': 'Connexion au serveur Plex admin échouée.'}), 500
 
-        if not item_admin:
-            abort(404)
+        item = plex_server_instance.fetchItem(rating_key)
 
-        # On construit le dictionnaire de base avec les infos de l'objet ADMIN
+        if not item:
+            # fetchItem lève NotFound, donc ce bloc pourrait ne pas être atteint,
+            # mais c'est une bonne pratique de le garder.
+            return jsonify({'error': 'Média non trouvé'}), 404
+
+        # Construire un dictionnaire avec toutes les infos nécessaires pour la modale
+        # Adapter les noms des attributs aux vrais noms de l'API Plex via plexapi.
         details = {
-            'type': item_admin.type,
-            'title': item_admin.title,
-            'year': item_admin.year,
-            'summary': item_admin.summary,
-            'rating': item_admin.rating,
-            'poster_url': admin_plex_server.url(item_admin.thumb, includeToken=True) if item_admin.thumb else None,
-            'genres': [genre.tag for genre in item_admin.genres[:4]],
-            'actors': [actor.tag for actor in item_admin.actors[:8]],
-            # On utilise les données de l'objet UTILISATEUR pour les infos personnelles
-            'user_rating': item_user.userRating,
+            'title': getattr(item, 'title', 'Titre inconnu'),
+            'year': getattr(item, 'year', ''),
+            'summary': getattr(item, 'summary', 'Aucun résumé disponible.'),
+            'tagline': getattr(item, 'tagline', ''), # Souvent appelé 'tagline' dans Plex
+            'rating': getattr(item, 'rating', ''), # Note sur 10 (ex: 7.5)
+            'genres': [genre.tag for genre in getattr(item, 'genres', [])],
+            # admin_plex_server.url(item.thumb, includeToken=True) est la méthode correcte pour obtenir l'URL complète
+            'poster_url': plex_server_instance.url(getattr(item, 'thumb', ''), includeToken=True) if getattr(item, 'thumb', '') else None
         }
-
-        if item_admin.type == 'movie':
-            details['duration_min'] = round(item_admin.duration / 60000) if item_admin.duration else None
-            details['directors'] = [director.tag for director in item_admin.directors]
-
-        elif item_admin.type == 'show':
-            details['duration_min'] = round(item_admin.duration / 60000) if item_admin.duration else None
-            details['directors'] = []
-            details['added_at'] = item_admin.addedAt.strftime('%d/%m/%Y') if item_admin.addedAt else 'N/A'
-            details['originally_available_at'] = item_admin.originallyAvailableAt.strftime('%Y-%m-%d') if item_admin.originallyAvailableAt else 'N/A'
-            # On utilise les données de l'objet UTILISATEUR pour les comptes d'épisodes
-            details['leaf_count'] = item_user.leafCount
-            details['viewed_leaf_count'] = item_user.viewedLeafCount
-
-            # Le reste (infos Sonarr) peut continuer d'utiliser les guids de l'objet admin
-            sonarr_series = next((s for g in item_admin.guids if 'tvdb' in g.id and (s := get_sonarr_series_by_guid(g.id))), None)
-            if sonarr_series:
-                details['sonarr_status'] = sonarr_series.get('status', 'N/A').capitalize()
-                stats = sonarr_series.get('statistics', {})
-                details['sonarr_season_count'] = stats.get('seasonCount', 0)
-            else:
-                details['sonarr_status'] = 'Non trouvé dans Sonarr'
-                details['sonarr_season_count'] = item_admin.childCount
-
-        return jsonify({'status': 'success', 'details': details})
+        return jsonify(details)
 
     except NotFound:
-        return jsonify({'status': 'error', 'message': 'Item not found in Plex.'}), 404
+        current_app.logger.warning(f"API get_media_details: Média avec ratingKey {rating_key} non trouvé (NotFound Exception).")
+        return jsonify({'error': f'Média avec ratingKey {rating_key} non trouvé.'}), 404
+    except Unauthorized: # Au cas où le token admin n'est pas valide
+        current_app.logger.error(f"API get_media_details: Autorisation refusée pour récupérer les détails de {rating_key}. Token admin invalide ?")
+        return jsonify({'error': 'Autorisation refusée par le serveur Plex.'}), 401
     except Exception as e:
-        current_app.logger.error(f"Erreur dans get_item_details pour ratingKey {rating_key}: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'message': 'An internal error occurred.'}), 500
+        current_app.logger.error(f"Erreur API lors de la récupération des détails pour {rating_key}: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
 # --- Gestionnaires d'erreur ---
 #@app.errorhandler(404)
 #def page_not_found(e):
