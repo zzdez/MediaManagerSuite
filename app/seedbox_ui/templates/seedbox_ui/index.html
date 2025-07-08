@@ -554,16 +554,14 @@
                 '#sonarr-pending-tab',
                 '#sonarr-content-container',
                 '#sonarr-loader',
-                // "{{ url_for('seedbox_ui.list_files', app_name='sonarr') }}" // Placeholder, la route n'existe pas
-                "#sonarr-content-placeholder" // URL Placeholder
+                "{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='sonarr_working') }}"
             );
 
             loadTabContent(
                 '#radarr-pending-tab',
                 '#radarr-content-container',
                 '#radarr-loader',
-                // "{{ url_for('seedbox_ui.list_files', app_name='radarr') }}" // Placeholder, la route n'existe pas
-                "#radarr-content-placeholder" // URL Placeholder
+                "{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='radarr_working') }}"
             );
         });
     </script>
