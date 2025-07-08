@@ -32,20 +32,46 @@
                 {% endif %}
             </td>
             <td>
-                {# Recrée ici les boutons d'action pertinents de l'ancienne interface #}
-                <button class="btn btn-sm btn-light toggle-watched-btn"
-                        title="Marquer comme vu/non vu"
+                <button class="btn btn-sm btn-outline-light toggle-watched-btn"
+                        title="Basculer Vu/Non Vu"
                         data-rating-key="{{ item.ratingKey }}">
                     <i class="bi bi-eye-fill"></i>
                 </button>
-                <button class="btn btn-sm btn-primary" title="Archiver">
-                    <i class="bi bi-archive-fill"></i>
+
+                {% if item.type == 'movie' %}
+                <button class="btn btn-sm btn-outline-primary archive-movie-btn"
+                        title="Archiver le film"
+                        data-bs-toggle="modal" data-bs-target="#archiveMovieModal"
+                        data-rating-key="{{ item.ratingKey }}"
+                        data-title="{{ item.title }}">
+                    <i class="bi bi-archive-fill"></i> <span class="d-none d-md-inline">Archiver</span>
                 </button>
-                 <button class="btn btn-sm btn-info" title="Oublier (Forget)">
-                    <i class="bi bi-eraser-fill"></i>
+                {% elif item.type == 'show' %}
+                <button class="btn btn-sm btn-outline-primary archive-show-btn"
+                        title="Archiver la série"
+                        data-bs-toggle="modal" data-bs-target="#archiveShowModal"
+                        data-rating-key="{{ item.ratingKey }}"
+                        data-title="{{ item.title }}"
+                        data-leaf-count="{{ item.leafCount }}"
+                        data-viewed-leaf-count="{{ item.viewedLeafCount }}">
+                    <i class="bi bi-archive-fill"></i> <span class="d-none d-md-inline">Archiver</span>
                 </button>
-                <button class="btn btn-sm btn-danger delete-item-btn"
-                        title="Supprimer"
+                <button class="btn btn-sm btn-outline-warning reject-show-btn"
+                        title="Rejeter la série (Oublier)"
+                        data-bs-toggle="modal" data-bs-target="#rejectShowModal"
+                        data-rating-key="{{ item.ratingKey }}"
+                        data-title="{{ item.title }}">
+                    <i class="bi bi-eraser-fill"></i> <span class="d-none d-md-inline">Rejeter</span>
+                </button>
+                <a href="{{ url_for('plex_editor.manage_seasons', rating_key=item.ratingKey) }}"
+                   class="btn btn-sm btn-outline-info"
+                   title="Gérer les saisons">
+                    <i class="bi bi-list-task"></i> <span class="d-none d-md-inline">Saisons</span>
+                </a>
+                {% endif %}
+
+                <button class="btn btn-sm btn-outline-danger delete-item-btn"
+                        title="Supprimer définitivement de Plex"
                         data-rating-key="{{ item.ratingKey }}"
                         data-item-title="{{ item.title }}">
                     <i class="bi bi-trash-fill"></i>
