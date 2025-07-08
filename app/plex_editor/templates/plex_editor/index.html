@@ -703,6 +703,94 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
     });
+
+    // --- Logique pour la modale de gestion de série ---
+    const seriesModalElement = document.getElementById('series-management-modal');
+    if (seriesModalElement) {
+        seriesModalElement.addEventListener('click', function(event) {
+            const targetElement = event.target;
+
+            // Logique pour supprimer une saison
+            const deleteSeasonBtn = targetElement.closest('.delete-season-btn');
+            if (deleteSeasonBtn) {
+                event.preventDefault();
+                const seasonId = deleteSeasonBtn.dataset.seasonId;
+                const seasonTitle = deleteSeasonBtn.dataset.seasonTitle || 'cette saison';
+
+                if (confirm(`Êtes-vous sûr de vouloir supprimer les fichiers de ${seasonTitle} et la dé-monitorer ? Cette action est irréversible.`)) {
+                    deleteSeasonBtn.disabled = true;
+                    deleteSeasonBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Suppr...';
+
+                    fetch(`{{ url_for('plex_editor.delete_season_files_and_unmonitor', season_plex_id=0) }}`.replace('0', seasonId), {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' } // CSRF token géré globalement si nécessaire ou via Flask-WTF pour formulaires
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            alert(data.message || 'Saison traitée pour suppression.');
+                            // Optionnel: masquer ou marquer la saison comme supprimée dans l'UI de la modale
+                            const seasonAccordionItem = deleteSeasonBtn.closest('.accordion-item');
+                            if (seasonAccordionItem) {
+                                seasonAccordionItem.classList.add('opacity-50'); // Rendre semi-transparent
+                                deleteSeasonBtn.remove(); // Supprimer le bouton
+                                const monitorToggle = seasonAccordionItem.querySelector('.season-monitor-toggle');
+                                if (monitorToggle) monitorToggle.disabled = true;
+                            }
+                        } else {
+                            alert(`Erreur: ${data.message || 'Impossible de supprimer la saison.'}`);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Erreur suppression saison:', error);
+                        alert('Erreur de communication lors de la suppression de la saison.');
+                    })
+                    .finally(() => {
+                        if (!deleteSeasonBtn.closest('.accordion-item')) { // Si le bouton n'a pas été retiré
+                           deleteSeasonBtn.disabled = false;
+                           deleteSeasonBtn.innerHTML = '<i class="bi bi-trash"></i> <span class="d-none d-sm-inline">Suppr. Saison</span>';
+                        }
+                    });
+                }
+            }
+        });
+
+        seriesModalElement.addEventListener('change', function(event) {
+            const targetElement = event.target;
+            // Logique pour le toggle de surveillance
+            const monitorToggle = targetElement.closest('.season-monitor-toggle');
+            if (monitorToggle) {
+                const seasonId = monitorToggle.dataset.seasonId;
+                const ursprünglicherStatus = monitorToggle.checked; // Lire l'état actuel APRES le clic de l'utilisateur
+
+                monitorToggle.disabled = true; // Désactiver pendant la requête
+
+                fetch(`{{ url_for('plex_editor.toggle_season_monitoring', season_plex_id=0) }}`.replace('0', seasonId), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        // Mettre à jour l'état du switch avec la valeur retournée par le serveur
+                        monitorToggle.checked = data.monitored;
+                        // alert(data.message || 'Statut de surveillance mis à jour.'); // Peut-être un peu verbeux pour chaque toggle
+                    } else {
+                        alert(`Erreur: ${data.message || 'Impossible de changer le statut de surveillance.'}`);
+                        monitorToggle.checked = !ursprünglicherStatus; // Rétablir l'état visuel en cas d'erreur
+                    }
+                })
+                .catch(error => {
+                    console.error('Erreur toggle surveillance:', error);
+                    alert('Erreur de communication lors du changement de statut de surveillance.');
+                    monitorToggle.checked = !ursprünglicherStatus; // Rétablir
+                })
+                .finally(() => {
+                    monitorToggle.disabled = false; // Réactiver
+                });
+            }
+        });
+    }
 });
 </script>
 {% endblock %}
