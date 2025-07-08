@@ -5,12 +5,10 @@
         {# <h4 class="mb-0">{{ series.title }}</h4> #}
         <small class="text-muted">
             Statut Plex:
-            {% if series.status == 'ended' %}
+            {% if not series.is_continuing %}
                 <span class="badge bg-danger">Terminée</span>
-            {% elif series.status == 'continuing' %}
+            {% else %} {# series.is_continuing est True #}
                 <span class="badge bg-success">En cours de diffusion</span>
-            {% else %}
-                <span class="badge bg-secondary">{{ series.status | capitalize }}</span>
             {% endif %}
             | Saisons Plex vues: {{ series.viewed_seasons_plex }} / {{ series.total_seasons_plex }}
         </small>

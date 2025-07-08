@@ -1452,7 +1452,7 @@ def get_series_details_for_management(rating_key):
         series_data = {
             'title': series.title,
             'ratingKey': series.ratingKey, # ratingKey de la série Plex
-            'status': series.status,  # 'continuing', 'ended', etc. (de Plex)
+            'is_continuing': series.isContinuing,  # Attribut booléen correct
             'total_seasons_plex': series.childCount, # Nombre de saisons dans Plex
             'viewed_seasons_plex': series.viewedChildCount, # Nombre de saisons vues dans Plex
             'is_monitored_global': is_monitored_global_status,
