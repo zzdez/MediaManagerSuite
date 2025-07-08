@@ -147,181 +147,151 @@
         </a>
     </header>
 
-    {# Flash messages are handled by layout.html #}
-    {# {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            {% for category, message in messages %}
-            <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-            </div>
-            {% endfor %}
-        {% endif %}
-    {% endwith %} #}
-
-    {# ========================================================================== #}
-    {# BARRE D'OUTILS AVEC LES BOUTONS DE NAVIGATION ET D'ACTION PRINCIPAUX       #}
-    {# ========================================================================== #}
-    <div class="btn-toolbar mb-3" role="toolbar" aria-label="Toolbar with button groups">
-        <div class="btn-group me-2" role="group" aria-label="Navigation group">
-            {# Bouton pour retourner au Portail Principal - ASSUMANT 'home' COMME ENDPOINT #}
-            <a href="{{ url_for('home') }}" class="btn btn-secondary btn-sm"> {# Corrected url_for for main app route #}
-                <i class="fas fa-home"></i> Portail
-            </a>
-            {# Bouton pour la Vue Liste rTorrent #}
-            <a href="{{ url_for('seedbox_ui.rtorrent_list_view') }}" class="btn btn-info btn-sm">
-                <i class="fas fa-list-alt"></i> Torrents rTorrent
-            </a>
-            {# NOUVEAU LIEN POUR LA GESTION DES FILES D'ATTENTE #}
-            <a href="{{ url_for('seedbox_ui.queue_manager_view') }}" class="btn btn-warning btn-sm">
-                <i class="fas fa-tasks"></i> Gestion Files *Arr
-            </a>
-        </div>
-
-        <div class="btn-group me-2" role="group" aria-label="Seedbox views group">
-            <a href="{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='sonarr') }}" class="btn btn-outline-primary btn-sm">
-                <i class="fas fa-server"></i> Seedbox Sonarr (Terminés)
-            </a>
-            <a href="{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='radarr') }}" class="btn btn-outline-primary btn-sm">
-                <i class="fas fa-server"></i> Seedbox Radarr (Terminés)
-            </a>
-        </div>
-
-        <div class="btn-group me-2" role="group" aria-label="Seedbox working views group">
-            <a href="{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='sonarr_working') }}" class="btn btn-outline-secondary btn-sm">
-                <i class="fas fa-cogs"></i> Seedbox Sonarr (Travail)
-            </a>
-            <a href="{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='radarr_working') }}" class="btn btn-outline-secondary btn-sm">
-                <i class="fas fa-cogs"></i> Seedbox Radarr (Travail)
-            </a>
-        </div>
-
-        <div class="btn-group" role="group" aria-label="Add torrent group">
-            <!-- Bouton Ajouter Torrent -->
-            <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#addTorrentModal">
-                <i class="fas fa-plus"></i> Ajouter Torrent
-            </button>
-            {# --- NOUVEAU BOUTON D'ACTION GROUPÉE --- #}
-            <button type="button" class="btn btn-primary btn-sm" id="batchMapToSonarrBtn" disabled
-                    onclick="openBatchSonarrMapModal()">
-                <i class="fas fa-object-group"></i> Mapper Sélection vers Série Sonarr
-            </button>
-            {# --- FIN NOUVEAU BOUTON --- #}
-        </div>
-
-        {# --- Bouton pour déclencher le scan SFTP Manuel --- #}
-        <div class="btn-group ms-auto" role="group" aria-label="SFTP Scan group">
-             <a href="{{ url_for('trigger_sftp_scan_manual') }}" class="btn btn-info btn-sm">
-                <i class="fas fa-sync-alt"></i> Scan SFTP Manuel
-            </a>
-        </div>
-        {# --- Fin Bouton Scan SFTP Manuel --- #}
+    <!-- Bouton d'Action Principal -->
+    <div class="d-flex justify-content-end mb-3">
+        <button type="button" class="btn btn-success btn-lg" data-bs-toggle="modal" data-bs-target="#addTorrentModal">
+            <i class="bi bi-plus-circle-fill"></i> Ajouter un Torrent
+        </button>
     </div>
-    {# FIN DE LA BARRE D'OUTILS #}
 
+    <!-- Nouvelle Navigation à Onglets -->
+    <ul class="nav nav-tabs" id="seedboxTab" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="dashboard-tab" data-bs-toggle="tab" data-bs-target="#dashboard-content" type="button" role="tab" aria-controls="dashboard-content" aria-selected="true">Tableau de Bord & Actions</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="sonarr-pending-tab" data-bs-toggle="tab" data-bs-target="#sonarr-pending" type="button" role="tab" aria-controls="sonarr-pending" aria-selected="false">Fichiers Sonarr</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="radarr-pending-tab" data-bs-toggle="tab" data-bs-target="#radarr-pending" type="button" role="tab" aria-controls="radarr-pending" aria-selected="false">Fichiers Radarr</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="rtorrent-view-tab" data-bs-toggle="tab" data-bs-target="#rtorrent-view" type="button" role="tab" aria-controls="rtorrent-view" aria-selected="false">Vue rTorrent</button>
+        </li>
+    </ul>
 
-{# ========================================================================== #}
-{# SECTION POUR LES ITEMS EN ATTENTE / ERREUR                                 #}
-{# ========================================================================== #}
-{% if items_requiring_attention %}
-    <hr class="my-4">
-    <h2><i class="fas fa-exclamation-triangle text-warning"></i> Torrents en Attente / Nécessitant Attention</h2>
-    <div class="table-responsive">
-        <table class="table table-sm table-hover">
-            <thead>
-                <tr>
-                    <th>Release Name</th>
-                    <th>Type</th>
-                    <th>ID Cible</th>
-                    <th>Statut Actuel</th>
-                    <th>Message</th>
-                    <th>MàJ</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in items_requiring_attention %}
-                <tr>
-                    <td title="{{ item.release_name }}">{{ item.release_name | truncate(60) }}</td>
-                    <td>
-                        <span class="badge {% if item.app_type == 'sonarr' %}bg-primary{% elif item.app_type == 'radarr' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
-                            {{ item.app_type | capitalize if item.app_type else 'N/A' }}
-                        </span>
-                    </td>
-                    <td>{{ item.target_id if item.target_id is not none else 'N/A' }}</td>
-                    <td><span class="badge bg-info text-dark">{{ item.status | replace('_', ' ') | capitalize }}</span></td>
-                    <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ item.status_message }}">{{ item.status_message | truncate(50) if item.status_message else '-' }}</td>
-                    <td title="{{ item.updated_at if item.updated_at else item.added_at }}">
-                        {{ (item.updated_at if item.updated_at else item.added_at).split('.')[0].replace('T', ' ') if (item.updated_at or item.added_at) else 'N/A' }}
-                    </td>
-                    <td>
-                        {# Bouton Réessayer l'Import (si l'item est dans le staging) #}
-                        {% if item.is_in_staging and item.status != 'processing_by_mms_api' %} {# Évite de relancer si déjà en cours #}
-                        <form action="{{ url_for('seedbox_ui.retry_problematic_import_action', torrent_hash=item.torrent_hash) }}" method="POST" style="display: inline-block;" onsubmit="return confirm('Réessayer l\'import automatique pour \'{{ item.release_name | e }}\' ?');">
-                            <button type="submit" class="btn btn-sm btn-outline-success mb-1" title="Réessayer l'import automatique">
-                                <i class="fas fa-redo"></i> Réessayer
-                            </button>
-                        </form>
-                        {% elif item.status == 'processing_by_mms_api' %}
-                            <button class="btn btn-sm btn-outline-secondary mb-1" disabled title="Traitement déjà en cours ou bloqué.">
-                                <i class="fas fa-spinner fa-spin"></i> En cours...
-                            </button>
-                        {% endif %}
+    <!-- Contenu des Onglets -->
+    <div class="tab-content" id="seedboxTabContent">
+        <!-- Onglet 1 (Défaut): Tableau de Bord & Actions -->
+        <div class="tab-pane fade show active" id="dashboard-content" role="tabpanel" aria-labelledby="dashboard-tab">
+            {# Contenu du staging déplacé ici #}
+            <hr class="my-4"> {# Séparateur avant le contenu du staging local #}
+            <h1>Contenu du Staging Local</h1>
 
-                        {# Bouton Mapper Manuellement (si applicable) #}
-                        {% if item.is_in_staging and item.app_type and item.target_id %}
-                            {# Ouvre le modal existant. Le JS devra être adapté pour pré-remplir. #}
-                            {% if item.app_type == 'sonarr' %}
-                            <button class="btn btn-sm btn-outline-primary mb-1"
-                                    onclick='openSonarrSearchModalForProblemItem({{ item.release_name | tojson | safe }}, {{ item.target_id }}, {{ item.torrent_hash | tojson | safe }})'
-                                    title="Mapper manuellement avec Sonarr (corriger l'association)">
-                                <i class="fas fa-edit"></i> Mapper Sonarr
-                            </button>
-                            {% elif item.app_type == 'radarr' %}
-                            <button class="btn btn-sm btn-outline-warning text-dark mb-1"
-                                    onclick='openRadarrSearchModalForProblemItem({{ item.release_name | tojson | safe }}, {{ item.target_id }}, {{ item.torrent_hash | tojson | safe }})'
-                                    title="Mapper manuellement avec Radarr (corriger l'association)">
-                                <i class="fas fa-edit"></i> Mapper Radarr
-                            </button>
-                            {% endif %}
-                        {% endif %}
+            {# AFFICHAGE EN ARBORESCENCE (votre code existant) #}
+            {% if items_tree %}
+                {% if staging_dir_display %}
+                <p class="text-muted mb-2">Dossier du Staging Local : <code>{{ staging_dir_display }}</code></p>
+                {% endif %}
+                <ul class="file-tree">
+                    {% for root_node in items_tree %}
+                        {{ render_tree_node(root_node, can_scan_sonarr, can_scan_radarr, 0) }}
+                    {% endfor %}
+                </ul>
+            {% elif not get_flashed_messages(category_filter=['danger']) %} {# Évite d'afficher "vide" s'il y a déjà une erreur #}
+                <div class="alert alert-info mt-3" role="alert">
+                    Le dossier de staging local est vide ou non accessible.
+                </div>
+            {% endif %}
+            {# FIN DE L'AFFICHAGE EN ARBORESCENCE #}
 
-                        {# Bouton Supprimer l'Association #}
-                        <form action="{{ url_for('seedbox_ui.delete_problematic_association_action', torrent_hash=item.torrent_hash) }}" method="POST" style="display: inline-block;" onsubmit="return confirm('Supprimer cette association en attente pour \'{{ item.release_name | e }}\' ? L\'item physique (s\'il existe) ne sera pas touché.');">
-                            <button type="submit" class="btn btn-sm btn-outline-danger mb-1" title="Supprimer cette association de la liste des items en attente">
-                                <i class="fas fa-times-circle"></i> Oublier
-                            </button>
-                        </form>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-{% else %}
-    <p class="text-muted">Aucun torrent ne nécessite une attention particulière actuellement.</p>
-{% endif %}
-{# FIN DE LA SECTION POUR LES ITEMS EN ATTENTE / ERREUR #}
+            {# SECTION POUR LES ITEMS EN ATTENTE / ERREUR (déplacée ici aussi) #}
+            {% if items_requiring_attention %}
+                <hr class="my-4">
+                <h2><i class="fas fa-exclamation-triangle text-warning"></i> Torrents en Attente / Nécessitant Attention</h2>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead>
+                            <tr>
+                                <th>Release Name</th>
+                                <th>Type</th>
+                                <th>ID Cible</th>
+                                <th>Statut Actuel</th>
+                                <th>Message</th>
+                                <th>MàJ</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in items_requiring_attention %}
+                            <tr>
+                                <td title="{{ item.release_name }}">{{ item.release_name | truncate(60) }}</td>
+                                <td>
+                                    <span class="badge {% if item.app_type == 'sonarr' %}bg-primary{% elif item.app_type == 'radarr' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                                        {{ item.app_type | capitalize if item.app_type else 'N/A' }}
+                                    </span>
+                                </td>
+                                <td>{{ item.target_id if item.target_id is not none else 'N/A' }}</td>
+                                <td><span class="badge bg-info text-dark">{{ item.status | replace('_', ' ') | capitalize }}</span></td>
+                                <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ item.status_message }}">{{ item.status_message | truncate(50) if item.status_message else '-' }}</td>
+                                <td title="{{ item.updated_at if item.updated_at else item.added_at }}">
+                                    {{ (item.updated_at if item.updated_at else item.added_at).split('.')[0].replace('T', ' ') if (item.updated_at or item.added_at) else 'N/A' }}
+                                </td>
+                                <td>
+                                    {# Bouton Réessayer l'Import (si l'item est dans le staging) #}
+                                    {% if item.is_in_staging and item.status != 'processing_by_mms_api' %} {# Évite de relancer si déjà en cours #}
+                                    <form action="{{ url_for('seedbox_ui.retry_problematic_import_action', torrent_hash=item.torrent_hash) }}" method="POST" style="display: inline-block;" onsubmit="return confirm('Réessayer l\'import automatique pour \'{{ item.release_name | e }}\' ?');">
+                                        <button type="submit" class="btn btn-sm btn-outline-success mb-1" title="Réessayer l'import automatique">
+                                            <i class="fas fa-redo"></i> Réessayer
+                                        </button>
+                                    </form>
+                                    {% elif item.status == 'processing_by_mms_api' %}
+                                        <button class="btn btn-sm btn-outline-secondary mb-1" disabled title="Traitement déjà en cours ou bloqué.">
+                                            <i class="fas fa-spinner fa-spin"></i> En cours...
+                                        </button>
+                                    {% endif %}
 
-<hr class="my-4"> {# Séparateur avant le contenu du staging local #}
-<h1>Contenu du Staging Local</h1>
+                                    {# Bouton Mapper Manuellement (si applicable) #}
+                                    {% if item.is_in_staging and item.app_type and item.target_id %}
+                                        {# Ouvre le modal existant. Le JS devra être adapté pour pré-remplir. #}
+                                        {% if item.app_type == 'sonarr' %}
+                                        <button class="btn btn-sm btn-outline-primary mb-1"
+                                                onclick='openSonarrSearchModalForProblemItem({{ item.release_name | tojson | safe }}, {{ item.target_id }}, {{ item.torrent_hash | tojson | safe }})'
+                                                title="Mapper manuellement avec Sonarr (corriger l'association)">
+                                            <i class="fas fa-edit"></i> Mapper Sonarr
+                                        </button>
+                                        {% elif item.app_type == 'radarr' %}
+                                        <button class="btn btn-sm btn-outline-warning text-dark mb-1"
+                                                onclick='openRadarrSearchModalForProblemItem({{ item.release_name | tojson | safe }}, {{ item.target_id }}, {{ item.torrent_hash | tojson | safe }})'
+                                                title="Mapper manuellement avec Radarr (corriger l'association)">
+                                            <i class="fas fa-edit"></i> Mapper Radarr
+                                        </button>
+                                        {% endif %}
+                                    {% endif %}
 
-    {# AFFICHAGE EN ARBORESCENCE (votre code existant) #}
-    {% if items_tree %}
-        {% if staging_dir_display %}
-        <p class="text-muted mb-2">Dossier du Staging Local : <code>{{ staging_dir_display }}</code></p>
-        {% endif %}
-        <ul class="file-tree">
-            {% for root_node in items_tree %}
-                {{ render_tree_node(root_node, can_scan_sonarr, can_scan_radarr, 0) }}
-            {% endfor %}
-        </ul>
-    {% elif not get_flashed_messages(category_filter=['danger']) %} {# Évite d'afficher "vide" s'il y a déjà une erreur #}
-        <div class="alert alert-info mt-3" role="alert">
-            Le dossier de staging local est vide ou non accessible.
+                                    {# Bouton Supprimer l'Association #}
+                                    <form action="{{ url_for('seedbox_ui.delete_problematic_association_action', torrent_hash=item.torrent_hash) }}" method="POST" style="display: inline-block;" onsubmit="return confirm('Supprimer cette association en attente pour \'{{ item.release_name | e }}\' ? L\'item physique (s\'il existe) ne sera pas touché.');">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger mb-1" title="Supprimer cette association de la liste des items en attente">
+                                            <i class="fas fa-times-circle"></i> Oublier
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="text-muted">Aucun torrent ne nécessite une attention particulière actuellement.</p>
+            {% endif %}
+            {# FIN DE LA SECTION POUR LES ITEMS EN ATTENTE / ERREUR #}
         </div>
-    {% endif %}
-    {# FIN DE L'AFFICHAGE EN ARBORESCENCE #}
+
+        <!-- Onglet 2 : Fichiers Sonarr -->
+        <div class="tab-pane fade" id="sonarr-pending" role="tabpanel" aria-labelledby="sonarr-pending-tab">
+            <p class="mt-3">Contenu à venir pour les fichiers Sonarr en attente...</p>
+        </div>
+
+        <!-- Onglet 3 : Fichiers Radarr -->
+        <div class="tab-pane fade" id="radarr-pending" role="tabpanel" aria-labelledby="radarr-pending-tab">
+            <p class="mt-3">Contenu à venir pour les fichiers Radarr en attente...</p>
+        </div>
+
+        <!-- Onglet 4 : Vue rTorrent -->
+        <div class="tab-pane fade" id="rtorrent-view" role="tabpanel" aria-labelledby="rtorrent-view-tab">
+            <p class="mt-3">Ici viendra la liste des torrents de rTorrent...</p>
+        </div>
+    </div>
 
 </div> {# Fin du container principal #}
 
