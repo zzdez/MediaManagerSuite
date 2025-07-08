@@ -279,12 +279,20 @@
 
         <!-- Onglet 2 : Fichiers Sonarr -->
         <div class="tab-pane fade" id="sonarr-pending" role="tabpanel" aria-labelledby="sonarr-pending-tab">
-            <p class="mt-3">Contenu à venir pour les fichiers Sonarr en attente...</p>
+            <div class="text-center mt-3" id="sonarr-loader">
+                <div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div>
+                <p>Chargement des fichiers Sonarr...</p>
+            </div>
+            <div id="sonarr-content-container"></div>
         </div>
 
         <!-- Onglet 3 : Fichiers Radarr -->
         <div class="tab-pane fade" id="radarr-pending" role="tabpanel" aria-labelledby="radarr-pending-tab">
-            <p class="mt-3">Contenu à venir pour les fichiers Radarr en attente...</p>
+            <div class="text-center mt-3" id="radarr-loader">
+                <div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div>
+                <p>Chargement des fichiers Radarr...</p>
+            </div>
+            <div id="radarr-content-container"></div>
         </div>
 
         <!-- Onglet 4 : Vue rTorrent -->
@@ -499,42 +507,64 @@
                 }
             }
 
-            // Script pour charger dynamiquement la vue rTorrent
-            const rtorrentTab = document.querySelector('#rtorrent-view-tab');
-            const contentContainer = document.querySelector('#rtorrent-content-container');
-            const loader = document.querySelector('#rtorrent-loader');
-            let isContentLoaded = false; // Pour ne charger le contenu qu'une seule fois
+            // Fonction générique pour charger le contenu d'un onglet
+            function loadTabContent(tabSelector, contentContainerSelector, loaderSelector, url) {
+                const tab = document.querySelector(tabSelector);
+                const contentContainer = document.querySelector(contentContainerSelector);
+                const loader = document.querySelector(loaderSelector);
+                let isContentLoaded = false;
 
-            if (rtorrentTab) { // S'assurer que l'onglet existe avant d'ajouter l'écouteur
-                rtorrentTab.addEventListener('shown.bs.tab', function(event) {
-                    // Si le contenu n'a pas encore été chargé
-                    if (!isContentLoaded) {
-                        if(loader) loader.style.display = 'block'; // Affiche le spinner
-                        if(contentContainer) contentContainer.innerHTML = ''; // Vide le conteneur
+                if (tab && contentContainer && loader) { // Check if all elements exist
+                    tab.addEventListener('shown.bs.tab', function(event) {
+                        if (!isContentLoaded) {
+                            loader.style.display = 'block';
+                            contentContainer.innerHTML = '';
 
-                        // Utilise l'URL de la route existante
-                        const url = "{{ url_for('seedbox_ui.rtorrent_list_view') }}";
-
-                        fetch(url)
-                            .then(response => {
-                                if (!response.ok) {
-                                    throw new Error('La réponse du réseau était incorrecte.');
-                                }
-                                return response.text();
-                            })
-                            .then(html => {
-                                if(loader) loader.style.display = 'none'; // Cache le spinner
-                                if(contentContainer) contentContainer.innerHTML = html; // Injecte le HTML
-                                isContentLoaded = true; // Marque le contenu comme chargé
-                            })
-                            .catch(error => {
-                                if(loader) loader.style.display = 'none'; // Cache le spinner
-                                if(contentContainer) contentContainer.innerHTML = `<div class="alert alert-danger mt-3">Erreur lors du chargement des torrents: ${error.message}</div>`;
-                                console.error('Erreur lors de la récupération des torrents:', error);
-                            });
-                    }
-                });
+                            fetch(url)
+                                .then(response => {
+                                    if (!response.ok) throw new Error('Erreur réseau lors du chargement du contenu de l\'onglet.');
+                                    return response.text();
+                                })
+                                .then(html => {
+                                    loader.style.display = 'none';
+                                    contentContainer.innerHTML = html;
+                                    isContentLoaded = true;
+                                })
+                                .catch(error => {
+                                    loader.style.display = 'none';
+                                    contentContainer.innerHTML = `<div class="alert alert-danger mt-3">Erreur lors du chargement: ${error.message}</div>`;
+                                    console.error(`Erreur de chargement pour ${tabSelector}:`, error);
+                                });
+                        }
+                    });
+                } else {
+                    console.warn(`Un ou plusieurs éléments manquants pour le chargement de l'onglet : ${tabSelector}, ${contentContainerSelector}, ${loaderSelector}`);
+                }
             }
+
+            // Configuration pour chaque onglet
+            loadTabContent(
+                '#rtorrent-view-tab',
+                '#rtorrent-content-container',
+                '#rtorrent-loader',
+                "{{ url_for('seedbox_ui.rtorrent_list_view') }}"
+            );
+
+            loadTabContent(
+                '#sonarr-pending-tab',
+                '#sonarr-content-container',
+                '#sonarr-loader',
+                // "{{ url_for('seedbox_ui.list_files', app_name='sonarr') }}" // Placeholder, la route n'existe pas
+                "#sonarr-content-placeholder" // URL Placeholder
+            );
+
+            loadTabContent(
+                '#radarr-pending-tab',
+                '#radarr-content-container',
+                '#radarr-loader',
+                // "{{ url_for('seedbox_ui.list_files', app_name='radarr') }}" // Placeholder, la route n'existe pas
+                "#radarr-content-placeholder" // URL Placeholder
+            );
         });
     </script>
 {% endblock %}
