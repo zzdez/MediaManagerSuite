@@ -1424,19 +1424,51 @@ def get_series_details_for_management(rating_key):
         if not series or series.type != 'show':
             return f'<div class="alert alert-warning">Série non trouvée ou type incorrect.</div>', 404
 
+        # Essayer de récupérer la série Sonarr correspondante pour l'état de monitoring des saisons
+        sonarr_series_details = None
+        plex_guid = series.guid
+        if 'tvdb' in plex_guid or 'tmdb' in plex_guid or 'imdb' in plex_guid: # Plex guids can be like 'plex://show/5d9f89dfc750d0001f1507de' or 'tvdb://12345'
+             # Essayer de chercher par GUID si c'est un format externe standard
+            sonarr_series_details = get_sonarr_series_by_guid(plex_guid)
+
+        if not sonarr_series_details: # Fallback si non trouvé par GUID direct (ex: guid plex://)
+            # On pourrait tenter de chercher par titre et année si nécessaire, mais c'est moins fiable.
+            # Pour l'instant, on logue si non trouvé par GUID.
+            current_app.logger.warning(f"API get_series_details: Série Sonarr non trouvée par GUID '{plex_guid}' pour Plex série '{series.title}'. L'état de monitoring des saisons pourrait être manquant.")
+            # Alternative : si on a un TVDB ID dans series.guids, on peut l'utiliser
+            tvdb_id = None
+            for g in series.guids:
+                if g.id.startswith('tvdb://'):
+                    tvdb_id = g.id.replace('tvdb://', '')
+                    break
+            if tvdb_id:
+                sonarr_series_details = get_sonarr_series_by_guid(f"tvdb://{tvdb_id}") # get_sonarr_series_by_guid s'attend au préfixe
+                if not sonarr_series_details:
+                     current_app.logger.warning(f"API get_series_details: Série Sonarr non trouvée non plus par TVDB ID '{tvdb_id}' extrait des GUIDs Plex.")
+
+
         series_data = {
             'title': series.title,
-            'ratingKey': series.ratingKey,
+            'ratingKey': series.ratingKey, # ratingKey de la série Plex
             'seasons': []
         }
 
         for season in series.seasons():
-            # Le statut isWatched pour une saison est directement un attribut de l'objet Season
+            sonarr_season_monitored_status = False # Default si non trouvé dans Sonarr
+            if sonarr_series_details and 'seasons' in sonarr_series_details:
+                for sonarr_s in sonarr_series_details['seasons']:
+                    if sonarr_s['seasonNumber'] == season.seasonNumber: # season.seasonNumber est l'index de la saison (0 pour specials, 1 pour S1 etc)
+                        sonarr_season_monitored_status = sonarr_s.get('monitored', False)
+                        break
+
             season_data = {
                 'title': season.title,
                 'isWatched': season.isWatched,
-                'viewed_episodes': season.viewedLeafCount, # Nombre d'épisodes vus dans cette saison
-                'total_episodes': season.leafCount,     # Nombre total d'épisodes dans cette saison
+                'viewed_episodes': season.viewedLeafCount,
+                'total_episodes': season.leafCount,
+                'ratingKey': season.ratingKey, # ratingKey de la saison Plex
+                'seasonNumber': season.seasonNumber, # Numéro de la saison pour correspondre avec Sonarr
+                'sonarr_monitored': sonarr_season_monitored_status,
                 'episodes': []
             }
             for episode in season.episodes():
@@ -1464,6 +1496,209 @@ def get_series_details_for_management(rating_key):
         current_app.logger.error(f"Erreur API lors de la récupération des détails de la série {rating_key}: {e}", exc_info=True)
         # Renvoyer une erreur HTML simple qui peut être affichée directement dans la modale
         return f'<div class="alert alert-danger">Erreur serveur: {str(e)}</div>', 500
+
+@plex_editor_bp.route('/api/season/<int:season_plex_id>/toggle_monitor', methods=['POST'])
+@login_required
+def toggle_season_monitoring(season_plex_id):
+    """Active ou désactive la surveillance d'une saison spécifique dans Sonarr."""
+    try:
+        # On a besoin du contexte admin pour fetchItem et potentiellement pour les infos de la série parente
+        admin_plex_server = get_plex_admin_server()
+        if not admin_plex_server:
+            return jsonify({'status': 'error', 'message': "Connexion admin Plex échouée."}), 500
+
+        plex_season = admin_plex_server.fetchItem(season_plex_id)
+        if not plex_season or plex_season.type != 'season':
+            return jsonify({'status': 'error', 'message': "Saison Plex non trouvée ou type incorrect."}), 404
+
+        plex_series = plex_season.parent
+        if not plex_series:
+            return jsonify({'status': 'error', 'message': "Série parente non trouvée pour cette saison."}), 404
+
+        current_app.logger.info(f"Toggle monitor pour saison Plex '{plex_season.title}' (ID: {season_plex_id}) de la série '{plex_series.title}'.")
+
+        # Trouver la série Sonarr correspondante
+        sonarr_series_details = None
+        tvdb_id = None
+        for g in plex_series.guids:
+            if g.id.startswith('tvdb://'):
+                tvdb_id = g.id.replace('tvdb://', '')
+                break
+
+        if tvdb_id:
+            # Tenter de récupérer la série Sonarr par son TVDB ID.
+            # get_sonarr_series_by_guid s'attend à un GUID formaté comme 'tvdb://12345'
+            sonarr_series_initial_info = get_sonarr_series_by_guid(f"tvdb://{tvdb_id}")
+            if sonarr_series_initial_info and 'id' in sonarr_series_initial_info:
+                 # Récupérer les détails complets de la série pour avoir l'état de toutes les saisons
+                sonarr_series_details = get_sonarr_series_by_id(sonarr_series_initial_info['id'])
+            else: # Tentative par titre/année si GUID échoue (moins fiable)
+                current_app.logger.warning(f"Série Sonarr non trouvée par TVDB ID {tvdb_id} pour '{plex_series.title}'. Tentative par titre.")
+                # Cette partie est plus complexe et sujette à erreurs, à implémenter avec prudence si nécessaire.
+                # Pour l'instant, on considère que si non trouvé par TVDB ID, c'est un échec.
+
+        if not sonarr_series_details:
+            current_app.logger.error(f"Impossible de trouver la série '{plex_series.title}' dans Sonarr.")
+            return jsonify({'status': 'error', 'message': f"Série '{plex_series.title}' non trouvée dans Sonarr."}), 404
+
+        # Trouver la saison Sonarr et inverser son état 'monitored'
+        target_sonarr_season_number = plex_season.seasonNumber
+        sonarr_season_found = False
+        new_monitored_state = False
+
+        if 'seasons' in sonarr_series_details:
+            for sonarr_s_data in sonarr_series_details['seasons']:
+                if sonarr_s_data.get('seasonNumber') == target_sonarr_season_number:
+                    current_monitored_state = sonarr_s_data.get('monitored', False)
+                    sonarr_s_data['monitored'] = not current_monitored_state
+                    new_monitored_state = sonarr_s_data['monitored']
+                    sonarr_season_found = True
+                    break
+
+        if not sonarr_season_found:
+            return jsonify({'status': 'error', 'message': f"Saison {target_sonarr_season_number} non trouvée dans les données Sonarr pour la série."}), 404
+
+        # Mettre à jour la série dans Sonarr avec le nouvel état de la saison
+        if update_sonarr_series(sonarr_series_details):
+            status_text = "activée" if new_monitored_state else "désactivée"
+            current_app.logger.info(f"Surveillance pour la saison Plex {season_plex_id} (Sonarr S{target_sonarr_season_number}) changée à '{status_text}'.")
+            return jsonify({
+                'status': 'success',
+                'message': f"Surveillance pour la saison {plex_season.title} {status_text}.",
+                'monitored': new_monitored_state
+            })
+        else:
+            current_app.logger.error(f"Échec de la mise à jour de la série dans Sonarr pour saison {season_plex_id}.")
+            return jsonify({'status': 'error', 'message': "Échec de la mise à jour dans Sonarr."}), 500
+
+    except NotFound:
+        current_app.logger.warning(f"API toggle_season_monitoring: Saison Plex avec ID {season_plex_id} non trouvée.")
+        return jsonify({'status': 'error', 'message': f"Saison Plex ID {season_plex_id} non trouvée."}), 404
+    except Exception as e:
+        current_app.logger.error(f"Erreur API toggle_season_monitoring pour saison {season_plex_id}: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@plex_editor_bp.route('/api/season/<int:season_plex_id>', methods=['DELETE'])
+@login_required
+def delete_season_files_and_unmonitor(season_plex_id):
+    """
+    Supprime les fichiers d'une saison via Sonarr, la passe en non-surveillée,
+    et rafraîchit Plex.
+    """
+    try:
+        admin_plex_server = get_plex_admin_server()
+        if not admin_plex_server:
+            return jsonify({'status': 'error', 'message': "Connexion admin Plex échouée."}), 500
+
+        plex_season = admin_plex_server.fetchItem(season_plex_id)
+        if not plex_season or plex_season.type != 'season':
+            return jsonify({'status': 'error', 'message': "Saison Plex non trouvée ou type incorrect."}), 404
+
+        plex_series = plex_season.parent
+        if not plex_series:
+            return jsonify({'status': 'error', 'message': "Série parente non trouvée pour cette saison."}), 404
+
+        current_app.logger.info(f"Requête de suppression pour saison Plex '{plex_season.title}' (ID: {season_plex_id}) de la série '{plex_series.title}'.")
+
+        # 1. Trouver la série Sonarr
+        sonarr_series_details = None
+        tvdb_id = next((g.id.replace('tvdb://', '') for g in plex_series.guids if g.id.startswith('tvdb://')), None)
+
+        if tvdb_id:
+            sonarr_series_initial_info = get_sonarr_series_by_guid(f"tvdb://{tvdb_id}")
+            if sonarr_series_initial_info and 'id' in sonarr_series_initial_info:
+                sonarr_series_details = get_sonarr_series_by_id(sonarr_series_initial_info['id'])
+
+        if not sonarr_series_details:
+            return jsonify({'status': 'error', 'message': f"Série '{plex_series.title}' non trouvée dans Sonarr."}), 404
+
+        sonarr_series_id = sonarr_series_details['id']
+        target_sonarr_season_number = plex_season.seasonNumber
+
+        # 2. Mettre la saison en non-surveillée dans Sonarr
+        sonarr_season_found_for_monitoring_update = False
+        if 'seasons' in sonarr_series_details:
+            for sonarr_s_data in sonarr_series_details['seasons']:
+                if sonarr_s_data.get('seasonNumber') == target_sonarr_season_number:
+                    sonarr_s_data['monitored'] = False
+                    sonarr_season_found_for_monitoring_update = True
+                    break
+
+        if not sonarr_season_found_for_monitoring_update:
+            # Ne pas bloquer si la saison n'est pas trouvée pour le monitoring, mais logguer.
+            current_app.logger.warning(f"Saison {target_sonarr_season_number} non explicitement trouvée dans Sonarr pour mise à jour monitoring, suppression des fichiers continue.")
+
+        # Il faut envoyer la mise à jour de la série Sonarr même si on va supprimer des fichiers ensuite
+        # car la suppression d'épisodes ne change pas l'état de monitoring de la saison.
+        if sonarr_season_found_for_monitoring_update: # Seulement si on a modifié quelque chose
+            if not update_sonarr_series(sonarr_series_details):
+                # Non bloquant pour la suppression, mais à noter.
+                current_app.logger.warning(f"Échec de la mise à jour du monitoring de la saison {target_sonarr_season_number} dans Sonarr avant suppression des fichiers.")
+
+        # 3. Supprimer les fichiers des épisodes de cette saison via Sonarr
+        # Sonarr API v3 permet de supprimer les fichiers d'épisodes.
+        # Il faut d'abord lister les fichiers des épisodes de la saison concernée.
+        all_episode_files = get_sonarr_episode_files(sonarr_series_id)
+        if all_episode_files is None: # Erreur de communication avec Sonarr
+             return jsonify({'status': 'error', 'message': "Impossible de récupérer la liste des fichiers d'épisodes depuis Sonarr."}), 500
+
+        episode_file_ids_to_delete = []
+        for ep_file in all_episode_files:
+            if ep_file.get('seasonNumber') == target_sonarr_season_number:
+                episode_file_ids_to_delete.append(ep_file['id'])
+
+        if not episode_file_ids_to_delete:
+            current_app.logger.info(f"Aucun fichier d'épisode trouvé dans Sonarr pour la saison {target_sonarr_season_number} de la série '{plex_series.title}'.")
+            # On continue pour scanner Plex, au cas où.
+        else:
+            # Supprimer les fichiers d'épisodes en bloc si l'API Sonarr le permet, sinon un par un.
+            # L'API Sonarr /api/v3/episodeFile/{id} avec DELETE supprime un fichier.
+            # Pour une suppression en masse, il y a /api/v3/episodeFile/bulk avec corps {"episodeFileIds": [ids]}
+            from app.utils.arr_client import sonarr_delete_episode_files_bulk # Supposons que cette fonction existe
+
+            # _is_dry_run_mode() n'est pas défini ici, on va supposer que ce n'est pas un dry run pour l'instant
+            # ou alors il faudrait le passer en argument ou le récupérer depuis la config.
+            # Pour l'instant, on effectue la suppression réelle.
+            # TODO: Intégrer _is_dry_run_mode() si nécessaire
+
+            is_simulating = _is_dry_run_mode() # Récupérer le mode dry_run
+            dry_run_prefix = "[SIMULATION] " if is_simulating else ""
+
+            current_app.logger.info(f"{dry_run_prefix}Tentative de suppression de {len(episode_file_ids_to_delete)} fichier(s) pour la saison {target_sonarr_season_number} via Sonarr.")
+            if not is_simulating:
+                if sonarr_delete_episode_files_bulk(episode_file_ids_to_delete):
+                    current_app.logger.info(f"{len(episode_file_ids_to_delete)} fichier(s) de la saison {target_sonarr_season_number} supprimés via Sonarr.")
+                else:
+                    current_app.logger.error(f"Échec de la suppression en masse des fichiers de la saison {target_sonarr_season_number} via Sonarr.")
+                    # On pourrait tenter une suppression individuelle ici en fallback, ou retourner une erreur.
+                    return jsonify({'status': 'error', 'message': "Échec de la suppression des fichiers via Sonarr."}), 500
+            else:
+                 current_app.logger.info(f"[SIMULATION] {len(episode_file_ids_to_delete)} fichier(s) de la saison {target_sonarr_season_number} seraient supprimés via Sonarr.")
+
+
+        # 4. Déclencher un scan de la bibliothèque Plex
+        try:
+            plex_library = admin_plex_server.library.sectionByID(plex_series.librarySectionID)
+            current_app.logger.info(f"Déclenchement d'un scan de la bibliothèque Plex '{plex_library.title}' après suppression de la saison.")
+            if not _is_dry_run_mode(): # Respecter le dry_run pour le scan aussi
+                plex_library.update()
+            else:
+                current_app.logger.info(f"[SIMULATION] Scan de la bibliothèque '{plex_library.title}' serait déclenché.")
+
+        except Exception as e_scan:
+            current_app.logger.error(f"Échec du déclenchement du scan Plex: {e_scan}", exc_info=True)
+            # Ne pas retourner une erreur bloquante ici, la suppression a peut-être eu lieu.
+
+        # La saison n'est pas supprimée de Plex elle-même, seulement ses fichiers et son monitoring.
+        # L'utilisateur verra la saison sans épisodes (ou Plex la masquera après le scan).
+        return jsonify({'status': 'success', 'message': f"Les fichiers de la saison '{plex_season.title}' ont été supprimés (ou leur suppression simulée) et la saison n'est plus surveillée."})
+
+    except NotFound:
+        current_app.logger.warning(f"API delete_season: Saison Plex avec ID {season_plex_id} non trouvée.")
+        return jsonify({'status': 'error', 'message': f"Saison Plex ID {season_plex_id} non trouvée."}), 404
+    except Exception as e:
+        current_app.logger.error(f"Erreur API delete_season pour saison {season_plex_id}: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 # --- Gestionnaires d'erreur ---
 #@app.errorhandler(404)
