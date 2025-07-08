@@ -63,11 +63,20 @@
                         data-title="{{ item.title }}">
                     <i class="bi bi-eraser-fill"></i> <span class="d-none d-md-inline">Rejeter</span>
                 </button>
-                <a href="{{ url_for('plex_editor.manage_seasons', rating_key=item.ratingKey) }}"
+                {# Bouton Gérer les Saisons obsolète remplacé par le bouton Gérer ci-dessous #}
+                {# <a href="{{ url_for('plex_editor.manage_seasons', rating_key=item.ratingKey) }}"
                    class="btn btn-sm btn-outline-info"
                    title="Gérer les saisons">
                     <i class="bi bi-list-task"></i> <span class="d-none d-md-inline">Saisons</span>
-                </a>
+                </a> #}
+                <button class="btn btn-sm btn-outline-success manage-series-btn"
+                        title="Gérer la série et les saisons"
+                        data-bs-toggle="modal"
+                        data-bs-target="#series-management-modal"
+                        data-rating-key="{{ item.ratingKey }}"
+                        data-title="{{ item.title }}">
+                    <i class="bi bi-gear-fill"></i> <span class="d-none d-md-inline">Gérer</span>
+                </button>
                 {% endif %}
 
                 <button class="btn btn-sm btn-outline-danger delete-item-btn"

@@ -181,6 +181,29 @@
     </div>
 </div>
 
+<!-- Modale de Gestion de Série -->
+<div class="modal fade" id="series-management-modal" tabindex="-1" aria-labelledby="seriesManagementModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable"> {# modal-lg pour plus d'espace, modal-dialog-scrollable pour contenu long #}
+        <div class="modal-content bg-dark text-white">
+            <div class="modal-header">
+                <h5 class="modal-title" id="seriesManagementModalLabel">Gestion de la Série : <span id="seriesManagementModalTitle"></span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                {# Le contenu sera injecté ici par JavaScript depuis _series_management_modal_content.html #}
+                <div class="text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Chargement...</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                {# Des boutons d'action pourraient être ajoutés ici plus tard si nécessaire #}
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -636,6 +659,48 @@ document.addEventListener('DOMContentLoaded', function () {
             }, { once: true });
         }
 
+        // --- Nouvelle logique pour le bouton GÉRER SÉRIE ---
+        const manageSeriesButton = event.target.closest('.manage-series-btn');
+        if (manageSeriesButton) {
+            event.preventDefault();
+            const ratingKey = manageSeriesButton.dataset.ratingKey;
+            const seriesTitle = manageSeriesButton.dataset.title;
+
+            const modalSeriesTitleElement = document.getElementById('seriesManagementModalTitle');
+            if (modalSeriesTitleElement) {
+                modalSeriesTitleElement.textContent = seriesTitle || 'Détails de la série';
+            }
+
+            const modalBody = document.querySelector('#series-management-modal .modal-body');
+            if (modalBody) {
+                // Afficher le spinner/loader
+                modalBody.innerHTML = `
+                    <div class="text-center my-5">
+                        <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status">
+                            <span class="visually-hidden">Chargement du contenu de la série...</span>
+                        </div>
+                        <p class="mt-2">Chargement...</p>
+                    </div>`;
+
+                // La modale elle-même est ouverte par data-bs-target, ici on charge le contenu.
+                fetch(`{{ url_for('plex_editor.get_series_details_for_management', rating_key=0) }}`.replace('0', ratingKey))
+                    .then(response => {
+                        if (!response.ok) {
+                            return response.text().then(text => {
+                                throw new Error(`Erreur HTTP ${response.status}: ${text || 'Erreur serveur inconnue.'}`);
+                            });
+                        }
+                        return response.text();
+                    })
+                    .then(html => {
+                        modalBody.innerHTML = html;
+                    })
+                    .catch(error => {
+                        console.error('Erreur fetch pour les détails de la série:', error);
+                        modalBody.innerHTML = `<div class="alert alert-danger">Impossible de charger les détails : ${error.message}</div>`;
+                    });
+            }
+        }
     });
 });
 </script>

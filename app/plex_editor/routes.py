@@ -1384,6 +1384,62 @@ def get_media_details_for_modal(rating_key): # Renommé pour clarté, bien que l
     except Exception as e:
         current_app.logger.error(f"Erreur API lors de la récupération des détails pour {rating_key}: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
+
+@plex_editor_bp.route('/api/series_details/<int:rating_key>')
+@login_required
+def get_series_details_for_management(rating_key):
+    """Récupère les détails complets d'une série pour la modale de gestion."""
+    try:
+        # Utiliser le serveur Plex spécifique à l'utilisateur pour les statuts 'isWatched'
+        user_plex_server = get_user_specific_plex_server()
+        if not user_plex_server:
+            current_app.logger.error(f"API get_series_details: Impossible d'obtenir une connexion Plex spécifique à l'utilisateur.")
+            return f'<div class="alert alert-danger">Erreur: Connexion au serveur Plex utilisateur échouée.</div>', 500
+
+        series = user_plex_server.fetchItem(rating_key)
+
+        if not series or series.type != 'show':
+            return f'<div class="alert alert-warning">Série non trouvée ou type incorrect.</div>', 404
+
+        series_data = {
+            'title': series.title,
+            'ratingKey': series.ratingKey,
+            'seasons': []
+        }
+
+        for season in series.seasons():
+            # Le statut isWatched pour une saison est directement un attribut de l'objet Season
+            season_data = {
+                'title': season.title,
+                'isWatched': season.isWatched,
+                'episodes': []
+            }
+            for episode in season.episodes():
+                # Le statut isWatched pour un épisode est directement un attribut de l'objet Episode
+                # Pour la taille, il faut vérifier la présence de media et parts
+                size_on_disk = 0
+                if episode.media and len(episode.media) > 0 and episode.media[0].parts and len(episode.media[0].parts) > 0:
+                    size_on_disk = episode.media[0].parts[0].size
+
+                episode_data = {
+                    'title': episode.title,
+                    'isWatched': episode.isWatched,
+                    'size_on_disk': size_on_disk
+                }
+                season_data['episodes'].append(episode_data)
+            series_data['seasons'].append(season_data)
+
+        # Rendre un template partiel avec ces données
+        return render_template('plex_editor/_series_management_modal_content.html', series=series_data)
+
+    except NotFound:
+        current_app.logger.warning(f"API get_series_details: Série avec ratingKey {rating_key} non trouvée.")
+        return f'<div class="alert alert-warning">Série avec ratingKey {rating_key} non trouvée.</div>', 404
+    except Exception as e:
+        current_app.logger.error(f"Erreur API lors de la récupération des détails de la série {rating_key}: {e}", exc_info=True)
+        # Renvoyer une erreur HTML simple qui peut être affichée directement dans la modale
+        return f'<div class="alert alert-danger">Erreur serveur: {str(e)}</div>', 500
+
 # --- Gestionnaires d'erreur ---
 #@app.errorhandler(404)
 #def page_not_found(e):
