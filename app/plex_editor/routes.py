@@ -1451,7 +1451,8 @@ def get_series_details_for_management(rating_key):
 
         seasons_list = []
         viewed_seasons_count = 0
-        plex_seasons_objects = series.seasons() # Obtenir les saisons une fois
+        total_series_size = 0 # Initialise la taille totale de la série
+        plex_seasons_objects = series.seasons()
 
         for season in plex_seasons_objects:
             if season.isWatched:
@@ -1464,6 +1465,21 @@ def get_series_details_for_management(rating_key):
                         sonarr_season_monitored_status = sonarr_s_detail.get('monitored', False)
                         break
 
+            episodes_list_for_season = []
+            total_season_size = 0 # Initialise la taille de la saison
+            for episode in season.episodes():
+                size_bytes = 0
+                if episode.media and len(episode.media) > 0 and episode.media[0].parts and len(episode.media[0].parts) > 0:
+                    size_bytes = getattr(episode.media[0].parts[0], 'size', 0)
+                total_season_size += size_bytes
+
+                episode_data = {
+                    'title': episode.title,
+                    'isWatched': episode.isWatched,
+                    'size_on_disk': size_bytes
+                }
+                episodes_list_for_season.append(episode_data)
+
             season_item_data = {
                 'title': season.title,
                 'viewed_episodes': season.viewedLeafCount,
@@ -1471,21 +1487,11 @@ def get_series_details_for_management(rating_key):
                 'ratingKey': season.ratingKey,
                 'seasonNumber': season.seasonNumber,
                 'is_monitored_season': sonarr_season_monitored_status,
-                'episodes': []
+                'total_size_on_disk': total_season_size, # <-- NOUVELLE DONNÉE SAISON
+                'episodes': episodes_list_for_season
             }
-
-            for episode in season.episodes():
-                size_on_disk = 0
-                if episode.media and len(episode.media) > 0 and episode.media[0].parts and len(episode.media[0].parts) > 0:
-                    size_on_disk = episode.media[0].parts[0].size
-
-                episode_data = {
-                    'title': episode.title,
-                    'isWatched': episode.isWatched,
-                    'size_on_disk': size_on_disk
-                }
-                season_item_data['episodes'].append(episode_data) # Correction ici
-            seasons_list.append(season_item_data) # Assurer que c'est season_item_data qui est ajouté à la liste
+            seasons_list.append(season_item_data)
+            total_series_size += total_season_size # Ajoute à la taille totale de la série
 
         series_data = {
             'title': series.title,
@@ -1495,7 +1501,8 @@ def get_series_details_for_management(rating_key):
             'viewed_seasons_plex': viewed_seasons_count,
             'is_monitored_global': is_monitored_global_status,
             'sonarr_series_id': sonarr_series_id_val,
-            'seasons': seasons_list # seasons_list contient maintenant les season_item_data corrigés
+            'total_size_on_disk': total_series_size, # <-- NOUVELLE DONNÉE SÉRIE
+            'seasons': seasons_list
         }
 
         # Rendre un template partiel avec ces données
