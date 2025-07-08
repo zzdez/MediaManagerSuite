@@ -158,40 +158,60 @@ def get_media_items():
         if not target_plex_server:
              return jsonify({'error': f"Impossible d'établir la connexion Plex pour l'utilisateur {user_id}."}), 500
 
-        all_items = []
-        search_args = {}
-        if status_filter == 'unwatched':
-            search_args['unwatched'] = True
-        elif status_filter == 'watched':
-            search_args['unwatched'] = False
-        # 'all' ne nécessite pas d'argument 'unwatched' spécifique
-
+        all_media_from_plex = []
         for lib_key in library_keys:
             try:
-                # lib_key est l'ID de la section (ex: '1', '23'). sectionByID attend un int.
                 library = target_plex_server.library.sectionByID(int(lib_key))
-                current_app.logger.info(f"API get_media_items: Recherche dans la bibliothèque '{library.title}' (Key: {lib_key}) avec filtres: {search_args}")
+                current_app.logger.info(f"API get_media_items: Récupération de tous les items de la bibliothèque '{library.title}' (Key: {lib_key}) pour l'utilisateur {user_id}.")
+                items_from_lib = library.all() # Récupère tous les items, le filtrage se fera en Python
 
-                # Utiliser search() pour appliquer les filtres directement via l'API Plex
-                items = library.search(**search_args)
-
-                for item in items:
-                    item.library_name = library.title # Ajout pour le template
-                    if item.type == 'show':
-                        item.viewed_episodes = item.viewedLeafCount
-                        item.total_episodes = item.leafCount
-                all_items.extend(items)
+                for item_from_lib in items_from_lib:
+                    item_from_lib.library_name = library.title
+                    if item_from_lib.type == 'show':
+                        item_from_lib.viewed_episodes = item_from_lib.viewedLeafCount
+                        item_from_lib.total_episodes = item_from_lib.leafCount
+                    all_media_from_plex.append(item_from_lib)
             except NotFound:
                 current_app.logger.warning(f"API get_media_items: Bibliothèque avec clé {lib_key} non trouvée pour l'utilisateur {user_id}.")
-                # On continue avec les autres bibliothèques si certaines ne sont pas trouvées
             except Exception as e_lib:
                 current_app.logger.error(f"API get_media_items: Erreur lors de l'accès à la bibliothèque {lib_key} pour {user_id}: {e_lib}", exc_info=True)
-                # On pourrait choisir de retourner une erreur ici ou de continuer
 
-        # Tri basique par titre pour l'instant. Pourra être amélioré.
-        all_items.sort(key=lambda x: getattr(x, 'titleSort', x.title).lower())
+        # --- Nouvelle Logique de Filtrage en Python ---
+        filtered_items = []
+        if status_filter == 'all':
+            filtered_items = all_media_from_plex
+        else:
+            for item in all_media_from_plex:
+                if item.type == 'show':
+                    # Assurer que total_episodes est non nul pour éviter division par zéro ou logique incorrecte
+                    total_episodes = getattr(item, 'total_episodes', 0)
+                    viewed_episodes = getattr(item, 'viewed_episodes', 0)
 
-        return render_template('plex_editor/_media_table.html', items=all_items)
+                    is_watched_series = total_episodes > 0 and viewed_episodes == total_episodes
+                    is_unwatched_series = total_episodes > 0 and viewed_episodes == 0
+                    # Pour 'in_progress', on s'assure qu'il y a des épisodes, sinon ce n'est pas applicable.
+                    is_in_progress_series = total_episodes > 0 and viewed_episodes > 0 and viewed_episodes < total_episodes
+
+                    if status_filter == 'watched' and is_watched_series:
+                        filtered_items.append(item)
+                    elif status_filter == 'unwatched' and is_unwatched_series:
+                        filtered_items.append(item)
+                    elif status_filter == 'in_progress' and is_in_progress_series:
+                        filtered_items.append(item)
+
+                elif item.type == 'movie':
+                    # Pour les films, la logique existante de item.isWatched est suffisante
+                    if status_filter == 'watched' and item.isWatched:
+                        filtered_items.append(item)
+                    elif status_filter == 'unwatched' and not item.isWatched:
+                        filtered_items.append(item)
+                    # Les films ne peuvent pas être 'in_progress' dans ce contexte
+            current_app.logger.info(f"API get_media_items: Filtrage appliqué. Avant: {len(all_media_from_plex)} items, Après: {len(filtered_items)} items pour le statut '{status_filter}'.")
+
+        # Tri basique par titre.
+        filtered_items.sort(key=lambda x: getattr(x, 'titleSort', x.title).lower())
+
+        return render_template('plex_editor/_media_table.html', items=filtered_items)
 
     except Unauthorized:
         current_app.logger.error(f"API get_media_items: Autorisation refusée pour {user_id}.", exc_info=True)
