@@ -136,29 +136,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // --- 3. Logique du bouton "Appliquer" (pour plus tard) ---
     applyBtn.addEventListener('click', function() {
-        // Pour l'instant, on ne fait rien, mais le branchement est là
+        // Cette section est pour la future logique de chargement des médias.
+        // Les console.log sont utiles pour le débogage.
         console.log('Bouton Appliquer cliqué');
         console.log('Utilisateur choisi:', userSelect.value);
-        // Pour obtenir les valeurs d'un select multiple:
+
         const selectedLibraries = Array.from(librarySelect.selectedOptions).map(opt => opt.value);
         console.log('Bibliothèques choisies:', selectedLibraries);
-
-        itemsContainer.innerHTML = ''; // Vide les anciens résultats
-        loader.style.display = 'block'; // Affiche le loader
-
-        // Simulation d'un appel API et traitement
-        // Remplacer ceci par le véritable appel pour charger les médias plus tard
-        setTimeout(() => {
-            loader.style.display = 'none';
-            if (userSelect.value && selectedLibraries.length > 0) {
-                itemsContainer.innerHTML = `<p class="text-success text-center">Chargement des médias pour l'utilisateur ${userSelect.options[userSelect.selectedIndex].text} et la/les bibliothèque(s) ${selectedLibraries.join(', ')}...</p>`;
-                // Ici, vous feriez l'appel fetch pour obtenir les médias et les afficher
-            } else if (!userSelect.value) {
-                 itemsContainer.innerHTML = '<p class="text-center text-warning">Veuillez d'abord sélectionner un utilisateur.</p>';
-            } else {
-                 itemsContainer.innerHTML = '<p class="text-center text-warning">Veuillez sélectionner au moins une bibliothèque.</p>';
-            }
-        }, 1500);
     });
 });
 </script>
