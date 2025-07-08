@@ -3290,14 +3290,14 @@ def add_torrent_and_map():
         return redirect(url_for('seedbox_ui.rtorrent_list')) # Rediriger vers une page pertinente
 
     # 2. Récupérer les configurations de l'application
-    rutorrent_api_url = current_app.config.get('RUTORRENT_API_URL')
-    rutorrent_user = current_app.config.get('RUTORRENT_USER')
-    rutorrent_password = current_app.config.get('RUTORRENT_PASSWORD')
-    ssl_verify_str = current_app.config.get('SEEDBOX_SSL_VERIFY', "True") # Default à "True" si non défini
+    rutorrent_api_url = current_app.config.get('RTORRENT_API_URL')
+    rutorrent_user = current_app.config.get('RTORRENT_USER')
+    rutorrent_password = current_app.config.get('RTORRENT_PASSWORD')
+    ssl_verify_str = current_app.config.get('RTORRENT_SSL_VERIFY', "True") # Default à "True" si non défini
 
     if not rutorrent_api_url:
         flash("L'URL de l'API ruTorrent n'est pas configurée.", 'danger')
-        current_app.logger.error("add_torrent_and_map: RUTORRENT_API_URL non configuré.")
+        current_app.logger.error("add_torrent_and_map: RTORRENT_API_URL non configuré.")
         return redirect(url_for('seedbox_ui.rtorrent_list'))
 
     # 3. Construire le download_dir
