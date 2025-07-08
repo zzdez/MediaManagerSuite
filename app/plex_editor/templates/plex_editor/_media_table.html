@@ -1,0 +1,24 @@
+<table class="table table-dark table-striped table-hover mt-4">
+    <thead>
+        <tr>
+            <th>Titre</th>
+            <th>Bibliothèque</th>
+            <th>Année</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for item in items %}
+        <tr>
+            <td>{{ item.title }}</td>
+            <td><span class="badge bg-secondary">{{ item.library_name }}</span></td>
+            <td>{{ item.year }}</td>
+            <td><button class="btn btn-sm btn-danger">Supprimer</button></td> {# Action de suppression à implémenter plus tard #}
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="4" class="text-center">Aucun média trouvé pour les filtres sélectionnés.</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>

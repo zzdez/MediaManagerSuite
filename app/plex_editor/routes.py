@@ -111,6 +111,94 @@ def get_user_libraries(user_id):
         current_app.logger.error(f"Erreur API lors de la récupération des bibliothèques pour l'utilisateur {user_id} : {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
+@plex_editor_bp.route('/api/media_items', methods=['POST'])
+@login_required
+def get_media_items():
+    """
+    Récupère les médias en fonction des filtres (utilisateur, bibliothèques, statut)
+    et retourne un template HTML partiel.
+    """
+    data = request.json
+    user_id = data.get('userId')
+    library_keys = data.get('libraryKeys', [])
+    status_filter = data.get('statusFilter', 'all')  # 'all', 'unwatched', 'watched'
+
+    if not user_id or not library_keys:
+        # Retourner un fragment HTML d'erreur ou un JSON, selon la gestion d'erreur préférée côté client
+        # Pour l'instant, un JSON pour que le client puisse afficher une alerte.
+        return jsonify({'error': 'ID utilisateur et au moins une clé de bibliothèque sont requis.'}), 400
+
+    try:
+        plex_url = current_app.config.get('PLEX_URL')
+        admin_token = current_app.config.get('PLEX_TOKEN')
+        if not plex_url or not admin_token:
+            current_app.logger.error("API get_media_items: Configuration Plex (URL/Token) manquante.")
+            return jsonify({'error': "Configuration Plex manquante."}), 500 # Ou render_template avec message d'erreur
+
+        main_plex_account = get_main_plex_account_object()
+        if not main_plex_account:
+            current_app.logger.error("API get_media_items: Impossible de récupérer le compte Plex principal.")
+            return jsonify({'error': "Impossible de récupérer le compte Plex principal."}), 500
+
+        target_plex_server = None
+        if str(main_plex_account.id) == user_id:
+            target_plex_server = PlexServer(plex_url, admin_token)
+            current_app.logger.info(f"API get_media_items: Accès admin pour userID {user_id}.")
+        else:
+            admin_plex_server_for_setup = PlexServer(plex_url, admin_token)
+            user_to_impersonate = next((u for u in main_plex_account.users() if str(u.id) == user_id), None)
+            if user_to_impersonate:
+                managed_user_token = user_to_impersonate.get_token(admin_plex_server_for_setup.machineIdentifier)
+                target_plex_server = PlexServer(plex_url, managed_user_token)
+                current_app.logger.info(f"API get_media_items: Accès emprunté pour user '{user_to_impersonate.title}' (ID: {user_id}).")
+            else:
+                current_app.logger.warning(f"API get_media_items: Utilisateur {user_id} non trouvé pour impersonnalisation.")
+                return jsonify({'error': f"Utilisateur {user_id} non trouvé."}), 404
+
+        if not target_plex_server:
+             return jsonify({'error': f"Impossible d'établir la connexion Plex pour l'utilisateur {user_id}."}), 500
+
+        all_items = []
+        search_args = {}
+        if status_filter == 'unwatched':
+            search_args['unwatched'] = True
+        elif status_filter == 'watched':
+            search_args['unwatched'] = False
+        # 'all' ne nécessite pas d'argument 'unwatched' spécifique
+
+        for lib_key in library_keys:
+            try:
+                # lib_key est l'ID de la section (ex: '1', '23'). sectionByID attend un int.
+                library = target_plex_server.library.sectionByID(int(lib_key))
+                current_app.logger.info(f"API get_media_items: Recherche dans la bibliothèque '{library.title}' (Key: {lib_key}) avec filtres: {search_args}")
+
+                # Utiliser search() pour appliquer les filtres directement via l'API Plex
+                items = library.search(**search_args)
+
+                for item in items:
+                    item.library_name = library.title # Ajout pour le template
+                all_items.extend(items)
+            except NotFound:
+                current_app.logger.warning(f"API get_media_items: Bibliothèque avec clé {lib_key} non trouvée pour l'utilisateur {user_id}.")
+                # On continue avec les autres bibliothèques si certaines ne sont pas trouvées
+            except Exception as e_lib:
+                current_app.logger.error(f"API get_media_items: Erreur lors de l'accès à la bibliothèque {lib_key} pour {user_id}: {e_lib}", exc_info=True)
+                # On pourrait choisir de retourner une erreur ici ou de continuer
+
+        # Tri basique par titre pour l'instant. Pourra être amélioré.
+        all_items.sort(key=lambda x: getattr(x, 'titleSort', x.title).lower())
+
+        return render_template('plex_editor/_media_table.html', items=all_items)
+
+    except Unauthorized:
+        current_app.logger.error(f"API get_media_items: Autorisation refusée pour {user_id}.", exc_info=True)
+        return jsonify({'error': "Autorisation refusée par le serveur Plex."}), 401 # Ou template d'erreur
+    except Exception as e:
+        current_app.logger.error(f"Erreur API lors de la récupération des médias pour {user_id} et bibliothèques {library_keys}: {e}", exc_info=True)
+        # En cas d'erreur majeure, on peut aussi rendre un fragment HTML d'erreur
+        # return render_template('plex_editor/_error_message.html', message=str(e)), 500
+        return jsonify({'error': str(e)}), 500
+
 @plex_editor_bp.route('/')
 @login_required
 def index():
