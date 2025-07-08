@@ -261,32 +261,50 @@
         </div>
 
         <div class="tab-pane fade" id="maintenance-content" role="tabpanel" aria-labelledby="maintenance-tab">
-            <div class="container mt-4">
-                <div class="row">
-                    <div class="col-md-12">
-                        <div class="card">
-                            <div class="card-header bg-secondary text-white">
-                                <h4><i class="bi bi-tools"></i> Outils de Maintenance</h4>
-                            </div>
-                            <div class="card-body">
-                                <p>Cette section est réservée pour les futurs outils de maintenance et de configuration avancée de MediaManagerSuite.</p>
-                                <p>Idées pour fonctionnalités futures :</p>
-                                <ul class="list-group list-group-flush">
-                                    <li class="list-group-item">Gestionnaire de configuration de l'application.</li>
-                                    <li class="list-group-item">Visualiseur de logs avancé.</li>
-                                    <li class="list-group-item">Outils de nettoyage (ex: anciennes associations, fichiers temporaires).</li>
-                                    <li class="list-group-item">Test de connexion aux services (*Arr, rTorrent, SFTP).</li>
-                                    <li class="list-group-item">Gestion des tâches planifiées (si applicable).</li>
-                                    <li class="list-group-item">Réintégration optionnelle de vues spécifiques si non accessibles ailleurs.</li>
-                                </ul>
-                                <div class="alert alert-info mt-3" role="alert">
-                                    <i class="bi bi-info-circle-fill"></i> Pour l'instant, cette section est un placeholder.
-                                </div>
-                            </div>
-                        </div>
+            <h4 class="mt-3 mb-3"><i class="bi bi-tools"></i> Outils de Maintenance</h4>
+
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h5 class="mb-0">Gestion des Files d'Attente *Arr</h5>
+                </div>
+                <div class="card-body">
+                    <p class="card-text">Visualiser et nettoyer les éléments potentiellement bloqués dans les files d'attente de Sonarr et Radarr.</p>
+                    <button class="btn btn-primary" id="load-arr-queue-btn" type="button">
+                        <i class="bi bi-hourglass-split"></i> Charger le Gestionnaire
+                    </button>
+                    <div class="text-center mt-3" id="arr-queue-loader" style="display: none;">
+                        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Chargement...</span></div>
+                        <p class="mt-2">Chargement du gestionnaire des files d'attente...</p>
+                    </div>
+                    <div id="arr-queue-container" class="mt-3"></div>
+                </div>
+            </div>
+
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h5 class="mb-0">Nettoyage des Dossiers de Travail Seedbox (SFTP)</h5>
+                </div>
+                <div class="card-body">
+                    <p class="card-text">Lister le contenu et potentiellement supprimer les fichiers/dossiers orphelins ou inutiles dans les dossiers de travail distants de Sonarr et Radarr sur la seedbox.</p>
+                    <div class="btn-group mb-3" role="group" aria-label="Charger dossiers de travail">
+                        <button class="btn btn-info" id="load-sonarr-workdir-btn" type="button">
+                            <i class="bi bi-tv"></i> Sonarr (Dossier Travail)
+                        </button>
+                        <button class="btn btn-success" id="load-radarr-workdir-btn" type="button">
+                            <i class="bi bi-film"></i> Radarr (Dossier Travail)
+                        </button>
+                    </div>
+                    <div class="text-center mt-3" id="workdir-loader" style="display: none;">
+                        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Chargement...</span></div>
+                        <p class="mt-2">Chargement des dossiers de travail...</p>
+                    </div>
+                    <div id="workdir-container" class="mt-3">
+                        <!-- Le contenu de remote_seedbox_list.html pour sonarr_working ou radarr_working sera chargé ici -->
                     </div>
                 </div>
             </div>
+
+            <!-- Vous pouvez ajouter d'autres cartes ici pour d'autres outils de maintenance -->
         </div>
     </div>
 </div>
