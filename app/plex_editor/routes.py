@@ -1424,53 +1424,63 @@ def get_series_details_for_management(rating_key):
         if not series or series.type != 'show':
             return f'<div class="alert alert-warning">Série non trouvée ou type incorrect.</div>', 404
 
-        # Essayer de récupérer la série Sonarr correspondante pour l'état de monitoring des saisons
-        sonarr_series_details = None
-        plex_guid = series.guid
-        if 'tvdb' in plex_guid or 'tmdb' in plex_guid or 'imdb' in plex_guid: # Plex guids can be like 'plex://show/5d9f89dfc750d0001f1507de' or 'tvdb://12345'
-             # Essayer de chercher par GUID si c'est un format externe standard
-            sonarr_series_details = get_sonarr_series_by_guid(plex_guid)
+        # Essayer de récupérer la série Sonarr correspondante
+        sonarr_series_full_details = None
+        sonarr_series_id_val = None
+        is_monitored_global_status = False
 
-        if not sonarr_series_details: # Fallback si non trouvé par GUID direct (ex: guid plex://)
-            # On pourrait tenter de chercher par titre et année si nécessaire, mais c'est moins fiable.
-            # Pour l'instant, on logue si non trouvé par GUID.
-            current_app.logger.warning(f"API get_series_details: Série Sonarr non trouvée par GUID '{plex_guid}' pour Plex série '{series.title}'. L'état de monitoring des saisons pourrait être manquant.")
-            # Alternative : si on a un TVDB ID dans series.guids, on peut l'utiliser
-            tvdb_id = None
-            for g in series.guids:
-                if g.id.startswith('tvdb://'):
-                    tvdb_id = g.id.replace('tvdb://', '')
-                    break
-            if tvdb_id:
-                sonarr_series_details = get_sonarr_series_by_guid(f"tvdb://{tvdb_id}") # get_sonarr_series_by_guid s'attend au préfixe
-                if not sonarr_series_details:
-                     current_app.logger.warning(f"API get_series_details: Série Sonarr non trouvée non plus par TVDB ID '{tvdb_id}' extrait des GUIDs Plex.")
+        tvdb_id = next((g.id.replace('tvdb://', '') for g in series.guids if g.id.startswith('tvdb://')), None)
 
+        if tvdb_id:
+            current_app.logger.info(f"API get_series_details: Recherche Sonarr avec TVDB ID: {tvdb_id} pour Plex série '{series.title}'")
+            # D'abord, chercher par GUID pour obtenir l'ID Sonarr
+            sonarr_series_basic_info = get_sonarr_series_by_guid(f"tvdb://{tvdb_id}")
+            if sonarr_series_basic_info and sonarr_series_basic_info.get('id'):
+                sonarr_series_id_val = sonarr_series_basic_info['id']
+                # Ensuite, obtenir les détails complets avec cet ID
+                sonarr_series_full_details = get_sonarr_series_by_id(sonarr_series_id_val)
+                if sonarr_series_full_details:
+                    is_monitored_global_status = sonarr_series_full_details.get('monitored', False)
+                    current_app.logger.info(f"API get_series_details: Série Sonarr trouvée (ID: {sonarr_series_id_val}), monitored: {is_monitored_global_status}")
+                else:
+                    current_app.logger.warning(f"API get_series_details: Série Sonarr trouvée par GUID mais détails complets non récupérés pour ID Sonarr {sonarr_series_id_val}.")
+            else:
+                current_app.logger.warning(f"API get_series_details: Série Sonarr non trouvée par TVDB ID '{tvdb_id}'.")
+        else:
+            current_app.logger.warning(f"API get_series_details: Aucun TVDB ID trouvé pour la série Plex '{series.title}'. Impossible de récupérer l'état Sonarr.")
 
         series_data = {
             'title': series.title,
             'ratingKey': series.ratingKey, # ratingKey de la série Plex
+            'status': series.status,  # 'continuing', 'ended', etc. (de Plex)
+            'total_seasons_plex': series.childCount, # Nombre de saisons dans Plex
+            'viewed_seasons_plex': series.viewedChildCount, # Nombre de saisons vues dans Plex
+            'is_monitored_global': is_monitored_global_status,
+            'sonarr_series_id': sonarr_series_id_val, # Peut être None
             'seasons': []
         }
 
+        seasons_list = []
         for season in series.seasons():
-            sonarr_season_monitored_status = False # Default si non trouvé dans Sonarr
-            if sonarr_series_details and 'seasons' in sonarr_series_details:
-                for sonarr_s in sonarr_series_details['seasons']:
-                    if sonarr_s['seasonNumber'] == season.seasonNumber: # season.seasonNumber est l'index de la saison (0 pour specials, 1 pour S1 etc)
-                        sonarr_season_monitored_status = sonarr_s.get('monitored', False)
+            sonarr_season_monitored_status = False
+            if sonarr_series_full_details and 'seasons' in sonarr_series_full_details:
+                for sonarr_s_detail in sonarr_series_full_details['seasons']:
+                    if sonarr_s_detail.get('seasonNumber') == season.seasonNumber:
+                        sonarr_season_monitored_status = sonarr_s_detail.get('monitored', False)
                         break
 
-            season_data = {
+            season_item_data = { # Renommé pour éviter confusion avec la variable 'season_data' externe si jamais
                 'title': season.title,
-                'isWatched': season.isWatched,
+                # 'isWatched': season.isWatched, # Déjà couvert par viewed_episodes == total_episodes
                 'viewed_episodes': season.viewedLeafCount,
                 'total_episodes': season.leafCount,
-                'ratingKey': season.ratingKey, # ratingKey de la saison Plex
-                'seasonNumber': season.seasonNumber, # Numéro de la saison pour correspondre avec Sonarr
-                'sonarr_monitored': sonarr_season_monitored_status,
-                'episodes': []
+                'ratingKey': season.ratingKey,
+                'seasonNumber': season.seasonNumber,
+                'is_monitored_season': sonarr_season_monitored_status, # Nouveau nom pour clarté
+                'episodes': [] # Gardé pour la structure, même si non utilisé dans le nouveau template
             }
+            # La boucle des épisodes reste pour la structure de données, même si le nouveau template ne les affiche plus individuellement.
+            # Si on voulait les ré-afficher, ce serait ici.
             for episode in season.episodes():
                 # Le statut isWatched pour un épisode est directement un attribut de l'objet Episode
                 # Pour la taille, il faut vérifier la présence de media et parts
@@ -1698,6 +1708,41 @@ def delete_season_files_and_unmonitor(season_plex_id):
         return jsonify({'status': 'error', 'message': f"Saison Plex ID {season_plex_id} non trouvée."}), 404
     except Exception as e:
         current_app.logger.error(f"Erreur API delete_season pour saison {season_plex_id}: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@plex_editor_bp.route('/api/series/<int:sonarr_series_id>/toggle_monitor_global', methods=['POST'])
+@login_required
+def toggle_global_series_monitoring(sonarr_series_id):
+    """Active ou désactive la surveillance globale d'une série dans Sonarr."""
+    try:
+        if not sonarr_series_id:
+            return jsonify({'status': 'error', 'message': "ID de série Sonarr manquant."}), 400
+
+        current_app.logger.info(f"Toggle monitor global pour série Sonarr ID: {sonarr_series_id}.")
+
+        sonarr_series = get_sonarr_series_by_id(sonarr_series_id)
+        if not sonarr_series:
+            return jsonify({'status': 'error', 'message': f"Série Sonarr avec ID {sonarr_series_id} non trouvée."}), 404
+
+        current_monitored_status = sonarr_series.get('monitored', False)
+        sonarr_series['monitored'] = not current_monitored_status
+        new_monitored_state = sonarr_series['monitored']
+
+        # Mettre à jour la série dans Sonarr
+        if update_sonarr_series(sonarr_series):
+            status_text = "activée" if new_monitored_state else "désactivée"
+            current_app.logger.info(f"Surveillance globale pour la série Sonarr {sonarr_series_id} changée à '{status_text}'.")
+            return jsonify({
+                'status': 'success',
+                'message': f"Surveillance globale {status_text} pour la série.",
+                'monitored': new_monitored_state
+            })
+        else:
+            current_app.logger.error(f"Échec de la mise à jour de la série Sonarr {sonarr_series_id} pour le monitoring global.")
+            return jsonify({'status': 'error', 'message': "Échec de la mise à jour du statut de surveillance global dans Sonarr."}), 500
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur API toggle_global_series_monitoring pour série Sonarr ID {sonarr_series_id}: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 # --- Gestionnaires d'erreur ---

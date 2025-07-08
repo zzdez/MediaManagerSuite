@@ -1,67 +1,79 @@
-<div class="accordion" id="seasons-accordion">
-    {% for season in series.seasons %}
-    <div class="accordion-item bg-secondary">
-        <h2 class="accordion-header" id="heading-season-{{ season.title | replace(' ', '-') | lower }}-{{ loop.index }}">
-            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-season-{{ season.title | replace(' ', '-') | lower }}-{{ loop.index }}" aria-expanded="false" aria-controls="collapse-season-{{ season.title | replace(' ', '-') | lower }}-{{ loop.index }}">
-                <div class="d-flex justify-content-between w-100 align-items-center">
-                    <span>{{ season.title }}</span>
-                    <span class="ms-auto me-3"> <!-- Aligné à droite -->
-                        {% if season.total_episodes > 0 %}
-                            {% if season.viewed_episodes == 0 %}
-                                <span class="badge bg-warning text-dark">Non commencée</span>
-                            {% elif season.viewed_episodes == season.total_episodes %}
-                                <span class="badge bg-success">Terminée</span>
-                            {% else %}
-                                <span class="badge bg-info">En cours</span>
-                            {% endif %}
-                            <small class="text-muted ms-1">{{ season.viewed_episodes }} / {{ season.total_episodes }} ép.</small>
-                        {% elif season.isWatched %} {# Cas d'une saison marquée vue mais sans décompte d'épisodes (moins probable mais sécurité) #}
-                             <span class="badge bg-success">Vue</span>
-                        {% else %}
-                             <span class="badge bg-secondary">Info N/A</span>
-                        {% endif %}
-                    </span>
-                </div>
-            </button>
-        </h2>
-        <div id="collapse-season-{{ season.title | replace(' ', '-') | lower }}-{{ loop.index }}" class="accordion-collapse collapse" aria-labelledby="heading-season-{{ season.title | replace(' ', '-') | lower }}-{{ loop.index }}" data-bs-parent="#seasons-accordion">
-            <div class="accordion-body p-2">
-                <div class="d-flex justify-content-end align-items-center mb-2 p-2 border-bottom">
-                    <div class="form-check form-switch me-3">
-                        <input class="form-check-input season-monitor-toggle" type="checkbox" role="switch"
-                               id="monitor-switch-{{ season.ratingKey }}"
-                               data-season-id="{{ season.ratingKey }}"
-                               {% if season.sonarr_monitored %}checked{% endif %}>
-                        <label class="form-check-label small" for="monitor-switch-{{ season.ratingKey }}">Surveiller (Sonarr)</label>
-                    </div>
-                    <button class="btn btn-sm btn-outline-danger delete-season-btn"
-                            data-season-id="{{ season.ratingKey }}"
-                            data-season-title="{{ season.title }}">
-                        <i class="bi bi-trash"></i> <span class="d-none d-sm-inline">Suppr. Saison</span>
-                    </button>
-                </div>
-
-                {% if season.episodes %}
-                <ul class="list-group list-group-flush">
-                    {% for episode in season.episodes %}
-                    <li class="list-group-item {% if episode.isWatched %}list-group-item-success{% else %}list-group-item-dark{% endif %} d-flex justify-content-between align-items-center py-1 px-2">
-                        <small>
-                            {{ episode.title }}
-                            {% if episode.isWatched %}
-                                <span class="badge bg-success ms-1 visually-hidden-unless-narrow">Vu</span>
-                            {% endif %}
-                        </small>
-                        <small class="text-muted">{{ (episode.size_on_disk / (1024*1024)) | round(1) }} MB</small>
-                    </li>
-                    {% endfor %}
-                </ul>
-                {% else %}
-                <p class="text-muted p-2">Aucun épisode trouvé pour cette saison.</p>
-                {% endif %}
-            </div>
-        </div>
+<!-- En-tête avec infos et actions globales -->
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        {# Le titre de la série est maintenant dans l'en-tête de la modale principale, pas besoin de le répéter ici #}
+        {# <h4 class="mb-0">{{ series.title }}</h4> #}
+        <small class="text-muted">
+            Statut Plex:
+            {% if series.status == 'ended' %}
+                <span class="badge bg-danger">Terminée</span>
+            {% elif series.status == 'continuing' %}
+                <span class="badge bg-success">En cours de diffusion</span>
+            {% else %}
+                <span class="badge bg-secondary">{{ series.status | capitalize }}</span>
+            {% endif %}
+            | Saisons Plex vues: {{ series.viewed_seasons_plex }} / {{ series.total_seasons_plex }}
+        </small>
+    </div>
+    {% if series.sonarr_series_id %} {# Afficher le switch uniquement si la série est trouvée dans Sonarr #}
+    <div class="form-check form-switch fs-5">
+        <input class="form-check-input series-global-monitor-toggle" type="checkbox" role="switch"
+               id="monitor-series-{{ series.ratingKey }}"
+               data-sonarr-series-id="{{ series.sonarr_series_id }}"
+               {% if series.is_monitored_global %}checked{% endif %}>
+        <label class="form-check-label small" for="monitor-series-{{ series.ratingKey }}">Surveiller Série (Sonarr)</label>
     </div>
     {% else %}
-    <div class="alert alert-info">Aucune saison trouvée pour cette série.</div>
-    {% endfor %}
+    <small class="text-warning">Série non trouvée dans Sonarr pour gestion du monitoring global.</small>
+    {% endif %}
 </div>
+
+<hr>
+
+<!-- Liste des saisons -->
+{% if series.seasons %}
+<ul class="list-group list-group-flush">
+    {% for season in series.seasons %}
+    <li class="list-group-item list-group-item-dark d-flex justify-content-between align-items-center py-2 px-2 mb-1 rounded">
+        <div class="flex-grow-1">
+            <strong>{{ season.title }}</strong>
+            {% if season.total_episodes > 0 %}
+                <small class="d-block text-muted">
+                    {% if season.viewed_episodes == 0 %}
+                        Non commencée
+                    {% elif season.viewed_episodes == season.total_episodes %}
+                        Terminée
+                    {% else %}
+                        En cours
+                    {% endif %}
+                    ({{ season.viewed_episodes }} / {{ season.total_episodes }} ép.)
+                </small>
+            {% else %}
+                 <small class="d-block text-muted">Aucun épisode listé dans Plex.</small>
+            {% endif %}
+        </div>
+        <div class="d-flex align-items-center ms-2">
+            {% if series.sonarr_series_id %} {# On a besoin de l'ID de la série Sonarr pour que le toggle saison ait du sens #}
+            <div class="form-check form-switch me-3">
+                <input class="form-check-input season-monitor-toggle" type="checkbox" role="switch"
+                       id="monitor-season-{{ season.ratingKey }}"
+                       data-season-id="{{ season.ratingKey }}"
+                       {% if season.is_monitored_season %}checked{% endif %}>
+                <label class="form-check-label small" for="monitor-season-{{ season.ratingKey }}">Surv.</label>
+            </div>
+            <button class="btn btn-sm btn-outline-danger delete-season-btn"
+                    data-season-id="{{ season.ratingKey }}"
+                    data-season-title="{{ season.title }}"
+                    title="Supprimer les fichiers de la saison et la dé-monitorer">
+                <i class="bi bi-trash"></i>
+            </button>
+            {% else %}
+            <small class="text-warning me-2" title="La série parente n'a pas été trouvée dans Sonarr.">(Actions Sonarr indisponibles)</small>
+            {% endif %}
+        </div>
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<div class="alert alert-info">Aucune saison trouvée pour cette série dans Plex.</div>
+{% endif %}
