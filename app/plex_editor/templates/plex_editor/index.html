@@ -64,6 +64,15 @@ document.addEventListener('DOMContentLoaded', function () {
     const loader = document.getElementById('plex-items-loader');
     const itemsContainer = document.getElementById('plex-items-container');
 
+    const LAST_USER_KEY = 'mms_last_plex_user_id';
+
+    // --- 1. Charger les utilisateurs au démarrage ---
+    const applyBtn = document.getElementById('apply-filters-btn');
+    const loader = document.getElementById('plex-items-loader');
+    const itemsContainer = document.getElementById('plex-items-container');
+
+    const LAST_USER_KEY = 'mms_last_plex_user_id';
+
     // --- 1. Charger les utilisateurs au démarrage ---
     fetch("{{ url_for('plex_editor.get_plex_users') }}")
         .then(response => {
@@ -82,21 +91,41 @@ document.addEventListener('DOMContentLoaded', function () {
             } else {
                  userSelect.innerHTML = '<option selected>Aucun utilisateur trouvé</option>';
             }
+
+            // --- NOUVELLE LOGIQUE : Recharger le dernier utilisateur ---
+            const lastUserId = localStorage.getItem(LAST_USER_KEY);
+            if (lastUserId) {
+                // Vérifier si l'option existe avant de la sélectionner
+                if (Array.from(userSelect.options).some(opt => opt.value === lastUserId)) {
+                    userSelect.value = lastUserId;
+                    // Déclenche manuellement l'événement 'change' pour charger les bibliothèques
+                    userSelect.dispatchEvent(new Event('change'));
+                } else {
+                    localStorage.removeItem(LAST_USER_KEY); // Clé invalide, on la supprime
+                }
+            }
         })
         .catch(error => {
             console.error("Erreur lors du chargement des utilisateurs:", error);
             userSelect.innerHTML = '<option selected>Erreur de chargement des utilisateurs</option>';
-            // Optionnel: afficher l'erreur dans la console ou une alerte
             itemsContainer.innerHTML = `<p class="text-danger text-center">Erreur chargement utilisateurs: ${error.message}</p>`;
         });
 
-    // --- 2. Charger les bibliothèques quand un utilisateur est choisi ---
+    // --- 2. Charger les bibliothèques ET SAUVEGARDER le choix ---
     userSelect.addEventListener('change', function () {
         const userId = this.value;
+
+        // --- NOUVELLE LOGIQUE : Sauvegarder le choix de l'utilisateur ---
+        if (userId) {
+            localStorage.setItem(LAST_USER_KEY, userId);
+        } else {
+            // Si l'utilisateur sélectionne "Choisir un utilisateur...", on pourrait vouloir effacer la clé
+            localStorage.removeItem(LAST_USER_KEY);
+        }
+
         librarySelect.innerHTML = '<option>Chargement...</option>';
         librarySelect.disabled = true;
         itemsContainer.innerHTML = '<p class="text-center text-muted">Veuillez sélectionner une ou plusieurs bibliothèques.</p>';
-
 
         if (!userId) {
             librarySelect.innerHTML = '';
@@ -104,7 +133,6 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        // Construction de l'URL pour get_user_libraries
         const libraryUrl = "{{ url_for('plex_editor.get_user_libraries', user_id='USER_ID_PLACEHOLDER') }}".replace('USER_ID_PLACEHOLDER', userId);
 
         fetch(libraryUrl)
@@ -115,7 +143,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 return response.json();
             })
             .then(libraries => {
-                librarySelect.innerHTML = ''; // Vide la liste
+                librarySelect.innerHTML = '';
                 if (libraries && libraries.length > 0) {
                     libraries.forEach(lib => {
                         const option = new Option(lib.text, lib.id);
@@ -141,38 +169,31 @@ document.addEventListener('DOMContentLoaded', function () {
         const statusFilter = document.getElementById('status-filter').value;
 
         if (!userId || selectedLibraries.length === 0) {
-            // Utiliser le conteneur d'items pour les messages d'alerte simples plutôt que alert()
             itemsContainer.innerHTML = '<p class="text-center text-warning">Veuillez sélectionner un utilisateur et au moins une bibliothèque.</p>';
             return;
         }
 
-        // Affiche le spinner et vide le conteneur
         loader.style.display = 'block';
         itemsContainer.innerHTML = '';
 
         fetch("{{ url_for('plex_editor.get_media_items') }}", {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json', },
             body: JSON.stringify({
                 userId: userId,
                 libraryKeys: selectedLibraries,
                 statusFilter: statusFilter
-                // Ajoute d'autres filtres ici si nécessaire
             })
         })
         .then(response => {
             if (!response.ok) {
-                // Essayer de lire le message d'erreur JSON du backend si disponible
                 return response.json().then(errData => {
                     throw new Error(`Erreur HTTP: ${response.status} - ${errData.error || response.statusText}`);
                 }).catch(() => {
-                    // Fallback si le corps n'est pas JSON ou si response.json() échoue aussi
                     throw new Error(`Erreur HTTP: ${response.status} - ${response.statusText}`);
                 });
             }
-            return response.text(); // Attend du HTML partiel
+            return response.text();
         })
         .then(html => {
             loader.style.display = 'none';
@@ -185,100 +206,71 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
-    // --- Gestionnaire d'événements pour les actions sur les items (dont suppression) ---
+    // --- Gestionnaire d'événements pour les actions sur les items ---
     itemsContainer.addEventListener('click', function(event) {
         const deleteButton = event.target.closest('.delete-item-btn');
+        const toggleButton = event.target.closest('.toggle-watched-btn');
 
         if (deleteButton) {
-            event.preventDefault(); // Empêche toute action par défaut du bouton
+            event.preventDefault();
             const ratingKey = deleteButton.dataset.ratingKey;
-            const itemTitle = deleteButton.dataset.itemTitle || 'cet élément'; // Fallback title
+            const itemTitle = deleteButton.dataset.itemTitle || 'cet élément';
 
             if (confirm(`Êtes-vous sûr de vouloir supprimer définitivement "${itemTitle}" de Plex ?`)) {
-
                 deleteButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
                 deleteButton.disabled = true;
-
-                // --- NOUVELLE LOGIQUE DE CONSTRUCTION D'URL ---
-                // 'plex_editor.index' donne '/plex_editor/'
-                // On concatène avec 'api/media_item/' et ratingKey
                 const finalUrl = `{{ url_for('plex_editor.index') }}api/media_item/${ratingKey}`;
 
-                fetch(finalUrl, { // Utilise la nouvelle URL
-                    method: 'DELETE',
-                    headers: {
-                        // Si CSRF est nécessaire pour les requêtes DELETE API, l'ajouter ici
-                    }
-                })
-                .then(response => response.json()) // Attend une réponse JSON du backend
+                fetch(finalUrl, { method: 'DELETE' })
+                .then(response => response.json())
                 .then(data => {
                     if (data.status === 'success') {
-                        deleteButton.closest('tr').remove(); // Supprime la ligne du tableau
-                        // Afficher une notification plus discrète si possible (toast)
-                        // Pour l'instant, une simple alerte.
-                        // alert(data.message); // Peut-être un peu intrusif, à voir
-                        console.log(data.message); // Log pour confirmation
-
-                        // Optionnel: Mettre à jour un compteur ou un message si le tableau devient vide
+                        deleteButton.closest('tr').remove();
+                        console.log(data.message);
                         if (itemsContainer.querySelectorAll('tbody tr').length === 0) {
                             itemsContainer.innerHTML = '<p class="text-center text-muted">Aucun média trouvé pour les filtres sélectionnés.</p>';
                         }
-                    } else {
-                        throw new Error(data.message || 'Erreur inconnue lors de la suppression.');
-                    }
+                    } else { throw new Error(data.message || 'Erreur inconnue lors de la suppression.'); }
                 })
                 .catch(error => {
                     alert(`Erreur lors de la suppression : ${error.message}`);
                     console.error('Erreur de suppression:', error);
-                    // Réactive le bouton en cas d'erreur pour permettre une nouvelle tentative
                     deleteButton.innerHTML = '<i class="bi bi-trash-fill"></i>';
                     deleteButton.disabled = false;
                 });
             }
-        }
-        // Ici, on pourrait ajouter des 'else if' pour d'autres boutons d'action (archiver, etc.)
-        // const archiveButton = event.target.closest('.archive-item-btn');
-        // if (archiveButton) { ... }
-
-        // Cible spécifiquement le bouton de bascule du statut "vu"
-        const toggleButton = event.target.closest('.toggle-watched-btn');
-
-        if (toggleButton) {
+        } else if (toggleButton) { // Modifié pour être un 'else if'
             event.preventDefault();
             const ratingKey = toggleButton.dataset.ratingKey;
-            const currentUserId = userSelect.value; // Important: prendre l'ID de l'utilisateur sélectionné
+            const currentUserId = userSelect.value;
 
             if (!currentUserId) {
-                alert("Veuillez d'abord sélectionner un utilisateur dans la liste déroulante principale.");
+                alert("Veuillez d'abord sélectionner un utilisateur.");
                 return;
             }
 
             toggleButton.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
             toggleButton.disabled = true;
-
             const toggleUrl = `{{ url_for('plex_editor.index') }}api/media_item/${ratingKey}/toggle_watched`;
 
             fetch(toggleUrl, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ userId: currentUserId }) // Envoyer l'ID utilisateur
+                headers: { 'Content-Type': 'application/json', },
+                body: JSON.stringify({ userId: currentUserId })
             })
             .then(response => response.json())
             .then(data => {
                 if (data.status === 'success') {
                     const statusCell = document.querySelector(`.media-status-cell[data-rating-key="${ratingKey}"]`);
                     if (statusCell) {
-                        if (data.is_watched) { // Utilise la valeur 'is_watched' retournée par l'API
-                            statusCell.innerHTML = '<span class="badge bg-success">Vu</span>';
+                        // Correction ici: Utiliser data.new_status_str comme demandé
+                        if (data.new_status_str === 'Vu') {
+                            statusCell.innerHTML = `<span class="badge bg-success">Vu</span>`;
                         } else {
-                            statusCell.innerHTML = '<span class="badge bg-warning text-dark">Non Vu</span>';
+                            statusCell.innerHTML = `<span class="badge bg-warning text-dark">Non Vu</span>`;
                         }
                     }
-                } else {
-                    throw new Error(data.message || 'Erreur inconnue lors du changement de statut.');
-                }
+                } else { throw new Error(data.message || 'Erreur inconnue lors du changement de statut.'); }
             })
             .catch(error => {
                 alert(`Erreur lors du changement de statut : ${error.message}`);
