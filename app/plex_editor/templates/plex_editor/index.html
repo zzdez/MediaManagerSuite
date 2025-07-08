@@ -208,7 +208,6 @@ document.addEventListener('DOMContentLoaded', function () {
                     method: 'DELETE',
                     headers: {
                         // Si CSRF est nécessaire pour les requêtes DELETE API, l'ajouter ici
-                        // 'X-CSRFToken': '{{ csrf_token() }}' // Exemple
                     }
                 })
                 .then(response => response.json()) // Attend une réponse JSON du backend
