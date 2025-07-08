@@ -1,190 +1,60 @@
 {% extends "layout.html" %}
 
-{% block title %}{{ title }} - Editeur Plex{% endblock %}
-
-{% block head_styles %}
-    <style>
-        /* Styles généraux - Specific to plex_editor/index.html */
-        /* body adjustments (font, margin, padding, bg-color, color, line-height) might conflict or be redundant with main.css.
-           Review and integrate into main.css if these are desired globally or adjust if only for this page.
-           For now, keeping them here but commented out parts that are likely handled by main.css or body data-bs-theme */
-
-        /* body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background-color: #f8f9fa;
-            color: #343a40;
-            line-height: 1.6;
-        } */
-
-        .plex-editor-container { /* Renamed from .container to avoid conflict with Bootstrap's .container if styles differ significantly */
-             max-width: 900px;
-             margin: 0 auto; /* Centering within main-content area, padding already on main-content */
-             /* background-color: #fff; */ /* Handled by dark theme or specific card backgrounds if needed */
-             padding: 25px 30px; /* This padding might be excessive if main-content already has padding */
-             border-radius: 8px;
-             /* box-shadow: 0 2px 10px rgba(0,0,0,0.08); */ /* Consider if shadow is needed with dark theme */
-        }
-
-        /* Flash messages are styled by Bootstrap and layout.html, custom styling here might be redundant or conflict. */
-        /* .alert {
-            padding: 1rem;
-            margin-bottom: 1.5rem;
-            border: 1px solid transparent;
-            border-radius: .375rem;
-            font-size: 0.95rem;
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-        }
-        .alert::before {
-            content: "ℹ️";
-            font-size: 1.2em;
-        }
-        .alert-success { color: #0f5132; background-color: #d1e7dd; border-color: #badbcc; }
-        .alert-success::before { content: "✅"; }
-        .alert-danger { color: #842029; background-color: #f8d7da; border-color: #f5c2c7; }
-        .alert-danger::before { content: "❌"; }
-        .alert-info { color: #055160; background-color: #cff4fc; border-color: #b6effb; }
-        .alert-info::before { content: "ℹ️"; }
-        .alert-warning { color: #664d03; background-color: #fff3cd; border-color: #ffecb5; }
-        .alert-warning::before { content: "⚠️"; } */
-
-
-        /* Informations Utilisateur */
-        .user-info {
-            text-align: right;
-            margin-bottom: 1rem;
-            padding-bottom: 0.5rem;
-            border-bottom: 1px solid #495057; /* Adjusted for dark theme */
-            font-size: 0.9em;
-            /* color: #6c757d; */ /* Will inherit from body or main.css */
-        }
-        .user-info strong { /* color: #343a40; */ } /* Will inherit */
-        .user-info a {
-            font-weight: normal;
-            margin-left: 10px;
-            color: #0d6efd; /* Bootstrap primary blue, good for links */
-            text-decoration: none;
-            transition: color 0.2s;
-        }
-        .user-info a:hover { color: #3b82f6; text-decoration: underline; }
-
-        /* Titres */
-        .plex-editor-container h1 { /* Scoped to this container */
-             /* color: #212529; */ /* Will inherit */
-             margin-bottom: 1rem;
-             text-align: center;
-             font-weight: 500;
-         }
-        .plex-editor-container h2 { /* Scoped to this container */
-             /* color: #495057; */ /* Will inherit */
-             margin-top: 2rem;
-             margin-bottom: 1rem;
-             padding-bottom: 0.5rem;
-             border-bottom: 2px solid #495057; /* Adjusted for dark theme */
-             font-weight: 500;
-             font-size: 1.5rem;
-         }
-
-        /* Liste des bibliothèques */
-        .plex-editor-container ul {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-        }
-        .plex-editor-container li {
-            margin-bottom: 10px;
-            padding: 12px 18px;
-            border: 1px solid #30363d; /* Darker border for dark theme */
-            border-radius: 5px;
-            /* background-color: #fff; */ /* Remove for dark theme, or use a dark card-like bg */
-            background-color: var(--sidebar-hover-bg-color); /* Using a variable for consistency */
-            transition: background-color 0.2s ease, box-shadow 0.2s ease;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .plex-editor-container li:hover {
-             background-color: #212529; /* Slightly lighter dark for hover */
-             /* box-shadow: 0 1px 4px rgba(0,0,0,0.06); */ /* Shadow might not be visible or desired in dark theme */
-        }
-        .plex-editor-container li a {
-            text-decoration: none;
-            color: #3b82f6; /* Link color */
-            font-weight: 500;
-            font-size: 1.1rem;
-            transition: color 0.2s;
-        }
-        .plex-editor-container li a:hover {
-            color: #5fa2ff; /* Lighter blue for hover */
-            text-decoration: underline;
-        }
-        .library-type {
-            font-size: 0.9em;
-            /* color: #6c757d; */ /* Inherit or use a light color for dark theme */
-            color: var(--sidebar-text-color);
-            margin-left: 15px;
-            background-color: #30363d; /* Darker badge background */
-            padding: 3px 8px;
-            border-radius: 3px;
-        }
-    </style>
-{% endblock %}
-
 {% block content %}
-    <div class="plex-editor-container">
-        {# Affiche l'utilisateur connecté et lien pour changer #}
-        {% if user_title %}
-        <div class="user-info">
-            Utilisateur actif : <strong>{{ user_title }}</strong>
-            (<a href="{{ url_for('plex_editor.index') }}" title="Changer l'utilisateur Plex actif">Changer</a>)
+<div class="container-fluid">
+    <h1 class="mb-4">Gestionnaire de Bibliothèque Plex</h1>
+
+    <!-- Zone des Filtres -->
+    <div class="card bg-dark text-white mb-4">
+        <div class="card-body">
+            <h5 class="card-title">Filtres</h5>
+            <div class="row g-3 align-items-end">
+                <!-- Filtre Utilisateur -->
+                <div class="col-md-3">
+                    <label for="user-select" class="form-label">Utilisateur Plex</label>
+                    <select id="user-select" class="form-select">
+                        <option selected>Chargement...</option>
+                        {# La liste des utilisateurs sera chargée ici par JS #}
+                    </select>
+                </div>
+                <!-- Filtre Bibliothèque -->
+                <div class="col-md-4">
+                    <label for="library-select" class="form-label">Bibliothèque(s)</label>
+                    <select id="library-select" class="form-select" multiple disabled>
+                        {# La liste des bibliothèques sera chargée ici par JS #}
+                    </select>
+                </div>
+                <!-- Autres filtres (statut, etc.) -->
+                <div class="col-md-3">
+                    <label for="status-filter" class="form-label">Statut</label>
+                    <select id="status-filter" class="form-select">
+                        <option value="all" selected>Tous</option>
+                        <option value="unwatched">Non vus</option>
+                        <option value="watched">Vus</option>
+                    </select>
+                </div>
+                <!-- Bouton d'application -->
+                <div class="col-md-2">
+                    <button id="apply-filters-btn" class="btn btn-primary w-100">Appliquer</button>
+                </div>
+            </div>
         </div>
-        {% endif %}
+    </div>
 
-        <h1>Éditeur Web pour Plex</h1>
+    <!-- Zone des Résultats -->
+    <div id="plex-items-loader" class="text-center mt-5" style="display: none;">
+        <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-2">Chargement des médias...</p>
+    </div>
+    <div id="plex-items-container">
+        <p class="text-center text-muted">Veuillez sélectionner un utilisateur et une bibliothèque pour afficher les médias.</p>
+    </div>
 
-        {# Flash messages are handled by layout.html #}
-        {# {% with messages = get_flashed_messages(with_categories=true) %}
-          {% if messages %}
-            {% for category, message in messages %}
-              <div class="alert alert-{{ category }}">{{ message }}</div>
-            {% endfor %}
-          {% endif %}
-        {% endwith %} #}
-
-        {# Titre de la section mis à jour pour inclure l'utilisateur #}
-        <h2>Bibliothèques Plex pour {{ user_title if user_title else 'vous' }} :</h2>
-
-        {# Affichage des bibliothèques ou d'une erreur/info #}
-        {% if plex_error %}
-            <p class="alert alert-danger">Impossible de charger les bibliothèques. Erreur : {{ plex_error }}</p>
-        {% elif libraries %}
-            <form action="{{ url_for('plex_editor.show_library') }}" method="GET">
-                <ul>
-                    {% for library in libraries %}
-                        <li>
-                            <input type="checkbox" name="selected_libs" value="{{ library.title }}" class="form-check-input me-2"> {# Added Bootstrap class #}
-                            {# Lien vers la page de la bibliothèque #}
-                            <a href="{{ url_for('plex_editor.show_library', library_name=library.title) }}">
-                                {{ library.title }}
-                            </a>
-                            {# Affiche le type de bibliothèque (movie, show, artist, photo) #}
-                            <span class="library-type">{{ library.type|capitalize }}</span>
-                        </li>
-                    {% endfor %}
-                </ul>
-                <button type="submit" class="btn btn-primary mt-3">Parcourir la Sélection</button> {# Added Bootstrap class #}
-            </form>
-        {% else %}
-            {# Si la liste est vide mais pas d'erreur Plex spécifique (connexion ok, mais 0 libs) #}
-            <p class="alert alert-info">Aucune bibliothèque Plex n'a été trouvée sur le serveur.</p>
-        {% endif %}
-
-    </div> {# Fin .plex-editor-container #}
+</div>
 {% endblock %}
 
 {% block scripts %}
-{# No page-specific scripts were present in the original file #}
+    {# On ajoutera le JS pour dynamiser tout ça plus tard #}
 {% endblock %}

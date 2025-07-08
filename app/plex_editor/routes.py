@@ -27,74 +27,41 @@ from app.utils.arr_client import (
 
 # --- Routes du Blueprint ---
 
-@plex_editor_bp.route('/', methods=['GET', 'POST'])
+@plex_editor_bp.route('/')
 @login_required
-def index(): # (### MODIFICATION ICI ###) - Le nom de la fonction est maintenant 'index'
-    """Page d'accueil du module, pour sélectionner l'utilisateur Plex."""
-    users_list = []
-    plex_error_message = None
-    main_plex_account = get_main_plex_account_object()
-    if not main_plex_account:
-        return render_template('plex_editor/select_user.html', title="Sélectionner l'Utilisateur", users=users_list, plex_error=plex_error_message or "Impossible de charger les utilisateurs.")
+def index():
+    """Affiche le nouveau tableau de bord unifié."""
+    return render_template('plex_editor/index.html')
 
-    if request.method == 'POST':
-        user_id_selected = request.form.get('user_id')
-        user_title_selected = request.form.get('user_title_hidden')
-        if user_id_selected and user_title_selected:
-            session['plex_user_id'] = user_id_selected
-            session['plex_user_title'] = user_title_selected
-            current_app.logger.info(f"Utilisateur '{user_title_selected}' (ID: {user_id_selected}) sélectionné.")
-            flash(f"Utilisateur '{user_title_selected}' sélectionné avec succès.", 'success')
-            return redirect(url_for('plex_editor.list_libraries'))
-        else:
-            flash("Sélection invalide. Veuillez choisir un utilisateur.", 'warning')
-            current_app.logger.warning("index: Soumission du formulaire avec données manquantes.") # (### MODIFICATION ICI ###) - Log mis à jour
-
-    try:
-        main_title = main_plex_account.title or main_plex_account.username or f"Principal (ID: {main_plex_account.id})"
-        users_list.append({'id': str(main_plex_account.id), 'title': main_title})
-        for user in main_plex_account.users():
-            managed_title = user.title or f"Géré (ID: {user.id})"
-            users_list.append({'id': str(user.id), 'title': managed_title})
-    except Exception as e:
-        current_app.logger.error(f"index: Erreur lors de la construction de la liste des utilisateurs: {e}", exc_info=True) # (### MODIFICATION ICI ###) - Log mis à jour
-        plex_error_message = "Erreur lors de la récupération de la liste des utilisateurs."
-        flash(plex_error_message, "danger")
-
-    return render_template('plex_editor/select_user.html',
-                           title="Sélectionner l'Utilisateur Plex",
-                           users=users_list,
-                           plex_error=plex_error_message)
-
-@plex_editor_bp.route('/libraries')
-@login_required
-def list_libraries():
-    """Affiche la liste des bibliothèques Plex disponibles."""
-    if 'plex_user_id' not in session:
-        flash("Veuillez d'abord sélectionner un utilisateur Plex.", "info")
-        return redirect(url_for('plex_editor.index')) # (### MODIFICATION ICI ###) - Pointeur vers la nouvelle fonction 'index'
-
-    user_title = session.get('plex_user_title', 'Utilisateur Inconnu')
-    plex_server = get_plex_admin_server()
-    libraries = []
-    plex_error_message = None
-
-    if plex_server:
-        try:
-            libraries = plex_server.library.sections()
-            flash(f'Connecté au serveur Plex: {plex_server.friendlyName} (Utilisateur actuel: {user_title})', 'success')
-        except Exception as e:
-            plex_error_message = str(e)
-            current_app.logger.error(f"list_libraries: Erreur de récupération des bibliothèques: {e}", exc_info=True)
-            flash(f"Erreur de récupération des bibliothèques : {e}", 'danger')
-    else:
-        plex_error_message = "Impossible de se connecter au serveur Plex."
-
-    return render_template('plex_editor/index.html',
-                           title=f'Bibliothèques - {user_title}',
-                           libraries=libraries,
-                           plex_error=plex_error_message,
-                           user_title=user_title)
+# @plex_editor_bp.route('/libraries')
+# @login_required
+# def list_libraries():
+#     """Affiche la liste des bibliothèques Plex disponibles."""
+#     if 'plex_user_id' not in session:
+#         flash("Veuillez d'abord sélectionner un utilisateur Plex.", "info")
+#         return redirect(url_for('plex_editor.index')) # (### MODIFICATION ICI ###) - Pointeur vers la nouvelle fonction 'index'
+#
+#     user_title = session.get('plex_user_title', 'Utilisateur Inconnu')
+#     plex_server = get_plex_admin_server()
+#     libraries = []
+#     plex_error_message = None
+#
+#     if plex_server:
+#         try:
+#             libraries = plex_server.library.sections()
+#             flash(f'Connecté au serveur Plex: {plex_server.friendlyName} (Utilisateur actuel: {user_title})', 'success')
+#         except Exception as e:
+#             plex_error_message = str(e)
+#             current_app.logger.error(f"list_libraries: Erreur de récupération des bibliothèques: {e}", exc_info=True)
+#             flash(f"Erreur de récupération des bibliothèques : {e}", 'danger')
+#     else:
+#         plex_error_message = "Impossible de se connecter au serveur Plex."
+#
+#     return render_template('plex_editor/index.html',
+#                            title=f'Bibliothèques - {user_title}',
+#                            libraries=libraries,
+#                            plex_error=plex_error_message,
+#                            user_title=user_title)
 def find_ready_to_watch_shows_in_library(library_name):
     """
     Fonction helper qui trouve les séries terminées, complètes et non vues
