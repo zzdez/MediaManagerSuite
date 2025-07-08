@@ -9,15 +9,15 @@ import logging
 # import base64 # For xmlrpc.client.Binary later
 
 def _send_xmlrpc_request(method_name, params):
-    api_url = current_app.config.get('RUTORRENT_API_URL')
-    user = current_app.config.get('RUTORRENT_USER')
-    password = current_app.config.get('RUTORRENT_PASSWORD')
+    api_url = current_app.config.get('RTORRENT_API_URL')
+    user = current_app.config.get('RTORRENT_USER')
+    password = current_app.config.get('RTORRENT_PASSWORD')
     # Read as string to handle "True"/"False" from config, default to "True"
-    ssl_verify_str = str(current_app.config.get('SEEDBOX_SSL_VERIFY', "True"))
+    ssl_verify_str = str(current_app.config.get('RTORRENT_SSL_VERIFY', "True"))
     ssl_verify = False if ssl_verify_str.lower() == "false" else True
 
     if not api_url:
-        current_app.logger.error("RUTORRENT_API_URL is not configured for XML-RPC.")
+        current_app.logger.error("RTORRENT_API_URL is not configured for XML-RPC.")
         return None, "ruTorrent API URL not configured."
 
     auth = HTTPDigestAuth(user, password) if user and password else None
@@ -132,12 +132,12 @@ def _send_xmlrpc_request(method_name, params):
 # _make_httprpc_request remains the same
 def _make_httprpc_request(method='POST', params=None, data=None, files=None, timeout=30):
     # ... (implementation from previous correct version) ...
-    api_url = current_app.config.get('RUTORRENT_API_URL')
-    user = current_app.config.get('RUTORRENT_USER')
-    password = current_app.config.get('RUTORRENT_PASSWORD')
-    ssl_verify = current_app.config.get('SEEDBOX_SSL_VERIFY', False)
+    api_url = current_app.config.get('RTORRENT_API_URL')
+    user = current_app.config.get('RTORRENT_USER')
+    password = current_app.config.get('RTORRENT_PASSWORD')
+    ssl_verify = current_app.config.get('RTORRENT_SSL_VERIFY', False)
     if not api_url:
-        current_app.logger.error("RUTORRENT_API_URL is not configured.")
+        current_app.logger.error("RTORRENT_API_URL is not configured.")
         return None, "ruTorrent API URL not configured."
     auth = HTTPDigestAuth(user, password) if user and password else None
     headers = {
@@ -155,7 +155,7 @@ def _make_httprpc_request(method='POST', params=None, data=None, files=None, tim
             return None, "Authentication failed with ruTorrent httprpc (Digest). Check user/password or server Digest settings."
         if response.status_code == 404:
             current_app.logger.error(f"httprpc API endpoint not found (404): {api_url}")
-            return None, "ruTorrent httprpc API endpoint not found. Check RUTORRENT_API_URL."
+            return None, "ruTorrent httprpc API endpoint not found. Check RTORRENT_API_URL."
         if response.content and 'application/json' in response.headers.get('Content-Type', ''):
             try:
                 json_response = response.json()

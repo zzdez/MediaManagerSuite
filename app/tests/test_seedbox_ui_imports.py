@@ -27,7 +27,7 @@ class TestSeedboxUiImports(unittest.TestCase):
             'SONARR_API_KEY': 'fake_sonarr_api_key',
             'RADARR_URL': 'http://fake-radarr.com',
             'RADARR_API_KEY': 'fake_radarr_api_key',
-            'STAGING_DIR': '/test/staging',
+            'LOCAL_STAGING_PATH': '/test/staging',
             'ORPHAN_EXTENSIONS': ['.nfo', '.txt'],
             'AUTO_REMOVE_SUCCESSFUL_FROM_MAP': True
         }
@@ -147,8 +147,8 @@ class TestSeedboxUiImports(unittest.TestCase):
         self.mock_path_mkdir.assert_called_with(parents=True, exist_ok=True)
         # Vérifier l'appel à cleanup
         self.mock_cleanup_staging.assert_called_once_with(
-            str(Path(self.mock_config['STAGING_DIR']) / "The.Show.S01E01.mkv"), # C'est le dossier parent qui est nettoyé si l'item est un fichier
-            self.mock_config['STAGING_DIR'],
+            str(Path(self.mock_config['LOCAL_STAGING_PATH']) / "The.Show.S01E01.mkv"), # C'est le dossier parent qui est nettoyé si l'item est un fichier
+            self.mock_config['LOCAL_STAGING_PATH'],
             self.mock_config['ORPHAN_EXTENSIONS']
         )
 
@@ -179,8 +179,8 @@ class TestSeedboxUiImports(unittest.TestCase):
         self.mock_shutil_move.assert_called_once()
         self.mock_path_mkdir.assert_called_with(parents=True, exist_ok=True) # Pour le dossier de saison
         self.mock_cleanup_staging.assert_called_once_with(
-            str(Path(self.mock_config['STAGING_DIR']) / "The.Show.S01.Release"),
-            self.mock_config['STAGING_DIR'],
+            str(Path(self.mock_config['LOCAL_STAGING_PATH']) / "The.Show.S01.Release"),
+            self.mock_config['LOCAL_STAGING_PATH'],
             self.mock_config['ORPHAN_EXTENSIONS']
         )
 

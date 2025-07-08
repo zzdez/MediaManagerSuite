@@ -113,12 +113,12 @@ def download_and_map():
     # Déterminer le chemin de destination pour rTorrent en fonction de instance_type
     target_download_path_rtorrent = None
     if instance_type == 'sonarr':
-        target_download_path_rtorrent = current_app.config.get('RTORRENT_DOWNLOAD_DIR_SONARR') # Updated config key
+        target_download_path_rtorrent = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_SONARR_PATH') # Updated config key
     elif instance_type == 'radarr':
-        target_download_path_rtorrent = current_app.config.get('RTORRENT_DOWNLOAD_DIR_RADARR') # Updated config key
+        target_download_path_rtorrent = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_RADARR_PATH') # Updated config key
 
     if not target_download_path_rtorrent:
-        current_app.logger.warning(f"Aucun chemin de destination rTorrent configuré pour instanceType '{instance_type}' via RTORRENT_DOWNLOAD_DIR_SONARR/RADARR. Le torrent sera téléchargé dans le répertoire par défaut de rTorrent.")
+        current_app.logger.warning(f"Aucun chemin de destination rTorrent configuré pour instanceType '{instance_type}' via SEEDBOX_RTORRENT_INCOMING_SONARR_PATH/RADARR_PATH. Le torrent sera téléchargé dans le répertoire par défaut de rTorrent.")
         # Pas besoin de retourner une erreur, rTorrent utilisera son défaut.
 
     try:
@@ -206,10 +206,15 @@ def download_and_map():
         # Il est crucial que `add_or_update_torrent_in_map` enregistre un `seedbox_download_path` qui sera scannable par le SeedboxImporter.
 
         # Tentative de construction du seedbox_dl_path pour le mapping:
-        # Si RTORRENT_DOWNLOAD_DIR_SONARR/RADARR est défini, on l'utilise comme base.
-        # Sinon, on utilise le RUTORRENT_DOWNLOAD_DIR général.
-        # Et on ajoute le nom de la release. rTorrent peut ajouter un sous-dossier avec le nom de la release.
-        base_map_path = target_download_path_rtorrent if target_download_path_rtorrent else current_app.config.get('RUTORRENT_DOWNLOAD_DIR', '/downloads/torrents')
+        # Si SEEDBOX_RTORRENT_INCOMING_SONARR_PATH/RADARR_PATH est défini, on l'utilise comme base.
+        base_map_path = target_download_path_rtorrent
+        if not base_map_path:
+            # Si aucun chemin spécifique n'est défini, rTorrent utilisera son chemin par défaut global.
+            # MMS ne peut pas connaître ce chemin par défaut de manière fiable sans configuration supplémentaire.
+            # Utiliser un placeholder ou logguer une erreur plus sévère si ce chemin est critique.
+            current_app.logger.warning(f"Download&Map: Chemin de téléchargement rTorrent non spécifiquement configuré pour '{instance_type}'. Le mapping se basera sur un chemin par défaut hypothétique '/downloads/torrents', ce qui peut être incorrect.")
+            base_map_path = "/downloads/torrents" # Fallback très générique, potentiellement incorrect.
+
         seedbox_dl_path_for_map = f"{base_map_path.rstrip('/')}/{release_name}"
 
         current_app.logger.info(f"Download&Map: Chemin de téléchargement estimé pour le mapping: '{seedbox_dl_path_for_map}'")

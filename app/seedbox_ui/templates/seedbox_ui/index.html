@@ -1,14 +1,13 @@
-<!doctype html>
-<html lang="fr">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Seedbox Staging UI - MediaManagerSuite</title>
+{% extends "layout.html" %}
+
+{% block title %}Seedbox Staging UI - MediaManagerSuite{% endblock %}
+
+{% block head_styles %}
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" integrity="sha512-Fo3rlrZj/k7ujTnHg4CGR2D7kSs0v4LLanw2qksYuRlEzO+tcaEPQogQ0KaoGN26/zrn20ImR1DfuLWnOo7aBA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
-        /* ... Vos styles CSS restent ici ... */
-        body { padding-top: 20px; padding-bottom: 60px; }
+        /* Styles specific to seedbox_ui/index.html */
         .action-buttons form, .action-buttons button { margin-right: 3px; margin-bottom: 3px; }
         ul.file-tree, ul.children-list { list-style-type: none; padding-left: 0; }
         .file-tree li > div { display: flex; align-items: center; padding: 0.25rem 0.5rem; border-bottom: 1px solid #eee; }
@@ -17,35 +16,26 @@
         .file-tree .toggle-children i { transition: transform 0.2s ease-in-out; }
         .file-tree .icon-container { width: 25px; text-align: center; flex-shrink: 0; }
         .file-tree .item-name-details { flex-grow: 1; margin-left: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .file-tree .item-actions { margin-left: auto; flex-shrink: 0; min-width: 280px; } /* Ajustez min-width si besoin pour tous les boutons */
+        .file-tree .item-actions { margin-left: auto; flex-shrink: 0; min-width: 280px; }
         .file-tree .btn-sm { padding: 0.15rem 0.3rem; font-size: 0.75rem; }
         .modal-lg { max-width: 800px; }
-        .btn-toolbar .btn { margin-right: 0.5rem; margin-bottom: 0.5rem;} /* Pour espacer les boutons dans la toolbar */
+        .btn-toolbar .btn { margin-right: 0.5rem; margin-bottom: 0.5rem;}
     </style>
-</head>
-<body>
+{% endblock %}
 
-{# ========================================================================== #}
-{# MACRO JINJA2 POUR RENDRE L'ARBORESCENCE (PLACÉ EN HAUT DU BODY) #}
-{# ========================================================================== #}
-
+{% block content %}
 {% macro render_tree_node(node, can_scan_sonarr, can_scan_radarr, level=0) %}
   <li style="margin-left: {{ level * 20 }}px;">
-    <div class="tree-node-item d-flex align-items-center"> {# Ajout de d-flex et align-items-center pour mieux gérer l'alignement vertical #}
-
-      {# --- CASE À COCHER POUR LES ITEMS DE NIVEAU 0 --- #}
-      <span style="width: 25px; flex-shrink: 0; text-align: center;"> {# Conteneur pour la case ou l'espace vide #}
+    <div class="tree-node-item d-flex align-items-center">
+      <span style="width: 25px; flex-shrink: 0; text-align: center;">
           {% if level == 0 %}
               <input type="checkbox" class="form-check-input staging-item-checkbox"
                      value="{{ node.path_for_actions }}"
                      aria-label="Sélectionner {{ node.name }}"
-                     style="margin-top: 0; vertical-align: middle;"> {# Style pour mieux aligner #}
+                     style="margin-top: 0; vertical-align: middle;">
           {% endif %}
        </span>
-      {# --- FIN CASE À COCHER --- #}
-
-      {# Icône de dossier/fichier #}
-      <span class="icon-container" style="width: 25px; text-align: center; flex-shrink: 0;"> {# style="width: 25px; text-align: center;" ajouté ici aussi #}
+      <span class="icon-container" style="width: 25px; text-align: center; flex-shrink: 0;">
         {% if node.is_dir and node.children %}
           <a href="#" class="toggle-children me-1" data-bs-toggle="tooltip" title="Déplier/Replier"><i class="fas fa-plus-square"></i></a>
         {% elif node.is_dir %}
@@ -54,14 +44,11 @@
           <i class="fas fa-file text-info me-1"></i>
         {% endif %}
       </span>
-
-      {# Nom de l'item et détails #}
-      <span class="item-name-details flex-grow-1" title="{{ node.name }}"> {# flex-grow-1 pour qu'il prenne l'espace restant #}
+      <span class="item-name-details flex-grow-1" title="{{ node.name }}">
          {{ node.name }}
          <small class="text-muted" style="font-size: 0.8em;">
              ({{ node.size_readable if node.size_readable else 'N/A' }}, {{ node.last_modified if node.last_modified else 'N/A' }})
          </small>
-         {# Display Association Info #}
          {% if node.association %}
             <div class="mt-1">
                 <span class="badge {% if node.association.app_type == 'sonarr' %}bg-primary{% elif node.association.app_type == 'radarr' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
@@ -80,13 +67,9 @@
             </div>
          {% endif %}
       </span>
-
-      {# Colonne des Actions #}
-      <div class="action-buttons item-actions ms-auto" style="min-width: 300px;"> {# ms-auto pour pousser à droite, ajuster min-width si besoin #}
+      <div class="action-buttons item-actions ms-auto" style="min-width: 300px;">
          {% if not node.name.endswith("(Erreur de lecture)") %}
              {% if level == 0 %}
-                {# ... Vos boutons d'action individuels (Mapper Sonarr, Mapper Radarr, Suppr., Nettoyer, Importer Associé) ... #}
-                {# ... restent les mêmes qu'avant ... #}
                 {% if can_scan_sonarr %}
                 <button class="btn btn-sm btn-outline-primary mb-1"
                         onclick='openSonarrSearchModal({{ node.path_for_actions | tojson | safe }}, "{{ 'directory' if node.is_dir else 'file' }}")'
@@ -94,7 +77,6 @@
                     <i class="fas fa-search"></i> <span class="d-none d-md-inline">Mapper Sonarr</span>
                 </button>
                 {% endif %}
-
                 {% if can_scan_radarr %}
                 <button class="btn btn-sm btn-outline-warning text-dark mb-1"
                         onclick='openRadarrSearchModal({{ node.path_for_actions | tojson | safe }}, "{{ 'directory' if node.is_dir else 'file' }}")'
@@ -102,13 +84,11 @@
                     <i class="fas fa-search"></i> <span class="d-none d-md-inline">Mapper Radarr</span>
                 </button>
                 {% endif %}
-
                 <form action="{{ url_for('seedbox_ui.delete_item', item_name=node.path_for_actions) }}" method="POST" style="display: inline-block;" onsubmit="return confirm('Supprimer \'{{ node.name | e }}\' ? Cette action est irréversible et supprimera tout le contenu.');">
                     <button type="submit" class="btn btn-sm btn-danger mb-1" title="Supprimer l'item et son contenu du staging">
                         <i class="fas fa-trash-alt"></i> <span class="d-none d-md-inline">Suppr.</span>
                     </button>
                 </form>
-
                 {% if node.is_dir %}
                 <form action="{{ url_for('seedbox_ui.cleanup_staging_item_action', item_name=node.path_for_actions) }}" method="POST" style="display: inline-block;" onsubmit="return confirm('Nettoyer le dossier \'{{ node.name | e }}\' ?\n\nCeci va :\n1. Supprimer les fichiers orphelins (ex: .nfo, .txt) à l\'intérieur.\n2. Supprimer les sous-dossiers qui deviendraient vides.\n3. Supprimer le dossier principal \'{{ node.name | e }}\' lui-même s\'il devient vide ou ne contient plus que des orphelins (maintenant supprimés).\n\nLes fichiers vidéo ou autres fichiers non-orphelins ne seront PAS supprimés par cette action.');">
                     <button type="submit" class="btn btn-sm btn-warning mb-1" title="Nettoyer le dossier (supprime orphelins et dossiers vides récursivement)">
@@ -116,7 +96,6 @@
                     </button>
                 </form>
                 {% endif %}
-
                 {% if node.association %}
                     <form method="POST" action="{{ url_for('seedbox_ui.process_staged_with_association', item_name_in_staging=node.path_for_actions) }}" style="display: inline-block;" onsubmit="return confirm('Lancer l\'importation de \'{{ node.name | e }}\' en utilisant la pré-association ?');">
                         <button type="submit" class="btn btn-sm btn-success mb-1" title="Lancer l'importation en utilisant la pré-association">
@@ -128,7 +107,6 @@
          {% endif %}
       </div>
     </div>
-
     {% if node.is_dir and node.children %}
       <ul class="children-list" style="display: none;">
         {% for child_node in node.children %}
@@ -139,202 +117,206 @@
   </li>
 {% endmacro %}
 
-
 <div class="container mt-4">
     <header class="pb-3 mb-4 border-bottom">
-        {# Lien vers la page actuelle pour rafraîchir ou comme titre cliquable #}
         <a href="{{ url_for('seedbox_ui.index') }}" class="d-flex align-items-center text-dark text-decoration-none">
-            <span class="fs-4">MediaManagerSuite - Gestion Staging</span>
+            <span class="fs-4">MediaManagerSuite - Tableau de Bord Seedbox</span>
         </a>
     </header>
 
-    {# Section pour les messages flash #}
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            {% for category, message in messages %}
-            <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    <div class="d-flex justify-content-end mb-3">
+        <button type="button" class="btn btn-success btn-lg" data-bs-toggle="modal" data-bs-target="#addTorrentModal">
+            <i class="bi bi-plus-circle-fill"></i> Ajouter un Torrent
+        </button>
+    </div>
+
+    <ul class="nav nav-tabs mb-3" id="mainTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="dashboard-tab" data-bs-toggle="tab" data-bs-target="#dashboard-content" type="button" role="tab" aria-controls="dashboard-content" aria-selected="true">
+                <i class="bi bi-speedometer2"></i> Tableau de Bord
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="finished-files-tab" data-bs-toggle="tab" data-bs-target="#finished-files-content" type="button" role="tab" aria-controls="finished-files-content" aria-selected="false">
+                <i class="bi bi-check-circle-fill"></i> Fichiers Terminés
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="rtorrent-view-tab" data-bs-toggle="tab" data-bs-target="#rtorrent-view-content" type="button" role="tab" aria-controls="rtorrent-view-content" aria-selected="false">
+                <i class="bi bi-hdd-stack"></i> Vue rTorrent
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="maintenance-tab" data-bs-toggle="tab" data-bs-target="#maintenance-content" type="button" role="tab" aria-controls="maintenance-content" aria-selected="false">
+                <i class="bi bi-tools"></i> Maintenance
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content" id="mainTabsContent">
+        <div class="tab-pane fade show active" id="dashboard-content" role="tabpanel" aria-labelledby="dashboard-tab">
+            <div class="d-flex justify-content-between align-items-center mt-3 mb-3">
+                <h3><i class="bi bi-folder2-open"></i> Staging Local MediaManagerSuite : <code>{{ staging_dir_display or 'Non configuré' }}</code></h3>
+                <div>
+                    <button id="batchMapToSonarrBtn" class="btn btn-sm btn-primary me-2" onclick="openBatchSonarrMapModal()" title="Mapper les items sélectionnés du staging à une série Sonarr" disabled>
+                        <i class="fas fa-object-group"></i> Mapper Sélection vers Sonarr
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary" onclick="location.reload()">
+                        <i class="bi bi-arrow-clockwise"></i> Actualiser Staging
+                    </button>
+                </div>
             </div>
-            {% endfor %}
-        {% endif %}
-    {% endwith %}
+            {% if items_tree %}
+                <ul class="file-tree">
+                    {% for root_node in items_tree %}
+                        {{ render_tree_node(root_node, can_scan_sonarr, can_scan_radarr, 0) }}
+                    {% endfor %}
+                </ul>
+            {% elif not get_flashed_messages(category_filter=['danger']) %}
+                <div class="alert alert-info mt-3 text-center" role="alert">
+                    <i class="bi bi-info-circle-fill"></i> Le dossier de staging est vide, non configuré, ou inaccessible.
+                </div>
+            {% endif %}
 
-    {# ========================================================================== #}
-    {# BARRE D'OUTILS AVEC LES BOUTONS DE NAVIGATION ET D'ACTION PRINCIPAUX       #}
-    {# ========================================================================== #}
-    <div class="btn-toolbar mb-3" role="toolbar" aria-label="Toolbar with button groups">
-        <div class="btn-group me-2" role="group" aria-label="Navigation group">
-            {# Bouton pour retourner au Portail Principal - ASSUMANT 'home' COMME ENDPOINT #}
-            <a href="{{ url_for('home') }}" class="btn btn-secondary btn-sm">
-                <i class="fas fa-home"></i> Portail
-            </a>
-            {# Bouton pour la Vue Liste rTorrent #}
-            <a href="{{ url_for('seedbox_ui.rtorrent_list_view') }}" class="btn btn-info btn-sm">
-                <i class="fas fa-list-alt"></i> Torrents rTorrent
-            </a>
-            {# NOUVEAU LIEN POUR LA GESTION DES FILES D'ATTENTE #}
-            <a href="{{ url_for('seedbox_ui.queue_manager_view') }}" class="btn btn-warning btn-sm">
-                <i class="fas fa-tasks"></i> Gestion Files *Arr
-            </a>
+            <hr class="my-4">
+            <h4><i class="bi bi-exclamation-triangle-fill text-warning"></i> Items en Attente / Nécessitant Attention</h4>
+            {% if items_requiring_attention %}
+                <div class="table-responsive">
+                    <table class="table table-dark table-striped table-hover mt-3 align-middle caption-top">
+                        <caption>Liste des items en attente d'association ou en erreur.</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col" style="width: 25%;">Nom de la Release (Staging/Torrent)</th>
+                                <th scope="col" style="width: 10%;">Type</th>
+                                <th scope="col" style="width: 20%;">Média Associé (*Arr ID)</th>
+                                <th scope="col" style="width: 15%;">Statut Actuel</th>
+                                <th scope="col" style="width: 15%;">Dernière MàJ</th>
+                                <th scope="col" style="width: 15%;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in items_requiring_attention %}
+                            <tr>
+                                <td><code>{{ item.release_name }}</code></td>
+                                <td>
+                                    {% if item.app_type == 'sonarr' %}<span class="badge bg-primary fs-6">Série</span>
+                                    {% elif item.app_type == 'radarr' %}<span class="badge bg-success fs-6">Film</span>
+                                    {% else %}<span class="badge bg-secondary fs-6">N/A</span>{% endif %}
+                                </td>
+                                <td>
+                                    {{ item.target_title or 'Non défini' }}
+                                    {% if item.target_id %}<small class="text-muted d-block">ID: {{ item.target_id }}</small>{% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge
+                                        {% if item.status and 'error' in item.status.lower() %} bg-danger
+                                        {% elif item.status and 'processing' in item.status.lower() %} bg-info text-dark
+                                        {% elif item.status and 'downloading' in item.status.lower() %} bg-primary
+                                        {% elif item.status and 'pending_mms_import' in item.status.lower() %} bg-warning text-dark
+                                        {% else %} bg-secondary
+                                        {% endif %} fs-6">
+                                        {{ item.status_display or item.status or 'Inconnu' }}
+                                    </span>
+                                    {% if item.status_message %}<small class="text-muted d-block fst-italic" title="{{ item.status_message }}">{{ item.status_message | truncate(50, True) }}</small>{% endif %}
+                                </td>
+                                <td>{{ item.updated_at_human or item.added_at_human or 'N/A' }}</td>
+                                <td>
+                                    {% if item.is_in_staging and item.target_id %}
+                                        <button class="btn btn-sm btn-success retry-import-btn mb-1 w-100" data-torrent-hash="{{ item.torrent_hash }}" title="Relancer l'import MMS."><i class="bi bi-play-fill"></i> Réessayer Import</button>
+                                    {% elif item.is_in_staging and not item.target_id %}
+                                         <button class="btn btn-sm btn-warning map-problematic-item-btn mb-1 w-100" data-torrent-hash="{{ item.torrent_hash }}" data-release-name="{{ item.release_name }}" data-app-type="{{ item.app_type }}" title="Mapper cet item."><i class="bi bi-link-45deg"></i> Mapper Item</button>
+                                    {% endif %}
+                                    <button class="btn btn-sm btn-danger delete-association-btn w-100" data-torrent-hash="{{ item.torrent_hash }}" title="Supprimer cette association."><i class="bi bi-trash-fill"></i> Oublier Assoc.</button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="alert alert-success text-center mt-3" role="alert">
+                    <i class="bi bi-check-circle-fill"></i> Aucun item en attente ou en erreur nécessitant une action.
+                </div>
+            {% endif %}
         </div>
 
-        <div class="btn-group me-2" role="group" aria-label="Seedbox views group">
-            <a href="{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='sonarr') }}" class="btn btn-outline-primary btn-sm">
-                <i class="fas fa-server"></i> Seedbox Sonarr (Terminés)
-            </a>
-            <a href="{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='radarr') }}" class="btn btn-outline-primary btn-sm">
-                <i class="fas fa-server"></i> Seedbox Radarr (Terminés)
-            </a>
+        <div class="tab-pane fade" id="finished-files-content" role="tabpanel" aria-labelledby="finished-files-tab">
+            <div class="text-center mt-5" id="finished-files-loader">
+                <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2">Chargement de la liste des fichiers terminés...</p>
+            </div>
+            <div id="finished-files-container"></div>
         </div>
 
-        <div class="btn-group me-2" role="group" aria-label="Seedbox working views group">
-            <a href="{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='sonarr_working') }}" class="btn btn-outline-secondary btn-sm">
-                <i class="fas fa-cogs"></i> Seedbox Sonarr (Travail)
-            </a>
-            <a href="{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='radarr_working') }}" class="btn btn-outline-secondary btn-sm">
-                <i class="fas fa-cogs"></i> Seedbox Radarr (Travail)
-            </a>
+        <div class="tab-pane fade" id="rtorrent-view-content" role="tabpanel" aria-labelledby="rtorrent-view-tab">
+            <div class="text-center mt-5" id="rtorrent-loader">
+                <div class="spinner-border text-info" style="width: 3rem; height: 3rem;" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2">Chargement de la liste des torrents depuis rTorrent...</p>
+            </div>
+            <div id="rtorrent-content-container"></div>
         </div>
 
-        <div class="btn-group" role="group" aria-label="Add torrent group">
-            <!-- Bouton Ajouter Torrent -->
-            <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#addTorrentModal">
-                <i class="fas fa-plus"></i> Ajouter Torrent
-            </button>
-            {# --- NOUVEAU BOUTON D'ACTION GROUPÉE --- #}
-            <button type="button" class="btn btn-primary btn-sm" id="batchMapToSonarrBtn" disabled
-                    onclick="openBatchSonarrMapModal()">
-                <i class="fas fa-object-group"></i> Mapper Sélection vers Série Sonarr
-            </button>
-            {# --- FIN NOUVEAU BOUTON --- #}
-        </div>
+        <div class="tab-pane fade" id="maintenance-content" role="tabpanel" aria-labelledby="maintenance-tab">
+            <h4 class="mt-3 mb-3"><i class="bi bi-tools"></i> Outils de Maintenance</h4>
 
-        {# --- Bouton pour déclencher le scan SFTP Manuel --- #}
-        <div class="btn-group ms-auto" role="group" aria-label="SFTP Scan group">
-             <a href="{{ url_for('trigger_sftp_scan_manual') }}" class="btn btn-info btn-sm">
-                <i class="fas fa-sync-alt"></i> Scan SFTP Manuel
-            </a>
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h5 class="mb-0">Gestion des Files d'Attente *Arr</h5>
+                </div>
+                <div class="card-body">
+                    <p class="card-text">Visualiser et nettoyer les éléments potentiellement bloqués dans les files d'attente de Sonarr et Radarr.</p>
+                    <button class="btn btn-primary" id="load-arr-queue-btn" type="button">
+                        <i class="bi bi-hourglass-split"></i> Charger le Gestionnaire
+                    </button>
+                    <div class="text-center mt-3" id="arr-queue-loader" style="display: none;">
+                        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Chargement...</span></div>
+                        <p class="mt-2">Chargement du gestionnaire des files d'attente...</p>
+                    </div>
+                    <div id="arr-queue-container" class="mt-3"></div>
+                </div>
+            </div>
+
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h5 class="mb-0">Nettoyage des Dossiers de Travail Seedbox (SFTP)</h5>
+                </div>
+                <div class="card-body">
+                    <p class="card-text">Lister le contenu et potentiellement supprimer les fichiers/dossiers orphelins ou inutiles dans les dossiers de travail distants de Sonarr et Radarr sur la seedbox.</p>
+                    <div class="btn-group mb-3" role="group" aria-label="Charger dossiers de travail">
+                        <button class="btn btn-info" id="load-sonarr-workdir-btn" type="button">
+                            <i class="bi bi-tv"></i> Sonarr (Dossier Travail)
+                        </button>
+                        <button class="btn btn-success" id="load-radarr-workdir-btn" type="button">
+                            <i class="bi bi-film"></i> Radarr (Dossier Travail)
+                        </button>
+                    </div>
+                    <div class="text-center mt-3" id="workdir-loader" style="display: none;">
+                        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Chargement...</span></div>
+                        <p class="mt-2">Chargement des dossiers de travail...</p>
+                    </div>
+                    <div id="workdir-container" class="mt-3">
+                        <!-- Le contenu de remote_seedbox_list.html pour sonarr_working ou radarr_working sera chargé ici -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Vous pouvez ajouter d'autres cartes ici pour d'autres outils de maintenance -->
         </div>
-        {# --- Fin Bouton Scan SFTP Manuel --- #}
     </div>
-    {# FIN DE LA BARRE D'OUTILS #}
+</div>
 
-
-{# ========================================================================== #}
-{# SECTION POUR LES ITEMS EN ATTENTE / ERREUR                                 #}
-{# ========================================================================== #}
-{% if items_requiring_attention %}
-    <hr class="my-4">
-    <h2><i class="fas fa-exclamation-triangle text-warning"></i> Torrents en Attente / Nécessitant Attention</h2>
-    <div class="table-responsive">
-        <table class="table table-sm table-hover">
-            <thead>
-                <tr>
-                    <th>Release Name</th>
-                    <th>Type</th>
-                    <th>ID Cible</th>
-                    <th>Statut Actuel</th>
-                    <th>Message</th>
-                    <th>MàJ</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in items_requiring_attention %}
-                <tr>
-                    <td title="{{ item.release_name }}">{{ item.release_name | truncate(60) }}</td>
-                    <td>
-                        <span class="badge {% if item.app_type == 'sonarr' %}bg-primary{% elif item.app_type == 'radarr' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
-                            {{ item.app_type | capitalize if item.app_type else 'N/A' }}
-                        </span>
-                    </td>
-                    <td>{{ item.target_id if item.target_id is not none else 'N/A' }}</td>
-                    <td><span class="badge bg-info text-dark">{{ item.status | replace('_', ' ') | capitalize }}</span></td>
-                    <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ item.status_message }}">{{ item.status_message | truncate(50) if item.status_message else '-' }}</td>
-                    <td title="{{ item.updated_at if item.updated_at else item.added_at }}">
-                        {{ (item.updated_at if item.updated_at else item.added_at).split('.')[0].replace('T', ' ') if (item.updated_at or item.added_at) else 'N/A' }}
-                    </td>
-                    <td>
-                        {# Bouton Réessayer l'Import (si l'item est dans le staging) #}
-                        {% if item.is_in_staging and item.status != 'processing_by_mms_api' %} {# Évite de relancer si déjà en cours #}
-                        <form action="{{ url_for('seedbox_ui.retry_problematic_import_action', torrent_hash=item.torrent_hash) }}" method="POST" style="display: inline-block;" onsubmit="return confirm('Réessayer l\'import automatique pour \'{{ item.release_name | e }}\' ?');">
-                            <button type="submit" class="btn btn-sm btn-outline-success mb-1" title="Réessayer l'import automatique">
-                                <i class="fas fa-redo"></i> Réessayer
-                            </button>
-                        </form>
-                        {% elif item.status == 'processing_by_mms_api' %}
-                            <button class="btn btn-sm btn-outline-secondary mb-1" disabled title="Traitement déjà en cours ou bloqué.">
-                                <i class="fas fa-spinner fa-spin"></i> En cours...
-                            </button>
-                        {% endif %}
-
-                        {# Bouton Mapper Manuellement (si applicable) #}
-                        {% if item.is_in_staging and item.app_type and item.target_id %}
-                            {# Ouvre le modal existant. Le JS devra être adapté pour pré-remplir. #}
-                            {% if item.app_type == 'sonarr' %}
-                            <button class="btn btn-sm btn-outline-primary mb-1"
-                                    onclick='openSonarrSearchModalForProblemItem({{ item.release_name | tojson | safe }}, {{ item.target_id }}, {{ item.torrent_hash | tojson | safe }})'
-                                    title="Mapper manuellement avec Sonarr (corriger l'association)">
-                                <i class="fas fa-edit"></i> Mapper Sonarr
-                            </button>
-                            {% elif item.app_type == 'radarr' %}
-                            <button class="btn btn-sm btn-outline-warning text-dark mb-1"
-                                    onclick='openRadarrSearchModalForProblemItem({{ item.release_name | tojson | safe }}, {{ item.target_id }}, {{ item.torrent_hash | tojson | safe }})'
-                                    title="Mapper manuellement avec Radarr (corriger l'association)">
-                                <i class="fas fa-edit"></i> Mapper Radarr
-                            </button>
-                            {% endif %}
-                        {% endif %}
-
-                        {# Bouton Supprimer l'Association #}
-                        <form action="{{ url_for('seedbox_ui.delete_problematic_association_action', torrent_hash=item.torrent_hash) }}" method="POST" style="display: inline-block;" onsubmit="return confirm('Supprimer cette association en attente pour \'{{ item.release_name | e }}\' ? L\'item physique (s\'il existe) ne sera pas touché.');">
-                            <button type="submit" class="btn btn-sm btn-outline-danger mb-1" title="Supprimer cette association de la liste des items en attente">
-                                <i class="fas fa-times-circle"></i> Oublier
-                            </button>
-                        </form>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-{% else %}
-    <p class="text-muted">Aucun torrent ne nécessite une attention particulière actuellement.</p>
-{% endif %}
-{# FIN DE LA SECTION POUR LES ITEMS EN ATTENTE / ERREUR #}
-
-<hr class="my-4"> {# Séparateur avant le contenu du staging local #}
-<h1>Contenu du Staging Local</h1>
-
-    {# AFFICHAGE EN ARBORESCENCE (votre code existant) #}
-    {% if items_tree %}
-        {% if staging_dir_display %}
-        <p class="text-muted mb-2">Dossier du Staging Local : <code>{{ staging_dir_display }}</code></p>
-        {% endif %}
-        <ul class="file-tree">
-            {% for root_node in items_tree %}
-                {{ render_tree_node(root_node, can_scan_sonarr, can_scan_radarr, 0) }}
-            {% endfor %}
-        </ul>
-    {% elif not get_flashed_messages(category_filter=['danger']) %} {# Évite d'afficher "vide" s'il y a déjà une erreur #}
-        <div class="alert alert-info mt-3" role="alert">
-            Le dossier de staging local est vide ou non accessible.
-        </div>
-    {% endif %}
-    {# FIN DE L'AFFICHAGE EN ARBORESCENCE #}
-
-</div> {# Fin du container principal #}
-
-{# Inclusion des Modals #}
 {% include "seedbox_ui/_modals.html" %}
+{% endblock %}
 
-    <!-- jQuery -->
+{% block scripts %}
+    {{ super() }}
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <!-- Bootstrap Bundle JS (Popper.js included) -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
     <script>
-        // Pass Flask URL endpoints to JavaScript
         window.appUrls = {
             searchSonarrApi: "{{ url_for('seedbox_ui.search_sonarr_api') }}",
             searchRadarrApi: "{{ url_for('seedbox_ui.search_radarr_api') }}",
@@ -346,22 +328,17 @@
             getSonarrQualityprofiles: "{{ url_for('seedbox_ui.get_sonarr_qualityprofiles_api') }}",
             getRadarrRootfolders: "{{ url_for('seedbox_ui.get_radarr_rootfolders_api') }}",
             getRadarrQualityprofiles: "{{ url_for('seedbox_ui.get_radarr_qualityprofiles_api') }}",
-            // Specific to index.html but could be moved if functionality is generalized
             batchMapToSonarrSeries: "{{ url_for('seedbox_ui.batch_map_to_sonarr_series_action') }}"
         };
-        // csrfToken if needed by external JS for POST requests (if not using Flask-WTF for forms in modals)
-        {# window.csrfToken = "{{ csrf_token() }}"; #}
     </script>
     <script src="{{ url_for('static', filename='js/seedbox_ui_modals.js') }}"></script>
     <script>
-        // Page-specific JavaScript for index.html (file tree, batch staging item mapping)
+        // BEGIN: Page-specific JavaScript for index.html
 
-        // Variables for batch mapping staging items (these are specific to index.html)
         const batchMapButton = document.getElementById('batchMapToSonarrBtn');
         const stagingItemCheckboxes = document.querySelectorAll('.staging-item-checkbox');
         let selectedStagingItemsForBatch = [];
 
-        // Function to update the state of the batch map button on index.html
         function updateBatchActionButtonState() {
             selectedStagingItemsForBatch = [];
             stagingItemCheckboxes.forEach(checkbox => {
@@ -369,52 +346,37 @@
                     selectedStagingItemsForBatch.push(checkbox.value);
                 }
             });
-
             if (batchMapButton) {
                 batchMapButton.disabled = selectedStagingItemsForBatch.length === 0;
             }
         }
 
-        // Event listeners for staging item checkboxes on index.html
-        stagingItemCheckboxes.forEach(checkbox => {
-            checkbox.addEventListener('change', updateBatchActionButtonState);
-        });
-        
-        // Initial state for the batch map button on index.html
-        if (batchMapButton) { // Check if the button exists on the page
-             updateBatchActionButtonState();
-        }
-
-
-        // Function to open the Sonarr search modal for batch mapping (specific to index.html)
         function openBatchSonarrMapModal() {
+            updateBatchActionButtonState();
             if (selectedStagingItemsForBatch.length === 0) {
                 alert("Veuillez sélectionner au moins un item du staging.");
                 return;
             }
             console.log("Batch Map (Staging): Ouvrir modal pour items:", selectedStagingItemsForBatch);
-
             const sonarrModalElement = document.getElementById('sonarrSearchModal');
             if (!sonarrModalElement) {
                 console.error("Modal Sonarr (ID: sonarrSearchModal) non trouvé !");
                 return;
             }
             sonarrModalElement.setAttribute('data-current-action', 'batchMapStaging');
-
-
-            document.getElementById('sonarrSearchQuery').value = ''; // Clear previous search
+            document.getElementById('sonarrSearchQuery').value = '';
             document.getElementById('sonarrSearchResults').innerHTML = `<p class="text-muted">Recherchez une série Sonarr pour mapper les <strong>${selectedStagingItemsForBatch.length} items</strong> sélectionnés du staging.</p>`;
             document.getElementById('sonarrSelectedSeriesId').value = '';
             document.getElementById('sonarrSelectedSeriesTitle').innerText = 'Aucune série sélectionnée';
-            document.getElementById('sonarrManualSeasonDiv').style.display = 'none'; // Not applicable for batch map
-            currentlySelectedSonarrSeriesIdInModal = null;
-
+            document.getElementById('sonarrManualSeasonDiv').style.display = 'none';
+            if (typeof currentlySelectedSonarrSeriesIdInModal !== 'undefined') {
+                 currentlySelectedSonarrSeriesIdInModal = null;
+            }
             const modalMapButton = document.getElementById('sonarrModalMapButton');
             if (modalMapButton) {
                 modalMapButton.innerHTML = '<i class="fas fa-object-group"></i> Mapper Sélection à cette Série';
                 modalMapButton.disabled = true;
                 modalMapButton.className = 'btn btn-primary';
-
                 modalMapButton.onclick = function() {
                     const seriesId = document.getElementById('sonarrSelectedSeriesId').value;
                     if (seriesId) {
@@ -428,43 +390,44 @@
             modal.show();
         }
 
-        // Function to trigger the batch Sonarr map action (specific to index.html)
         async function triggerBatchSonarrMapAction(selectedSeriesIdForBatch) {
+            updateBatchActionButtonState();
             if (!selectedSeriesIdForBatch) {
                 alert("Aucune série Sonarr n'a été sélectionnée.");
                 return;
             }
             if (selectedStagingItemsForBatch.length === 0) {
-                alert("Aucun item du staging n'est sélectionné.");
+                alert("Aucun item du staging n'est sélectionné pour le mappage groupé.");
                 return;
             }
 
             const payload = {
-                item_names: selectedStagingItemsForBatch, // These are path_for_actions from staging
+                item_names: selectedStagingItemsForBatch,
                 series_id: parseInt(selectedSeriesIdForBatch)
             };
-
             const resultsDivInModal = document.getElementById('sonarrSearchResults');
             if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-info">Traitement groupé pour le staging en cours (${selectedStagingItemsForBatch.length} items)...</div>`;
-            
             const modalMapButton = document.getElementById('sonarrModalMapButton');
             if(modalMapButton) modalMapButton.disabled = true;
 
             try {
-                const response = await fetch("{{ url_for('seedbox_ui.batch_map_to_sonarr_series_action') }}", {
+                const response = await fetch(window.appUrls.batchMapToSonarrSeries, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(payload)
                 });
                 const result = await response.json();
-
                 if (response.ok && result.success) {
                     let message = `Traitement groupé du staging terminé. ${result.processed_count || 0} items traités.`;
                     if (result.errors_count && result.errors_count > 0) {
                         message += ` ${result.errors_count} items ont échoué ou nécessité une attention.`;
                     }
                     if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-${(result.errors_count && result.errors_count > 0) ? 'warning' : 'success'}">${escapeJsString(message)}</div>`;
-                    flashMessageGlobally(message, (result.errors_count && result.errors_count > 0) ? 'warning' : 'success');
+                    if (typeof flashMessageGlobally === "function" && typeof escapeJsString === "function") {
+                        flashMessageGlobally(message, (result.errors_count && result.errors_count > 0) ? 'warning' : 'success');
+                    } else {
+                        alert(message);
+                    }
                     setTimeout(() => {
                         const modalInstance = bootstrap.Modal.getInstance(document.getElementById('sonarrSearchModal'));
                         if (modalInstance) modalInstance.hide();
@@ -474,17 +437,19 @@
                     throw new Error(result.error || `Erreur HTTP ${response.status}`);
                 }
             } catch (error) {
-                if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-danger">Erreur: ${escapeJsString(error.message)}</div>`;
-                flashMessageGlobally(`Erreur lors du mapping groupé du staging: ${escapeJsString(error.message)}`, 'danger');
+                const errorMessage = (typeof escapeJsString === "function") ? escapeJsString(error.message) : error.message;
+                if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-danger">Erreur: ${errorMessage}</div>`;
+                if (typeof flashMessageGlobally === "function") {
+                    flashMessageGlobally(`Erreur lors du mapping groupé du staging: ${errorMessage}`, 'danger');
+                } else {
+                     alert(`Erreur lors du mapping groupé du staging: ${errorMessage}`);
+                }
             } finally {
                  if(modalMapButton) modalMapButton.disabled = false;
             }
         }
 
-
-        // DOMContentLoaded for page-specific (non-modal) JS for index.html
         document.addEventListener('DOMContentLoaded', function() {
-            // File tree toggling logic
             document.querySelectorAll('.file-tree .toggle-children').forEach(toggler => {
                 toggler.addEventListener('click', function (event) {
                     event.preventDefault();
@@ -504,22 +469,139 @@
                 });
             });
 
-            // Initialize tooltips
             var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
             tooltipTriggerList.map(function (tooltipTriggerEl) { return new bootstrap.Tooltip(tooltipTriggerEl); });
             
-            // Logic for initializing addTorrentModal
             const addTorrentModalEl = document.getElementById('addTorrentModal');
-            if (addTorrentModalEl) { // Check if modal exists on this page
+            if (addTorrentModalEl) {
                 if (typeof initializeAddTorrentModal === 'function') {
                     addTorrentModalEl.addEventListener('show.bs.modal', initializeAddTorrentModal);
-                    console.log('addTorrentModal event listener attached by index.html.'); // For debugging
                 } else {
-                    console.error('initializeAddTorrentModal function not found by index.html. Check seedbox_ui_modals.js loading.');
+                    console.error('initializeAddTorrentModal function not found. Check seedbox_ui_modals.js loading.');
                 }
             }
 
+            function loadTabContent(tabSelector, contentContainerSelector, loaderSelector, url) {
+                const tab = document.querySelector(tabSelector);
+                const contentContainer = document.querySelector(contentContainerSelector);
+                const loader = document.querySelector(loaderSelector);
+                let isContentLoaded = false;
+
+                if (tab && contentContainer && loader) {
+                    tab.addEventListener('shown.bs.tab', function(event) {
+                        if (!isContentLoaded || event.target.id === 'finished-files-tab' || event.target.id === 'rtorrent-view-tab') {
+                            loader.style.display = 'block';
+                            contentContainer.innerHTML = '';
+
+                            fetch(url)
+                                .then(response => {
+                                    if (!response.ok) {
+                                        throw new Error(`Erreur réseau ${response.status} lors du chargement de ${url}`);
+                                    }
+                                    return response.text();
+                                })
+                                .then(html => {
+                                    contentContainer.innerHTML = html;
+                                    if (event.target.id !== 'finished-files-tab' && event.target.id !== 'rtorrent-view-tab') {
+                                       isContentLoaded = true;
+                                    }
+                                })
+                                .catch(error => {
+                                    console.error('Erreur chargement onglet:', error);
+                                    contentContainer.innerHTML = `<div class="alert alert-danger">Impossible de charger le contenu: ${error.message}</div>`;
+                                })
+                                .finally(() => {
+                                    loader.style.display = 'none';
+                                });
+                        }
+                    });
+                    if (tab.classList.contains('active')) {
+                        var shownEvent = new Event('shown.bs.tab', { bubbles: true, cancelable: true });
+                        tab.dispatchEvent(shownEvent);
+                    }
+                } else {
+                    console.warn(`Un ou plusieurs éléments manquants pour le chargement de l'onglet : ${tabSelector}, ${contentContainerSelector}, ${loaderSelector}`);
+                }
+            }
+
+            loadTabContent(
+                '#finished-files-tab',
+                '#finished-files-container',
+                '#finished-files-loader',
+                "{{ url_for('seedbox_ui.unified_finished_list') }}"
+            );
+
+            loadTabContent(
+                '#rtorrent-view-tab',
+                '#rtorrent-content-container',
+                '#rtorrent-loader',
+                "{{ url_for('seedbox_ui.rtorrent_list_view') }}"
+            );
+
+            stagingItemCheckboxes.forEach(checkbox => {
+                checkbox.addEventListener('change', updateBatchActionButtonState);
+            });
+
+            if (batchMapButton) {
+                 updateBatchActionButtonState();
+            }
+
+            // Helper function to load content for maintenance sections
+            function loadMaintenanceContent(buttonId, containerId, loaderId, url) {
+                const button = document.getElementById(buttonId);
+                const container = document.getElementById(containerId);
+                const loader = document.getElementById(loaderId);
+
+                if (!button || !container || !loader) {
+                    console.error(`Missing elements for maintenance loader: ${buttonId}, ${containerId}, ${loaderId}`);
+                    return;
+                }
+
+                button.addEventListener('click', function() {
+                    loader.style.display = 'block';
+                    container.innerHTML = ''; // Clear previous content
+
+                    fetch(url)
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error(`Erreur réseau ${response.status} lors du chargement de ${url}`);
+                            }
+                            return response.text();
+                        })
+                        .then(html => {
+                            container.innerHTML = html;
+                        })
+                        .catch(error => {
+                            console.error('Erreur chargement contenu maintenance:', error);
+                            container.innerHTML = `<div class="alert alert-danger mt-2">Impossible de charger le contenu: ${error.message}</div>`;
+                        })
+                        .finally(() => {
+                            loader.style.display = 'none';
+                        });
+                });
+            }
+
+            // Loaders for Maintenance Tab sections
+            loadMaintenanceContent(
+                'load-arr-queue-btn',
+                'arr-queue-container',
+                'arr-queue-loader',
+                "{{ url_for('seedbox_ui.queue_manager_view') }}"
+            );
+            loadMaintenanceContent(
+                'load-sonarr-workdir-btn',
+                'workdir-container', // Both Sonarr and Radarr workdir buttons load into the same container
+                'workdir-loader',
+                "{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='sonarr_working') }}"
+            );
+            loadMaintenanceContent(
+                'load-radarr-workdir-btn',
+                'workdir-container', // Both Sonarr and Radarr workdir buttons load into the same container
+                'workdir-loader',
+                "{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='radarr_working') }}"
+            );
+
         });
+        // END: Page-specific JavaScript for index.html
     </script>
-</body>
-</html>
+{% endblock %}

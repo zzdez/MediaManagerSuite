@@ -1,42 +1,28 @@
-<!doctype html>
-<html lang="fr">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ page_title }} - MediaManagerSuite</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <style>
-        body { padding-top: 20px; padding-bottom: 60px; }
-        ul.file-tree, ul.children-list { list-style-type: none; padding-left: 0; }
-        .file-tree li > div.tree-node-item { display: flex; align-items: center; padding: 0.25rem 0.5rem; border-bottom: 1px solid #eee; }
-        .file-tree li > div.tree-node-item:hover { background-color: #f8f9fa; }
-        .file-tree .toggle-children { cursor: pointer; color: #0d6efd; text-decoration: none; }
-        .file-tree .toggle-children i { transition: transform 0.2s ease-in-out; }
-        .file-tree .icon-container { width: 25px; text-align: center; flex-shrink: 0; }
-        .file-tree .checkbox-container { width: 30px; text-align: center; flex-shrink: 0; }
-        .file-tree .item-name-details { flex-grow: 1; margin-left: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .file-tree .item-actions { margin-left: auto; flex-shrink: 0; min-width: 280px; /* Augmenté pour les deux boutons */ }
-        .file-tree .btn-xs { padding: 0.1rem 0.3rem; font-size: 0.75rem; margin-left: 3px; }
-        .modal-lg { max-width: 800px; }
-    </style>
-</head>
-<body>
+<!-- Specific styles for remote_seedbox_list, ensure they are scoped or not conflicting -->
+<style>
+    /* Styles specific to remote_seedbox_list.html, excluding body padding */
+    ul.file-tree, ul.children-list { list-style-type: none; padding-left: 0; }
+    .file-tree li > div.tree-node-item { display: flex; align-items: center; padding: 0.25rem 0.5rem; border-bottom: 1px solid #eee; }
+    /* .file-tree li > div.tree-node-item:hover { background-color: #f8f9fa; } */ /* Adjusted for dark theme consistency */
+    .file-tree .toggle-children { cursor: pointer; color: #0d6efd; text-decoration: none; }
+    .file-tree .toggle-children i { transition: transform 0.2s ease-in-out; }
+    .file-tree .icon-container { width: 25px; text-align: center; flex-shrink: 0; }
+    .file-tree .checkbox-container { width: 30px; text-align: center; flex-shrink: 0; }
+    .file-tree .item-name-details { flex-grow: 1; margin-left: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-tree .item-actions { margin-left: auto; flex-shrink: 0; min-width: 200px; }
+    .file-tree .btn-xs { padding: 0.1rem 0.3rem; font-size: 0.75rem; margin-left: 3px; }
+</style>
 
 {% macro render_remote_tree_node(node, app_type, allow_sftp_delete, level=0) %}
   <li style="margin-left: {{ level * 20 }}px;">
-    <div class="tree-node-item d-flex align-items-center"> {# d-flex pour un meilleur alignement #}
-
-      {# --- CASE À COCHER UNIQUE POUR ACTIONS GROUPÉES --- #}
-      <span style="width: 30px; flex-shrink: 0; text-align: center; padding-right: 5px;"> {# Ajustement léger du style pour un seul checkbox #}
+    <div class="tree-node-item d-flex align-items-center">
+      <span style="width: 30px; flex-shrink: 0; text-align: center; padding-right: 5px;">
           <input type="checkbox" class="form-check-input batch-action-item-checkbox"
-                 name="selected_items_paths" {# Corrigé pour correspondre au backend pour la suppression #}
+                 name="selected_items_paths"
                  value="{{ node.path_for_actions | e }}"
                  data-item-name="{{ node.name | e }}"
                  aria-label="Sélectionner {{ node.name | e }} pour une action groupée">
       </span>
-      {# --- FIN CASE À COCHER UNIQUE --- #}
-
       <span class="icon-container" style="width: 25px; text-align: center; flex-shrink: 0;">
         {% if node.is_dir and node.children %}
           <a href="#" class="toggle-children me-1" title="Déplier/Replier"><i class="fas fa-plus-square"></i></a>
@@ -46,21 +32,17 @@
           <i class="fas fa-file text-info me-1"></i>
         {% endif %}
       </span>
-
       <span class="item-name-details flex-grow-1" title="{{ node.name }}">
          {{ node.name }}
          <small class="text-muted fs-sm">
              ({{ node.size_readable if node.size_readable else 'N/A' }}{% if node.last_modified != 'N/A' %}, {{ node.last_modified }}{% endif %})
          </small>
-         {# DEBUG: level={{ level }}, allow_sftp_delete={{ allow_sftp_delete }}, node.is_in_local_staging={{ node.is_in_local_staging }} #}
-         {% if level == 0 and not allow_sftp_delete and node.is_in_local_staging %}  {# <--- REMETTRE level == 0 #}
+         {% if level == 0 and not allow_sftp_delete and node.is_in_local_staging %}
             <span class="badge bg-success ms-2">Déjà dans Staging Local</span>
          {% endif %}
       </span>
-
-      <div class="action-buttons item-actions ms-auto" style="min-width: 200px;">
-        {% if not allow_sftp_delete %} {# Mode "Terminés" #}
-            {# Le bouton de rapatriement individuel est conservé, mais désactivé si déjà dans staging #}
+      <div class="action-buttons item-actions ms-auto">
+        {% if not allow_sftp_delete %}
             <button class="btn btn-xs btn-outline-secondary"
                     data-remote-path="{{ node.path_for_actions | e }}"
                     data-app-type="{{ app_type | e }}"
@@ -68,8 +50,6 @@
                     title="Rapatrier vers staging (traitement manuel ensuite)">
                 <i class="fas fa-download"></i> <span class="d-none d-md-inline">Staging</span>
             </button>
-
-            {# Le bouton Rapatrier & Mapper est conservé, désactivé si déjà dans staging #}
             <button type="button" class="btn btn-xs btn-outline-primary"
                     data-remote-path="{{ node.path_for_actions | e }}"
                     data-app-type="{{ app_type | e }}"
@@ -79,12 +59,9 @@
                     title="Rapatrier et mapper directement cet item">
                 <i class="fas fa-link"></i> <span class="d-none d-md-inline">Rapatrier & Mapper</span>
             </button>
-        {% else %}
-            {# Mode "Working Folder" - Actions de suppression gérées par le formulaire global (via la case à cocher sftp-item-delete-checkbox) #}
         {% endif %}
       </div>
     </div>
-
     {% if node.is_dir and node.children %}
       <ul class="children-list" style="display: none;">
         {% for child_node in node.children %}
@@ -95,589 +72,103 @@
   </li>
 {% endmacro %}
 
-    <div class="container mt-4">
-        <header class="pb-3 mb-4 border-bottom">
-            <div class="d-flex justify-content-between align-items-center">
-                <span class="fs-4">{{ page_title }}</span>
-                <div>
-                    <a href="{{ url_for('seedbox_ui.index') }}" class="btn btn-outline-secondary btn-sm">
-                        <i class="fas fa-arrow-left"></i> Retour au Staging Local
-                    </a>
-                     <a href="{{ url_for('home') }}" class="btn btn-outline-primary btn-sm ms-2">
-                        <i class="fas fa-home"></i> Portail Principal
-                    </a>
-                </div>
-            </div>
-        </header>
+<div id="sftpActionFeedback" class="mt-3"></div>
 
-        <div id="sftpActionFeedback" class="mt-3"></div> {# Votre feedback existant #}
+{% if error_message %}<div class="alert alert-danger mt-3" role="alert"><strong>Erreur :</strong> {{ error_message }}</div>{% endif %}
 
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}{% for category, message in messages %}<div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">{{ message }}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>{% endfor %}{% endif %}
-        {% endwith %}
+<h4 class="mt-3 mb-2">{{ page_title }}</h4>
+<p class="text-muted small">Contenu de : <code>{{ target_root_folder_path }}</code> sur la seedbox.</p>
 
-        {% if error_message %}<div class="alert alert-danger" role="alert"><strong>Erreur :</strong> {{ error_message }}</div>{% endif %}
-
-        <p class="text-muted">Contenu de : <code>{{ target_root_folder_path }}</code> sur la seedbox.</p>
-
-        {# --- BOUTONS D'ACTION GROUPÉE --- #}
-        <div class="mb-3 mt-2 btn-toolbar" role="toolbar">
-            {% if 'working' not in app_type %}
-            <div class="btn-group me-2" role="group">
-                <button type="button" class="btn btn-success btn-sm" id="batchRapatrierBtn" disabled>
-                    <i class="fas fa-download"></i> Rapatrier Sélection vers Staging
-                </button>
-            </div>
-
-            {# Bouton "RAPATRIER & PRÉ-MAPPER SONARR" - seulement pour vues Sonarr non-working #}
-            {% if 'sonarr' in app_type and 'working' not in app_type %}
-            <div class="btn-group me-2" role="group">
-                <button type="button" class="btn btn-primary btn-sm" id="batchRapatrierAndPremapSonarrBtn" disabled>
-                    <i class="fas fa-link"></i> Rapatrier & Pré-Mapper Sélection (Sonarr)
-                </button>
-            </div>
-            {% endif %}
-            {% endif %} {# End 'working' not in app_type #}
-
-            <div class="btn-group me-2" role="group" aria-label="Groupe d'action de suppression">
-                <button type="button" class="btn btn-danger btn-sm" id="batchDeleteBtn" disabled>
-                    <i class="fas fa-trash-alt"></i> Supprimer Sélection de la Seedbox
-                </button>
-            </div>
-
-            <div class="ms-auto"> {# Pour pousser le statut à droite si on en veut un global #}
+<div class="mb-3 mt-2 btn-toolbar" role="toolbar">
+    {% if 'working' not in app_type %}
+    <div class="btn-group me-2" role="group">
+        <button type="button" class="btn btn-success btn-sm" id="batchRapatrierBtn" disabled>
+            <i class="fas fa-download"></i> Rapatrier Sélection vers Staging
+        </button>
+    </div>
+    {% if 'sonarr' in app_type and 'working' not in app_type %}
+    <div class="btn-group me-2" role="group">
+        <button type="button" class="btn btn-primary btn-sm" id="batchRapatrierAndPremapSonarrBtn" disabled>
+            <i class="fas fa-link"></i> Rapatrier & Pré-Mapper Sélection (Sonarr)
+        </button>
+    </div>
+    {% endif %}
+    {% endif %}
+    <div class="btn-group me-2" role="group" aria-label="Groupe d'action de suppression">
+        <button type="button" class="btn btn-danger btn-sm" id="batchDeleteBtn" disabled>
+            <i class="fas fa-trash-alt"></i> Supprimer Sélection de la Seedbox
+        </button>
+    </div>
+    <div class="ms-auto">
          <span id="batchGlobalStatus" class="ms-3"></span>
     </div>
 </div>
 
-        {# Votre arbre de fichiers/dossiers distants commence ici #}
-        {% if items_tree %}
-            {# Le formulaire sftpDeleteForm n'est plus nécessaire car la suppression est gérée par JS #}
-            <ul class="file-tree">
-                {% for root_node in items_tree %}
-                    {# La macro render_remote_tree_node rend les items avec la classe .batch-action-item-checkbox #}
-                    {{ render_remote_tree_node(root_node, app_type, allow_sftp_delete, 0) }}
-                {% endfor %}
-            </ul>
-        {% elif not error_message %}
-            <div class="alert alert-info">Aucun item trouvé dans ce dossier distant ou dossier inaccessible.</div>
-        {% endif %}
-    </div>
+{% if items_tree %}
+    <ul class="file-tree">
+        {% for root_node in items_tree %}
+            {{ render_remote_tree_node(root_node, app_type, allow_sftp_delete, 0) }}
+        {% endfor %}
+    </ul>
+{% elif not error_message %}
+    <div class="alert alert-info mt-3">Aucun item trouvé dans ce dossier distant ou dossier inaccessible.</div>
+{% endif %}
 
-    {# Inclusion des Modals #}
-    {% include 'seedbox_ui/_modals.html' %}
+<script>
+    // Script specific to remote_seedbox_list.html functionality
+    // Note: Assumes seedbox_ui_modals.js and its functions (like getCleanedSearchTerm, flashMessageGlobally, etc.)
+    // and window.appUrls are already loaded by the parent page (index.html).
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        // Define appUrls for use in external JS files
-        window.appUrls = {
-            searchSonarrApi: "{{ url_for('seedbox_ui.search_sonarr_api') }}",
-            searchRadarrApi: "{{ url_for('seedbox_ui.search_radarr_api') }}",
-            getSonarrRootfolders: "{{ url_for('seedbox_ui.get_sonarr_rootfolders_api') }}",
-            getSonarrQualityprofiles: "{{ url_for('seedbox_ui.get_sonarr_qualityprofiles_api') }}",
-            getRadarrRootfolders: "{{ url_for('seedbox_ui.get_radarr_rootfolders_api') }}",
-            getRadarrQualityprofiles: "{{ url_for('seedbox_ui.get_radarr_qualityprofiles_api') }}",
-            rtorrentAddTorrent: "{{ url_for('seedbox_ui.rtorrent_add_torrent_action') }}",
-            triggerSonarrImport: "{{ url_for('seedbox_ui.trigger_sonarr_import') }}",
-            triggerRadarrImport: "{{ url_for('seedbox_ui.trigger_radarr_import') }}",
-            forceSonarrImport: "{{ url_for('seedbox_ui.force_sonarr_import_action') }}",
-            // URLs specific to remote_seedbox_list.html actions that might be modalized later or called from global JS
-            manualSftpDownload: "{{ url_for('seedbox_ui.manual_sftp_download_action') }}",
-            sftpRetrieveAndProcess: "{{ url_for('seedbox_ui.sftp_retrieve_and_process_action') }}",
-            {# sftpBatchDownload: "{{ url_for('seedbox_ui.sftp_batch_download_action') }}", #}
-            {# sftpBatchRetrieveAndPremapSonarr: "{{ url_for('seedbox_ui.sftp_batch_retrieve_and_premap_sonarr_action') }}", #}
-            
-            sftpAddAndImportArrItem: "{{ url_for('seedbox_ui.sftp_add_and_import_arr_item_action') }}",
-            sftpAddAndImportArrItemPlaceholder: "{{ url_for('seedbox_ui.sftp_add_and_import_arr_item_placeholder') }}"
-        };
-    </script>
-    <script src="{{ url_for('static', filename='js/seedbox_ui_modals.js') }}"></script>
-    <script>
-        console.log("remote_seedbox_list.html inline script: START");
-        // Page-specific JavaScript for remote_seedbox_list.html
-        // This script will handle SFTP specific actions, tree rendering, and batch operations on this page.
-        // Modal opening functions (like openSftpRetrieveAndMapModal) will call generic functions from seedbox_ui_modals.js
-        // Helper functions like escapeJsString, getCleanedSearchTerm, flashMessageGlobally are now in seedbox_ui_modals.js
-        // Generic modal functions like executeSonarrSearch, executeRadarrSearch, handleGenericSonarrSeriesSelection are also in seedbox_ui_modals.js
+    console.log("remote_seedbox_list.html inline script: Re-executing for new content.");
 
-    // --- Global for this page context ---
+    // Context for individual SFTP item actions (especially for modals)
     let sftpItemForDirectMap = {
         remotePath: null,
-        appType: null, // 'sonarr' or 'radarr' (context of the remote folder view)
+        appType: null,
         itemNameForDisplay: null,
-        itemTypeForDisplay: null // 'directory' or 'file'
+        itemTypeForDisplay: null
     };
 
-    // --- Batch Action Variables ---
-    const batchRapatrierButton = document.getElementById('batchRapatrierBtn');
-    // selectedRemoteItemsForBatch is still declared globally as updateBatchActionButtonsState populates it,
-    // and some older functions might still reference it before they are fully updated.
-    // However, primary action handlers will now re-query the DOM.
-    let selectedRemoteItemsForBatch = [];
-    const batchRapatrierAndPremapSonarrButton = document.getElementById('batchRapatrierAndPremapSonarrBtn');
-    const globalDeleteButton = document.getElementById('batchDeleteBtn'); // Added for clarity
+    // Batch action elements specific to this view
+    const batchRapatrierButtonRemote = document.getElementById('batchRapatrierBtn');
+    const batchRapatrierAndPremapSonarrButtonRemote = document.getElementById('batchRapatrierAndPremapSonarrBtn');
+    const globalDeleteButtonRemote = document.getElementById('batchDeleteBtn');
+    const sftpItemCheckboxes = document.querySelectorAll('.batch-action-item-checkbox');
 
-    // --- Page specific functions that might call modal functions ---
 
-    // This function is specific to this page as it prepares context for generic modal functions
-    function openSftpRetrieveAndMapModal(buttonElement) {
-        console.log('[SFTP Map Modal] openSftpRetrieveAndMapModal called. Item:', buttonElement.getAttribute('data-item-name-for-modal'), 'AppType:', buttonElement.getAttribute('data-app-type'));
-        sftpItemForDirectMap.remotePath = buttonElement.getAttribute('data-remote-path');
-        sftpItemForDirectMap.appType = buttonElement.getAttribute('data-app-type'); // sonarr, radarr, sonarr_working, etc.
-        sftpItemForDirectMap.itemNameForDisplay = buttonElement.getAttribute('data-item-name-for-modal');
-        sftpItemForDirectMap.itemTypeForDisplay = buttonElement.getAttribute('data-item-type');
-
-        const targetArrAppType = sftpItemForDirectMap.appType.replace('_working', ''); // Normalize to 'sonarr' or 'radarr' for modal type
-        
-        // Calls to generic openSonarrSearchModal or openRadarrSearchModal will be made from here
-        // after setting up the necessary context or by passing sftpItemForDirectMap or relevant parts.
-        // For now, the detailed modal setup is here, but it will use global functions like getCleanedSearchTerm.
-
-        if (targetArrAppType === 'sonarr') {
-            const sonarrModalElement = document.getElementById('sonarrSearchModal');
-            if (!sonarrModalElement) { console.error("Modal Sonarr non trouvé!"); return; }
-            
-            sonarrModalElement.setAttribute('data-current-action', 'sftpRetrieveAndMapIndividual');
-            document.getElementById('sonarrItemToMap').textContent = sftpItemForDirectMap.itemNameForDisplay;
-            document.getElementById('sonarrOriginalItemName').value = sftpItemForDirectMap.remotePath; 
-            document.getElementById('sonarrItemType').textContent = sftpItemForDirectMap.itemTypeForDisplay === 'directory' ? 'Dossier (Distant)' : 'Fichier (Distant)';
-            document.getElementById('sonarrSearchQuery').value = getCleanedSearchTerm(sftpItemForDirectMap.itemNameForDisplay); 
-            document.getElementById('sonarrSearchResults').innerHTML = '';
-            document.getElementById('sonarrSelectedSeriesId').value = '';
-            document.getElementById('sonarrSelectedSeriesTitle').innerText = 'Aucune série sélectionnée';
-            document.getElementById('sonarrManualSeasonDiv').style.display = 'block'; 
-            document.getElementById('sonarrSearchModalGenericLabel').textContent = `Rapatrier & Mapper: ${sftpItemForDirectMap.itemNameForDisplay}`;
-
-            const modalMapButton = document.getElementById('sonarrModalMapButton');
-            if (modalMapButton) {
-                // Le texte et l'icône du bouton sont maintenant gérés par handleGenericSonarrSeriesSelection
-                modalMapButton.disabled = true; // Désactivé jusqu'à sélection
-                modalMapButton.onclick = function() { // Cet onclick sera reconfiguré par handleGeneric...
-                    const sonarrModalElem = document.getElementById('sonarrSearchModal');
-                    const isNew = sonarrModalElem.getAttribute('data-is-new-media') === 'true';
-                    const selectedMediaId = document.getElementById('sonarrSelectedSeriesId').value; // Peut être TVDB ID si nouveau
-                    const selectedMediaTitle = sonarrModalElem.getAttribute('data-selected-media-title'); // Titre stocké
-                    const userForcedSeason = document.getElementById('sonarrManualSeasonInput').value;
-
-                    if (!selectedMediaId) { alert("Veuillez sélectionner une série."); return; }
-
-                    if (isNew) {
-                        console.log('[SFTP Map Modal] Action: Nouveau média Sonarr. ID (TVDB):', selectedMediaId, 'Titre:', selectedMediaTitle);
-                        // Préparer les données pour promptAndExecuteSftpNewMediaAddAndMap
-                        const searchResultData = { // Simule l'objet searchResultData attendu
-                            tvdbId: selectedMediaId, // ou l'ID externe approprié
-                            title: selectedMediaTitle,
-                            // Ajouter d'autres champs si nécessaire depuis la sélection (year, etc.)
-                        };
-                        promptAndExecuteSftpNewMediaAddAndMap(searchResultData, targetArrAppType);
-                    } else {
-                        console.log('[SFTP Map Modal] Action: Média Sonarr existant. ID (Sonarr):', selectedMediaId, 'Titre:', selectedMediaTitle);
-                        executeSftpRetrieveAndProcess(selectedMediaId, selectedMediaTitle, targetArrAppType, userForcedSeason);
-                    }
-                };
+    function updateBatchActionButtonsStateRemote() {
+        let currentSelectedPaths = [];
+        sftpItemCheckboxes.forEach(checkbox => {
+            if (checkbox.checked) {
+                currentSelectedPaths.push(checkbox.value);
             }
-            console.log('[SFTP Map Modal] About to show Sonarr modal.');
-            var sonarrModalInstance = new bootstrap.Modal(sonarrModalElement);
-            sonarrModalInstance.show();
-
-        } else if (targetArrAppType === 'radarr') {
-            const radarrModalElement = document.getElementById('radarrSearchModal');
-            if (!radarrModalElement) { console.error("Modal Radarr non trouvé!"); return; }
-
-            radarrModalElement.setAttribute('data-current-action', 'sftpRetrieveAndMapIndividual');
-            // ... (configuration initiale de la modale Radarr comme avant) ...
-            document.getElementById('radarrItemToMap').textContent = sftpItemForDirectMap.itemNameForDisplay;
-            document.getElementById('radarrOriginalItemName').value = sftpItemForDirectMap.remotePath;
-            document.getElementById('radarrItemType').textContent = sftpItemForDirectMap.itemTypeForDisplay === 'directory' ? 'Dossier (Distant)' : 'Fichier (Distant)';
-            document.getElementById('radarrSearchQuery').value = getCleanedSearchTerm(sftpItemForDirectMap.itemNameForDisplay);
-            document.getElementById('radarrSearchResults').innerHTML = '';
-            document.getElementById('radarrSelectedMovieId').value = '';
-            document.getElementById('radarrSelectedMovieTitle').innerText = 'Aucun film sélectionné';
-            document.getElementById('radarrSearchModalGenericLabel').textContent = `Rapatrier & Mapper: ${sftpItemForDirectMap.itemNameForDisplay}`;
-            
-            const modalMapButton = document.getElementById('radarrModalMapButton');
-            if (modalMapButton) {
-                modalMapButton.disabled = true; // Désactivé jusqu'à sélection
-                modalMapButton.onclick = function() {
-                    const radarrModalElem = document.getElementById('radarrSearchModal');
-                    const isNew = radarrModalElem.getAttribute('data-is-new-media') === 'true';
-                    const selectedMediaId = document.getElementById('radarrSelectedMovieId').value; // Peut être TMDB ID si nouveau
-                    const selectedMediaTitle = radarrModalElem.getAttribute('data-selected-media-title'); // Titre stocké
-
-                    if (!selectedMediaId) { alert("Veuillez sélectionner un film."); return; }
-
-                    if (isNew) {
-                        console.log('[SFTP Map Modal] Action: Nouveau média Radarr. ID (TMDB):', selectedMediaId, 'Titre:', selectedMediaTitle);
-                        const searchResultData = {
-                            tmdbId: selectedMediaId, // ou l'ID externe approprié
-                            title: selectedMediaTitle,
-                        };
-                        promptAndExecuteSftpNewMediaAddAndMap(searchResultData, targetArrAppType);
-                    } else {
-                        console.log('[SFTP Map Modal] Action: Média Radarr existant. ID (Radarr):', selectedMediaId, 'Titre:', selectedMediaTitle);
-                        executeSftpRetrieveAndProcess(selectedMediaId, selectedMediaTitle, targetArrAppType, null); 
-                    }
-                };
-            }
-            console.log('[SFTP Map Modal] About to show Radarr modal.');
-            var radarrModalInstance = new bootstrap.Modal(radarrModalElement);
-            radarrModalInstance.show();
-        }
-    }
-
-    async function executeSftpRetrieveAndProcess(targetInternalMediaId, targetMediaTitleForDisplay, arrAppType, userForcedSeason = null) {
-        console.log('[SFTP Map Modal] executeSftpRetrieveAndProcess called. Target Internal ID:', targetInternalMediaId, 'Title:', targetMediaTitleForDisplay, 'sftpItem:', JSON.stringify(sftpItemForDirectMap));
-        const modalId = (arrAppType === 'sonarr') ? 'sonarrSearchModal' : 'radarrSearchModal';
-        const resultsDiv = document.getElementById((arrAppType === 'sonarr') ? 'sonarrSearchResults' : 'radarrSearchResults'); // Ou le feedback div
-        const modalMapButton = document.getElementById((arrAppType === 'sonarr') ? 'sonarrModalMapButton' : 'radarrModalMapButton');
-
-        if (!sftpItemForDirectMap.remotePath) {
-            if(resultsDiv) resultsDiv.innerHTML = `<div class="alert alert-danger">Erreur: Contexte SFTP perdu.</div>`;
-            return;
-        }
-        if(resultsDiv) resultsDiv.innerHTML = `<div class="alert alert-info">Rapatriement & mappage pour '${escapeJsString(sftpItemForDirectMap.itemNameForDisplay)}' vers '${escapeJsString(targetMediaTitleForDisplay)}'...</div>`;
-        if(modalMapButton) modalMapButton.disabled = true;
-
-        try {
-            const payload = {
-                remote_path: sftpItemForDirectMap.remotePath,
-                app_type_of_remote_folder: sftpItemForDirectMap.appType, // sonarr, radarr, sonarr_working etc.
-            };
-            if (arrAppType === 'sonarr') {
-                payload.target_series_id = targetInternalMediaId; // Doit être l'ID interne Sonarr
-                if (userForcedSeason && userForcedSeason.trim() !== '') {
-                    payload.user_forced_season = parseInt(userForcedSeason);
-                }
-            } else { 
-                payload.target_movie_id = targetInternalMediaId; // Doit être l'ID interne Radarr
-            }
-
-            console.log('[SFTP Map Modal] executeSftpRetrieveAndProcess: About to fetch /seedbox/sftp-retrieve-and-process with payload:', JSON.stringify(payload));
-            const response = await fetch(window.appUrls.sftpRetrieveAndProcess, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-            });
-            const result = await response.json();
-
-            if (response.ok && result.success) {
-                if(resultsDiv) resultsDiv.innerHTML = `<div class="alert alert-success">${escapeJsString(result.message)}</div>`;
-                flashMessageGlobally(result.message || "Rapatriement et mappage réussis.", 'success'); 
-                setTimeout(() => {
-                    var modalInstance = bootstrap.Modal.getInstance(document.getElementById(modalId));
-                    if (modalInstance) modalInstance.hide();
-                    window.location.reload();
-                }, 3000);
-            } else {
-                throw new Error(result.error || `Erreur HTTP ${response.status}`);
-            }
-        } catch (error) {
-            console.error('[SFTP Map Modal] executeSftpRetrieveAndProcess: Error caught:', error);
-            if(resultsDiv) resultsDiv.innerHTML = `<div class="alert alert-danger">Erreur: ${escapeJsString(error.message)}</div>`;
-            flashMessageGlobally(`Erreur R&P: ${escapeJsString(error.message)}`, 'danger');
-        } finally {
-            if(modalMapButton) modalMapButton.disabled = false;
-        }
-    }
-
-    async function promptAndExecuteSftpNewMediaAddAndMap(searchResultData, arrAppType) {
-        console.log('[SFTP Map Modal] promptAndExecuteSftpNewMediaAddAndMap for new media.', searchResultData, arrAppType);
-        const modalElementId = (arrAppType === 'sonarr') ? 'sonarrSearchModal' : 'radarrSearchModal';
-        const modalElement = document.getElementById(modalElementId);
-        const feedbackDiv = document.getElementById((arrAppType === 'sonarr') ? 'sonarrSearchModalFeedbackZone' : 'radarrSearchModalFeedbackZone');
-        const mainButton = document.getElementById((arrAppType === 'sonarr') ? 'sonarrModalMapButton' : 'radarrModalMapButton');
-
-        const optionsContainerId = (arrAppType === 'sonarr') ? 'sftpSonarrNewSeriesOptionsContainer' : 'sftpRadarrNewMovieOptionsContainer';
-        const optionsContainer = document.getElementById(optionsContainerId);
-
-        if (!modalElement || !optionsContainer || !mainButton || !feedbackDiv) {
-            console.error("Éléments de la modale manquants pour l'ajout SFTP.");
-            alert("Erreur interne: Impossible d'afficher les options d'ajout.");
-            return;
-        }
-
-        // Cacher les résultats de recherche et afficher les options d'ajout
-        const searchResultsDivId = (arrAppType === 'sonarr') ? 'sonarrSearchResults' : 'radarrSearchResults';
-        const searchResultsDiv = document.getElementById(searchResultsDivId);
-        if(searchResultsDiv) searchResultsDiv.style.display = 'none';
-        optionsContainer.style.display = 'block';
-        feedbackDiv.innerHTML = `<p class="alert alert-info">Veuillez configurer les options pour ajouter <strong>${searchResultData.title}</strong> à ${arrAppType.charAt(0).toUpperCase() + arrAppType.slice(1)}.</p>`;
-
-        // Peupler les selects
-        if (arrAppType === 'sonarr') {
-            populateSelectFromServer(window.appUrls.getSonarrRootfolders, 'sftpSonarrRootFolderSelect', 'path', 'path', 'Dossier Racine Sonarr');
-            populateSelectFromServer(window.appUrls.getSonarrQualityprofiles, 'sftpSonarrQualityProfileSelect', 'id', 'name', 'Profil Qualité Sonarr');
-            // populateSelectFromServer pour Language Profile si nécessaire
-        } else { // radarr
-            populateSelectFromServer(window.appUrls.getRadarrRootfolders, 'sftpRadarrRootFolderSelect', 'path', 'path', 'Dossier Racine Radarr');
-            populateSelectFromServer(window.appUrls.getRadarrQualityprofiles, 'sftpRadarrQualityProfileSelect', 'id', 'name', 'Profil Qualité Radarr');
-            const minAvailabilitySelect = document.getElementById('sftpRadarrMinimumAvailabilitySelect');
-            if (minAvailabilitySelect) minAvailabilitySelect.disabled = false;
-        }
-
-        // Reconfigurer le bouton principal pour confirmer l'ajout
-        mainButton.innerHTML = `<i class="fas fa-check-circle"></i> Confirmer Ajout & Rapatrier`;
-        mainButton.disabled = false; // Activer car l'utilisateur doit choisir des options
-        mainButton.onclick = async function() {
-            await confirmSftpNewMediaAddAndMap(searchResultData, arrAppType);
-        };
-    }
-
-    async function confirmSftpNewMediaAddAndMap(searchResultData, arrAppType) {
-        console.log('[SFTP Map Modal] confirmSftpNewMediaAddAndMap called.', searchResultData, arrAppType);
-        const feedbackDiv = document.getElementById((arrAppType === 'sonarr') ? 'sonarrSearchModalFeedbackZone' : 'radarrSearchModalFeedbackZone');
-        const mainButton = document.getElementById((arrAppType === 'sonarr') ? 'sonarrModalMapButton' : 'radarrModalMapButton');
-        if(mainButton) mainButton.disabled = true;
-        if(feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-info"><i class="fas fa-spinner fa-spin"></i> Ajout à ${arrAppType}, rapatriement et import en cours...</div>`;
-
-        const userChoicesForAdd = {};
-        if (arrAppType === 'sonarr') {
-            userChoicesForAdd.rootFolderPath = document.getElementById('sftpSonarrRootFolderSelect').value;
-            userChoicesForAdd.qualityProfileId = parseInt(document.getElementById('sftpSonarrQualityProfileSelect').value);
-            // userChoicesForAdd.languageProfileId = parseInt(document.getElementById('sftpSonarrLanguageProfileSelect').value) || 1; // Exemple
-            userChoicesForAdd.languageProfileId = 1; // Defaulting to 1 for now
-            userChoicesForAdd.monitored = true;
-            userChoicesForAdd.seasonFolder = true;
-            userChoicesForAdd.addOptions = { searchForMissingEpisodes: false };
-        } else { // radarr
-            userChoicesForAdd.rootFolderPath = document.getElementById('sftpRadarrRootFolderSelect').value;
-            userChoicesForAdd.qualityProfileId = parseInt(document.getElementById('sftpRadarrQualityProfileSelect').value);
-            userChoicesForAdd.minimumAvailability = document.getElementById('sftpRadarrMinimumAvailabilitySelect').value;
-            userChoicesForAdd.monitored = true;
-            userChoicesForAdd.addOptions = { searchForMovie: false };
-        }
-
-        if (!userChoicesForAdd.rootFolderPath || !userChoicesForAdd.qualityProfileId) {
-            if(feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-danger">Erreur: Dossier racine et profil de qualité sont requis.</div>`;
-            if(mainButton) mainButton.disabled = false;
-            return;
-        }
-
-        const payload = {
-            sftp_details: {
-                remote_path: sftpItemForDirectMap.remotePath,
-                app_type_of_remote_folder: sftpItemForDirectMap.appType,
-                item_name: sftpItemForDirectMap.itemNameForDisplay,
-                item_type: sftpItemForDirectMap.itemTypeForDisplay
-            },
-            media_to_add: searchResultData,
-            user_choices: userChoicesForAdd,
-            arr_type: arrAppType
-        };
-
-        try {
-            console.log('[SFTP Map Modal] confirmSftpNewMediaAddAndMap: About to fetch /api/sftp-add-and-import-arr-item with payload:', JSON.stringify(payload));
-            const response = await fetch(window.appUrls.sftpAddAndImportArrItem, { // Utilise la nouvelle URL
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-            });
-            const result = await response.json();
-
-            if (response.ok && result.success) {
-                if(feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-success">${escapeJsString(result.message)}</div>`;
-                flashMessageGlobally(result.message || "Opération réussie.", 'success');
-                setTimeout(() => {
-                    const modalId = (arrAppType === 'sonarr') ? 'sonarrSearchModal' : 'radarrSearchModal';
-                    var modalInstance = bootstrap.Modal.getInstance(document.getElementById(modalId));
-                    if (modalInstance) modalInstance.hide();
-                    window.location.reload();
-                }, 3000);
-            } else {
-                throw new Error(result.error || `Erreur HTTP ${response.status}`);
-            }
-        } catch (error) {
-            console.error('[SFTP Map Modal] confirmSftpNewMediaAddAndMap: Error caught:', error);
-            if(feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-danger">Erreur: ${escapeJsString(error.message)}</div>`;
-            flashMessageGlobally(`Erreur: ${escapeJsString(error.message)}`, 'danger');
-        } finally {
-            if(mainButton) mainButton.disabled = false;
-             // Réinitialiser l'affichage pour une future sélection
-            const optionsContainerId = (arrAppType === 'sonarr') ? 'sftpSonarrNewSeriesOptionsContainer' : 'sftpRadarrNewMovieOptionsContainer';
-            const optionsContainer = document.getElementById(optionsContainerId);
-            if(optionsContainer) optionsContainer.style.display = 'none';
-            const searchResultsDivId = (arrAppType === 'sonarr') ? 'sonarrSearchResults' : 'radarrSearchResults';
-            const searchResultsDiv = document.getElementById(searchResultsDivId);
-            if(searchResultsDiv) searchResultsDiv.style.display = 'block'; // Réafficher les résultats de recherche
-        }
-    }
-    
-    function clearSftpContext() {
-        console.log("[SFTP Context] Clearing SFTP context.");
-        // Réinitialiser les conteneurs d'options SFTP
-        const sonarrSftpOptions = document.getElementById('sftpSonarrNewSeriesOptionsContainer');
-        if(sonarrSftpOptions) sonarrSftpOptions.style.display = 'none';
-        const radarrSftpOptions = document.getElementById('sftpRadarrNewMovieOptionsContainer');
-        if(radarrSftpOptions) radarrSftpOptions.style.display = 'none';
-        // Réafficher les résultats de recherche par défaut
-        const sonarrSearchResults = document.getElementById('sonarrSearchResults');
-        if(sonarrSearchResults) sonarrSearchResults.style.display = 'block';
-        const radarrSearchResults = document.getElementById('radarrSearchResults');
-        if(radarrSearchResults) radarrSearchResults.style.display = 'block';
-
-        sftpItemForDirectMap.remotePath = null;
-        sftpItemForDirectMap.appType = null;
-        sftpItemForDirectMap.itemNameForDisplay = null;
-        sftpItemForDirectMap.itemTypeForDisplay = null;
-        const sonarrLabel = document.getElementById('sonarrSearchModalGenericLabel');
-        if(sonarrLabel) sonarrLabel.textContent = "Mapper à une Série Sonarr";
-        const radarrLabel = document.getElementById('radarrSearchModalGenericLabel');
-        if(radarrLabel) radarrLabel.textContent = "Mapper à un Film Radarr";
-    }
-
-    // --- SFTP Batch Download (No mapping, just download to staging) ---
-    async function handleBatchRapatrier() {
-        const currentSelectedItems = [];
-        document.querySelectorAll('.batch-action-item-checkbox:checked').forEach(checkbox => {
-            currentSelectedItems.push(checkbox.value);
         });
+        const anyItemSelected = currentSelectedPaths.length > 0;
 
-        if (currentSelectedItems.length === 0) { alert("Sélectionnez des items à rapatrier."); return; }
-        const appTypeSource = "{{ app_type | e }}"; 
-        const feedbackEl = document.getElementById('batchGlobalStatus') || document.getElementById('sftpActionFeedback');
-
-        if (batchRapatrierButton) batchRapatrierButton.disabled = true;
-        if (feedbackEl) feedbackEl.innerHTML = `<span class="text-info"><i class="fas fa-spinner fa-spin"></i> Rapatriement de ${currentSelectedItems.length} item(s)...</span>`;
-
-        try {
-            const response = await fetch(window.appUrls.sftpBatchDownload, {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ remote_paths: currentSelectedItems, app_type_context: appTypeSource })
-            });
-            const result = await response.json();
-            if (response.ok && result.success) {
-                let message = `Rapatriement groupé: ${result.successful_downloads || 0} succès.`;
-                if (result.failed_downloads && result.failed_downloads > 0) message += ` ${result.failed_downloads} échecs.`;
-                if (feedbackEl) feedbackEl.innerHTML = `<span class="text-${result.failed_downloads > 0 ? 'warning':'success'}">${escapeJsString(message)}</span>`;
-                flashMessageGlobally(message, result.failed_downloads > 0 ? 'warning':'success');
-                setTimeout(() => { window.location.reload(); }, 4500);
-            } else { throw new Error(result.error || `Erreur HTTP ${response.status}`); }
-        } catch (error) {
-            if (feedbackEl) feedbackEl.innerHTML = `<span class="text-danger">Erreur: ${escapeJsString(error.message)}</span>`;
-        } finally {
-            if (batchRapatrierButton) batchRapatrierButton.disabled = false;
-        }
+        if (batchRapatrierButtonRemote) batchRapatrierButtonRemote.disabled = !anyItemSelected;
+        if (batchRapatrierAndPremapSonarrButtonRemote) batchRapatrierAndPremapSonarrButtonRemote.disabled = !anyItemSelected;
+        if (globalDeleteButtonRemote) globalDeleteButtonRemote.disabled = !anyItemSelected;
     }
 
-    // --- SFTP Batch Retrieve and Premap to SONARR ---
-    function openBatchRetrieveAndPremapSonarrModal() {
-        const currentSelectedItems = [];
-        document.querySelectorAll('.batch-action-item-checkbox:checked').forEach(checkbox => {
-            currentSelectedItems.push(checkbox.value);
-        });
+    // Attach listeners for this fragment
+    sftpItemCheckboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', updateBatchActionButtonsStateRemote);
+    });
 
-        if (currentSelectedItems.length === 0) { alert("Sélectionnez des items."); return; }
-        
-        const sonarrModalElement = document.getElementById('sonarrSearchModal');
-        if (!sonarrModalElement) { console.error("Modal Sonarr non trouvé!"); return; }
-
-        sonarrModalElement.setAttribute('data-current-action', 'sftpBatchRetrieveAndPremapSonarr');
-        // Pass currentSelectedItems to the function that will actually execute the action.
-        // Store it on the modal element or pass it to triggerBatchRetrieveAndPremapSonarr.
-        // For this example, let's assume triggerBatchRetrieveAndPremapSonarr will re-query or receive it.
-        sonarrModalElement.dataset.currentSelectedItemsForBatch = JSON.stringify(currentSelectedItems);
-
-
-        document.getElementById('sonarrItemToMap').textContent = `${currentSelectedItems.length} items sélectionnés`;
-        document.getElementById('sonarrOriginalItemName').value = ''; 
-        document.getElementById('sonarrItemType').textContent = 'Lot (Distant)';
-        document.getElementById('sonarrSearchQuery').value = '';
-        document.getElementById('sonarrSearchResults').innerHTML = `<p class="text-muted">Recherchez la série Sonarr cible pour les <strong>${currentSelectedItems.length} items</strong>.</p>`;
-        document.getElementById('sonarrSelectedSeriesId').value = '';
-        document.getElementById('sonarrSelectedSeriesTitle').innerText = 'Aucune série sélectionnée';
-        document.getElementById('sonarrManualSeasonDiv').style.display = 'none'; 
-        document.getElementById('sonarrSearchModalGenericLabel').textContent = `Rapatrier & Pré-Mapper ${selectedRemoteItemsForBatch.length} items (Sonarr)`;
-
-        const modalMapButton = document.getElementById('sonarrModalMapButton');
-        if (modalMapButton) {
-            modalMapButton.innerHTML = '<i class="fas fa-link"></i> Rapatrier & Pré-Mapper Sélection';
-            modalMapButton.disabled = true;
-            modalMapButton.onclick = function() {
-                const targetSeriesId = document.getElementById('sonarrSelectedSeriesId').value;
-                if (targetSeriesId) {
-                    // Retrieve the items from the modal's dataset or re-query.
-                    const itemsToProcess = JSON.parse(sonarrModalElement.dataset.currentSelectedItemsForBatch || '[]');
-                    if (itemsToProcess.length > 0) {
-                        triggerBatchRetrieveAndPremapSonarr(targetSeriesId, itemsToProcess);
-                    } else {
-                        alert("Aucun item sélectionné pour le traitement (erreur interne).");
-                    }
-                }
-                else { alert("Sélectionnez une série Sonarr."); }
-            };
-        }
-        var sonarrModalInstance = new bootstrap.Modal(sonarrModalElement);
-        sonarrModalInstance.show();
+    if (globalDeleteButtonRemote) {
+        globalDeleteButtonRemote.addEventListener('click', handleBatchSftpDeleteRemote);
+    }
+    if (batchRapatrierButtonRemote) {
+        batchRapatrierButtonRemote.addEventListener('click', handleBatchRapatrierRemote);
+    }
+    if (batchRapatrierAndPremapSonarrButtonRemote) {
+        batchRapatrierAndPremapSonarrButtonRemote.addEventListener('click', openBatchRetrieveAndPremapSonarrModalRemote);
     }
 
-    async function triggerBatchRetrieveAndPremapSonarr(targetSeriesId, itemsToProcess) { // Now accepts itemsToProcess
-        const resultsDivInModal = document.getElementById('sonarrSearchResults');
-        const modalMapButton = document.getElementById('sonarrModalMapButton');
-        const mainActionButton = document.getElementById('batchRapatrierAndPremapSonarrBtn');
-
-        if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-info"><i class="fas fa-spinner fa-spin"></i> Traitement...</div>`;
-        if(modalMapButton) modalMapButton.disabled = true;
-        if(mainActionButton) mainActionButton.disabled = true;
-
-        try {
-            const payload = {
-                remote_paths: itemsToProcess, // Use the passed itemsToProcess
-                series_id: parseInt(targetSeriesId),
-                app_type_context: "{{ app_type | e }}" 
-            };
-            const response = await fetch(window.appUrls.sftpBatchRetrieveAndPremapSonarr, {
-                method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
-            });
-            const result = await response.json();
-            if (response.ok && result.success) {
-                let message = result.message || `R&P Sonarr: ${result.successful_ops || 0} succès, ${result.failed_ops || 0} échecs.`;
-                if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-${result.failed_ops > 0 ? 'warning' : 'success'}">${escapeJsString(message)}</div>`;
-                flashMessageGlobally(message, result.failed_ops > 0 ? 'warning' : 'success');
-                setTimeout(() => {
-                    const mi = bootstrap.Modal.getInstance(document.getElementById('sonarrSearchModal'));
-                    if (mi) mi.hide(); window.location.reload();
-                }, 4000);
-            } else { throw new Error(result.error || `Erreur HTTP ${response.status}`); }
-        } catch (error) {
-            if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-danger">Erreur: ${escapeJsString(error.message)}</div>`;
-        } finally {
-            if(modalMapButton) modalMapButton.disabled = false;
-            if(mainActionButton) mainActionButton.disabled = false;
-        }
-    }
-
-    // --- SFTP Manual Download (Individual item, no mapping) ---
-    async function triggerManualSftpDownload(buttonElement) {
-        const remotePath = buttonElement.getAttribute('data-remote-path');
-        const appTypeCtx = buttonElement.getAttribute('data-app-type'); 
-        const itemName = remotePath.split('/').pop();
-
-        if (!confirm(`Rapatrier '${itemName}' vers le staging local ?\n\nL'import final se fera depuis la vue du Staging Local.`)) return;
-        
-        buttonElement.disabled = true;
-        buttonElement.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Rapatriement...';
-        const feedbackDiv = document.getElementById('sftpActionFeedback');
-        feedbackDiv.innerHTML = `<div class="alert alert-info">Rapatriement de '${escapeJsString(itemName)}'...</div>`;
-
-        try {
-            const response = await fetch(window.appUrls.manualSftpDownload, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ remote_path: remotePath, app_type: appTypeCtx })
-            });
-            const result = await response.json();
-            if (response.ok && result.success) {
-                feedbackDiv.innerHTML = `<div class="alert alert-success">${escapeJsString(result.message)}</div>`;
-                buttonElement.closest('div.tree-node-item').parentNode.classList.add('table-secondary', 'text-muted');
-                const mapButton = buttonElement.nextElementSibling; 
-                if (mapButton && mapButton.title.includes("Rapatrier & Mapper")) mapButton.disabled = true;
-            } else { throw new Error(result.error || `Erreur HTTP ${response.status}`); }
-        } catch (error) {
-            feedbackDiv.innerHTML = `<div class="alert alert-danger">Erreur: ${escapeJsString(error.message)}</div>`;
-            buttonElement.disabled = false;
-            buttonElement.innerHTML = '<i class="fas fa-download"></i> Staging';
-        }
-    }
-
-    // --- DOMContentLoaded for page-specific listeners ---
-    document.addEventListener('DOMContentLoaded', function() {
-        // Tree node toggle
-        document.querySelectorAll('.file-tree .toggle-children').forEach(toggler => {
+    // Tree node toggle (specific to this fragment's tree)
+    document.querySelectorAll('#rtorrent-content-container .file-tree .toggle-children, #workdir-container .file-tree .toggle-children').forEach(toggler => {
+        // Check if already processed to avoid duplicate listeners if content is reloaded multiple times without full page refresh
+        if (toggler.getAttribute('data-listener-attached') !== 'true') {
             toggler.addEventListener('click', function (event) {
                 event.preventDefault();
                 const childrenList = this.closest('li').querySelector('.children-list');
@@ -689,121 +180,130 @@
                     icon.classList.toggle('fa-minus-square', isHidden);
                 }
             });
-        });
-
-        // Tooltips
-        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-        tooltipTriggerList.map(function (tooltipTriggerEl) { return new bootstrap.Tooltip(tooltipTriggerEl); });
-
-        // Checkbox listeners for batch actions
-        // Combined listener for the new single checkbox class
-        document.querySelectorAll('.batch-action-item-checkbox').forEach(checkbox => {
-            checkbox.addEventListener('change', updateBatchActionButtonsState);
-        });
-        
-        const globalDeleteButtonJS = document.getElementById('batchDeleteBtn');
-        if (globalDeleteButtonJS) {
-            globalDeleteButtonJS.addEventListener('click', handleBatchSftpDelete);
+            toggler.setAttribute('data-listener-attached', 'true');
         }
-
-        // Batch Rapatrier Button
-        if (batchRapatrierButton) {
-            batchRapatrierButton.addEventListener('click', handleBatchRapatrier);
-        }
-        // Batch Rapatrier & Premap Sonarr Button
-        if (batchRapatrierAndPremapSonarrButton) {
-            batchRapatrierAndPremapSonarrButton.addEventListener('click', openBatchRetrieveAndPremapSonarrModal);
-        }
-        
-        // Modal hide listeners to clear SFTP context
-        // These ensure that if a generic modal (Sonarr/Radarr search) was opened via an SFTP action,
-        // its context is cleared when it's hidden.
-        const sonarrModalEl = document.getElementById('sonarrSearchModal');
-        if (sonarrModalEl) { sonarrModalEl.addEventListener('hidden.bs.modal', clearSftpContext); }
-        
-        const radarrModalEl = document.getElementById('radarrSearchModal');
-        if (radarrModalEl) { radarrModalEl.addEventListener('hidden.bs.modal', clearSftpContext); }
-
-        // Logic for initializing addTorrentModal (if it's used on this page)
-        const addTorrentModalEl = document.getElementById('addTorrentModal');
-        if (addTorrentModalEl) { 
-            if (typeof initializeAddTorrentModal === 'function') {
-                addTorrentModalEl.addEventListener('show.bs.modal', initializeAddTorrentModal);
-                console.log('addTorrentModal event listener attached by remote_seedbox_list.html.');
-            } else {
-                console.error('initializeAddTorrentModal function not found by remote_seedbox_list.html. Check seedbox_ui_modals.js loading.');
-            }
-        }
-
-        updateBatchActionButtonsState(); // Initial call
     });
 
-    // This function needs to be defined for checkboxes to work
-    function updateBatchActionButtonsState() {
-        selectedRemoteItemsForBatch = []; // Clear and repopulate global list (can be removed if no other function uses it directly)
-        document.querySelectorAll('.batch-action-item-checkbox:checked').forEach(checkbox => {
-            selectedRemoteItemsForBatch.push(checkbox.value);
-        });
-        const anyItemSelected = selectedRemoteItemsForBatch.length > 0;
 
-        // Update all batch buttons based on anyItemSelected
-        if (batchRapatrierButton) batchRapatrierButton.disabled = !anyItemSelected;
-        if (batchRapatrierAndPremapSonarrButton) batchRapatrierAndPremapSonarrButton.disabled = !anyItemSelected;
+    // Tooltips (specific to this fragment's elements)
+    var tooltipTriggerListRemote = [].slice.call(document.querySelectorAll('#rtorrent-content-container [data-bs-toggle="tooltip"], #workdir-container [data-bs-toggle="tooltip"]'));
+    tooltipTriggerListRemote.map(function (tooltipTriggerEl) {
+      return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
 
-        // globalDeleteButton was already declared at the top of the script
-        if (globalDeleteButton) globalDeleteButton.disabled = !anyItemSelected;
+    // Initial call
+    updateBatchActionButtonsStateRemote();
+
+    // Functions (potentially renamed to avoid collision if absolutely necessary, but scoping via DOMContentLoaded or IIFE is better)
+    // For now, these are page-specific versions.
+    function openSftpRetrieveAndMapModal(buttonElement) {
+        sftpItemForDirectMap.remotePath = buttonElement.getAttribute('data-remote-path');
+        sftpItemForDirectMap.appType = buttonElement.getAttribute('data-app-type');
+        sftpItemForDirectMap.itemNameForDisplay = buttonElement.getAttribute('data-item-name-for-modal');
+        sftpItemForDirectMap.itemTypeForDisplay = buttonElement.getAttribute('data-item-type');
+        const targetArrAppType = sftpItemForDirectMap.appType.replace('_working', '');
+
+        if (targetArrAppType === 'sonarr') {
+            openSonarrSearchModalForSftp(sftpItemForDirectMap); // Calls function from seedbox_ui_modals.js
+        } else if (targetArrAppType === 'radarr') {
+            openRadarrSearchModalForSftp(sftpItemForDirectMap); // Calls function from seedbox_ui_modals.js
+        }
     }
 
-    async function handleBatchSftpDelete() {
-        const selectedCheckboxes = document.querySelectorAll('.batch-action-item-checkbox:checked');
-        const remotePaths = Array.from(selectedCheckboxes).map(cb => cb.value);
+    async function triggerManualSftpDownload(buttonElement) {
+        const remotePath = buttonElement.getAttribute('data-remote-path');
+        const appTypeCtx = buttonElement.getAttribute('data-app-type');
+        const itemName = remotePath.split('/').pop();
+        if (!confirm(`Rapatrier '${itemName}' vers le staging local ? L'import final se fera depuis la vue du Staging Local.`)) return;
 
-        if (remotePaths.length === 0) {
-            alert("Veuillez sélectionner des items à supprimer.");
-            return;
-        }
-
-        if (!confirm(`Êtes-vous sûr de vouloir supprimer DÉFINITIVEMENT ${remotePaths.length} item(s) sélectionné(s) de la seedbox ?`)) {
-            return;
-        }
-
-        const deleteButton = document.getElementById('batchDeleteBtn');
-        const feedbackEl = document.getElementById('sftpActionFeedback'); // Or batchGlobalStatus
-        if (deleteButton) deleteButton.disabled = true;
-        if (feedbackEl) feedbackEl.innerHTML = `<span class="text-info"><i class="fas fa-spinner fa-spin"></i> Suppression en cours...</span>`;
-
-        const formData = new FormData();
-        remotePaths.forEach(path => formData.append('selected_items_paths', path));
-        formData.append('app_type_source', '{{ app_type | e }}'); // Get current app_type
+        buttonElement.disabled = true;
+        buttonElement.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Rapatriement...';
+        const feedbackDiv = document.getElementById('sftpActionFeedback');
+        if(feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-info">Rapatriement de '${escapeJsString(itemName)}'...</div>`;
 
         try {
-            const response = await fetch("{{ url_for('seedbox_ui.sftp_delete_items_action') }}", {
-                method: 'POST',
-                body: formData
-            });
+            const response = await fetch(window.appUrls.manualSftpDownload, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ remote_path: remotePath, app_type: appTypeCtx }) });
+            const result = await response.json();
+            if (response.ok && result.success) {
+                if(feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-success">${escapeJsString(result.message)}</div>`;
+                // Visually mark as downloaded
+                buttonElement.classList.remove('btn-outline-secondary');
+                buttonElement.classList.add('btn-secondary', 'disabled');
+                buttonElement.innerHTML = '<i class="fas fa-check-circle"></i> Rapatrié';
+                const mapButton = buttonElement.nextElementSibling;
+                if (mapButton && mapButton.getAttribute('onclick').includes("openSftpRetrieveAndMapModal")) { // Check if it's the R&M button
+                    mapButton.classList.add('disabled');
+                    mapButton.setAttribute('title', 'Déjà rapatrié, mapper depuis le staging local.');
+                }
+            } else { throw new Error(result.error || `Erreur HTTP ${response.status}`); }
+        } catch (error) {
+            if(feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-danger">Erreur: ${escapeJsString(error.message)}</div>`;
+            buttonElement.disabled = false;
+            buttonElement.innerHTML = '<i class="fas fa-download"></i> Staging';
+        }
+    }
+    
+    async function handleBatchRapatrierRemote() {
+        const currentSelectedPaths = [];
+        document.querySelectorAll('#workdir-container .batch-action-item-checkbox:checked, #rtorrent-content-container .batch-action-item-checkbox:checked').forEach(checkbox => { // Ensure we select from current context
+            currentSelectedPaths.push(checkbox.value);
+        });
+        if (currentSelectedPaths.length === 0) { alert("Sélectionnez des items à rapatrier."); return; }
+        const appTypeSource = "{{ app_type | e }}"; 
+        const feedbackEl = document.getElementById('batchGlobalStatus') || document.getElementById('sftpActionFeedback');
+        if (batchRapatrierButtonRemote) batchRapatrierButtonRemote.disabled = true;
+        if (feedbackEl) feedbackEl.innerHTML = `<span class="text-info"><i class="fas fa-spinner fa-spin"></i> Rapatriement de ${currentSelectedPaths.length} item(s)...</span>`;
+        try {
+            const response = await fetch(window.appUrls.sftpBatchDownload, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ remote_paths: currentSelectedPaths, app_type_context: appTypeSource }) });
+            const result = await response.json();
+            if (response.ok && result.success) {
+                let message = `Rapatriement groupé: ${result.successful_downloads || 0} succès.`;
+                if (result.failed_downloads && result.failed_downloads > 0) message += ` ${result.failed_downloads} échecs.`;
+                if (feedbackEl) feedbackEl.innerHTML = `<span class="text-${result.failed_downloads > 0 ? 'warning':'success'}">${escapeJsString(message)}</span>`;
+                flashMessageGlobally(message, result.failed_downloads > 0 ? 'warning':'success');
+                setTimeout(() => { document.getElementById('rtorrent-view-tab') ? document.getElementById('rtorrent-view-tab').click() : (document.getElementById('maintenance-tab') ? document.getElementById('maintenance-tab').click() : window.location.reload()); }, 4500);
+            } else { throw new Error(result.error || `Erreur HTTP ${response.status}`); }
+        } catch (error) {
+            if (feedbackEl) feedbackEl.innerHTML = `<span class="text-danger">Erreur: ${escapeJsString(error.message)}</span>`;
+        } finally { if (batchRapatrierButtonRemote) batchRapatrierButtonRemote.disabled = false; }
+    }
 
+    function openBatchRetrieveAndPremapSonarrModalRemote() {
+        const currentSelectedPaths = [];
+        document.querySelectorAll('#workdir-container .batch-action-item-checkbox:checked, #rtorrent-content-container .batch-action-item-checkbox:checked').forEach(checkbox => {
+            currentSelectedPaths.push(checkbox.value);
+        });
+        if (currentSelectedPaths.length === 0) { alert("Sélectionnez des items."); return; }
+        openBatchMapToSonarrModalForSftp(currentSelectedPaths, "{{ app_type | e }}"); // Calls function from seedbox_ui_modals.js
+    }
+
+    async function handleBatchSftpDeleteRemote() {
+        const selectedCheckboxes = document.querySelectorAll('#workdir-container .batch-action-item-checkbox:checked, #rtorrent-content-container .batch-action-item-checkbox:checked');
+        const remotePaths = Array.from(selectedCheckboxes).map(cb => cb.value);
+        if (remotePaths.length === 0) { alert("Veuillez sélectionner des items à supprimer."); return; }
+        if (!confirm(`Êtes-vous sûr de vouloir supprimer DÉFINITIVEMENT ${remotePaths.length} item(s) sélectionné(s) de la seedbox ?`)) return;
+        const deleteButton = document.getElementById('batchDeleteBtn');
+        const feedbackEl = document.getElementById('sftpActionFeedback');
+        if (deleteButton) deleteButton.disabled = true;
+        if (feedbackEl) feedbackEl.innerHTML = `<span class="text-info"><i class="fas fa-spinner fa-spin"></i> Suppression en cours...</span>`;
+        const formData = new FormData();
+        remotePaths.forEach(path => formData.append('selected_items_paths', path));
+        formData.append('app_type_source', '{{ app_type | e }}');
+        try {
+            const response = await fetch("{{ url_for('seedbox_ui.sftp_delete_items_action') }}", { method: 'POST', body: formData });
             if (response.ok) {
-                if (feedbackEl) feedbackEl.innerHTML = `<span class="text-success">Suppression réussie. Rechargement...</span>`;
-                // Utiliser flashMessageGlobally si disponible et adapté, sinon le message via feedbackEl est déjà là.
-                // flashMessageGlobally(`${remotePaths.length} item(s) marqué(s) pour suppression. La page va se recharger.`, 'success');
-                // Le flash via le backend après redirection est préférable.
-                setTimeout(() => { window.location.reload(); }, 2500); // La redirection du backend affichera les flash messages.
+                if (feedbackEl) feedbackEl.innerHTML = `<span class="text-success">Opération de suppression envoyée. Rechargement...</span>`;
+                setTimeout(() => { document.getElementById('rtorrent-view-tab') ? document.getElementById('rtorrent-view-tab').click() : (document.getElementById('maintenance-tab') ? document.getElementById('maintenance-tab').click() : window.location.reload()); }, 2500);
             } else {
                 let errorMsg = `Erreur HTTP ${response.status} lors de la suppression.`;
-                try { // Essayer de parser une erreur JSON du backend
-                    const result = await response.json();
-                    if (result && result.error) errorMsg = result.error;
-                } catch (e) { /* Ignore if response is not JSON */ }
+                try { const result = await response.json(); if (result && result.error) errorMsg = result.error; } catch (e) { /* Ignore */ }
                 throw new Error(errorMsg);
             }
         } catch (error) {
             console.error('Error during SFTP batch delete:', error);
             if (feedbackEl) feedbackEl.innerHTML = `<span class="text-danger">Erreur: ${escapeJsString(error.message)}</span>`;
-            // flashMessageGlobally(`Erreur lors de la suppression: ${error.message}`, 'danger');
             if (deleteButton) deleteButton.disabled = false;
         }
     }
-    console.log("remote_seedbox_list.html inline script: END -- all functions should be defined now.");
-    </script>
-</body>
-</html>
+    console.log("remote_seedbox_list.html inline script: END");
+</script>

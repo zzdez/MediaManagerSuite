@@ -1,17 +1,20 @@
-<!doctype html>
-<html lang="fr">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ title }} - MediaManagerSuite</title>
+{% extends "layout.html" %}
+
+{% block title %}{{ title }} - MediaManagerSuite{% endblock %}
+
+{% block head_styles %}
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body { padding-top: 40px; padding-bottom: 40px; background-color: #f5f5f5; }
+        /* Styles specific to home_portal, if any, can be adjusted or removed if main.css covers them */
+        /* body adjustments like padding-top might not be needed if main.css handles overall layout */
         .portal-container { max-width: 600px; margin: auto; }
         .portal-link { margin-bottom: 15px; }
     </style>
-</head>
-<body>
+    <!-- Font Awesome is a style dependency, move to head_styles -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+{% endblock %}
+
+{% block content %}
     <div class="text-center portal-container">
         <img class="mb-4" src="{{ url_for('static', filename='logo.png') if false else 'https://via.placeholder.com/72x57.png?text=MMS' }}" alt="" width="72" height="57"> <!-- Remplace par ton logo si tu en as un dans app/static/logo.png -->
         <h1 class="h3 mb-3 fw-normal">{{ title }}</h1>
@@ -43,9 +46,8 @@
         <p class="mt-5 mb-3 text-muted">© MediaManagerSuite {{ current_year }}</p>
         <!-- FIN DE LA LIGNE MODIFIÉE -->
     </div>
+{% endblock %}
 
+{% block scripts %}
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- Ajoute Font Awesome si tu utilises les icônes (fas fa-...) -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-</body>
-</html>
+{% endblock %}

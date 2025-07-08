@@ -566,7 +566,7 @@ def process_staging_item_api(): # Renommé pour éviter conflit si vous aviez un
 
     logger.info(f"process_staging_item_api: Found pre-association for '{item_name_in_staging}': Torrent Hash {torrent_hash}, Type: {mapping_data.get('app_type')}, Target ID: {mapping_data.get('target_id')}")
 
-    full_staging_path_str = str((Path(current_app.config['STAGING_DIR']) / item_name_in_staging).resolve())
+    full_staging_path_str = str((Path(current_app.config['LOCAL_STAGING_PATH']) / item_name_in_staging).resolve())
 
     # Vérifier si le chemin existe réellement dans le staging
     if not os.path.exists(full_staging_path_str):
@@ -588,7 +588,7 @@ def process_staging_item_api(): # Renommé pour éviter conflit si vous aviez un
 
     # path_to_cleanup est le nom de l'item dans le staging, car nos helpers attendent cela
     # pour la fonction cleanup_staging_subfolder_recursively.
-    path_to_cleanup = item_name_in_staging # Le nom du dossier/fichier principal dans STAGING_DIR
+    path_to_cleanup = item_name_in_staging # Le nom du dossier/fichier principal dans LOCAL_STAGING_PATH
 
     if app_type == 'sonarr':
         # Pour l'import automatique, on ne force pas de saison.
@@ -596,7 +596,7 @@ def process_staging_item_api(): # Renommé pour éviter conflit si vous aviez un
         # Si une saison spécifique était stockée dans mapping_data, on pourrait la passer.
         # Exemple: user_chosen_season_from_map = mapping_data.get('season_number')
         result_from_handler = _handle_staged_sonarr_item(
-            item_name_in_staging=item_name_in_staging, # Le nom du dossier/fichier dans STAGING_DIR
+            item_name_in_staging=item_name_in_staging, # Le nom du dossier/fichier dans LOCAL_STAGING_PATH
             series_id_target=target_id,
             path_to_cleanup_in_staging_after_success=full_staging_path_str, # Chemin absolu de l'item à nettoyer
             user_chosen_season=None, # Laisser le helper déterminer ou se fier à Sonarr
@@ -605,7 +605,7 @@ def process_staging_item_api(): # Renommé pour éviter conflit si vous aviez un
         )
     elif app_type == 'radarr':
         result_from_handler = _handle_staged_radarr_item(
-            item_name_in_staging=item_name_in_staging, # Le nom du dossier/fichier dans STAGING_DIR
+            item_name_in_staging=item_name_in_staging, # Le nom du dossier/fichier dans LOCAL_STAGING_PATH
             movie_id_target=target_id,
             path_to_cleanup_in_staging_after_success=full_staging_path_str, # Chemin absolu de l'item à nettoyer
             automated_import=True,
@@ -663,11 +663,11 @@ def _handle_staged_sonarr_item(item_name_in_staging, series_id_target,
 
     sonarr_url = current_app.config.get('SONARR_URL')
     sonarr_api_key = current_app.config.get('SONARR_API_KEY')
-    staging_dir_str = current_app.config.get('STAGING_DIR')
-    orphan_exts = current_app.config.get('ORPHAN_EXTENSIONS', [])
+    local_staging_path_str = current_app.config.get('LOCAL_STAGING_PATH')
+    orphan_exts = current_app.config.get('ORPHAN_CLEANER_EXTENSIONS', []) # Variable renommée
 
     # path_to_process_abs est le dossier de la release (ou le fichier unique) dans le staging
-    path_to_process_abs = (Path(staging_dir_str) / item_name_in_staging).resolve()
+    path_to_process_abs = (Path(local_staging_path_str) / item_name_in_staging).resolve()
 
     if not path_to_process_abs.exists():
         err_msg = f"Item '{item_name_in_staging}' non trouvé à '{path_to_process_abs}'."
@@ -853,7 +853,7 @@ def _handle_staged_sonarr_item(item_name_in_staging, series_id_target,
         try:
             # La fonction cleanup_staging_subfolder_recursively devrait maintenant vider le dossier
             # car tous les fichiers vidéo principaux ont été déplacés.
-            cleanup_staging_subfolder_recursively(str(actual_folder_to_cleanup), staging_dir_str, orphan_exts)
+            cleanup_staging_subfolder_recursively(str(actual_folder_to_cleanup), local_staging_path_str, orphan_exts)
         except Exception as e_cleanup:
             logger.error(f"{log_prefix}Erreur lors du nettoyage de {actual_folder_to_cleanup}: {e_cleanup}")
             # Ne pas considérer cela comme un échec bloquant de l'import si les fichiers ont été déplacés.
@@ -916,10 +916,10 @@ def _handle_staged_radarr_item(item_name_in_staging, movie_id_target,
 
     radarr_url = current_app.config.get('RADARR_URL')
     radarr_api_key = current_app.config.get('RADARR_API_KEY')
-    staging_dir_str = current_app.config.get('STAGING_DIR')
-    orphan_exts = current_app.config.get('ORPHAN_EXTENSIONS', [])
+    local_staging_path_str = current_app.config.get('LOCAL_STAGING_PATH')
+    orphan_exts = current_app.config.get('ORPHAN_CLEANER_EXTENSIONS', []) # Variable renommée
 
-    path_of_item_in_staging_abs = (Path(staging_dir_str) / item_name_in_staging).resolve()
+    path_of_item_in_staging_abs = (Path(local_staging_path_str) / item_name_in_staging).resolve()
     if not path_of_item_in_staging_abs.exists():
         err_msg = f"Item '{item_name_in_staging}' (résolu en {path_of_item_in_staging_abs}) non trouvé."
         logger.error(f"{log_prefix}{err_msg}")
@@ -1019,7 +1019,7 @@ def _handle_staged_radarr_item(item_name_in_staging, movie_id_target,
         logger.info(f"{log_prefix}Nettoyage dossier staging: {actual_folder_to_cleanup}")
         time.sleep(1)
         try:
-            cleanup_staging_subfolder_recursively(str(actual_folder_to_cleanup), staging_dir_str, orphan_exts)
+            cleanup_staging_subfolder_recursively(str(actual_folder_to_cleanup), local_staging_path_str, orphan_exts)
         except NameError:
             logger.error(f"{log_prefix}Fonction 'cleanup_staging_subfolder_recursively' non trouvée. Nettoyage manuel requis pour {actual_folder_to_cleanup}")
         except Exception as e_cleanup:
@@ -1706,9 +1706,9 @@ from . import seedbox_ui_bp # Ou from app.seedbox_ui import seedbox_ui_bp si la 
 @login_required
 def index():
     logger = current_app.logger # Obtenir le logger
-    staging_dir = current_app.config.get('STAGING_DIR')
-    if not staging_dir or not os.path.isdir(staging_dir):
-        flash(f"Le dossier de staging '{staging_dir}' n'est pas configuré ou n'existe pas/n'est pas un dossier.", 'danger')
+    local_staging_path = current_app.config.get('LOCAL_STAGING_PATH')
+    if not local_staging_path or not os.path.isdir(local_staging_path):
+        flash(f"Le dossier de staging '{local_staging_path}' n'est pas configuré ou n'existe pas/n'est pas un dossier.", 'danger')
         # Toujours essayer de charger les items en attente même si le staging est problématique
         # return render_template('seedbox_ui/index.html', items_tree=[]) # Ancien retour
 
@@ -1727,9 +1727,9 @@ def index():
     logger.debug(f"Index: Associations (pour arbre staging) par release_name: {associations_by_release_name_for_staging_tree}")
 
     items_tree_data = []
-    if staging_dir and os.path.isdir(staging_dir):
-        logger.info(f"Index: Construction de l'arborescence pour le dossier de staging: {staging_dir}")
-        items_tree_data = build_file_tree(staging_dir, staging_dir, associations_by_release_name_for_staging_tree)
+    if local_staging_path and os.path.isdir(local_staging_path):
+        logger.info(f"Index: Construction de l'arborescence pour le dossier de staging: {local_staging_path}")
+        items_tree_data = build_file_tree(local_staging_path, local_staging_path, associations_by_release_name_for_staging_tree)
     # --- Fin Items du Staging Local ---
 
 
@@ -1747,8 +1747,8 @@ def index():
                 item_info = data.copy() # Copier pour ne pas modifier l'original en ajoutant le hash
                 item_info['torrent_hash'] = torrent_hash # Ajouter le hash pour les actions
                 # Vérifier si l'item est physiquement dans le staging (pour l'action "Réessayer")
-                if staging_dir and item_info.get('release_name'):
-                    item_info['is_in_staging'] = (Path(staging_dir) / item_info['release_name']).exists()
+                if local_staging_path and item_info.get('release_name'):
+                    item_info['is_in_staging'] = (Path(local_staging_path) / item_info['release_name']).exists()
                 else:
                     item_info['is_in_staging'] = False
                 items_requiring_attention.append(item_info)
@@ -1770,17 +1770,17 @@ def index():
                            items_tree=items_tree_data,
                            can_scan_sonarr=sonarr_configured,
                            can_scan_radarr=radarr_configured,
-                           staging_dir_display=staging_dir,
+                           staging_dir_display=local_staging_path,
                            items_requiring_attention=items_requiring_attention) # Passer la nouvelle liste au template
 
 @seedbox_ui_bp.route('/delete/<path:item_name>', methods=['POST'])
 @login_required
 def delete_item(item_name):
-    staging_dir = current_app.config.get('STAGING_DIR')
-    item_path = os.path.join(staging_dir, item_name) # item_name peut contenir des sous-dossiers, d'où <path:>
+    local_staging_path = current_app.config.get('LOCAL_STAGING_PATH')
+    item_path = os.path.join(local_staging_path, item_name) # item_name peut contenir des sous-dossiers, d'où <path:>
 
-    # Sécurité : Vérifier que item_path est bien dans staging_dir
-    if not os.path.abspath(item_path).startswith(os.path.abspath(staging_dir)):
+    # Sécurité : Vérifier que item_path est bien dans local_staging_path
+    if not os.path.abspath(item_path).startswith(os.path.abspath(local_staging_path)):
         flash("Tentative de suppression d'un chemin invalide.", 'danger')
         logger.warning(f"Tentative de suppression de chemin invalide : {item_path}")
         return redirect(url_for('seedbox_ui.index'))
@@ -1814,13 +1814,13 @@ def delete_item(item_name):
 def scan_sonarr(item_name):
     sonarr_url = current_app.config.get('SONARR_URL')
     sonarr_api_key = current_app.config.get('SONARR_API_KEY')
-    staging_dir = current_app.config.get('STAGING_DIR')
+    local_staging_path = current_app.config.get('LOCAL_STAGING_PATH')
 
     if not sonarr_url or not sonarr_api_key:
         flash("Sonarr n'est pas configuré.", 'danger')
         return redirect(url_for('seedbox_ui.index'))
 
-    item_path = os.path.join(staging_dir, item_name)
+    item_path = os.path.join(local_staging_path, item_name)
     if not os.path.exists(item_path): # Vérifier si l'item existe toujours
         flash(f"L'item '{item_name}' n'existe pas dans le staging.", 'warning')
         return redirect(url_for('seedbox_ui.index'))
@@ -1834,13 +1834,13 @@ def scan_sonarr(item_name):
 def scan_radarr(item_name):
     radarr_url = current_app.config.get('RADARR_URL')
     radarr_api_key = current_app.config.get('RADARR_API_KEY')
-    staging_dir = current_app.config.get('STAGING_DIR')
+    local_staging_path = current_app.config.get('LOCAL_STAGING_PATH')
 
     if not radarr_url or not radarr_api_key:
         flash("Radarr n'est pas configuré.", 'danger')
         return redirect(url_for('seedbox_ui.index'))
 
-    item_path = os.path.join(staging_dir, item_name)
+    item_path = os.path.join(local_staging_path, item_name)
     if not os.path.exists(item_path):
         flash(f"L'item '{item_name}' n'existe pas dans le staging.", 'warning')
         return redirect(url_for('seedbox_ui.index'))
@@ -2175,7 +2175,7 @@ def remote_seedbox_view(app_type_target):
     sftp_port = current_app.config.get('SEEDBOX_SFTP_PORT')
     sftp_user = current_app.config.get('SEEDBOX_SFTP_USER')
     sftp_password = current_app.config.get('SEEDBOX_SFTP_PASSWORD')
-    local_staging_dir_str = current_app.config.get('STAGING_DIR')
+    local_staging_dir_str = current_app.config.get('LOCAL_STAGING_PATH')
     local_staging_dir_for_check = Path(local_staging_dir_str) if local_staging_dir_str else None
 
     remote_path_to_list_root = None
@@ -2185,20 +2185,20 @@ def remote_seedbox_view(app_type_target):
     view_type = "unknown"
 
     if app_type_target == 'sonarr':
-        remote_path_to_list_root = current_app.config.get('SEEDBOX_SONARR_FINISHED_PATH')
+        remote_path_to_list_root = current_app.config.get('SEEDBOX_SCANNER_TARGET_SONARR_PATH')
         page_title = "Seedbox - Sonarr (Terminés)"
         view_type = "finished"
     elif app_type_target == 'radarr':
-        remote_path_to_list_root = current_app.config.get('SEEDBOX_RADARR_FINISHED_PATH')
+        remote_path_to_list_root = current_app.config.get('SEEDBOX_SCANNER_TARGET_RADARR_PATH')
         page_title = "Seedbox - Radarr (Terminés)"
         view_type = "finished"
     elif app_type_target == 'sonarr_working':
-        remote_path_to_list_root = current_app.config.get('SEEDBOX_SONARR_WORKING_PATH')
+        remote_path_to_list_root = current_app.config.get('SEEDBOX_SCANNER_WORKING_SONARR_PATH')
         page_title = "Seedbox - Sonarr (Dossier de Travail)"
         allow_sftp_delete = True
         view_type = "working"
     elif app_type_target == 'radarr_working':
-        remote_path_to_list_root = current_app.config.get('SEEDBOX_RADARR_WORKING_PATH')
+        remote_path_to_list_root = current_app.config.get('SEEDBOX_SCANNER_WORKING_RADARR_PATH')
         page_title = "Seedbox - Radarr (Dossier de Travail)"
         allow_sftp_delete = True
         view_type = "working"
@@ -2289,8 +2289,8 @@ def manual_sftp_download_action():
     sftp_port = current_app.config.get('SEEDBOX_SFTP_PORT')
     sftp_user = current_app.config.get('SEEDBOX_SFTP_USER')
     sftp_password = current_app.config.get('SEEDBOX_SFTP_PASSWORD')
-    local_staging_dir_pathobj = Path(current_app.config.get('STAGING_DIR'))
-    processed_log_file_str = current_app.config.get('PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT') # Récupérer une seule fois
+    local_staging_dir_pathobj = Path(current_app.config.get('LOCAL_STAGING_PATH'))
+    processed_log_file_str = current_app.config.get('LOCAL_PROCESSED_LOG_PATH') # Variable renommée
 
     if not all([remote_path_to_download_posix, app_type_target_from_js, sftp_host, sftp_port, sftp_user, sftp_password, local_staging_dir_pathobj]):
         logger.error("manual_sftp_download_action: Configuration SFTP, chemin distant ou type d'app manquant.")
@@ -2324,16 +2324,16 @@ def manual_sftp_download_action():
                     base_scan_folder_name_on_seedbox = None
                     # Utiliser app_type_target_from_js qui est défini au début de la fonction
                     if app_type_target_from_js == 'sonarr':
-                        config_path_str = current_app.config.get('SEEDBOX_SONARR_FINISHED_PATH')
+                        config_path_str = current_app.config.get('SEEDBOX_SCANNER_TARGET_SONARR_PATH')
                         if config_path_str: base_scan_folder_name_on_seedbox = Path(config_path_str).name
                     elif app_type_target_from_js == 'radarr':
-                        config_path_str = current_app.config.get('SEEDBOX_RADARR_FINISHED_PATH')
+                        config_path_str = current_app.config.get('SEEDBOX_SCANNER_TARGET_RADARR_PATH')
                         if config_path_str: base_scan_folder_name_on_seedbox = Path(config_path_str).name
                     elif app_type_target_from_js == 'sonarr_working':
-                        config_path_str = current_app.config.get('SEEDBOX_SONARR_WORKING_PATH')
+                        config_path_str = current_app.config.get('SEEDBOX_SCANNER_WORKING_SONARR_PATH')
                         if config_path_str: base_scan_folder_name_on_seedbox = Path(config_path_str).name
                     elif app_type_target_from_js == 'radarr_working':
-                        config_path_str = current_app.config.get('SEEDBOX_RADARR_WORKING_PATH')
+                        config_path_str = current_app.config.get('SEEDBOX_SCANNER_WORKING_RADARR_PATH')
                         if config_path_str: base_scan_folder_name_on_seedbox = Path(config_path_str).name
 
                     if base_scan_folder_name_on_seedbox:
@@ -2436,11 +2436,11 @@ def sftp_retrieve_and_process_action():
     sftp_port = current_app.config.get('SEEDBOX_SFTP_PORT')
     sftp_user = current_app.config.get('SEEDBOX_SFTP_USER')
     sftp_password = current_app.config.get('SEEDBOX_SFTP_PASSWORD')
-    local_staging_dir_pathobj = Path(current_app.config.get('STAGING_DIR'))
-    # processed_log_file_str = current_app.config.get('PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT') # For marking items for external script
+    local_staging_dir_pathobj = Path(current_app.config.get('LOCAL_STAGING_PATH'))
+    # processed_log_file_str = current_app.config.get('LOCAL_PROCESSED_LOG_PATH') # For marking items for external script
 
     if not all([sftp_host, sftp_port, sftp_user, sftp_password, local_staging_dir_pathobj]):
-        current_app.logger.error("sftp_retrieve_and_process_action: Configuration SFTP or staging_dir manquante.")
+        current_app.logger.error("sftp_retrieve_and_process_action: Configuration SFTP or local_staging_path manquante.")
         return jsonify({"success": False, "error": "Configuration serveur incomplète pour cette action."}), 500
 
     if not remote_path_posix or not app_type_of_remote_folder:
@@ -2467,16 +2467,16 @@ def sftp_retrieve_and_process_action():
         if success_download:
             current_app.logger.info(f"SFTP R&P: Download de '{item_basename_on_seedbox}' réussi vers '{local_staged_item_path_obj}'.")
             # Update processed_sftp_items.json (logic copied & adapted from manual_sftp_download_action)
-            processed_log_file_str = current_app.config.get('PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT')
+            processed_log_file_str = current_app.config.get('LOCAL_PROCESSED_LOG_PATH')
             if processed_log_file_str:
                 try:
                     # Determine base_scan_folder_name_on_seedbox based on app_type_of_remote_folder
-                    # This assumes app_type_of_remote_folder correctly reflects the *source* folder type (e.g., 'sonarr' for SEEDBOX_SONARR_FINISHED_PATH)
+                    # This assumes app_type_of_remote_folder correctly reflects the *source* folder type (e.g., 'sonarr' for SEEDBOX_SCANNER_TARGET_SONARR_PATH)
                     path_config_key_map = {
-                        'sonarr': 'SEEDBOX_SONARR_FINISHED_PATH',
-                        'radarr': 'SEEDBOX_RADARR_FINISHED_PATH',
-                        'sonarr_working': 'SEEDBOX_SONARR_WORKING_PATH', # Though R&P usually from finished
-                        'radarr_working': 'SEEDBOX_RADARR_WORKING_PATH'  # Though R&P usually from finished
+                        'sonarr': 'SEEDBOX_SCANNER_TARGET_SONARR_PATH',
+                        'radarr': 'SEEDBOX_SCANNER_TARGET_RADARR_PATH',
+                        'sonarr_working': 'SEEDBOX_SCANNER_WORKING_SONARR_PATH', # Though R&P usually from finished
+                        'radarr_working': 'SEEDBOX_SCANNER_WORKING_RADARR_PATH'  # Though R&P usually from finished
                     }
                     base_folder_config_key = path_config_key_map.get(app_type_of_remote_folder)
                     base_scan_folder_name_on_seedbox = None
@@ -2721,15 +2721,15 @@ def trigger_sonarr_import():
     # Récupérer les configs
     sonarr_url = current_app.config.get('SONARR_URL')
     sonarr_api_key = current_app.config.get('SONARR_API_KEY')
-    staging_dir = current_app.config.get('STAGING_DIR')
+    local_staging_path = current_app.config.get('LOCAL_STAGING_PATH')
 
-    if not all([item_name_from_frontend, series_id_from_frontend, sonarr_url, sonarr_api_key, staging_dir]):
+    if not all([item_name_from_frontend, series_id_from_frontend, sonarr_url, sonarr_api_key, local_staging_path]):
         logger.error("trigger_sonarr_import: Données POST manquantes ou config Sonarr/staging incomplète.")
         return jsonify({"success": False, "error": "Données manquantes ou Sonarr/staging non configuré."}), 400
 
     # path_of_item_in_staging_abs est le chemin complet de ce sur quoi l'utilisateur a cliqué dans l'UI du staging local.
-    # item_name_from_frontend est le chemin relatif par rapport à staging_dir.
-    path_of_item_in_staging_abs = (Path(staging_dir) / item_name_from_frontend).resolve()
+    # item_name_from_frontend est le chemin relatif par rapport à local_staging_path.
+    path_of_item_in_staging_abs = (Path(local_staging_path) / item_name_from_frontend).resolve()
 
     if not path_of_item_in_staging_abs.exists():
         logger.error(f"trigger_sonarr_import: Item UI '{item_name_from_frontend}' (résolu en {path_of_item_in_staging_abs}) non trouvé.")
@@ -2879,6 +2879,82 @@ def force_sonarr_import_action():
 # ------------------------------------------------------------------------------
 # trigger_radarr_import (MODIFIÉE POUR UTILISER _execute_mms_radarr_import)
 # ------------------------------------------------------------------------------
+# Import stat module for checking file types from SFTP attributes
+import stat
+from app.utils.sftp_scanner import _connect_sftp, _list_remote_files # Import SFTP utilities
+
+@seedbox_ui_bp.route('/unified_finished_list')
+# Pas besoin de @login_required ici car la page qui l'appelle (index) l'est déjà
+def unified_finished_list():
+    """
+    Scanne les dossiers terminés SFTP de Sonarr et Radarr,
+    fusionne les résultats (fichiers uniquement) et les retourne via un template partiel.
+    """
+    all_finished_files = []
+    sftp_client = None
+    logger_instance = current_app.logger
+
+    try:
+        sftp_client = _connect_sftp()
+        if not sftp_client:
+            raise Exception("Impossible de se connecter au serveur SFTP.")
+
+        # Process a given path (Sonarr or Radarr)
+        def process_sftp_path(path_config_key, app_type_name):
+            processed_files_for_path = []
+            remote_path = current_app.config.get(path_config_key)
+            logger_instance.info(f"Scan du dossier SFTP {app_type_name} terminé: {remote_path}")
+
+            if remote_path:
+                # _list_remote_files returns a list of SFTPAttributes objects
+                sftp_items_attrs = _list_remote_files(sftp_client, remote_path)
+                for item_attr in sftp_items_attrs:
+                    # Check if it's a file (not a directory)
+                    if not stat.S_ISDIR(item_attr.st_mode):
+                        size_bytes = item_attr.st_size
+                        size_readable = "0 B"
+                        if size_bytes > 0:
+                            s_name = ("B", "KB", "MB", "GB", "TB")
+                            s_idx = 0
+                            s_temp = float(size_bytes)
+                            while s_temp >= 1024 and s_idx < len(s_name) - 1:
+                                s_temp /= 1024.0
+                                s_idx += 1
+                            size_readable = f"{s_temp:.2f} {s_name[s_idx]}"
+
+                        processed_files_for_path.append({
+                            'name': item_attr.filename,
+                            'size_human': size_readable,
+                            'size_bytes': size_bytes, # Keep raw bytes if needed later
+                            'app_type': app_type_name,
+                            # 'last_modified': datetime.fromtimestamp(item_attr.st_mtime).strftime('%Y-%m-%d %H:%M:%S') # Optional
+                        })
+            else:
+                logger_instance.warning(f"{path_config_key} n'est pas configuré.")
+            return processed_files_for_path
+
+        # 1. Récupérer les fichiers Sonarr terminés
+        all_finished_files.extend(process_sftp_path('SEEDBOX_SCANNER_TARGET_SONARR_PATH', 'sonarr'))
+
+        # 2. Récupérer les fichiers Radarr terminés
+        all_finished_files.extend(process_sftp_path('SEEDBOX_SCANNER_TARGET_RADARR_PATH', 'radarr'))
+
+        # 3. Trier la liste par nom
+        all_finished_files.sort(key=lambda x: x.get('name', '').lower())
+
+    except Exception as e:
+        logger_instance.error(f"Erreur lors de la création de la liste unifiée SFTP : {e}", exc_info=True)
+        return render_template('seedbox_ui/_error_display.html', error_message=f"Erreur SFTP ou de traitement : {e}")
+    finally:
+        if sftp_client:
+            try:
+                sftp_client.close()
+                logger_instance.info("Connexion SFTP fermée.")
+            except Exception as e_close:
+                logger_instance.error(f"Erreur lors de la fermeture de la connexion SFTP: {e_close}", exc_info=True)
+
+    return render_template('seedbox_ui/_unified_file_list.html', items=all_finished_files)
+
 
 @seedbox_ui_bp.route('/trigger-radarr-import', methods=['POST'])
 @login_required
@@ -2894,9 +2970,9 @@ def trigger_radarr_import():
 
     radarr_url = current_app.config.get('RADARR_URL')
     radarr_api_key = current_app.config.get('RADARR_API_KEY')
-    staging_dir = current_app.config.get('STAGING_DIR')
+    local_staging_path = current_app.config.get('LOCAL_STAGING_PATH')
 
-    if not all([item_name_from_frontend, movie_id_from_frontend is not None, radarr_url, radarr_api_key, staging_dir]):
+    if not all([item_name_from_frontend, movie_id_from_frontend is not None, radarr_url, radarr_api_key, local_staging_path]):
         logger.error(f"{log_prefix_trigger}Données POST manquantes ou config Radarr/staging incomplète.")
         return jsonify({"success": False, "error": "Données manquantes ou Radarr/staging non configuré."}), 400
 
@@ -2906,7 +2982,7 @@ def trigger_radarr_import():
         logger.error(f"{log_prefix_trigger}Movie ID invalide: '{movie_id_from_frontend}'. Doit être un entier.")
         return jsonify({"success": False, "error": "Format de Movie ID invalide."}), 400
 
-    path_of_item_in_staging_abs = (Path(staging_dir) / item_name_from_frontend).resolve()
+    path_of_item_in_staging_abs = (Path(local_staging_path) / item_name_from_frontend).resolve()
     if not path_of_item_in_staging_abs.exists():
         logger.error(f"{log_prefix_trigger}Item UI '{item_name_from_frontend}' (résolu en {path_of_item_in_staging_abs}) non trouvé.")
         return jsonify({"success": False, "error": f"Item '{item_name_from_frontend}' non trouvé dans le staging."}), 404
@@ -2944,17 +3020,17 @@ def trigger_radarr_import():
 @seedbox_ui_bp.route('/cleanup-staging-item/<path:item_name>', methods=['POST'])
 @login_required
 def cleanup_staging_item_action(item_name):
-    staging_dir = current_app.config.get('STAGING_DIR')
-    orphan_exts = current_app.config.get('ORPHAN_EXTENSIONS', [])
+    local_staging_path = current_app.config.get('LOCAL_STAGING_PATH')
+    orphan_exts = current_app.config.get('ORPHAN_CLEANER_EXTENSIONS', []) # Variable renommée
 
     # item_name est le nom de l'item tel qu'affiché dans l'UI (peut être un dossier ou un fichier à la racine du staging)
-    item_to_cleanup_path = os.path.join(staging_dir, item_name)
+    item_to_cleanup_path = os.path.join(local_staging_path, item_name)
     item_to_cleanup_path = os.path.normpath(os.path.abspath(item_to_cleanup_path)) # Sécurisation
 
     logger.info(f"Action de nettoyage manuel demandée pour l'item de staging: {item_to_cleanup_path}")
 
-    # Sécurité : Vérifier que item_to_cleanup_path est bien dans staging_dir
-    if not item_to_cleanup_path.startswith(os.path.normpath(os.path.abspath(staging_dir))):
+    # Sécurité : Vérifier que item_to_cleanup_path est bien dans local_staging_path
+    if not item_to_cleanup_path.startswith(os.path.normpath(os.path.abspath(local_staging_path))):
         flash("Tentative de nettoyage d'un chemin invalide.", 'danger')
         logger.warning(f"Tentative de nettoyage de chemin invalide : {item_to_cleanup_path}")
         return redirect(url_for('seedbox_ui.index'))
@@ -2965,8 +3041,8 @@ def cleanup_staging_item_action(item_name):
         logger.warning(f"Tentative de nettoyage sur un non-dossier : {item_to_cleanup_path}")
         return redirect(url_for('seedbox_ui.index'))
 
-    # Si le dossier est le staging_dir lui-même, on ne fait rien (la fonction de cleanup a aussi ce garde-fou)
-    if item_to_cleanup_path == os.path.normpath(os.path.abspath(staging_dir)):
+    # Si le dossier est le local_staging_path lui-même, on ne fait rien (la fonction de cleanup a aussi ce garde-fou)
+    if item_to_cleanup_path == os.path.normpath(os.path.abspath(local_staging_path)):
         flash("Impossible de nettoyer le dossier de staging racine directement.", "danger")
         logger.warning("Tentative de nettoyage du dossier de staging racine via l'UI.")
         return redirect(url_for('seedbox_ui.index'))
@@ -2974,7 +3050,7 @@ def cleanup_staging_item_action(item_name):
     if os.path.exists(item_to_cleanup_path):
         # Le is_top_level_call=True est important ici car c'est le dossier de base qu'on veut nettoyer.
         # La fonction récursive passera False pour ses appels internes.
-        success = cleanup_staging_subfolder_recursively(item_to_cleanup_path, staging_dir, orphan_exts, is_top_level_call=True)
+        success = cleanup_staging_subfolder_recursively(item_to_cleanup_path, local_staging_path, orphan_exts, is_top_level_call=True)
         if success:
             # Vérifier si le dossier lui-même a été supprimé ou juste son contenu orphelin
             if not os.path.exists(item_to_cleanup_path):
@@ -3057,12 +3133,12 @@ def rtorrent_add_torrent_action():
     # --- Configuration rTorrent et *Arr ---
     if app_type == 'sonarr':
         rtorrent_label = current_app.config.get('RTORRENT_LABEL_SONARR')
-        rtorrent_download_dir = current_app.config.get('RTORRENT_DOWNLOAD_DIR_SONARR')
+        rtorrent_download_dir = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_SONARR_PATH') # Variable renommée
         arr_url = current_app.config.get('SONARR_URL')
         arr_api_key = current_app.config.get('SONARR_API_KEY')
     else: # radarr
         rtorrent_label = current_app.config.get('RTORRENT_LABEL_RADARR')
-        rtorrent_download_dir = current_app.config.get('RTORRENT_DOWNLOAD_DIR_RADARR')
+        rtorrent_download_dir = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_RADARR_PATH') # Variable renommée
         arr_url = current_app.config.get('RADARR_URL')
         arr_api_key = current_app.config.get('RADARR_API_KEY')
 
@@ -3290,22 +3366,22 @@ def add_torrent_and_map():
         return redirect(url_for('seedbox_ui.rtorrent_list')) # Rediriger vers une page pertinente
 
     # 2. Récupérer les configurations de l'application
-    rutorrent_api_url = current_app.config.get('RUTORRENT_API_URL')
-    rutorrent_user = current_app.config.get('RUTORRENT_USER')
-    rutorrent_password = current_app.config.get('RUTORRENT_PASSWORD')
-    ssl_verify_str = current_app.config.get('SEEDBOX_SSL_VERIFY', "True") # Default à "True" si non défini
+    rutorrent_api_url = current_app.config.get('RTORRENT_API_URL')
+    rutorrent_user = current_app.config.get('RTORRENT_USER')
+    rutorrent_password = current_app.config.get('RTORRENT_PASSWORD')
+    ssl_verify_str = current_app.config.get('RTORRENT_SSL_VERIFY', "True") # Default à "True" si non défini
 
     if not rutorrent_api_url:
         flash("L'URL de l'API ruTorrent n'est pas configurée.", 'danger')
-        current_app.logger.error("add_torrent_and_map: RUTORRENT_API_URL non configuré.")
+        current_app.logger.error("add_torrent_and_map: RTORRENT_API_URL non configuré.")
         return redirect(url_for('seedbox_ui.rtorrent_list'))
 
     # 3. Construire le download_dir
     base_download_dir = ""
     if media_type == 'series':
-        base_download_dir = current_app.config.get('RTORRENT_DOWNLOAD_DIR_SONARR')
+        base_download_dir = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_SONARR_PATH') # Variable renommée
     elif media_type == 'movie':
-        base_download_dir = current_app.config.get('RTORRENT_DOWNLOAD_DIR_RADARR')
+        base_download_dir = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_RADARR_PATH') # Variable renommée
     else:
         flash(f"Type de média inconnu: {media_type}.", 'danger')
         current_app.logger.error(f"add_torrent_and_map: Type de média inconnu '{media_type}'.")
@@ -3377,13 +3453,13 @@ def process_staged_with_association(item_name_in_staging):
     """
     current_app.logger.info(f"Traitement avec association demandé pour : {item_name_in_staging}")
 
-    staging_dir = current_app.config.get('STAGING_DIR')
-    if not staging_dir: # Should not happen if app is configured
+    local_staging_path = current_app.config.get('LOCAL_STAGING_PATH')
+    if not local_staging_path: # Should not happen if app is configured
         flash("Le dossier de staging n'est pas configuré dans l'application.", "danger")
-        current_app.logger.error("process_staged_with_association: STAGING_DIR non configuré.")
+        current_app.logger.error("process_staged_with_association: LOCAL_STAGING_PATH non configuré.")
         return redirect(url_for('seedbox_ui.index'))
 
-    path_of_item_in_staging_abs = (Path(staging_dir) / item_name_in_staging).resolve()
+    path_of_item_in_staging_abs = (Path(local_staging_path) / item_name_in_staging).resolve()
 
     if not path_of_item_in_staging_abs.exists():
         flash(f"L'item '{item_name_in_staging}' n'a pas été trouvé dans le dossier de staging.", "danger")
@@ -3465,12 +3541,12 @@ def _run_automated_processing_cycle():
     # 1. Récupérer les configurations nécessaires
     rtorrent_label_sonarr = current_app.config.get('RTORRENT_LABEL_SONARR')
     rtorrent_label_radarr = current_app.config.get('RTORRENT_LABEL_RADARR')
-    seedbox_sonarr_finished_path = current_app.config.get('SEEDBOX_SONARR_FINISHED_PATH')
-    seedbox_radarr_finished_path = current_app.config.get('SEEDBOX_RADARR_FINISHED_PATH')
-    staging_dir = current_app.config.get('STAGING_DIR')
+    seedbox_sonarr_finished_path = current_app.config.get('SEEDBOX_SCANNER_TARGET_SONARR_PATH') # Variable renommée
+    seedbox_radarr_finished_path = current_app.config.get('SEEDBOX_SCANNER_TARGET_RADARR_PATH') # Variable renommée
+    local_staging_path = current_app.config.get('LOCAL_STAGING_PATH')
 
-    if not all([rtorrent_label_sonarr, rtorrent_label_radarr, seedbox_sonarr_finished_path, seedbox_radarr_finished_path, staging_dir]):
-        current_app.logger.error("Automatisation: Configuration manquante (labels rTorrent, chemins distants finis, ou staging_dir). Cycle annulé.")
+    if not all([rtorrent_label_sonarr, rtorrent_label_radarr, seedbox_sonarr_finished_path, seedbox_radarr_finished_path, local_staging_path]):
+        current_app.logger.error("Automatisation: Configuration manquante (labels rTorrent, chemins distants finis, ou local_staging_path). Cycle annulé.")
         return {"success": False, "message": "Configuration manquante pour l'automatisation."}
 
     # 2. Lister les torrents depuis rTorrent
@@ -3545,7 +3621,7 @@ def _run_automated_processing_cycle():
         # remote_full_path_to_download still uses torrent_name_rtorrent, as that's the name on the remote
         remote_full_path_to_download = str(Path(remote_base_path) / torrent_name_rtorrent).replace('\\', '/')
         # local_staged_item_name is now taken from association data (release_name_expected_on_seedbox)
-        local_staged_item_path_abs = Path(staging_dir) / local_staged_item_name
+        local_staged_item_path_abs = Path(local_staging_path) / local_staged_item_name
 
         current_app.logger.info(f"Automatisation: Préparation du téléchargement SFTP pour '{torrent_name_rtorrent}' (attendu localement comme '{local_staged_item_name}') depuis '{remote_full_path_to_download}' vers '{local_staged_item_path_abs}'.")
 
@@ -3645,22 +3721,22 @@ def api_process_staged_item():
 
     current_app.logger.info(f"API Process Staged: Traitement demandé pour l'item: '{item_name}'")
 
-    staging_dir = current_app.config.get('STAGING_DIR')
-    if not staging_dir:
-        current_app.logger.error("API Process Staged: STAGING_DIR n'est pas configuré dans l'application.")
+    local_staging_path = current_app.config.get('LOCAL_STAGING_PATH')
+    if not local_staging_path:
+        current_app.logger.error("API Process Staged: LOCAL_STAGING_PATH n'est pas configuré dans l'application.")
         # Cette erreur est côté serveur, donc 500 est plus approprié.
-        return jsonify({"success": False, "error": "Configuration serveur incomplète (STAGING_DIR)."}), 500
+        return jsonify({"success": False, "error": "Configuration serveur incomplète (LOCAL_STAGING_PATH)."}), 500
 
     # Utiliser Path pour construire le chemin et normaliser
     # item_name pourrait contenir des sous-chemins ex: "dossier/fichier.mkv"
     # Path.resolve() n'est pas idéal ici car il peut échouer si une partie du chemin n'existe pas.
     # On veut joindre et normaliser pour la comparaison et la vérification d'existence.
-    item_path = (Path(staging_dir) / item_name).resolve() # resolve() pour obtenir le chemin absolu canonique
+    item_path = (Path(local_staging_path) / item_name).resolve() # resolve() pour obtenir le chemin absolu canonique
 
-    # Sécurité: Vérifier que le chemin résolu est bien DANS le staging_dir
+    # Sécurité: Vérifier que le chemin résolu est bien DANS le local_staging_path
     # Cela empêche les traversées de répertoire comme item_name = "../../../../etc/passwd"
-    if not item_path.is_relative_to(Path(staging_dir).resolve()):
-        current_app.logger.error(f"API Process Staged: Tentative d'accès hors du STAGING_DIR détectée pour '{item_name}'. Chemin résolu: {item_path}")
+    if not item_path.is_relative_to(Path(local_staging_path).resolve()):
+        current_app.logger.error(f"API Process Staged: Tentative d'accès hors du LOCAL_STAGING_PATH détectée pour '{item_name}'. Chemin résolu: {item_path}")
         return jsonify({"success": False, "error": "Chemin d'accès invalide."}), 400
 
     if not item_path.exists():
@@ -3769,10 +3845,10 @@ def batch_map_to_sonarr_series_action():
 
     logger.info(f"Batch Map Sonarr: Traitement de {len(item_names_in_staging)} items pour la série ID {series_id_target}.")
 
-    staging_dir = current_app.config.get('STAGING_DIR')
-    if not staging_dir:
-        logger.error("Batch Map Sonarr: STAGING_DIR non configuré.")
-        return jsonify({"success": False, "error": "Configuration serveur incomplète (STAGING_DIR)."}), 500
+    local_staging_path = current_app.config.get('LOCAL_STAGING_PATH')
+    if not local_staging_path:
+        logger.error("Batch Map Sonarr: LOCAL_STAGING_PATH non configuré.")
+        return jsonify({"success": False, "error": "Configuration serveur incomplète (LOCAL_STAGING_PATH)."}), 500
 
     successful_imports = 0
     failed_imports_details = [] # Pour stocker les détails des échecs
@@ -3780,7 +3856,7 @@ def batch_map_to_sonarr_series_action():
     for item_name in item_names_in_staging:
         logger.info(f"Batch Map Sonarr: Traitement de l'item '{item_name}' pour la série {series_id_target}.")
 
-        full_staging_path_str = str((Path(staging_dir) / item_name).resolve())
+        full_staging_path_str = str((Path(local_staging_path) / item_name).resolve())
         if not os.path.exists(full_staging_path_str):
             logger.warning(f"Batch Map Sonarr: Item '{item_name}' non trouvé dans le staging à '{full_staging_path_str}'. Ignoré.")
             failed_imports_details.append({"item": item_name, "reason": "Non trouvé dans le staging"})
@@ -3855,9 +3931,9 @@ def retry_problematic_import_action(torrent_hash):
         return redirect(url_for('seedbox_ui.index'))
 
     item_name_in_staging = association_data.get('release_name')
-    staging_dir = current_app.config.get('STAGING_DIR')
+    local_staging_path = current_app.config.get('LOCAL_STAGING_PATH')
 
-    if not item_name_in_staging or not staging_dir or not (Path(staging_dir) / item_name_in_staging).exists():
+    if not item_name_in_staging or not local_staging_path or not (Path(local_staging_path) / item_name_in_staging).exists():
         flash(f"L'item '{item_name_in_staging or 'Inconnu'}' n'est plus dans le staging ou informations manquantes. Impossible de réessayer.", "warning")
         if torrent_hash: # S'assurer qu'on a un hash pour mettre à jour le statut
             torrent_map_manager.update_torrent_status_in_map(torrent_hash, "error_retry_failed_item_not_in_staging", "Item non trouvé dans le staging pour la relance.")
@@ -4305,10 +4381,10 @@ def sftp_add_and_import_arr_item_action():
     sftp_port = int(current_app.config.get('SEEDBOX_SFTP_PORT', 22))
     sftp_user = current_app.config.get('SEEDBOX_SFTP_USER')
     sftp_password = current_app.config.get('SEEDBOX_SFTP_PASSWORD')
-    local_staging_dir_pathobj = Path(current_app.config.get('STAGING_DIR'))
+    local_staging_dir_pathobj = Path(current_app.config.get('LOCAL_STAGING_PATH'))
 
     if not all([sftp_host, sftp_user, sftp_password, local_staging_dir_pathobj.exists()]):
-        logger.error("SFTP Add&Import: Configuration SFTP ou staging_dir manquante/invalide pour le rapatriement.")
+        logger.error("SFTP Add&Import: Configuration SFTP ou local_staging_path manquante/invalide pour le rapatriement.")
         # On pourrait vouloir supprimer le média ajouté à *Arr ici, mais c'est complexe.
         return jsonify({"success": False, "error": "Configuration serveur incomplète pour le rapatriement SFTP."}), 500
 
@@ -4331,7 +4407,7 @@ def sftp_add_and_import_arr_item_action():
         if success_download:
             logger.info(f"SFTP Add&Import: Téléchargement de '{item_basename_on_seedbox}' réussi vers '{local_staged_item_path_obj}'.")
             # Mise à jour de processed_sftp_items.json
-            processed_log_file_str = current_app.config.get('PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT')
+            processed_log_file_str = current_app.config.get('LOCAL_PROCESSED_LOG_PATH')
             if processed_log_file_str:
                 try:
                     base_scan_folder_name_on_seedbox = Path(sftp_details.get('app_type_of_remote_folder', 'unknown_remote_folder')).name # Utiliser le type de dossier distant

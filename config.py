@@ -15,87 +15,81 @@ else:
     print("           Les variables d'environnement pourraient ne pas être chargées.")
 
 class Config:
-    # --- Clé Secrète Globale ---
-    SECRET_KEY = os.environ.get('SECRET_KEY') or 'une-cle-secrete-tres-forte-et-aleatoire-a-definir-absolument'
+    # --- FLASK CORE ---
+    FLASK_APP = os.getenv('FLASK_APP', 'run.py')
+    SECRET_KEY = os.getenv('SECRET_KEY', 'une-cle-secrete-tres-forte-et-aleatoire-a-definir-absolument')
+    FLASK_DEBUG = os.getenv('FLASK_DEBUG', 'False').lower() in ('true', '1', 't')
+    APP_PASSWORD = os.getenv('APP_PASSWORD')
 
-    # --- Configuration Globale Flask ---
-    DEBUG = os.environ.get('FLASK_DEBUG', '0').lower() in ('true', '1', 't')
+    # --- PLEX ---
+    PLEX_URL = os.getenv('PLEX_URL')
+    PLEX_TOKEN = os.getenv('PLEX_TOKEN')
 
-    # --- URL de l'API interne de MMS pour traiter les items du staging ---
-    MMS_API_PROCESS_STAGING_URL = os.getenv(
-        'MMS_API_PROCESS_STAGING_URL',
-        f"http://127.0.0.1:{os.getenv('FLASK_RUN_PORT', 5001)}/seedbox/process-staging-item"
-    )
-    
-    # --- Configurations pour Plex Web Editor ---
-    PLEX_URL = os.environ.get('PLEX_URL')
-    PLEX_TOKEN = os.environ.get('PLEX_TOKEN')
-    PERFORM_ACTUAL_DELETION=True
-    #PERFORM_ACTUAL_DELETION = os.environ.get('PERFORM_ACTUAL_DELETION', 'False').lower() in ('true', '1', 't')
-    default_orphan_extensions_str = ".nfo,.jpg,.jpeg,.png,.txt,.srt,.sub,.idx,.lnk,.exe,.vsmeta,.edl"
-    orphan_extensions_str = os.environ.get('ORPHAN_EXTENSIONS', default_orphan_extensions_str)
-    ORPHAN_EXTENSIONS = [ext.strip().lower() for ext in orphan_extensions_str.split(',') if ext.strip()]
+    # --- *ARR SUITE ---
+    SONARR_URL = os.getenv('SONARR_URL')
+    SONARR_API_KEY = os.getenv('SONARR_API_KEY')
+    RADARR_URL = os.getenv('RADARR_URL')
+    RADARR_API_KEY = os.getenv('RADARR_API_KEY')
+    RADARR_TAG_ON_ARCHIVE = os.getenv('RADARR_TAG_ON_ARCHIVE', 'vu')
+    PROWLARR_URL = os.getenv('PROWLARR_URL')
+    PROWLARR_API_KEY = os.getenv('PROWLARR_API_KEY')
 
-    # --- Configurations pour Seedbox UI / Torrent Management ---
-    STAGING_DIR = os.environ.get('STAGING_DIR')
-    SONARR_URL = os.environ.get('SONARR_URL')
-    SONARR_API_KEY = os.environ.get('SONARR_API_KEY')
-    RADARR_URL = os.environ.get('RADARR_URL')
-    RADARR_API_KEY = os.environ.get('RADARR_API_KEY')
-    RADARR_TAG_ON_ARCHIVE = os.environ.get('RADARR_TAG_ON_ARCHIVE', 'vu')
-    PENDING_TORRENTS_MAP_FILE = os.environ.get(
-        'PENDING_TORRENTS_MAP_FILE',
-        os.path.join(INSTANCE_FOLDER_PATH, 'pending_torrents_map.json')
-    )
-    RTORRENT_POST_ADD_DELAY_SECONDS = int(os.getenv('RTORRENT_POST_ADD_DELAY_SECONDS', 3))
+    # --- SEEDBOX: rTORRENT/ruTORRENT API ---
+    RTORRENT_API_URL = os.getenv('RTORRENT_API_URL')
+    RTORRENT_USER = os.getenv('RTORRENT_USER')
+    RTORRENT_PASSWORD = os.getenv('RTORRENT_PASSWORD')
+    RTORRENT_SSL_VERIFY = os.getenv('RTORRENT_SSL_VERIFY', 'False').lower() in ('true', '1', 't')
 
-    # --- rTorrent/ruTorrent httprpc API Configuration ---
-    RUTORRENT_API_URL = os.getenv('RUTORRENT_API_URL')
-    RUTORRENT_USER = os.getenv('RUTORRENT_USER')
-    RUTORRENT_PASSWORD = os.getenv('RUTORRENT_PASSWORD')
-    _raw_ssl_verify = os.getenv('SEEDBOX_SSL_VERIFY', 'False')
-    SEEDBOX_SSL_VERIFY = _raw_ssl_verify.lower() in ['true', '1', 't', 'yes']
+    # --- SEEDBOX: SFTP ---
+    SEEDBOX_SFTP_HOST = os.getenv('SEEDBOX_SFTP_HOST')
+    SEEDBOX_SFTP_PORT = int(os.getenv('SEEDBOX_SFTP_PORT', 22)) # Default SFTP port
+    SEEDBOX_SFTP_USER = os.getenv('SEEDBOX_SFTP_USER')
+    SEEDBOX_SFTP_PASSWORD = os.getenv('SEEDBOX_SFTP_PASSWORD')
+
+    # --- PATHS & DIRECTORIES ---
+    # -- Chemins LOCAUX (sur la machine qui exécute MMS) --
+    LOCAL_STAGING_PATH = os.getenv('LOCAL_STAGING_PATH')
+    LOCAL_PROCESSED_LOG_PATH = os.getenv('LOCAL_PROCESSED_LOG_PATH', os.path.join(INSTANCE_FOLDER_PATH, 'processed_sftp_items.json'))
+
+    # -- Chemins DISTANTS (sur la seedbox Linux) --
     RTORRENT_LABEL_SONARR = os.getenv('RTORRENT_LABEL_SONARR', 'sonarr')
     RTORRENT_LABEL_RADARR = os.getenv('RTORRENT_LABEL_RADARR', 'radarr')
-    RTORRENT_DOWNLOAD_DIR_SONARR = os.getenv('RTORRENT_DOWNLOAD_DIR_SONARR', '/downloads/incomplete/sonarr_temp/')
-    RTORRENT_DOWNLOAD_DIR_RADARR = os.getenv('RTORRENT_DOWNLOAD_DIR_RADARR', '/downloads/incomplete/radarr_temp/')
+    SEEDBOX_RTORRENT_INCOMING_SONARR_PATH = os.getenv('SEEDBOX_RTORRENT_INCOMING_SONARR_PATH')
+    SEEDBOX_RTORRENT_INCOMING_RADARR_PATH = os.getenv('SEEDBOX_RTORRENT_INCOMING_RADARR_PATH')
+    SEEDBOX_SCANNER_TARGET_SONARR_PATH = os.getenv('SEEDBOX_SCANNER_TARGET_SONARR_PATH')
+    SEEDBOX_SCANNER_TARGET_RADARR_PATH = os.getenv('SEEDBOX_SCANNER_TARGET_RADARR_PATH')
+    SEEDBOX_SCANNER_WORKING_SONARR_PATH = os.getenv('SEEDBOX_SCANNER_WORKING_SONARR_PATH')
+    SEEDBOX_SCANNER_WORKING_RADARR_PATH = os.getenv('SEEDBOX_SCANNER_WORKING_RADARR_PATH')
+    
+    # --- YGGTORENT ---
+    YGG_INDEXER_ID = os.getenv('YGG_INDEXER_ID')
+    YGG_BASE_URL = os.getenv('YGG_BASE_URL', 'https://www.yggtorrent.top')
+    YGG_COOKIE = os.getenv('YGG_COOKIE')
+    YGG_USER_AGENT = os.getenv('YGG_USER_AGENT', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36')
 
-    # --- SFTP Configuration ---
-    SEEDBOX_SFTP_HOST = os.environ.get('SEEDBOX_SFTP_HOST')
-    SEEDBOX_SFTP_PORT = int(os.environ.get('SEEDBOX_SFTP_PORT', 22))
-    SEEDBOX_SFTP_USER = os.environ.get('SEEDBOX_SFTP_USER')
-    SEEDBOX_SFTP_PASSWORD = os.environ.get('SEEDBOX_SFTP_PASSWORD')
-    SEEDBOX_SONARR_FINISHED_PATH = os.environ.get('SEEDBOX_SONARR_FINISHED_PATH')
-    SEEDBOX_RADARR_FINISHED_PATH = os.environ.get('SEEDBOX_RADARR_FINISHED_PATH')
-    SEEDBOX_SONARR_WORKING_PATH = os.environ.get('SEEDBOX_SONARR_WORKING_PATH')
-    SEEDBOX_RADARR_WORKING_PATH = os.environ.get('SEEDBOX_RADARR_WORKING_PATH')
+    # --- ADVANCED & TASKS ---
+    SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES = int(os.getenv('SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES', 15))
+    ORPHAN_CLEANER_PERFORM_DELETION = os.getenv('ORPHAN_CLEANER_PERFORM_DELETION', 'False').lower() in ('true', '1', 't')
+    _default_orphan_extensions_str = ".nfo,.jpg,.jpeg,.png,.txt,.srt,.sub,.idx,.lnk,.exe,.vsmeta,.edl"
+    _orphan_extensions_env = os.getenv('ORPHAN_CLEANER_EXTENSIONS', _default_orphan_extensions_str)
+    ORPHAN_CLEANER_EXTENSIONS = [ext.strip().lower() for ext in _orphan_extensions_env.split(',') if ext.strip()]
+    MMS_API_PROCESS_STAGING_URL = os.getenv('MMS_API_PROCESS_STAGING_URL', f"http://127.0.0.1:{os.getenv('FLASK_RUN_PORT', 5001)}/seedbox/process-staging-item")
+    SFTP_SCANNER_GUARDFRAIL_ENABLED = os.getenv('SFTP_SCANNER_GUARDFRAIL_ENABLED', 'True').lower() in ('true', '1', 't')
 
-    PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT = os.environ.get('PROCESSED_ITEMS_LOG_FILE_PATH_FOR_SFTP_SCRIPT')
-    SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES = int(os.environ.get('SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES', 30))
 
-    # Enable or disable the SFTP scanner guardrail feature
-    # If True, the scanner will check if media already exists in Sonarr/Radarr
-    # before downloading from SFTP.
-    SFTP_SCANNER_GUARDFRAIL_ENABLED = os.environ.get('SFTP_SCANNER_GUARDFRAIL_ENABLED', 'True').lower() == 'true'
+    # --- Anciennes variables (à supprimer/migrer après vérification que plus rien ne les utilise) ---
+    PENDING_TORRENTS_MAP_FILE = os.getenv(
+        'PENDING_TORRENTS_MAP_FILE',
+        os.path.join(INSTANCE_FOLDER_PATH, 'pending_torrents_map.json')
+    ) # Si utilisé, vérifier sa pertinence ou migrer vers LOCAL_PROCESSED_LOG_PATH si fonction similaire
+    RTORRENT_POST_ADD_DELAY_SECONDS = int(os.getenv('RTORRENT_POST_ADD_DELAY_SECONDS', 3)) # Spécifique à rTorrent, garder si pertinent
+    # SFTP_SCANNER_GUARDFRAIL_ENABLED = os.getenv('SFTP_SCANNER_GUARDFRAIL_ENABLED', 'True').lower() == 'true' # Garder si cette logique est toujours utilisée
 
-    # --- Configuration Interface de Configuration ---
-    APP_PASSWORD = os.environ.get('APP_PASSWORD')
-
-    # --- Prowlarr API Configuration ---
-    PROWLARR_URL = os.environ.get('PROWLARR_URL')
-    PROWLARR_API_KEY = os.environ.get('PROWLARR_API_KEY')
-
-    # --- YGGTorrent Specific Configuration ---
-    YGG_INDEXER_ID = os.environ.get('YGG_INDEXER_ID')
-    YGG_BASE_URL = os.environ.get('YGG_BASE_URL', 'https://www.yggtorrent.top')
-    YGG_COOKIE = os.environ.get('YGG_COOKIE')
-    YGG_USER_AGENT = os.environ.get('YGG_USER_AGENT', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36')
 
 # --- FIN DE LA CLASSE CONFIG ---
 
 
 # --- Section de vérification et d'avertissements (exécutée une seule fois au démarrage) ---
-# Ce code est maintenant en dehors de la classe, donc il peut accéder aux attributs de Config sans NameError.
 def check_and_print_startup_info():
     if not Config.APP_PASSWORD:
         print("-" * 70)
@@ -108,13 +102,17 @@ def check_and_print_startup_info():
     if not Config.PLEX_TOKEN: _missing_configs.append("PLEX_TOKEN")
     if not Config.SECRET_KEY or Config.SECRET_KEY == 'une-cle-secrete-tres-forte-et-aleatoire-a-definir-absolument':
         _missing_configs.append("SECRET_KEY (non sécurisée ou manquante)")
-    if not Config.STAGING_DIR: _missing_configs.append("STAGING_DIR")
+    if not Config.LOCAL_STAGING_PATH: _missing_configs.append("LOCAL_STAGING_PATH (anciennement STAGING_DIR)")
     if not Config.SONARR_URL: _missing_configs.append("SONARR_URL")
     if not Config.SONARR_API_KEY: _missing_configs.append("SONARR_API_KEY")
     if not Config.RADARR_URL: _missing_configs.append("RADARR_URL")
     if not Config.RADARR_API_KEY: _missing_configs.append("RADARR_API_KEY")
     if not Config.PROWLARR_URL: _missing_configs.append("PROWLARR_URL")
     if not Config.PROWLARR_API_KEY: _missing_configs.append("PROWLARR_API_KEY")
+    if not Config.RTORRENT_API_URL: _missing_configs.append("RTORRENT_API_URL")
+    if not Config.SEEDBOX_SFTP_HOST: _missing_configs.append("SEEDBOX_SFTP_HOST")
+    if not Config.MMS_API_PROCESS_STAGING_URL: _missing_configs.append("MMS_API_PROCESS_STAGING_URL")
+
 
     if _missing_configs:
         print("-" * 70)
@@ -124,19 +122,19 @@ def check_and_print_startup_info():
         print("            Veuillez les définir correctement dans votre fichier .env.")
         print("-" * 70)
 
-    if not Config.PERFORM_ACTUAL_DELETION:
+    if not Config.ORPHAN_CLEANER_PERFORM_DELETION:
         print("-" * 70)
         print("INFO      : Mode SIMULATION (Dry Run) activé pour le nettoyage des dossiers.")
-        print("            (PERFORM_ACTUAL_DELETION est 'False' ou non défini dans .env)")
+        print("            (ORPHAN_CLEANER_PERFORM_DELETION est 'False' ou non défini dans .env)")
         print("-" * 70)
     else:
         print("-" * 70)
         print("ATTENTION : Mode SUPPRESSION RÉELLE activé pour le nettoyage des dossiers !")
-        print("            (PERFORM_ACTUAL_DELETION est 'True' dans .env)")
+        print("            (ORPHAN_CLEANER_PERFORM_DELETION est 'True' dans .env)")
         print("-" * 70)
 
-    print(f"INFO      : Extensions orphelines pour nettoyage : {Config.ORPHAN_EXTENSIONS}")
-    print(f"INFO      : Fichier de mapping des torrents configuré pour : {Config.PENDING_TORRENTS_MAP_FILE}")
+    print(f"INFO      : Extensions orphelines pour nettoyage : {Config.ORPHAN_CLEANER_EXTENSIONS}")
+    # print(f"INFO      : Fichier de mapping des torrents configuré pour : {Config.PENDING_TORRENTS_MAP_FILE}") # Commenté car PENDING_TORRENTS_MAP_FILE est marqué comme ancien
 
 # Appeler la fonction de vérification au moment de l'import du module config
 check_and_print_startup_info()
@@ -146,12 +144,42 @@ check_and_print_startup_info()
 # Pour tester si les variables sont bien chargées (optionnel, commenter après vérification)
 # if __name__ == '__main__':
 #     print(f"Config.SECRET_KEY: {Config.SECRET_KEY}")
+#     print(f"Config.FLASK_DEBUG: {Config.FLASK_DEBUG}")
+#     print(f"Config.APP_PASSWORD: {Config.APP_PASSWORD}")
 #     print(f"Config.PLEX_URL: {Config.PLEX_URL}")
-#     print(f"Config.STAGING_DIR: {Config.STAGING_DIR}")
-#     print(f"Config.PENDING_TORRENTS_MAP_FILE: {Config.PENDING_TORRENTS_MAP_FILE}")
-#     print(f"Config.DEBUG: {Config.DEBUG}")
+#     print(f"Config.PLEX_TOKEN: {Config.PLEX_TOKEN}")
+#     print(f"Config.SONARR_URL: {Config.SONARR_URL}")
+#     print(f"Config.SONARR_API_KEY: {Config.SONARR_API_KEY}")
+#     print(f"Config.RADARR_URL: {Config.RADARR_URL}")
+#     print(f"Config.RADARR_API_KEY: {Config.RADARR_API_KEY}")
+#     print(f"Config.PROWLARR_URL: {Config.PROWLARR_URL}")
+#     print(f"Config.PROWLARR_API_KEY: {Config.PROWLARR_API_KEY}")
+#     print(f"Config.RTORRENT_API_URL: {Config.RTORRENT_API_URL}")
+#     print(f"Config.RTORRENT_USER: {Config.RTORRENT_USER}")
+#     print(f"Config.RTORRENT_PASSWORD: {Config.RTORRENT_PASSWORD}")
+#     print(f"Config.RTORRENT_SSL_VERIFY: {Config.RTORRENT_SSL_VERIFY}")
+#     print(f"Config.SEEDBOX_SFTP_HOST: {Config.SEEDBOX_SFTP_HOST}")
+#     print(f"Config.SEEDBOX_SFTP_PORT: {Config.SEEDBOX_SFTP_PORT}")
+#     print(f"Config.SEEDBOX_SFTP_USER: {Config.SEEDBOX_SFTP_USER}")
+#     print(f"Config.SEEDBOX_SFTP_PASSWORD: {Config.SEEDBOX_SFTP_PASSWORD}")
+#     print(f"Config.LOCAL_STAGING_PATH: {Config.LOCAL_STAGING_PATH}")
+#     print(f"Config.LOCAL_PROCESSED_LOG_PATH: {Config.LOCAL_PROCESSED_LOG_PATH}")
+#     print(f"Config.RTORRENT_LABEL_SONARR: {Config.RTORRENT_LABEL_SONARR}")
+#     print(f"Config.RTORRENT_LABEL_RADARR: {Config.RTORRENT_LABEL_RADARR}")
+#     print(f"Config.SEEDBOX_RTORRENT_INCOMING_SONARR_PATH: {Config.SEEDBOX_RTORRENT_INCOMING_SONARR_PATH}")
+#     print(f"Config.SEEDBOX_RTORRENT_INCOMING_RADARR_PATH: {Config.SEEDBOX_RTORRENT_INCOMING_RADARR_PATH}")
+#     print(f"Config.SEEDBOX_SCANNER_TARGET_SONARR_PATH: {Config.SEEDBOX_SCANNER_TARGET_SONARR_PATH}")
+#     print(f"Config.SEEDBOX_SCANNER_TARGET_RADARR_PATH: {Config.SEEDBOX_SCANNER_TARGET_RADARR_PATH}")
+#     print(f"Config.SEEDBOX_SCANNER_WORKING_SONARR_PATH: {Config.SEEDBOX_SCANNER_WORKING_SONARR_PATH}")
+#     print(f"Config.SEEDBOX_SCANNER_WORKING_RADARR_PATH: {Config.SEEDBOX_SCANNER_WORKING_RADARR_PATH}")
+#     print(f"Config.YGG_INDEXER_ID: {Config.YGG_INDEXER_ID}")
+#     print(f"Config.YGG_BASE_URL: {Config.YGG_BASE_URL}")
+#     print(f"Config.YGG_COOKIE: {Config.YGG_COOKIE}")
+#     print(f"Config.YGG_USER_AGENT: {Config.YGG_USER_AGENT}")
+#     print(f"Config.SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES: {Config.SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES}")
+#     print(f"Config.ORPHAN_CLEANER_PERFORM_DELETION: {Config.ORPHAN_CLEANER_PERFORM_DELETION}")
+#     print(f"Config.ORPHAN_CLEANER_EXTENSIONS: {Config.ORPHAN_CLEANER_EXTENSIONS}")
 #     print(f"Instance folder path: {INSTANCE_FOLDER_PATH}")
-#     # Vérifier si le dossier instance existe, sinon le créer
 #     if not os.path.exists(INSTANCE_FOLDER_PATH):
 #         try:
 #             os.makedirs(INSTANCE_FOLDER_PATH)

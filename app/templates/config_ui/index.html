@@ -1,0 +1,42 @@
+<!-- Extrait du nouveau template config_ui/index.html -->
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="container">
+    <h1>Configuration de l'Application</h1>
+    <p class="text-muted">Modifiez les valeurs ci-dessous et sauvegardez pour mettre à jour votre fichier <code>.env</code>.</p>
+
+    <form method="post" action="{{ url_for('config_ui.save_config') }}"> {# Corrigé pour pointer vers save_config #}
+        {% for item in config_items %}
+            {% if item.type == 'header' %}
+                <h3 class="mt-4 mb-3">{{ item.text }}</h3>
+
+            {% elif item.type == 'variable' %}
+                <div class="mb-3">
+                    <label for="{{ item.key }}" class="form-label"><code>{{ item.key }}</code></label>
+                    <input type="{{ 'password' if item.is_password else 'text' }}"
+                           class="form-control"
+                           id="{{ item.key }}"
+                           name="{{ item.key }}"
+                           value="{{ item.value }}">
+                    {% if item.description %}
+                        <div class="form-text text-muted fst-italic">{{ item.description }}</div>
+                    {% endif %}
+                </div>
+
+            {% elif item.type == 'comment' %}
+                <p class="text-muted fst-italic">{{ item.text }}</p>
+
+            {% elif item.type == 'description' %} {# Distinguer description de comment si besoin #}
+                 <p class="text-muted">{{ item.text }}</p>
+
+            {% elif item.type == 'spacer' %}
+                <hr class="my-4">
+
+            {% endif %}
+        {% endfor %}
+
+        <button type="submit" class="btn btn-primary mt-3">Sauvegarder la Configuration</button>
+    </form>
+</div>
+{% endblock %}
