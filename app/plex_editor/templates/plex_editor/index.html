@@ -513,7 +513,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 fetch(`{{ url_for('plex_editor.archive_movie_route') }}`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ ratingKey: ratingKey, options: options })
                 })
                 .then(response => response.json())
@@ -567,7 +567,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 fetch(`{{ url_for('plex_editor.archive_show_route') }}`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ ratingKey: ratingKey, options: options })
                 })
                 .then(response => response.json())
@@ -611,7 +611,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 fetch(`{{ url_for('plex_editor.reject_show_route') }}`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ ratingKey: ratingKey })
                 })
                 .then(response => response.json())
