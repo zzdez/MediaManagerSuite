@@ -167,6 +167,38 @@ def get_media_items():
 
                 for item_from_lib in items_from_lib:
                     item_from_lib.library_name = library.title
+                    # Calcul de la taille totale
+                    total_size_bytes = 0
+                    try:
+                        if hasattr(item_from_lib, 'media') and item_from_lib.media: # Pour les films
+                            for media_part in item_from_lib.media:
+                                for part in media_part.parts:
+                                    total_size_bytes += part.size
+                        elif item_from_lib.type == 'show': # Pour les séries
+                            # item_from_lib.reload() # Peut être très lent, à utiliser avec prudence
+                            for season_item in item_from_lib.seasons():
+                                for episode_item in season_item.episodes():
+                                    if hasattr(episode_item, 'media') and episode_item.media:
+                                        for media_part in episode_item.media:
+                                            for part in media_part.parts:
+                                                total_size_bytes += part.size
+                    except Exception as e_size:
+                        current_app.logger.warning(f"API get_media_items: Erreur calcul taille pour '{item_from_lib.title}': {e_size}")
+
+                    item_from_lib.total_size_on_disk_bytes = total_size_bytes
+
+                    # Formattage de la taille pour l'affichage
+                    if total_size_bytes == 0:
+                        item_from_lib.total_size_on_disk_display = "0 B"
+                    else:
+                        size_name = ("B", "KB", "MB", "GB", "TB")
+                        i = 0
+                        temp_size = float(total_size_bytes)
+                        while temp_size >= 1024 and i < len(size_name) - 1:
+                            temp_size /= 1024.0
+                            i += 1
+                        item_from_lib.total_size_on_disk_display = f"{temp_size:.2f} {size_name[i]}"
+
                     if item_from_lib.type == 'show':
                         item_from_lib.viewed_episodes = item_from_lib.viewedLeafCount
                         item_from_lib.total_episodes = item_from_lib.leafCount
@@ -1394,8 +1426,24 @@ def get_media_details_for_modal(rating_key): # Renommé pour clarté, bien que l
             'rating': getattr(item, 'rating', ''), # Note sur 10 (ex: 7.5)
             'genres': [genre.tag for genre in getattr(item, 'genres', [])],
             # admin_plex_server.url(item.thumb, includeToken=True) est la méthode correcte pour obtenir l'URL complète
-            'poster_url': plex_server_instance.url(getattr(item, 'thumb', ''), includeToken=True) if getattr(item, 'thumb', '') else None
+            'poster_url': plex_server_instance.url(getattr(item, 'thumb', ''), includeToken=True) if getattr(item, 'thumb', '') else None,
+            'duration_ms': getattr(item, 'duration', 0) # Durée en millisecondes
         }
+
+        # Convertir la durée en format lisible (HH:MM:SS ou MM:SS)
+        duration_ms = details.get('duration_ms', 0)
+        if duration_ms > 0:
+            seconds_total = int(duration_ms / 1000)
+            hours = seconds_total // 3600
+            minutes = (seconds_total % 3600) // 60
+            seconds = seconds_total % 60
+            if hours > 0:
+                details['duration_readable'] = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+            else:
+                details['duration_readable'] = f"{minutes:02d}:{seconds:02d}"
+        else:
+            details['duration_readable'] = "N/A"
+
         return jsonify(details)
 
     except NotFound:

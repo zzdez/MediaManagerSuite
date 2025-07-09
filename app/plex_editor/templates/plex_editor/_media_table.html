@@ -4,9 +4,10 @@
             <th scope="col" style="width: 5%;"><input type="checkbox" class="form-check-input"></th>
             <th scope="col">Titre</th>
             <th scope="col" style="width: 15%;">Bibliothèque</th>
+            <th scope="col" style="width: 10%;">Taille Disque</th> {# NOUVELLE COLONNE #}
             <th scope="col" style="width: 10%;">Date d'Ajout</th>
             <th scope="col" style="width: 10%;">Statut</th>
-            <th scope="col" style="width: 20%;">Actions</th>
+            <th scope="col" style="width: 15%;">Actions</th> {# Réduction de la largeur pour faire de la place #}
         </tr>
     </thead>
     <tbody>
@@ -23,6 +24,7 @@
                 <small class="d-block text-muted">Année: {{ item.year }}</small>
             </td>
             <td><span class="badge bg-secondary">{{ item.library_name }}</span></td>
+            <td>{{ item.total_size_on_disk_display if item.total_size_on_disk_display else 'N/A' }}</td> {# NOUVELLE CELLULE #}
             <td>{{ item.addedAt.strftime('%Y-%m-%d') if item.addedAt else 'N/A' }}</td>
             <td class="media-status-cell" data-rating-key="{{ item.ratingKey }}">
                 {% if item.type == 'show' %}

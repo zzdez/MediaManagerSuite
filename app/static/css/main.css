@@ -68,3 +68,25 @@ body {
     width: calc(100% - var(--sidebar-width));
     position: relative;
 }
+
+/* Seedbox Staging Table Row Hover */
+.file-tree li > div.tree-node-item:hover {
+    background-color: #343a40 !important; /* Dark grey hover */
+    color: #f8f9fa; /* Light text color for contrast on dark hover */
+}
+
+/* Ensure text on hovered items is light */
+.file-tree li > div.tree-node-item:hover .item-name-details,
+.file-tree li > div.tree-node-item:hover .item-name-details small,
+.file-tree li > div.tree-node-item:hover .item-name-details .badge {
+    color: #f8f9fa !important;
+}
+.file-tree li > div.tree-node-item:hover .item-name-details .badge.bg-warning {
+    color: #000 !important; /* Keep text dark for yellow warning badge for readability */
+}
+
+
+/* Radarr Button Text Color */
+.btn.btn-outline-warning.text-dark { /* Targeting the existing classes for the Radarr button */
+    color: white !important;
+}
