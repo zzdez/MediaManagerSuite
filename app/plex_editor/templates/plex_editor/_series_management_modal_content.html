@@ -11,6 +11,7 @@
                 <span class="badge bg-secondary">{{ series.plex_status | capitalize }}</span>
             {% endif %}
             | Saisons Plex vues: {{ series.viewed_seasons_plex }} / {{ series.total_seasons_plex }}
+            | Taille: {{ (series.total_size_on_disk / (1024*1024*1024)) | round(2) }} GB
         </small>
     </div>
     {% if series.sonarr_series_id %}
@@ -47,9 +48,10 @@
                             En cours
                         {% endif %}
                         ({{ season.viewed_episodes }} / {{ season.total_episodes }} ép.)
+                        | Taille: {{ (season.total_size_on_disk / (1024*1024)) | round(2) }} MB
                     </small>
                 {% else %}
-                     <small class="d-block text-muted">Aucun épisode listé dans Plex.</small>
+                     <small class="d-block text-muted">Aucun épisode listé dans Plex. (Taille: {{ (season.total_size_on_disk / (1024*1024)) | round(2) }} MB)</small>
                 {% endif %}
             </div>
             <div class="d-flex align-items-center ms-2">
