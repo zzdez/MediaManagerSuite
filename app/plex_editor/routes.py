@@ -167,29 +167,23 @@ def get_media_items():
 
                 for item_from_lib in items_from_lib:
                     item_from_lib.library_name = library.title
-                    item_from_lib.total_size = 0 # Initialize total_size
-                    item_from_lib.total_size_display = "N/A"
 
+                    # Corrected size calculation logic as per new instructions
                     try:
                         if item_from_lib.type == 'movie':
-                            if hasattr(item_from_lib, 'media') and item_from_lib.media and \
-                               len(item_from_lib.media) > 0 and hasattr(item_from_lib.media[0], 'parts') and \
-                               len(item_from_lib.media[0].parts) > 0 and hasattr(item_from_lib.media[0].parts[0], 'size'):
-                                item_from_lib.total_size = item_from_lib.media[0].parts[0].size
-                            else:
-                                current_app.logger.debug(f"Movie '{item_from_lib.title}' (key: {item_from_lib.ratingKey}) missing media/part/size attributes for size calculation.")
+                            # Accès direct à la taille pour un film
+                            item_from_lib.total_size = item_from_lib.media[0].parts[0].size
                         elif item_from_lib.type == 'show':
-                            current_total_show_size = 0
-                            # item_from_lib.reload() # Avoid reload for performance unless strictly necessary
-                            for season_item in item_from_lib.seasons():
-                                for episode_item in season_item.episodes():
-                                    if hasattr(episode_item, 'media') and episode_item.media:
-                                        for media_part_ep in episode_item.media: # Renamed to avoid conflict
-                                            for part_ep in media_part_ep.parts: # Renamed to avoid conflict
-                                                current_total_show_size += getattr(part_ep, 'size', 0)
-                            item_from_lib.total_size = current_total_show_size
-                    except Exception as e_size:
-                        current_app.logger.warning(f"API get_media_items: Erreur calcul taille pour '{item_from_lib.title}' (key: {item_from_lib.ratingKey}): {e_size}")
+                            # Pour une série, on utilise la taille déjà calculée par Plex
+                            # L'attribut 'sizeOnDisk' est généralement disponible pour les séries
+                            item_from_lib.total_size = getattr(item_from_lib, 'sizeOnDisk', 0)
+                        else:
+                            item_from_lib.total_size = 0
+                    except (AttributeError, IndexError):
+                        # Si un film n'a pas de média ou de partie (ex: métadonnées uniquement)
+                        # Ou si sizeOnDisk n'est pas présent pour une série
+                        current_app.logger.debug(f"Could not determine size for '{item_from_lib.title}' (key: {item_from_lib.ratingKey}) via primary method. Setting to 0.")
+                        item_from_lib.total_size = 0
 
                     # Formattage de la taille pour l'affichage (utilisant item_from_lib.total_size)
                     if item_from_lib.total_size == 0:
@@ -197,11 +191,13 @@ def get_media_items():
                     else:
                         size_name = ("B", "KB", "MB", "GB", "TB")
                         i = 0
-                        temp_size = float(total_size_bytes)
+                        # Ensure total_size is float for division
+                        temp_size = float(item_from_lib.total_size)
                         while temp_size >= 1024 and i < len(size_name) - 1:
                             temp_size /= 1024.0
                             i += 1
-                        item_from_lib.total_size_on_disk_display = f"{temp_size:.2f} {size_name[i]}"
+                        # Ensure the correct attribute name is used for display
+                        item_from_lib.total_size_display = f"{temp_size:.2f} {size_name[i]}"
 
                     if item_from_lib.type == 'show':
                         item_from_lib.viewed_episodes = item_from_lib.viewedLeafCount

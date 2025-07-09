@@ -24,7 +24,7 @@
                 <small class="d-block text-muted">Année: {{ item.year }}</small>
             </td>
             <td><span class="badge bg-secondary">{{ item.library_name }}</span></td>
-            <td>{{ item.total_size_on_disk_display if item.total_size_on_disk_display else 'N/A' }}</td> {# NOUVELLE CELLULE #}
+            <td>{{ item.total_size_display if item.total_size_display else 'N/A' }}</td> {# MODIFIED CELLULE #}
             <td>{{ item.addedAt.strftime('%Y-%m-%d') if item.addedAt else 'N/A' }}</td>
             <td class="media-status-cell" data-rating-key="{{ item.ratingKey }}">
                 {% if item.type == 'show' %}
