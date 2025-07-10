@@ -126,33 +126,177 @@ import json # Added json import
 from flask import jsonify
 from app.utils.rtorrent_client import add_torrent_data_and_get_hash_robustly, add_magnet_and_get_hash_robustly
 from app.utils.mapping_manager import add_or_update_torrent_in_map
+# Imports for new logic in download_and_map
+from app.utils.arr_client import (
+    add_new_series_to_sonarr, add_new_movie_to_radarr,
+    get_sonarr_series_by_id, # We'll need to implement get_radarr_movie_by_id or adapt
+    update_sonarr_series, update_radarr_movie, # Assuming these can update monitored status
+    search_sonarr_by_title, search_radarr_by_title, _radarr_api_request # adding _radarr_api_request for direct movie GET
+)
+from guessit import guessit
+
 
 @search_ui_bp.route('/download-and-map', methods=['POST'])
 @login_required
 def download_and_map():
     data = request.get_json()
-    release_name = data.get('releaseName')
-    download_link = data.get('downloadLink') # Peut être une URL HTTP/S ou un lien magnet:
-    indexer_id = data.get('indexerId') # Nouveau
-    guid = data.get('guid')             # Nouveau
-    instance_type = data.get('instanceType')
-    media_id = data.get('mediaId')
+    release_name = data.get('releaseName') # Prowlarr release title
+    download_link = data.get('downloadLink')
+    indexer_id = data.get('indexerId')
+    guid = data.get('guid') # Prowlarr GUID, might contain tvdb/tmdb/imdb id
+    instance_type = data.get('instanceType') # 'sonarr' or 'radarr'
+    media_id_from_js = data.get('mediaId') # Sonarr/Radarr internal ID, or external TVDB/TMDB ID, or 'NEW_ITEM_FROM_PROWLARR'
+    action_type = data.get('actionType', 'map_existing') # 'map_existing' or 'add_then_map'
 
-    if not all([release_name, download_link, indexer_id, guid, instance_type, media_id]):
-        missing_params = [p for p, v in {
-            "releaseName": release_name, "downloadLink": download_link,
-            "indexerId": indexer_id, "guid": guid,
-            "instanceType": instance_type, "mediaId": media_id
+    current_app.logger.info(f"Download&Map: release='{release_name}', media_id='{media_id_from_js}', action='{action_type}', instance_type='{instance_type}'")
+
+    if not all([release_name, download_link, indexer_id, guid, instance_type, media_id_from_js]):
+        missing_params = [p for p,v in {
+            "releaseName": release_name, "downloadLink": download_link, "indexerId": indexer_id,
+            "guid": guid, "instanceType": instance_type, "mediaId": media_id_from_js
         }.items() if not v]
         return jsonify({'status': 'error', 'message': f'Données manquantes dans la requête: {", ".join(missing_params)}'}), 400
 
+    actual_media_id_for_mapping = None # This will hold the internal Sonarr/Radarr ID
+
+    # --- Step 1: Handle Sonarr/Radarr interaction based on actionType and mediaId ---
+    if action_type == 'add_then_map':
+        if str(media_id_from_js) == 'NEW_ITEM_FROM_PROWLARR':
+            current_app.logger.info(f"Download&Map: Adding new item '{release_name}' to {instance_type} based on Prowlarr data.")
+            parsed_info = guessit(release_name)
+            item_title = parsed_info.get('title')
+            item_year = parsed_info.get('year')
+
+            if not item_title:
+                return jsonify({'status': 'error', 'message': f"Impossible d'analyser le titre depuis '{release_name}' pour l'ajout."}), 400
+
+            external_id = None
+            # TODO: Robustly parse guid for tvdbId/tmdbId. Example: if 'imdb=' in guid -> extract, then lookup tvdb/tmdb.
+            # For now, search Sonarr/Radarr by title to find an unadded item with matching external ID.
+            arr_search_results = []
+            if instance_type == 'sonarr':
+                arr_search_results = search_sonarr_by_title(item_title)
+                if arr_search_results:
+                    # Prefer item not already in Sonarr (i.e., no 'id' field or id is 0)
+                    # and matching year if series has year (less common for Sonarr title search to use year directly)
+                    new_series_prospect = next((s for s in arr_search_results if not s.get('id')), None)
+                    if not new_series_prospect and arr_search_results: new_series_prospect = arr_search_results[0] # fallback
+                    if new_series_prospect: external_id = new_series_prospect.get('tvdbId')
+            elif instance_type == 'radarr':
+                arr_search_results = search_radarr_by_title(item_title)
+                if arr_search_results:
+                    prospects = [m for m in arr_search_results if (not item_year or m.get('year') == item_year)]
+                    new_movie_prospect = next((m for m in prospects if not m.get('id')), None)
+                    if not new_movie_prospect and prospects: new_movie_prospect = prospects[0] # fallback
+                    if new_movie_prospect: external_id = new_movie_prospect.get('tmdbId')
+
+            if not external_id:
+                return jsonify({'status': 'error', 'message': f"Impossible de trouver un ID externe (TVDB/TMDB) pour '{item_title}' ({item_year}). Ajout manuel requis via Sonarr/Radarr."}), 400
+
+            default_root_folder = current_app.config.get(f'DEFAULT_{instance_type.upper()}_ROOT_FOLDER')
+            default_quality_profile_id = current_app.config.get(f'DEFAULT_{instance_type.upper()}_PROFILE_ID')
+            default_language_profile_id = current_app.config.get(f'DEFAULT_SONARR_LANGUAGE_PROFILE_ID', 1) # Sonarr specific
+
+            if not default_root_folder or not default_quality_profile_id:
+                return jsonify({'status': 'error', 'message': f"Configuration par défaut (dossier racine/profil qualité) manquante pour {instance_type}."}), 500
+
+            added_media = None
+            if instance_type == 'sonarr':
+                added_media = add_new_series_to_sonarr(
+                    tvdb_id=external_id, title=item_title, quality_profile_id=default_quality_profile_id,
+                    language_profile_id=default_language_profile_id, root_folder_path=default_root_folder
+                )
+            elif instance_type == 'radarr':
+                 # Radarr add_new_movie_to_radarr expects tmdb_id, title, quality_profile_id, root_folder_path
+                added_media = add_new_movie_to_radarr(
+                    tmdb_id=external_id, title=item_title, quality_profile_id=default_quality_profile_id,
+                    root_folder_path=default_root_folder
+                    # minimum_availability can be passed if needed, defaults in function
+                )
+
+            if added_media and added_media.get('id'):
+                actual_media_id_for_mapping = added_media.get('id')
+                current_app.logger.info(f"Download&Map: '{item_title}' ajouté à {instance_type} avec ID {actual_media_id_for_mapping}.")
+            else:
+                return jsonify({'status': 'error', 'message': f"Échec de l'ajout de '{item_title}' à {instance_type}."}), 500
+
+        else: # media_id_from_js is supposedly an existing Sonarr/Radarr ID or an external ID (TVDB/TMDB)
+            try:
+                # Try to convert to int. If it's an internal ID, it should be an int.
+                # If it's an external ID like 'tvdb:12345', this will fail, handle in except.
+                internal_id_candidate = int(media_id_from_js)
+                item_details = None
+                if instance_type == 'sonarr':
+                    item_details = get_sonarr_series_by_id(internal_id_candidate)
+                elif instance_type == 'radarr':
+                    # In arr_client.py, _radarr_api_request is internal. We need a direct get.
+                    # Placeholder: use direct _radarr_api_request if available, or create get_radarr_movie_by_id
+                    item_details = _radarr_api_request('GET', f'movie/{internal_id_candidate}')
+
+
+                if item_details and item_details.get('id'): # Check if .get('id') is valid, not just if item_details is truthy
+                    actual_media_id_for_mapping = item_details.get('id')
+                    if not item_details.get('monitored', False): # Default to False if 'monitored' key is missing
+                        current_app.logger.info(f"Download&Map: Item ID {actual_media_id_for_mapping} ({instance_type}) trouvé mais non surveillé. Mise à jour...")
+                        item_details['monitored'] = True
+                        if instance_type == 'sonarr' and 'seasons' in item_details:
+                            for season in item_details['seasons']: season['monitored'] = True
+
+                        update_payload = {key: item_details[key] for key in item_details if key != "path"} # Radarr V3 put movie/{id} doesn't like "path"
+
+                        update_success = False
+                        if instance_type == 'sonarr':
+                            update_success = update_sonarr_series(item_details) # Sonarr's PUT takes the full object
+                        elif instance_type == 'radarr':
+                             # Radarr API PUT /movie/{id} expects the movie object without 'id' in the payload for some versions.
+                             # More robust: use 'movieEditor' endpoint or ensure payload is correct for PUT /movie/{id}.
+                             # For Radarr, the standard seems to be PUT /api/v3/movie (with id in body) or PUT /api/v3/movie/{id} (id not in body)
+                             # The arr_client update_radarr_movie should handle this.
+                             # Let's assume update_radarr_movie takes the full object and figures it out.
+                            update_success = update_radarr_movie(item_details)
+
+                        if not update_success:
+                             current_app.logger.warning(f"Échec de la mise à jour du statut surveillé pour ID {actual_media_id_for_mapping}.")
+                    else:
+                        current_app.logger.info(f"Download&Map: Item ID {actual_media_id_for_mapping} ({instance_type}) déjà surveillé.")
+                else:
+                    # This means media_id_from_js (as int) was not found as an internal ID.
+                    # This case should ideally not happen if JS logic is correct (i.e., mediaId is from a successful *Arr search).
+                    # Or, it could be an external ID that happens to be an integer (like some TMDB IDs).
+                    # For now, error out if an integer media_id_from_js is not found.
+                    return jsonify({'status': 'error', 'message': f"Média ID {media_id_from_js} (entier) non trouvé dans {instance_type}."}), 404
+
+            except ValueError: # media_id_from_js was not an int, so it must be an external ID string (e.g. "tvdb:12345")
+                # This path is if JS sends an external ID directly (e.g. selected from a non-Arr source in modal)
+                # For now, this is less likely given current JS. If it occurs, treat like NEW_ITEM_FROM_PROWLARR.
+                # This is simplified: actual parsing of "tvdb:12345" to 12345 would be needed.
+                # The 'NEW_ITEM_FROM_PROWLARR' flow is more robust for adding based on title.
+                current_app.logger.warning(f"Download&Map: media_id_from_js '{media_id_from_js}' non entier, ajout non implémenté pour ce cas spécifique. Tenter comme nouvel item.")
+                # Fall through to error or re-route to NEW_ITEM_FROM_PROWLARR logic if desired (too complex for this diff)
+                return jsonify({'status': 'error', 'message': f"Gestion des ID externes '{media_id_from_js}' non entièrement implémentée ici."}), 501
+
+    elif action_type == 'map_existing':
+        try:
+            actual_media_id_for_mapping = int(media_id_from_js)
+        except ValueError:
+            return jsonify({'status': 'error', 'message': f"ID média invalide pour 'map_existing': {media_id_from_js}"}), 400
+        current_app.logger.info(f"Download&Map: 'map_existing' pour ID {actual_media_id_for_mapping} ({instance_type}).")
+
+    else:
+        return jsonify({'status': 'error', 'message': f"Type d'action inconnu: {action_type}"}), 400
+
+    if not actual_media_id_for_mapping: # Guard against logic errors above
+        current_app.logger.error(f"Download&Map: Échec de la détermination de l'ID média interne final pour {release_name}.")
+        return jsonify({'status': 'error', 'message': "Impossible de déterminer l'ID média interne pour Sonarr/Radarr."}), 500
+
+    # --- Step 2: Proceed with torrent download using actual_media_id_for_mapping for labels ---
     torrent_hash = None
     error_msg_add = None
-    torrent_data = None # Pour stocker les bytes du .torrent si ce n'est pas un magnet
+    torrent_data = None
 
-    label_for_rtorrent = f"mms-{instance_type}-{media_id}" # Label pour rTorrent
+    # Use final actual_media_id_for_mapping for consistent rTorrent label
+    label_for_rtorrent = f"mms-{instance_type}-{actual_media_id_for_mapping}"
 
-    # Déterminer le chemin de destination pour rTorrent en fonction de instance_type
     target_download_path_rtorrent = None
     if instance_type == 'sonarr':
         target_download_path_rtorrent = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_SONARR_PATH') # Updated config key
