@@ -83,7 +83,7 @@
                                        data-download-link="{{ result.downloadUrl }}"
                                        data-guid="{{ result.guid }}" {# Ajouté #}
                                        data-indexer-id="{{ result.indexerId }}" {# Ajouté #}
-                                       data-parsed-title="{{ result.status_info.parsed_title|e }}">
+                                       data-parsed-title="{{ result.title|e }}"> {# Changed from result.status_info.parsed_title to result.title as status_info is no longer available here #}
                                         <i class="fas fa-download"></i> & Mapper
                                     </a>
                                     {# Bouton pour télécharger le fichier .torrent via le nouveau proxy intelligent #}
@@ -96,7 +96,7 @@
                                         <i class="fas fa-file-arrow-down"></i>
                                     </a>
                                     {% endif %}
-                                    {% endif %} {# Fin du if result.status_info.status != 'Déjà Présent' #}
+                                    {# The orphaned endif that was here (around line 99) is now removed. #}
                                 </div>
                             </li>
                             {% endfor %}
