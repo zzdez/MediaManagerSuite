@@ -4,7 +4,7 @@ from guessit import guessit # Ensure guessit is imported
 from plexapi.exceptions import NotFound
 
 from .arr_client import search_radarr_by_title, search_sonarr_by_title
-from .plex_client import get_user_specific_plex_server
+from .plex_client import get_user_specific_plex_server, get_plex_admin_server # Added get_plex_admin_server
 
 def _check_arr_status(parsed_info, status_info_ref, release_title_for_log):
     """Helper function to check Sonarr/Radarr status."""
@@ -98,23 +98,41 @@ def check_media_status(release_title):
         if not parsed_title:
             current_app.logger.warn(f"check_media_status: Guessit failed to find a title for '{release_title}'. Proceeding to Arr check with raw title if possible.")
             # No proper title, Plex check is unlikely to succeed. Fallback to Arr check.
-            return _check_arr_status(parsed_info, status_info, release_title)
+            return _check_arr_status(parsed_info, status_info, release_title) # Pass status_info to be updated
 
 
-        # --- ÉTAPE 1: Vérification Plex (Live Query using parsed info) ---
-        user_plex = None
+        # --- ÉTAPE 1: Gestion du contexte Plex et Vérification ---
+        plex_server_to_check = None
         try:
-            user_plex = get_user_specific_plex_server()
-        except Exception as e:
-            current_app.logger.error(f"check_media_status: Erreur lors de la récupération du serveur Plex: {e}", exc_info=True)
+            plex_server_to_check = get_user_specific_plex_server()
+            if plex_server_to_check:
+                current_app.logger.info("check_media_status: Utilisation du serveur Plex spécifique à l'utilisateur.")
+            else: # Explicitly check if None was returned without exception by get_user_specific_plex_server
+                current_app.logger.info("check_media_status: Aucun serveur Plex spécifique à l'utilisateur trouvé (ou contexte manquant).")
+        except Exception as e_user_plex:
+            current_app.logger.warn(f"check_media_status: Échec de la récupération du serveur Plex spécifique à l'utilisateur: {e_user_plex}. Tentative avec le serveur principal.")
+            plex_server_to_check = None # Ensure it's None if any error during user-specific fetch
 
-        if user_plex:
-            current_app.logger.debug(f"check_media_status: Vérification Plex pour '{parsed_title}' (type: {media_type})")
+        if not plex_server_to_check:
+            current_app.logger.info("check_media_status: Tentative d'utilisation du serveur Plex principal par défaut.")
+            try:
+                plex_server_to_check = get_plex_admin_server()
+                if plex_server_to_check:
+                    current_app.logger.info("check_media_status: Utilisation du serveur Plex principal par défaut réussie.")
+                else:
+                    # This else might be hit if get_plex_admin_server itself returns None (e.g. config missing)
+                    current_app.logger.warn("check_media_status: Échec de la récupération du serveur Plex principal (get_plex_admin_server a retourné None). Le check Plex sera ignoré.")
+            except Exception as e_admin_plex:
+                current_app.logger.error(f"check_media_status: Erreur lors de la connexion au serveur Plex principal: {e_admin_plex}", exc_info=True)
+                plex_server_to_check = None # Ensure it's None on exception
+
+        # Proceed with Plex check only if a server instance was successfully obtained
+        if plex_server_to_check:
+            current_app.logger.debug(f"check_media_status: Vérification Plex sur '{plex_server_to_check.friendlyName}' pour '{parsed_title}' (type: {media_type})")
             if media_type == 'movie':
                 try:
-                    plex_results = user_plex.library.search(title=parsed_title, year=parsed_year, libtype='movie', limit=5)
+                    plex_results = plex_server_to_check.library.search(title=parsed_title, year=parsed_year, libtype='movie', limit=5)
                     for movie_item in plex_results:
-                        # Stricter matching: compare lowercase titles and ensure year matches if provided
                         if movie_item.title.lower() == parsed_title.lower() and \
                            (not parsed_year or movie_item.year == parsed_year):
                             if hasattr(movie_item, 'media') and movie_item.media and \
@@ -130,10 +148,10 @@ def check_media_status(release_title):
                     current_app.logger.warn(f"check_media_status: Saison/épisode non parsé correctement pour '{release_title}', Plex check pour épisode ignoré.")
                 else:
                     try:
-                        plex_shows = user_plex.library.search(title=parsed_title, libtype='show', limit=5) # parsed_title is show title
+                        plex_shows = plex_server_to_check.library.search(title=parsed_title, libtype='show', limit=5)
                         if plex_shows:
                             for show_item in plex_shows:
-                                if show_item.title.lower() == parsed_title.lower(): # Match show title
+                                if show_item.title.lower() == parsed_title.lower():
                                     try:
                                         episode_item = show_item.episode(season=parsed_season, episode=parsed_episode)
                                         if episode_item and hasattr(episode_item, 'media') and episode_item.media and \
@@ -152,10 +170,10 @@ def check_media_status(release_title):
                     except Exception as e_show:
                         current_app.logger.error(f"check_media_status: Erreur recherche série Plex '{parsed_title}': {e_show}", exc_info=True)
         else:
-            current_app.logger.warn("check_media_status: user_plex non disponible, Plex check ignoré.")
+            current_app.logger.warn("check_media_status: Aucune instance de serveur Plex disponible (ni utilisateur, ni admin). Le check Plex est ignoré.")
 
-        # --- ÉTAPE 2: Si non présent dans Plex, vérifier Sonarr/Radarr ---
-        return _check_arr_status(parsed_info, status_info, release_title)
+        # --- ÉTAPE 2: Si non présent dans Plex (ou Plex check ignoré), vérifier Sonarr/Radarr ---
+        return _check_arr_status(parsed_info, status_info, release_title) # Pass status_info to be updated
 
     except Exception as e:
         current_app.logger.error(f"Erreur majeure dans check_media_status pour '{release_title}': {e}", exc_info=True)
