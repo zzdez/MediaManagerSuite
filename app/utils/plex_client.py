@@ -1,9 +1,12 @@
 # app/utils/plex_client.py
 # -*- coding: utf-8 -*-
 
+import logging # Added logging import
 from flask import current_app, session, flash
 from plexapi.server import PlexServer
 from plexapi.exceptions import NotFound, Unauthorized
+
+logger = logging.getLogger(__name__) # Defined module-level logger
 
 # --- Fonctions Utilitaires ---
 
@@ -112,65 +115,67 @@ def find_plex_media_by_external_id(plex_server, external_id_str: str, media_type
     # We might need to parse the ID out of external_id_str if it includes such schemes.
     # Example: external_id_str could be "tvdb://12345" or just "12345" if type is known.
     # Plex's search for guid usually expects the raw ID part for some agents, or full for others.
-    # fetchItem is generally more reliable if the full GUID URI is correct for Plex.
+    # The fetchItem method is problematic for scheme-based GUIDs like tvdb:// as it forms invalid URLs.
+    # We will primarily rely on library.search(guid=...) which is more robust for these.
 
-    parsed_guid_for_search = external_id_str # Default to using it directly
+    libtype_for_search = 'show' if media_type_from_guessit == 'episode' else media_type_from_guessit
+    if libtype_for_search not in ['show', 'movie']:
+        logger.warn(f"Plex Client: Invalid libtype '{libtype_for_search}' for GUID search of '{external_id_str}'.")
+        return None
 
-    # Attempt with fetchItem first, as it's more direct if the GUID format is what Plex expects.
+    # Attempt 1: Search with the full external_id_str (e.g., "tvdb://12345")
     try:
-        # Plex's fetchItem can use various forms of GUIDs, including those with schemes.
-        item = plex_server.fetchItem(external_id_str)
-        if item:
-            # If media_type is 'episode', we want the show. If fetchItem got an episode, get its grandparent (show).
-            if media_type_from_guessit == 'episode' and item.type == 'episode':
-                logger.debug(f"Plex Client: Found episode by ID '{external_id_str}', returning its show '{item.grandparentTitle}'.")
-                return item.show() #.show() is an attribute that re-fetches the show
-            elif media_type_from_guessit == 'episode' and item.type == 'show':
-                logger.debug(f"Plex Client: Found show directly by ID '{external_id_str}'.")
-                return item
-            elif media_type_from_guessit == 'movie' and item.type == 'movie':
-                logger.debug(f"Plex Client: Found movie by ID '{external_id_str}'.")
-                return item
-            else:
-                logger.warn(f"Plex Client: Found item by ID '{external_id_str}' but type mismatch. Expected '{media_type_from_guessit}', got '{item.type}'.")
-                return None # Type mismatch
-        logger.debug(f"Plex Client: fetchItem for '{external_id_str}' returned None or non-matching type.")
-    except NotFound:
-        logger.debug(f"Plex Client: No item found with fetchItem for GUID '{external_id_str}'.")
-    except Exception as e:
-        logger.error(f"Plex Client: Error using fetchItem for GUID '{external_id_str}': {e}")
-
-    # Fallback: try searching via library.search(guid=...)
-    # This often requires the ID part without the scheme for some agents.
-    # Example: if external_id_str is 'tvdb://12345', try searching guid='12345'
-    # This part is tricky as Plex agent GUID formats vary.
-    # For simplicity, we'll try with the original external_id_str first in search.
-    # A more robust solution would parse common schemes like tvdb://, tmdb://, imdb://
-
-    try:
-        # Determine libtype for search
-        libtype_for_search = 'show' if media_type_from_guessit == 'episode' else media_type_from_guessit
-        if libtype_for_search not in ['show', 'movie']:
-            logger.warn(f"Plex Client: Invalid libtype '{libtype_for_search}' for GUID search.")
-            return None
-
+        logger.debug(f"Plex Client: Attempting GUID search with full ID '{external_id_str}' and libtype '{libtype_for_search}'.")
         results = plex_server.library.search(guid=external_id_str, libtype=libtype_for_search, limit=1)
         if results:
-            logger.info(f"Plex Client: Found media by GUID search '{external_id_str}': {results[0].title}")
-            return results[0] # Returns the show or movie object
-
-        # Try parsing common GUIDs if the above failed
-        if '//' in external_id_str:
-            parsed_id_only = external_id_str.split('//')[-1]
-            results_parsed = plex_server.library.search(guid=parsed_id_only, libtype=libtype_for_search, limit=1)
-            if results_parsed:
-                logger.info(f"Plex Client: Found media by parsed GUID search '{parsed_id_only}': {results_parsed[0].title}")
-                return results_parsed[0]
+            item = results[0]
+            # Ensure correct type if 'episode' was requested (we want the show)
+            if media_type_from_guessit == 'episode' and item.type == 'episode':
+                 logger.info(f"Plex Client: Found episode by full GUID search '{external_id_str}', returning show: {item.show().title}")
+                 return item.show()
+            elif item.type == libtype_for_search: # Covers show for episode type, or movie for movie type
+                 logger.info(f"Plex Client: Found media by full GUID search '{external_id_str}': {item.title}")
+                 return item
+            else:
+                 logger.warn(f"Plex Client: Full GUID search for '{external_id_str}' found item of type '{item.type}', expected '{libtype_for_search}'.")
 
     except Exception as e:
-        logger.error(f"Plex Client: Error searching Plex by GUID '{external_id_str}': {e}", exc_info=True)
+        logger.error(f"Plex Client: Error searching Plex by full GUID '{external_id_str}': {e}", exc_info=True)
 
-    logger.warn(f"Plex Client: Could not find Plex media by external ID '{external_id_str}'.")
+    # Attempt 2: Parse common schemes and search with only the ID part (e.g., "12345" from "tvdb://12345")
+    if '//' in external_id_str:
+        parsed_id_only = external_id_str.split('//')[-1]
+        if parsed_id_only and parsed_id_only != external_id_str: # Ensure parsing actually changed something
+            try:
+                logger.debug(f"Plex Client: Attempting GUID search with parsed ID '{parsed_id_only}' and libtype '{libtype_for_search}'.")
+                results_parsed = plex_server.library.search(guid=parsed_id_only, libtype=libtype_for_search, limit=1)
+                if results_parsed:
+                    item = results_parsed[0]
+                    if media_type_from_guessit == 'episode' and item.type == 'episode':
+                        logger.info(f"Plex Client: Found episode by parsed GUID search '{parsed_id_only}', returning show: {item.show().title}")
+                        return item.show()
+                    elif item.type == libtype_for_search:
+                        logger.info(f"Plex Client: Found media by parsed GUID search '{parsed_id_only}': {item.title}")
+                        return item
+                    else:
+                        logger.warn(f"Plex Client: Parsed GUID search for '{parsed_id_only}' found item of type '{item.type}', expected '{libtype_for_search}'.")
+            except Exception as e:
+                logger.error(f"Plex Client: Error searching Plex by parsed GUID '{parsed_id_only}': {e}", exc_info=True)
+
+    # If fetchItem was considered for specific Plex internal GUIDs (not scheme-based ones), that logic could go here.
+    # For now, relying on library.search(guid=...) is safer for external IDs.
+    # Example: If external_id_str was something like "/library/metadata/xxxxx" (a rating key)
+    # if external_id_str.startswith("/library/metadata/"):
+    #     try:
+    #         item = plex_server.fetchItem(external_id_str)
+    #         # ... (type checking as above) ...
+    #         return item
+    #     except NotFound:
+    #          logger.debug(f"Plex Client: fetchItem for direct key '{external_id_str}' not found.")
+    #     except Exception as e:
+    #          logger.error(f"Plex Client: Error with fetchItem for direct key '{external_id_str}': {e}")
+
+    logger.warn(f"Plex Client: Could not find Plex media by external ID '{external_id_str}' after all attempts.")
     return None
 
 def find_plex_media_by_titles(plex_server, titles_list: list, year: int, media_type_from_guessit: str):
