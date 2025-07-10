@@ -195,21 +195,46 @@ def check_media_status(release_title):
                         status_info.update({'status': 'Déjà Présent', 'badge_color': 'success'})
                         return status_info
                 elif media_type == 'episode':
-                    if not all([isinstance(parsed_season, int), isinstance(parsed_episode, int)]):
-                        current_app.logger.warn(f"Plex: Saison/épisode non parsé pour '{release_title}', impossible de vérifier l'épisode sur '{plex_media_item_found.title}'.")
-                    else:
+                    # Case 1: Specific episode check
+                    if isinstance(parsed_season, int) and isinstance(parsed_episode, int):
+                        current_app.logger.debug(f"Plex: Checking for specific episode S{parsed_season}E{parsed_episode} of '{plex_media_item_found.title}'.")
                         try:
-                            # plex_media_item_found should be the show object here
                             episode_item = plex_media_item_found.episode(season=parsed_season, episode=parsed_episode)
                             if episode_item and hasattr(episode_item, 'media') and episode_item.media and \
                                hasattr(episode_item.media[0], 'parts') and episode_item.media[0].parts:
-                                current_app.logger.info(f"Plex: Épisode '{status_info['details']}' disponible.")
+                                current_app.logger.info(f"Plex: Specific episode '{status_info['details']}' found and available.")
                                 status_info.update({'status': 'Déjà Présent', 'badge_color': 'success'})
                                 return status_info
+                            else:
+                                current_app.logger.debug(f"Plex: Specific episode S{parsed_season}E{parsed_episode} for '{plex_media_item_found.title}' found but no media/parts (unavailable).")
                         except NotFound:
-                            current_app.logger.debug(f"Plex: Épisode S{parsed_season}E{parsed_episode} non trouvé pour la série '{plex_media_item_found.title}'.")
+                            current_app.logger.debug(f"Plex: Specific episode S{parsed_season}E{parsed_episode} not found for series '{plex_media_item_found.title}'.")
                         except Exception as e_ep_check:
-                            current_app.logger.error(f"Plex: Erreur vérification épisode S{parsed_season}E{parsed_episode} pour '{plex_media_item_found.title}': {e_ep_check}")
+                            current_app.logger.error(f"Plex: Error checking specific episode S{parsed_season}E{parsed_episode} for '{plex_media_item_found.title}': {e_ep_check}", exc_info=True)
+
+                    # Case 2: Full season check (if specific episode not found or not specified)
+                    # This 'elif' ensures it only runs if the specific episode check above didn't return.
+                    # It also implies parsed_episode might be None or not an int if guessit identified a season pack.
+                    elif isinstance(parsed_season, int) and not isinstance(parsed_episode, int): # Check for season if episode is not valid/specified
+                        current_app.logger.debug(f"Plex: Checking for full season S{parsed_season} of '{plex_media_item_found.title}'.")
+                        try:
+                            season_obj = plex_media_item_found.season(season=parsed_season) # Get season by number
+                            if season_obj and season_obj.episodes(): # Check if season exists and has any episodes
+                                # Further check: are any of these episodes actually available?
+                                # For simplicity, we consider the season "present" if the season object exists and lists episodes.
+                                # A more granular check could iterate season_obj.episodes() and check their availability.
+                                current_app.logger.info(f"Plex: Season {parsed_season} ('{season_obj.title}') found with episodes for series '{plex_media_item_found.title}'. Marking as 'Déjà Présent'.")
+                                status_info['details'] = f"{plex_media_item_found.title} - Saison {parsed_season}" # Update details for season
+                                status_info.update({'status': 'Déjà Présent', 'badge_color': 'success'})
+                                return status_info
+                            else:
+                                current_app.logger.debug(f"Plex: Season {parsed_season} for '{plex_media_item_found.title}' found but no episodes listed or season object empty.")
+                        except NotFound:
+                            current_app.logger.debug(f"Plex: Season {parsed_season} not found for series '{plex_media_item_found.title}'.")
+                        except Exception as e_season_check:
+                            current_app.logger.error(f"Plex: Error checking season S{parsed_season} for '{plex_media_item_found.title}': {e_season_check}", exc_info=True)
+                    else:
+                        current_app.logger.warn(f"Plex: Parsed season/episode numbers for '{release_title}' (S{parsed_season}E{parsed_episode}) are not suitable for specific episode or season check.")
         else:
             current_app.logger.warn("check_media_status: Aucune instance de serveur Plex disponible. Le check Plex est ignoré.")
 
