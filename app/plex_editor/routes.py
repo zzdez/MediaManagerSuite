@@ -167,6 +167,56 @@ def get_media_items():
 
                 for item_from_lib in items_from_lib:
                     item_from_lib.library_name = library.title
+
+                    # Corrected size calculation logic as per new instructions
+                    try:
+                        if item_from_lib.type == 'movie':
+                            # Accès direct à la taille pour un film
+                            # Ensure all attributes exist before accessing
+                            if hasattr(item_from_lib, 'media') and item_from_lib.media and \
+                               len(item_from_lib.media) > 0 and hasattr(item_from_lib.media[0], 'parts') and \
+                               len(item_from_lib.media[0].parts) > 0 and hasattr(item_from_lib.media[0].parts[0], 'size'):
+                                item_from_lib.total_size = item_from_lib.media[0].parts[0].size
+                            else:
+                                item_from_lib.total_size = 0 # Default if path is incomplete
+                                current_app.logger.debug(f"Movie '{item_from_lib.title}' (key: {item_from_lib.ratingKey}) missing full media path for size.")
+                        elif item_from_lib.type == 'show':
+                            # --- NOUVELLE LOGIQUE DE CALCUL POUR LES SÉRIES ---
+                            series_size = 0
+                            # 'episodes()' recharges detailed info, including files. Can be slow.
+                            for episode in item_from_lib.episodes(): # PlexAPI reloads item if necessary
+                                if hasattr(episode, 'media') and episode.media:
+                                    for media_item in episode.media: # Iterate through media items of an episode
+                                        if hasattr(media_item, 'parts') and media_item.parts:
+                                            for part in media_item.parts: # Iterate through parts of a media item
+                                                series_size += getattr(part, 'size', 0) # Use getattr for safety
+                            item_from_lib.total_size = series_size
+                            # --- FIN DE LA NOUVELLE LOGIQUE ---
+                        else:
+                            item_from_lib.total_size = 0
+                    except (AttributeError, IndexError) as e_size_calc:
+                        # Catch specific errors related to attribute access
+                        current_app.logger.warning(f"Error calculating size for '{item_from_lib.title}' (key: {item_from_lib.ratingKey}): {type(e_size_calc).__name__} - {e_size_calc}. Setting size to 0.")
+                        item_from_lib.total_size = 0
+                    except Exception as e_general_size:
+                        # Catch any other unexpected errors during size calculation
+                        current_app.logger.error(f"Unexpected error calculating size for '{item_from_lib.title}' (key: {item_from_lib.ratingKey}): {type(e_general_size).__name__} - {e_general_size}", exc_info=True)
+                        item_from_lib.total_size = 0
+
+                    # Formattage de la taille pour l'affichage (utilisant item_from_lib.total_size)
+                    if item_from_lib.total_size == 0:
+                        item_from_lib.total_size_display = "0 B"
+                    else:
+                        size_name = ("B", "KB", "MB", "GB", "TB")
+                        i = 0
+                        # Ensure total_size is float for division
+                        temp_size = float(item_from_lib.total_size)
+                        while temp_size >= 1024 and i < len(size_name) - 1:
+                            temp_size /= 1024.0
+                            i += 1
+                        # Ensure the correct attribute name is used for display
+                        item_from_lib.total_size_display = f"{temp_size:.2f} {size_name[i]}"
+
                     if item_from_lib.type == 'show':
                         item_from_lib.viewed_episodes = item_from_lib.viewedLeafCount
                         item_from_lib.total_episodes = item_from_lib.leafCount
@@ -1394,8 +1444,24 @@ def get_media_details_for_modal(rating_key): # Renommé pour clarté, bien que l
             'rating': getattr(item, 'rating', ''), # Note sur 10 (ex: 7.5)
             'genres': [genre.tag for genre in getattr(item, 'genres', [])],
             # admin_plex_server.url(item.thumb, includeToken=True) est la méthode correcte pour obtenir l'URL complète
-            'poster_url': plex_server_instance.url(getattr(item, 'thumb', ''), includeToken=True) if getattr(item, 'thumb', '') else None
+            'poster_url': plex_server_instance.url(getattr(item, 'thumb', ''), includeToken=True) if getattr(item, 'thumb', '') else None,
+            'duration_ms': getattr(item, 'duration', 0) # Durée en millisecondes
         }
+
+        # Convertir la durée en format lisible (HH:MM:SS ou MM:SS)
+        duration_ms = details.get('duration_ms', 0)
+        if duration_ms > 0:
+            seconds_total = int(duration_ms / 1000)
+            hours = seconds_total // 3600
+            minutes = (seconds_total % 3600) // 60
+            seconds = seconds_total % 60
+            if hours > 0:
+                details['duration_readable'] = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+            else:
+                details['duration_readable'] = f"{minutes:02d}:{seconds:02d}"
+        else:
+            details['duration_readable'] = "N/A"
+
         return jsonify(details)
 
     except NotFound:

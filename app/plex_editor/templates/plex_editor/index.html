@@ -492,6 +492,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                 <p>${data.summary || 'Aucun résumé.'}</p>
                                 <p><strong>Genres:</strong> ${data.genres && data.genres.length > 0 ? data.genres.join(', ') : 'Non spécifiés'}</p>
                                 <p><strong>Note:</strong> ${data.rating ? `${data.rating} / 10` : 'Non noté'}</p>
+                    <p><strong>Durée:</strong> ${data.duration_readable || 'N/A'}</p> {# NOUVELLE LIGNE POUR LA DURÉE #}
                             </div>
                         </div>`;
                     modalLoader.style.display = 'none';
