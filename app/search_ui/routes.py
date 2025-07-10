@@ -8,6 +8,7 @@ from app.utils.media_status_checker import check_media_status # Ajout de l'impor
 from app.utils.plex_client import get_user_specific_plex_server # MOVED IMPORT HERE
 # Utiliser le login_required défini dans app/__init__.py pour la cohérence
 from app import login_required
+from app.utils.media_status_checker import check_media_status as util_check_media_status # Alias to avoid name collision
 
 @search_ui_bp.route('/', methods=['GET'])
 @login_required
@@ -16,37 +17,78 @@ def search_page():
     results = None
     
     if query:
-        # --- PRÉ-CHARGEMENT COMPLET PLEX ---
-        plex_show_cache, plex_episode_cache, plex_movie_cache = {}, {}, {}
-        user_plex = get_user_specific_plex_server()
-        if user_plex:
-            all_libs = user_plex.library.sections()
-            for lib in all_libs:
-                if lib.type == 'show':
-                    for show in lib.all():
-                        tvdb_id = next((int(g.id.split('//')[1]) for g in show.guids if 'tvdb' in g.id), None)
-                        if tvdb_id:
-                            plex_show_cache[tvdb_id] = show
-                            plex_episode_cache[tvdb_id] = {(e.seasonNumber, e.index) for e in show.episodes()}
-                elif lib.type == 'movie':
-                    for movie in lib.all():
-                        tmdb_id = next((int(g.id.split('//')[1]) for g in movie.guids if 'tmdb' in g.id), None)
-                        if tmdb_id:
-                            plex_movie_cache[tmdb_id] = {'title': movie.title, 'year': movie.year}
-
-        current_app.logger.info(f"Cache Plex créé: {len(plex_show_cache)} séries, {len(plex_movie_cache)} films.")
-
-        # --- TRAITEMENT DES RÉSULTATS PROWLARR ---
+        # --- TRAITEMENT DES RÉSULTATS PROWLARR (SIMPLIFIÉ) ---
+        # La vérification du statut Plex/Sonarr/Radarr est maintenant gérée par une route API séparée.
         raw_results = search_prowlarr(query)
         if raw_results is not None:
-            for result in raw_results:
-                result['status_info'] = check_media_status(result['title'], plex_show_cache, plex_episode_cache, plex_movie_cache)
+            # On ne vérifie plus le statut ici. On passe les résultats bruts.
+            # Le template s'attend à 'results' qui est une liste de dictionnaires.
+            # Chaque dictionnaire doit contenir au moins 'title' et 'guid' pour le nouveau bouton.
             results = raw_results
+            # Assurez-vous que `search_prowlarr` retourne bien 'guid' pour chaque résultat.
+            # Si ce n'est pas le cas, il faudra l'ajouter ou l'adapter.
+            # Pour l'instant, on assume que Prowlarr fournit cela.
         else:
             flash("Erreur de communication avec Prowlarr.", "danger")
             results = []
 
     return render_template('search_ui/search.html', title="Recherche", results=results, query=query)
+
+
+@search_ui_bp.route('/check_media_status', methods=['POST'])
+@login_required
+def check_media_status_api():
+    data = request.json
+    guid = data.get('guid') # guid is available from Prowlarr, but util_check_media_status primarily uses title
+    title = data.get('title') # This is the release_title from Prowlarr
+
+    if not title:
+        current_app.logger.warn("/check_media_status - Titre manquant dans la requête POST.")
+        return jsonify({'text': 'Titre manquant', 'status_class': 'text-danger'}), 400
+
+    try:
+        # Call the checker utility. It will use empty Plex caches by default.
+        status_info_raw = util_check_media_status(release_title=title)
+
+        current_app.logger.debug(f"Résultat de util_check_media_status pour '{title}' (GUID: {guid}): {status_info_raw}")
+
+        status_label = status_info_raw.get('status', 'Indéterminé')
+        # 'details' from util_check_media_status is usually the parsed title like "Movie Title (2023)" or "Show S01E01"
+        details_text = status_info_raw.get('details', title)
+
+        # Construct the text to display
+        if status_label in ['Déjà Présent', 'Non Trouvé (Radarr)', 'Série non trouvée', 'Erreur Analyse', 'Indéterminé']:
+            # For these statuses, the label itself is descriptive enough.
+            final_text = status_label
+        else:
+            # For other statuses like "Manquant (Surveillé)", "Non Surveillé", include details.
+            final_text = f"{status_label}: {details_text}"
+
+        badge_color = status_info_raw.get('badge_color', 'secondary')
+        status_class_map = {
+            'success': 'text-success',  # e.g., Déjà Présent
+            'warning': 'text-warning',  # e.g., Manquant (Surveillé)
+            'danger': 'text-danger',    # e.g., Erreur Analyse
+            'secondary': 'text-body-secondary', # e.g., Non Surveillé, Indéterminé (Bootstrap 5.3 class for muted text)
+            'dark': 'text-body-secondary' # e.g., Non Trouvé (Radarr/Sonarr)
+            # 'info', 'primary' are not typically returned by current util_check_media_status
+        }
+        status_class = status_class_map.get(badge_color, 'text-body-secondary') # Default to muted text
+
+        # Override if the status itself indicates an error more strongly
+        if status_info_raw.get('status') == 'Erreur Analyse':
+             status_class = 'text-danger'
+             final_text = "Erreur d'analyse du statut" # More user-friendly
+        elif "erreur" in status_label.lower() and status_label != 'Erreur Analyse': # Catch other potential error strings
+            status_class = 'text-danger'
+            # final_text is already set to status_label which would contain "erreur..."
+
+        current_app.logger.info(f"Statut API pour '{title}': text='{final_text}', class='{status_class}'")
+        return jsonify({'text': final_text, 'status_class': status_class})
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur API dans /check_media_status pour '{title}' (GUID: {guid}): {e}", exc_info=True)
+        return jsonify({'text': 'Erreur serveur interne', 'status_class': 'text-danger'}), 500
 
 
 # Note: La route /results n'est plus explicitement nécessaire si /search gère tout.

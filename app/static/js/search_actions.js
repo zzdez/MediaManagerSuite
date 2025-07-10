@@ -164,4 +164,56 @@ $(document).ready(function() {
         });
     });
 
+    // --- [4] Logique pour le bouton "Vérifier Statut" ---
+    document.addEventListener('click', function(event) {
+        if (event.target.classList.contains('check-status-btn')) {
+            const button = event.target;
+            const statusCell = button.closest('.status-cell'); // Find the parent cell
+            const spinner = statusCell.querySelector('.spinner-border');
+
+            const guid = button.dataset.guid;
+            const title = button.dataset.title;
+
+            button.classList.add('d-none');
+            spinner.classList.remove('d-none');
+
+            // Assuming the blueprint is mounted at /search, so the URL is /search/check_media_status
+            // This matches the pattern of other fetch/ajax calls in this file.
+            fetch("/search/check_media_status", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    // If CSRF protection is enabled and needed for POST requests,
+                    // a CSRF token would need to be included in headers.
+                    // For example, get it from a meta tag or a hidden input if available.
+                    // 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                },
+                body: JSON.stringify({ guid: guid, title: title })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    // Try to parse error a bit better if it's JSON
+                    return response.json().then(errData => {
+                        throw new Error(errData.text || `HTTP error ${response.status}`);
+                    }).catch(() => {
+                        // If not JSON, throw generic error
+                        throw new Error(`HTTP error ${response.status}`);
+                    });
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.text && data.status_class) {
+                    statusCell.innerHTML = `<span class="${data.status_class}">${data.text}</span>`;
+                } else {
+                    // Fallback if data is not as expected
+                    statusCell.innerHTML = `<span class="text-warning">Réponse invalide</span>`;
+                }
+            })
+            .catch(error => {
+                console.error("Erreur de vérification du statut:", error);
+                statusCell.innerHTML = `<span class="text-danger">Erreur: ${error.message || 'Communication'}</span>`;
+            });
+        }
+    });
 });
