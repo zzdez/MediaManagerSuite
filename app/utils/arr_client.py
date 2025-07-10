@@ -587,3 +587,119 @@ def add_new_movie_to_radarr(tmdb_id: int, title: str, quality_profile_id: int, r
 
         logger.error(f"RADARR_CLIENT: Failed to add movie '{title}'. Response/Error: {error_details}")
         return None
+
+def get_arr_media_details(search_title: str, media_type_from_guessit: str, year_from_guessit: int = None):
+    """
+    Searches Sonarr/Radarr for a media item by title and returns enriched details including
+    canonical title, alternative titles, and external IDs.
+    """
+    if not search_title or not media_type_from_guessit:
+        logger.warn("get_arr_media_details: search_title or media_type_from_guessit is missing.")
+        return None
+
+    logger.info(f"get_arr_media_details: Searching for '{search_title}' (Type: {media_type_from_guessit}, Year: {year_from_guessit})")
+
+    initial_search_results = []
+    arr_item_id = None
+    arr_item_details = None
+
+    if media_type_from_guessit == 'episode': # Sonarr
+        initial_search_results = search_sonarr_by_title(search_title)
+        if initial_search_results:
+            # Try to find an exact title match or a year match if Sonarr lookup provides series year
+            best_match = None
+            for item in initial_search_results:
+                if item.get('title','').lower() == search_title.lower():
+                    if year_from_guessit and item.get('year') and item.get('year') == year_from_guessit:
+                        best_match = item # Perfect match with year
+                        break
+                    elif not year_from_guessit and not best_match : # If no year to match, first exact title match
+                        best_match = item
+            if not best_match and initial_search_results : best_match = initial_search_results[0] # Fallback to first result
+
+            if best_match:
+                arr_item_id = best_match.get('id') # Sonarr's internal ID if already added
+                if not arr_item_id: # Not yet in Sonarr, use tvdbId for fetching details if possible from lookup
+                    # Sonarr's lookup usually gives enough details directly without needing a second call by tvdbId
+                    arr_item_details = best_match
+                else: # Already in Sonarr, fetch full details by its Sonarr ID
+                    arr_item_details = get_sonarr_series_by_id(arr_item_id)
+            else:
+                logger.info(f"get_arr_media_details: No suitable match found in Sonarr lookup for '{search_title}'.")
+                return None
+        else:
+            logger.info(f"get_arr_media_details: Sonarr lookup returned no results for '{search_title}'.")
+            return None
+
+    elif media_type_from_guessit == 'movie': # Radarr
+        initial_search_results = search_radarr_by_title(search_title)
+        if initial_search_results:
+            best_match = None
+            # Radarr's lookup often returns multiple versions/qualities if movie is already added.
+            # We prefer a match with the correct year.
+            if year_from_guessit:
+                for item in initial_search_results:
+                    if item.get('year') == year_from_guessit and item.get('title','').lower() == search_title.lower():
+                        best_match = item
+                        break
+            if not best_match: # If no year match or no year_from_guessit
+                 for item in initial_search_results: # Try title match without year
+                    if item.get('title','').lower() == search_title.lower():
+                        best_match = item
+                        break
+            if not best_match and initial_search_results: best_match = initial_search_results[0] # Fallback
+
+            if best_match:
+                arr_item_id = best_match.get('id') # Radarr's internal ID if already added
+                if not arr_item_id: # Not yet in Radarr
+                    arr_item_details = best_match # Lookup result is usually detailed enough
+                else: # Already in Radarr, fetch full details
+                    arr_item_details = _radarr_api_request('GET', f'movie/{arr_item_id}')
+            else:
+                logger.info(f"get_arr_media_details: No suitable match found in Radarr lookup for '{search_title}'.")
+                return None
+        else:
+            logger.info(f"get_arr_media_details: Radarr lookup returned no results for '{search_title}'.")
+            return None
+    else:
+        logger.warn(f"get_arr_media_details: Unknown media_type_from_guessit '{media_type_from_guessit}'.")
+        return None
+
+    if not arr_item_details:
+        logger.warn(f"get_arr_media_details: Could not retrieve full details for '{search_title}' from {media_type_from_guessit}.")
+        return None
+
+    # Extract information
+    # Sonarr: title, alternateTitles (list of dicts with title), tvdbId, imdbId (sometimes)
+    # Radarr: title, alternativeTitles (list of dicts with title), tmdbId, imdbId
+
+    canonical_title = arr_item_details.get('title')
+    alternate_titles_raw = []
+    if media_type_from_guessit == 'episode': # Sonarr
+        alternate_titles_raw = arr_item_details.get('alternateTitles', [])
+    elif media_type_from_guessit == 'movie': # Radarr
+        # Radarr V3 uses 'alternativeTitles', V4+ might use 'alternateTitles'. Check both.
+        alternate_titles_raw = arr_item_details.get('alternativeTitles') or arr_item_details.get('alternateTitles', [])
+
+
+    alternate_titles_list = [alt.get('title') for alt in alternate_titles_raw if alt.get('title')]
+
+    # Remove duplicates and the canonical title from alternate titles if present
+    unique_alternate_titles = list(set(alternate_titles_list))
+    if canonical_title and canonical_title in unique_alternate_titles:
+        unique_alternate_titles.remove(canonical_title)
+
+    details = {
+        'canonical_title': canonical_title,
+        'alternate_titles': unique_alternate_titles,
+        'tvdb_id': arr_item_details.get('tvdbId') if media_type_from_guessit == 'episode' else None,
+        'tmdb_id': arr_item_details.get('tmdbId') if media_type_from_guessit == 'movie' else None,
+        'imdb_id': arr_item_details.get('imdbId'), # Both Sonarr & Radarr might have imdbId
+        'arr_item_id': arr_item_id, # Internal Sonarr/Radarr ID (None if not yet added)
+        'arr_item_monitored': arr_item_details.get('monitored', False), # Monitored status
+        'year': arr_item_details.get('year'), # Year from Arr, often more reliable
+        'raw_arr_response': arr_item_details # For debugging or further use
+    }
+
+    logger.info(f"get_arr_media_details: Successfully fetched details for '{search_title}': TVDB ID: {details['tvdb_id']}, TMDB ID: {details['tmdb_id']}, IMDb ID: {details['imdb_id']}, Arr ID: {details['arr_item_id']}")
+    return details

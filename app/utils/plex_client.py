@@ -1,9 +1,12 @@
 # app/utils/plex_client.py
 # -*- coding: utf-8 -*-
 
+import logging # Added logging import
 from flask import current_app, session, flash
 from plexapi.server import PlexServer
 from plexapi.exceptions import NotFound, Unauthorized
+
+logger = logging.getLogger(__name__) # Defined module-level logger
 
 # --- Fonctions Utilitaires ---
 
@@ -98,3 +101,127 @@ def get_user_specific_plex_server():
     except Exception as e:
         current_app.logger.error(f"Erreur majeure lors de l'obtention de la connexion utilisateur Plex : {e}", exc_info=True)
         return None
+
+def find_plex_media_by_external_id(plex_server, external_id_str: str, media_type_from_guessit: str):
+    """
+    Finds a Plex media item (show or movie) using an external ID string (e.g., "tvdb://12345").
+    For 'episode' media_type, it aims to return the show.
+    Returns the Plex item or None.
+    """
+    if not plex_server or not external_id_str:
+        return None
+
+    # Plex GUIDs often don't include the "scheme" part like "tvdb://" in its internal guids field for search.
+    # We might need to parse the ID out of external_id_str if it includes such schemes.
+    # Example: external_id_str could be "tvdb://12345" or just "12345" if type is known.
+    # Plex's search for guid usually expects the raw ID part for some agents, or full for others.
+    # The fetchItem method is problematic for scheme-based GUIDs like tvdb:// as it forms invalid URLs.
+    # We will primarily rely on library.search(guid=...) which is more robust for these.
+
+    libtype_for_search = 'show' if media_type_from_guessit == 'episode' else media_type_from_guessit
+    if libtype_for_search not in ['show', 'movie']:
+        logger.warn(f"Plex Client: Invalid libtype '{libtype_for_search}' for GUID search of '{external_id_str}'.")
+        return None
+
+    # Attempt 1: Search with the full external_id_str (e.g., "tvdb://12345")
+    try:
+        logger.debug(f"Plex Client: Attempting GUID search with full ID '{external_id_str}' and libtype '{libtype_for_search}'.")
+        results = plex_server.library.search(guid=external_id_str, libtype=libtype_for_search, limit=1)
+        if results:
+            item = results[0]
+            # Ensure correct type if 'episode' was requested (we want the show)
+            if media_type_from_guessit == 'episode' and item.type == 'episode':
+                 logger.info(f"Plex Client: Found episode by full GUID search '{external_id_str}', returning show: {item.show().title}")
+                 return item.show()
+            elif item.type == libtype_for_search: # Covers show for episode type, or movie for movie type
+                 logger.info(f"Plex Client: Found media by full GUID search '{external_id_str}': {item.title}")
+                 return item
+            else:
+                 logger.warn(f"Plex Client: Full GUID search for '{external_id_str}' found item of type '{item.type}', expected '{libtype_for_search}'.")
+
+    except Exception as e:
+        logger.error(f"Plex Client: Error searching Plex by full GUID '{external_id_str}': {e}", exc_info=True)
+
+    # Attempt 2: Parse common schemes and search with only the ID part (e.g., "12345" from "tvdb://12345")
+    if '//' in external_id_str:
+        parsed_id_only = external_id_str.split('//')[-1]
+        if parsed_id_only and parsed_id_only != external_id_str: # Ensure parsing actually changed something
+            try:
+                logger.debug(f"Plex Client: Attempting GUID search with parsed ID '{parsed_id_only}' and libtype '{libtype_for_search}'.")
+                results_parsed = plex_server.library.search(guid=parsed_id_only, libtype=libtype_for_search, limit=1)
+                if results_parsed:
+                    item = results_parsed[0]
+                    if media_type_from_guessit == 'episode' and item.type == 'episode':
+                        logger.info(f"Plex Client: Found episode by parsed GUID search '{parsed_id_only}', returning show: {item.show().title}")
+                        return item.show()
+                    elif item.type == libtype_for_search:
+                        logger.info(f"Plex Client: Found media by parsed GUID search '{parsed_id_only}': {item.title}")
+                        return item
+                    else:
+                        logger.warn(f"Plex Client: Parsed GUID search for '{parsed_id_only}' found item of type '{item.type}', expected '{libtype_for_search}'.")
+            except Exception as e:
+                logger.error(f"Plex Client: Error searching Plex by parsed GUID '{parsed_id_only}': {e}", exc_info=True)
+
+    # If fetchItem was considered for specific Plex internal GUIDs (not scheme-based ones), that logic could go here.
+    # For now, relying on library.search(guid=...) is safer for external IDs.
+    # Example: If external_id_str was something like "/library/metadata/xxxxx" (a rating key)
+    # if external_id_str.startswith("/library/metadata/"):
+    #     try:
+    #         item = plex_server.fetchItem(external_id_str)
+    #         # ... (type checking as above) ...
+    #         return item
+    #     except NotFound:
+    #          logger.debug(f"Plex Client: fetchItem for direct key '{external_id_str}' not found.")
+    #     except Exception as e:
+    #          logger.error(f"Plex Client: Error with fetchItem for direct key '{external_id_str}': {e}")
+
+    logger.warn(f"Plex Client: Could not find Plex media by external ID '{external_id_str}' after all attempts.")
+    return None
+
+def find_plex_media_by_titles(plex_server, titles_list: list, year: int, media_type_from_guessit: str):
+    """
+    Finds a Plex media item by iterating through a list of titles.
+    Returns the Plex item or None.
+    """
+    if not plex_server or not titles_list:
+        return None
+
+    libtype_for_search = 'show' if media_type_from_guessit == 'episode' else media_type_from_guessit
+    if libtype_for_search not in ['show', 'movie']:
+        logger.warn(f"Plex Client: Invalid libtype '{libtype_for_search}' for titles search.")
+        return None
+
+    for title_to_search in titles_list:
+        if not title_to_search: continue # Skip empty titles
+
+        try:
+            logger.debug(f"Plex Client: Searching Plex for title '{title_to_search}', year '{year}', type '{libtype_for_search}'.")
+            results = plex_server.library.search(title=title_to_search, year=year, libtype=libtype_for_search, limit=5)
+            if results:
+                # Prefer exact title match (case-insensitive) if multiple results
+                for item in results:
+                    if item.title.lower() == title_to_search.lower():
+                        # If year was provided for search, ensure Plex item's year also matches
+                        if year and hasattr(item, 'year') and item.year != year:
+                            logger.debug(f"Plex Client: Title '{title_to_search}' matched but year mismatch (Plex: {item.year}, Expected: {year}). Skipping.")
+                            continue
+                        logger.info(f"Plex Client: Found exact title match for '{title_to_search}' (Year: {item.year if hasattr(item, 'year') else 'N/A'}).")
+                        return item
+
+                # If no exact title match, but got results, consider the first one (less ideal)
+                # This could be refined further based on confidence scores if Plex API provides them via plexapi
+                logger.info(f"Plex Client: Found potential match for title '{title_to_search}' (first result: {results[0].title}). Year matching: {year == results[0].year if hasattr(results[0], 'year') and year else 'N/A or no year given'}.")
+                # Ensure year matches if one was provided for the search
+                if year and hasattr(results[0], 'year') and results[0].year == year:
+                    return results[0]
+                elif not year: # If no year was provided for search, first result is a candidate
+                    return results[0]
+                # else: year was provided but didn't match the first result, so continue to next title in titles_list
+
+        except Exception as e:
+            logger.error(f"Plex Client: Error searching Plex by title '{title_to_search}': {e}", exc_info=True)
+            # Continue to the next title if an error occurs for one
+            continue
+
+    logger.warn(f"Plex Client: Could not find Plex media by any of the titles: {titles_list} (Year: {year}).")
+    return None
