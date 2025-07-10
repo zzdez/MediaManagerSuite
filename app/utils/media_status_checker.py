@@ -1,158 +1,161 @@
 # app/utils/media_status_checker.py
 from flask import current_app
-from guessit import guessit
+from guessit import guessit # Ensure guessit is imported
 from plexapi.exceptions import NotFound
 
 from .arr_client import search_radarr_by_title, search_sonarr_by_title
-from .plex_client import get_user_specific_plex_server # Ensure this is correctly imported
+from .plex_client import get_user_specific_plex_server
 
-# Removed plex_show_cache, plex_episode_cache, plex_movie_cache from parameters as they are no longer used
+def _check_arr_status(parsed_info, status_info_ref, release_title_for_log):
+    """Helper function to check Sonarr/Radarr status."""
+    media_type = parsed_info.get('type')
+    # Use parsed_title from parsed_info for Arr search, as it's cleaner
+    arr_search_title = parsed_info.get('title')
+
+    if not arr_search_title: # Should have been caught earlier, but defensive
+        current_app.logger.warn(f"_check_arr_status: No title from guessit for '{release_title_for_log}', cannot check Arr.")
+        status_info_ref.update({'status': 'Erreur Analyse Titre Arr', 'badge_color': 'danger'})
+        return status_info_ref
+
+    current_app.logger.debug(f"_check_arr_status: Checking Arr for '{arr_search_title}' (type: {media_type}) from release '{release_title_for_log}'")
+
+    if media_type == 'movie':
+        year = parsed_info.get('year') # Use parsed year for Radarr search
+        # status_info_ref['details'] would have been set by the main function if it's a movie
+
+        radarr_results = search_radarr_by_title(arr_search_title)
+        found_in_radarr = None
+        if radarr_results:
+            if year:
+                found_in_radarr = next((m for m in radarr_results if m.get('year') == year and m.get('title', '').lower() == arr_search_title.lower()), None)
+            if not found_in_radarr: # Fallback if year match fails or no year
+                found_in_radarr = next((m for m in radarr_results if m.get('title', '').lower() == arr_search_title.lower()), None)
+
+        if not found_in_radarr:
+            status_info_ref.update({'status': 'Non Trouvé (Radarr)', 'badge_color': 'dark'})
+        elif found_in_radarr.get('monitored'):
+            status_info_ref.update({'status': 'Manquant (Surveillé)', 'badge_color': 'warning'})
+        else:
+            status_info_ref.update({'status': 'Non Surveillé', 'badge_color': 'secondary'})
+        return status_info_ref
+
+    elif media_type == 'episode':
+        season_num = parsed_info.get('season')
+        # episode_num = parsed_info.get('episode') # Not directly used for series search/status
+        # status_info_ref['details'] would have been set by the main function for episode
+
+        if not isinstance(season_num, int): # Episode number check is not critical for series monitoring status
+            current_app.logger.warn(f"_check_arr_status: Cannot accurately check Sonarr for '{release_title_for_log}' due to missing season number.")
+            status_info_ref.update({'status': 'Erreur Analyse Saison (Arr)', 'badge_color': 'danger'})
+            return status_info_ref
+
+        sonarr_results = search_sonarr_by_title(arr_search_title) # arr_search_title is series title
+        if not sonarr_results:
+            status_info_ref.update({'status': 'Série non trouvée', 'badge_color': 'dark'})
+            return status_info_ref
+
+        sonarr_series = next((s for s in sonarr_results if s.get('title','').lower() == arr_search_title.lower()), sonarr_results[0])
+
+        if sonarr_series.get('monitored'):
+            status_info_ref.update({'status': 'Manquant (Surveillé)', 'badge_color': 'warning'})
+        else:
+            status_info_ref.update({'status': 'Non Surveillé', 'badge_color': 'secondary'})
+        return status_info_ref
+
+    # If media_type is unknown or not movie/episode
+    current_app.logger.warn(f"_check_arr_status: Type de média inconnu '{media_type}' pour '{release_title_for_log}'. Statut Arr non déterminé.")
+    # status_info_ref remains 'Indéterminé' or previous state
+    return status_info_ref
+
+
 def check_media_status(release_title):
     status_info = {
         'status': 'Indéterminé', 
-        'details': release_title, 
+        'details': release_title, # Default details to raw title
         'badge_color': 'secondary',
-        'parsed_title': None,
-        'media_type': None
+        'parsed_title': None, # Will be updated by guessit
+        'media_type': None    # Will be updated by guessit
     }
     
     try:
         parsed_info = guessit(release_title)
+        parsed_title = parsed_info.get('title')
+        parsed_year = parsed_info.get('year')
+        parsed_season = parsed_info.get('season')
+        parsed_episode = parsed_info.get('episode')
         media_type = parsed_info.get('type')
-        title = parsed_info.get('title') # This is the series title for episodes, or movie title
 
         status_info['media_type'] = media_type
-        status_info['parsed_title'] = title
+        status_info['parsed_title'] = parsed_title # Store the parsed title
 
-        if not title:
-            current_app.logger.warn(f"check_media_status: Guessit failed to find a title for '{release_title}'.")
-            return status_info
+        # Update details string based on parsed info for better display later
+        if media_type == 'movie' and parsed_title:
+            status_info['details'] = f"{parsed_title} ({parsed_year})" if parsed_year else parsed_title
+        elif media_type == 'episode' and parsed_title and isinstance(parsed_season, int) and isinstance(parsed_episode, int):
+            status_info['details'] = f"{parsed_title} - S{parsed_season:02d}E{parsed_episode:02d}"
+        # else, details remains release_title or as updated by specific logic
 
-        # --- ÉTAPE 1: Vérification Plex (Live Query) ---
+        if not parsed_title:
+            current_app.logger.warn(f"check_media_status: Guessit failed to find a title for '{release_title}'. Proceeding to Arr check with raw title if possible.")
+            # No proper title, Plex check is unlikely to succeed. Fallback to Arr check.
+            return _check_arr_status(parsed_info, status_info, release_title)
+
+
+        # --- ÉTAPE 1: Vérification Plex (Live Query using parsed info) ---
         user_plex = None
         try:
             user_plex = get_user_specific_plex_server()
         except Exception as e:
             current_app.logger.error(f"check_media_status: Erreur lors de la récupération du serveur Plex: {e}", exc_info=True)
-            # Proceed without Plex check if server connection fails
 
         if user_plex:
-            current_app.logger.debug(f"check_media_status: Vérification Plex pour '{title}' (type: {media_type})")
+            current_app.logger.debug(f"check_media_status: Vérification Plex pour '{parsed_title}' (type: {media_type})")
             if media_type == 'movie':
-                year = parsed_info.get('year')
-                status_info['details'] = f"{title} ({year})" if year else title
                 try:
-                    # Search returns a list, even if it's an exact match
-                    plex_results = user_plex.library.search(title=title, year=year, libtype='movie', limit=5)
+                    plex_results = user_plex.library.search(title=parsed_title, year=parsed_year, libtype='movie', limit=5)
                     for movie_item in plex_results:
-                        # Additional check to ensure it's the correct movie if year wasn't perfectly matched by search
-                        if year and movie_item.year != year:
-                            continue
-                        if movie_item.title.lower() == title.lower(): # Stricter title match
-                             # Check if media is available (has parts)
+                        # Stricter matching: compare lowercase titles and ensure year matches if provided
+                        if movie_item.title.lower() == parsed_title.lower() and \
+                           (not parsed_year or movie_item.year == parsed_year):
                             if hasattr(movie_item, 'media') and movie_item.media and \
                                hasattr(movie_item.media[0], 'parts') and movie_item.media[0].parts:
-                                current_app.logger.info(f"check_media_status: '{title}' trouvé dans Plex.")
+                                current_app.logger.info(f"check_media_status: Film '{parsed_title}' ({parsed_year}) trouvé dans Plex.")
                                 status_info.update({'status': 'Déjà Présent', 'badge_color': 'success'})
                                 return status_info
                 except Exception as e:
-                    current_app.logger.error(f"check_media_status: Erreur lors de la recherche du film Plex '{title}': {e}", exc_info=True)
+                    current_app.logger.error(f"check_media_status: Erreur lors de la recherche du film Plex '{parsed_title}': {e}", exc_info=True)
 
             elif media_type == 'episode':
-                season_num = parsed_info.get('season')
-                episode_num = parsed_info.get('episode')
-
-                if not all([isinstance(season_num, int), isinstance(episode_num, int)]):
-                    # If season/episode not parsed, can't check Plex accurately for episode
-                    current_app.logger.warn(f"check_media_status: Saison/épisode non parsé pour '{release_title}', Plex check pour épisode ignoré.")
+                if not all([isinstance(parsed_season, int), isinstance(parsed_episode, int)]):
+                    current_app.logger.warn(f"check_media_status: Saison/épisode non parsé correctement pour '{release_title}', Plex check pour épisode ignoré.")
                 else:
-                    status_info['details'] = f"{title} - S{season_num:02d}E{episode_num:02d}"
                     try:
-                        # Search for the show first
-                        plex_shows = user_plex.library.search(title=title, libtype='show', limit=5)
+                        plex_shows = user_plex.library.search(title=parsed_title, libtype='show', limit=5) # parsed_title is show title
                         if plex_shows:
-                            for show_item in plex_shows: # Iterate in case of multiple matches for a show title
-                                if show_item.title.lower() == title.lower(): # Stricter title match
+                            for show_item in plex_shows:
+                                if show_item.title.lower() == parsed_title.lower(): # Match show title
                                     try:
-                                        episode_item = show_item.episode(season=season_num, episode=episode_num)
+                                        episode_item = show_item.episode(season=parsed_season, episode=parsed_episode)
                                         if episode_item and hasattr(episode_item, 'media') and episode_item.media and \
                                            hasattr(episode_item.media[0], 'parts') and episode_item.media[0].parts:
-                                            current_app.logger.info(f"check_media_status: '{status_info['details']}' trouvé dans Plex.")
+                                            current_app.logger.info(f"check_media_status: Épisode '{status_info['details']}' trouvé dans Plex.")
                                             status_info.update({'status': 'Déjà Présent', 'badge_color': 'success'})
                                             return status_info
                                     except NotFound:
-                                        # Episode not found in this specific show, try next if multiple shows matched
                                         continue
                                     except Exception as e_ep:
-                                        current_app.logger.error(f"check_media_status: Erreur lors de la récupération de l'épisode Plex pour '{title} S{season_num}E{episode_num}': {e_ep}", exc_info=True)
-                                        break # Error with this show, stop trying
-                            # If loop completes and episode not found in any matched show
-                            current_app.logger.debug(f"check_media_status: Épisode '{status_info['details']}' non trouvé dans Plex après vérification des shows correspondants.")
+                                        current_app.logger.error(f"check_media_status: Erreur récupération épisode Plex pour '{parsed_title} S{parsed_season}E{parsed_episode}': {e_ep}", exc_info=True)
+                                        break
+                            current_app.logger.debug(f"check_media_status: Épisode '{status_info['details']}' non trouvé dans Plex.")
                         else:
-                            current_app.logger.debug(f"check_media_status: Série '{title}' non trouvée dans Plex.")
+                            current_app.logger.debug(f"check_media_status: Série '{parsed_title}' non trouvée dans Plex.")
                     except Exception as e_show:
-                        current_app.logger.error(f"check_media_status: Erreur lors de la recherche de la série Plex '{title}': {e_show}", exc_info=True)
+                        current_app.logger.error(f"check_media_status: Erreur recherche série Plex '{parsed_title}': {e_show}", exc_info=True)
         else:
             current_app.logger.warn("check_media_status: user_plex non disponible, Plex check ignoré.")
 
-        # --- ÉTAPE 2: Si non présent dans Plex, vérifier Sonarr/Radarr (logique existante) ---
-        current_app.logger.debug(f"check_media_status: '{release_title}' non trouvé dans Plex (ou Plex indisponible). Vérification Sonarr/Radarr.")
-
-        if media_type == 'movie':
-            # Year already parsed for Plex check
-            year = parsed_info.get('year')
-            # status_info['details'] already set
-            radarr_results = search_radarr_by_title(title) # title is movie title
-            found_in_radarr = None
-            if radarr_results:
-                # Filter by year if available, otherwise take first match
-                if year:
-                    found_in_radarr = next((m for m in radarr_results if m.get('year') == year and m.get('title', '').lower() == title.lower()), None)
-                if not found_in_radarr: # If year-specific match failed or no year, try broader match
-                    found_in_radarr = next((m for m in radarr_results if m.get('title', '').lower() == title.lower()), None)
-            
-            if not found_in_radarr:
-                status_info.update({'status': 'Non Trouvé (Radarr)', 'badge_color': 'dark'})
-            elif found_in_radarr.get('monitored'):
-                status_info.update({'status': 'Manquant (Surveillé)', 'badge_color': 'warning'})
-            else:
-                status_info.update({'status': 'Non Surveillé', 'badge_color': 'secondary'})
-            return status_info
-
-        elif media_type == 'episode':
-            # season_num, episode_num, title (series title), status_info['details'] already set/checked
-            season_num = parsed_info.get('season') # Re-get in case it wasn't set due to not being int
-            episode_num = parsed_info.get('episode')
-
-            if not all([isinstance(season_num, int), isinstance(episode_num, int)]):
-                 # This case should ideally be caught earlier, but as a safeguard
-                current_app.logger.warn(f"check_media_status: Cannot check Sonarr for '{release_title}' due to missing season/episode numbers.")
-                status_info.update({'status': 'Erreur Analyse S/E', 'badge_color': 'danger'})
-                return status_info
-
-            sonarr_results = search_sonarr_by_title(title) # title is series title
-            if not sonarr_results:
-                status_info.update({'status': 'Série non trouvée', 'badge_color': 'dark'})
-                return status_info
-            
-            # Assuming the first result from sonarr_results is the most relevant if multiple are returned
-            # A more robust approach might involve matching tvdbId if available from Prowlarr guid
-            sonarr_series = next((s for s in sonarr_results if s.get('title','').lower() == title.lower()), sonarr_results[0])
-
-            # Here, we need to check if the specific episode is monitored AND has a file in Sonarr's view
-            # The current search_sonarr_by_title gives series info, not episode file status directly.
-            # For simplicity, if series is monitored, assume episode is 'Manquant (Surveillé)' unless Plex said 'Déjà Présent'.
-            # A deeper check would query Sonarr for the specific episode's status.
-            if sonarr_series.get('monitored'):
-                # TODO: Optionally, query Sonarr for this specific episode's file status for more accuracy
-                # For now, if series is monitored and not in Plex, assume episode is wanted.
-                status_info.update({'status': 'Manquant (Surveillé)', 'badge_color': 'warning'})
-            else:
-                status_info.update({'status': 'Non Surveillé', 'badge_color': 'secondary'})
-            return status_info
-
-        # If media_type is neither movie nor episode, or other unhandled case
-        return status_info
+        # --- ÉTAPE 2: Si non présent dans Plex, vérifier Sonarr/Radarr ---
+        return _check_arr_status(parsed_info, status_info, release_title)
 
     except Exception as e:
         current_app.logger.error(f"Erreur majeure dans check_media_status pour '{release_title}': {e}", exc_info=True)
