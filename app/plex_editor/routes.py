@@ -172,17 +172,35 @@ def get_media_items():
                     try:
                         if item_from_lib.type == 'movie':
                             # Accès direct à la taille pour un film
-                            item_from_lib.total_size = item_from_lib.media[0].parts[0].size
+                            # Ensure all attributes exist before accessing
+                            if hasattr(item_from_lib, 'media') and item_from_lib.media and \
+                               len(item_from_lib.media) > 0 and hasattr(item_from_lib.media[0], 'parts') and \
+                               len(item_from_lib.media[0].parts) > 0 and hasattr(item_from_lib.media[0].parts[0], 'size'):
+                                item_from_lib.total_size = item_from_lib.media[0].parts[0].size
+                            else:
+                                item_from_lib.total_size = 0 # Default if path is incomplete
+                                current_app.logger.debug(f"Movie '{item_from_lib.title}' (key: {item_from_lib.ratingKey}) missing full media path for size.")
                         elif item_from_lib.type == 'show':
-                            # Pour une série, on utilise la taille déjà calculée par Plex
-                            # L'attribut 'sizeOnDisk' est généralement disponible pour les séries
-                            item_from_lib.total_size = getattr(item_from_lib, 'sizeOnDisk', 0)
+                            # --- NOUVELLE LOGIQUE DE CALCUL POUR LES SÉRIES ---
+                            series_size = 0
+                            # 'episodes()' recharges detailed info, including files. Can be slow.
+                            for episode in item_from_lib.episodes(): # PlexAPI reloads item if necessary
+                                if hasattr(episode, 'media') and episode.media:
+                                    for media_item in episode.media: # Iterate through media items of an episode
+                                        if hasattr(media_item, 'parts') and media_item.parts:
+                                            for part in media_item.parts: # Iterate through parts of a media item
+                                                series_size += getattr(part, 'size', 0) # Use getattr for safety
+                            item_from_lib.total_size = series_size
+                            # --- FIN DE LA NOUVELLE LOGIQUE ---
                         else:
                             item_from_lib.total_size = 0
-                    except (AttributeError, IndexError):
-                        # Si un film n'a pas de média ou de partie (ex: métadonnées uniquement)
-                        # Ou si sizeOnDisk n'est pas présent pour une série
-                        current_app.logger.debug(f"Could not determine size for '{item_from_lib.title}' (key: {item_from_lib.ratingKey}) via primary method. Setting to 0.")
+                    except (AttributeError, IndexError) as e_size_calc:
+                        # Catch specific errors related to attribute access
+                        current_app.logger.warning(f"Error calculating size for '{item_from_lib.title}' (key: {item_from_lib.ratingKey}): {type(e_size_calc).__name__} - {e_size_calc}. Setting size to 0.")
+                        item_from_lib.total_size = 0
+                    except Exception as e_general_size:
+                        # Catch any other unexpected errors during size calculation
+                        current_app.logger.error(f"Unexpected error calculating size for '{item_from_lib.title}' (key: {item_from_lib.ratingKey}): {type(e_general_size).__name__} - {e_general_size}", exc_info=True)
                         item_from_lib.total_size = 0
 
                     # Formattage de la taille pour l'affichage (utilisant item_from_lib.total_size)
