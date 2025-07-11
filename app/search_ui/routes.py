@@ -3,7 +3,7 @@
 from flask import render_template, request, flash, redirect, url_for, current_app, jsonify # Ajout de redirect et url_for ET current_app ET jsonify
 from . import search_ui_bp
 from app.utils.prowlarr_client import search_prowlarr
-from app.utils.arr_client import search_sonarr_by_title, search_radarr_by_title
+from app.utils.arr_client import search_sonarr_by_title, search_radarr_by_title # MODIFIED: Removed ArrClient
 from app.utils.media_status_checker import check_media_status # Ajout de l'import
 from app.utils.plex_client import get_user_specific_plex_server # MOVED IMPORT HERE
 # Utiliser le login_required défini dans app/__init__.py pour la cohérence
@@ -89,6 +89,89 @@ def check_media_status_api():
     except Exception as e:
         current_app.logger.error(f"Erreur API dans /check_media_status pour '{title}' (GUID: {guid}): {e}", exc_info=True)
         return jsonify({'text': 'Erreur serveur interne', 'status_class': 'text-danger'}), 500
+
+
+@search_ui_bp.route('/api/prepare_mapping_details', methods=['POST'])
+@login_required
+def prepare_mapping_details():
+    """
+    Prend une release de Prowlarr, l'enrichit avec les données de Sonarr/Radarr,
+    et retourne les détails pour la modale de mapping.
+    """
+    data = request.json
+    release_title = data.get('title')
+
+    if not release_title:
+        current_app.logger.warn("API /api/prepare_mapping_details - Titre manquant dans la requête POST.")
+        return jsonify({'error': 'Titre manquant'}), 400
+
+    try:
+        # Réutilise la logique d'enrichissement que nous avons déjà construite !
+        # Utilisation des fonctions existantes de arr_client.py
+        from app.utils.arr_client import parse_media_name, get_arr_media_details
+
+        parsed_release = parse_media_name(release_title)
+        if not parsed_release or parsed_release['type'] == 'unknown' or not parsed_release['title']:
+            current_app.logger.warn(f"API /api/prepare_mapping_details - Impossible de parser le titre: '{release_title}'")
+            return jsonify({'error': f"Impossible d'analyser le titre de la release: '{release_title}'."}), 400
+
+        # Déterminer le media_type pour get_arr_media_details ('episode' pour tv, 'movie' pour movie)
+        arr_media_type = ""
+        if parsed_release['type'] == 'tv':
+            arr_media_type = 'episode' # get_arr_media_details attend 'episode' pour les séries Sonarr
+        elif parsed_release['type'] == 'movie':
+            arr_media_type = 'movie'
+        else: # Au cas où parse_media_name retournerait un autre type valide dans le futur
+            current_app.logger.error(f"Type de média non géré '{parsed_release['type']}' après parsing de '{release_title}'")
+            return jsonify({'error': f"Type de média non géré: '{parsed_release['type']}'."}), 400
+
+        enriched_data = get_arr_media_details(
+            search_title=parsed_release['title'],
+            media_type_from_guessit=arr_media_type,
+            year_from_guessit=parsed_release['year']
+        )
+
+        if not enriched_data or not enriched_data.get('raw_arr_response'):
+            current_app.logger.info(f"API /api/prepare_mapping_details - Aucun média correspondant trouvé dans Sonarr/Radarr pour '{parsed_release['title']}'.")
+            return jsonify({'error': f"Aucun média correspondant trouvé dans Sonarr/Radarr pour '{parsed_release['title']}' (Année: {parsed_release['year']})."}), 404
+
+        raw_response = enriched_data.get('raw_arr_response')
+
+        # Construction de la réponse pour la modale
+        modal_details = {
+            'id': enriched_data.get('arr_item_id'), # ID Sonarr/Radarr (peut être None si non ajouté)
+            'title': raw_response.get('title', parsed_release['title']), # Titre de Sonarr/Radarr, fallback au titre parsé
+            'year': raw_response.get('year', parsed_release['year']),     # Année de Sonarr/Radarr, fallback à l'année parsée
+            'overview': raw_response.get('overview', 'Synopsis non disponible.'),
+            'remotePoster': None,
+            'media_type': arr_media_type # 'episode' (pour série) ou 'movie'
+        }
+
+        # Extraction du poster
+        images = raw_response.get('images', [])
+        for img in images:
+            if img.get('coverType') == 'poster' and img.get('remoteUrl'):
+                modal_details['remotePoster'] = img.get('remoteUrl')
+                break
+            elif img.get('coverType') == 'poster' and img.get('url'): # Certains retours API utilisent 'url' au lieu de 'remoteUrl'
+                modal_details['remotePoster'] = img.get('url')
+                break
+
+        # Si l'ID interne n'est pas disponible (média non ajouté à *Arr),
+        # mais que nous avons un ID externe (tmdbId/tvdbId), il pourrait être utile de le passer.
+        # Pour l'instant, le JS s'attend à 'data.id' comme ID interne.
+        # Si modal_details['id'] est None, le JS devra gérer ce cas (par ex. proposer l'ajout).
+        if modal_details['id'] is None:
+            current_app.logger.info(f"API /api/prepare_mapping_details - Média '{modal_details['title']}' non trouvé dans Sonarr/Radarr (pas d'ID interne). TMDB/TVDB ID: {enriched_data.get('tmdb_id') or enriched_data.get('tvdb_id')}")
+            # Le JS doit être capable de gérer un ID null, par exemple pour proposer un ajout.
+            # Pour l'instant, on renvoie les infos disponibles.
+
+        current_app.logger.debug(f"API /api/prepare_mapping_details - Détails pour modale pour '{release_title}': {modal_details}")
+        return jsonify(modal_details)
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur lors de la préparation du mapping pour {release_title}: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
 
 
 # Note: La route /results n'est plus explicitement nécessaire si /search gère tout.

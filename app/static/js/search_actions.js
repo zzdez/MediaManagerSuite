@@ -2,6 +2,8 @@ $(document).ready(function() {
     console.log("Search actions script loaded.");
 
     // --- [1] Logique pour le bouton "Télécharger & Mapper" (Ouvre la modale) ---
+    // Commenting out the old jQuery-based handler for .download-and-map-btn
+    /*
     $('body').on('click', '.download-and-map-btn', function(e) {
         e.preventDefault();
         console.log("Bouton '& Mapper' cliqué !");
@@ -56,7 +58,149 @@ $(document).ready(function() {
         
         modalElement.modal('show');
     });
+    */
     // END OF MODIFIED HANDLER [1]
+
+    // --- Nouvelle logique pour la modale de mapping intelligent (JavaScript natif) ---
+    document.addEventListener('DOMContentLoaded', function() {
+        // Logique pour les boutons .download-and-map-btn (ouverture de la nouvelle modale)
+        document.body.addEventListener('click', function(event) {
+            if (event.target.classList.contains('download-and-map-btn')) {
+                event.preventDefault(); // Important si le bouton est un <a> ou <button type="submit">
+                const button = event.target;
+                const releaseTitle = button.dataset.releaseTitle; // data-release-title sur le bouton
+                const guid = button.dataset.guid;
+                // On récupère aussi downloadLink et indexerId pour le mapping final, même si non utilisés par prepare_mapping_details
+                const downloadLink = button.dataset.downloadLink;
+                const indexerId = button.dataset.indexerId;
+
+                console.log("New download-and-map-btn clicked. Release: ", releaseTitle, "GUID:", guid);
+
+                const modalElement = document.getElementById('intelligent-mapping-modal');
+                if (!modalElement) {
+                    console.error("La modale #intelligent-mapping-modal n'a pas été trouvée !");
+                    return;
+                }
+                const modal = new bootstrap.Modal(modalElement);
+                const loader = document.getElementById('mapping-modal-loader');
+                const content = document.getElementById('mapping-modal-content');
+                const confirmBtn = document.getElementById('confirm-map-btn');
+
+                // Affiche le loader et ouvre la modale
+                loader.style.display = 'block';
+                content.classList.add('d-none');
+                content.innerHTML = ''; // Vider le contenu précédent
+                modal.show();
+
+                // Stocker les infos Prowlarr sur le bouton de confirmation pour l'étape finale
+                confirmBtn.dataset.guid = guid;
+                confirmBtn.dataset.downloadLink = downloadLink; // Stocker pour l'action finale
+                confirmBtn.dataset.indexerId = indexerId;       // Stocker pour l'action finale
+                confirmBtn.dataset.releaseTitle = releaseTitle; // Stocker pour l'action finale (et potentiellement pour le message de confirmation)
+
+
+                fetch("/search/api/prepare_mapping_details", { // URL ajustée
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        // Ajouter X-CSRFToken si nécessaire pour les POST requests
+                        // 'X-CSRFToken': document.querySelector('input[name="csrf_token"]').value
+                    },
+                    body: JSON.stringify({ title: releaseTitle })
+                })
+                .then(response => {
+                    if (!response.ok) { // Gérer les erreurs HTTP comme 404, 500
+                        return response.json().then(errData => { // Essayer de parser le JSON d'erreur
+                            throw new Error(errData.error || `Erreur HTTP ${response.status}`);
+                        }).catch(() => { // Si le corps de l'erreur n'est pas JSON ou si response.json() échoue
+                            throw new Error(`Erreur HTTP ${response.status}`);
+                        });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.error) { // Gérer les erreurs applicatives retournées par l'API
+                        throw new Error(data.error);
+                    }
+
+                    // Remplit le contenu de la modale
+                    // S'assurer que les champs existent bien dans 'data' (title, year, overview, remotePoster, id)
+                    const yearDisplay = data.year ? `(${data.year})` : '';
+                    const overviewDisplay = data.overview || 'Synopsis non disponible.';
+                    const posterHtml = data.remotePoster ? `<img src="${data.remotePoster}" class="img-fluid rounded mb-3" style="max-height: 400px; object-fit: contain;">` : '<p class="text-muted">Aucune jaquette disponible.</p>';
+
+                    content.innerHTML = `
+                        <p>La release <code>${releaseTitle}</code> sera mappée avec le média suivant :</p>
+                        <div class="row">
+                            <div class="col-md-4 text-center">${posterHtml}</div>
+                            <div class="col-md-8">
+                                <h4>${data.title || 'Titre inconnu'} ${yearDisplay}</h4>
+                                <p class="text-muted small" style="max-height: 250px; overflow-y: auto;">${overviewDisplay}</p>
+                                ${data.id ? '' : '<p class="text-warning small">Note: Ce média n\'est pas encore dans Sonarr/Radarr. Le mapping l\'ajoutera.</p>'}
+                            </div>
+                        </div>
+                    `;
+
+                    // Stocke l'ID Sonarr/Radarr pour le clic final
+                    // `data.id` est l'ID interne de Sonarr/Radarr. S'il est null, cela signifie que le média n'est pas encore dans *Arr.
+                    // La logique de `confirm-map-btn` devra gérer cela.
+                    confirmBtn.dataset.arrId = data.id; // Peut être null
+                    confirmBtn.dataset.mediaType = data.media_type; // 'movie' ou 'episode' (pour série)
+
+                    loader.style.display = 'none';
+                    content.classList.remove('d-none');
+                })
+                .catch(error => {
+                    console.error("Erreur lors de la préparation du mapping:", error);
+                    content.innerHTML = `<div class="alert alert-danger">${error.message}</div>`;
+                    loader.style.display = 'none';
+                    content.classList.remove('d-none');
+                    confirmBtn.disabled = true; // Désactiver le bouton de confirmation en cas d'erreur
+                });
+            }
+        });
+
+        // Nouvel écouteur pour le bouton de confirmation final dans la modale intelligente
+        const confirmMapButton = document.getElementById('confirm-map-btn');
+        if (confirmMapButton) {
+            confirmMapButton.addEventListener('click', function() {
+                const guid = this.dataset.guid;
+                const arrId = this.dataset.arrId; // Peut être "null" (string) ou null (object) si non défini.
+                const downloadLink = this.dataset.downloadLink;
+                const indexerId = this.dataset.indexerId;
+                const releaseTitle = this.dataset.releaseTitle;
+                const mediaType = this.dataset.mediaType; // 'movie' or 'episode'
+
+                // Convertir arrId en null si c'est la string "null" ou undefined, sinon en int si c'est un nombre valide
+                let finalArrId = null;
+                if (arrId && arrId !== "null" && arrId !== "undefined") {
+                    const parsedId = parseInt(arrId, 10);
+                    if (!isNaN(parsedId)) {
+                        finalArrId = parsedId;
+                    }
+                }
+
+                console.log(`Lancement du mapping pour GUID: ${guid} avec l'ID Sonarr/Radarr: ${finalArrId} (Type: ${mediaType})`);
+                console.log(`Infos Prowlarr: Release='${releaseTitle}', Link='${downloadLink}', Indexer='${indexerId}'`);
+
+                // TODO: Ici, appeler la VRAIE route de téléchargement et mapping
+                // Exemple: fetch('/search/download-and-map', { ... })
+                // en utilisant les données stockées: guid, finalArrId, releaseTitle, downloadLink, indexerId, mediaType
+                // Le backend /search/download-and-map devra être adapté pour utiliser ces informations.
+                // Si finalArrId est null, le backend devra comprendre qu'il s'agit d'un nouvel ajout basé sur releaseTitle (et peut-être guid pour l'ID externe).
+
+                alert(`Simulation: Mapping pour GUID: ${guid}, ArrID: ${finalArrId}, Type: ${mediaType}. Vérifiez la console.`);
+
+                const modal = bootstrap.Modal.getInstance(document.getElementById('intelligent-mapping-modal'));
+                if (modal) {
+                    modal.hide();
+                }
+            });
+        } else {
+            console.error("Le bouton #confirm-map-btn n'a pas été trouvé !");
+        }
+    });
+    // --- Fin de la nouvelle logique pour la modale de mapping intelligent ---
 
     // --- [2] Logique pour le bouton "Rechercher" DANS la modale ---
     $('body').on('click', '#executeSonarrRadarrSearch', function(e) {
