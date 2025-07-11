@@ -150,15 +150,50 @@ $(document).ready(function() {
         console.log(`[jQuery] Lancement du mapping pour GUID: ${guid} avec l'ID Sonarr/Radarr: ${finalArrId} (Type: ${mediaType})`);
         console.log(`[jQuery] Infos Prowlarr: Release='${releaseTitle}', Link='${downloadLink}', Indexer='${indexerId}'`);
 
-        // TODO: Ici, appeler la VRAIE route de téléchargement et mapping
-        // Exemple: fetch('/search/download-and-map', { ... })
-        // ...
+        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Lancement...');
 
-        alert(`[jQuery] Simulation: Mapping pour GUID: ${guid}, ArrID: ${finalArrId}, Type: ${mediaType}. Vérifiez la console.`);
-
-        // Cacher la modale
-        // On s'assure de cibler la bonne modale, même si #confirm-map-btn est dedans.
-        $('#intelligent-mapping-modal').modal('hide');
+        fetch('/search/download-and-map', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                guid: guid,
+                mediaId: finalArrId, // ID Sonarr/Radarr, ou null
+                releaseName: releaseTitle,
+                downloadLink: downloadLink,
+                indexerId: indexerId,
+                instanceType: mediaType, // 'movie' ou 'episode'. Le backend s'attend à instanceType.
+                actionType: finalArrId ? 'map_existing' : 'add_then_map'
+            })
+        })
+        .then(response => {
+            // D'abord, vérifier si la réponse est ok et si c'est du JSON
+            if (!response.ok) {
+                // Essayer de lire le corps comme JSON pour un message d'erreur plus détaillé
+                return response.json().then(errData => {
+                    throw new Error(errData.message || `Erreur HTTP ${response.status}`);
+                }).catch(() => {
+                    // Si le corps n'est pas JSON ou si .json() échoue, lancer une erreur générique
+                    throw new Error(`Erreur HTTP ${response.status}`);
+                });
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.status === 'success') {
+                alert(data.message || 'Action terminée avec succès !'); // Ou une meilleure notification "toast"
+                $('#intelligent-mapping-modal').modal('hide');
+            } else {
+                // Si data.status n'est pas 'success', mais que la réponse était ok (ex: statut 200 mais erreur applicative)
+                throw new Error(data.message || 'Une erreur est survenue lors du traitement.');
+            }
+        })
+        .catch(error => {
+            alert('Erreur: ' + error.message);
+            console.error('[jQuery] Erreur de mapping final:', error);
+        })
+        .finally(() => {
+            button.prop('disabled', false).html('Confirmer et Mapper');
+        });
     });
     // FIN du gestionnaire pour #confirm-map-btn
 
