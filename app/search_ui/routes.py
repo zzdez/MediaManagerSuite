@@ -245,9 +245,9 @@ def download_and_map():
     actual_media_id_for_mapping = None
     internal_instance_type = None # Will be 'sonarr' or 'radarr'
 
-    if instance_type_from_js == 'episode':
+    if instance_type == 'episode':
         internal_instance_type = 'sonarr'
-    elif instance_type_from_js == 'movie':
+    elif instance_type == 'movie':
         internal_instance_type = 'radarr'
     else:
         current_app.logger.warning(f"Download&Map: instanceType '{instance_type_from_js}' from JS is not 'episode' or 'movie'. Attempting to parse from release_name.")
