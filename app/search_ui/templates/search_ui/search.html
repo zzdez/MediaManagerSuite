@@ -54,12 +54,13 @@
                 </form>
                 
                 {% if results is not none and request.args.get('mode') == 'free_search' %}
-                    <hr>
-                    <h3>Résultats pour "{{ query }}" ({{ results|length }})</h3>
-                    {% if results %}
-                        <ul class="list-group">
-                            {% for result in results %}
-                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <div id="search-results-container"> {# AJOUTÉ CE CONTENEUR AVEC ID #}
+                        <hr>
+                        <h3>Résultats pour "{{ query }}" ({{ results|length }})</h3>
+                        {% if results %}
+                            <ul class="list-group">
+                                {% for result in results %}
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
                                 <div style="flex-grow: 1; margin-right: 15px;">
                                     <strong>{{ result.title }}</strong><br>
                                     <small class="text-muted">Indexer: {{ result.indexer }} | Taille: {{ (result.size / 1024**3)|round(2) }} GB</small>
@@ -104,6 +105,7 @@
                     {% else %}
                         <div class="alert alert-warning mt-3">Aucun résultat trouvé pour cette recherche.</div>
                     {% endif %}
+                    </div> {# FERMETURE DU DIV #search-results-container #}
                 {% endif %}
             </div>
         </div>
