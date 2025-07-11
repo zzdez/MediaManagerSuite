@@ -130,24 +130,32 @@ $(document).ready(function() {
     $('body').on('click', '#confirm-map-btn', function() {
         const button = $(this);
         const guid = button.data('guid');
-        // jQuery .data() peut retourner undefined si l'attribut n'existe pas.
-        // Il convertit aussi "null" (string) en null (object) si l'attribut data-arr-id="null"
-        let arrId = button.data('arr-id');
+        let arrIdRaw = button.data('arr-id'); // Peut être null, undefined, "null", "undefined", ou un nombre
         const downloadLink = button.data('download-link');
         const indexerId = button.data('indexer-id');
         const releaseTitle = button.data('release-title');
-        const mediaType = button.data('media-type');
+        const mediaType = button.data('media-type'); // 'movie' ou 'episode'
 
-        // Assurer que arrId est un entier ou null.
-        let finalArrId = null;
-        if (arrId !== undefined && arrId !== null && arrId !== "null") {
-            const parsedId = parseInt(arrId, 10);
+        let mediaIdForBackend;
+        let actionTypeForBackend;
+
+        if (arrIdRaw === undefined || arrIdRaw === null || arrIdRaw === "null" || arrIdRaw === "undefined" || String(arrIdRaw).trim() === "") {
+            mediaIdForBackend = 'NEW_ITEM_FROM_PROWLARR'; // Flag spécial pour le backend
+            actionTypeForBackend = 'add_then_map';
+        } else {
+            const parsedId = parseInt(arrIdRaw, 10);
             if (!isNaN(parsedId)) {
-                finalArrId = parsedId;
+                mediaIdForBackend = parsedId;
+                actionTypeForBackend = 'map_existing';
+            } else {
+                // Fallback si arrIdRaw est une chaîne non numérique inattendue mais pas "null"/"undefined"
+                console.warn(`[jQuery] arrId ('${arrIdRaw}') inattendu, tentative d'ajout comme nouvel item.`);
+                mediaIdForBackend = 'NEW_ITEM_FROM_PROWLARR';
+                actionTypeForBackend = 'add_then_map';
             }
         }
 
-        console.log(`[jQuery] Lancement du mapping pour GUID: ${guid} avec l'ID Sonarr/Radarr: ${finalArrId} (Type: ${mediaType})`);
+        console.log(`[jQuery] Action: ${actionTypeForBackend} pour GUID: ${guid} avec MediaID pour backend: ${mediaIdForBackend} (Type: ${mediaType})`);
         console.log(`[jQuery] Infos Prowlarr: Release='${releaseTitle}', Link='${downloadLink}', Indexer='${indexerId}'`);
 
         button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Lancement...');
@@ -157,12 +165,12 @@ $(document).ready(function() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 guid: guid,
-                mediaId: finalArrId, // ID Sonarr/Radarr, ou null
+                mediaId: mediaIdForBackend,
                 releaseName: releaseTitle,
                 downloadLink: downloadLink,
                 indexerId: indexerId,
-                instanceType: mediaType, // 'movie' ou 'episode'. Le backend s'attend à instanceType.
-                actionType: finalArrId ? 'map_existing' : 'add_then_map'
+                instanceType: mediaType,
+                actionType: actionTypeForBackend
             })
         })
         .then(response => {
