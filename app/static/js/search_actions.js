@@ -43,22 +43,38 @@ $(document).ready(function() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ title: releaseTitle })
         })
-        .then(response => { // Gestion d'erreur améliorée pour fetch
+        .then(response => {
             if (!response.ok) {
-                return response.json().then(errData => {
-                    throw new Error(errData.error || `Erreur HTTP ${response.status}`);
+                // Si c'est une erreur 404, on passe à la gestion du "non trouvé"
+                if (response.status === 404) {
+                    return response.json().then(errData => {
+                        // On lance une erreur personnalisée avec un type
+                        let error = new Error(errData.error || 'Média non trouvé dans Sonarr/Radarr.');
+                        error.type = 'NOT_FOUND';
+                        error.releaseTitle = releaseTitle; // Ajout pour l'utiliser dans le catch
+                        throw error;
+                    }).catch(() => { // Au cas où .json() échoue pour une 404
+                        let error = new Error('Média non trouvé dans Sonarr/Radarr (erreur parsing JSON de la 404).');
+                        error.type = 'NOT_FOUND';
+                        error.releaseTitle = releaseTitle;
+                        throw error;
+                    });
+                }
+                // Pour les autres erreurs HTTP (500, etc.)
+                return response.json().then(errData => { // Essayer de parser le JSON d'erreur
+                    throw new Error(errData.error || `Erreur serveur ${response.status}.`);
                 }).catch(() => { // Si le corps de l'erreur n'est pas JSON
-                    throw new Error(`Erreur HTTP ${response.status}`);
+                    throw new Error(`Erreur serveur ${response.status}.`);
                 });
             }
             return response.json();
         })
         .then(data => {
-            if (data.error) { // Erreur applicative retournée par l'API
+            if (data.error) { // Erreur applicative retournée dans un JSON avec statut 200 (moins probable ici)
                 throw new Error(data.error);
             }
 
-            // Remplit le contenu de la modale
+            // Remplit le contenu de la modale pour un média trouvé
             const yearDisplay = data.year ? `(${data.year})` : '';
             const overviewDisplay = data.overview || 'Synopsis non disponible.';
             const posterHtml = data.remotePoster ? `<img src="${data.remotePoster}" class="img-fluid rounded mb-3" style="max-height: 400px; object-fit: contain;">` : '<p class="text-muted">Aucune jaquette disponible.</p>';
@@ -70,24 +86,42 @@ $(document).ready(function() {
                     <div class="col-md-8">
                         <h4>${data.title || 'Titre inconnu'} ${yearDisplay}</h4>
                         <p class="text-muted small" style="max-height: 250px; overflow-y: auto;">${overviewDisplay}</p>
-                        ${data.id ? '' : '<p class="text-warning small">Note: Ce média n\'est pas encore dans Sonarr/Radarr. Le mapping l\'ajoutera.</p>'}
+                        ${data.id ? '' : '<p class="text-warning small">Note: Ce média n\'est pas encore dans Sonarr/Radarr. Le mapping l\'ajoutera (si confirmé).</p>'}
                     </div>
                 </div>
             `);
 
-            confirmBtn.data('arr-id', data.id); // data.id peut être null
+            confirmBtn.data('arr-id', data.id);
             confirmBtn.data('media-type', data.media_type);
+            confirmBtn.show(); // Assure que le bouton de confirmation initial est visible
+            confirmBtn.prop('disabled', false); // Réactive le bouton
 
             loader.hide();
             content.removeClass('d-none');
-            confirmBtn.prop('disabled', false); // Réactive le bouton
         })
         .catch(error => {
             console.error("Erreur lors de la préparation du mapping (jQuery handler):", error);
-            content.html(`<div class="alert alert-danger">${error.message}</div>`);
+
+            if (error.type === 'NOT_FOUND') {
+                // Affiche le message d'erreur ET le bouton pour ajouter
+                content.html(`
+                    <div class="alert alert-warning">${error.message}</div>
+                    <p>Voulez-vous tenter d'ajouter <strong>"${error.releaseTitle}"</strong> à Sonarr/Radarr et de le mapper ?</p>
+                    <div class="text-center">
+                        <button class="btn btn-info" id="add-and-map-new-item-btn">
+                            <i class="fas fa-plus-circle"></i> Oui, Ajouter et Mapper
+                        </button>
+                    </div>
+                `);
+                confirmBtn.hide(); // Cache le bouton de confirmation initial
+            } else {
+                // Erreur générique
+                content.html(`<div class="alert alert-danger">${error.message}</div>`);
+                confirmBtn.hide(); // Cache aussi le bouton de confirmation pour les erreurs génériques
+            }
             loader.hide();
             content.removeClass('d-none');
-            // confirmBtn reste désactivé par défaut
+            // confirmBtn est déjà désactivé par défaut ou caché.
         });
     });
     // FIN du gestionnaire pour .download-and-map-btn
@@ -127,6 +161,76 @@ $(document).ready(function() {
         $('#intelligent-mapping-modal').modal('hide');
     });
     // FIN du gestionnaire pour #confirm-map-btn
+
+    // Gestionnaire pour le bouton "Oui, Ajouter et Mapper" (ajouté dynamiquement)
+    $('body').on('click', '#add-and-map-new-item-btn', function() {
+        const addButton = $(this);
+        // Les informations nécessaires (guid, downloadLink, indexerId, releaseTitle)
+        // sont stockées sur le bouton #confirm-map-btn.
+        // #confirm-map-btn est caché mais toujours dans le DOM de la modale.
+        const confirmBtn = $('#confirm-map-btn');
+
+        const guid = confirmBtn.data('guid');
+        const downloadLink = confirmBtn.data('download-link');
+        const indexerId = confirmBtn.data('indexer-id');
+        const releaseTitle = confirmBtn.data('release-title');
+        // Le mediaType n'est pas connu à ce stade car prepare_mapping_details a échoué.
+        // Le backend devra le déduire à partir de releaseTitle (guessit).
+
+        console.log(`[jQuery] Clic sur #add-and-map-new-item-btn.`);
+        console.log(`[jQuery] Intention d'AJOUTER et MAPPER pour Release: "${releaseTitle}", GUID: ${guid}`);
+        console.log(`[jQuery] Avec DownloadLink: ${downloadLink}, IndexerID: ${indexerId}`);
+
+        // Mettre le bouton en état de chargement
+        addButton.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Traitement...');
+
+        // TODO: Logique d'appel à /search/download-and-map
+        // Il faudra passer un identifiant spécial pour mediaId, par exemple 'NEW_ITEM_FROM_MODAL_ADD_BUTTON'
+        // et s'assurer que le backend peut déterminer le instanceType (sonarr/radarr)
+        // Exemple de payload:
+        /*
+        const payload = {
+            releaseName: releaseTitle,
+            downloadLink: downloadLink,
+            indexerId: indexerId,
+            guid: guid,
+            mediaId: 'NEW_ITEM_FROM_MODAL_ADD_BUTTON', // Flag spécial
+            actionType: 'add_then_map' // Action explicite
+            // instanceType devra être déterminé par le backend ou via une étape supplémentaire.
+        };
+        fetch('/search/download-and-map', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                alert('Succès (simulation): ' + data.message);
+                $('#intelligent-mapping-modal').modal('hide');
+            } else {
+                alert('Erreur (simulation): ' + data.message);
+                addButton.prop('disabled', false).html('<i class="fas fa-plus-circle"></i> Oui, Ajouter et Mapper');
+            }
+        })
+        .catch(error => {
+            console.error('Erreur fetch pour add-and-map-new-item:', error);
+            alert('Erreur de communication serveur (simulation).');
+            addButton.prop('disabled', false).html('<i class="fas fa-plus-circle"></i> Oui, Ajouter et Mapper');
+        });
+        */
+
+        // Pour l'instant, simple alerte et fermeture de la modale
+        alert(`Simulation: Ajout et Mapping pour "${releaseTitle}". Le backend doit être adapté.`);
+        console.log("La logique réelle d'appel à /search/download-and-map avec action d'ajout est à implémenter.");
+
+        // Optionnel: remettre le bouton à son état initial si on ne ferme pas la modale tout de suite
+        // addButton.prop('disabled', false).html('<i class="fas fa-plus-circle"></i> Oui, Ajouter et Mapper');
+
+        $('#intelligent-mapping-modal').modal('hide');
+    });
+    // FIN du gestionnaire pour #add-and-map-new-item-btn
+
 
     // --- Nouvelle logique pour la modale de mapping intelligent (JavaScript natif) ---
     // Ce bloc entier sera supprimé.
