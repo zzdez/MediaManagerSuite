@@ -28,9 +28,15 @@ class Config:
     # --- *ARR SUITE ---
     SONARR_URL = os.getenv('SONARR_URL')
     SONARR_API_KEY = os.getenv('SONARR_API_KEY')
+    DEFAULT_SONARR_ROOT_FOLDER = os.getenv('DEFAULT_SONARR_ROOT_FOLDER')
+    DEFAULT_SONARR_PROFILE_ID = int(os.getenv('DEFAULT_SONARR_PROFILE_ID', '1')) # Default to '1' if not set, then convert to int
+
     RADARR_URL = os.getenv('RADARR_URL')
     RADARR_API_KEY = os.getenv('RADARR_API_KEY')
+    DEFAULT_RADARR_ROOT_FOLDER = os.getenv('DEFAULT_RADARR_ROOT_FOLDER')
+    DEFAULT_RADARR_PROFILE_ID = int(os.getenv('DEFAULT_RADARR_PROFILE_ID', '1')) # Default to '1' if not set, then convert to int
     RADARR_TAG_ON_ARCHIVE = os.getenv('RADARR_TAG_ON_ARCHIVE', 'vu')
+
     PROWLARR_URL = os.getenv('PROWLARR_URL')
     PROWLARR_API_KEY = os.getenv('PROWLARR_API_KEY')
 
