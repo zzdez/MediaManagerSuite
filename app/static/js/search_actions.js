@@ -127,13 +127,29 @@ $(document).ready(function() {
                                         <h6 class="mb-1">${title} (${year})${statusBadge}${addedBadge}</h6>
                                         ${
                                             (() => {
+                                                let alternateTitleHtml = '';
+                                                const mainTitle = item.title || '';
+
                                                 if (item.alternate_titles && item.alternate_titles.length > 0) {
-                                                    const alternate = item.alternate_titles.find(alt => alt.toLowerCase() !== title.toLowerCase());
-                                                    if (alternate) {
-                                                        return `<small class="d-block text-info" title="${item.alternate_titles.join(', ')}">Titre original: ${alternate}</small>`;
+                                                    // Fonction simple pour "nettoyer" un titre pour la comparaison
+                                                    const normalize = (str) => str.toLowerCase().replace(/[^a-z0-9]/g, '');
+                                                    const normalizedMainTitle = normalize(mainTitle);
+
+                                                    // On cherche le "meilleur" titre alternatif : le premier qui est suffisamment différent.
+                                                    const bestAlternate = item.alternate_titles.find(alt => {
+                                                        const normalizedAlt = normalize(alt);
+                                                        return normalizedAlt && normalizedAlt !== normalizedMainTitle;
+                                                    });
+
+                                                    if (bestAlternate) {
+                                                        // Heuristique simple pour déterminer le label
+                                                        const isMainTitleLikelyFrench = /[àâçéèêëîïôûùüÿñæœ]/i.test(mainTitle);
+                                                        const label = isMainTitleLikelyFrench ? "Titre Original" : "Titre Français";
+
+                                                        alternateTitleHtml = `<small class="d-block text-info"><i>${label}: ${bestAlternate}</i></small>`;
                                                     }
                                                 }
-                                                return '';
+                                                return alternateTitleHtml;
                                             })()
                                         }
                                         <p class="mb-1 small text-muted modal-synopsis" title="Survolez pour lire la suite">
