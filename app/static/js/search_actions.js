@@ -15,6 +15,7 @@ $(document).ready(function() {
         const indexerId = button.data('indexer-id');
 
         const modalEl = $('#sonarrRadarrSearchModal');
+        modalEl.find('.modal-title').text(`Mapper : ${releaseTitle}`);
         const loader = $('#mapping-modal-loader');
         const content = $('#mapping-modal-content');
         const confirmBtn = $('#confirm-map-btn');
@@ -125,4 +126,59 @@ $(document).ready(function() {
     // Supprime les anciens gestionnaires qui ne sont plus utiles
     // $('body').on('click', '#executeSonarrRadarrSearch', ...);
     // $('body').on('click', '.map-select-item-btn', ...);
+
+    $('body').on('click', '#executeSonarrRadarrSearch', function() {
+        console.log("Bouton de recherche manuelle cliqué !");
+
+        const modal = $(this).closest('.modal');
+        const query = modal.find('#sonarrRadarrQuery').val();
+        const resultsContainer = modal.find('#prowlarrModalSearchResults');
+        const instanceType = modal.find('input[name="mapInstanceType"]:checked').val();
+
+        if (!query) {
+            resultsContainer.html('<p class="text-danger">Veuillez entrer une recherche.</p>');
+            return;
+        }
+
+        resultsContainer.html('<div class="d-flex justify-content-center"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></div>');
+
+        // Réutilise l'appel AJAX existant vers /search/api/search-arr
+        $.ajax({
+            url: '/search/api/search-arr',
+            data: {
+                query: query,
+                type: instanceType
+            },
+            success: function(data) {
+                let html = '';
+                if (data.length > 0) {
+                    data.forEach(function(item) {
+                        html += `<div class="list-group-item">
+                                    <div class="row align-items-center">
+                                        <div class="col-md-2">
+                                            <img src="${item.poster || 'https://via.placeholder.com/100x150'}" class="img-fluid rounded">
+                                        </div>
+                                        <div class="col-md-8">
+                                            <strong>${item.title} (${item.year})</strong>
+                                            <p class="mb-1 small">${item.overview ? item.overview.substring(0, 150) + '...' : ''}</p>
+                                            <small class="text-muted">Status: ${item.status} | Is Added: ${item.isAdded}</small>
+                                        </div>
+                                        <div class="col-md-2 text-end">
+                                            <button class="btn btn-sm btn-primary map-select-item-btn" data-media-id="${item.id}" data-instance-type="${instanceType}">
+                                                Select
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>`;
+                    });
+                } else {
+                    html = '<p class="text-warning">Aucun résultat trouvé.</p>';
+                }
+                resultsContainer.html(html);
+            },
+            error: function() {
+                resultsContainer.html('<p class="text-danger">Erreur lors de la recherche.</p>');
+            }
+        });
+    });
 });
