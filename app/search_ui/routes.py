@@ -419,19 +419,49 @@ def search_arr_proxy():
     if not query:
         return jsonify({'error': 'Le terme de recherche est manquant'}), 400
 
-    results = []
+    arr_results = []
     try:
         if media_type == 'sonarr':
-            results = search_sonarr_by_title(query)
+            arr_results = search_sonarr_by_title(query)
         elif media_type == 'radarr':
-            results = search_radarr_by_title(query)
+            arr_results = search_radarr_by_title(query)
         else:
             return jsonify({'error': 'Type de média invalide'}), 400
     except Exception as e:
         current_app.logger.error(f"Erreur lors de la recherche {media_type} pour '{query}': {e}")
         return jsonify({'error': f'Erreur de communication avec {media_type.capitalize()}'}), 500
 
-    return jsonify(results)
+    detailed_results = []
+    if arr_results:
+        for item in arr_results:
+            # Pour chaque item, on construit un dictionnaire propre
+            is_added = item.get('id') and item.get('id') > 0
+
+            # Déterminer l'ID à utiliser : l'ID interne si le média est déjà ajouté, sinon l'ID externe
+            media_id = item.get('id') if is_added else (item.get('tvdbId') or item.get('tmdbId'))
+
+            # Extraire l'URL du poster
+            poster_url = None
+            for img in item.get('images', []):
+                if img.get('coverType') == 'poster' and (img.get('remoteUrl') or img.get('url')):
+                    # Radarr utilise parfois 'remoteUrl', Sonarr utilise 'url' dans certaines réponses de lookup
+                    poster_url = img.get('remoteUrl') or img.get('url')
+                    break
+
+            details = {
+                'id': media_id,
+                'title': item.get('title'),
+                'year': item.get('year'),
+                'overview': item.get('overview', 'Aucun résumé disponible.'),
+                'status': item.get('status', 'Inconnu'), # ex: 'continuing' ou 'ended'
+                # Le nombre de saisons n'est pertinent que pour Sonarr
+                'seasons': len(item.get('seasons', [])) if media_type == 'sonarr' and item.get('seasons') is not None else 'N/A',
+                'poster': poster_url,
+                'isAdded': is_added # Pour que le frontend sache si le média est déjà dans la bibliothèque
+            }
+            detailed_results.append(details)
+
+    return jsonify(detailed_results)
 
 # Imports nécessaires pour la nouvelle route download_torrent
 from flask import Response, stream_with_context

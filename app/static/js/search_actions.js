@@ -90,35 +90,50 @@ $(document).ready(function() {
                 resultsContainer.empty();
                 console.log(`[Handler 2 AJAX Success] ActionType: ${currentActionType}, Media Type: ${mediaType}`);
                 if (data && data.length > 0) {
-                    const list = $('<div class="list-group"></div>');
                     data.forEach(function(item) {
                         const year = item.year || '';
                         const title = item.title || 'Titre inconnu';
-                        // id is Sonarr/Radarr internal ID if exists, otherwise it might be an external id like tvdbId/tmdbId from a lookup
-                        const id = item.id || item.tvdbId || item.tmdbId;
-                        const isExistingInArr = !!item.id; // True if Sonarr/Radarr internal ID exists
+                        const overview = item.overview || 'Synopsis non disponible.';
+                        const posterUrl = item.poster || 'https://via.placeholder.com/200x300.png?text=No+Poster'; // Image par défaut
 
-                        // Display more info about the item
-                        let itemDetails = `<strong>${title}</strong> (${year})`;
-                        if(isExistingInArr) {
-                            itemDetails += `<br><small class="text-success">Déjà dans ${mediaTypeLabel} (ID: ${id})</small>`;
-                        } else {
-                            itemDetails += `<br><small class="text-primary">Non trouvé dans ${mediaTypeLabel} (ID Externe: ${id})</small>`;
+                        let statusBadge = '';
+                        if (mediaType === 'sonarr') { // Les badges de statut sont plus pertinents pour les séries
+                            if (item.status === 'ended') {
+                                statusBadge = '<span class="badge bg-danger ms-2">Terminé</span>';
+                            } else if (item.status === 'continuing') {
+                                statusBadge = '<span class="badge bg-success ms-2">En cours</span>';
+                            }
                         }
-                        // TODO: Add more details like monitored status if available from search_arr_proxy
+
+                        let addedBadge = item.isAdded ? '<span class="badge bg-info ms-2">Déjà Ajouté</span>' : '';
+
+                        let seasonsInfo = '';
+                        if (mediaType === 'sonarr' && item.seasons !== 'N/A') {
+                            seasonsInfo = `<small class="text-info">Saisons: ${item.seasons}</small>`;
+                        }
 
                         const itemHtml = `
                             <button type="button" class="list-group-item list-group-item-action map-select-item-btn"
-                                    data-media-id="${id}"
-                                    data-media-title="${title.replace(/"/g, '&quot;')}" 
-                                    data-instance-type="${mediaType}" 
+                                    data-media-id="${item.id}"
+                                    data-media-title="${title.replace(/"/g, '&quot;')}"
+                                    data-instance-type="${mediaType}"
                                     data-year="${year}"
-                                    data-is-existing-in-arr="${isExistingInArr}">
-                                ${itemDetails}
+                                    data-is-existing-in-arr="${item.isAdded}">
+                                <div class="row g-2 align-items-center">
+                                    <div class="col-md-2 text-center">
+                                        <img src="${posterUrl}" class="img-fluid rounded" style="max-height: 150px;">
+                                    </div>
+                                    <div class="col-md-10">
+                                        <h6 class="mb-1">${title} (${year})${statusBadge}${addedBadge}</h6>
+                                        <p class="mb-1 small text-muted" style="max-height: 55px; overflow-y: hidden;">
+                                            ${overview}
+                                        </p>
+                                        ${seasonsInfo}
+                                    </div>
+                                </div>
                             </button>`;
-                        list.append(itemHtml);
+                        resultsContainer.append(itemHtml);
                     });
-                    resultsContainer.append(list);
                 } else { // No results found in Sonarr/Radarr for the query
                     if (currentActionType === 'add_then_map' && originalProwlarrTitle) {
                         resultsContainer.html(`
