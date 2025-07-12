@@ -80,12 +80,11 @@
                                        Une logique JS pourrait le cacher/modifier après vérification du statut si nécessaire.
                                        Pour l'instant, on enlève la condition. #}
                                     <a href="#" class="btn btn-sm btn-success download-and-map-btn"
-                                       data-release-title="{{ result.title|e }}"
-                                       data-download-link="{{ result.downloadUrl }}"
-                                       data-guid="{{ result.guid }}" {# Ajouté #}
-                                       data-indexer-id="{{ result.indexerId }}" {# Ajouté #}
-                                       data-parsed-title="{{ result.title|e }}"> {# Changed from result.status_info.parsed_title to result.title as status_info is no longer available here #}
-                                        <i class="fas fa-download"></i> & Mapper
+                                       data-title="{{ result.title|e }}"
+                                       data-download-link="{{ result.download }}"
+                                       data-guid="{{ result.guid }}"
+                                       data-indexer-id="{{ result.indexerId }}">
+                                        <i class="fas fa-cogs"></i> & Mapper
                                     </a>
                                     {# Bouton pour télécharger le fichier .torrent via le nouveau proxy intelligent #}
                                     {% if not result.downloadUrl.startswith('magnet:') %}
