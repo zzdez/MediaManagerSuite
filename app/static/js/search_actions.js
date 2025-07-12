@@ -14,7 +14,7 @@ $(document).ready(function() {
         const downloadLink = button.data('download-link');
         const indexerId = button.data('indexer-id');
 
-        const modalEl = $('#intelligent-mapping-modal');
+        const modalEl = $('#sonarrRadarrSearchModal');
         const loader = $('#mapping-modal-loader');
         const content = $('#mapping-modal-content');
         const confirmBtn = $('#confirm-map-btn');
@@ -30,7 +30,13 @@ $(document).ready(function() {
         confirmBtn.data('indexerId', indexerId);
         confirmBtn.data('releaseTitle', releaseTitle);
 
-        modalEl.modal('show'); // Ouvre la NOUVELLE modale
+        const modalElement = document.getElementById('sonarrRadarrSearchModal');
+        if (!modalElement) {
+            console.error("ERREUR: La structure HTML de la modale #sonarrRadarrSearchModal est introuvable !");
+            return;
+        }
+        const myModal = bootstrap.Modal.getOrCreateInstance(modalElement);
+        myModal.show(); // La commande pour afficher la modale
 
         // Appelle la NOUVELLE route d'enrichissement
         console.log("JS: Lancement du fetch vers /search/api/prepare_mapping_details");
@@ -103,7 +109,7 @@ $(document).ready(function() {
         .then(data => {
             if (data.status === 'success') {
                 alert(data.message);
-                $('#intelligent-mapping-modal').modal('hide');
+                $('#sonarrRadarrSearchModal').modal('hide');
             } else {
                 alert('Erreur: ' + data.message);
                 button.prop('disabled', false).html('Confirmer');

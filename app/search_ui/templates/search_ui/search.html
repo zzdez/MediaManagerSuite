@@ -44,13 +44,26 @@
             <div class="tab-pane fade {% if request.args.get('mode') == 'free_search' %}show active{% endif %}" id="free-search" role="tabpanel">
                 <p>Recherchez n'importe quel terme sur vos indexers.</p>
                 <form method="GET" action="{{ url_for('search_ui.search_page') }}">
-                    <div class="input-group mb-3">
-                        <input type="text" class="form-control" name="query" placeholder="Ex: Dune Part Two 2024" value="{{ query or '' }}">
-                        <input type="hidden" name="mode" value="free_search">
-                        <button class="btn btn-primary" type="submit" id="search-button">
-                            <i class="fas fa-search"></i> Lancer la Recherche Libre
-                        </button>
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <input type="text" name="query" class="form-control" placeholder="Titre du film ou de la série..." value="{{ query or '' }}">
+                        </div>
+                        <div class="col-md-2">
+                            <input type="number" name="year" class="form-control" placeholder="Année">
+                        </div>
+                        <div class="col-md-2">
+                            <select name="lang" class="form-select">
+                                <option value="">Toutes les langues</option>
+                                <option value="fr">Français</option>
+                                <option value="en">Anglais</option>
+                                <!-- Ajouter d'autres langues si nécessaire -->
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <button type="submit" class="btn btn-primary w-100">Rechercher</button>
+                        </div>
                     </div>
+                    <input type="hidden" name="mode" value="free_search">
                 </form>
                 
                 {% if results is not none and request.args.get('mode') == 'free_search' %}

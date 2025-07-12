@@ -14,12 +14,14 @@ from app.utils.media_status_checker import check_media_status as util_check_medi
 @login_required
 def search_page():
     query = request.args.get('query', '').strip()
+    year = request.args.get('year')
+    lang = request.args.get('lang')
     results = None
     
     if query:
         # --- TRAITEMENT DES RÉSULTATS PROWLARR (SIMPLIFIÉ) ---
         # La vérification du statut Plex/Sonarr/Radarr est maintenant gérée par une route API séparée.
-        raw_results = search_prowlarr(query)
+        raw_results = search_prowlarr(query, year=year, lang=lang)
         if raw_results is not None:
             # On ne vérifie plus le statut ici. On passe les résultats bruts.
             # Le template s'attend à 'results' qui est une liste de dictionnaires.

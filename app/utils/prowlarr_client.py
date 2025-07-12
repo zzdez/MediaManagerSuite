@@ -32,7 +32,7 @@ def _prowlarr_api_request(params):
         current_app.logger.error(f"Prowlarr API request failed: {e}")
         return None
 
-def search_prowlarr(query, categories=None):
+def search_prowlarr(query, categories=None, year=None, lang=None):
     """
     Searches Prowlarr for a given query and optional categories.
 
@@ -40,6 +40,8 @@ def search_prowlarr(query, categories=None):
         query (str): The search term.
         categories (list of int, optional): List of Prowlarr category IDs.
                                             e.g., [2000] for Movies, [5000] for TV.
+        year (str, optional): The year of the media.
+        lang (str, optional): The language of the media.
 
     Returns:
         list: A list of search results, or None if an error occurs.
@@ -48,5 +50,9 @@ def search_prowlarr(query, categories=None):
     if categories:
         # L'API Prowlarr attend les catégories comme des paramètres répétées
         params['category'] = categories
+    if year:
+        params['year'] = year
+    if lang:
+        params['lang'] = lang
 
     return _prowlarr_api_request(params)
