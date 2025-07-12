@@ -3,7 +3,7 @@
 from flask import render_template, request, flash, redirect, url_for, current_app, jsonify # Ajout de redirect et url_for ET current_app ET jsonify
 from . import search_ui_bp
 from app.utils.prowlarr_client import search_prowlarr
-from app.utils.arr_client import search_sonarr_by_title, search_radarr_by_title # MODIFIED: Removed ArrClient
+from app.utils.arr_client import search_sonarr_by_title, search_radarr_by_title
 from app.utils.media_status_checker import check_media_status # Ajout de l'import
 from app.utils.plex_client import get_user_specific_plex_server # MOVED IMPORT HERE
 # Utiliser le login_required défini dans app/__init__.py pour la cohérence
@@ -103,14 +103,18 @@ def prepare_mapping_details():
         return jsonify({'error': 'Titre manquant'}), 400
 
     try:
-        # 1. On cherche d'abord dans Sonarr/Radarr
+        # --- ÉTAPE 1: APPEL DIRECT À LA FONCTION ---
+        current_app.logger.info("Étape 1: Appel à arr_client.get_arr_media_details...")
+
+        # Importe la fonction directement, pas la classe
         from app.utils.arr_client import get_arr_media_details, parse_media_name
 
+        # Appelle la fonction directement
         parsed_info = parse_media_name(release_title)
         media_type = 'episode' if parsed_info['type'] == 'tv' else parsed_info['type']
-
         media_details_from_arr = get_arr_media_details(release_title, media_type, parsed_info.get('year'))
 
+        # ... Le reste du code (Étape 2, Étape 3) reste identique ...
         if not media_details_from_arr:
             return jsonify({'error': f"Aucun média correspondant trouvé dans Sonarr/Radarr pour '{release_title}'."}), 404
 
