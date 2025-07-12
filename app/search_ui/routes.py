@@ -93,6 +93,49 @@ def check_media_status_api():
 
 # La route /api/prepare_mapping_details a été supprimée car elle n'est plus utilisée.
 
+@search_ui_bp.route('/api/prepare_mapping_details', methods=['POST'])
+@login_required
+def prepare_mapping_details():
+    data = request.get_json()
+    release_title = data.get('release_title')
+
+    if not release_title:
+        return jsonify({'error': 'Titre de la release manquant.'}), 400
+
+    try:
+        # 1. On continue de chercher dans Sonarr/Radarr d'abord
+        from app.utils.arr_client import get_arr_media_details, parse_media_name
+
+        parsed_info = parse_media_name(release_title)
+        media_type = 'episode' if parsed_info['type'] == 'tv' else parsed_info['type']
+
+        media_details_from_arr = get_arr_media_details(release_title, media_type, parsed_info.get('year'))
+
+        if not media_details_from_arr:
+            return jsonify({'error': 'Média non trouvé dans Sonarr/Radarr.'}), 404
+
+        # 2. On a trouvé ! On récupère son TVDB ID.
+        tvdb_id = media_details_from_arr.get('tvdb_id')
+
+        # 3. NOUVEAU : On enrichit avec TVDB pour avoir les infos en français
+        if tvdb_id:
+            from app.utils.tvdb_client import TheTVDBClient
+            tvdb_client = TheTVDBClient()
+            # On demande les détails en français
+            tvdb_details_fr = tvdb_client.get_series_details_by_id(tvdb_id, lang='fra')
+
+            if tvdb_details_fr:
+                # On met à jour nos informations avec les données françaises
+                media_details_from_arr['title'] = tvdb_details_fr.get('title') or media_details_from_arr['title']
+                media_details_from_arr['overview'] = tvdb_details_fr.get('overview') or media_details_from_arr['overview']
+                media_details_from_arr['remotePoster'] = tvdb_details_fr.get('poster') or media_details_from_arr['remotePoster']
+
+        return jsonify(media_details_from_arr)
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur dans /api/prepare_mapping_details pour '{release_title}': {e}", exc_info=True)
+        return jsonify({'error': 'Erreur interne du serveur.'}), 500
+
 # Note: La route /results n'est plus explicitement nécessaire si /search gère tout.
 # Si vous souhaitez la conserver pour une raison spécifique (ex: liens directs vers les résultats),
 # assurez-vous que sa logique est cohérente avec celle de search_page ou qu'elle redirige.

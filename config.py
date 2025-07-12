@@ -73,6 +73,10 @@ class Config:
     YGG_COOKIE = os.getenv('YGG_COOKIE')
     YGG_USER_AGENT = os.getenv('YGG_USER_AGENT', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36')
 
+    # --- API Externes ---
+    TVDB_API_KEY = os.getenv('TVDB_API_KEY')
+    GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+
     # --- ADVANCED & TASKS ---
     SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES = int(os.getenv('SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES', '15').split('#')[0].strip())
     ORPHAN_CLEANER_PERFORM_DELETION = os.getenv('ORPHAN_CLEANER_PERFORM_DELETION', 'False').split('#')[0].strip().lower() in ('true', '1', 't')
