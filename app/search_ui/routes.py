@@ -452,6 +452,12 @@ def search_arr_proxy():
             # Radarr v3 utilise 'alternativeTitles'.
             alternate_titles_raw = item.get('alternateTitles') or item.get('alternativeTitles', [])
 
+            # Construire une liste de dictionnaires avec titre et langue
+            alt_titles_with_lang = [
+                {'title': alt.get('title'), 'lang': alt.get('language', {}).get('name', 'unknown').lower()}
+                for alt in alternate_titles_raw if alt.get('title')
+            ]
+
             details = {
                 'id': media_id,
                 'title': item.get('title'),
@@ -462,7 +468,7 @@ def search_arr_proxy():
                 'seasons': len(item.get('seasons', [])) if media_type == 'sonarr' and item.get('seasons') is not None else 'N/A',
                 'poster': poster_url,
                 'isAdded': is_added, # Pour que le frontend sache si le média est déjà dans la bibliothèque
-                'alternate_titles': [alt.get('title') for alt in alternate_titles_raw if alt.get('title')]
+                'alternate_titles': alt_titles_with_lang
             }
             detailed_results.append(details)
 

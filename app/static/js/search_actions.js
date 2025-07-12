@@ -131,22 +131,26 @@ $(document).ready(function() {
                                                 const mainTitle = item.title || '';
 
                                                 if (item.alternate_titles && item.alternate_titles.length > 0) {
-                                                    // Fonction simple pour "nettoyer" un titre pour la comparaison
-                                                    const normalize = (str) => str.toLowerCase().replace(/[^a-z0-9]/g, '');
-                                                    const normalizedMainTitle = normalize(mainTitle);
+                                                    // Recherche spécifiquement le titre français et anglais
+                                                    const frenchTitleObj = item.alternate_titles.find(alt => alt.lang === 'french');
+                                                    const englishTitleObj = item.alternate_titles.find(alt => alt.lang === 'english');
 
-                                                    // On cherche le "meilleur" titre alternatif : le premier qui est suffisamment différent.
-                                                    const bestAlternate = item.alternate_titles.find(alt => {
-                                                        const normalizedAlt = normalize(alt);
-                                                        return normalizedAlt && normalizedAlt !== normalizedMainTitle;
-                                                    });
+                                                    let displayTitles = [];
 
-                                                    if (bestAlternate) {
-                                                        // Heuristique simple pour déterminer le label
-                                                        const isMainTitleLikelyFrench = /[àâçéèêëîïôûùüÿñæœ]/i.test(mainTitle);
-                                                        const label = isMainTitleLikelyFrench ? "Titre Original" : "Titre Français";
+                                                    // Logique pour déterminer quel titre afficher
+                                                    if (frenchTitleObj && frenchTitleObj.title.toLowerCase() !== mainTitle.toLowerCase()) {
+                                                        displayTitles.push(`<i>Titre Français: ${frenchTitleObj.title}</i>`);
+                                                    }
 
-                                                        alternateTitleHtml = `<small class="d-block text-info"><i>${label}: ${bestAlternate}</i></small>`;
+                                                    if (englishTitleObj && englishTitleObj.title.toLowerCase() !== mainTitle.toLowerCase()) {
+                                                        // Évite d'afficher le titre anglais s'il est le même que le titre français déjà trouvé
+                                                        if (!frenchTitleObj || englishTitleObj.title.toLowerCase() !== frenchTitleObj.title.toLowerCase()) {
+                                                            displayTitles.push(`<i>Titre Original: ${englishTitleObj.title}</i>`);
+                                                        }
+                                                    }
+
+                                                    if(displayTitles.length > 0) {
+                                                        alternateTitleHtml = `<small class="d-block text-info">${displayTitles.join(' | ')}</small>`;
                                                     }
                                                 }
                                                 return alternateTitleHtml;
