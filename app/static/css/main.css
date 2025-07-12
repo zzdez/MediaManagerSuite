@@ -90,3 +90,21 @@ body {
 .btn.btn-outline-warning.text-dark { /* Targeting the existing classes for the Radarr button */
     color: white !important;
 }
+
+/* Style pour le synopsis dans la modale de recherche */
+.modal-synopsis {
+    max-height: 55px; /* Hauteur limitée par défaut (environ 3 lignes) */
+    overflow: hidden;
+    transition: max-height 0.3s ease-in-out; /* Animation douce */
+    text-align: justify; /* Pour une meilleure lisibilité */
+    cursor: pointer; /* Indique que l'élément est interactif */
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.2); /* Indice visuel qu'il y a plus à voir */
+    padding-bottom: 5px;
+}
+
+/* Au survol de la souris, on étend la hauteur pour tout afficher */
+.modal-synopsis:hover {
+    max-height: 200px; /* Augmente la hauteur maximale */
+    overflow-y: auto;  /* Affiche une barre de défilement si nécessaire */
+    border-bottom: 1px dashed transparent; /* Cache la ligne pointillée au survol */
+}

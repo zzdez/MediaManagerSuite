@@ -16,9 +16,9 @@ else:
 
 class Config:
     # --- FLASK CORE ---
-    FLASK_APP = os.getenv('FLASK_APP', 'run.py')
+    FLASK_APP = os.getenv('FLASK_APP', 'run.py').split('#')[0].strip()
     SECRET_KEY = os.getenv('SECRET_KEY', 'une-cle-secrete-tres-forte-et-aleatoire-a-definir-absolument')
-    FLASK_DEBUG = os.getenv('FLASK_DEBUG', 'False').lower() in ('true', '1', 't')
+    FLASK_DEBUG = os.getenv('FLASK_DEBUG', 'False').split('#')[0].strip().lower() in ('true', '1', 't')
     APP_PASSWORD = os.getenv('APP_PASSWORD')
 
     # --- PLEX ---
@@ -28,9 +28,15 @@ class Config:
     # --- *ARR SUITE ---
     SONARR_URL = os.getenv('SONARR_URL')
     SONARR_API_KEY = os.getenv('SONARR_API_KEY')
+    DEFAULT_SONARR_ROOT_FOLDER = os.getenv('DEFAULT_SONARR_ROOT_FOLDER')
+    DEFAULT_SONARR_PROFILE_ID = int(os.getenv('DEFAULT_SONARR_PROFILE_ID', '1').split('#')[0].strip())
+
     RADARR_URL = os.getenv('RADARR_URL')
     RADARR_API_KEY = os.getenv('RADARR_API_KEY')
-    RADARR_TAG_ON_ARCHIVE = os.getenv('RADARR_TAG_ON_ARCHIVE', 'vu')
+    DEFAULT_RADARR_ROOT_FOLDER = os.getenv('DEFAULT_RADARR_ROOT_FOLDER')
+    DEFAULT_RADARR_PROFILE_ID = int(os.getenv('DEFAULT_RADARR_PROFILE_ID', '1').split('#')[0].strip())
+    RADARR_TAG_ON_ARCHIVE = os.getenv('RADARR_TAG_ON_ARCHIVE', 'vu').split('#')[0].strip()
+
     PROWLARR_URL = os.getenv('PROWLARR_URL')
     PROWLARR_API_KEY = os.getenv('PROWLARR_API_KEY')
 
@@ -38,11 +44,11 @@ class Config:
     RTORRENT_API_URL = os.getenv('RTORRENT_API_URL')
     RTORRENT_USER = os.getenv('RTORRENT_USER')
     RTORRENT_PASSWORD = os.getenv('RTORRENT_PASSWORD')
-    RTORRENT_SSL_VERIFY = os.getenv('RTORRENT_SSL_VERIFY', 'False').lower() in ('true', '1', 't')
+    RTORRENT_SSL_VERIFY = os.getenv('RTORRENT_SSL_VERIFY', 'False').split('#')[0].strip().lower() in ('true', '1', 't')
 
     # --- SEEDBOX: SFTP ---
     SEEDBOX_SFTP_HOST = os.getenv('SEEDBOX_SFTP_HOST')
-    SEEDBOX_SFTP_PORT = int(os.getenv('SEEDBOX_SFTP_PORT', 22)) # Default SFTP port
+    SEEDBOX_SFTP_PORT = int(os.getenv('SEEDBOX_SFTP_PORT', '22').split('#')[0].strip())
     SEEDBOX_SFTP_USER = os.getenv('SEEDBOX_SFTP_USER')
     SEEDBOX_SFTP_PASSWORD = os.getenv('SEEDBOX_SFTP_PASSWORD')
 
@@ -68,13 +74,13 @@ class Config:
     YGG_USER_AGENT = os.getenv('YGG_USER_AGENT', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36')
 
     # --- ADVANCED & TASKS ---
-    SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES = int(os.getenv('SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES', 15))
-    ORPHAN_CLEANER_PERFORM_DELETION = os.getenv('ORPHAN_CLEANER_PERFORM_DELETION', 'False').lower() in ('true', '1', 't')
+    SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES = int(os.getenv('SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES', '15').split('#')[0].strip())
+    ORPHAN_CLEANER_PERFORM_DELETION = os.getenv('ORPHAN_CLEANER_PERFORM_DELETION', 'False').split('#')[0].strip().lower() in ('true', '1', 't')
     _default_orphan_extensions_str = ".nfo,.jpg,.jpeg,.png,.txt,.srt,.sub,.idx,.lnk,.exe,.vsmeta,.edl"
-    _orphan_extensions_env = os.getenv('ORPHAN_CLEANER_EXTENSIONS', _default_orphan_extensions_str)
+    _orphan_extensions_env = os.getenv('ORPHAN_CLEANER_EXTENSIONS', _default_orphan_extensions_str).split('#')[0].strip()
     ORPHAN_CLEANER_EXTENSIONS = [ext.strip().lower() for ext in _orphan_extensions_env.split(',') if ext.strip()]
-    MMS_API_PROCESS_STAGING_URL = os.getenv('MMS_API_PROCESS_STAGING_URL', f"http://127.0.0.1:{os.getenv('FLASK_RUN_PORT', 5001)}/seedbox/process-staging-item")
-    SFTP_SCANNER_GUARDFRAIL_ENABLED = os.getenv('SFTP_SCANNER_GUARDFRAIL_ENABLED', 'True').lower() in ('true', '1', 't')
+    MMS_API_PROCESS_STAGING_URL = os.getenv('MMS_API_PROCESS_STAGING_URL', f"http://127.0.0.1:{os.getenv('FLASK_RUN_PORT', '5001').split('#')[0].strip()}/seedbox/process-staging-item")
+    SFTP_SCANNER_GUARDFRAIL_ENABLED = os.getenv('SFTP_SCANNER_GUARDFRAIL_ENABLED', 'True').split('#')[0].strip().lower() in ('true', '1', 't')
 
 
     # --- Anciennes variables (à supprimer/migrer après vérification que plus rien ne les utilise) ---
@@ -82,7 +88,7 @@ class Config:
         'PENDING_TORRENTS_MAP_FILE',
         os.path.join(INSTANCE_FOLDER_PATH, 'pending_torrents_map.json')
     ) # Si utilisé, vérifier sa pertinence ou migrer vers LOCAL_PROCESSED_LOG_PATH si fonction similaire
-    RTORRENT_POST_ADD_DELAY_SECONDS = int(os.getenv('RTORRENT_POST_ADD_DELAY_SECONDS', 3)) # Spécifique à rTorrent, garder si pertinent
+    RTORRENT_POST_ADD_DELAY_SECONDS = int(os.getenv('RTORRENT_POST_ADD_DELAY_SECONDS', '3').split('#')[0].strip()) # Spécifique à rTorrent, garder si pertinent
     # SFTP_SCANNER_GUARDFRAIL_ENABLED = os.getenv('SFTP_SCANNER_GUARDFRAIL_ENABLED', 'True').lower() == 'true' # Garder si cette logique est toujours utilisée
 
 

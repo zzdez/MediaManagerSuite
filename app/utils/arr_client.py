@@ -703,3 +703,141 @@ def get_arr_media_details(search_title: str, media_type_from_guessit: str, year_
 
     logger.info(f"get_arr_media_details: Successfully fetched details for '{search_title}': TVDB ID: {details['tvdb_id']}, TMDB ID: {details['tmdb_id']}, IMDb ID: {details['imdb_id']}, Arr ID: {details['arr_item_id']}")
     return details
+
+
+def add_series_by_title_to_sonarr(series_title: str, series_year: int = None):
+    """
+    Searches for a series by title (and optionally year) in Sonarr,
+    then adds it if found and not already in Sonarr.
+    Uses default root folder and quality profile from config.
+    Returns the new series object from Sonarr API if successful, else raises ValueError.
+    """
+    logger.info(f"Attempting to search and add series: '{series_title}' (Year: {series_year}) to Sonarr.")
+
+    candidates = search_sonarr_by_title(series_title)
+    if not candidates:
+        raise ValueError(f"Sonarr: No series found matching title '{series_title}'.")
+
+    best_match = None
+    for series in candidates:
+        # Prefer an item not already added (no 'id' or id is 0)
+        if not series.get('id') or series.get('id') == 0:
+            # Title matching (case-insensitive, simple normalization)
+            normalized_api_title = re.sub(r'[^\w\s]', '', series.get('title', '')).lower()
+            normalized_search_title = re.sub(r'[^\w\s]', '', series_title).lower()
+
+            if normalized_api_title == normalized_search_title:
+                if series_year:
+                    if series.get('year') == series_year:
+                        best_match = series
+                        break
+                else: # No year provided, first title match is good enough for now
+                    best_match = series
+                    break
+
+    if not best_match: # Fallback if no exact match on unadded item, try first result if any
+        logger.warning(f"Sonarr: No exact unadded match for '{series_title}' (Year: {series_year}). Considering first lookup result if available.")
+        # This part could be refined: what if the first result is already added?
+        # For now, we prioritize unadded. If all are added or no good match, this will remain None.
+        # Or, if we want to be more aggressive, take candidates[0] if it has a tvdbId.
+        # However, add_new_series_to_sonarr expects an unadded item.
+        # If best_match is still None here, it means no suitable *unadded* candidate was found.
+        raise ValueError(f"Sonarr: No suitable *unadded* series found for '{series_title}' (Year: {series_year}) via lookup.")
+
+
+    tvdb_id = best_match.get('tvdbId')
+    if not tvdb_id:
+        raise ValueError(f"Sonarr: Could not find TVDB ID for '{series.get('title', series_title)}' from search results.")
+
+    # Get default Sonarr configurations
+    default_root_folder = current_app.config.get('DEFAULT_SONARR_ROOT_FOLDER')
+    default_quality_profile_id = current_app.config.get('DEFAULT_SONARR_PROFILE_ID')
+    default_language_profile_id = current_app.config.get('DEFAULT_SONARR_LANGUAGE_PROFILE_ID', 1) # Sonarr specific
+
+    if not default_root_folder or not default_quality_profile_id:
+        missing_configs = []
+        if not default_root_folder: missing_configs.append("DEFAULT_SONARR_ROOT_FOLDER")
+        if not default_quality_profile_id: missing_configs.append("DEFAULT_SONARR_PROFILE_ID")
+        raise ValueError(f"Sonarr: Missing default configuration: {', '.join(missing_configs)}.")
+
+    logger.info(f"Sonarr: Found TVDB ID {tvdb_id} for '{series_title}'. Proceeding to add with defaults.")
+
+    # Use the existing add_new_series_to_sonarr function
+    added_series_details = add_new_series_to_sonarr(
+        tvdb_id=tvdb_id,
+        title=best_match.get('title'), # Use title from Sonarr's lookup result for consistency
+        quality_profile_id=default_quality_profile_id,
+        language_profile_id=default_language_profile_id,
+        root_folder_path=default_root_folder
+        # season_folder, monitored, search_for_missing_episodes use defaults from add_new_series_to_sonarr
+    )
+
+    if not added_series_details or not added_series_details.get('id'):
+        # add_new_series_to_sonarr already logs errors, so just raise generic here
+        raise ValueError(f"Sonarr: Failed to add series '{series_title}' using TVDB ID {tvdb_id}.")
+
+    logger.info(f"Sonarr: Successfully added series '{added_series_details.get('title')}' with Sonarr ID {added_series_details.get('id')}.")
+    return added_series_details
+
+
+def add_movie_by_title_to_radarr(movie_title: str, movie_year: int = None):
+    """
+    Searches for a movie by title (and optionally year) in Radarr,
+    then adds it if found and not already in Radarr.
+    Uses default root folder and quality profile from config.
+    Returns the new movie object from Radarr API if successful, else raises ValueError.
+    """
+    logger.info(f"Attempting to search and add movie: '{movie_title}' (Year: {movie_year}) to Radarr.")
+
+    candidates = search_radarr_by_title(movie_title)
+    if not candidates:
+        raise ValueError(f"Radarr: No movies found matching title '{movie_title}'.")
+
+    best_match = None
+    for movie in candidates:
+        if not movie.get('id') or movie.get('id') == 0: # Prefer unadded
+            normalized_api_title = re.sub(r'[^\w\s]', '', movie.get('title', '')).lower()
+            normalized_search_title = re.sub(r'[^\w\s]', '', movie_title).lower()
+
+            if normalized_api_title == normalized_search_title:
+                if movie_year:
+                    if movie.get('year') == movie_year:
+                        best_match = movie
+                        break
+                else:
+                    best_match = movie
+                    break
+
+    if not best_match:
+        raise ValueError(f"Radarr: No suitable *unadded* movie found for '{movie_title}' (Year: {movie_year}) via lookup.")
+
+    tmdb_id = best_match.get('tmdbId')
+    if not tmdb_id:
+        raise ValueError(f"Radarr: Could not find TMDB ID for '{best_match.get('title', movie_title)}' from search results.")
+
+    # Get default Radarr configurations
+    default_root_folder = current_app.config.get('DEFAULT_RADARR_ROOT_FOLDER')
+    default_quality_profile_id = current_app.config.get('DEFAULT_RADARR_PROFILE_ID')
+    # Radarr also uses 'minimumAvailability', defaults in add_new_movie_to_radarr function
+
+    if not default_root_folder or not default_quality_profile_id:
+        missing_configs = []
+        if not default_root_folder: missing_configs.append("DEFAULT_RADARR_ROOT_FOLDER")
+        if not default_quality_profile_id: missing_configs.append("DEFAULT_RADARR_PROFILE_ID")
+        raise ValueError(f"Radarr: Missing default configuration: {', '.join(missing_configs)}.")
+
+    logger.info(f"Radarr: Found TMDB ID {tmdb_id} for '{movie_title}'. Proceeding to add with defaults.")
+
+    added_movie_details = add_new_movie_to_radarr(
+        tmdb_id=tmdb_id,
+        title=best_match.get('title'), # Use title from Radarr's lookup result
+        quality_profile_id=default_quality_profile_id,
+        root_folder_path=default_root_folder
+        # minimum_availability, monitored, search_for_movie use defaults from add_new_movie_to_radarr
+    )
+
+    if not added_movie_details or not added_movie_details.get('id'):
+        raise ValueError(f"Radarr: Failed to add movie '{movie_title}' using TMDB ID {tmdb_id}.")
+
+    logger.info(f"Radarr: Successfully added movie '{added_movie_details.get('title')}' with Radarr ID {added_movie_details.get('id')}.")
+    return added_movie_details
