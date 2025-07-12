@@ -119,8 +119,8 @@ def prepare_mapping_details():
 
         # 3. NOUVEAU : On enrichit avec TVDB pour avoir les infos en français
         if tvdb_id:
-            from app.utils.tvdb_client import CustomTVDBClient
-            tvdb_client = CustomTVDBClient()
+            from app.utils.tvdb_client import TheTVDBClient
+            tvdb_client = TheTVDBClient()
             # On demande les détails en français
             tvdb_details_fr = tvdb_client.get_series_details_by_id(tvdb_id, lang='fra')
 
@@ -513,6 +513,32 @@ def search_arr_proxy():
                 'isAdded': is_added, # Pour que le frontend sache si le média est déjà dans la bibliothèque
                 'alternate_titles': alt_titles_with_lang
             }
+
+            tvdb_id = item.get('tvdbId')
+            current_app.logger.debug(f"Traitement de '{item.get('title')}'. ID TVDB trouvé : {tvdb_id}")
+
+            if tvdb_id:
+                try:
+                    from app.utils.tvdb_client import TheTVDBClient
+                    tvdb_client = TheTVDBClient()
+
+                    current_app.logger.debug(f"Appel du client TVDB pour l'ID {tvdb_id}...")
+                    tvdb_details_fr = tvdb_client.get_series_details_by_id(tvdb_id, lang='fra')
+
+                    if tvdb_details_fr:
+                        current_app.logger.debug(f"TVDB a retourné des détails : {tvdb_details_fr}")
+                        # Met à jour les informations
+                        details['title'] = tvdb_details_fr.get('title') or details['title']
+                        details['overview'] = tvdb_details_fr.get('overview') or details['overview']
+                        details['poster'] = tvdb_details_fr.get('poster') or details.get('poster')
+                    else:
+                        current_app.logger.warning(f"L'appel TVDB pour l'ID {tvdb_id} n'a retourné aucun détail.")
+
+                except Exception as e:
+                    current_app.logger.error(f"Une erreur est survenue lors de l'appel au client TVDB pour l'ID {tvdb_id}: {e}", exc_info=True)
+            else:
+                current_app.logger.warning(f"Aucun ID TVDB trouvé pour '{item.get('title')}', impossible d'enrichir.")
+
             detailed_results.append(details)
 
     return jsonify(detailed_results)
