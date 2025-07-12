@@ -119,8 +119,8 @@ def prepare_mapping_details():
 
         # 3. NOUVEAU : On enrichit avec TVDB pour avoir les infos en français
         if tvdb_id:
-            from app.utils.tvdb_client import TheTVDBClient
-            tvdb_client = TheTVDBClient()
+            from app.utils.tvdb_client import CustomTVDBClient
+            tvdb_client = CustomTVDBClient()
             # On demande les détails en français
             tvdb_details_fr = tvdb_client.get_series_details_by_id(tvdb_id, lang='fra')
 
