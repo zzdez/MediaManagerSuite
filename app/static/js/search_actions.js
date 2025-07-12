@@ -125,7 +125,18 @@ $(document).ready(function() {
                                     </div>
                                     <div class="col-md-10">
                                         <h6 class="mb-1">${title} (${year})${statusBadge}${addedBadge}</h6>
-                                        <p class="mb-1 small text-muted" style="max-height: 55px; overflow-y: hidden;">
+                                        ${
+                                            (() => {
+                                                if (item.alternate_titles && item.alternate_titles.length > 0) {
+                                                    const alternate = item.alternate_titles.find(alt => alt.toLowerCase() !== title.toLowerCase());
+                                                    if (alternate) {
+                                                        return `<small class="d-block text-info" title="${item.alternate_titles.join(', ')}">Titre original: ${alternate}</small>`;
+                                                    }
+                                                }
+                                                return '';
+                                            })()
+                                        }
+                                        <p class="mb-1 small text-muted modal-synopsis" title="Survolez pour lire la suite">
                                             ${overview}
                                         </p>
                                         ${seasonsInfo}
