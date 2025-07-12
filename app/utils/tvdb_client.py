@@ -1,7 +1,7 @@
 # app/utils/tvdb_client.py
 import logging
 from flask import current_app
-from tvdb_v4_client import TVDBClient
+from thetvdb_api import TVDB
 
 logger = logging.getLogger(__name__)
 
@@ -10,7 +10,7 @@ class TheTVDBClient:
         self.api_key = current_app.config.get('TVDB_API_KEY')
         if not self.api_key:
             raise ValueError("La clé API TVDB (TVDB_API_KEY) n'est pas configurée.")
-        self.client = TVDBClient(api_key=self.api_key)
+        self.client = TVDB(api_key=self.api_key)
 
     def get_series_details_by_id(self, tvdb_id, lang='fra'):
         """
