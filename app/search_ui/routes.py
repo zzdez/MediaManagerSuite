@@ -96,14 +96,14 @@ def check_media_status_api():
 @search_ui_bp.route('/api/prepare_mapping_details', methods=['POST'])
 @login_required
 def prepare_mapping_details():
-    data = request.get_json()
-    release_title = data.get('release_title')
+    data = request.json
+    release_title = data.get('title')
 
     if not release_title:
-        return jsonify({'error': 'Titre de la release manquant.'}), 400
+        return jsonify({'error': 'Titre manquant'}), 400
 
     try:
-        # 1. On continue de chercher dans Sonarr/Radarr d'abord
+        # 1. On cherche d'abord dans Sonarr/Radarr
         from app.utils.arr_client import get_arr_media_details, parse_media_name
 
         parsed_info = parse_media_name(release_title)
@@ -112,29 +112,37 @@ def prepare_mapping_details():
         media_details_from_arr = get_arr_media_details(release_title, media_type, parsed_info.get('year'))
 
         if not media_details_from_arr:
-            return jsonify({'error': 'Média non trouvé dans Sonarr/Radarr.'}), 404
+            return jsonify({'error': f"Aucun média correspondant trouvé dans Sonarr/Radarr pour '{release_title}'."}), 404
 
         # 2. On a trouvé ! On récupère son TVDB ID.
         tvdb_id = media_details_from_arr.get('tvdb_id')
+        current_app.logger.debug(f"Préparation du mapping pour '{release_title}'. ID TVDB trouvé : {tvdb_id}")
 
-        # 3. NOUVEAU : On enrichit avec TVDB pour avoir les infos en français
+        # 3. On enrichit avec TVDB pour avoir les infos en français
         if tvdb_id:
-            from app.utils.tvdb_client import TheTVDBClient
+            from app.utils.tvdb_client import TheTVDBClient # Import local
             tvdb_client = TheTVDBClient()
-            # On demande les détails en français
+
+            current_app.logger.debug(f"Appel du client TVDB pour l'ID {tvdb_id}...")
             tvdb_details_fr = tvdb_client.get_series_details_by_id(tvdb_id, lang='fra')
 
             if tvdb_details_fr:
+                current_app.logger.debug(f"TVDB a retourné des détails : {tvdb_details_fr}")
                 # On met à jour nos informations avec les données françaises
-                media_details_from_arr['title'] = tvdb_details_fr.get('title') or media_details_from_arr['title']
-                media_details_from_arr['overview'] = tvdb_details_fr.get('overview') or media_details_from_arr['overview']
-                media_details_from_arr['remotePoster'] = tvdb_details_fr.get('poster') or media_details_from_arr['remotePoster']
+                media_details_from_arr['title'] = tvdb_details_fr.get('title') or media_details_from_arr.get('title')
+                media_details_from_arr['overview'] = tvdb_details_fr.get('overview') or media_details_from_arr.get('overview')
+                # La clé pour le poster est `remotePoster` dans le JS
+                media_details_from_arr['remotePoster'] = tvdb_details_fr.get('poster') or media_details_from_arr.get('remotePoster')
+            else:
+                current_app.logger.warning(f"L'appel TVDB pour l'ID {tvdb_id} n'a retourné aucun détail.")
+        else:
+            current_app.logger.warning(f"Aucun ID TVDB trouvé pour '{release_title}', impossible d'enrichir.")
 
         return jsonify(media_details_from_arr)
 
     except Exception as e:
-        current_app.logger.error(f"Erreur dans /api/prepare_mapping_details pour '{release_title}': {e}", exc_info=True)
-        return jsonify({'error': 'Erreur interne du serveur.'}), 500
+        current_app.logger.error(f"Erreur lors de la préparation du mapping pour {release_title}: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 # Note: La route /results n'est plus explicitement nécessaire si /search gère tout.
 # Si vous souhaitez la conserver pour une raison spécifique (ex: liens directs vers les résultats),
@@ -513,32 +521,6 @@ def search_arr_proxy():
                 'isAdded': is_added, # Pour que le frontend sache si le média est déjà dans la bibliothèque
                 'alternate_titles': alt_titles_with_lang
             }
-
-            tvdb_id = item.get('tvdbId')
-            current_app.logger.debug(f"Traitement de '{item.get('title')}'. ID TVDB trouvé : {tvdb_id}")
-
-            if tvdb_id:
-                try:
-                    from app.utils.tvdb_client import TheTVDBClient
-                    tvdb_client = TheTVDBClient()
-
-                    current_app.logger.debug(f"Appel du client TVDB pour l'ID {tvdb_id}...")
-                    tvdb_details_fr = tvdb_client.get_series_details_by_id(tvdb_id, lang='fra')
-
-                    if tvdb_details_fr:
-                        current_app.logger.debug(f"TVDB a retourné des détails : {tvdb_details_fr}")
-                        # Met à jour les informations
-                        details['title'] = tvdb_details_fr.get('title') or details['title']
-                        details['overview'] = tvdb_details_fr.get('overview') or details['overview']
-                        details['poster'] = tvdb_details_fr.get('poster') or details.get('poster')
-                    else:
-                        current_app.logger.warning(f"L'appel TVDB pour l'ID {tvdb_id} n'a retourné aucun détail.")
-
-                except Exception as e:
-                    current_app.logger.error(f"Une erreur est survenue lors de l'appel au client TVDB pour l'ID {tvdb_id}: {e}", exc_info=True)
-            else:
-                current_app.logger.warning(f"Aucun ID TVDB trouvé pour '{item.get('title')}', impossible d'enrichir.")
-
             detailed_results.append(details)
 
     return jsonify(detailed_results)
