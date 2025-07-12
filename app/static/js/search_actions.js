@@ -33,13 +33,25 @@ $(document).ready(function() {
         modalEl.modal('show'); // Ouvre la NOUVELLE modale
 
         // Appelle la NOUVELLE route d'enrichissement
+        console.log("JS: Lancement du fetch vers /search/api/prepare_mapping_details");
+
         fetch("/search/api/prepare_mapping_details", {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ title: releaseTitle })
         })
-        .then(response => response.json())
+        .then(response => {
+            // --- LOG 1 : Est-ce qu'on reçoit une réponse ? ---
+            console.log("JS: Réponse reçue du serveur. Statut:", response.status);
+            if (!response.ok) {
+                throw new Error(`Erreur HTTP ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
+            // --- LOG 2 : Est-ce que les données JSON sont correctes ? ---
+            console.log("JS: Données JSON parsées avec succès:", data);
+
             if (data.error) throw new Error(data.error);
 
             // Remplit le contenu
@@ -47,11 +59,15 @@ $(document).ready(function() {
             content.html(`<div class="row"><div class="col-md-3">${posterHtml}</div><div class="col-md-9"><h4>${data.title} (${data.year})</h4><p>${data.overview}</p></div></div>`);
 
             confirmBtn.data('arr-id', data.id); // Stocke l'ID Sonarr/Radarr
+
+            console.log("JS: Contenu de la modale mis à jour. Affichage...");
             loader.hide();
             content.removeClass('d-none');
             confirmBtn.prop('disabled', false);
         })
         .catch(error => {
+            // --- LOG 3 : Est-ce qu'une erreur est attrapée ? ---
+            console.error("JS: ERREUR DANS LE BLOC FETCH:", error);
             content.html(`<div class="alert alert-danger">${error.message}</div>`);
             loader.hide();
             content.removeClass('d-none');

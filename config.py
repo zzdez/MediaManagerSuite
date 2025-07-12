@@ -75,7 +75,6 @@ class Config:
 
     # --- API Externes ---
     TVDB_API_KEY = os.getenv('TVDB_API_KEY')
-    TVDB_PIN = os.getenv('TVDB_PIN')
     GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
     # --- ADVANCED & TASKS ---
