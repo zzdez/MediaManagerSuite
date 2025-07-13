@@ -28,7 +28,13 @@ $(document).ready(function() {
         const myModal = new bootstrap.Modal(modalEl[0]);
         myModal.show();
 
-        fetch("/api/prepare_mapping_details", {
+        const prepareUrl = $('#search-page-container').data('prepare-mapping-url');
+        if (!prepareUrl) {
+            console.error("Erreur critique: L'URL de l'API de mapping est introuvable.");
+            return;
+        }
+
+        fetch(prepareUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ title: releaseTitle })

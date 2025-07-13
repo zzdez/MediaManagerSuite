@@ -9,6 +9,8 @@
 {% endblock %}
 
 {% block content %}
+<div id="search-page-container"
+     data-prepare-mapping-url="{{ url_for('search_ui.prepare_mapping_details') }}">
     <div class="container mt-4">
         {# Headings and paragraphs should inherit text color from the dark theme #}
         <h1><i class="fas fa-search-plus"></i> Découverte de Contenu</h1>
@@ -162,6 +164,7 @@
     <!-- ### FIN DE LA MODALE ### -->
 
     <!-- La modale #intelligent-mapping-modal a été supprimée. -->
+</div>
 {% endblock %}
 
 {% block scripts %}
