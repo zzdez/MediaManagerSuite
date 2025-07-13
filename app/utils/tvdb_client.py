@@ -20,30 +20,39 @@ class CustomTVDBClient:
             self.client = None
 
     def get_series_details_by_id(self, tvdb_id, lang='fra'):
-        if not self.client:
-            logger.error("TVDB client is not initialized.")
-            return None
-
         try:
-            logger.info(f"Fetching TVDB details for ID: {tvdb_id} with language '{lang}'")
+            logger.info(f"Recherche TVDB pour l'ID : {tvdb_id}")
             
-            series_data = self.client.get_series_extended(tvdb_id, meta=lang, short=False)
-            
-            if not series_data:
-                logger.warning(f"No data returned from TVDB for ID {tvdb_id}.")
+            # --- ÉTAPE 1 : Récupérer les données de base (en anglais par défaut) ---
+            base_data = self.client.get_series_extended(tvdb_id)
+            if not base_data:
+                logger.warning(f"TVDB n'a rien retourné pour l'ID {tvdb_id}.")
                 return None
-
-            logger.debug(f"Raw TVDB details received for {tvdb_id}: {series_data}")
             
+            # On stocke les détails de base
             details = {
-                'title': series_data.get('name'),
-                'overview': series_data.get('overview'),
-                'status': series_data.get('status', {}).get('name'),
-                'poster_path': series_data.get('image'),
-                'year': series_data.get('year'),
-                'tvdb_id': series_data.get('id')
+                'title': base_data.get('name'),
+                'overview': base_data.get('overview'),
+                'status': base_data.get('status', {}).get('name'),
+                'poster': base_data.get('image'),
+                'year': base_data.get('year')
             }
+
+            # --- ÉTAPE 2 : Récupérer spécifiquement la traduction française ---
+            if lang:
+                logger.info(f"Tentative de récupération de la traduction '{lang}' pour l'ID {tvdb_id}")
+                try:
+                    translation_data = self.client.get_series_translation(tvdb_id, lang)
+                    if translation_data:
+                        logger.info(f"Traduction '{lang}' trouvée. Mise à jour des détails.")
+                        # On écrase le titre et le synopsis avec la version traduite si elle existe
+                        details['title'] = translation_data.get('name') or details['title']
+                        details['overview'] = translation_data.get('overview') or details['overview']
+                except Exception as e:
+                    logger.warning(f"Impossible de récupérer la traduction '{lang}' pour {tvdb_id}: {e}")
+
             return details
+
         except Exception as e:
-            logger.error(f"Error fetching TVDB details for {tvdb_id}: {e}", exc_info=True)
+            logger.error(f"Erreur majeure lors de la récupération des détails TVDB pour {tvdb_id}: {e}", exc_info=True)
             return None
