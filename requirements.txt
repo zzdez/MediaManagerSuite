@@ -26,3 +26,4 @@ Werkzeug==3.1.3
 guessit
 APScheduler>=3.0.0,<4.0.0
 tvdb_v4_official
+tmdbv3api

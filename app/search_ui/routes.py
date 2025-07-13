@@ -93,8 +93,6 @@ def check_media_status_api():
         return jsonify({'text': 'Erreur serveur interne', 'status_class': 'text-danger'}), 500
 
 
-# La route /api/prepare_mapping_details a été supprimée car elle n'est plus utilisée.
-
 @search_ui_bp.route('/api/prepare_mapping_details', methods=['POST'])
 @login_required
 def prepare_mapping_details():
@@ -104,51 +102,41 @@ def prepare_mapping_details():
     if not release_title:
         return jsonify({'error': 'Titre manquant'}), 400
 
-    try:
-        # --- ÉTAPE 1: APPEL DIRECT À LA FONCTION ---
-        current_app.logger.info("Étape 1: Appel à arr_client.get_arr_media_details...")
+    from app.utils.arr_client import parse_media_name
+    from app.utils.arr_client import search_sonarr_by_title, search_radarr_by_title
+    from app.utils.tvdb_client import CustomTVDBClient
+    from app.utils.tmdb_client import TheMovieDBClient
 
-        # Importe la fonction directement, pas la classe
-        from app.utils.arr_client import get_arr_media_details, parse_media_name
+    parsed_info = parse_media_name(release_title)
+    media_type = 'series' if parsed_info['type'] == 'tv' else 'movie'
 
-        # Appelle la fonction directement
-        parsed_info = parse_media_name(release_title)
-        media_type = 'episode' if parsed_info['type'] == 'tv' else parsed_info['type']
-        media_details_from_arr = get_arr_media_details(release_title, media_type, parsed_info.get('year'))
+    candidates = []
+    if media_type == 'series':
+        candidates = search_sonarr_by_title(parsed_info['title'])
+    else:
+        candidates = search_radarr_by_title(parsed_info['title'])
 
-        # ... Le reste du code (Étape 2, Étape 3) reste identique ...
-        if not media_details_from_arr:
-            return jsonify({'error': f"Aucun média correspondant trouvé dans Sonarr/Radarr pour '{release_title}'."}), 404
+    enriched_candidates = []
+    if media_type == 'series':
+        tvdb_client = CustomTVDBClient()
+        for cand in candidates:
+            tvdb_id = cand.get('tvdbId')
+            if tvdb_id:
+                tvdb_details = tvdb_client.get_series_details_by_id(tvdb_id, lang='fra')
+                if tvdb_details:
+                    cand.update(tvdb_details)
+            enriched_candidates.append(cand)
+    else:
+        tmdb_client = TheMovieDBClient()
+        for cand in candidates:
+            tmdb_id = cand.get('tmdbId')
+            if tmdb_id:
+                tmdb_details = tmdb_client.get_movie_details(tmdb_id)
+                if tmdb_details:
+                    cand.update(tmdb_details)
+            enriched_candidates.append(cand)
 
-        # 2. On a trouvé ! On récupère son TVDB ID.
-        tvdb_id = media_details_from_arr.get('tvdb_id')
-        current_app.logger.debug(f"Préparation du mapping pour '{release_title}'. ID TVDB trouvé : {tvdb_id}")
-
-        # 3. On enrichit avec TVDB pour avoir les infos en français
-        if tvdb_id:
-            from app.utils.tvdb_client import CustomTVDBClient
-            tvdb_client = CustomTVDBClient()
-
-            current_app.logger.debug(f"Appel du client TVDB pour l'ID {tvdb_id}...")
-            tvdb_details_fr = tvdb_client.get_series_details_by_id(tvdb_id, lang='fra')
-
-            if tvdb_details_fr:
-                current_app.logger.debug(f"TVDB a retourné des détails : {tvdb_details_fr}")
-                # On met à jour nos informations avec les données françaises
-                media_details_from_arr['title'] = tvdb_details_fr.get('title') or media_details_from_arr.get('title')
-                media_details_from_arr['overview'] = tvdb_details_fr.get('overview') or media_details_from_arr.get('overview')
-                # La clé pour le poster est `remotePoster` dans le JS
-                media_details_from_arr['remotePoster'] = tvdb_details_fr.get('poster') or media_details_from_arr.get('remotePoster')
-            else:
-                current_app.logger.warning(f"L'appel TVDB pour l'ID {tvdb_id} n'a retourné aucun détail.")
-        else:
-            current_app.logger.warning(f"Aucun ID TVDB trouvé pour '{release_title}', impossible d'enrichir.")
-
-        return jsonify(media_details_from_arr)
-
-    except Exception as e:
-        current_app.logger.error(f"Erreur lors de la préparation du mapping pour {release_title}: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+    return render_template('search_ui/_mapping_selection_list.html', candidates=enriched_candidates)
 
 # Note: La route /results n'est plus explicitement nécessaire si /search gère tout.
 # Si vous souhaitez la conserver pour une raison spécifique (ex: liens directs vers les résultats),
