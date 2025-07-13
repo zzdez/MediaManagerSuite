@@ -3,7 +3,7 @@
 from flask import render_template, request, flash, redirect, url_for, current_app, jsonify # Ajout de redirect et url_for ET current_app ET jsonify
 from . import search_ui_bp
 from app.utils.prowlarr_client import search_prowlarr
-from app.utils.arr_client import search_sonarr_by_title, search_radarr_by_title # MODIFIED: Removed ArrClient
+from app.utils.arr_client import search_sonarr_by_title, search_radarr_by_title
 from app.utils.media_status_checker import check_media_status # Ajout de l'import
 from app.utils.plex_client import get_user_specific_plex_server # MOVED IMPORT HERE
 # Utiliser le login_required défini dans app/__init__.py pour la cohérence
@@ -14,12 +14,14 @@ from app.utils.media_status_checker import check_media_status as util_check_medi
 @login_required
 def search_page():
     query = request.args.get('query', '').strip()
+    year = request.args.get('year')
+    lang = request.args.get('lang')
     results = None
     
     if query:
         # --- TRAITEMENT DES RÉSULTATS PROWLARR (SIMPLIFIÉ) ---
         # La vérification du statut Plex/Sonarr/Radarr est maintenant gérée par une route API séparée.
-        raw_results = search_prowlarr(query)
+        raw_results = search_prowlarr(query, year=year, lang=lang)
         if raw_results is not None:
             # On ne vérifie plus le statut ici. On passe les résultats bruts.
             # Le template s'attend à 'results' qui est une liste de dictionnaires.
@@ -91,7 +93,50 @@ def check_media_status_api():
         return jsonify({'text': 'Erreur serveur interne', 'status_class': 'text-danger'}), 500
 
 
-# La route /api/prepare_mapping_details a été supprimée car elle n'est plus utilisée.
+@search_ui_bp.route('/api/prepare_mapping_details', methods=['POST'])
+@login_required
+def prepare_mapping_details():
+    data = request.json
+    release_title = data.get('title')
+
+    if not release_title:
+        return jsonify({'error': 'Titre manquant'}), 400
+
+    from app.utils.arr_client import parse_media_name
+    from app.utils.arr_client import search_sonarr_by_title, search_radarr_by_title
+    from app.utils.tvdb_client import CustomTVDBClient
+    from app.utils.tmdb_client import TheMovieDBClient
+
+    parsed_info = parse_media_name(release_title)
+    media_type = 'series' if parsed_info['type'] == 'tv' else 'movie'
+
+    candidates = []
+    if media_type == 'series':
+        candidates = search_sonarr_by_title(parsed_info['title'])
+    else:
+        candidates = search_radarr_by_title(parsed_info['title'])
+
+    enriched_candidates = []
+    if media_type == 'series':
+        tvdb_client = CustomTVDBClient()
+        for cand in candidates:
+            tvdb_id = cand.get('tvdbId')
+            if tvdb_id:
+                tvdb_details = tvdb_client.get_series_details_by_id(tvdb_id, lang='fra')
+                if tvdb_details:
+                    cand.update(tvdb_details)
+            enriched_candidates.append(cand)
+    else:
+        tmdb_client = TheMovieDBClient()
+        for cand in candidates:
+            tmdb_id = cand.get('tmdbId')
+            if tmdb_id:
+                tmdb_details = tmdb_client.get_movie_details(tmdb_id)
+                if tmdb_details:
+                    cand.update(tmdb_details)
+            enriched_candidates.append(cand)
+
+    return render_template('search_ui/_mapping_selection_list.html', candidates=enriched_candidates)
 
 # Note: La route /results n'est plus explicitement nécessaire si /search gère tout.
 # Si vous souhaitez la conserver pour une raison spécifique (ex: liens directs vers les résultats),
