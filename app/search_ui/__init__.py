@@ -233,3 +233,58 @@ def download_and_map():
     except Exception as e:
         current_app.logger.error(f"Erreur majeure dans /download-and-map pour '{release_name}': {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': f"Erreur serveur inattendue: {str(e)}"}), 500
+
+# =====================================================================
+# ROUTES DE PROXY DE TÉLÉCHARGEMENT RESTAURÉES
+# =====================================================================
+
+@search_ui_bp.route('/download_torrent_proxy')
+@login_required
+def download_torrent_proxy():
+    # Imports locaux
+    import requests
+
+    url = request.args.get('url')
+    release_name = request.args.get('release_name', 'download.torrent')
+    indexer_id = request.args.get('indexer_id')
+    guid = request.args.get('guid')
+
+    if not all([url, release_name, indexer_id, guid]):
+        current_app.logger.error(f"Proxy download: Paramètres manquants.")
+        return Response("Erreur: Paramètres manquants.", status=400)
+
+    ygg_indexer_id = current_app.config.get('YGG_INDEXER_ID')
+    final_filename = f"{release_name.replace(' ', '_')}.torrent"
+
+    try:
+        if str(ygg_indexer_id) == str(indexer_id):
+            ygg_cookie = current_app.config.get('YGG_COOKIE')
+            ygg_user_agent = current_app.config.get('YGG_USER_AGENT')
+            ygg_base_url = current_app.config.get('YGG_BASE_URL')
+
+            if not all([ygg_cookie, ygg_user_agent, ygg_base_url]):
+                raise ValueError("Configuration YGG manquante.")
+
+            release_id_ygg = guid.split('?id=')[1].split('&')[0]
+            final_ygg_download_url = f"{ygg_base_url.rstrip('/')}/engine/download_torrent?id={release_id_ygg}"
+            headers = {'User-Agent': ygg_user_agent, 'Cookie': ygg_cookie}
+            response = requests.get(final_ygg_download_url, headers=headers, timeout=45, allow_redirects=True)
+        else:
+            standard_user_agent = current_app.config.get('YGG_USER_AGENT', 'Mozilla/5.0')
+            headers = {'User-Agent': standard_user_agent}
+            response = requests.get(url, headers=headers, timeout=45, allow_redirects=True)
+
+        response.raise_for_status()
+
+        content_type = response.headers.get('Content-Type', '').lower()
+        if 'application/x-bittorrent' not in content_type and 'application/octet-stream' not in content_type:
+            raise ValueError(f"La réponse n'est pas un fichier .torrent valide. Content-Type: '{content_type}'.")
+
+        return Response(
+            response.content,
+            mimetype='application/x-bittorrent',
+            headers={'Content-Disposition': f'attachment;filename="{final_filename}"'}
+        )
+    except Exception as e:
+        current_app.logger.error(f"Proxy download: Erreur pour '{release_name}': {e}", exc_info=True)
+        return Response(f"Une erreur est survenue lors du proxy de téléchargement: {e}", status=500)
