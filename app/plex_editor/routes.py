@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import os
-from app import login_required
+from app.auth import login_required
 from flask import (render_template, current_app, flash, abort, url_for,
                    redirect, request, session, jsonify)
 from datetime import datetime

@@ -6,8 +6,7 @@ from app.utils.prowlarr_client import search_prowlarr
 from app.utils.arr_client import search_sonarr_by_title, search_radarr_by_title
 from app.utils.media_status_checker import check_media_status # Ajout de l'import
 from app.utils.plex_client import get_user_specific_plex_server # MOVED IMPORT HERE
-# Utiliser le login_required défini dans app/__init__.py pour la cohérence
-from app import login_required
+from app.auth import login_required
 from app.utils.media_status_checker import check_media_status as util_check_media_status # Alias to avoid name collision
 from app.utils.arr_client import search_sonarr_by_title, search_radarr_by_title
 from app.utils.tvdb_client import TheTVDBClient

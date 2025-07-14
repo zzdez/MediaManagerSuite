@@ -5,7 +5,7 @@ from logging.handlers import RotatingFileHandler
 import os
 from datetime import datetime
 import secrets # Added import
-from functools import wraps # Added for login_required decorator
+from app.auth import login_required
 
 from flask import Flask, render_template, session, flash, request, redirect, url_for, current_app # Added current_app
 from config import Config # Correct car config.py est à la racine du projet
@@ -23,17 +23,6 @@ logger = logging.getLogger(__name__)
 scheduler = None
 # Global lock for SFTP scan
 sftp_scan_lock = threading.Lock()
-
-# Décorateur login_required
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if not session.get('logged_in'):
-            session['next_url'] = request.url
-            flash("Veuillez vous connecter pour accéder à cette page.", 'warning')
-            return redirect(url_for('login'))
-        return f(*args, **kwargs)
-    return decorated_function
 
 def create_app(config_class=Config):
     app = Flask(__name__)
