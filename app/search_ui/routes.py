@@ -10,6 +10,13 @@ from app.utils.plex_client import get_user_specific_plex_server # MOVED IMPORT H
 from app import login_required
 from app.utils.media_status_checker import check_media_status as util_check_media_status # Alias to avoid name collision
 from app.utils.arr_client import search_sonarr_by_title, search_radarr_by_title
+from app.utils.tvdb_client import TheTVDBClient
+from app.utils.tmdb_client import TMDbClient
+from config import Config
+
+# Initialise les clients
+tvdb_client = TheTVDBClient(api_key=Config.TVDB_API_KEY, pin=Config.TVDB_PIN)
+tmdb_client = TMDbClient(api_key=Config.TMDB_API_KEY)
 
 @search_ui_bp.route('/', methods=['GET'])
 @login_required
@@ -751,3 +758,46 @@ def search_lookup():
     except Exception as e:
         # Idéalement, logguer l'erreur côté serveur
         return jsonify({'error': f'An error occurred while communicating with the service: {str(e)}'}), 500
+
+@search_ui_bp.route('/api/enrich/details', methods=['POST'])
+def enrich_details():
+    data = request.get_json()
+    media_id = data.get('media_id')
+    media_type = data.get('media_type')
+
+    if not media_id or not media_type:
+        return jsonify({'error': 'Missing media_id or media_type'}), 400
+
+    try:
+        if media_type == 'tv':
+            details = tvdb_client.get_series_details_by_id(media_id, lang='fra')
+            if details:
+                # Formate la réponse pour le frontend
+                formatted_details = {
+                    'id': details.get('tvdb_id'),
+                    'title': details.get('name'),
+                    'year': details.get('year'),
+                    'overview': details.get('overview'),
+                    'poster': details.get('image_url'),
+                    'status': details.get('status')
+                }
+                return jsonify(formatted_details)
+        elif media_type == 'movie':
+            details = tmdb_client.get_movie_details(media_id, lang='fr-FR')
+            if details:
+                 # Formate la réponse pour le frontend
+                formatted_details = {
+                    'id': details.get('id'),
+                    'title': details.get('title'),
+                    'year': details.get('release_date', 'N/A')[:4],
+                    'overview': details.get('overview'),
+                    'poster': f"https://image.tmdb.org/t/p/w500{details.get('poster_path')}" if details.get('poster_path') else '',
+                    'status': details.get('status')
+                }
+                return jsonify(formatted_details)
+
+        return jsonify({'error': 'Media not found'}), 404
+
+    except Exception as e:
+        # Logguer l'erreur
+        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
