@@ -9,6 +9,7 @@ from app.utils.plex_client import get_user_specific_plex_server # MOVED IMPORT H
 # Utiliser le login_required défini dans app/__init__.py pour la cohérence
 from app import login_required
 from app.utils.media_status_checker import check_media_status as util_check_media_status # Alias to avoid name collision
+from app.utils.arr_client import search_sonarr_by_title, search_radarr_by_title
 
 @search_ui_bp.route('/', methods=['GET'])
 @login_required
@@ -724,3 +725,29 @@ def download_torrent():
     except Exception as ex_generic:
         current_app.logger.error(f"Erreur générique inattendue lors du téléchargement du .torrent (old route) {torrent_url}: {ex_generic}", exc_info=True)
         return Response(f"Erreur serveur inattendue lors de la tentative de téléchargement.", status=500)
+
+@search_ui_bp.route('/api/search/lookup', methods=['POST'])
+def search_lookup():
+    data = request.get_json()
+    term = data.get('term')
+    media_type = data.get('media_type')
+
+    if not term or not media_type:
+        return jsonify({'error': 'Missing term or media_type'}), 400
+
+    try:
+        if media_type == 'tv':
+            results = search_sonarr_by_title(term)
+            # Important : Ne garde que les champs nécessaires pour le frontend
+            simplified_results = [{'title': s.get('title'), 'year': s.get('year'), 'tvdbId': s.get('tvdbId')} for s in results]
+            return jsonify(simplified_results)
+        elif media_type == 'movie':
+            results = search_radarr_by_title(term)
+            # Important : Ne garde que les champs nécessaires pour le frontend
+            simplified_results = [{'title': m.get('title'), 'year': m.get('year'), 'tmdbId': m.get('tmdbId')} for m in results]
+            return jsonify(simplified_results)
+        else:
+            return jsonify({'error': 'Invalid media_type specified'}), 400
+    except Exception as e:
+        # Idéalement, logguer l'erreur côté serveur
+        return jsonify({'error': f'An error occurred while communicating with the service: {str(e)}'}), 500
