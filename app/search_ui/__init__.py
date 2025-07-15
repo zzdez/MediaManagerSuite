@@ -39,22 +39,26 @@ def search_page():
 @search_ui_bp.route('/api/search/lookup', methods=['POST'])
 def search_lookup():
     # Imports locaux
-    from app.utils.arr_client import search_sonarr_by_title, search_radarr_by_title
+    from app.utils.arr_client import search_sonarr_by_title, search_radarr_by_title, parse_media_name
 
     data = request.get_json()
-    term = data.get('term')
+    release_title = data.get('term')
     media_type = data.get('media_type')
 
-    if not term or not media_type:
+    if not release_title or not media_type:
         return jsonify({'error': 'Missing term or media_type'}), 400
+
+    # On parse le titre pour avoir un terme de recherche propre !
+    parsed_info = parse_media_name(release_title)
+    search_term = parsed_info.get('title') if parsed_info else release_title
 
     try:
         if media_type == 'tv':
-            results = search_sonarr_by_title(term)
+            results = search_sonarr_by_title(search_term)
             simplified_results = [{'title': s.get('title'), 'year': s.get('year'), 'tvdbId': s.get('tvdbId')} for s in results]
             return jsonify(simplified_results)
         elif media_type == 'movie':
-            results = search_radarr_by_title(term)
+            results = search_radarr_by_title(search_term)
             simplified_results = [{'title': m.get('title'), 'year': m.get('year'), 'tmdbId': m.get('tmdbId')} for m in results]
             return jsonify(simplified_results)
         else:
