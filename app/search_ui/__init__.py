@@ -71,8 +71,8 @@ def enrich_details():
     from app.utils.tmdb_client import TheMovieDBClient  # CORRIGÉ
 
     # Initialisation des clients ici
-    tvdb_client = CustomTVDBClient(api_key=Config.TVDB_API_KEY, pin=Config.TVDB_PIN)
-    tmdb_client = TheMovieDBClient(api_key=Config.TMDB_API_KEY)  # CORRIGÉ
+    tvdb_client = CustomTVDBClient()  # CORRIGÉ
+    tmdb_client = TheMovieDBClient()  # CORRIGÉ
 
     data = request.get_json()
     media_id = data.get('media_id')
