@@ -45,7 +45,7 @@
 
             <div class="tab-pane fade {% if request.args.get('mode') == 'free_search' %}show active{% endif %}" id="free-search" role="tabpanel">
                 <p>Recherchez n'importe quel terme sur vos indexers.</p>
-                <form method="GET" action="{{ url_for('search_ui.search_page') }}" id="free-search-form">
+                <form id="search-form" method="GET" action="{{ url_for('search_ui.search_page') }}">
                     <div class="row g-2 mb-3">
                         <div class="col-12">
                             <div class="form-check form-check-inline">
