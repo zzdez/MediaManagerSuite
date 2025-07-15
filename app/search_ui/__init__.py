@@ -67,12 +67,12 @@ def search_lookup():
 @search_ui_bp.route('/api/enrich/details', methods=['POST'])
 def enrich_details():
     # Imports locaux
-    from app.utils.tvdb_client import CustomTVDBClient  # CORRIGÉ
-    from app.utils.tmdb_client import TMDbClient
+    from app.utils.tvdb_client import CustomTVDBClient
+    from app.utils.tmdb_client import TheMovieDBClient  # CORRIGÉ
 
     # Initialisation des clients ici
-    tvdb_client = CustomTVDBClient(api_key=Config.TVDB_API_KEY, pin=Config.TVDB_PIN)  # CORRIGÉ
-    tmdb_client = TMDbClient(api_key=Config.TMDB_API_KEY)
+    tvdb_client = CustomTVDBClient(api_key=Config.TVDB_API_KEY, pin=Config.TVDB_PIN)
+    tmdb_client = TheMovieDBClient(api_key=Config.TMDB_API_KEY)  # CORRIGÉ
 
     data = request.get_json()
     media_id = data.get('media_id')
