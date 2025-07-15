@@ -33,7 +33,7 @@ class CustomTVDBClient:
         logger.info(f"Recherche TVDB pour l'ID : {tvdb_id}")
         try:
             # Étape 1: On récupère TOUJOURS les données de base de la série
-            series_response = self.client.get_series_by_id(tvdb_id)
+            series_response = self.client.get_series(tvdb_id)
             if not series_response or 'data' not in series_response:
                 logger.warning(f"Aucune donnée de base trouvée pour l'ID TVDB {tvdb_id}")
                 return None
