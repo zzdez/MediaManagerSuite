@@ -2,7 +2,7 @@
 
 import logging
 from tvdb_v4_official import TVDB
-from app.config import Config
+from config import Config
 
 logger = logging.getLogger(__name__)
 
