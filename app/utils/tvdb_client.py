@@ -1,7 +1,7 @@
 # Fichier : app/utils/tvdb_client.py
 
 import logging
-from pytvdb import TVDB
+from tvdb_v4_api import TVDB
 from app.config import Config
 
 logger = logging.getLogger(__name__)
