@@ -31,30 +31,29 @@ class CustomTVDBClient:
 
     def get_series_details_by_id(self, tvdb_id, lang='fra'):
         """
-        Récupère les détails d'une série. Robuste et avec fallback.
+        Récupère les détails d'une série. Corrigé pour lire la réponse directe.
         """
         if not self.client:
-            logger.warning("TVDB client not authenticated. Attempting to log in again.")
-            self.login()
-            if not self.client:
-                logger.error("Fatal: TVDB client cannot be initialized.")
-                return None
+            logger.error("Fatal: Le client TVDB ne peut pas être initialisé.")
+            return None
 
         logger.info(f"Recherche TVDB pour l'ID : {tvdb_id}")
         try:
             # Étape 1: Récupération des données de base
-            series_response = self.client.get_series(tvdb_id)
-            if not series_response or 'data' not in series_response:
-                logger.warning(f"Aucune donnée de base trouvée pour l'ID TVDB {tvdb_id}")
+            base_data = self.client.get_series(tvdb_id)
+
+            # La réponse est directement le dictionnaire de données.
+            if not base_data or not isinstance(base_data, dict):
+                logger.warning(f"Aucune donnée valide (ou dictionnaire vide) reçue pour l'ID TVDB {tvdb_id}")
                 return None
 
-            base_data = series_response['data']
+            logger.info(f"Données de base trouvées pour {tvdb_id}. Nom: {base_data.get('seriesName')}")
 
             details = {
                 'tvdb_id': base_data.get('id'),
                 'name': base_data.get('seriesName'),
                 'overview': base_data.get('overview', 'Aucun synopsis disponible.'),
-                'status': base_data.get('status'),
+                'status': base_data.get('status', {}).get('name', 'Inconnu'), # Accès plus sûr
                 'year': base_data.get('year'),
                 'image_url': base_data.get('image')
             }
@@ -62,10 +61,10 @@ class CustomTVDBClient:
             # Étape 2: Tentative d'enrichissement avec la traduction
             try:
                 translation_response = self.client.get_series_translation(tvdb_id, lang)
-                if translation_response and 'data' in translation_response and translation_response['data'].get('overview'):
+                if translation_response and translation_response.get('overview'):
                     logger.info(f"Traduction '{lang}' trouvée pour {tvdb_id}.")
-                    details['name'] = translation_response['data'].get('name') or details['name']
-                    details['overview'] = translation_response['data'].get('overview') or details['overview']
+                    details['name'] = translation_response.get('name') or details['name']
+                    details['overview'] = translation_response.get('overview') or details['overview']
             except Exception as e:
                 logger.warning(f"Impossible de récupérer la traduction '{lang}' pour {tvdb_id}: {e}")
 
