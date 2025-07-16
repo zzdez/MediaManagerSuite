@@ -3,6 +3,7 @@
 from flask import Blueprint, render_template, request, flash, jsonify, Response, stream_with_context, current_app
 from app.auth import login_required
 from config import Config
+from app.utils.arr_client import ArrClient
 
 # 1. Définition du Blueprint (seul code global avec les imports "sûrs")
 search_ui_bp = Blueprint(
@@ -11,6 +12,8 @@ search_ui_bp = Blueprint(
     template_folder='templates',
     static_folder='static'
 )
+
+arr_client = ArrClient(current_app)
 
 # 2. Toutes les routes. Les imports "à risque" sont maintenant DANS les fonctions.
 
@@ -46,7 +49,7 @@ def api_search_lookup():
         return jsonify({'error': 'Le terme de recherche et le type de média sont requis'}), 400
 
     # ... (la logique existante qui appelle Sonarr/Radarr en utilisant search_term)
-    # results = arr_client.lookup(media_type, search_term)
+    results = arr_client.lookup(media_type, search_term)
 
     # À la fin, renvoyer directement le JSON
     return jsonify(results)
