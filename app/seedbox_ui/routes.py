@@ -1349,7 +1349,7 @@ def _execute_mms_sonarr_import(item_name_in_staging, # Nom du fichier/dossier da
 
     sonarr_url = current_app.config.get('SONARR_URL')
     sonarr_api_key = current_app.config.get('SONARR_API_KEY')
-    staging_dir_str = current_app.config.get('STAGING_DIR')
+    staging_dir_str = current_app.config.get('LOCAL_STAGING_PATH') or current_app.config.get('STAGING_DIR')
     orphan_exts = current_app.config.get('ORPHAN_EXTENSIONS', [])
 
     path_of_item_in_staging_abs = (Path(staging_dir_str) / item_name_in_staging).resolve()
@@ -1359,7 +1359,7 @@ def _execute_mms_sonarr_import(item_name_in_staging, # Nom du fichier/dossier da
         logger.error(f"{log_prefix}{err_msg}")
         if torrent_hash_for_status_update and is_automated_flow:
             torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_mms_staging_path_missing", err_msg)
-        return {"success": False, "message": err_msg, "manual_required": True if is_automated_flow else False}
+        {"success": False, "message": err_msg, "manual_required": True if is_automated_flow else False}
 
     # Récupérer les détails de la série pour le chemin racine
     series_details_url = f"{sonarr_url.rstrip('/')}/api/v3/series/{series_id_target}"
@@ -1369,7 +1369,7 @@ def _execute_mms_sonarr_import(item_name_in_staging, # Nom du fichier/dossier da
         logger.error(f"{log_prefix}{err_msg}")
         if torrent_hash_for_status_update and is_automated_flow:
              torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_mms_sonarr_api", err_msg)
-        return {"success": False, "message": err_msg, "manual_required": True if is_automated_flow else False}
+        {"success": False, "message": err_msg, "manual_required": True if is_automated_flow else False}
 
     series_root_folder_path_str = series_data.get('path')
     series_title_from_sonarr = series_data.get('title', 'Série Inconnue')
@@ -1378,7 +1378,7 @@ def _execute_mms_sonarr_import(item_name_in_staging, # Nom du fichier/dossier da
         logger.error(f"{log_prefix}{err_msg}")
         if torrent_hash_for_status_update and is_automated_flow:
              torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_mms_sonarr_config", err_msg)
-        return {"success": False, "message": err_msg, "manual_required": True if is_automated_flow else False}
+        {"success": False, "message": err_msg, "manual_required": True if is_automated_flow else False}
     series_root_path = Path(series_root_folder_path_str)
 
     video_files_to_process = []
@@ -1534,7 +1534,7 @@ def _execute_mms_radarr_import(item_name_in_staging, # Nom du fichier/dossier da
 
     radarr_url = current_app.config.get('RADARR_URL')
     radarr_api_key = current_app.config.get('RADARR_API_KEY')
-    staging_dir_str = current_app.config.get('STAGING_DIR')
+    staging_dir_str = current_app.config.get('LOCAL_STAGING_PATH') or current_app.config.get('STAGING_DIR')
     orphan_exts = current_app.config.get('ORPHAN_EXTENSIONS', [])
 
     path_of_item_in_staging_abs = (Path(staging_dir_str) / item_name_in_staging).resolve()
@@ -1593,7 +1593,7 @@ def _execute_mms_radarr_import(item_name_in_staging, # Nom du fichier/dossier da
         logger.error(f"{log_prefix}{err_msg}")
         if torrent_hash_for_status_update and is_automated_flow:
              torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_mms_radarr_config", err_msg)
-        return {"success": False, "message": err_msg, "manual_required": True if is_automated_flow else False}
+        {"success": False, "message": err_msg, "manual_required": True if is_automated_flow else False}
 
     destination_movie_folder_abs = Path(movie_folder_path_from_radarr_api).resolve()
     destination_video_file_abs = destination_movie_folder_abs / original_filename_of_video

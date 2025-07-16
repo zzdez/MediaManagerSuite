@@ -45,7 +45,19 @@
 
             <div class="tab-pane fade {% if request.args.get('mode') == 'free_search' %}show active{% endif %}" id="free-search" role="tabpanel">
                 <p>Recherchez n'importe quel terme sur vos indexers.</p>
-                <form method="GET" action="{{ url_for('search_ui.search_page') }}">
+                <form id="search-form" method="GET" action="{{ url_for('search_ui.search_page') }}">
+                    <div class="row g-2 mb-3">
+                        <div class="col-12">
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="media_type" id="media_type_tv" value="tv" {% if request.args.get('media_type', 'tv') == 'tv' %}checked{% endif %}>
+                                <label class="form-check-label" for="media_type_tv">Série TV</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="media_type" id="media_type_movie" value="movie" {% if request.args.get('media_type') == 'movie' %}checked{% endif %}>
+                                <label class="form-check-label" for="media_type_movie">Film</label>
+                            </div>
+                        </div>
+                    </div>
                     <div class="row g-2">
                         <div class="col-md-6">
                             <input type="text" name="query" class="form-control" placeholder="Titre du film ou de la série..." value="{{ query or '' }}">
@@ -66,6 +78,7 @@
                         </div>
                     </div>
                     <input type="hidden" name="mode" value="free_search">
+                    <input type="hidden" id="search-form-media-type" value="{{ request.args.get('media_type', 'tv') }}">
                 </form>
                 
                 {% if results is not none and request.args.get('mode') == 'free_search' %}
@@ -172,4 +185,17 @@
     
     <script src="{{ url_for('static', filename='js/seedbox_ui_modals.js') }}"></script>
     <script src="{{ url_for('static', filename='js/search_actions.js') }}"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const mediaTypeRadios = document.querySelectorAll('input[name="media_type"]');
+            const hiddenInput = document.getElementById('search-form-media-type');
+
+            mediaTypeRadios.forEach(radio => {
+                radio.addEventListener('change', function() {
+                    hiddenInput.value = this.value;
+                });
+            });
+        });
+    </script>
 {% endblock %}

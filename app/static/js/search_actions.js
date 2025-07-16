@@ -1,166 +1,190 @@
-// Dans search_actions.js
+// Fichier : app/static/js/search_actions.js
+// Version : Lazy Loading (corrigée)
 
 $(document).ready(function() {
-    console.log("Search actions script loaded. (Version corrigée)");
+    console.log("Search actions (Lazy Loading) script chargé.");
 
-    // GESTIONNAIRE POUR LE BOUTON "& MAPPER"
+    const modalEl = $('#sonarrRadarrSearchModal');
+    if (modalEl.length === 0) {
+        console.error("Erreur critique: La modale #sonarrRadarrSearchModal est introuvable sur la page.");
+        return;
+    }
+    const modal = new bootstrap.Modal(modalEl[0]);
+    const modalBody = modalEl.find('.modal-body');
+    const confirmBtn = modalEl.find('#confirm-map-btn');
+
+    // ---- GESTIONNAIRE PRINCIPAL : Ouvre la modale de mapping ----
     $('body').on('click', '.download-and-map-btn', function(event) {
         event.preventDefault();
         const button = $(this);
         const releaseTitle = button.data('title');
-        const guid = button.data('guid');
-        const downloadLink = button.data('download-link');
-        const indexerId = button.data('indexer-id');
 
-        const modalEl = $('#sonarrRadarrSearchModal');
-        const modalBody = modalEl.find('.modal-body');
-        const confirmBtn = $('#confirm-map-btn');
-
-        modalEl.find('.modal-title').text(`Mapper : ${releaseTitle}`);
-        modalBody.html('<div class="d-flex justify-content-center"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></div>');
-        confirmBtn.prop('disabled', true);
-
-        confirmBtn.data('guid', guid);
-        confirmBtn.data('downloadLink', downloadLink);
-        confirmBtn.data('indexerId', indexerId);
+        // Stocke les données du téléchargement sur le bouton de confirmation
+        confirmBtn.data('guid', button.data('guid'));
+        confirmBtn.data('downloadLink', button.data('download-link'));
+        confirmBtn.data('indexerId', button.data('indexer-id'));
         confirmBtn.data('releaseTitle', releaseTitle);
+        confirmBtn.prop('disabled', true); // Désactivé par défaut
 
-        const myModal = new bootstrap.Modal(modalEl[0]);
-        myModal.show();
-
-        const prepareUrl = $('#search-page-container').data('prepare-mapping-url');
-        if (!prepareUrl) {
-            console.error("Erreur critique: L'URL de l'API de mapping est introuvable.");
+        // Récupère le type de média (tv/movie) depuis le formulaire de recherche principal
+        const mediaType = $('#search-form [name="media_type"]').val();
+        if (!mediaType) {
+            alert("Erreur: Impossible de déterminer le type de média (tv/movie) depuis le formulaire principal.");
             return;
         }
+        confirmBtn.data('mediaType', mediaType);
 
-        fetch(prepareUrl, {
+        // Configure la modale et affiche un spinner
+        modalEl.find('.modal-title').text(`Mapper : ${releaseTitle}`);
+        modalBody.html('<div class="text-center p-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Recherche...</span></div><p class="mt-2">Recherche des correspondances...</p></div>');
+        modal.show();
+
+        // --- ÉTAPE 1 : APPEL RAPIDE À SONARR/RADARR ---
+        // L'URL est préfixée par le blueprint '/search'
+        const lookupUrl = '/search/api/search/lookup';
+        console.log(`Appel de l'API Lookup : ${lookupUrl} avec le terme "${releaseTitle}" et type "${mediaType}"`);
+
+        fetch(lookupUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: releaseTitle })
+            body: JSON.stringify({ term: releaseTitle, media_type: mediaType })
         })
-        .then(response => response.text())
-        .then(html => {
-            modalBody.html(html);
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Erreur réseau (${response.status})`);
+            }
+            return response.json();
+        })
+        .then(results => {
+            let resultsHtml = '';
+            if (results && results.length > 0) {
+                resultsHtml = results.map(item => `
+                    <div class="list-group-item d-flex justify-content-between align-items-center" id="item-${item.tvdbId || item.tmdbId}">
+                        <span><strong>${item.title}</strong> (${item.year})</span>
+                        <button class="btn btn-sm btn-outline-primary enrich-details-btn"
+                                data-media-id="${item.tvdbId || item.tmdbId}"
+                                data-media-type="${mediaType}">
+                            Voir les détails
+                        </button>
+                    </div>
+                `).join('');
+            } else {
+                resultsHtml = '<div class="alert alert-warning">Aucun résultat trouvé dans Sonarr/Radarr.</div>';
+            }
+            modalBody.html(`<div class="list-group list-group-flush">${resultsHtml}</div>`);
         })
         .catch(error => {
-            console.error("Error fetching mapping details:", error);
-            modalBody.html('<div class="alert alert-danger">Erreur de communication avec le serveur.</div>');
+            console.error("Erreur pendant la recherche lookup:", error);
+            modalBody.html(`<div class="alert alert-danger">Erreur de communication avec le serveur pour la recherche. Vérifiez la console.</div>`);
         });
     });
 
-    // GESTIONNAIRE POUR LE BOUTON "SELECT" DANS LA MODALE
+    // ---- GESTIONNAIRE D'ENRICHISSEMENT (LAZY LOADING) ----
+    $('body').on('click', '.enrich-details-btn', function() {
+        const button = $(this);
+        const mediaId = button.data('media-id');
+        const mediaType = button.data('media-type');
+        const itemContainer = button.closest('.list-group-item');
+
+        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>');
+
+        // --- ÉTAPE 2 : APPEL LENT POUR ENRICHIR UN SEUL ITEM ---
+        const enrichUrl = '/search/api/enrich/details';
+        console.log(`Appel de l'API Enrich : ${enrichUrl} avec l'id "${mediaId}" et type "${mediaType}"`);
+
+        fetch(enrichUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ media_id: mediaId, media_type: mediaType })
+        })
+        .then(response => response.json())
+        .then(details => {
+            if (details.error) {
+                throw new Error(details.error);
+            }
+            const cardHtml = `
+                <div class="card enriched-card mb-2">
+                    <div class="row g-0">
+                        <div class="col-md-2 text-center">
+                            <img src="${details.poster || 'https://via.placeholder.com/150x225'}" class="img-fluid rounded-start" style="max-height: 150px;" alt="Poster">
+                        </div>
+                        <div class="col-md-10">
+                            <div class="card-body py-2">
+                                <h6 class="card-title mb-1">${details.title} (${details.year})</h6>
+                                <p class="card-text small" style="max-height: 60px; overflow: hidden;">${details.overview ? details.overview : 'Pas de description.'}</p>
+                                <button class="btn btn-sm btn-success select-candidate-btn" data-media-id="${details.id}">
+                                    ✓ Sélectionner ce média
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+            itemContainer.replaceWith(cardHtml);
+        })
+        .catch(error => {
+            console.error('Erreur pendant l\'enrichissement:', error);
+            button.parent().append(`<span class="text-danger small ms-2">Erreur</span>`);
+            button.prop('disabled', false).html('Voir les détails');
+        });
+    });
+
+    // ---- GESTIONNAIRE DE SÉLECTION FINALE ----
     $('body').on('click', '.select-candidate-btn', function() {
         const button = $(this);
         const mediaId = button.data('media-id');
-        const title = button.data('title');
 
-        // Highlight the selected card
-        $('.card').removeClass('border-primary');
-        button.closest('.card').addClass('border-primary');
+        $('.enriched-card').removeClass('border-primary border-3');
+        button.closest('.enriched-card').addClass('border-primary border-3');
 
-        // Store the selected media ID on the confirm button
-        $('#confirm-map-btn').data('media-id', mediaId).prop('disabled', false);
+        confirmBtn.data('selectedMediaId', mediaId).prop('disabled', false);
     });
 
-    // GESTIONNAIRE POUR LE BOUTON "CONFIRMER" DANS LA MODALE
+    // ---- GESTIONNAIRE DE CONFIRMATION FINALE ----
     $('body').on('click', '#confirm-map-btn', function() {
         const button = $(this);
-        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Lancement...');
+        const data = button.data();
 
-        const releaseTitle = button.data('releaseTitle');
-        const downloadLink = button.data('downloadLink');
-        const guid = button.data('guid');
-        const indexerId = button.data('indexerId');
-        const mediaId = button.data('media-id');
-        const instanceType = $('#media_type').val();
+        const payload = {
+            releaseName: data.releaseTitle,
+            downloadLink: data.downloadLink,
+            indexerId: data.indexerId,
+            guid: data.guid,
+            instanceType: data.mediaType,
+            mediaId: data.selectedMediaId,
+            actionType: 'add_then_map' // Action par défaut
+        };
 
-        fetch('/search/download-and-map', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                releaseName: releaseTitle,
-                downloadLink: downloadLink,
-                indexerId: indexerId,
-                guid: guid,
-                instanceType: instanceType,
-                mediaId: mediaId,
-                actionType: 'add_then_map'
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === 'success') {
-                alert(data.message);
-                $('#sonarrRadarrSearchModal').modal('hide');
-            } else {
-                alert('Erreur: ' + data.message);
-                button.prop('disabled', false).html('Confirmer');
-            }
-        })
-        .catch(error => {
-            console.error('Erreur Fetch:', error);
-            alert('Erreur de communication avec le serveur.');
-            button.prop('disabled', false).html('Confirmer');
-        });
-    });
-
-    // Supprime les anciens gestionnaires qui ne sont plus utiles
-    // $('body').on('click', '#executeSonarrRadarrSearch', ...);
-    // $('body').on('click', '.map-select-item-btn', ...);
-
-    $('body').on('click', '#executeSonarrRadarrSearch', function() {
-        console.log("Bouton de recherche manuelle cliqué !");
-
-        const modal = $(this).closest('.modal');
-        const query = modal.find('#sonarrRadarrQuery').val();
-        const resultsContainer = modal.find('#prowlarrModalSearchResults');
-        const instanceType = modal.find('input[name="mapInstanceType"]:checked').val();
-
-        if (!query) {
-            resultsContainer.html('<p class="text-danger">Veuillez entrer une recherche.</p>');
+        if (!payload.mediaId) {
+            alert("Erreur : Aucun média n'a été sélectionné.");
             return;
         }
 
-        resultsContainer.html('<div class="d-flex justify-content-center"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></div>');
+        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Lancement...');
 
-        // Réutilise l'appel AJAX existant vers /search/api/search-arr
-        $.ajax({
-            url: '/search/api/search-arr',
-            data: {
-                query: query,
-                type: instanceType
-            },
-            success: function(data) {
-                let html = '';
-                if (data.length > 0) {
-                    data.forEach(function(item) {
-                        html += `<div class="list-group-item">
-                                    <div class="row align-items-center">
-                                        <div class="col-md-2">
-                                            <img src="${item.poster || 'https://via.placeholder.com/100x150'}" class="img-fluid rounded">
-                                        </div>
-                                        <div class="col-md-8">
-                                            <strong>${item.title} (${item.year})</strong>
-                                            <p class="mb-1 small">${item.overview ? item.overview.substring(0, 150) + '...' : ''}</p>
-                                            <small class="text-muted">Status: ${item.status} | Is Added: ${item.isAdded}</small>
-                                        </div>
-                                        <div class="col-md-2 text-end">
-                                            <button class="btn btn-sm btn-primary map-select-item-btn" data-media-id="${item.id}" data-instance-type="${instanceType}">
-                                                Select
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>`;
-                    });
-                } else {
-                    html = '<p class="text-warning">Aucun résultat trouvé.</p>';
-                }
-                resultsContainer.html(html);
-            },
-            error: function() {
-                resultsContainer.html('<p class="text-danger">Erreur lors de la recherche.</p>');
+        // L'URL est préfixée par le blueprint '/search'
+        const finalUrl = '/search/download-and-map';
+
+        fetch(finalUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success' || data.status === 'warning') {
+                alert(data.message);
+                modal.hide();
+                // Optionnel : supprimer la ligne de la recherche principale
+                $(`.download-and-map-btn[data-guid="${payload.guid}"]`).closest('tr').fadeOut();
+            } else {
+                alert('Erreur: ' + (data.message || "Une erreur inconnue est survenue."));
+                button.prop('disabled', false).html('Confirmer le Mapping');
             }
+        })
+        .catch(error => {
+            console.error('Erreur Fetch finale:', error);
+            alert('Erreur de communication majeure avec le serveur.');
+            button.prop('disabled', false).html('Confirmer le Mapping');
         });
     });
 });
