@@ -14,6 +14,28 @@ search_ui_bp = Blueprint(
 
 # 2. Toutes les routes. Les imports "à risque" sont maintenant DANS les fonctions.
 
+@search_ui_bp.route('/', methods=['GET'])
+@login_required
+def search_page():
+    # Imports locaux
+    from app.utils.prowlarr_client import search_prowlarr
+
+    query = request.args.get('query', '').strip()
+    year = request.args.get('year')
+    lang = request.args.get('lang')
+    results = None
+
+    if query:
+        raw_results = search_prowlarr(query, year=year, lang=lang)
+        if raw_results is not None:
+            results = raw_results
+        else:
+            flash("Erreur de communication avec Prowlarr.", "danger")
+            results = []
+
+    return render_template('search_ui/search.html', title="Recherche", results=results, query=query)
+
+
 @search_ui_bp.route('/api/search/lookup', methods=['POST'])
 def api_search_lookup():
     data = request.get_json()
