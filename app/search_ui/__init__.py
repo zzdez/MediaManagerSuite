@@ -94,7 +94,10 @@ def api_search_lookup():
     # Extraire uniquement les données des items triés
     final_results = [result['data'] for result in sorted_results]
 
-    return jsonify(final_results)
+    return jsonify({
+        'results': final_results,
+        'cleaned_query': clean_title
+    })
 
 
 @search_ui_bp.route('/api/enrich/details', methods=['POST'])
