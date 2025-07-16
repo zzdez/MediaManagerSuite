@@ -4,6 +4,8 @@ from flask import Blueprint, render_template, request, flash, jsonify, Response,
 from app.auth import login_required
 from config import Config
 from app.utils import arr_client
+from Levenshtein import distance as levenshtein_distance
+from app.utils.arr_client import parse_media_name
 
 # 1. Définition du Blueprint (seul code global avec les imports "sûrs")
 search_ui_bp = Blueprint(
@@ -46,29 +48,53 @@ def api_search_lookup():
     if not search_term or not media_type:
         return jsonify({'error': 'Le terme de recherche et le type de média sont requis'}), 400
 
-    results = []
+    # Étape 1: Analyser le titre original pour extraire un nom propre et une année
+    parsed_info = parse_media_name(search_term)
+    clean_title = parsed_info.get('title', search_term).lower()
+    year = parsed_info.get('year')
+
+    api_response = []
     try:
         if media_type == 'tv':
-            # Appel de la fonction correcte depuis le module arr_client
-            api_response = arr_client.search_sonarr_by_title(search_term)
-            # La réponse est directement une liste de dictionnaires, c'est ce que veut le frontend
-            if api_response:
-                results = api_response
-
+            api_response = arr_client.search_sonarr_by_title(clean_title)
         elif media_type == 'movie':
-            # Appel de la fonction correcte depuis le module arr_client
-            api_response = arr_client.search_radarr_by_title(search_term)
-            if api_response:
-                results = api_response
+            api_response = arr_client.search_radarr_by_title(clean_title)
         else:
             return jsonify({'error': f'Media type non supporté: {media_type}'}), 400
 
     except Exception as e:
-        current_app.logger.error(f"Erreur durant l'appel à l'API Sonarr/Radarr via arr_client: {e}")
+        current_app.logger.error(f"Erreur durant l'appel à l'API Sonarr/Radarr: {e}")
         return jsonify({'error': 'Erreur de communication avec Sonarr/Radarr.'}), 500
 
-    # Renvoie la liste des résultats (peut être vide si rien n'est trouvé)
-    return jsonify(results)
+    if not api_response:
+        return jsonify([])
+
+    # Étape 2: Calculer un score de pertinence pour chaque résultat
+    scored_results = []
+    for item in api_response:
+        item_title = item.get('title', '').lower()
+        item_year = item.get('year')
+
+        # Le score de base est la distance textuelle
+        score = levenshtein_distance(clean_title, item_title)
+
+        # Bonus pour une correspondance de titre exacte
+        if clean_title == item_title:
+            score -= 10
+
+        # Pénalité importante si l'année est connue et ne correspond pas
+        if year and item_year and year != item_year:
+            score += 20
+
+        scored_results.append({'score': score, 'data': item})
+
+    # Étape 3: Trier les résultats en fonction du score (le plus bas est le meilleur)
+    sorted_results = sorted(scored_results, key=lambda x: x['score'])
+
+    # Extraire uniquement les données des items triés
+    final_results = [result['data'] for result in sorted_results]
+
+    return jsonify(final_results)
 
 
 @search_ui_bp.route('/api/enrich/details', methods=['POST'])
