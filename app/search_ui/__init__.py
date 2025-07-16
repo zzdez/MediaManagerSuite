@@ -3,7 +3,7 @@
 from flask import Blueprint, render_template, request, flash, jsonify, Response, stream_with_context, current_app
 from app.auth import login_required
 from config import Config
-from app.utils.arr_client import ArrClient
+from app.utils import arr_client
 
 # 1. Définition du Blueprint (seul code global avec les imports "sûrs")
 search_ui_bp = Blueprint(
@@ -12,8 +12,6 @@ search_ui_bp = Blueprint(
     template_folder='templates',
     static_folder='static'
 )
-
-arr_client = ArrClient(current_app)
 
 # 2. Toutes les routes. Les imports "à risque" sont maintenant DANS les fonctions.
 
@@ -48,10 +46,28 @@ def api_search_lookup():
     if not search_term or not media_type:
         return jsonify({'error': 'Le terme de recherche et le type de média sont requis'}), 400
 
-    # ... (la logique existante qui appelle Sonarr/Radarr en utilisant search_term)
-    results = arr_client.lookup(media_type, search_term)
+    results = []
+    try:
+        if media_type == 'tv':
+            # Appel de la fonction correcte depuis le module arr_client
+            api_response = arr_client.search_sonarr_by_title(search_term)
+            # La réponse est directement une liste de dictionnaires, c'est ce que veut le frontend
+            if api_response:
+                results = api_response
 
-    # À la fin, renvoyer directement le JSON
+        elif media_type == 'movie':
+            # Appel de la fonction correcte depuis le module arr_client
+            api_response = arr_client.search_radarr_by_title(search_term)
+            if api_response:
+                results = api_response
+        else:
+            return jsonify({'error': f'Media type non supporté: {media_type}'}), 400
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur durant l'appel à l'API Sonarr/Radarr via arr_client: {e}")
+        return jsonify({'error': 'Erreur de communication avec Sonarr/Radarr.'}), 500
+
+    # Renvoie la liste des résultats (peut être vide si rien n'est trouvé)
     return jsonify(results)
 
 
