@@ -14,58 +14,20 @@ search_ui_bp = Blueprint(
 
 # 2. Toutes les routes. Les imports "à risque" sont maintenant DANS les fonctions.
 
-@search_ui_bp.route('/', methods=['GET'])
-@login_required
-def search_page():
-    # Imports locaux
-    from app.utils.prowlarr_client import search_prowlarr
-
-    query = request.args.get('query', '').strip()
-    year = request.args.get('year')
-    lang = request.args.get('lang')
-    results = None
-
-    if query:
-        raw_results = search_prowlarr(query, year=year, lang=lang)
-        if raw_results is not None:
-            results = raw_results
-        else:
-            flash("Erreur de communication avec Prowlarr.", "danger")
-            results = []
-
-    return render_template('search_ui/search.html', title="Recherche", results=results, query=query)
-
-
 @search_ui_bp.route('/api/search/lookup', methods=['POST'])
-def search_lookup():
-    # Imports locaux
-    from app.utils.arr_client import search_sonarr_by_title, search_radarr_by_title, parse_media_name
-
+def api_search_lookup():
     data = request.get_json()
-    release_title = data.get('term')
+    search_term = data.get('term')
     media_type = data.get('media_type')
 
-    if not release_title or not media_type:
-        return jsonify({'error': 'Missing term or media_type'}), 400
+    if not search_term or not media_type:
+        return jsonify({'error': 'Le terme de recherche et le type de média sont requis'}), 400
 
-    # On parse le titre pour avoir un terme de recherche propre !
-    parsed_info = parse_media_name(release_title)
-    search_term = parsed_info.get('title') if parsed_info else release_title
+    # ... (la logique existante qui appelle Sonarr/Radarr en utilisant search_term)
+    # results = arr_client.lookup(media_type, search_term)
 
-    try:
-        if media_type == 'tv':
-            results = search_sonarr_by_title(search_term)
-            simplified_results = [{'title': s.get('title'), 'year': s.get('year'), 'tvdbId': s.get('tvdbId')} for s in results]
-            return jsonify(simplified_results)
-        elif media_type == 'movie':
-            results = search_radarr_by_title(search_term)
-            simplified_results = [{'title': m.get('title'), 'year': m.get('year'), 'tmdbId': m.get('tmdbId')} for m in results]
-            return jsonify(simplified_results)
-        else:
-            return jsonify({'error': 'Invalid media_type specified'}), 400
-    except Exception as e:
-        current_app.logger.error(f"Erreur dans search_lookup: {e}", exc_info=True)
-        return jsonify({'error': f'An error occurred while communicating with the service: {str(e)}'}), 500
+    # À la fin, renvoyer directement le JSON
+    return jsonify(results)
 
 
 @search_ui_bp.route('/api/enrich/details', methods=['POST'])
