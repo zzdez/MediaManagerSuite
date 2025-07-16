@@ -145,4 +145,37 @@ $(document).ready(function() {
 
     // Le Handler [4] pour .download-torrent-file-btn a été supprimé car
     // le téléchargement sera géré par un lien direct <a> vers une route backend.
+
+    // --- [5] Logique pour la recherche manuelle DANS la modale ---
+    $('body').on('click', '#manual-search-button', function(e) {
+        e.preventDefault();
+
+        const newQuery = $('#manual-search-input').val();
+        const fileId = $('#mapping-modal').data('file-id'); // Assurez-vous que file-id est stocké sur la modale
+        const resultsContainer = $('#mapping-selection-list');
+
+        if (!newQuery) {
+            alert('Veuillez entrer un terme de recherche.');
+            return;
+        }
+
+        resultsContainer.html('<div class="d-flex justify-content-center align-items-center"><div class="spinner-border text-info" role="status"></div><strong class="ms-2">Recherche...</strong></div>');
+
+        fetch('/api/search/lookup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                manual_query: newQuery,
+                file_id: fileId
+            })
+        })
+        .then(response => response.text())
+        .then(html => {
+            resultsContainer.html(html);
+        })
+        .catch(error => {
+            console.error('Erreur Fetch:', error);
+            resultsContainer.html('<p class="text-danger text-center">Erreur de communication avec le serveur.</p>');
+        });
+    });
 });
