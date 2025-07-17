@@ -7,7 +7,7 @@ from .arr_client import search_radarr_by_title, search_sonarr_by_title, get_arr_
 from .plex_client import get_user_specific_plex_server, get_plex_admin_server, find_plex_media_by_external_id, find_plex_media_by_titles # Added Plex helpers
 
 def _check_arr_status(parsed_info, status_info_ref, release_title_for_log):
-    """Helper function to check Sonarr/Radarr status."""
+    """Helper function to check Sonarr/Radarr status and return rich details."""
     media_type = parsed_info.get('type')
     arr_search_title = parsed_info.get('title')
 
@@ -16,60 +16,52 @@ def _check_arr_status(parsed_info, status_info_ref, release_title_for_log):
         return status_info_ref
 
     current_app.logger.debug(f"_check_arr_status: Checking Arr for '{arr_search_title}' (type: {media_type})")
+    
+    arr_instance = "Inconnu"
+    found_item = None
+    api_results = []
 
     if media_type == 'movie':
-        year = parsed_info.get('year')
-        radarr_results = search_radarr_by_title(arr_search_title)
-        found_in_radarr = None
-        if radarr_results:
-            # Priorité à une correspondance exacte de titre et d'année
+        arr_instance = "Radarr"
+        api_results = search_radarr_by_title(arr_search_title)
+        if api_results:
+            year = parsed_info.get('year')
             if year:
-                found_in_radarr = next((m for m in radarr_results if m.get('year') == year and m.get('title', '').lower() == arr_search_title.lower()), None)
-            # Fallback sur le titre seul
-            if not found_in_radarr:
-                found_in_radarr = next((m for m in radarr_results if m.get('title', '').lower() == arr_search_title.lower()), None)
-
-        if not found_in_radarr:
-            status_info_ref.update({'status': 'Non Trouvé (Radarr)', 'badge_color': 'dark'})
-        else:
-            # CORRECTION : On met à jour le champ 'details' avec le titre propre de Radarr
-            canonical_title = found_in_radarr.get('title', arr_search_title)
-            canonical_year = found_in_radarr.get('year', year)
-            status_info_ref['details'] = f"{canonical_title} ({canonical_year})"
-            
-            if found_in_radarr.get('monitored'):
-                status_info_ref.update({'status': 'Manquant (Surveillé)', 'badge_color': 'warning'})
-            else:
-                status_info_ref.update({'status': 'Non Surveillé', 'badge_color': 'secondary'})
+                found_item = next((m for m in api_results if m.get('year') == year and m.get('title', '').lower() == arr_search_title.lower()), None)
+            if not found_item:
+                found_item = next((m for m in api_results if m.get('title', '').lower() == arr_search_title.lower()), None)
+            if not found_item and api_results: # Si toujours rien, prendre le premier comme meilleure supposition
+                found_item = api_results[0]
 
     elif media_type == 'episode':
-        sonarr_results = search_sonarr_by_title(arr_search_title)
-        if not sonarr_results:
-            status_info_ref.update({'status': 'Série non trouvée', 'badge_color': 'dark'})
-        else:
-            # On prend le premier résultat qui est le plus pertinent
-            sonarr_series = sonarr_results[0]
-            
-            # CORRECTION : On met à jour le champ 'details' avec le titre propre de Sonarr
-            canonical_title = sonarr_series.get('title', arr_search_title)
-            season_num = parsed_info.get('season')
-            episode_num = parsed_info.get('episode')
-            
-            details_str = f"{canonical_title}"
-            if isinstance(season_num, int):
-                details_str += f" S{season_num:02d}"
-            if isinstance(episode_num, int):
-                 details_str += f"E{episode_num:02d}"
-            status_info_ref['details'] = details_str
+        arr_instance = "Sonarr"
+        api_results = search_sonarr_by_title(arr_search_title)
+        # La recherche Sonarr est déjà triée par pertinence, le premier résultat est le meilleur
+        if api_results:
+            found_item = api_results[0]
 
-            if sonarr_series.get('monitored'):
-                status_info_ref.update({'status': 'Manquant (Surveillé)', 'badge_color': 'warning'})
-            else:
-                status_info_ref.update({'status': 'Non Surveillé', 'badge_color': 'secondary'})
-    
+    # --- Logique de mise à jour du statut ---
+    if not found_item:
+        status_info_ref.update({'status': f'Non Trouvé ({arr_instance})', 'badge_color': 'dark'})
+        # On laisse le 'details' par défaut (nom du fichier) car on n'a pas d'autre info
+        current_app.logger.info(f"_check_arr_status: Item '{arr_search_title}' non trouvé dans {arr_instance}.")
     else:
-        current_app.logger.warn(f"Type de média inconnu '{media_type}' pour le check Arr.")
-    
+        current_app.logger.info(f"_check_arr_status: Item trouvé dans {arr_instance}: {found_item.get('title')}")
+        # On a trouvé l'item, on peuple les détails enrichis
+        status_info_ref['status_details'] = {
+            'title': found_item.get('title', 'Titre inconnu'),
+            'year': found_item.get('year'),
+            'id': found_item.get('id') or found_item.get('sonarrId') or found_item.get('radarrId'), # ID interne
+            'tvdbId': found_item.get('tvdbId'),
+            'tmdbId': found_item.get('tmdbId'),
+            'instance': arr_instance.lower()
+        }
+        
+        if found_item.get('monitored'):
+            status_info_ref.update({'status': 'Manquant (Surveillé)', 'badge_color': 'warning'})
+        else:
+            status_info_ref.update({'status': 'Non Surveillé', 'badge_color': 'secondary'})
+
     return status_info_ref
 
 
