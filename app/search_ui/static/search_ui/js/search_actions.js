@@ -1,148 +1,183 @@
+// Fichier : app/search_ui/static/search_ui/js/search_actions.js
+// Version : FINALE avec recherche manuelle robuste et titre nettoyé
+
 $(document).ready(function() {
-    console.log("Search actions script loaded.");
+    console.log("Search actions (FINAL) script chargé.");
 
-    // --- [1] Logique pour le bouton "Télécharger & Mapper" (Ouvre la modale) ---
-    $('body').on('click', '.download-and-map-btn', function(e) {
-        e.preventDefault();
-        console.log("Bouton 'Télécharger & Mapper' cliqué !");
+    const modalEl = $('#sonarrRadarrSearchModal');
+    if (modalEl.length === 0) {
+        console.error("Erreur critique: La modale #sonarrRadarrSearchModal est introuvable.");
+        return;
+    }
+    const modal = new bootstrap.Modal(modalEl[0]);
+    const modalBody = modalEl.find('.modal-body');
+    const confirmBtn = modalEl.find('#confirm-map-btn');
 
-        const modalElement = $('#sonarrRadarrSearchModal'); // Use jQuery selector
-
-        // Stocker les données sur la modale pour les retrouver plus tard
-        const releaseTitleToStore = $(this).data('release-title');
-        const downloadLinkToStore = $(this).data('download-link');
-        console.log("[Handler 1] Storing on modal: releaseTitle =", releaseTitleToStore, ", downloadLink =", downloadLinkToStore);
-        modalElement.data('releaseTitle', releaseTitleToStore);
-        modalElement.data('downloadLink', downloadLinkToStore);
-        // Verification log immediately after storing
-        console.log("[Handler 1] Data stored: releaseTitle on modal is now", modalElement.data('releaseTitle'), ", downloadLink on modal is now", modalElement.data('downloadLink'));
-
-        // Pré-remplir le champ de recherche
-        modalElement.find('#sonarrRadarrQuery').val($(this).data('parsed-title') || '');
-
-        // Réinitialiser les résultats et le titre
-        modalElement.find('#sonarrRadarrModalLabel').text(`Mapper : ${$(this).data('release-title')}`);
-        // IMPORTANT: The HTML for sonarrRadarrSearchModal must have its results div ID changed to 'prowlarrModalSearchResults'
-        modalElement.find('#prowlarrModalSearchResults').empty().html('<p class="text-muted text-center">Effectuez une recherche pour trouver un média à associer.</p>');
-
-        modalElement.modal('show'); // Use Bootstrap 3/4 style
-    });
-
-    // --- [2] Logique pour le bouton "Rechercher" DANS la modale ---
-    $('body').on('click', '#executeSonarrRadarrSearch', function(e) {
-        // e.stopPropagation(); // Temporarily removed for testing
-        console.log("Recherche dans la modale DÉCLENCHÉE !");
-
-        const query = $('#sonarrRadarrQuery').val();
-        const mediaType = $('input[name="mapInstanceType"]:checked').val();
-        // IMPORTANT: Ensure the modal HTML's results div ID is updated to 'prowlarrModalSearchResults'
-        const resultsContainer = $('#prowlarrModalSearchResults');
-
-        if (!query) {
-            resultsContainer.html('<p class="text-danger text-center">Veuillez entrer un terme de recherche.</p>');
-            return;
+    // --- FONCTION UTILITAIRE QUI RETOURNE LE HTML DE LA LISTE ---
+    function getResultsListHtml(results, mediaType) {
+        if (!results || results.length === 0) {
+            return '<div id="lookup-results-list" class="alert alert-warning">Aucun résultat trouvé.</div>';
         }
+        const itemsHtml = results.map(item => `
+            <div class="list-group-item d-flex justify-content-between align-items-center" id="item-${item.tvdbId || item.tmdbId}">
+                <span><strong>${item.title}</strong> (${item.year})</span>
+                <button class="btn btn-sm btn-outline-primary enrich-details-btn"
+                        data-media-id="${item.tvdbId || item.tmdbId}"
+                        data-media-type="${mediaType}">
+                    Voir les détails
+                </button>
+            </div>
+        `).join('');
+        return `<div class="list-group list-group-flush" id="lookup-results-list">${itemsHtml}</div>`;
+    }
 
-        resultsContainer.html('<div class="d-flex justify-content-center align-items-center"><div class="spinner-border text-info" role="status"></div><strong class="ms-2">Recherche...</strong></div>');
-
-        $.ajax({
-            url: '/search/api/search-arr',
-            type: 'GET',
-            data: { query: query, type: mediaType },
-            success: function(data) {
-                resultsContainer.empty();
-                // Log mediaType's value as seen by the success callback's closure
-                console.log("[Handler 2 AJAX Success] Value of mediaType from closure:", mediaType);
-                if (data && data.length > 0) {
-                    const list = $('<div class="list-group"></div>');
-                    data.forEach(function(item) {
-                        const year = item.year || '';
-                        const title = item.title || 'Titre inconnu';
-                        const id = item.id || item.tvdbId || item.tmdbId;
-
-                        const itemHtml = `
-                            <button type="button" class="list-group-item list-group-item-action map-select-item-btn"
-                                    data-media-id="${id}"
-                                    data-media-title="${title.replace(/"/g, '&quot;')}"
-                                    data-instance-type="${mediaType}"
-                                    data-year="${year}">
-                                <strong>${title}</strong> (${year})
-                            </button>`;
-                        list.append(itemHtml);
-                    });
-                    resultsContainer.append(list);
-                } else {
-                    resultsContainer.html('<p class="text-warning text-center">Aucun résultat trouvé.</p>');
-                }
-            },
-            error: function(jqXHR) {
-                const errorMsg = jqXHR.responseJSON ? jqXHR.responseJSON.error : "Erreur de communication.";
-                resultsContainer.html(`<p class="text-danger text-center">Erreur: ${errorMsg}</p>`);
-            }
-        });
-    });
-
-    // --- [3] Logique pour le clic sur un résultat DANS la modale ---
-    $('body').on('click', '.map-select-item-btn', function(e) {
-        e.stopPropagation(); // <-- AJOUTER CETTE LIGNE
-
+    // --- GESTIONNAIRE PRINCIPAL : OUVRE LA MODALE ---
+    $('body').on('click', '.download-and-map-btn', function(event) {
+        event.preventDefault();
         const button = $(this);
-        const mediaId = button.data('media-id');
-        const mediaType = button.data('instance-type'); // Use .data() as it's now working.
-        const mediaTitle = button.data('media-title');
-        const mediaYear = button.data('year');
+        const releaseTitle = button.data('title');
+        confirmBtn.data('guid', button.data('guid'));
+        confirmBtn.data('downloadLink', button.data('download-link'));
+        confirmBtn.data('indexerId', button.data('indexer-id'));
+        confirmBtn.data('releaseTitle', releaseTitle);
+        confirmBtn.prop('disabled', true);
+        const mediaType = $('#search-form [name="media_type"]').val();
+        if (!mediaType) { alert("Erreur: Type de média introuvable."); return; }
+        confirmBtn.data('mediaType', mediaType);
 
-        // Removed diagnostic logs for mediaTypeFromData and mediaTypeFromAttr here
+        modalEl.find('.modal-title').text(`Mapper : ${releaseTitle}`);
+        modalBody.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div><p class="mt-2">Recherche...</p></div>');
+        modal.show();
 
-        const modal = $('#sonarrRadarrSearchModal');
-        const retrievedReleaseTitle = modal.data('releaseTitle');
-        const retrievedDownloadLink = modal.data('downloadLink');
-        // Keeping this log for now as it confirms modal data, can be removed later if desired.
-        console.log("[Handler 3] Retrieving from modal: releaseTitle =", retrievedReleaseTitle, ", downloadLink =", retrievedDownloadLink);
-
-        // Use the retrieved values for the check and subsequent operations
-        const releaseTitle = retrievedReleaseTitle;
-        const downloadLink = retrievedDownloadLink;
-
-        if (!mediaId || !mediaType || !releaseTitle || !downloadLink) {
-            alert("Erreur critique : une information essentielle est manquante.");
-            // Simplified error log
-            console.error("[Handler 3] Missing data check failed:", { mediaId, mediaType, releaseTitle, downloadLink });
-            return;
-        }
-
-        button.closest('.list-group').find('.map-select-item-btn').prop('disabled', true);
-        button.html('<span class="spinner-border spinner-border-sm" role="status"></span> Lancement...');
-
-        fetch('/search/download-and-map', {
+        fetch('/search/api/search/lookup', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                releaseName: releaseTitle,
-                downloadLink: downloadLink,
-                instanceType: mediaType,
-                mediaId: mediaId
-            })
+            body: JSON.stringify({ term: releaseTitle, media_type: mediaType })
         })
         .then(response => response.json())
         .then(data => {
-            if (data.status === 'success') {
-                alert(data.message);
-                modal.modal('hide');
-            } else {
-                alert('Erreur: ' + data.message);
-                button.closest('.list-group').find('.map-select-item-btn').prop('disabled', false);
-                button.html(`<strong>${mediaTitle}</strong> (${mediaYear})`); // Restaurer le texte
-            }
+            // 'data' est maintenant { results: [...], cleaned_query: "..." }
+            const searchBarHtml = `
+                <div class="manual-search-container mb-3">
+                    <div class="input-group">
+                        <input type="text" id="manual-search-input" class="form-control" placeholder="Affiner la recherche..." value="${data.cleaned_query}">
+                        <button id="manual-search-button" class="btn btn-secondary">Rechercher</button>
+                    </div>
+                </div>
+            `;
+            const resultsHtml = getResultsListHtml(data.results, mediaType);
+            modalBody.html(searchBarHtml + resultsHtml);
         })
         .catch(error => {
-            console.error('Erreur Fetch:', error);
-            alert('Erreur de communication avec le serveur.');
-            button.closest('.list-group').find('.map-select-item-btn').prop('disabled', false);
-            button.html(`<strong>${mediaTitle}</strong> (${mediaYear})`); // Restaurer le texte
+            console.error("Erreur pendant la recherche lookup:", error);
+            modalBody.html('<div class="alert alert-danger">Erreur de communication avec le serveur.</div>');
         });
     });
 
-    // Le Handler [4] pour .download-torrent-file-btn a été supprimé car
-    // le téléchargement sera géré par un lien direct <a> vers une route backend.
+    // --- GESTIONNAIRE POUR LA RECHERCHE MANUELLE ---
+    $('body').on('click', '#manual-search-button', function() {
+        const button = $(this);
+        const manualQuery = $('#manual-search-input').val();
+        const mediaType = confirmBtn.data('mediaType');
+        const resultsList = $('#lookup-results-list'); // On cible la liste existante
+
+        if (!manualQuery) { alert("Veuillez entrer un terme à rechercher."); return; }
+
+        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+        resultsList.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div></div>');
+
+        fetch('/search/api/search/lookup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ term: manualQuery, media_type: mediaType })
+        })
+        .then(response => response.json())
+        .then(data => {
+            // 'data' est aussi { results: [...], cleaned_query: "..." }
+            // On met à jour la liste SANS toucher à la barre de recherche
+            const newResultsHtml = getResultsListHtml(data.results, mediaType);
+            resultsList.replaceWith(newResultsHtml); // On remplace l'ancienne liste par la nouvelle
+        })
+        .catch(error => {
+            console.error("Erreur recherche manuelle:", error);
+            resultsList.replaceWith('<div id="lookup-results-list" class="alert alert-danger">Erreur de communication.</div>');
+        })
+        .finally(() => {
+            button.prop('disabled', false).html('Rechercher');
+        });
+    });
+
+    // ---- GESTIONNAIRE D'ENRICHISSEMENT (INCHANGÉ) ----
+    $('body').on('click', '.enrich-details-btn', function() {
+        const button = $(this);
+        const mediaId = button.data('media-id');
+        const mediaType = button.data('media-type');
+        const itemContainer = button.closest('.list-group-item');
+        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+        fetch('/search/api/enrich/details', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ media_id: mediaId, media_type: mediaType })
+        })
+        .then(response => response.json())
+        .then(details => {
+            if (details.error) throw new Error(details.error);
+            const cardHtml = `
+                <div class="card enriched-card mb-2">
+                    <div class="row g-0">
+                        <div class="col-md-2 text-center align-self-center">
+                            <img src="${details.poster || 'https://via.placeholder.com/150x225'}" class="img-fluid rounded-start" style="max-height: 150px;" alt="Poster">
+                        </div>
+                        <div class="col-md-10">
+                            <div class="card-body py-2">
+                                <h6 class="card-title mb-1">${details.title} (${details.year})</h6>
+                                <p class="card-text small" style="max-height: 60px; overflow-y: auto;">${details.overview || 'Pas de description.'}</p>
+                                <button class="btn btn-sm btn-success select-candidate-btn" data-media-id="${details.id}">✓ Sélectionner ce média</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+            itemContainer.replaceWith(cardHtml);
+        })
+        .catch(error => {
+            console.error('Erreur enrichissement:', error);
+            button.prop('disabled', false).html('Voir les détails');
+        });
+    });
+
+    // ---- GESTIONNAIRE DE SÉLECTION FINALE (INCHANGÉ) ----
+    $('body').on('click', '.select-candidate-btn', function() {
+        const button = $(this);
+        const mediaId = button.data('media-id');
+        modalBody.find('.enriched-card').removeClass('border-primary border-3');
+        button.closest('.enriched-card').addClass('border-primary border-3');
+        confirmBtn.data('selectedMediaId', mediaId).prop('disabled', false);
+    });
+
+    // ---- GESTIONNAIRE DE CONFIRMATION FINALE (INCHANGÉ) ----
+    $('body').on('click', '#confirm-map-btn', function() {
+        const button = $(this);
+        const data = button.data();
+        const payload = { releaseName: data.releaseTitle, downloadLink: data.downloadLink, indexerId: data.indexerId, guid: data.guid, instanceType: data.mediaType, mediaId: data.selectedMediaId, actionType: 'add_then_map' };
+        if (!payload.mediaId) { alert("Erreur : Aucun média n'a été sélectionné."); return; }
+        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Lancement...');
+        fetch('/search/download-and-map', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success' || data.status === 'warning') {
+                alert(data.message);
+                modal.hide();
+                $(`.download-and-map-btn[data-guid="${payload.guid}"]`).closest('tr').fadeOut();
+            } else {
+                alert('Erreur: ' + (data.message || "Une erreur inconnue est survenue."));
+                button.prop('disabled', false).html('Confirmer le Mapping');
+            }
+        })
+        .catch(error => {
+            console.error('Erreur Fetch finale:', error);
+            alert('Erreur de communication majeure avec le serveur.');
+            button.prop('disabled', false).html('Confirmer le Mapping');
+        });
+    });
 });

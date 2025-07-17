@@ -3,6 +3,9 @@
 from flask import Blueprint, render_template, request, flash, jsonify, Response, stream_with_context, current_app
 from app.auth import login_required
 from config import Config
+from app.utils import arr_client
+from Levenshtein import distance as levenshtein_distance
+from app.utils.arr_client import parse_media_name
 
 # 1. Définition du Blueprint (seul code global avec les imports "sûrs")
 search_ui_bp = Blueprint(
@@ -37,35 +40,64 @@ def search_page():
 
 
 @search_ui_bp.route('/api/search/lookup', methods=['POST'])
-def search_lookup():
-    # Imports locaux
-    from app.utils.arr_client import search_sonarr_by_title, search_radarr_by_title, parse_media_name
-
+def api_search_lookup():
     data = request.get_json()
-    release_title = data.get('term')
+    search_term = data.get('term')
     media_type = data.get('media_type')
 
-    if not release_title or not media_type:
-        return jsonify({'error': 'Missing term or media_type'}), 400
+    if not search_term or not media_type:
+        return jsonify({'error': 'Le terme de recherche et le type de média sont requis'}), 400
 
-    # On parse le titre pour avoir un terme de recherche propre !
-    parsed_info = parse_media_name(release_title)
-    search_term = parsed_info.get('title') if parsed_info else release_title
+    # Étape 1: Analyser le titre original pour extraire un nom propre et une année
+    parsed_info = parse_media_name(search_term)
+    clean_title = parsed_info.get('title', search_term).lower()
+    year = parsed_info.get('year')
 
+    api_response = []
     try:
         if media_type == 'tv':
-            results = search_sonarr_by_title(search_term)
-            simplified_results = [{'title': s.get('title'), 'year': s.get('year'), 'tvdbId': s.get('tvdbId')} for s in results]
-            return jsonify(simplified_results)
+            api_response = arr_client.search_sonarr_by_title(clean_title)
         elif media_type == 'movie':
-            results = search_radarr_by_title(search_term)
-            simplified_results = [{'title': m.get('title'), 'year': m.get('year'), 'tmdbId': m.get('tmdbId')} for m in results]
-            return jsonify(simplified_results)
+            api_response = arr_client.search_radarr_by_title(clean_title)
         else:
-            return jsonify({'error': 'Invalid media_type specified'}), 400
+            return jsonify({'error': f'Media type non supporté: {media_type}'}), 400
+
     except Exception as e:
-        current_app.logger.error(f"Erreur dans search_lookup: {e}", exc_info=True)
-        return jsonify({'error': f'An error occurred while communicating with the service: {str(e)}'}), 500
+        current_app.logger.error(f"Erreur durant l'appel à l'API Sonarr/Radarr: {e}")
+        return jsonify({'error': 'Erreur de communication avec Sonarr/Radarr.'}), 500
+
+    if not api_response:
+        return jsonify([])
+
+    # Étape 2: Calculer un score de pertinence pour chaque résultat
+    scored_results = []
+    for item in api_response:
+        item_title = item.get('title', '').lower()
+        item_year = item.get('year')
+
+        # Le score de base est la distance textuelle
+        score = levenshtein_distance(clean_title, item_title)
+
+        # Bonus pour une correspondance de titre exacte
+        if clean_title == item_title:
+            score -= 10
+
+        # Pénalité importante si l'année est connue et ne correspond pas
+        if year and item_year and year != item_year:
+            score += 20
+
+        scored_results.append({'score': score, 'data': item})
+
+    # Étape 3: Trier les résultats en fonction du score (le plus bas est le meilleur)
+    sorted_results = sorted(scored_results, key=lambda x: x['score'])
+
+    # Extraire uniquement les données des items triés
+    final_results = [result['data'] for result in sorted_results]
+
+    return jsonify({
+        'results': final_results,
+        'cleaned_query': clean_title
+    })
 
 
 @search_ui_bp.route('/api/enrich/details', methods=['POST'])

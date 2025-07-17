@@ -1,3 +1,10 @@
+<div class="manual-search-container mb-3">
+    <div class="input-group">
+        <input type="text" id="manual-search-input" class="form-control" placeholder="New search..." data-original-query="{{ original_query }}">
+        <button id="manual-search-button" class="btn btn-secondary">Rechercher</button>
+    </div>
+</div>
+
 <input type="hidden" id="media_type" value="{{ candidates[0].media_type if candidates else '' }}">
 {% for candidate in candidates %}
 <div class="card mb-3">
