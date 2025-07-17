@@ -17,35 +17,41 @@ def _check_arr_status(parsed_info, status_info_ref, release_title_for_log):
 
     current_app.logger.debug(f"_check_arr_status: Checking Arr for '{arr_search_title}' (type: {media_type})")
 
-    arr_instance = None
+    arr_instance = "Inconnu"
     found_item = None
+    api_results = []
 
     if media_type == 'movie':
         arr_instance = "Radarr"
-        year = parsed_info.get('year')
-        radarr_results = search_radarr_by_title(arr_search_title)
-        if radarr_results:
+        api_results = search_radarr_by_title(arr_search_title)
+        if api_results:
+            year = parsed_info.get('year')
             if year:
-                found_item = next((m for m in radarr_results if m.get('year') == year and m.get('title', '').lower() == arr_search_title.lower()), None)
+                found_item = next((m for m in api_results if m.get('year') == year and m.get('title', '').lower() == arr_search_title.lower()), None)
             if not found_item:
-                found_item = next((m for m in radarr_results if m.get('title', '').lower() == arr_search_title.lower()), None)
+                found_item = next((m for m in api_results if m.get('title', '').lower() == arr_search_title.lower()), None)
+            if not found_item: # Si toujours rien, prendre le premier comme meilleure supposition
+                found_item = api_results[0]
+
 
     elif media_type == 'episode':
         arr_instance = "Sonarr"
-        sonarr_results = search_sonarr_by_title(arr_search_title)
-        if sonarr_results:
-            # La recherche renvoie déjà les résultats triés par pertinence
-            found_item = sonarr_results[0]
+        api_results = search_sonarr_by_title(arr_search_title)
+        # La recherche Sonarr est déjà triée par pertinence, le premier résultat est le meilleur
+        if api_results:
+            found_item = api_results[0]
 
     # --- Logique de mise à jour du statut ---
     if not found_item:
         status_info_ref.update({'status': f'Non Trouvé ({arr_instance})', 'badge_color': 'dark'})
+        # On laisse le 'details' par défaut (nom du fichier) car on n'a pas d'autre info
     else:
+        current_app.logger.info(f"_check_arr_status: Item trouvé dans {arr_instance}: {found_item.get('title')}")
         # On a trouvé l'item, on peuple les détails enrichis
         status_info_ref['status_details'] = {
             'title': found_item.get('title', 'Titre inconnu'),
             'year': found_item.get('year'),
-            'id': found_item.get('id'), # ID interne de Sonarr/Radarr
+            'id': found_item.get('id') or found_item.get('sonarrId') or found_item.get('radarrId'), # ID interne
             'tvdbId': found_item.get('tvdbId'),
             'tmdbId': found_item.get('tmdbId'),
             'instance': arr_instance.lower()
