@@ -260,12 +260,31 @@ $('body').on('click', '.check-status-btn', function() {
         return response.json();
     })
     .then(data => {
-        if (data.text && data.status_class) {
-            // Version avec "fw-bold" pour une meilleure visibilité
-            statusCell.html(`<span class="${data.status_class} fw-bold">${data.text}</span>`);
-        } else {
-            statusCell.html(`<span class="text-warning">Réponse invalide</span>`);
+        let statusHtml = '';
+        // Cas 1: Le média est trouvé dans Sonarr/Radarr, on affiche la fiche détaillée
+        if (data.status_details) {
+            const details = data.status_details;
+            const arrUrl = details.instance === 'sonarr'
+                ? `/sonarr/series/${details.title.toLowerCase().replace(/\s+/g, '-')}` // URL non officielle mais courante
+                : `/radarr/movie/${details.id}`; // URL de Radarr
+
+            statusHtml = `
+                <div class="text-start">
+                    <strong class="${data.status_class}">${data.status}</strong><br>
+                    <span class="text-muted">${details.title} (${details.year})</span><br>
+                    <a href="${arrUrl}" target="_blank" class="small">Voir dans ${details.instance} (ID: ${details.id})</a>
+                </div>
+            `;
         }
+        // Cas 2: Statut simple (Déjà présent, Non trouvé, etc.)
+        else if (data.text && data.status_class) {
+            statusHtml = `<span class="${data.status_class} fw-bold">${data.text}</span>`;
+        }
+        // Cas 3: Erreur ou réponse invalide
+        else {
+            statusHtml = `<span class="text-warning">Réponse invalide</span>`;
+        }
+        statusCell.html(statusHtml);
     })
     .catch(error => {
         console.error("Erreur de vérification du statut:", error);
