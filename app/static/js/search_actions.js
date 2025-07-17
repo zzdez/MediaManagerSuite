@@ -1,8 +1,8 @@
 // Fichier : app/search_ui/static/search_ui/js/search_actions.js
-// Version : FINALE (v2) avec recherche manuelle robuste et titre nettoyé
+// Version : FINALE avec "meilleur candidat" et gestion de la réponse OBJET
 
 $(document).ready(function() {
-    console.log("Search actions (FINAL v2) script chargé.");
+    console.log("Search actions (FINAL v3 - Best Match) script chargé.");
 
     const modalEl = $('#sonarrRadarrSearchModal');
     if (modalEl.length === 0) {
@@ -18,16 +18,20 @@ $(document).ready(function() {
         if (!results || results.length === 0) {
             return '<div id="lookup-results-list" class="alert alert-warning">Aucun résultat trouvé.</div>';
         }
-        const itemsHtml = results.map(item => `
-            <div class="list-group-item d-flex justify-content-between align-items-center" id="item-${item.tvdbId || item.tmdbId}">
-                <span><strong>${item.title}</strong> (${item.year})</span>
-                <button class="btn btn-sm btn-outline-primary enrich-details-btn"
-                        data-media-id="${item.tvdbId || item.tmdbId}"
-                        data-media-type="${mediaType}">
-                    Voir les détails
-                </button>
-            </div>
-        `).join('');
+        const itemsHtml = results.map(item => {
+            // Ajoute la classe 'best-match' si l'item est marqué
+            const bestMatchClass = item.is_best_match ? 'best-match' : '';
+            return `
+                <div class="list-group-item d-flex justify-content-between align-items-center ${bestMatchClass}" id="item-${item.tvdbId || item.tmdbId}">
+                    <span><strong>${item.title}</strong> (${item.year})</span>
+                    <button class="btn btn-sm btn-outline-primary enrich-details-btn"
+                            data-media-id="${item.tvdbId || item.tmdbId}"
+                            data-media-type="${mediaType}">
+                        Voir les détails
+                    </button>
+                </div>
+            `;
+        }).join('');
         return `<div class="list-group list-group-flush" id="lookup-results-list">${itemsHtml}</div>`;
     }
 
@@ -43,7 +47,6 @@ $(document).ready(function() {
         confirmBtn.prop('disabled', true);
         const mediaType = $('#search-form [name="media_type"]').val();
         if (!mediaType) { alert("Erreur: Type de média introuvable."); return; }
-        // Note: Nous n'utilisons plus confirmBtn pour stocker mediaType.
 
         modalEl.find('.modal-title').text(`Mapper : ${releaseTitle}`);
         modalBody.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div><p class="mt-2">Recherche...</p></div>');
@@ -56,8 +59,7 @@ $(document).ready(function() {
         })
         .then(response => response.json())
         .then(data => {
-            // 'data' est { results: [...], cleaned_query: "..." }
-            // **LA CORRECTION EST ICI : on stocke mediaType sur le conteneur de recherche**
+            // 'data' est maintenant l'OBJET { results: [...], cleaned_query: "..." }
             const searchBarHtml = `
                 <div class="manual-search-container mb-3" data-media-type="${mediaType}">
                     <div class="input-group">
@@ -66,6 +68,7 @@ $(document).ready(function() {
                     </div>
                 </div>
             `;
+            // On passe data.results à la fonction
             const resultsHtml = getResultsListHtml(data.results, mediaType);
             modalBody.html(searchBarHtml + resultsHtml);
         })
@@ -80,14 +83,10 @@ $(document).ready(function() {
         const button = $(this);
         const manualQuery = $('#manual-search-input').val();
         const searchContainer = $('.manual-search-container');
-        // **LA CORRECTION EST ICI : on récupère mediaType depuis le conteneur**
         const mediaType = searchContainer.data('media-type');
         const resultsList = $('#lookup-results-list');
 
-        if (!manualQuery || !mediaType) { 
-            alert("Erreur: Terme de recherche ou type de média manquant."); 
-            return; 
-        }
+        if (!manualQuery || !mediaType) { alert("Erreur: Terme ou type manquant."); return; }
 
         button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
         resultsList.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div></div>');
@@ -99,6 +98,7 @@ $(document).ready(function() {
         })
         .then(response => response.json())
         .then(data => {
+            // On passe data.results à la fonction
             const newResultsHtml = getResultsListHtml(data.results, mediaType);
             resultsList.replaceWith(newResultsHtml);
         })
@@ -111,7 +111,7 @@ $(document).ready(function() {
         });
     });
 
-    // ---- GESTIONNAIRE D'ENRICHISSEMENT (INCHANGÉ) ----
+    // ---- GESTIONNAIRE D'ENRICHISSEMENT (LAZY LOADING) ----
     $('body').on('click', '.enrich-details-btn', function() {
         const button = $(this);
         const mediaId = button.data('media-id');
@@ -150,7 +150,7 @@ $(document).ready(function() {
         });
     });
 
-    // ---- GESTIONNAIRE DE SÉLECTION FINALE (INCHANGÉ) ----
+    // ---- GESTIONNAIRE DE SÉLECTION FINALE ----
     $('body').on('click', '.select-candidate-btn', function() {
         const button = $(this);
         const mediaId = button.data('media-id');
@@ -159,7 +159,7 @@ $(document).ready(function() {
         confirmBtn.data('selectedMediaId', mediaId).prop('disabled', false);
     });
 
-    // ---- GESTIONNAIRE DE CONFIRMATION FINALE (INCHANGÉ) ----
+    // ---- GESTIONNAIRE DE CONFIRMATION FINALE ----
     $('body').on('click', '#confirm-map-btn', function() {
         const button = $(this);
         const data = button.data();
