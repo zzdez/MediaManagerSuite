@@ -16,7 +16,7 @@ def _check_arr_status(parsed_info, status_info_ref, release_title_for_log):
         return status_info_ref
 
     current_app.logger.debug(f"_check_arr_status: Checking Arr for '{arr_search_title}' (type: {media_type})")
-
+    
     arr_instance = "Inconnu"
     found_item = None
     api_results = []
@@ -30,9 +30,8 @@ def _check_arr_status(parsed_info, status_info_ref, release_title_for_log):
                 found_item = next((m for m in api_results if m.get('year') == year and m.get('title', '').lower() == arr_search_title.lower()), None)
             if not found_item:
                 found_item = next((m for m in api_results if m.get('title', '').lower() == arr_search_title.lower()), None)
-            if not found_item: # Si toujours rien, prendre le premier comme meilleure supposition
+            if not found_item and api_results: # Si toujours rien, prendre le premier comme meilleure supposition
                 found_item = api_results[0]
-
 
     elif media_type == 'episode':
         arr_instance = "Sonarr"
@@ -45,6 +44,7 @@ def _check_arr_status(parsed_info, status_info_ref, release_title_for_log):
     if not found_item:
         status_info_ref.update({'status': f'Non Trouvé ({arr_instance})', 'badge_color': 'dark'})
         # On laisse le 'details' par défaut (nom du fichier) car on n'a pas d'autre info
+        current_app.logger.info(f"_check_arr_status: Item '{arr_search_title}' non trouvé dans {arr_instance}.")
     else:
         current_app.logger.info(f"_check_arr_status: Item trouvé dans {arr_instance}: {found_item.get('title')}")
         # On a trouvé l'item, on peuple les détails enrichis
@@ -56,7 +56,7 @@ def _check_arr_status(parsed_info, status_info_ref, release_title_for_log):
             'tmdbId': found_item.get('tmdbId'),
             'instance': arr_instance.lower()
         }
-
+        
         if found_item.get('monitored'):
             status_info_ref.update({'status': 'Manquant (Surveillé)', 'badge_color': 'warning'})
         else:

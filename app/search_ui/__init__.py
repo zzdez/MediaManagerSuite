@@ -172,40 +172,33 @@ def check_media_status_api():
     title = data.get('title')
 
     if not title:
-        current_app.logger.warn("/check_media_status - Titre manquant.")
         return jsonify({'text': 'Titre manquant', 'status_class': 'text-danger'}), 400
 
     try:
-        status_info_raw = util_check_media_status(release_title=title)
-        status_label = status_info_raw.get('status', 'Indéterminé')
-        details_text = status_info_raw.get('details', title)
+        # On récupère le dictionnaire complet depuis notre fonction utilitaire
+        status_info = util_check_media_status(release_title=title)
 
-        if status_label in ['Déjà Présent', 'Non Trouvé (Radarr)', 'Série non trouvée', 'Erreur Analyse', 'Indéterminé']:
-            final_text = status_label
-        else:
-            final_text = f"{status_label}: {details_text}"
-
-        badge_color = status_info_raw.get('badge_color', 'secondary')
+        # On conserve la conversion de la couleur en classe CSS, c'est une bonne pratique
+        badge_color = status_info.get('badge_color', 'secondary')
         status_class_map = {
-            'success': 'text-success',
-            'warning': 'text-warning',
-            'danger': 'text-danger',
-            'secondary': 'text-body-secondary',
+            'success': 'text-success', 'warning': 'text-warning',
+            'danger': 'text-danger', 'secondary': 'text-body-secondary',
             'dark': 'text-body-secondary'
         }
-        status_class = status_class_map.get(badge_color, 'text-body-secondary')
+        status_info['status_class'] = status_class_map.get(badge_color, 'text-body-secondary')
+        
+        # Pour la compatibilité avec le JS, on s'assure qu'un champ 'text' existe
+        # pour les cas où 'status_details' n'est pas présent (ex: "Déjà Présent").
+        if 'details' in status_info and 'text' not in status_info:
+             status_info['text'] = status_info['details']
 
-        if status_info_raw.get('status') == 'Erreur Analyse':
-             status_class = 'text-danger'
-             final_text = "Erreur d'analyse du statut"
-        elif "erreur" in status_label.lower():
-            status_class = 'text-danger'
-
-        return jsonify({'text': final_text, 'status_class': status_class})
+        # On renvoie le dictionnaire entier, incluant 'status_details' s'il existe
+        return jsonify(status_info)
 
     except Exception as e:
         current_app.logger.error(f"Erreur API dans /check_media_status pour '{title}': {e}", exc_info=True)
         return jsonify({'text': 'Erreur serveur interne', 'status_class': 'text-danger'}), 500
+
 
 
 @search_ui_bp.route('/api/prepare_mapping_details', methods=['POST'])
