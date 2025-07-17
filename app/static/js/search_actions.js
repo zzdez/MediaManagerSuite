@@ -222,4 +222,54 @@ $(document).ready(function() {
             button.prop('disabled', false).html('Confirmer le Mapping');
         });
     });
+
+// ---- GESTIONNAIRE POUR VÉRIFIER LE STATUT D'UN MÉDIA (RESTAURÉ) ----
+$('body').on('click', '.check-status-btn', function() {
+    const button = $(this);
+    const statusCell = button.closest('.status-cell');
+    const spinner = statusCell.find('.spinner-border');
+
+    // On n'envoie que le titre, car c'est ce que le backend actuel attend.
+    const title = button.data('title');
+
+    if (!title) {
+        console.error("Titre manquant pour la vérification du statut.");
+        return;
+    }
+
+    button.addClass('d-none');
+    spinner.removeClass('d-none');
+
+    // URL corrigée avec le préfixe du blueprint
+    fetch("/search/check_media_status", {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ title: title })
+    })
+    .then(response => {
+        if (!response.ok) {
+            // Gestion d'erreur améliorée pour afficher le message du serveur s'il existe
+            return response.json().then(errData => {
+                throw new Error(errData.text || `HTTP error ${response.status}`);
+            }).catch(() => {
+                throw new Error(`HTTP error ${response.status}`);
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.text && data.status_class) {
+            // Version avec "fw-bold" pour une meilleure visibilité
+            statusCell.html(`<span class="${data.status_class} fw-bold">${data.text}</span>`);
+        } else {
+            statusCell.html(`<span class="text-warning">Réponse invalide</span>`);
+        }
+    })
+    .catch(error => {
+        console.error("Erreur de vérification du statut:", error);
+        statusCell.html(`<span class="text-danger fw-bold">Erreur</span>`);
+    });
+});
 });
