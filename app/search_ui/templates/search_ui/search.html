@@ -199,3 +199,40 @@
         });
     </script>
 {% endblock %}
+{% block modals %}
+{{ super() }}
+<!-- Modale pour l'ajout manuel d'un média -->
+<div class="modal fade" id="manualAddModal" tabindex="-1" aria-labelledby="manualAddModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="manualAddModalLabel">Création Manuelle</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small">Veuillez fournir un ID externe (TVDB pour les séries, TMDb pour les films) pour garantir une correspondance exacte.</p>
+                <form id="manual-add-form">
+                    <input type="hidden" id="manual-add-media-type" name="media_type">
+
+                    <div class="mb-3">
+                        <label for="manual-add-id" class="form-label">ID (TVDB / TMDb)</label>
+                        <input type="number" class="form-control" id="manual-add-id" name="media_id" required>
+                        <div class="form-text">ID numérique de la série sur TheTVDB ou du film sur TheMovieDB.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="manual-add-title" class="form-label">Titre (Optionnel)</label>
+                        <input type="text" class="form-control" id="manual-add-title" name="title">
+                        <div class="form-text">Le titre sera automatiquement récupéré depuis l'ID, mais vous pouvez le spécifier si nécessaire.</div>
+                    </div>
+
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" id="confirm-manual-add-btn">Ajouter et Mapper</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

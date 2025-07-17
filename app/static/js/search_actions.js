@@ -1,41 +1,83 @@
 // Fichier : app/search_ui/static/search_ui/js/search_actions.js
-// Version : FINALE avec "meilleur candidat" et gestion de la réponse OBJET
+// Version : FINALE ET UNIFIÉE (inclut toutes les fonctionnalités)
 
 $(document).ready(function() {
-    console.log("Search actions (FINAL v3 - Best Match) script chargé.");
+    console.log("Search actions (UNIFIED v4) script chargé.");
 
     const modalEl = $('#sonarrRadarrSearchModal');
     if (modalEl.length === 0) {
         console.error("Erreur critique: La modale #sonarrRadarrSearchModal est introuvable.");
         return;
     }
-    const modal = new bootstrap.Modal(modalEl[0]);
+    const modal = new bootstrap.Modal(modalEl);
     const modalBody = modalEl.find('.modal-body');
     const confirmBtn = modalEl.find('#confirm-map-btn');
 
-    // --- FONCTION UTILITAIRE QUI RETOURNE LE HTML DE LA LISTE ---
-    function getResultsListHtml(results, mediaType) {
-        if (!results || results.length === 0) {
-            return '<div id="lookup-results-list" class="alert alert-warning">Aucun résultat trouvé.</div>';
+    // --- GESTION DE LA MODALE D'AJOUT MANUEL ---
+    const manualAddModelEl = $('#manualAddModal');
+    let manualAddModel;
+    if (manualAddModelEl.length > 0) {
+        manualAddModel = new bootstrap.Modal(manualAddModelEl);
+    } else {
+        console.error("Erreur critique: La modale #manualAddModal est introuvable.");
+    }
+    
+    // Ouvre la modale de saisie manuelle au clic
+    $('body').on('click', '#open-manual-add-modal-btn', function() {
+        if (!manualAddModel) return;
+        const mediaType = $('.manual-search-container').data('media-type');
+        const form = $('#manual-add-form');
+        const idLabel = form.find('label[for="manual-add-id"]');
+        const titleInput = form.find('#manual-add-title');
+        const currentSearchQuery = $('#manual-search-input').val();
+
+        titleInput.val(currentSearchQuery);
+
+        if (mediaType === 'tv') {
+            idLabel.text('ID (TVDB)');
+            form.find('#manual-add-id').attr('placeholder', 'Ex: 208111');
+        } else {
+            idLabel.text('ID (TMDb)');
+            form.find('#manual-add-id').attr('placeholder', 'Ex: 1399');
         }
-        const itemsHtml = results.map(item => {
-            // Ajoute la classe 'best-match' si l'item est marqué
-            const bestMatchClass = item.is_best_match ? 'best-match' : '';
-            return `
-                <div class="list-group-item d-flex justify-content-between align-items-center ${bestMatchClass}" id="item-${item.tvdbId || item.tmdbId}">
-                    <span><strong>${item.title}</strong> (${item.year})</span>
-                    <button class="btn btn-sm btn-outline-primary enrich-details-btn"
-                            data-media-id="${item.tvdbId || item.tmdbId}"
-                            data-media-type="${mediaType}">
-                        Voir les détails
-                    </button>
-                </div>
-            `;
-        }).join('');
-        return `<div class="list-group list-group-flush" id="lookup-results-list">${itemsHtml}</div>`;
+        form.find('#manual-add-media-type').val(mediaType);
+        manualAddModel.show();
+    });
+
+    // --- FONCTION UTILITAIRE POUR AFFICHER LA LISTE DES RÉSULTATS ---
+    function getResultsListHtml(results, mediaType) {
+        let itemsHtml = '';
+        if (results && results.length > 0) {
+            itemsHtml = results.map(item => {
+                const bestMatchClass = item.is_best_match ? 'best-match' : '';
+                return `
+                    <div class="list-group-item d-flex justify-content-between align-items-center ${bestMatchClass}" id="item-${item.tvdbId || item.tmdbId}">
+                        <span><strong>${item.title}</strong> (${item.year})</span>
+                        <button class="btn btn-sm btn-outline-primary enrich-details-btn"
+                                data-media-id="${item.tvdbId || item.tmdbId}"
+                                data-media-type="${mediaType}">
+                            Voir les détails
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        } else {
+            itemsHtml = '<div class="alert alert-info">Aucun résultat trouvé.</div>';
+        }
+
+        const manualAddButtonHtml = `
+            <div class="text-center mt-3 border-top pt-3">
+                <p class="small text-muted">Aucun de ces résultats ne correspond ?</p>
+                <button class="btn btn-sm btn-outline-secondary" id="open-manual-add-modal-btn">
+                    <i class="bi bi-plus-lg"></i> Créer manuellement dans Sonarr/Radarr
+                </button>
+            </div>
+        `;
+        
+        return `<div class="list-group list-group-flush" id="lookup-results-list">${itemsHtml}</div>` + manualAddButtonHtml;
     }
 
-    // --- GESTIONNAIRE PRINCIPAL : OUVRE LA MODALE ---
+    // --- GESTIONNAIRE PRINCIPAL : OUVRE LA MODALE DE MAPPING ---
     $('body').on('click', '.download-and-map-btn', function(event) {
         event.preventDefault();
         const button = $(this);
@@ -59,7 +101,6 @@ $(document).ready(function() {
         })
         .then(response => response.json())
         .then(data => {
-            // 'data' est maintenant l'OBJET { results: [...], cleaned_query: "..." }
             const searchBarHtml = `
                 <div class="manual-search-container mb-3" data-media-type="${mediaType}">
                     <div class="input-group">
@@ -68,7 +109,6 @@ $(document).ready(function() {
                     </div>
                 </div>
             `;
-            // On passe data.results à la fonction
             const resultsHtml = getResultsListHtml(data.results, mediaType);
             modalBody.html(searchBarHtml + resultsHtml);
         })
@@ -77,19 +117,18 @@ $(document).ready(function() {
             modalBody.html('<div class="alert alert-danger">Erreur de communication avec le serveur.</div>');
         });
     });
-    
+
     // --- GESTIONNAIRE POUR LA RECHERCHE MANUELLE ---
     $('body').on('click', '#manual-search-button', function() {
         const button = $(this);
         const manualQuery = $('#manual-search-input').val();
         const searchContainer = $('.manual-search-container');
         const mediaType = searchContainer.data('media-type');
-        const resultsList = $('#lookup-results-list');
+        const resultsListContainer = $('#lookup-results-list').parent();
 
         if (!manualQuery || !mediaType) { alert("Erreur: Terme ou type manquant."); return; }
-
         button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
-        resultsList.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div></div>');
+        resultsListContainer.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div></div>');
         
         fetch('/search/api/search/lookup', {
             method: 'POST',
@@ -98,13 +137,12 @@ $(document).ready(function() {
         })
         .then(response => response.json())
         .then(data => {
-            // On passe data.results à la fonction
             const newResultsHtml = getResultsListHtml(data.results, mediaType);
-            resultsList.replaceWith(newResultsHtml);
+            resultsListContainer.html(newResultsHtml);
         })
         .catch(error => {
             console.error("Erreur recherche manuelle:", error);
-            resultsList.replaceWith('<div id="lookup-results-list" class="alert alert-danger">Erreur de communication.</div>');
+            resultsListContainer.html('<div class="alert alert-danger">Erreur de communication.</div>');
         })
         .finally(() => {
             button.prop('disabled', false).html('Rechercher');

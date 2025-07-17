@@ -31,7 +31,15 @@ $(document).ready(function() {
         </div>
     `;
 }).join('');
-        return `<div class="list-group list-group-flush" id="lookup-results-list">${itemsHtml}</div>`;
+        const manualAddButtonHtml = `
+    <div class="text-center mt-3">
+        <p class="small text-muted">Aucun de ces résultats ne correspond ?</p>
+        <button class="btn btn-sm btn-outline-secondary" id="open-manual-add-modal-btn">
+            <i class="bi bi-plus-lg"></i> Créer manuellement dans Sonarr/Radarr
+        </button>
+    </div>
+`;
+        return `<div class="list-group list-group-flush" id="lookup-results-list">${itemsHtml}</div>` + manualAddButtonHtml;
     }
 
     // --- GESTIONNAIRE PRINCIPAL : OUVRE LA MODALE ---
