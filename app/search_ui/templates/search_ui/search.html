@@ -10,7 +10,9 @@
 
 {% block content %}
 <div id="search-page-container"
-     data-prepare-mapping-url="{{ url_for('search_ui.prepare_mapping_details') }}">
+     data-prepare-mapping-url="{{ url_for('search_ui.prepare_mapping_details') }}"
+     data-sonarr-url="{{ sonarr_url }}"
+     data-radarr-url="{{ radarr_url }}">
     <div class="container mt-4">
         {# Headings and paragraphs should inherit text color from the dark theme #}
         <h1><i class="fas fa-search-plus"></i> Découverte de Contenu</h1>

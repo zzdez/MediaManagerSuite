@@ -264,15 +264,25 @@ $('body').on('click', '.check-status-btn', function() {
         // Cas 1: Le média est trouvé dans Sonarr/Radarr, on affiche la fiche détaillée
         if (data.status_details) {
             const details = data.status_details;
-            const arrUrl = details.instance === 'sonarr'
-                ? `/sonarr/series/${details.title.toLowerCase().replace(/\s+/g, '-')}` // URL non officielle mais courante
-                : `/radarr/movie/${details.id}`; // URL de Radarr
+            const container = $('#search-page-container');
+            const sonarrBaseUrl = container.data('sonarr-url').replace(/\/$/, ""); // Supprime le / final s'il existe
+            const radarrBaseUrl = container.data('radarr-url').replace(/\/$/, "");
+
+            let arrUrl = '#'; // URL par défaut en cas de problème
+            if (details.instance === 'sonarr' && sonarrBaseUrl) {
+                // Pour Sonarr, l'URL utilise le "title slug"
+                const titleSlug = details.title.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, '-');
+                arrUrl = `${sonarrBaseUrl}/series/${titleSlug}`;
+            } else if (details.instance === 'radarr' && radarrBaseUrl) {
+                // Pour Radarr, l'URL utilise l'ID interne de Radarr
+                arrUrl = `${radarrBaseUrl}/movie/${details.id}`;
+            }
 
             statusHtml = `
                 <div class="text-start">
-                    <strong class="badge bg-${data.badge_color}">${data.status}</strong><br>
+                    <strong class="${data.status_class}">${data.status}</strong><br>
                     <span class="text-muted">${details.title} (${details.year})</span><br>
-                    <a href="${arrUrl}" target="_blank" class="small">Voir dans ${details.instance} (ID: ${details.id})</a>
+                    <a href="${arrUrl}" target="_blank" class="small text-info">Voir dans ${details.instance}</a>
                 </div>
             `;
         }
