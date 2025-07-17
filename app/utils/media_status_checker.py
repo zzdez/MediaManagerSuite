@@ -26,32 +26,37 @@ def _check_arr_status(parsed_info, status_info_ref, release_title_for_log):
         api_results = search_radarr_by_title(arr_search_title)
         if api_results:
             year = parsed_info.get('year')
+            best_match = None
             if year:
-                found_item = next((m for m in api_results if m.get('year') == year and m.get('title', '').lower() == arr_search_title.lower()), None)
-            if not found_item:
-                found_item = next((m for m in api_results if m.get('title', '').lower() == arr_search_title.lower()), None)
-            if not found_item and api_results: # Si toujours rien, prendre le premier comme meilleure supposition
-                found_item = api_results[0]
+                best_match = next((m for m in api_results if m.get('year') == year and m.get('title', '').lower() == arr_search_title.lower()), None)
+            if not best_match:
+                best_match = next((m for m in api_results if m.get('title', '').lower() == arr_search_title.lower()), None)
+            if not best_match:
+                best_match = api_results[0]
+            found_item = best_match
 
     elif media_type == 'episode':
         arr_instance = "Sonarr"
         api_results = search_sonarr_by_title(arr_search_title)
-        # La recherche Sonarr est déjà triée par pertinence, le premier résultat est le meilleur
         if api_results:
             found_item = api_results[0]
 
     # --- Logique de mise à jour du statut ---
-    if not found_item:
+    # LA CORRECTION CRUCIALE EST ICI : On vérifie si l'item a un ID interne (> 0)
+    # Un item avec un ID est géré par l'instance, sinon c'est juste un résultat de lookup.
+    if not found_item or not found_item.get('id') or found_item.get('id') == 0:
         status_info_ref.update({'status': f'Non Trouvé ({arr_instance})', 'badge_color': 'dark'})
-        # On laisse le 'details' par défaut (nom du fichier) car on n'a pas d'autre info
-        current_app.logger.info(f"_check_arr_status: Item '{arr_search_title}' non trouvé dans {arr_instance}.")
+        # On met à jour les détails avec le titre trouvé, même s'il n'est pas géré
+        if found_item:
+            status_info_ref['details'] = f"{found_item.get('title', arr_search_title)} ({found_item.get('year')})"
+        current_app.logger.info(f"_check_arr_status: Item '{arr_search_title}' est connu mais NON GÉRÉ par {arr_instance}.")
     else:
-        current_app.logger.info(f"_check_arr_status: Item trouvé dans {arr_instance}: {found_item.get('title')}")
-        # On a trouvé l'item, on peuple les détails enrichis
+        # L'item est bien géré, on peut vérifier son statut de monitoring
+        current_app.logger.info(f"_check_arr_status: Item trouvé et GÉRÉ dans {arr_instance}: {found_item.get('title')} (ID: {found_item.get('id')})")
         status_info_ref['status_details'] = {
             'title': found_item.get('title', 'Titre inconnu'),
             'year': found_item.get('year'),
-            'id': found_item.get('id') or found_item.get('sonarrId') or found_item.get('radarrId'), # ID interne
+            'id': found_item.get('id'),
             'tvdbId': found_item.get('tvdbId'),
             'tmdbId': found_item.get('tmdbId'),
             'instance': arr_instance.lower()

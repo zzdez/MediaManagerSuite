@@ -36,7 +36,10 @@ def search_page():
             flash("Erreur de communication avec Prowlarr.", "danger")
             results = []
 
-    return render_template('search_ui/search.html', title="Recherche", results=results, query=query)
+    sonarr_url = current_app.config.get('SONARR_URL', '')
+    radarr_url = current_app.config.get('RADARR_URL', '')
+
+    return render_template('search_ui/search.html', title="Recherche", results=results, query=query, sonarr_url=sonarr_url, radarr_url=radarr_url)
 
 
 @search_ui_bp.route('/api/search/lookup', methods=['POST'])
