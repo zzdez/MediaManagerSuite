@@ -270,15 +270,15 @@ $('body').on('click', '.check-status-btn', function() {
 
             statusHtml = `
                 <div class="text-start">
-                    <strong class="${data.status_class}">${data.status}</strong><br>
+                    <strong class="badge bg-${data.badge_color}">${data.status}</strong><br>
                     <span class="text-muted">${details.title} (${details.year})</span><br>
                     <a href="${arrUrl}" target="_blank" class="small">Voir dans ${details.instance} (ID: ${details.id})</a>
                 </div>
             `;
         }
         // Cas 2: Statut simple (Déjà présent, Non trouvé, etc.)
-        else if (data.text && data.status_class) {
-            statusHtml = `<span class="${data.status_class} fw-bold">${data.text}</span>`;
+        else if (data.status && data.badge_color) {
+            statusHtml = `<span class="badge bg-${data.badge_color} fw-bold">${data.status}</span>`;
         }
         // Cas 3: Erreur ou réponse invalide
         else {
