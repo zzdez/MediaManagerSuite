@@ -18,16 +18,19 @@ $(document).ready(function() {
         if (!results || results.length === 0) {
             return '<div id="lookup-results-list" class="alert alert-warning">Aucun résultat trouvé.</div>';
         }
-        const itemsHtml = results.map(item => `
-            <div class="list-group-item d-flex justify-content-between align-items-center" id="item-${item.tvdbId || item.tmdbId}">
-                <span><strong>${item.title}</strong> (${item.year})</span>
-                <button class="btn btn-sm btn-outline-primary enrich-details-btn"
-                        data-media-id="${item.tvdbId || item.tmdbId}"
-                        data-media-type="${mediaType}">
-                    Voir les détails
-                </button>
-            </div>
-        `).join('');
+        const itemsHtml = results.map(item => {
+    const bestMatchClass = item.is_best_match ? 'best-match' : '';
+    return `
+        <div class="list-group-item d-flex justify-content-between align-items-center ${bestMatchClass}" id="item-${item.tvdbId || item.tmdbId}">
+            <span><strong>${item.title}</strong> (${item.year})</span>
+            <button class="btn btn-sm btn-outline-primary enrich-details-btn"
+                    data-media-id="${item.tvdbId || item.tmdbId}"
+                    data-media-type="${mediaType}">
+                Voir les détails
+            </button>
+        </div>
+    `;
+}).join('');
         return `<div class="list-group list-group-flush" id="lookup-results-list">${itemsHtml}</div>`;
     }
 

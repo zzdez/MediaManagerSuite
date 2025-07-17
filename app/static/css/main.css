@@ -108,3 +108,10 @@ body {
     overflow-y: auto;  /* Affiche une barre de défilement si nécessaire */
     border-bottom: 1px dashed transparent; /* Cache la ligne pointillée au survol */
 }
+
+/* Style pour la suggestion du meilleur candidat dans la modale de mapping */
+.best-match {
+    border: 2px solid #0d6efd; /* Utilise la couleur bleue primaire de Bootstrap */
+    border-radius: .375rem; /* Arrondi standard de Bootstrap */
+    background-color: rgba(13, 110, 253, 0.05); /* Teinte de fond très légère */
+}

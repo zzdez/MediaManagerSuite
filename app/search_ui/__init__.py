@@ -94,6 +94,10 @@ def api_search_lookup():
     # Extraire uniquement les données des items triés
     final_results = [result['data'] for result in sorted_results]
 
+    # Ajoute un marqueur au premier résultat pour l'identifier comme "meilleur"
+    if final_results:
+        final_results[0]['is_best_match'] = True
+
     return jsonify({
         'results': final_results,
         'cleaned_query': clean_title
