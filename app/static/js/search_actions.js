@@ -1,98 +1,52 @@
 // Fichier : app/search_ui/static/search_ui/js/search_actions.js
-// Version : FINALE ET UNIFIÉE (inclut toutes les fonctionnalités)
+// Version : Architecture Unifiée Finale
 
 $(document).ready(function() {
-    console.log("Search actions (UNIFIED v4) script chargé.");
+    console.log("Search actions (UNIFIED ARCHITECTURE) script chargé.");
 
     const modalEl = $('#sonarrRadarrSearchModal');
-    if (modalEl.length === 0) {
-        console.error("Erreur critique: La modale #sonarrRadarrSearchModal est introuvable.");
-        return;
-    }
-    const modal = new bootstrap.Modal(modalEl);
     const modalBody = modalEl.find('.modal-body');
-    const confirmBtn = modalEl.find('#confirm-map-btn');
+    const confirmBtn = modalEl.find('#confirm-map-btn'); // Gardé pour les actions futures
 
-    // --- GESTION DE LA MODALE D'AJOUT MANUEL ---
-    const manualAddModelEl = $('#manualAddModal');
-    let manualAddModel;
-    if (manualAddModelEl.length > 0) {
-        manualAddModel = new bootstrap.Modal(manualAddModelEl);
-    } else {
-        console.error("Erreur critique: La modale #manualAddModal est introuvable.");
-    }
-    
-    // Ouvre la modale de saisie manuelle au clic
-    $('body').on('click', '#open-manual-add-modal-btn', function() {
-        if (!manualAddModel) return;
-        const mediaType = $('.manual-search-container').data('media-type');
-        const form = $('#manual-add-form');
-        const idLabel = form.find('label[for="manual-add-id"]');
-        const titleInput = form.find('#manual-add-title');
-        const currentSearchQuery = $('#manual-search-input').val();
-
-        titleInput.val(currentSearchQuery);
-
-        if (mediaType === 'tv') {
-            idLabel.text('ID (TVDB)');
-            form.find('#manual-add-id').attr('placeholder', 'Ex: 208111');
-        } else {
-            idLabel.text('ID (TMDb)');
-            form.find('#manual-add-id').attr('placeholder', 'Ex: 1399');
-        }
-        form.find('#manual-add-media-type').val(mediaType);
-        manualAddModel.show();
-    });
-
-    // --- FONCTION UTILITAIRE POUR AFFICHER LA LISTE DES RÉSULTATS ---
-    function getResultsListHtml(results, mediaType) {
+    // --- FONCTION UTILITAIRE POUR AFFICHER LES RÉSULTATS ---
+    function displayResults(resultsData, mediaType) {
+        const resultsContainer = modalBody.find('#lookup-results-container');
         let itemsHtml = '';
-        if (results && results.length > 0) {
-            itemsHtml = results.map(item => {
+        if (resultsData && resultsData.length > 0) {
+            itemsHtml = resultsData.map(item => {
                 const bestMatchClass = item.is_best_match ? 'best-match' : '';
                 return `
-                    <div class="list-group-item d-flex justify-content-between align-items-center ${bestMatchClass}" id="item-${item.tvdbId || item.tmdbId}">
+                    <div class="list-group-item d-flex justify-content-between align-items-center ${bestMatchClass}">
                         <span><strong>${item.title}</strong> (${item.year})</span>
-                        <button class="btn btn-sm btn-outline-primary enrich-details-btn"
-                                data-media-id="${item.tvdbId || item.tmdbId}"
-                                data-media-type="${mediaType}">
+                        <button class="btn btn-sm btn-outline-primary enrich-details-btn" data-media-id="${item.tvdbId || item.tmdbId}" data-media-type="${mediaType}">
                             Voir les détails
                         </button>
                     </div>
                 `;
             }).join('');
         } else {
-            itemsHtml = '<div class="alert alert-info">Aucun résultat trouvé.</div>';
+            itemsHtml = '<div class="alert alert-info mt-3">Aucun résultat trouvé.</div>';
         }
-
-        const manualAddButtonHtml = `
-            <div class="text-center mt-3 border-top pt-3">
-                <p class="small text-muted">Aucun de ces résultats ne correspond ?</p>
-                <button class="btn btn-sm btn-outline-secondary" id="open-manual-add-modal-btn">
-                    <i class="bi bi-plus-lg"></i> Créer manuellement dans Sonarr/Radarr
-                </button>
-            </div>
-        `;
-        
-        return `<div class="list-group list-group-flush" id="lookup-results-list">${itemsHtml}</div>` + manualAddButtonHtml;
+        resultsContainer.html(`<div class="list-group list-group-flush">${itemsHtml}</div>`);
     }
 
-    // --- GESTIONNAIRE PRINCIPAL : OUVRE LA MODALE DE MAPPING ---
+    // --- GESTIONNAIRE PRINCIPAL : OUVRE ET CONSTRUIT LA MODALE ---
     $('body').on('click', '.download-and-map-btn', function(event) {
         event.preventDefault();
         const button = $(this);
         const releaseTitle = button.data('title');
+        const mediaType = $('#search-form [name="media_type"]').val();
+        
+        // Stocke les données initiales sur le bouton de confirmation final
         confirmBtn.data('guid', button.data('guid'));
         confirmBtn.data('downloadLink', button.data('download-link'));
         confirmBtn.data('indexerId', button.data('indexer-id'));
         confirmBtn.data('releaseTitle', releaseTitle);
         confirmBtn.prop('disabled', true);
-        const mediaType = $('#search-form [name="media_type"]').val();
-        if (!mediaType) { alert("Erreur: Type de média introuvable."); return; }
 
         modalEl.find('.modal-title').text(`Mapper : ${releaseTitle}`);
-        modalBody.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div><p class="mt-2">Recherche...</p></div>');
-        modal.show();
+        modalBody.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div><p class="mt-2">Recherche initiale...</p></div>');
+        new bootstrap.Modal(modalEl[0]).show();
 
         fetch('/search/api/search/lookup', {
             method: 'POST',
@@ -101,16 +55,25 @@ $(document).ready(function() {
         })
         .then(response => response.json())
         .then(data => {
-            const searchBarHtml = `
-                <div class="manual-search-container mb-3" data-media-type="${mediaType}">
-                    <div class="input-group">
-                        <input type="text" id="manual-search-input" class="form-control" placeholder="Affiner la recherche..." value="${data.cleaned_query}">
-                        <button id="manual-search-button" class="btn btn-secondary">Rechercher</button>
+            const idPlaceholder = mediaType === 'tv' ? 'Rechercher par ID TVDB...' : 'Rechercher par ID TMDb...';
+            const modalHtml = `
+                <div data-media-type="${mediaType}">
+                    <label for="manual-search-input" class="form-label small">Recherche par Titre</label>
+                    <div class="input-group mb-2">
+                        <input type="text" id="manual-search-input" class="form-control" value="${data.cleaned_query}">
                     </div>
+                    <div class="text-center text-muted my-2 small text-uppercase">ou</div>
+                    <label for="manual-id-input" class="form-label small">Recherche par ID</label>
+                    <div class="input-group mb-3">
+                        <input type="number" id="manual-id-input" class="form-control" placeholder="${idPlaceholder}">
+                    </div>
+                    <button id="unified-search-button" class="btn btn-primary w-100"><i class="fas fa-search"></i> Lancer la recherche</button>
+                    <hr>
+                    <div id="lookup-results-container"></div>
                 </div>
             `;
-            const resultsHtml = getResultsListHtml(data.results, mediaType);
-            modalBody.html(searchBarHtml + resultsHtml);
+            modalBody.html(modalHtml);
+            displayResults(data.results, mediaType);
         })
         .catch(error => {
             console.error("Erreur pendant la recherche lookup:", error);
@@ -118,36 +81,48 @@ $(document).ready(function() {
         });
     });
 
-    // --- GESTIONNAIRE POUR LA RECHERCHE MANUELLE ---
-    $('body').on('click', '#manual-search-button', function() {
+    // --- GESTIONNAIRE DE LA RECHERCHE UNIFIÉE ---
+    $('body').on('click', '#unified-search-button', function() {
         const button = $(this);
-        const manualQuery = $('#manual-search-input').val();
-        const searchContainer = $('.manual-search-container');
-        const mediaType = searchContainer.data('media-type');
-        const resultsListContainer = $('#lookup-results-list').parent();
-
-        if (!manualQuery || !mediaType) { alert("Erreur: Terme ou type manquant."); return; }
-        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
-        resultsListContainer.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div></div>');
+        const container = button.closest('[data-media-type]');
+        const mediaType = container.data('media-type');
+        const titleQuery = container.find('#manual-search-input').val();
+        const idQuery = container.find('#manual-id-input').val();
         
+        let payload = { media_type: mediaType };
+        if (idQuery) {
+            payload.media_id = idQuery;
+        } else if (titleQuery) {
+            payload.term = titleQuery;
+        } else {
+            alert("Veuillez entrer un titre ou un ID.");
+            return;
+        }
+
+        const resultsContainer = modalBody.find('#lookup-results-container');
+        resultsContainer.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div></div>');
+        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Recherche...');
+
         fetch('/search/api/search/lookup', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ term: manualQuery, media_type: mediaType })
+            body: JSON.stringify(payload)
         })
         .then(response => response.json())
         .then(data => {
-            const newResultsHtml = getResultsListHtml(data.results, mediaType);
-            resultsListContainer.html(newResultsHtml);
+            displayResults(data.results, mediaType);
         })
         .catch(error => {
-            console.error("Erreur recherche manuelle:", error);
-            resultsListContainer.html('<div class="alert alert-danger">Erreur de communication.</div>');
+            console.error("Erreur recherche unifiée:", error);
+            resultsContainer.html('<div class="alert alert-danger">Erreur de communication.</div>');
         })
         .finally(() => {
-            button.prop('disabled', false).html('Rechercher');
+            button.prop('disabled', false).html('<i class="fas fa-search"></i> Lancer la recherche');
         });
     });
+    
+    // --- GESTIONNAIRES EXISTANTS ---
+    // Le code ci-dessous est identique aux versions précédentes et doit être conservé.
 
     // ---- GESTIONNAIRE D'ENRICHISSEMENT (LAZY LOADING) ----
     $('body').on('click', '.enrich-details-btn', function() {
@@ -201,7 +176,7 @@ $(document).ready(function() {
     $('body').on('click', '#confirm-map-btn', function() {
         const button = $(this);
         const data = button.data();
-        const payload = { releaseName: data.releaseTitle, downloadLink: data.downloadLink, indexerId: data.indexerId, guid: data.guid, instanceType: data.mediaType, mediaId: data.selectedMediaId, actionType: 'add_then_map' };
+        const payload = { releaseName: data.releaseTitle, downloadLink: data.downloadLink, indexerId: data.indexerId, guid: data.guid, instanceType: button.closest('.modal-content').find('[data-media-type]').data('media-type'), mediaId: data.selectedMediaId, actionType: 'add_then_map' };
         if (!payload.mediaId) { alert("Erreur : Aucun média n'a été sélectionné."); return; }
         button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Lancement...');
         fetch('/search/download-and-map', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
@@ -209,7 +184,7 @@ $(document).ready(function() {
         .then(data => {
             if (data.status === 'success' || data.status === 'warning') {
                 alert(data.message);
-                modal.hide();
+                new bootstrap.Modal(modalEl[0]).hide();
                 $(`.download-and-map-btn[data-guid="${payload.guid}"]`).closest('tr').fadeOut();
             } else {
                 alert('Erreur: ' + (data.message || "Une erreur inconnue est survenue."));
@@ -222,83 +197,4 @@ $(document).ready(function() {
             button.prop('disabled', false).html('Confirmer le Mapping');
         });
     });
-
-// ---- GESTIONNAIRE POUR VÉRIFIER LE STATUT D'UN MÉDIA (RESTAURÉ) ----
-$('body').on('click', '.check-status-btn', function() {
-    const button = $(this);
-    const statusCell = button.closest('.status-cell');
-    const spinner = statusCell.find('.spinner-border');
-
-    // On n'envoie que le titre, car c'est ce que le backend actuel attend.
-    const title = button.data('title');
-
-    if (!title) {
-        console.error("Titre manquant pour la vérification du statut.");
-        return;
-    }
-
-    button.addClass('d-none');
-    spinner.removeClass('d-none');
-
-    // URL corrigée avec le préfixe du blueprint
-    fetch("/search/check_media_status", {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ title: title })
-    })
-    .then(response => {
-        if (!response.ok) {
-            // Gestion d'erreur améliorée pour afficher le message du serveur s'il existe
-            return response.json().then(errData => {
-                throw new Error(errData.text || `HTTP error ${response.status}`);
-            }).catch(() => {
-                throw new Error(`HTTP error ${response.status}`);
-            });
-        }
-        return response.json();
-    })
-    .then(data => {
-        let statusHtml = '';
-        // Cas 1: Le média est trouvé dans Sonarr/Radarr, on affiche la fiche détaillée
-        if (data.status_details) {
-            const details = data.status_details;
-            const container = $('#search-page-container');
-            const sonarrBaseUrl = container.data('sonarr-url').replace(/\/$/, ""); // Supprime le / final s'il existe
-            const radarrBaseUrl = container.data('radarr-url').replace(/\/$/, "");
-
-            let arrUrl = '#'; // URL par défaut en cas de problème
-            if (details.instance === 'sonarr' && sonarrBaseUrl) {
-                // Pour Sonarr, l'URL utilise le "title slug"
-                const titleSlug = details.title.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, '-');
-                arrUrl = `${sonarrBaseUrl}/series/${titleSlug}`;
-            } else if (details.instance === 'radarr' && radarrBaseUrl) {
-                // Pour Radarr, l'URL utilise l'ID interne de Radarr
-                arrUrl = `${radarrBaseUrl}/movie/${details.id}`;
-            }
-
-            statusHtml = `
-                <div class="text-start">
-                    <strong class="${data.status_class}">${data.status}</strong><br>
-                    <span class="text-muted">${details.title} (${details.year})</span><br>
-                    <a href="${arrUrl}" target="_blank" class="small text-info">Voir dans ${details.instance}</a>
-                </div>
-            `;
-        }
-        // Cas 2: Statut simple (Déjà présent, Non trouvé, etc.)
-        else if (data.status && data.badge_color) {
-            statusHtml = `<span class="badge bg-${data.badge_color} fw-bold">${data.status}</span>`;
-        }
-        // Cas 3: Erreur ou réponse invalide
-        else {
-            statusHtml = `<span class="text-warning">Réponse invalide</span>`;
-        }
-        statusCell.html(statusHtml);
-    })
-    .catch(error => {
-        console.error("Erreur de vérification du statut:", error);
-        statusCell.html(`<span class="text-danger fw-bold">Erreur</span>`);
-    });
-});
 });

@@ -47,63 +47,64 @@ def api_search_lookup():
     data = request.get_json()
     search_term = data.get('term')
     media_type = data.get('media_type')
+    media_id = data.get('media_id') # Nouveau champ pour la recherche par ID
 
-    if not search_term or not media_type:
-        return jsonify({'error': 'Le terme de recherche et le type de média sont requis'}), 400
+    if not media_type or (not search_term and not media_id):
+        return jsonify({'error': 'Titre ou ID du média requis.'}), 400
 
-    # Étape 1: Analyser le titre original pour extraire un nom propre et une année
-    parsed_info = parse_media_name(search_term)
-    clean_title = parsed_info.get('title', search_term).lower()
-    year = parsed_info.get('year')
+    final_results = []
+    clean_title = ""
 
-    api_response = []
-    try:
+    # Cas 1: Recherche par ID (prioritaire)
+    if media_id:
+        current_app.logger.info(f"Recherche par ID: {media_id}, Type: {media_type}")
+        # Note: Cette partie nécessite que vos clients Arr puissent chercher par ID externe.
+        # On simule un résultat pour l'instant, en attendant d'avoir la bonne fonction.
+        # Pour que cela marche, il faudra une fonction comme `get_sonarr_series_by_tvdbid`
+        if media_type == 'tv':
+            # Simuler une recherche qui retourne un seul item
+            api_response = arr_client.search_sonarr_by_title(f"tvdb:{media_id}")
+            if api_response: final_results = api_response
+        elif media_type == 'movie':
+            api_response = arr_client.search_radarr_by_title(f"tmdb:{media_id}")
+            if api_response: final_results = api_response
+
+        if final_results:
+            final_results[0]['is_best_match'] = True # L'ID est toujours le meilleur résultat
+            clean_title = final_results[0].get('title', '')
+
+
+    # Cas 2: Recherche par Titre
+    elif search_term:
+        current_app.logger.info(f"Recherche par Titre: {search_term}, Type: {media_type}")
+        parsed_info = parse_media_name(search_term)
+        clean_title = parsed_info.get('title', search_term).lower()
+        year = parsed_info.get('year')
+
+        api_response = []
         if media_type == 'tv':
             api_response = arr_client.search_sonarr_by_title(clean_title)
         elif media_type == 'movie':
             api_response = arr_client.search_radarr_by_title(clean_title)
-        else:
-            return jsonify({'error': f'Media type non supporté: {media_type}'}), 400
 
-    except Exception as e:
-        current_app.logger.error(f"Erreur durant l'appel à l'API Sonarr/Radarr: {e}")
-        return jsonify({'error': 'Erreur de communication avec Sonarr/Radarr.'}), 500
+        if api_response:
+            scored_results = []
+            for item in api_response:
+                item_title = item.get('title', '').lower()
+                score = levenshtein_distance(clean_title, item_title)
+                if clean_title == item_title: score -= 10
+                if year and item.get('year') and year != item.get('year'): score += 20
+                scored_results.append({'score': score, 'data': item})
 
-    if not api_response:
-        return jsonify([])
+            sorted_results = sorted(scored_results, key=lambda x: x['score'])
+            final_results = [result['data'] for result in sorted_results]
 
-    # Étape 2: Calculer un score de pertinence pour chaque résultat
-    scored_results = []
-    for item in api_response:
-        item_title = item.get('title', '').lower()
-        item_year = item.get('year')
-
-        # Le score de base est la distance textuelle
-        score = levenshtein_distance(clean_title, item_title)
-
-        # Bonus pour une correspondance de titre exacte
-        if clean_title == item_title:
-            score -= 10
-
-        # Pénalité importante si l'année est connue et ne correspond pas
-        if year and item_year and year != item_year:
-            score += 20
-
-        scored_results.append({'score': score, 'data': item})
-
-    # Étape 3: Trier les résultats en fonction du score (le plus bas est le meilleur)
-    sorted_results = sorted(scored_results, key=lambda x: x['score'])
-
-    # Extraire uniquement les données des items triés
-    final_results = [result['data'] for result in sorted_results]
-
-    # Ajoute un marqueur au premier résultat pour l'identifier comme "meilleur"
-    if final_results:
-        final_results[0]['is_best_match'] = True
+            if final_results:
+                final_results[0]['is_best_match'] = True
 
     return jsonify({
         'results': final_results,
-        'cleaned_query': clean_title
+        'cleaned_query': clean_title or search_term
     })
 
 
@@ -178,10 +179,13 @@ def check_media_status_api():
         return jsonify({'text': 'Titre manquant', 'status_class': 'text-danger'}), 400
 
     try:
-        # On récupère le dictionnaire complet depuis notre fonction utilitaire
+        # 1. On récupère le dictionnaire complet depuis notre fonction utilitaire
         status_info = util_check_media_status(release_title=title)
 
-        # On conserve la conversion de la couleur en classe CSS, c'est une bonne pratique
+        # 2. On prépare le champ 'text' pour les cas simples (compatibilité)
+        status_info['text'] = status_info.get('details', status_info.get('status', 'Indéterminé'))
+        
+        # 3. On s'assure que la classe CSS est présente
         badge_color = status_info.get('badge_color', 'secondary')
         status_class_map = {
             'success': 'text-success', 'warning': 'text-warning',
@@ -189,13 +193,8 @@ def check_media_status_api():
             'dark': 'text-body-secondary'
         }
         status_info['status_class'] = status_class_map.get(badge_color, 'text-body-secondary')
-        
-        # Pour la compatibilité avec le JS, on s'assure qu'un champ 'text' existe
-        # pour les cas où 'status_details' n'est pas présent (ex: "Déjà Présent").
-        if 'details' in status_info and 'text' not in status_info:
-             status_info['text'] = status_info['details']
 
-        # On renvoie le dictionnaire entier, incluant 'status_details' s'il existe
+        # 4. On renvoie le dictionnaire ENTIER, qui inclut 'status_details' s'il existe
         return jsonify(status_info)
 
     except Exception as e:
@@ -324,3 +323,61 @@ def download_torrent_proxy():
     except Exception as e:
         current_app.logger.error(f"Proxy download: Erreur pour '{release_name}': {e}", exc_info=True)
         return Response(f"Une erreur est survenue lors du proxy de téléchargement: {e}", status=500)
+
+@search_ui_bp.route('/api/add/manual', methods=['POST'])
+@login_required
+def manual_add_media():
+    data = request.get_json()
+    media_id = data.get('media_id')
+    media_type = data.get('media_type') # 'tv' ou 'movie'
+    title = data.get('title', '') # Titre optionnel
+
+    if not media_id or not media_type:
+        return jsonify({'status': 'error', 'message': 'ID du média ou type manquant.'}), 400
+
+    try:
+        # Récupérer les configurations par défaut
+        if media_type == 'tv':
+            root_folder = current_app.config.get('DEFAULT_SONARR_ROOT_FOLDER')
+            profile_id = current_app.config.get('DEFAULT_SONARR_PROFILE_ID')
+            lang_profile_id = current_app.config.get('DEFAULT_SONARR_LANGUAGE_PROFILE_ID')
+            if not all([root_folder, profile_id, lang_profile_id]):
+                raise ValueError("Configuration Sonarr par défaut manquante.")
+
+            # Ajoute la série via son TVDB ID
+            added_item = arr_client.add_new_series_to_sonarr(
+                tvdb_id=int(media_id),
+                title=title, # Le titre est surtout pour le log, Sonarr se base sur l'ID
+                quality_profile_id=profile_id,
+                language_profile_id=lang_profile_id,
+                root_folder_path=root_folder
+            )
+
+        elif media_type == 'movie':
+            root_folder = current_app.config.get('DEFAULT_RADARR_ROOT_FOLDER')
+            profile_id = current_app.config.get('DEFAULT_RADARR_PROFILE_ID')
+            if not all([root_folder, profile_id]):
+                raise ValueError("Configuration Radarr par défaut manquante.")
+
+            # Ajoute le film via son TMDb ID
+            added_item = arr_client.add_new_movie_to_radarr(
+                tmdb_id=int(media_id),
+                title=title,
+                quality_profile_id=profile_id,
+                root_folder_path=root_folder
+            )
+        else:
+             return jsonify({'status': 'error', 'message': 'Type de média non supporté.'}), 400
+
+        if added_item and added_item.get('id'):
+            return jsonify({
+                'status': 'success',
+                'message': f"'{added_item.get('title')}' ajouté avec succès à {media_type.capitalize()}!",
+                'added_item': added_item
+            })
+        else:
+            raise Exception("L'ajout a échoué. Réponse invalide de l'API Arr.")
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur durant l'ajout manuel: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
