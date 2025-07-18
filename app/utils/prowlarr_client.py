@@ -35,13 +35,34 @@ def _prowlarr_api_request(params):
 
 def get_prowlarr_categories():
     """Fetches all available categories from the Prowlarr API."""
-    # On peut réutiliser le helper existant en passant juste l'endpoint
-    response_json = _prowlarr_api_request({'t': 'caps'}) # 'caps' est un bon moyen de récupérer les catégories
-    if response_json and 'categories' in response_json:
-        all_categories = response_json['categories']['category']
-        return sorted(all_categories, key=lambda x: int(x['@attributes']['id']))
-    else:
-        current_app.logger.error("Format de réponse inattendu pour les catégories Prowlarr.")
+    config = current_app.config
+    api_key = config.get('PROWLARR_API_KEY')
+    base_url_from_config = config.get('PROWLARR_URL')
+
+    if not api_key or not base_url_from_config:
+        current_app.logger.error("Prowlarr URL or API Key is not configured for category fetching.")
+        return []
+
+    base_url = base_url_from_config.rstrip('/')
+    # L'endpoint pour les 'capabilities' (qui inclut les catégories) est /api/v1/caps
+    url = f"{base_url}/api/v1/caps"
+
+    try:
+        response = requests.get(url, params={'apikey': api_key}, timeout=20)
+        response.raise_for_status()
+        response_json = response.json()
+
+        # La structure de la réponse de /caps est response['categories']['category']
+        if response_json and 'categories' in response_json and 'category' in response_json['categories']:
+            all_categories = response_json['categories']['category']
+            # On trie par ID pour un affichage cohérent
+            return sorted(all_categories, key=lambda x: int(x['@attributes']['id']))
+        else:
+            current_app.logger.error("Format de réponse inattendu pour les catégories Prowlarr depuis /api/v1/caps.")
+            return []
+
+    except requests.exceptions.RequestException as e:
+        current_app.logger.error(f"Prowlarr API request for categories failed: {e}")
         return []
 
 def search_prowlarr(query, categories=None, lang=None):
