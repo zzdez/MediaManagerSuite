@@ -5,6 +5,9 @@ import logging
 from flask import render_template, request, redirect, url_for, flash, current_app
 from . import config_ui_bp  # Importe le Blueprint depuis __init__.py
 from dotenv import dotenv_values, set_key
+from app.utils.prowlarr_client import get_prowlarr_categories
+from app.utils.config_manager import load_search_categories, save_search_categories
+from flask_login import login_required
 
 # Initialisation du logger pour ce module
 logger = logging.getLogger(__name__)
@@ -76,3 +79,33 @@ def save_config():
         flash(f"Une erreur est survenue lors de la sauvegarde de la configuration : {e}", "danger")
     
     return redirect(url_for('config_ui.show_config'))
+
+@config_ui_bp.route('/search_categories', methods=['GET', 'POST'])
+@login_required
+def search_categories_config():
+    if request.method == 'POST':
+        sonarr_cats = request.form.getlist('sonarr_categories')
+        radarr_cats = request.form.getlist('radarr_categories')
+
+        settings = {
+            'sonarr_categories': [int(c) for c in sonarr_cats],
+            'radarr_categories': [int(c) for c in radarr_cats]
+        }
+
+        if save_search_categories(settings):
+            flash("Catégories de recherche sauvegardées avec succès.", "success")
+        else:
+            flash("Erreur lors de la sauvegarde des catégories.", "danger")
+
+        return redirect(url_for('config_ui.search_categories_config'))
+
+    # Pour la méthode GET
+    all_categories = get_prowlarr_categories()
+    current_config = load_search_categories()
+
+    return render_template(
+        'config_ui/search_categories.html',
+        title="Configuration des Catégories de Recherche",
+        all_categories=all_categories,
+        current_config=current_config
+    )
