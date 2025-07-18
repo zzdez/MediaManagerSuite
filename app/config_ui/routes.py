@@ -1,21 +1,18 @@
-# app/config_ui/routes.py
-
+# app/config_ui/routes.py (Version Unifiée)
 import os
 import logging
 from flask import render_template, request, redirect, url_for, flash, current_app
-from . import config_ui_bp  # Importe le Blueprint depuis __init__.py
+from . import config_ui_bp
 from dotenv import dotenv_values, set_key
 from app.utils.prowlarr_client import get_prowlarr_categories
 from app.utils.config_manager import load_search_categories, save_search_categories
-from flask_login import login_required
+from app.auth import login_required
 
-# Initialisation du logger pour ce module
 logger = logging.getLogger(__name__)
 
 @config_ui_bp.route('/', methods=['GET'])
-@config_ui_bp.route('/configure', methods=['GET']) # Accepte les deux URLs pour être sûr
+@login_required
 def show_config():
-    """Affiche la page de configuration en se basant sur .env.template."""
     config_items = []
     
     try:
@@ -59,53 +56,49 @@ def show_config():
         logger.error(f"Erreur critique lors de la construction de la page de configuration : {e}", exc_info=True)
         flash(f"Une erreur est survenue lors de la lecture des fichiers de configuration : {e}", "danger")
 
+    # --- AJOUT: CHARGEMENT DES DONNÉES DE CATÉGORIE ---
+    all_categories = get_prowlarr_categories()
+    search_config = load_search_categories()
+
     return render_template('config_ui/index.html',
                            config_items=config_items,
-                           title="Configuration de l'Application")
+                           title="Configuration de l'Application",
+                           all_categories=all_categories,
+                           search_config=search_config)
 
 @config_ui_bp.route('/save', methods=['POST'])
+@login_required
 def save_config():
-    """Sauvegarde les modifications de la configuration dans le fichier .env."""
     try:
         dotenv_path = os.path.join(current_app.root_path, '..', '.env')
         
-        # Sauvegarder chaque clé reçue du formulaire
+        # --- NOUVEAU: SÉPARER LES VARIABLES .ENV DES CATÉGORIES ---
+        env_vars_to_save = {}
+        sonarr_cats_to_save = []
+        radarr_cats_to_save = []
+
         for key, value in request.form.items():
+            if key.startswith('sonarr_category_'):
+                sonarr_cats_to_save.append(int(value))
+            elif key.startswith('radarr_category_'):
+                radarr_cats_to_save.append(int(value))
+            else:
+                env_vars_to_save[key] = value
+
+        # Sauvegarde des variables .env
+        for key, value in env_vars_to_save.items():
             set_key(dotenv_path, key, value)
         
-        flash("Configuration sauvegardée avec succès. Un redémarrage de l'application est nécessaire pour appliquer les changements.", "success")
-    except Exception as e:
-        logger.error(f"Erreur lors de la sauvegarde de la configuration : {e}", exc_info=True)
-        flash(f"Une erreur est survenue lors de la sauvegarde de la configuration : {e}", "danger")
-    
-    return redirect(url_for('config_ui.show_config'))
-
-@config_ui_bp.route('/search_categories', methods=['GET', 'POST'])
-@login_required
-def search_categories_config():
-    if request.method == 'POST':
-        sonarr_cats = request.form.getlist('sonarr_categories')
-        radarr_cats = request.form.getlist('radarr_categories')
-
-        settings = {
-            'sonarr_categories': [int(c) for c in sonarr_cats],
-            'radarr_categories': [int(c) for c in radarr_cats]
+        # Sauvegarde des catégories
+        search_settings = {
+            'sonarr_categories': sonarr_cats_to_save,
+            'radarr_categories': radarr_cats_to_save
         }
+        save_search_categories(search_settings)
 
-        if save_search_categories(settings):
-            flash("Catégories de recherche sauvegardées avec succès.", "success")
-        else:
-            flash("Erreur lors de la sauvegarde des catégories.", "danger")
+        flash("Configuration sauvegardée avec succès.", "success")
+    except Exception as e:
+        logger.error(f"Erreur lors de la sauvegarde : {e}", exc_info=True)
+        flash(f"Une erreur est survenue : {e}", "danger")
 
-        return redirect(url_for('config_ui.search_categories_config'))
-
-    # Pour la méthode GET
-    all_categories = get_prowlarr_categories()
-    current_config = load_search_categories()
-
-    return render_template(
-        'config_ui/search_categories.html',
-        title="Configuration des Catégories de Recherche",
-        all_categories=all_categories,
-        current_config=current_config
-    )
+    return redirect(url_for('config_ui.show_config'))
