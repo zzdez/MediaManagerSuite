@@ -23,52 +23,62 @@ search_ui_bp = Blueprint(
 def search_page():
     # Imports locaux
     from app.utils.prowlarr_client import search_prowlarr
+    from guessit import guessit
 
     # --- Étape 1: Récupération de tous les filtres ---
     query = request.args.get('query', '').strip()
-    year = request.args.get('year')
+    year_str = request.args.get('year') # Renommé en year_str
     lang = request.args.get('lang')
-    # Nouveaux filtres (ils seront ajoutés au HTML plus tard)
-    quality = request.args.get('quality')
+    quality = request.args.get('quality') 
     codec = request.args.get('codec')
-    release_type = request.args.get('release_type') # 'season', 'complete'
+    release_type = request.args.get('release_type')
 
     results = None
 
     if query:
-        # --- Étape 2: Appel à Prowlarr (seulement avec les filtres qu'il comprend) ---
+        # --- Étape 2: Appel à Prowlarr ---
         raw_results = search_prowlarr(query, lang=lang)
 
         if raw_results is None:
             flash("Erreur de communication avec Prowlarr.", "danger")
             results = []
         else:
-            # --- Étape 3: Filtrage intelligent en Python ---
+            # --- Étape 3: Filtrage intelligent en Python (Logique Corrigée) ---
             filtered_results = []
+            year_filter = int(year_str) if year_str and year_str.isdigit() else None
+
             for result in raw_results:
                 title = result.get('title', '')
                 parsed_info = guessit(title)
-
-                # Filtre par Année
-                if year and str(parsed_info.get('year', '')) != year:
-                    continue # Passe au résultat suivant
-
-                # Filtre par Qualité (ex: '1080p')
+                
+                # Filtre par Année (CORRIGÉ AVEC TOLÉRANCE)
+                if year_filter:
+                    parsed_year = parsed_info.get('year')
+                    # On ne filtre QUE si guessit a trouvé une année.
+                    if parsed_year:
+                        try:
+                            # Tolérance de +/- 1 an
+                            if abs(int(parsed_year) - year_filter) > 1:
+                                continue # Rejeter si l'écart est trop grand
+                        except (ValueError, TypeError):
+                            continue # Ignorer si l'année n'est pas un nombre valide
+                
+                # Filtre par Qualité
                 if quality and quality.lower() not in parsed_info.get('screen_size', '').lower():
                     continue
 
-                # Filtre par Codec (ex: 'x265')
+                # Filtre par Codec
                 if codec and codec.lower() not in parsed_info.get('video_codec', '').lower():
                     continue
 
                 # Filtre par Type de Release
                 if release_type == 'season' and 'season' not in parsed_info:
                     continue
-                if release_type == 'complete' and 'complete' not in title.lower(): # Heuristique simple
+                if release_type == 'complete' and 'complete' not in title.lower():
                     continue
 
                 filtered_results.append(result)
-
+            
             results = filtered_results
 
     sonarr_url = current_app.config.get('SONARR_URL', '')
