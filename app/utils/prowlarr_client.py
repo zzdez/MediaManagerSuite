@@ -35,34 +35,27 @@ def _prowlarr_api_request(params):
 
 def get_prowlarr_categories():
     """Fetches all available categories from the Prowlarr API."""
-    config = current_app.config
-    api_key = config.get('PROWLARR_API_KEY')
-    base_url_from_config = config.get('PROWLARR_URL')
-
-    if not api_key or not base_url_from_config:
-        current_app.logger.error("Prowlarr URL or API Key is not configured for category fetching.")
+    # On utilise le helper existant qui connaît la bonne URL (/api/v1/search)
+    # et on lui passe le paramètre 't=caps' pour demander les capacités.
+    params = {'t': 'caps', 'o': 'json'} # 'o=json' pour être sûr de la réponse
+    
+    response_json = _prowlarr_api_request(params)
+    
+    if not response_json:
+        current_app.logger.error("N'a reçu aucune réponse de Prowlarr pour la demande de catégories.")
         return []
 
-    base_url = base_url_from_config.rstrip('/')
-    # L'endpoint pour les 'capabilities' (qui inclut les catégories) est /api/v1/caps
-    url = f"{base_url}/api/v1/caps"
-
+    # La structure de la réponse de /api/v1/search?t=caps est response['categories']['category']
     try:
-        response = requests.get(url, params={'apikey': api_key}, timeout=20)
-        response.raise_for_status()
-        response_json = response.json()
-
-        # La structure de la réponse de /caps est response['categories']['category']
-        if response_json and 'categories' in response_json and 'category' in response_json['categories']:
+        if 'categories' in response_json and 'category' in response_json['categories']:
             all_categories = response_json['categories']['category']
             # On trie par ID pour un affichage cohérent
             return sorted(all_categories, key=lambda x: int(x['@attributes']['id']))
         else:
-            current_app.logger.error("Format de réponse inattendu pour les catégories Prowlarr depuis /api/v1/caps.")
+            current_app.logger.error("Format de réponse inattendu pour les catégories Prowlarr. Réponse reçue : %s", response_json)
             return []
-
-    except requests.exceptions.RequestException as e:
-        current_app.logger.error(f"Prowlarr API request for categories failed: {e}")
+    except (KeyError, TypeError) as e:
+        current_app.logger.error(f"Erreur en parsant la réponse des catégories Prowlarr : {e}")
         return []
 
 def search_prowlarr(query, categories=None, lang=None):
