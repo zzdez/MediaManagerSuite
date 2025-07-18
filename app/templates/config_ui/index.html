@@ -42,11 +42,14 @@
         <p class="text-muted">Sélectionnez les catégories à inclure dans les recherches "Sonarr" et "Radarr".</p>
 
 <div class="row">
+    <!-- Colonne Sonarr -->
     <div class="col-md-6">
-        <h4><i class="fas fa-tv"></i> Écosystème Sonarr</h4>
+        <h3><i class="fas fa-tv"></i> Écosystème Sonarr</h3>
+        <p class="small text-muted">Séries, Émissions, Documentaires TV, etc.</p>
         <div class="card p-3" style="max-height: 500px; overflow-y: auto;">
             {% for category in all_categories %}
-                {% if category['@attributes']['id'].startswith('5') %} {# Affiche seulement les catégories TV (ID 5xxx) #}
+                {# On affiche toutes les catégories dont l'ID commence par 5 (ex: 5000, 5070, etc.) #}
+                {% if category['@attributes']['id'].startswith('5') %}
                     <div class="form-check">
                         <input class="form-check-input" type="checkbox" name="sonarr_categories" value="{{ category['@attributes']['id'] }}" id="sonarr-cat-{{ category['@attributes']['id'] }}"
                         {% if category['@attributes']['id']|int in search_config.sonarr_categories %}checked{% endif %}>
@@ -58,16 +61,20 @@
             {% endfor %}
         </div>
     </div>
+
+    <!-- Colonne Radarr -->
     <div class="col-md-6">
-        <h4><i class="fas fa-film"></i> Écosystème Radarr</h4>
+        <h3><i class="fas fa-film"></i> Écosystème Radarr</h3>
+        <p class="small text-muted">Films, Concerts, Documentaires, etc.</p>
         <div class="card p-3" style="max-height: 500px; overflow-y: auto;">
             {% for category in all_categories %}
-                {% if category['@attributes']['id'].startswith('2') %} {# Affiche seulement les catégories Films (ID 2xxx) #}
+                {# On affiche toutes les catégories dont l'ID commence par 2 (ex: 2000, 2060, etc.) #}
+                {% if category['@attributes']['id'].startswith('2') %}
                     <div class="form-check">
                         <input class="form-check-input" type="checkbox" name="radarr_categories" value="{{ category['@attributes']['id'] }}" id="radarr-cat-{{ category['@attributes']['id'] }}"
                         {% if category['@attributes']['id']|int in search_config.radarr_categories %}checked{% endif %}>
                         <label class="form-check-label" for="radarr-cat-{{ category['@attributes']['id'] }}">
-                            {{ category['@attributes']['name'] }}
+                            {{ category['@attributes']['name'] }} <span class="text-muted">({{ category['@attributes']['id'] }})</span>
                         </label>
                     </div>
                 {% endif %}
