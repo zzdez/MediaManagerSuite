@@ -47,63 +47,64 @@ def api_search_lookup():
     data = request.get_json()
     search_term = data.get('term')
     media_type = data.get('media_type')
+    media_id = data.get('media_id') # Nouveau champ pour la recherche par ID
 
-    if not search_term or not media_type:
-        return jsonify({'error': 'Le terme de recherche et le type de média sont requis'}), 400
+    if not media_type or (not search_term and not media_id):
+        return jsonify({'error': 'Titre ou ID du média requis.'}), 400
 
-    # Étape 1: Analyser le titre original pour extraire un nom propre et une année
-    parsed_info = parse_media_name(search_term)
-    clean_title = parsed_info.get('title', search_term).lower()
-    year = parsed_info.get('year')
+    final_results = []
+    clean_title = ""
 
-    api_response = []
-    try:
+    # Cas 1: Recherche par ID (prioritaire)
+    if media_id:
+        current_app.logger.info(f"Recherche par ID: {media_id}, Type: {media_type}")
+        # Note: Cette partie nécessite que vos clients Arr puissent chercher par ID externe.
+        # On simule un résultat pour l'instant, en attendant d'avoir la bonne fonction.
+        # Pour que cela marche, il faudra une fonction comme `get_sonarr_series_by_tvdbid`
+        if media_type == 'tv':
+            # Simuler une recherche qui retourne un seul item
+            api_response = arr_client.search_sonarr_by_title(f"tvdb:{media_id}")
+            if api_response: final_results = api_response
+        elif media_type == 'movie':
+            api_response = arr_client.search_radarr_by_title(f"tmdb:{media_id}")
+            if api_response: final_results = api_response
+
+        if final_results:
+            final_results[0]['is_best_match'] = True # L'ID est toujours le meilleur résultat
+            clean_title = final_results[0].get('title', '')
+
+
+    # Cas 2: Recherche par Titre
+    elif search_term:
+        current_app.logger.info(f"Recherche par Titre: {search_term}, Type: {media_type}")
+        parsed_info = parse_media_name(search_term)
+        clean_title = parsed_info.get('title', search_term).lower()
+        year = parsed_info.get('year')
+
+        api_response = []
         if media_type == 'tv':
             api_response = arr_client.search_sonarr_by_title(clean_title)
         elif media_type == 'movie':
             api_response = arr_client.search_radarr_by_title(clean_title)
-        else:
-            return jsonify({'error': f'Media type non supporté: {media_type}'}), 400
 
-    except Exception as e:
-        current_app.logger.error(f"Erreur durant l'appel à l'API Sonarr/Radarr: {e}")
-        return jsonify({'error': 'Erreur de communication avec Sonarr/Radarr.'}), 500
+        if api_response:
+            scored_results = []
+            for item in api_response:
+                item_title = item.get('title', '').lower()
+                score = levenshtein_distance(clean_title, item_title)
+                if clean_title == item_title: score -= 10
+                if year and item.get('year') and year != item.get('year'): score += 20
+                scored_results.append({'score': score, 'data': item})
 
-    if not api_response:
-        return jsonify([])
+            sorted_results = sorted(scored_results, key=lambda x: x['score'])
+            final_results = [result['data'] for result in sorted_results]
 
-    # Étape 2: Calculer un score de pertinence pour chaque résultat
-    scored_results = []
-    for item in api_response:
-        item_title = item.get('title', '').lower()
-        item_year = item.get('year')
-
-        # Le score de base est la distance textuelle
-        score = levenshtein_distance(clean_title, item_title)
-
-        # Bonus pour une correspondance de titre exacte
-        if clean_title == item_title:
-            score -= 10
-
-        # Pénalité importante si l'année est connue et ne correspond pas
-        if year and item_year and year != item_year:
-            score += 20
-
-        scored_results.append({'score': score, 'data': item})
-
-    # Étape 3: Trier les résultats en fonction du score (le plus bas est le meilleur)
-    sorted_results = sorted(scored_results, key=lambda x: x['score'])
-
-    # Extraire uniquement les données des items triés
-    final_results = [result['data'] for result in sorted_results]
-
-    # Ajoute un marqueur au premier résultat pour l'identifier comme "meilleur"
-    if final_results:
-        final_results[0]['is_best_match'] = True
+            if final_results:
+                final_results[0]['is_best_match'] = True
 
     return jsonify({
         'results': final_results,
-        'cleaned_query': clean_title
+        'cleaned_query': clean_title or search_term
     })
 
 
