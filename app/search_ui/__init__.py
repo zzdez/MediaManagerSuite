@@ -6,6 +6,7 @@ from config import Config
 from app.utils import arr_client
 from Levenshtein import distance as levenshtein_distance
 from app.utils.arr_client import parse_media_name
+from guessit import guessit
 
 # 1. Définition du Blueprint (seul code global avec les imports "sûrs")
 search_ui_bp = Blueprint(
@@ -23,18 +24,52 @@ def search_page():
     # Imports locaux
     from app.utils.prowlarr_client import search_prowlarr
 
+    # --- Étape 1: Récupération de tous les filtres ---
     query = request.args.get('query', '').strip()
     year = request.args.get('year')
     lang = request.args.get('lang')
+    # Nouveaux filtres (ils seront ajoutés au HTML plus tard)
+    quality = request.args.get('quality')
+    codec = request.args.get('codec')
+    release_type = request.args.get('release_type') # 'season', 'complete'
+
     results = None
 
     if query:
-        raw_results = search_prowlarr(query, year=year, lang=lang)
-        if raw_results is not None:
-            results = raw_results
-        else:
+        # --- Étape 2: Appel à Prowlarr (seulement avec les filtres qu'il comprend) ---
+        raw_results = search_prowlarr(query, lang=lang)
+
+        if raw_results is None:
             flash("Erreur de communication avec Prowlarr.", "danger")
             results = []
+        else:
+            # --- Étape 3: Filtrage intelligent en Python ---
+            filtered_results = []
+            for result in raw_results:
+                title = result.get('title', '')
+                parsed_info = guessit(title)
+
+                # Filtre par Année
+                if year and str(parsed_info.get('year', '')) != year:
+                    continue # Passe au résultat suivant
+
+                # Filtre par Qualité (ex: '1080p')
+                if quality and quality.lower() not in parsed_info.get('screen_size', '').lower():
+                    continue
+
+                # Filtre par Codec (ex: 'x265')
+                if codec and codec.lower() not in parsed_info.get('video_codec', '').lower():
+                    continue
+
+                # Filtre par Type de Release
+                if release_type == 'season' and 'season' not in parsed_info:
+                    continue
+                if release_type == 'complete' and 'complete' not in title.lower(): # Heuristique simple
+                    continue
+
+                filtered_results.append(result)
+
+            results = filtered_results
 
     sonarr_url = current_app.config.get('SONARR_URL', '')
     radarr_url = current_app.config.get('RADARR_URL', '')

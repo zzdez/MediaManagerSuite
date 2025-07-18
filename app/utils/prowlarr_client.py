@@ -32,27 +32,29 @@ def _prowlarr_api_request(params):
         current_app.logger.error(f"Prowlarr API request failed: {e}")
         return None
 
-def search_prowlarr(query, categories=None, year=None, lang=None):
+def search_prowlarr(query, categories=None, lang=None):
     """
-    Searches Prowlarr for a given query and optional categories.
-
-    Args:
-        query (str): The search term.
-        categories (list of int, optional): List of Prowlarr category IDs.
-                                            e.g., [2000] for Movies, [5000] for TV.
-        year (str, optional): The year of the media.
-        lang (str, optional): The language of the media.
-
-    Returns:
-        list: A list of search results, or None if an error occurs.
+    Searches Prowlarr for a given query and optional filters.
+    Prowlarr's direct filtering capabilities are limited via API,
+    so complex filtering (like year, quality) will be done post-retrieval.
     """
-    params = {'query': query, 'type': 'search'}
+    params = {
+        'query': query,
+        'type': 'search'
+    }
     if categories:
-        # L'API Prowlarr attend les catégories comme des paramètres répétées
         params['category'] = categories
-    if year:
-        params['year'] = year
+
+    # Le filtrage par langue peut parfois être ajouté à la query
+    # Prowlarr ne gère pas un paramètre 'lang' directement dans la recherche.
+    # On l'ajoute au terme de recherche, ce qui est une heuristique courante.
+    effective_query = query
     if lang:
-        params['lang'] = lang
+        lang_map = {'fr': 'FRENCH', 'en': 'ENGLISH'} # Peut être étendu
+        lang_term = lang_map.get(lang)
+        if lang_term:
+            effective_query = f"{query} {lang_term}"
+
+    params['query'] = effective_query
 
     return _prowlarr_api_request(params)
