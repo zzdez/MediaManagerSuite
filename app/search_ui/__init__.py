@@ -179,10 +179,13 @@ def check_media_status_api():
         return jsonify({'text': 'Titre manquant', 'status_class': 'text-danger'}), 400
 
     try:
-        # On récupère le dictionnaire complet depuis notre fonction utilitaire
+        # 1. On récupère le dictionnaire complet depuis notre fonction utilitaire
         status_info = util_check_media_status(release_title=title)
 
-        # On conserve la conversion de la couleur en classe CSS, c'est une bonne pratique
+        # 2. On prépare le champ 'text' pour les cas simples (compatibilité)
+        status_info['text'] = status_info.get('details', status_info.get('status', 'Indéterminé'))
+        
+        # 3. On s'assure que la classe CSS est présente
         badge_color = status_info.get('badge_color', 'secondary')
         status_class_map = {
             'success': 'text-success', 'warning': 'text-warning',
@@ -190,13 +193,8 @@ def check_media_status_api():
             'dark': 'text-body-secondary'
         }
         status_info['status_class'] = status_class_map.get(badge_color, 'text-body-secondary')
-        
-        # Pour la compatibilité avec le JS, on s'assure qu'un champ 'text' existe
-        # pour les cas où 'status_details' n'est pas présent (ex: "Déjà Présent").
-        if 'details' in status_info and 'text' not in status_info:
-             status_info['text'] = status_info['details']
 
-        # On renvoie le dictionnaire entier, incluant 'status_details' s'il existe
+        # 4. On renvoie le dictionnaire ENTIER, qui inclut 'status_details' s'il existe
         return jsonify(status_info)
 
     except Exception as e:
