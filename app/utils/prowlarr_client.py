@@ -1,86 +1,98 @@
-# app/utils/prowlarr_client.py
 import requests
 from flask import current_app
 
+# --- HELPER DE RECHERCHE ---
 def _prowlarr_api_request(params):
-    """Helper function to make requests to the Prowlarr API."""
+    """Helper function to make SEARCH requests to the Prowlarr API."""
     config = current_app.config
     api_key = config.get('PROWLARR_API_KEY')
-    # On récupère l'URL et on la traite de manière sûre
-    base_url_from_config = config.get('PROWLARR_URL')
+    base_url = config.get('PROWLARR_URL', '').rstrip('/')
 
-    # On vérifie AVANT d'essayer de manipuler la chaîne
-    if not api_key or not base_url_from_config:
+    if not api_key or not base_url:
         current_app.logger.error("Prowlarr URL or API Key is not configured.")
         return None
 
-    # On enlève le / final seulement si la chaîne existe
-    base_url = base_url_from_config.rstrip('/')
-    
-    # L'endpoint de recherche est /api/v1/search pour Prowlarr
     url = f"{base_url}/api/v1/search"
     
-    # Le reste de la fonction est inchangé...
     request_params = {'apikey': api_key}
-    request_params.update(params)
+    if params:
+        request_params.update(params)
 
     try:
         response = requests.get(url, params=request_params, timeout=30)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
-        current_app.logger.error(f"Prowlarr API request failed: {e}")
+        current_app.logger.error(f"Prowlarr API SEARCH request failed: {e}")
         return None
 
-
-def get_prowlarr_categories():
-    """Fetches all available categories from the Prowlarr API."""
-    # On utilise le helper existant qui connaît la bonne URL (/api/v1/search)
-    # et on lui passe le paramètre 't=caps' pour demander les capacités.
-    params = {'t': 'caps', 'o': 'json'} # 'o=json' pour être sûr de la réponse
-    
-    response_json = _prowlarr_api_request(params)
-    
-    if not response_json:
-        current_app.logger.error("N'a reçu aucune réponse de Prowlarr pour la demande de catégories.")
-        return []
-
-    # La structure de la réponse de /api/v1/search?t=caps est response['categories']['category']
-    try:
-        if 'categories' in response_json and 'category' in response_json['categories']:
-            all_categories = response_json['categories']['category']
-            # On trie par ID pour un affichage cohérent
-            return sorted(all_categories, key=lambda x: int(x['@attributes']['id']))
-        else:
-            current_app.logger.error("Format de réponse inattendu pour les catégories Prowlarr. Réponse reçue : %s", response_json)
-            return []
-    except (KeyError, TypeError) as e:
-        current_app.logger.error(f"Erreur en parsant la réponse des catégories Prowlarr : {e}")
-        return []
-
+# --- FONCTION DE RECHERCHE ---
 def search_prowlarr(query, categories=None, lang=None):
-    """
-    Searches Prowlarr for a given query and optional filters.
-    Prowlarr's direct filtering capabilities are limited via API,
-    so complex filtering (like year, quality) will be done post-retrieval.
-    """
+    """Searches Prowlarr for a given query and optional filters."""
+    effective_query = query
+    if lang:
+        lang_map = {'fr': 'FRENCH', 'en': 'ENGLISH'}
+        lang_term = lang_map.get(lang)
+        if lang_term:
+            effective_query = f"{query} {lang_term}"
+
     params = {
-        'query': query,
+        'query': effective_query,
         'type': 'search'
     }
     if categories:
         params['category'] = categories
 
-    # Le filtrage par langue peut parfois être ajouté à la query
-    # Prowlarr ne gère pas un paramètre 'lang' directement dans la recherche.
-    # On l'ajoute au terme de recherche, ce qui est une heuristique courante.
-    effective_query = query
-    if lang:
-        lang_map = {'fr': 'FRENCH', 'en': 'ENGLISH'} # Peut être étendu
-        lang_term = lang_map.get(lang)
-        if lang_term:
-            effective_query = f"{query} {lang_term}"
-
-    params['query'] = effective_query
-
     return _prowlarr_api_request(params)
+
+# --- FONCTION DE CATÉGORIES (AUTONOME ET CORRIGÉE) ---
+def get_prowlarr_categories():
+    """Fetches all available categories from the Prowlarr API."""
+    config = current_app.config
+    api_key = config.get('PROWLARR_API_KEY')
+    base_url = config.get('PROWLARR_URL', '').rstrip('/')
+
+    if not api_key or not base_url:
+        current_app.logger.error("Prowlarr URL or API Key is not configured for category fetching.")
+        return []
+
+    # On construit l'URL de l'endpoint CATEGORY manuellement et directement
+    url = f"{base_url}/api/v1/category"
+    params = {'apikey': api_key}
+
+    try:
+        response = requests.get(url, params=params, timeout=20)
+        response.raise_for_status()
+        all_categories = response.json()
+
+        if not isinstance(all_categories, list):
+            current_app.logger.error(f"Prowlarr category response is not a list: {all_categories}")
+            return []
+
+        # Reformate la réponse pour que le template puisse l'utiliser
+        formatted_categories = []
+        for cat in all_categories:
+            # Créer une structure imbriquée pour les sous-catégories si elles existent
+            sub_cats_formatted = []
+            if 'subCategories' in cat and isinstance(cat['subCategories'], list):
+                for sub in cat['subCategories']:
+                     sub_cats_formatted.append({
+                         '@attributes': {
+                             'id': str(sub.get('id')),
+                             'name': sub.get('name')
+                         }
+                     })
+
+            formatted_categories.append({
+                '@attributes': {
+                    'id': str(cat.get('id')),
+                    'name': cat.get('name')
+                },
+                'subcat': sub_cats_formatted
+            })
+
+        return sorted(formatted_categories, key=lambda x: int(x['@attributes']['id']))
+
+    except requests.exceptions.RequestException as e:
+        current_app.logger.error(f"Prowlarr API CATEGORY request failed: {e}")
+        return []
