@@ -32,6 +32,34 @@ def _prowlarr_api_request(params):
         current_app.logger.error(f"Prowlarr API request failed: {e}")
         return None
 
+
+def get_prowlarr_categories():
+    """Fetches all available categories from the Prowlarr API."""
+    # L'endpoint pour les catégories est /api/v1/category
+    params = {} # Pas de paramètre spécifique requis pour cette route
+
+    # On doit appeler l'API différemment ici car _prowlarr_api_request est fait pour la recherche
+    config = current_app.config
+    api_key = config.get('PROWLARR_API_KEY')
+    base_url_from_config = config.get('PROWLARR_URL')
+
+    if not api_key or not base_url_from_config:
+        current_app.logger.error("Prowlarr URL or API Key is not configured for category fetching.")
+        return []
+
+    base_url = base_url_from_config.rstrip('/')
+    url = f"{base_url}/api/v1/category"
+
+    try:
+        response = requests.get(url, params={'apikey': api_key}, timeout=20)
+        response.raise_for_status()
+        # On ne retourne que les catégories qui ne sont pas des sous-catégories pour la simplicité
+        all_categories = response.json()
+        return sorted(all_categories, key=lambda x: x['id'])
+    except requests.exceptions.RequestException as e:
+        current_app.logger.error(f"Prowlarr API request for categories failed: {e}")
+        return []
+
 def search_prowlarr(query, categories=None, lang=None):
     """
     Searches Prowlarr for a given query and optional filters.
