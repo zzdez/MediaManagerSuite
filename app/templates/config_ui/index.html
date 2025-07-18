@@ -46,23 +46,14 @@
         <h4><i class="fas fa-tv"></i> Écosystème Sonarr</h4>
         <div class="card p-3" style="max-height: 500px; overflow-y: auto;">
             {% for category in all_categories %}
-                {% if category['@attributes']['id'].startswith('5') %} {# Affiche seulement les catégories TV #}
+                {% if category['@attributes']['id'].startswith('5') %} {# Affiche seulement les catégories TV (ID 5xxx) #}
                     <div class="form-check">
                         <input class="form-check-input" type="checkbox" name="sonarr_categories" value="{{ category['@attributes']['id'] }}" id="sonarr-cat-{{ category['@attributes']['id'] }}"
                         {% if category['@attributes']['id']|int in search_config.sonarr_categories %}checked{% endif %}>
-                        <label class="form-check-label fw-bold" for="sonarr-cat-{{ category['@attributes']['id'] }}">
-                            {{ category['@attributes']['name'] }}
+                        <label class="form-check-label" for="sonarr-cat-{{ category['@attributes']['id'] }}">
+                            {{ category['@attributes']['name'] }} <span class="text-muted">({{ category['@attributes']['id'] }})</span>
                         </label>
                     </div>
-                    {% for subcat in category.subcat %}
-                        <div class="form-check ms-4">
-                            <input class="form-check-input" type="checkbox" name="sonarr_categories" value="{{ subcat['@attributes']['id'] }}" id="sonarr-cat-{{ subcat['@attributes']['id'] }}"
-                            {% if subcat['@attributes']['id']|int in search_config.sonarr_categories %}checked{% endif %}>
-                            <label class="form-check-label" for="sonarr-cat-{{ subcat['@attributes']['id'] }}">
-                                {{ subcat['@attributes']['name'] }}
-                            </label>
-                        </div>
-                    {% endfor %}
                 {% endif %}
             {% endfor %}
         </div>
@@ -71,23 +62,14 @@
         <h4><i class="fas fa-film"></i> Écosystème Radarr</h4>
         <div class="card p-3" style="max-height: 500px; overflow-y: auto;">
             {% for category in all_categories %}
-                {% if category['@attributes']['id'].startswith('2') %} {# Affiche seulement les catégories Films #}
+                {% if category['@attributes']['id'].startswith('2') %} {# Affiche seulement les catégories Films (ID 2xxx) #}
                     <div class="form-check">
                         <input class="form-check-input" type="checkbox" name="radarr_categories" value="{{ category['@attributes']['id'] }}" id="radarr-cat-{{ category['@attributes']['id'] }}"
                         {% if category['@attributes']['id']|int in search_config.radarr_categories %}checked{% endif %}>
-                        <label class="form-check-label fw-bold" for="radarr-cat-{{ category['@attributes']['id'] }}">
+                        <label class="form-check-label" for="radarr-cat-{{ category['@attributes']['id'] }}">
                             {{ category['@attributes']['name'] }}
                         </label>
                     </div>
-                    {% for subcat in category.subcat %}
-                        <div class="form-check ms-4">
-                            <input class="form-check-input" type="checkbox" name="radarr_categories" value="{{ subcat['@attributes']['id'] }}" id="radarr-cat-{{ subcat['@attributes']['id'] }}"
-                            {% if subcat['@attributes']['id']|int in search_config.radarr_categories %}checked{% endif %}>
-                            <label class="form-check-label" for="radarr-cat-{{ subcat['@attributes']['id'] }}">
-                                {{ subcat['@attributes']['name'] }}
-                            </label>
-                        </div>
-                    {% endfor %}
                 {% endif %}
             {% endfor %}
         </div>

@@ -48,7 +48,7 @@ def search_prowlarr(query, categories=None, lang=None):
 
 # --- FONCTION DE CATÉGORIES (utilise le bon endpoint via le nouveau helper) ---
 def get_prowlarr_categories():
-    """Fetches all available categories from the Prowlarr API using the correct endpoint."""
+    """Fetches all available categories from the Prowlarr API and formats them for the template."""
     # On appelle le bon endpoint : '/indexer/categories'
     all_categories = _make_prowlarr_request('indexer/categories')
     
@@ -59,20 +59,20 @@ def get_prowlarr_categories():
     # Reformate la réponse pour que le template puisse l'utiliser
     formatted_categories = []
     for cat in all_categories:
-        # La documentation indique que 'subCategories' est une liste de strings.
-        # Nous les formatons pour être compatibles avec le template.
+        # Note: Le filtre agressif (if cat.get('id') % 1000 == 0) a été supprimé.
+        # Nous traitons maintenant TOUTES les catégories renvoyées par l'API.
+
         sub_cats_formatted = []
-        if 'subCategories' in cat and isinstance(cat['subCategories'], list):
-            # Cette partie est une adaptation car la doc est ambiguë.
-            # Nous supposons que les sub-catégories ne sont pas cliquables individuellement pour l'instant.
-            pass # Pour l'instant, on ignore les sous-catégories pour simplifier et assurer que ça marche.
+        # La structure de la réponse pour subCategories est juste une liste de strings, pas d'objets.
+        # Nous allons donc les ignorer pour l'instant pour assurer la stabilité.
+        # Le template est déjà conçu pour gérer une liste 'subcat' vide.
 
         formatted_categories.append({
             '@attributes': {
                 'id': str(cat.get('id')),
                 'name': cat.get('name')
             },
-            'subcat': [] # On laisse vide pour la compatibilité du template
+            'subcat': [] # On laisse vide pour la compatibilité
         })
 
     return sorted(formatted_categories, key=lambda x: int(x['@attributes']['id']))
