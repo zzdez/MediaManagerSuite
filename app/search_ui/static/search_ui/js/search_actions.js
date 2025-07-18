@@ -199,6 +199,9 @@ $('body').on('click', '#confirm-manual-add-btn', function() {
     const mediaId = form.find('#manual-add-id').val();
     const mediaType = form.find('#manual-add-media-type').val();
     const title = form.find('#manual-add-title').val();
+    const manualAddModelEl = $('#manual-add-modal');
+    const manualAddModel = bootstrap.Modal.getInstance(manualAddModelEl);
+
 
     if (!mediaId) {
         alert("Veuillez entrer un ID TVDB ou TMDb.");
@@ -220,7 +223,9 @@ $('body').on('click', '#confirm-manual-add-btn', function() {
     .then(data => {
         if (data.status === 'success') {
             alert(data.message);
-            manualAddModel.hide(); // Ferme la modale d'ajout manuel
+            if (manualAddModel) {
+                manualAddModel.hide();
+            }
             // Optionnel : on pourrait rafraîchir la modale principale pour sélectionner le nouvel item.
             // Pour l'instant, on se contente de fermer.
         } else {
