@@ -324,3 +324,61 @@ def download_torrent_proxy():
     except Exception as e:
         current_app.logger.error(f"Proxy download: Erreur pour '{release_name}': {e}", exc_info=True)
         return Response(f"Une erreur est survenue lors du proxy de téléchargement: {e}", status=500)
+
+@search_ui_bp.route('/api/add/manual', methods=['POST'])
+@login_required
+def manual_add_media():
+    data = request.get_json()
+    media_id = data.get('media_id')
+    media_type = data.get('media_type') # 'tv' ou 'movie'
+    title = data.get('title', '') # Titre optionnel
+
+    if not media_id or not media_type:
+        return jsonify({'status': 'error', 'message': 'ID du média ou type manquant.'}), 400
+
+    try:
+        # Récupérer les configurations par défaut
+        if media_type == 'tv':
+            root_folder = current_app.config.get('DEFAULT_SONARR_ROOT_FOLDER')
+            profile_id = current_app.config.get('DEFAULT_SONARR_PROFILE_ID')
+            lang_profile_id = current_app.config.get('DEFAULT_SONARR_LANGUAGE_PROFILE_ID')
+            if not all([root_folder, profile_id, lang_profile_id]):
+                raise ValueError("Configuration Sonarr par défaut manquante.")
+
+            # Ajoute la série via son TVDB ID
+            added_item = arr_client.add_new_series_to_sonarr(
+                tvdb_id=int(media_id),
+                title=title, # Le titre est surtout pour le log, Sonarr se base sur l'ID
+                quality_profile_id=profile_id,
+                language_profile_id=lang_profile_id,
+                root_folder_path=root_folder
+            )
+
+        elif media_type == 'movie':
+            root_folder = current_app.config.get('DEFAULT_RADARR_ROOT_FOLDER')
+            profile_id = current_app.config.get('DEFAULT_RADARR_PROFILE_ID')
+            if not all([root_folder, profile_id]):
+                raise ValueError("Configuration Radarr par défaut manquante.")
+
+            # Ajoute le film via son TMDb ID
+            added_item = arr_client.add_new_movie_to_radarr(
+                tmdb_id=int(media_id),
+                title=title,
+                quality_profile_id=profile_id,
+                root_folder_path=root_folder
+            )
+        else:
+             return jsonify({'status': 'error', 'message': 'Type de média non supporté.'}), 400
+
+        if added_item and added_item.get('id'):
+            return jsonify({
+                'status': 'success',
+                'message': f"'{added_item.get('title')}' ajouté avec succès à {media_type.capitalize()}!",
+                'added_item': added_item
+            })
+        else:
+            raise Exception("L'ajout a échoué. Réponse invalide de l'API Arr.")
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur durant l'ajout manuel: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': str(e)}), 500

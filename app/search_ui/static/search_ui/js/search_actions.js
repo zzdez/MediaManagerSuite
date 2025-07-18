@@ -191,4 +191,48 @@ $(document).ready(function() {
             button.prop('disabled', false).html('Confirmer le Mapping');
         });
     });
+
+// ---- GESTIONNAIRE POUR CONFIRMER L'AJOUT MANUEL ----
+$('body').on('click', '#confirm-manual-add-btn', function() {
+    const button = $(this);
+    const form = $('#manual-add-form');
+    const mediaId = form.find('#manual-add-id').val();
+    const mediaType = form.find('#manual-add-media-type').val();
+    const title = form.find('#manual-add-title').val();
+
+    if (!mediaId) {
+        alert("Veuillez entrer un ID TVDB ou TMDb.");
+        return;
+    }
+
+    button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Ajout en cours...');
+
+    fetch('/search/api/add/manual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            media_id: mediaId,
+            media_type: mediaType,
+            title: title
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            alert(data.message);
+            manualAddModel.hide(); // Ferme la modale d'ajout manuel
+            // Optionnel : on pourrait rafraîchir la modale principale pour sélectionner le nouvel item.
+            // Pour l'instant, on se contente de fermer.
+        } else {
+            alert("Erreur: " + data.message);
+        }
+    })
+    .catch(error => {
+        console.error("Erreur durant l'ajout manuel:", error);
+        alert("Une erreur de communication est survenue.");
+    })
+    .finally(() => {
+        button.prop('disabled', false).html('Ajouter et Mapper');
+    });
+});
 });
