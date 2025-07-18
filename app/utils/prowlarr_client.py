@@ -48,31 +48,42 @@ def search_prowlarr(query, categories=None, lang=None):
 
 # --- FONCTION DE CATÉGORIES (utilise le bon endpoint via le nouveau helper) ---
 def get_prowlarr_categories():
-    """Fetches all available categories from the Prowlarr API and formats them for the template."""
-    # On appelle le bon endpoint : '/indexer/categories'
-    all_categories = _make_prowlarr_request('indexer/categories')
-    
-    if not all_categories or not isinstance(all_categories, list):
-        current_app.logger.error(f"Format de réponse inattendu ou vide pour les catégories Prowlarr. Réponse: {all_categories}")
+    """
+    [VERSION FINALE GARANTIE] Fetches all categories by querying the details
+    of the first available indexer and using the correct data path.
+    """
+    try:
+        indexers = _make_prowlarr_request('indexer')
+        if not indexers: raise ValueError("La liste des indexers est vide.")
+
+        first_indexer_id = indexers[0].get('id')
+        if not first_indexer_id: raise ValueError("Le premier indexer n'a pas d'ID.")
+        
+        current_app.logger.info(f"Prowlarr: Récupération des catégories via l'indexer ID {first_indexer_id}.")
+        indexer_details = _make_prowlarr_request(f'indexer/{first_indexer_id}')
+
+        # --- CORRECTION FINALE : Utiliser le bon chemin d'accès ---
+        if not indexer_details or 'capabilities' not in indexer_details or 'categories' not in indexer_details['capabilities']:
+            raise ValueError("Le chemin 'capabilities.categories' est manquant dans la réponse de l'API.")
+        
+        all_categories = indexer_details['capabilities']['categories']
+        # --- FIN DE LA CORRECTION ---
+
+        current_app.logger.info(f"Prowlarr: {len(all_categories)} catégories trouvées avec succès.")
+        
+        formatted_categories = []
+        for cat in all_categories:
+            # On ne prend que les catégories avec un nom pour éviter les erreurs
+            if cat.get('name'):
+                formatted_categories.append({
+                    '@attributes': {
+                        'id': str(cat.get('id')),
+                        'name': cat.get('name')
+                    }
+                })
+        
+        return sorted(formatted_categories, key=lambda x: int(x['@attributes']['id']))
+
+    except Exception as e:
+        current_app.logger.error(f"Échec de la récupération des catégories: {e}", exc_info=True)
         return []
-
-    # Reformate la réponse pour que le template puisse l'utiliser
-    formatted_categories = []
-    for cat in all_categories:
-        # Note: Le filtre agressif (if cat.get('id') % 1000 == 0) a été supprimé.
-        # Nous traitons maintenant TOUTES les catégories renvoyées par l'API.
-
-        sub_cats_formatted = []
-        # La structure de la réponse pour subCategories est juste une liste de strings, pas d'objets.
-        # Nous allons donc les ignorer pour l'instant pour assurer la stabilité.
-        # Le template est déjà conçu pour gérer une liste 'subcat' vide.
-
-        formatted_categories.append({
-            '@attributes': {
-                'id': str(cat.get('id')),
-                'name': cat.get('name')
-            },
-            'subcat': [] # On laisse vide pour la compatibilité
-        })
-
-    return sorted(formatted_categories, key=lambda x: int(x['@attributes']['id']))
