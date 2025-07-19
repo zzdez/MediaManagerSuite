@@ -50,8 +50,8 @@
                             {{ category.name }} <span class="text-muted small">({{ category.id }})</span>
                         </label>
                     </div>
-                    <!-- Conteneur de badges qui force le retour à la ligne -->
-                    <div class="ps-4 pt-1 d-flex flex-wrap">
+                    <!-- Conteneur de badges avec padding-top augmenté -->
+                    <div class="ps-4 pt-2 d-flex flex-wrap">
                         {% for indexer in category.indexers %}
                             <span class="badge bg-secondary me-1 mb-1">{{ indexer }}</span>
                         {% endfor %}
@@ -77,8 +77,8 @@
                             {{ category.name }} <span class="text-muted small">({{ category.id }})</span>
                         </label>
                     </div>
-                    <!-- Conteneur de badges qui force le retour à la ligne -->
-                    <div class="ps-4 pt-1 d-flex flex-wrap">
+                    <!-- Conteneur de badges avec padding-top augmenté -->
+                    <div class="ps-4 pt-2 d-flex flex-wrap">
                         {% for indexer in category.indexers %}
                             <span class="badge bg-secondary me-1 mb-1">{{ indexer }}</span>
                         {% endfor %}
