@@ -43,7 +43,7 @@
             {% for category in all_categories %}
                 <div class="form-check mb-3">
                     <!-- Checkbox et Label -->
-                    <div class="mb-2">
+                    <div>
                         <input class="form-check-input" type="checkbox" name="sonarr_categories" value="{{ category.id }}" id="sonarr-cat-{{ category.id }}"
                         {% if category.id|int in search_config.sonarr_categories %}checked{% endif %}>
                         <label class="form-check-label" for="sonarr-cat-{{ category.id }}">
@@ -51,7 +51,7 @@
                         </label>
                     </div>
                     <!-- Conteneur de badges avec padding-top augmenté -->
-                    <div class="ps-4 pt-2 d-flex flex-wrap">
+                    <div class="ps-4 pt-2 d-flex flex-wrap mb-2">
                         {% for indexer in category.indexers %}
                             <span class="badge bg-secondary me-1 mb-1">{{ indexer }}</span>
                         {% endfor %}
@@ -70,7 +70,7 @@
             {% for category in all_categories %}
                  <div class="form-check mb-3">
                     <!-- Checkbox et Label -->
-                    <div class="mb-2">
+                    <div>
                         <input class="form-check-input" type="checkbox" name="radarr_categories" value="{{ category.id }}" id="radarr-cat-{{ category.id }}"
                         {% if category.id|int in search_config.radarr_categories %}checked{% endif %}>
                         <label class="form-check-label" for="radarr-cat-{{ category.id }}">
@@ -78,7 +78,7 @@
                         </label>
                     </div>
                     <!-- Conteneur de badges avec padding-top augmenté -->
-                    <div class="ps-4 pt-2 d-flex flex-wrap">
+                    <div class="ps-4 pt-2 d-flex flex-wrap mb-2">
                         {% for indexer in category.indexers %}
                             <span class="badge bg-secondary me-1 mb-1">{{ indexer }}</span>
                         {% endfor %}
