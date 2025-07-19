@@ -13,11 +13,14 @@ logger = logging.getLogger(__name__)
 @config_ui_bp.route('/', methods=['GET'])
 @login_required
 def show_config():
-    """Affiche la page de configuration en se basant sur .env.template ET les catégories Prowlarr."""
+    """Affiche la page de configuration et la section des catégories filtrées par whitelist."""
     
     # --- PARTIE .ENV (INCHANGÉE) ---
     config_items = []
     try:
+        # ... (la logique de parsing du .env.template reste exactement la même) ...
+        # Ce code est déjà correct et n'a pas besoin d'être modifié.
+        # Assurez-vous simplement qu'il est bien présent ici.
         dotenv_path = os.path.join(current_app.root_path, '..', '.env')
         template_path = os.path.join(current_app.root_path, '..', '.env.template')
         env_values = dotenv_values(dotenv_path) if os.path.exists(dotenv_path) else {}
@@ -41,22 +44,32 @@ def show_config():
     except Exception as e:
         flash(f"Erreur lors de la lecture des fichiers de configuration : {e}", "danger")
 
-    # --- PARTIE CATÉGORIES (LOGIQUE AMÉLIORÉE) ---
+    # --- PARTIE CATÉGORIES (LOGIQUE FINALE PAR WHITELIST) ---
+
+    # Définition des listes blanches d'ID de catégories
+    SONARR_CATEGORIES_WHITELIST = [
+        5000, 5050, 5060, 5070, 5080, 100002, 100013, 100014, 100015, 100016,
+        100017, 100030, 100032, 100034, 100098, 10101, 10102, 10103, 10104, 10105, 10109,
+        10110, 10123, 102179, 102182, 102184
+    ]
+    RADARR_CATEGORIES_WHITELIST = [
+        2000, 2020, 2030, 2040, 2045, 2050, 2060, 2070, 2080, 100001, 100003,
+        100004, 100005, 100006, 100007, 100008, 100009, 100012, 100020, 100031,
+        100033, 100094, 100095, 100100, 100107, 100118, 100119, 100122, 100125,
+        100126, 100127, 102145, 102178, 102180, 102181, 102183, 102185, 102186, 102187
+    ]
+
     all_categories = get_prowlarr_categories()
     search_config = load_search_categories()
 
     sonarr_display_categories = []
     radarr_display_categories = []
 
-    sonarr_keywords = ['tv', 'séries', 'series', 'émissions', 'shows']
-    radarr_keywords = ['movies', 'films', 'concert']
-
     for category in all_categories:
-        cat_name = category['@attributes']['name'].lower()
-        # Répartit les catégories dans les deux listes en fonction de mots-clés
-        if any(keyword in cat_name for keyword in sonarr_keywords):
+        cat_id = int(category['@attributes']['id'])
+        if cat_id in SONARR_CATEGORIES_WHITELIST:
             sonarr_display_categories.append(category)
-        elif any(keyword in cat_name for keyword in radarr_keywords):
+        if cat_id in RADARR_CATEGORIES_WHITELIST: # 'if' et non 'elif' pour les cas ambigus
             radarr_display_categories.append(category)
 
     return render_template('config_ui/index.html',
