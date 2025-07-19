@@ -37,30 +37,42 @@ def search_prowlarr(query, categories=None, lang=None):
 
 def get_prowlarr_categories():
     """
-    [STRATÉGIE FINALE v2] Fetches all categories by querying the details
-    of a reliable indexer known to have the full category list.
+    [MULTI-INDEXER] Fetches and merges categories from ALL enabled indexers.
     """
     try:
-        master_indexer_id = 11  # Ygg
-        current_app.logger.info(f"Prowlarr: Using master indexer ID {master_indexer_id} to fetch category list.")
-        indexer_details = _make_prowlarr_request(f'indexer/{master_indexer_id}')
+        current_app.logger.info("Prowlarr: Récupération de tous les indexers pour fusionner les catégories...")
+        indexers = _make_prowlarr_request('indexer')
+        if not indexers: raise ValueError("La liste des indexers est vide.")
 
-        if not indexer_details or 'capabilities' not in indexer_details or 'categories' not in indexer_details['capabilities']:
-             raise ValueError(f"Could not extract 'capabilities.categories' path from indexer {master_indexer_id}.")
+        all_categories_map = {} # Utilise un dictionnaire pour éviter les doublons par ID
 
-        all_categories = indexer_details['capabilities']['categories']
-        current_app.logger.info(f"Prowlarr: Found {len(all_categories)} categories successfully via master indexer.")
+        for indexer in indexers:
+            indexer_id = indexer.get('id')
+            if not indexer.get('enable', False) or not indexer_id:
+                continue # Ignore les indexers désactivés
+
+            current_app.logger.debug(f"Prowlarr: Récupération des catégories pour l'indexer ID {indexer_id} ({indexer.get('name')}).")
+            indexer_details = _make_prowlarr_request(f'indexer/{indexer_id}')
+            
+            if indexer_details and 'capabilities' in indexer_details and 'categories' in indexer_details['capabilities']:
+                for cat in indexer_details['capabilities']['categories']:
+                    cat_id_str = str(cat.get('id'))
+                    if cat_id_str not in all_categories_map and cat.get('name'):
+                        all_categories_map[cat_id_str] = {
+                            '@attributes': {
+                                'id': cat_id_str,
+                                'name': cat.get('name')
+                            }
+                        }
         
-        formatted_categories = []
-        for cat in all_categories:
-            if cat.get('name'):
-                formatted_categories.append({
-                    '@attributes': {
-                        'id': str(cat.get('id')),
-                        'name': cat.get('name')
-                    }
-                })
-        return sorted(formatted_categories, key=lambda x: int(x['@attributes']['id']))
+        if not all_categories_map:
+            raise ValueError("Aucune catégorie n'a pu être récupérée d'aucun indexer.")
+
+        # Convertit le dictionnaire en liste et trie par ID
+        final_list = list(all_categories_map.values())
+        current_app.logger.info(f"Prowlarr: {len(final_list)} catégories uniques trouvées sur tous les indexers.")
+        return sorted(final_list, key=lambda x: int(x['@attributes']['id']))
+
     except Exception as e:
-        current_app.logger.error(f"Failed to fetch categories via master indexer: {e}", exc_info=True)
+        current_app.logger.error(f"Échec de la récupération multi-indexer des catégories: {e}", exc_info=True)
         return []
