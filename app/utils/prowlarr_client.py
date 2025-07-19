@@ -37,16 +37,16 @@ def search_prowlarr(query, categories=None, lang=None):
 
 def get_prowlarr_categories():
     """
-    [INTERPRETATION STRATEGY] Fetches the master list of all category definitions,
-    then interprets each indexer's capabilities as category families (e.g., 2000 implies 2000-2999)
-    to correctly associate all sub-categories.
+    [DOCUMENTATION-BASED STRATEGY] Fetches the master list of all categories from the official
+    '/api/v1/indexer/categories' endpoint, then enriches it by interpreting each indexer's
+    capabilities to associate all relevant sub-categories.
     """
     try:
-        # Étape 1: Récupérer la liste maîtresse de TOUTES les définitions de catégories.
-        current_app.logger.info("Prowlarr: Fetching master category definitions from /api/v1/definitions/categories...")
-        master_definitions = _make_prowlarr_request('definitions/categories')
-        if not master_definitions:
-            raise ValueError("Could not fetch the master category definitions from Prowlarr. Check Prowlarr version and connectivity.")
+        # Étape 1: Appeler l'endpoint officiel et vérifié pour obtenir la liste maîtresse.
+        current_app.logger.info("Prowlarr: Fetching master category list from CORRECT endpoint: /api/v1/indexer/categories...")
+        master_categories = _make_prowlarr_request('indexer/categories')
+        if not master_categories:
+            raise ValueError("Could not fetch the master category list from '/api/v1/indexer/categories'.")
 
         # Crée notre carte de base, prête à être enrichie.
         all_categories_map = {
@@ -54,9 +54,9 @@ def get_prowlarr_categories():
                 'id': str(cat['id']),
                 'name': cat['name'],
                 'indexers': []
-            } for cat in master_definitions
+            } for cat in master_categories
         }
-        current_app.logger.info(f"Prowlarr: Master definitions list contains {len(all_categories_map)} categories.")
+        current_app.logger.info(f"Prowlarr: Master list contains {len(all_categories_map)} categories.")
 
         # Étape 2: Récupérer tous les indexers pour l'enrichissement.
         current_app.logger.info("Prowlarr: Fetching enabled indexers to interpret their capabilities...")
@@ -72,26 +72,29 @@ def get_prowlarr_categories():
             if not indexer.get('enable', False) or not indexer_id or not indexer_name:
                 continue
 
-            # Étape 3: Utiliser les 'capabilities' comme des indices de familles.
             current_app.logger.debug(f"Prowlarr: Interpreting capabilities for indexer '{indexer_name}' (ID: {indexer_id}).")
             indexer_details = _make_prowlarr_request(f'indexer/{indexer_id}')
             
             if not (indexer_details and 'capabilities' in indexer_details and 'categories' in indexer_details['capabilities']):
                 continue
 
-            # On récupère les ID parents que l'indexer supporte (ex: ['2000', '5000'])
+            # Étape 3: Interpréter les 'capabilities' comme des familles de catégories.
             supported_parent_ids = {str(cat['id']) for cat in indexer_details['capabilities']['categories']}
 
             # Étape 4: Enrichissement intelligent de la liste maîtresse.
             for cat_id, category_data in all_categories_map.items():
                 cat_id_int = int(cat_id)
 
-                # Vérifie si la catégorie appartient à une des familles supportées
+                # Vérifie si la catégorie appartient à une des familles supportées.
+                # Cette logique reste la plus robuste pour associer les sous-catégories.
                 is_supported = False
                 if 2000 <= cat_id_int < 3000 and '2000' in supported_parent_ids: is_supported = True
                 elif 5000 <= cat_id_int < 6000 and '5000' in supported_parent_ids: is_supported = True
-                # Ajoutez d'autres familles au besoin (ex: 1000 pour 'Console', 3000 pour 'Audio', etc.)
-                # elif 1000 <= cat_id_int < 2000 and '1000' in supported_parent_ids: is_supported = True
+                elif 8000 <= cat_id_int < 9000 and '8000' in supported_parent_ids: is_supported = True # Books
+                elif 1000 <= cat_id_int < 2000 and '1000' in supported_parent_ids: is_supported = True # Console
+                elif 3000 <= cat_id_int < 4000 and '3000' in supported_parent_ids: is_supported = True # Audio
+                elif 4000 <= cat_id_int < 5000 and '4000' in supported_parent_ids: is_supported = True # PC
+                elif 7000 <= cat_id_int < 8000 and '7000' in supported_parent_ids: is_supported = True # XXX
 
                 if is_supported:
                     if indexer_name not in category_data['indexers']:
@@ -100,9 +103,9 @@ def get_prowlarr_categories():
         final_list = list(all_categories_map.values())
         sorted_list = sorted(final_list, key=lambda x: int(x['id']))
 
-        current_app.logger.info(f"Prowlarr: Successfully enriched list of {len(sorted_list)} categories.")
+        current_app.logger.info(f"Prowlarr: Successfully enriched list of {len(sorted_list)} categories using the official API endpoint.")
         return sorted_list
 
     except Exception as e:
-        current_app.logger.error(f"Prowlarr category processing failed with interpretation strategy: {e}", exc_info=True)
+        current_app.logger.error(f"Prowlarr category processing failed with DOCUMENTATION-BASED strategy: {e}", exc_info=True)
         return []
