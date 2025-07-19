@@ -37,59 +37,72 @@ def search_prowlarr(query, categories=None, lang=None):
 
 def get_prowlarr_categories():
     """
-    [MULTI-INDEXER AGGREGATION] Fetches and merges categories from ALL enabled indexers,
-    associating each category with the indexers that provide it.
+    [INTERPRETATION STRATEGY] Fetches the master list of all category definitions,
+    then interprets each indexer's capabilities as category families (e.g., 2000 implies 2000-2999)
+    to correctly associate all sub-categories.
     """
     try:
-        current_app.logger.info("Prowlarr: Fetching all enabled indexers to merge categories...")
+        # Étape 1: Récupérer la liste maîtresse de TOUTES les définitions de catégories.
+        current_app.logger.info("Prowlarr: Fetching master category definitions from /api/v1/definitions/categories...")
+        master_definitions = _make_prowlarr_request('definitions/categories')
+        if not master_definitions:
+            raise ValueError("Could not fetch the master category definitions from Prowlarr. Check Prowlarr version and connectivity.")
+
+        # Crée notre carte de base, prête à être enrichie.
+        all_categories_map = {
+            str(cat['id']): {
+                'id': str(cat['id']),
+                'name': cat['name'],
+                'indexers': []
+            } for cat in master_definitions
+        }
+        current_app.logger.info(f"Prowlarr: Master definitions list contains {len(all_categories_map)} categories.")
+
+        # Étape 2: Récupérer tous les indexers pour l'enrichissement.
+        current_app.logger.info("Prowlarr: Fetching enabled indexers to interpret their capabilities...")
         indexers = _make_prowlarr_request('indexer')
         if not indexers:
-            raise ValueError("The indexer list from Prowlarr is empty or unreachable.")
-
-        # Dictionnaire pour agréger les catégories et leurs indexers.
-        # Format: { "cat_id": {"id": "...", "name": "...", "indexers": ["name1", "name2"]} }
-        all_categories_map = {}
+            current_app.logger.warning("Prowlarr: The indexer list is empty. No categories will be associated with indexers.")
+            return sorted(list(all_categories_map.values()), key=lambda x: int(x['id']))
 
         for indexer in indexers:
             indexer_id = indexer.get('id')
             indexer_name = indexer.get('name')
 
-            # Ignore les indexers désactivés ou sans ID/nom
             if not indexer.get('enable', False) or not indexer_id or not indexer_name:
                 continue
 
-            current_app.logger.debug(f"Prowlarr: Fetching capabilities for indexer '{indexer_name}' (ID: {indexer_id}).")
+            # Étape 3: Utiliser les 'capabilities' comme des indices de familles.
+            current_app.logger.debug(f"Prowlarr: Interpreting capabilities for indexer '{indexer_name}' (ID: {indexer_id}).")
             indexer_details = _make_prowlarr_request(f'indexer/{indexer_id}')
             
-            if indexer_details and 'capabilities' in indexer_details and 'categories' in indexer_details['capabilities']:
-                for cat in indexer_details['capabilities']['categories']:
-                    cat_id_str = str(cat.get('id'))
-                    cat_name = cat.get('name')
+            if not (indexer_details and 'capabilities' in indexer_details and 'categories' in indexer_details['capabilities']):
+                continue
 
-                    if not cat_id_str or not cat_name:
-                        continue # Ignore les catégories malformées
+            # On récupère les ID parents que l'indexer supporte (ex: ['2000', '5000'])
+            supported_parent_ids = {str(cat['id']) for cat in indexer_details['capabilities']['categories']}
 
-                    # Si la catégorie n'a jamais été vue, on l'initialise
-                    if cat_id_str not in all_categories_map:
-                        all_categories_map[cat_id_str] = {
-                            'id': cat_id_str,
-                            'name': cat_name,
-                            'indexers': [] # Initialise la liste des indexers
-                        }
+            # Étape 4: Enrichissement intelligent de la liste maîtresse.
+            for cat_id, category_data in all_categories_map.items():
+                cat_id_int = int(cat_id)
 
-                    # On ajoute l'indexer actuel à la liste de cette catégorie
-                    if indexer_name not in all_categories_map[cat_id_str]['indexers']:
-                        all_categories_map[cat_id_str]['indexers'].append(indexer_name)
+                # Vérifie si la catégorie appartient à une des familles supportées
+                is_supported = False
+                if 2000 <= cat_id_int < 3000 and '2000' in supported_parent_ids: is_supported = True
+                elif 5000 <= cat_id_int < 6000 and '5000' in supported_parent_ids: is_supported = True
+                # Ajoutez d'autres familles au besoin (ex: 1000 pour 'Console', 3000 pour 'Audio', etc.)
+                # elif 1000 <= cat_id_int < 2000 and '1000' in supported_parent_ids: is_supported = True
 
-        if not all_categories_map:
-            raise ValueError("No valid categories could be retrieved from any enabled indexer.")
+                if is_supported:
+                    if indexer_name not in category_data['indexers']:
+                        category_data['indexers'].append(indexer_name)
 
         final_list = list(all_categories_map.values())
         sorted_list = sorted(final_list, key=lambda x: int(x['id']))
 
-        current_app.logger.info(f"Prowlarr: Found {len(sorted_list)} unique categories across all enabled indexers.")
+        current_app.logger.info(f"Prowlarr: Successfully enriched list of {len(sorted_list)} categories.")
         return sorted_list
 
     except Exception as e:
-        current_app.logger.error(f"Failed to fetch and merge Prowlarr categories: {e}", exc_info=True)
+        current_app.logger.error(f"Prowlarr category processing failed with interpretation strategy: {e}", exc_info=True)
         return []
