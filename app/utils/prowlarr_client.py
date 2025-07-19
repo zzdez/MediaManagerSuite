@@ -37,62 +37,61 @@ def search_prowlarr(query, categories=None, lang=None):
 
 def get_prowlarr_categories():
     """
-    [MULTI-INDEXER] Fetches and merges categories from ALL enabled indexers,
-    associating each category with the indexers that provide it.
+    [HYBRID STRATEGY] Fetches the master list of all categories from Prowlarr,
+    then enriches it with which active indexer supports each category.
+    This is the definitive method to get all sub-categories.
     """
     try:
-        current_app.logger.info("Prowlarr: Fetching all enabled indexers to merge categories...")
+        # Étape 1: Récupérer la liste maîtresse complète de TOUTES les catégories
+        current_app.logger.info("Prowlarr: Fetching master category list from /api/v1/category...")
+        master_categories = _make_prowlarr_request('category')
+        if not master_categories:
+            raise ValueError("Could not fetch the master category list from Prowlarr.")
+
+        # Crée une carte pour un accès rapide, initialisant chaque catégorie avec une liste d'indexers vide.
+        # Format: { "cat_id": {"id": "...", "name": "...", "indexers": []} }
+        all_categories_map = {
+            str(cat['id']): {
+                'id': str(cat['id']),
+                'name': cat['name'],
+                'indexers': []
+            } for cat in master_categories
+        }
+        current_app.logger.info(f"Prowlarr: Master list contains {len(all_categories_map)} categories.")
+
+        # Étape 2: Récupérer tous les indexers pour l'enrichissement
+        current_app.logger.info("Prowlarr: Fetching all enabled indexers to enrich the category list...")
         indexers = _make_prowlarr_request('indexer')
         if not indexers:
             raise ValueError("The indexer list from Prowlarr is empty or unreachable.")
-
-        # Dictionnaire pour agréger les catégories et leurs indexers.
-        # Format: { "cat_id": {"id": "...", "name": "...", "indexers": ["name1", "name2"]} }
-        all_categories_map = {}
 
         for indexer in indexers:
             indexer_id = indexer.get('id')
             indexer_name = indexer.get('name')
 
-            # Ignore les indexers désactivés ou sans ID/nom
             if not indexer.get('enable', False) or not indexer_id or not indexer_name:
                 continue
 
-            current_app.logger.debug(f"Prowlarr: Fetching capabilities for indexer '{indexer_name}' (ID: {indexer_id}).")
+            # Étape 3: Utiliser les 'capabilities' uniquement pour savoir ce que l'indexer supporte
+            current_app.logger.debug(f"Prowlarr: Enriching with capabilities from indexer '{indexer_name}' (ID: {indexer_id}).")
             indexer_details = _make_prowlarr_request(f'indexer/{indexer_id}')
             
             if indexer_details and 'capabilities' in indexer_details and 'categories' in indexer_details['capabilities']:
-                for cat in indexer_details['capabilities']['categories']:
-                    cat_id_str = str(cat.get('id'))
-                    cat_name = cat.get('name')
+                # On récupère les ID de toutes les catégories (mères et filles) que l'indexer annonce supporter
+                supported_cat_ids = {str(cat['id']) for cat in indexer_details['capabilities']['categories']}
 
-                    if not cat_id_str or not cat_name:
-                        continue # Ignore les catégories malformées
+                # Pour chaque catégorie supportée, on ajoute le badge à notre liste maîtresse
+                for cat_id in supported_cat_ids:
+                    if cat_id in all_categories_map:
+                        if indexer_name not in all_categories_map[cat_id]['indexers']:
+                            all_categories_map[cat_id]['indexers'].append(indexer_name)
 
-                    # Si la catégorie n'a jamais été vue, on l'initialise
-                    if cat_id_str not in all_categories_map:
-                        all_categories_map[cat_id_str] = {
-                            'id': cat_id_str,
-                            'name': cat_name,
-                            'indexers': [] # Initialise la liste des indexers
-                        }
-
-                    # On ajoute l'indexer actuel à la liste de cette catégorie
-                    if indexer_name not in all_categories_map[cat_id_str]['indexers']:
-                        all_categories_map[cat_id_str]['indexers'].append(indexer_name)
-        
-        if not all_categories_map:
-            raise ValueError("No valid categories could be retrieved from any enabled indexer.")
-
-        # Convertit le dictionnaire de cartes en une liste de dictionnaires
         final_list = list(all_categories_map.values())
-
-        # Trie la liste finale par ID de catégorie (en convertissant en entier)
         sorted_list = sorted(final_list, key=lambda x: int(x['id']))
 
-        current_app.logger.info(f"Prowlarr: Found {len(sorted_list)} unique categories across all enabled indexers.")
+        current_app.logger.info(f"Prowlarr: Enriched list contains {len(sorted_list)} categories.")
         return sorted_list
 
     except Exception as e:
-        current_app.logger.error(f"Failed to fetch and merge Prowlarr categories: {e}", exc_info=True)
+        current_app.logger.error(f"Failed to fetch and merge Prowlarr categories with hybrid strategy: {e}", exc_info=True)
         return []
