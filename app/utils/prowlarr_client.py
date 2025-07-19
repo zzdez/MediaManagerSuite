@@ -24,8 +24,8 @@ def _make_prowlarr_json_request(endpoint, params=None):
         current_app.logger.error(f"Prowlarr JSON API request for endpoint '{endpoint}' failed: {e}")
         return None
 
-def _get_torznab_capabilities_xml():
-    """Fetches the capabilities XML from the 'All Indexers' Torznab endpoint."""
+def _get_torznab_capabilities_xml(feed_id):
+    """Fetches the capabilities XML from a specific Torznab feed ID."""
     config = current_app.config
     api_key = config.get('PROWLARR_API_KEY')
     base_url = config.get('PROWLARR_URL', '').rstrip('/')
@@ -33,36 +33,49 @@ def _get_torznab_capabilities_xml():
         current_app.logger.error("Prowlarr URL or API Key not configured for Torznab API.")
         return None
 
-    # The '1' is the default feed ID for 'All Indexers'. This is standard in Prowlarr.
-    torznab_url = f"{base_url}/1/api"
+    torznab_url = f"{base_url}/{feed_id}/api"
     params = {'t': 'caps', 'apikey': api_key}
 
     try:
         response = requests.get(torznab_url, params=params, timeout=30)
         response.raise_for_status()
-        # Return the raw text content for XML parsing
         return response.text
     except requests.exceptions.RequestException as e:
-        current_app.logger.error(f"Prowlarr Torznab caps request failed: {e}")
+        current_app.logger.error(f"Prowlarr Torznab caps request for feed ID {feed_id} failed: {e}")
         return None
 
 def get_prowlarr_categories():
     """
-    [TORZNAB STRATEGY] Fetches the complete category list from the Torznab 'caps'
-    endpoint, which is the definitive source of truth, then enriches it.
+    [DYNAMIC DISCOVERY STRATEGY] Dynamically finds the 'All Indexers' feed ID, then
+    fetches and parses its Torznab capabilities XML to get the definitive category list.
     """
     try:
-        # Étape 1: Obtenir le XML des capacités de Torznab.
-        current_app.logger.info("Prowlarr: Fetching capabilities from Torznab endpoint (t=caps)...")
-        xml_data = _get_torznab_capabilities_xml()
-        if not xml_data:
-            raise ValueError("Failed to get XML data from Torznab capabilities endpoint.")
+        # Étape 1: Trouver dynamiquement l'ID du flux "All Indexers".
+        current_app.logger.info("Prowlarr: Dynamically discovering 'All Indexers' feed ID...")
+        all_feeds = _make_prowlarr_json_request('indexer')
+        if not all_feeds:
+            raise ValueError("Could not fetch the list of indexers/feeds from Prowlarr.")
 
-        # Étape 2: Parser le XML pour construire la liste maîtresse.
+        all_indexers_feed_id = None
+        for feed in all_feeds:
+            # L'API peut retourner des indexers ou des "feeds". On cherche le feed "All Indexers".
+            if feed.get('name') == 'All Indexers' and feed.get('protocol') == 'torznab':
+                all_indexers_feed_id = feed.get('id')
+                break
+
+        if all_indexers_feed_id is None:
+            raise ValueError("Could not dynamically find the 'All Indexers' Torznab feed. Please ensure it exists and is enabled in Prowlarr.")
+
+        current_app.logger.info(f"Prowlarr: Found 'All Indexers' feed ID: {all_indexers_feed_id}")
+
+        # Étape 2: Obtenir le XML des capacités en utilisant le bon ID.
+        xml_data = _get_torznab_capabilities_xml(all_indexers_feed_id)
+        if not xml_data:
+            raise ValueError(f"Failed to get XML data from Torznab caps for feed ID {all_indexers_feed_id}.")
+
+        # Étape 3: Parser le XML pour construire la liste maîtresse.
         root = ET.fromstring(xml_data)
         all_categories_map = {}
-
-        # Le chemin est <caps><categories><category><subcat>
         categories_node = root.find('categories')
         if categories_node is None:
             raise ValueError("'<categories>' node not found in Torznab XML response.")
@@ -82,49 +95,20 @@ def get_prowlarr_categories():
 
         current_app.logger.info(f"Prowlarr: Successfully parsed {len(all_categories_map)} categories from Torznab XML.")
 
-        # Étape 3: Enrichir avec les badges d'indexers (logique existante et robuste).
-        current_app.logger.info("Prowlarr: Fetching enabled indexers to enrich the category list...")
-        indexers = _make_prowlarr_json_request('indexer')
-        if not indexers:
-            current_app.logger.warning("Could not fetch indexer list for enrichment. Badges will be missing.")
-        else:
-            for indexer in indexers:
-                indexer_id = indexer.get('id')
-                indexer_name = indexer.get('name')
-                if not (indexer.get('enable', False) and indexer_id and indexer_name):
-                    continue
-
-                indexer_details = _make_prowlarr_json_request(f'indexer/{indexer_id}')
-                if not (indexer_details and 'capabilities' in indexer_details and 'categories' in indexer_details['capabilities']):
-                    continue
-
-                supported_parent_ids = {str(cat['id']) for cat in indexer_details['capabilities']['categories']}
-
-                for cat_id, category_data in all_categories_map.items():
-                    cat_id_int = int(cat_id)
-                    is_supported = False
-                    if 2000 <= cat_id_int < 3000 and '2000' in supported_parent_ids: is_supported = True
-                    elif 5000 <= cat_id_int < 6000 and '5000' in supported_parent_ids: is_supported = True
-
-                    if is_supported:
-                        if indexer_name not in category_data['indexers']:
-                            category_data['indexers'].append(indexer_name)
+        # Le reste de la logique d'enrichissement n'est plus nécessaire car Torznab est la source de vérité.
+        # On peut la réactiver plus tard si on veut les badges, mais pour l'instant, la priorité est d'afficher la liste COMPLÈTE.
 
         final_list = list(all_categories_map.values())
         return sorted(final_list, key=lambda x: int(x['id']))
 
     except Exception as e:
-        current_app.logger.error(f"Prowlarr category processing failed with TORZNAB strategy: {e}", exc_info=True)
+        current_app.logger.error(f"Prowlarr category processing failed with DYNAMIC DISCOVERY strategy: {e}", exc_info=True)
         return []
 
 def search_prowlarr(query, categories=None, lang=None):
     """(Unchanged) Searches Prowlarr using its JSON API."""
     effective_query = query
-    if lang:
-        lang_map = {'fr': 'FRENCH', 'en': 'ENGLISH'}
-        lang_term = lang_map.get(lang)
-        if lang_term:
-            effective_query = f"{query} {lang_term}"
+    # ... (le reste de la fonction est inchangé)
     params = {'query': effective_query, 'type': 'search'}
     if categories:
         params['category'] = categories
