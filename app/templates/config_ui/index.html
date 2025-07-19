@@ -35,51 +35,55 @@
         <h3 class="mt-4 mb-3">Catégories de Recherche Prowlarr</h3>
         <p class="text-muted">Sélectionnez les catégories à inclure dans les recherches "Sonarr" et "Radarr". Les badges indiquent quels indexers actifs proposent chaque catégorie.</p>
 
-        <div class="row">
-            <!-- Colonne Sonarr -->
-            <div class="col-md-6">
-                <h4><i class="fas fa-tv"></i> Écosystème Sonarr</h4>
-                <div class="card p-3" style="max-height: 500px; overflow-y: auto;">
-                    {% for category in all_categories %}
-                        <div class="form-check my-1">
-                            <input class="form-check-input" type="checkbox" name="sonarr_categories" value="{{ category.id }}" id="sonarr-cat-{{ category.id }}"
-                            {% if category.id|int in search_config.sonarr_categories %}checked{% endif %}>
-                            <label class="form-check-label" for="sonarr-cat-{{ category.id }}">
-                                {{ category.name }} <span class="text-muted small">({{ category.id }})</span>
-                                <!-- NOUVEAU: Affichage des badges d'indexers -->
-                                {% for indexer in category.indexers %}
-                                    <span class="badge bg-info text-dark ms-1">{{ indexer }}</span>
-                                {% endfor %}
-                            </label>
-                        </div>
-                    {% else %}
-                        <p class="text-warning">Aucune catégorie Prowlarr n'a pu être chargée. Vérifiez votre configuration Prowlarr.</p>
-                    {% endfor %}
+<div class="row">
+    <!-- Colonne Sonarr -->
+    <div class="col-md-6">
+        <h4><i class="fas fa-tv"></i> Écosystème Sonarr</h4>
+        <div class="card p-3" style="max-height: 500px; overflow-y: auto;">
+            {% for category in all_categories %}
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" name="sonarr_categories" value="{{ category.id }}" id="sonarr-cat-{{ category.id }}"
+                    {% if category.id|int in search_config.sonarr_categories %}checked{% endif %}>
+                    <label class="form-check-label" for="sonarr-cat-{{ category.id }}">
+                        {{ category.name }} <span class="text-muted small">({{ category.id }})</span>
+                    </label>
+                    <!-- Conteneur séparé et indenté pour les badges -->
+                    <div class="ps-4 mt-1">
+                        {% for indexer in category.indexers %}
+                            <span class="badge bg-secondary me-1">{{ indexer }}</span>
+                        {% endfor %}
+                    </div>
                 </div>
-            </div>
-
-            <!-- Colonne Radarr -->
-            <div class="col-md-6">
-                <h4><i class="fas fa-film"></i> Écosystème Radarr</h4>
-                <div class="card p-3" style="max-height: 500px; overflow-y: auto;">
-                    {% for category in all_categories %}
-                        <div class="form-check my-1">
-                            <input class="form-check-input" type="checkbox" name="radarr_categories" value="{{ category.id }}" id="radarr-cat-{{ category.id }}"
-                            {% if category.id|int in search_config.radarr_categories %}checked{% endif %}>
-                            <label class="form-check-label" for="radarr-cat-{{ category.id }}">
-                                {{ category.name }} <span class="text-muted small">({{ category.id }})</span>
-                                <!-- NOUVEAU: Affichage des badges d'indexers -->
-                                {% for indexer in category.indexers %}
-                                    <span class="badge bg-info text-dark ms-1">{{ indexer }}</span>
-                                {% endfor %}
-                            </label>
-                        </div>
-                    {% else %}
-                         <p class="text-warning">Aucune catégorie Prowlarr n'a pu être chargée. Vérifiez votre configuration Prowlarr.</p>
-                    {% endfor %}
-                </div>
-            </div>
+            {% else %}
+                <p class="text-warning">Aucune catégorie Prowlarr n'a pu être chargée. Vérifiez votre configuration Prowlarr et les logs de l'application.</p>
+            {% endfor %}
         </div>
+    </div>
+
+    <!-- Colonne Radarr -->
+    <div class="col-md-6">
+        <h4><i class="fas fa-film"></i> Écosystème Radarr</h4>
+        <div class="card p-3" style="max-height: 500px; overflow-y: auto;">
+            {% for category in all_categories %}
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" name="radarr_categories" value="{{ category.id }}" id="radarr-cat-{{ category.id }}"
+                    {% if category.id|int in search_config.radarr_categories %}checked{% endif %}>
+                    <label class="form-check-label" for="radarr-cat-{{ category.id }}">
+                        {{ category.name }} <span class="text-muted small">({{ category.id }})</span>
+                    </label>
+                    <!-- Conteneur séparé et indenté pour les badges -->
+                    <div class="ps-4 mt-1">
+                        {% for indexer in category.indexers %}
+                            <span class="badge bg-secondary me-1">{{ indexer }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% else %}
+                 <p class="text-warning">Aucune catégorie Prowlarr n'a pu être chargée. Vérifiez votre configuration Prowlarr et les logs de l'application.</p>
+            {% endfor %}
+        </div>
+    </div>
+</div>
 
         <button type="submit" class="btn btn-primary mt-4 w-100">Sauvegarder Toute la Configuration</button>
     </form>
