@@ -37,42 +37,62 @@ def search_prowlarr(query, categories=None, lang=None):
 
 def get_prowlarr_categories():
     """
-    [MULTI-INDEXER] Fetches and merges categories from ALL enabled indexers.
+    [MULTI-INDEXER] Fetches and merges categories from ALL enabled indexers,
+    associating each category with the indexers that provide it.
     """
     try:
-        current_app.logger.info("Prowlarr: Récupération de tous les indexers pour fusionner les catégories...")
+        current_app.logger.info("Prowlarr: Fetching all enabled indexers to merge categories...")
         indexers = _make_prowlarr_request('indexer')
-        if not indexers: raise ValueError("La liste des indexers est vide.")
+        if not indexers:
+            raise ValueError("The indexer list from Prowlarr is empty or unreachable.")
 
-        all_categories_map = {} # Utilise un dictionnaire pour éviter les doublons par ID
+        # Dictionnaire pour agréger les catégories et leurs indexers.
+        # Format: { "cat_id": {"id": "...", "name": "...", "indexers": ["name1", "name2"]} }
+        all_categories_map = {}
 
         for indexer in indexers:
             indexer_id = indexer.get('id')
-            if not indexer.get('enable', False) or not indexer_id:
-                continue # Ignore les indexers désactivés
+            indexer_name = indexer.get('name')
 
-            current_app.logger.debug(f"Prowlarr: Récupération des catégories pour l'indexer ID {indexer_id} ({indexer.get('name')}).")
+            # Ignore les indexers désactivés ou sans ID/nom
+            if not indexer.get('enable', False) or not indexer_id or not indexer_name:
+                continue
+
+            current_app.logger.debug(f"Prowlarr: Fetching capabilities for indexer '{indexer_name}' (ID: {indexer_id}).")
             indexer_details = _make_prowlarr_request(f'indexer/{indexer_id}')
             
             if indexer_details and 'capabilities' in indexer_details and 'categories' in indexer_details['capabilities']:
                 for cat in indexer_details['capabilities']['categories']:
                     cat_id_str = str(cat.get('id'))
-                    if cat_id_str not in all_categories_map and cat.get('name'):
+                    cat_name = cat.get('name')
+
+                    if not cat_id_str or not cat_name:
+                        continue # Ignore les catégories malformées
+
+                    # Si la catégorie n'a jamais été vue, on l'initialise
+                    if cat_id_str not in all_categories_map:
                         all_categories_map[cat_id_str] = {
-                            '@attributes': {
-                                'id': cat_id_str,
-                                'name': cat.get('name')
-                            }
+                            'id': cat_id_str,
+                            'name': cat_name,
+                            'indexers': [] # Initialise la liste des indexers
                         }
+
+                    # On ajoute l'indexer actuel à la liste de cette catégorie
+                    if indexer_name not in all_categories_map[cat_id_str]['indexers']:
+                        all_categories_map[cat_id_str]['indexers'].append(indexer_name)
         
         if not all_categories_map:
-            raise ValueError("Aucune catégorie n'a pu être récupérée d'aucun indexer.")
+            raise ValueError("No valid categories could be retrieved from any enabled indexer.")
 
-        # Convertit le dictionnaire en liste et trie par ID
+        # Convertit le dictionnaire de cartes en une liste de dictionnaires
         final_list = list(all_categories_map.values())
-        current_app.logger.info(f"Prowlarr: {len(final_list)} catégories uniques trouvées sur tous les indexers.")
-        return sorted(final_list, key=lambda x: int(x['@attributes']['id']))
+
+        # Trie la liste finale par ID de catégorie (en convertissant en entier)
+        sorted_list = sorted(final_list, key=lambda x: int(x['id']))
+
+        current_app.logger.info(f"Prowlarr: Found {len(sorted_list)} unique categories across all enabled indexers.")
+        return sorted_list
 
     except Exception as e:
-        current_app.logger.error(f"Échec de la récupération multi-indexer des catégories: {e}", exc_info=True)
+        current_app.logger.error(f"Failed to fetch and merge Prowlarr categories: {e}", exc_info=True)
         return []
