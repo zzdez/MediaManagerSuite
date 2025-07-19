@@ -16,11 +16,15 @@ logger = logging.getLogger(__name__)
 @config_ui_bp.route('/', methods=['GET'])
 @login_required
 def show_config():
-    """Affiche la page de configuration et la section des catégories filtrées par la whitelist COMPLÈTE."""
+    """
+    Affiche la page de configuration, incluant les variables .env
+    et LA LISTE COMPLÈTE des catégories Prowlarr.
+    """
     
     # --- PARTIE .ENV (INCHANGÉE) ---
     config_items = []
     try:
+        # ... (la logique de parsing du .env.template reste exactement la même) ...
         dotenv_path = os.path.join(current_app.root_path, '..', '.env')
         template_path = os.path.join(current_app.root_path, '..', '.env.template')
         env_values = dotenv_values(dotenv_path) if os.path.exists(dotenv_path) else {}
@@ -43,30 +47,15 @@ def show_config():
     except Exception as e:
         flash(f"Erreur lors de la lecture des fichiers de configuration : {e}", "danger")
 
-    # --- PARTIE CATÉGORIES (AVEC LES WHITELISTS COMPLÈTES ET VÉRIFIÉES) ---
-    SONARR_WHITELIST = [
-        5000, 5030, 5040, 5050, 5060, 5070, 5080, 100013, 100014, 100015, 100016, 100017,
-        100030, 100032, 100034, 100098, 100101, 100104, 100109, 100110, 100123,
-        102179, 102182, 102184, 102186 # Ajout Sport de Ygg
-    ]
-    RADARR_WHITELIST = [
-        2000, 2020, 2030, 2040, 2045, 2050, 2060, 2070, 2080, 100001, 100003, 100004,
-        100005, 100006, 100007, 100008, 100009, 100012, 100020, 100031, 100033,
-        100094, 100095, 100100, 100107, 100118, 100119, 100122, 100125, 100126,
-        100127, 102145, 102178, 102180, 102181, 102183, 102185, 102187
-    ]
-    
-    all_categories = get_prowlarr_categories()
+    # --- PARTIE CATÉGORIES (SANS FILTRE) ---
+    # On récupère toutes les catégories et on les envoie directement au template.
+    all_prowlarr_categories = get_prowlarr_categories()
     search_config = load_search_categories()
     
-    sonarr_display_categories = [cat for cat in all_categories if int(cat['@attributes']['id']) in SONARR_WHITELIST]
-    radarr_display_categories = [cat for cat in all_categories if int(cat['@attributes']['id']) in RADARR_WHITELIST]
-
     return render_template('config_ui/index.html',
                            title="Configuration de l'Application",
                            config_items=config_items,
-                           sonarr_categories=sonarr_display_categories,
-                           radarr_categories=radarr_display_categories,
+                           all_categories=all_prowlarr_categories, # On passe la liste complète
                            search_config=search_config)
 
 
