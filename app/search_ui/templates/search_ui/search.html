@@ -49,6 +49,16 @@
                 <p>Recherchez n'importe quel terme sur vos indexers.</p>
                 <form id="search-form">
                     <div class="row g-2">
+                        <div class="col-12 mb-3">
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="search_type" id="search_type_sonarr" value="sonarr" checked>
+                                <label class="form-check-label" for="search_type_sonarr">Recherche Sonarr</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="search_type" id="search_type_radarr" value="radarr">
+                                <label class="form-check-label" for="search_type_radarr">Recherche Radarr</label>
+                            </div>
+                        </div>
                         <div class="col-md-6">
                             <input type="text" name="query" class="form-control" placeholder="Titre du film ou de la série..." value="{{ query or '' }}">
                         </div>

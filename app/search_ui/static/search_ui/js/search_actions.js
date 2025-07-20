@@ -7,6 +7,11 @@ $(document).ready(function() {
     const modalEl = $('#sonarrRadarrSearchModal');
     const modalBody = modalEl.find('.modal-body');
 
+    // --- Synchronisation du type de recherche avec le champ caché ---
+    $('input[name="search_type"]').on('change', function() {
+        $('#search-form-media-type').val($(this).val() === 'sonarr' ? 'tv' : 'movie');
+    });
+
     // --- FONCTION UTILITAIRE POUR AFFICHER LES RÉSULTATS ---
     function displayResults(resultsData, mediaType) {
         const resultsContainer = modalBody.find('#lookup-results-container');
@@ -33,7 +38,7 @@ $(document).ready(function() {
     // ### GESTIONNAIRE UNIQUE ET CORRECT POUR LA RECHERCHE PRINCIPALE ###
     // =================================================================
     $('#execute-prowlarr-search-btn').on('click', function() {
-        const form = $(this).closest('form');
+        const form = $('#search-form');
         const query = form.find('[name="query"]').val();
         if (!query) {
             alert("Veuillez entrer un terme à rechercher.");
@@ -46,7 +51,7 @@ $(document).ready(function() {
         // Construction du payload COMPLET et CORRECT
         const payload = {
             query: query,
-            search_type: $('#search-form-media-type').val(), // La clé du problème
+            search_type: form.find('input[name="search_type"]:checked').val(), // Correction ici
             year: form.find('[name="year"]').val(),
             lang: form.find('[name="lang"]').val(),
             quality: $('#filterQuality').val(),
