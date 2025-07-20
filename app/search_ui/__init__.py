@@ -31,30 +31,26 @@ def search_page():
 @search_ui_bp.route('/api/prowlarr/search', methods=['POST'])
 @login_required
 def prowlarr_search():
-    """
-    Reçoit une requête de recherche, interroge Prowlarr, filtre les résultats
-    en fonction des critères avancés et les renvoie.
-    """
     data = request.get_json()
     query = data.get('query')
     if not query:
         return jsonify({"error": "La requête de recherche est vide."}), 400
 
-    # --- ÉTAPE 1: Récupération des filtres ---
-    quality_filter = data.get('quality') # ex: "1080p"
-    codec_filter = data.get('codec')       # ex: "x265"
-    source_filter = data.get('source')     # ex: "bluray"
+    year_filter = data.get('year')
+    lang_filter = data.get('lang')
+    quality_filter = data.get('quality')
+    codec_filter = data.get('codec')
+    source_filter = data.get('source')
 
-    logging.info(f"Recherche Prowlarr pour '{query}' avec les filtres: Qualité={quality_filter}, Codec={codec_filter}, Source={source_filter}")
+    search_query = f"{query} {year_filter if year_filter else ''}".strip()
+    logging.info(f"Recherche Prowlarr pour '{search_query}' (Lang: {lang_filter}) avec filtres: Q={quality_filter}, C={codec_filter}, S={source_filter}")
 
-    # --- ÉTAPE 2: Recherche large sur Prowlarr ---
-    raw_results = search_prowlarr(query)
+    raw_results = search_prowlarr(query=search_query, lang=lang_filter)
     if raw_results is None:
         return jsonify({"error": "Erreur lors de la communication avec Prowlarr."}), 500
 
-    # --- ÉTAPE 3: Logique de filtrage avec guessit ---
-    # Si aucun filtre n'est sélectionné, on ne filtre pas.
-    if not quality_filter and not codec_filter and not source_filter:
+    has_advanced_filters = any([quality_filter, codec_filter, source_filter])
+    if not has_advanced_filters:
         return jsonify(raw_results)
 
     filtered_results = []
@@ -62,31 +58,18 @@ def prowlarr_search():
         title = result.get('title', '')
         info = guessit(title)
 
-        # Le résultat doit correspondre à TOUS les filtres actifs
         matches = True
-
-        # Vérification de la qualité (screen_size chez guessit)
-        if quality_filter:
-            # On vérifie si la qualité du titre contient la qualité demandée (ex: "1080p" est dans "1080p")
-            if 'screen_size' not in info or quality_filter.lower() not in info['screen_size'].lower():
-                matches = False
-
-        # Vérification du codec
-        if matches and codec_filter:
-            if 'video_codec' not in info or codec_filter.lower() not in info['video_codec'].lower():
-                matches = False
-
-        # Vérification de la source
-        if matches and source_filter:
-            if 'source' not in info or source_filter.lower() not in info['source'].lower():
-                matches = False
+        if quality_filter and quality_filter.lower() not in info.get('screen_size', '').lower():
+            matches = False
+        if matches and codec_filter and codec_filter.lower() not in info.get('video_codec', '').lower():
+            matches = False
+        if matches and source_filter and source_filter.lower() not in info.get('source', '').lower():
+            matches = False
 
         if matches:
             filtered_results.append(result)
 
     logging.info(f"{len(raw_results)} résultats bruts, {len(filtered_results)} après filtrage.")
-
-    # --- ÉTAPE 4: Renvoi de la liste filtrée ---
     return jsonify(filtered_results)
 
 
