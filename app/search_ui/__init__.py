@@ -31,10 +31,6 @@ def search_page():
 @search_ui_bp.route('/api/prowlarr/search', methods=['POST'])
 @login_required
 def prowlarr_search():
-    """
-    Reçoit une requête de recherche, interroge Prowlarr, filtre les résultats
-    en fonction des critères avancés et les renvoie.
-    """
     data = request.get_json()
     query = data.get('query')
     if not query:
@@ -54,9 +50,17 @@ def prowlarr_search():
     if raw_results is None:
         return jsonify({"error": "Erreur lors de la communication avec Prowlarr."}), 500
 
+    # --- DÉBUT DU BLOC DE DIAGNOSTIC ---
+    logging.info("--- DIAGNOSTIC GUESSIT (5 premiers résultats) ---")
+    for i, result in enumerate(raw_results[:5]):
+        title = result.get('title', '')
+        info = guessit(title)
+        logging.info(f"TITRE: '{title}' ===> GUESSIT: {info}")
+    logging.info("--- FIN DU DIAGNOSTIC ---")
+    # --- FIN DU BLOC DE DIAGNOSTIC ---
+
     has_advanced_filters = any([quality_filter, codec_filter, source_filter])
     if not has_advanced_filters:
-        logging.info(f"Aucun filtre avancé, retour de {len(raw_results)} résultats bruts.")
         return jsonify(raw_results)
 
     filtered_results = []
@@ -64,12 +68,9 @@ def prowlarr_search():
         title = result.get('title', '')
         info = guessit(title)
 
-        # --- NOUVELLE LOGIQUE DE FILTRAGE ROBUSTE ---
-        # Un item correspond si le filtre n'est pas défini OU si le filtre correspond.
-
-        quality_match = (not quality_filter) or (quality_filter.lower() in info.get('screen_size', '').lower())
-        codec_match = (not codec_filter) or (codec_filter.lower() in info.get('video_codec', '').lower())
-        source_match = (not source_filter) or (source_filter.lower() in info.get('source', '').lower())
+        quality_match = (not quality_filter) or (quality_filter.lower() in str(info.get('screen_size', '')).lower())
+        codec_match = (not codec_filter) or (codec_filter.lower() in str(info.get('video_codec', '')).lower())
+        source_match = (not source_filter) or (source_filter.lower() in str(info.get('source', '')).lower())
 
         if quality_match and codec_match and source_match:
             filtered_results.append(result)
