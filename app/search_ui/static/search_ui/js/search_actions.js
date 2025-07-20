@@ -127,6 +127,7 @@ $(document).ready(function() {
         // ---- MISE À JOUR : Création du payload complet ----
         const payload = {
             query: query,
+            search_type: $('[name="search_type"]:checked').val(), // <<< LIGNE À AJOUTER
             quality: qualityFilter,
             codec: codecFilter,
             source: sourceFilter

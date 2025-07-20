@@ -9,6 +9,7 @@ from Levenshtein import distance as levenshtein_distance
 from app.utils.arr_client import parse_media_name
 from guessit import guessit
 from app.utils.prowlarr_client import search_prowlarr
+from app.utils.config_manager import load_search_categories
 
 # 1. Définition du Blueprint (seul code global avec les imports "sûrs")
 search_ui_bp = Blueprint(
@@ -32,45 +33,46 @@ def search_page():
 @login_required
 def prowlarr_search():
     """
-    Reçoit une requête de recherche, construit une requête complète avec tous les filtres,
-    et délègue la recherche à Prowlarr.
+    Reçoit une requête, charge les catégories appropriées (Sonarr/Radarr),
+    construit une requête complète et la délègue à Prowlarr.
     """
     data = request.get_json()
     query = data.get('query')
     if not query:
         return jsonify({"error": "La requête de recherche est vide."}), 400
 
-    # Récupération de tous les filtres
+    # ÉTAPE 1: DÉTERMINER LES CATÉGORIES À UTILISER
+    search_type = data.get('search_type', 'sonarr')
+
+    search_config = load_search_categories()
+    categories_to_use = search_config.get(f"{search_type}_categories", [])
+
+    if not categories_to_use:
+        logging.warning(f"Aucune catégorie n'est configurée pour la recherche '{search_type}'. La recherche se fera sans filtre de catégorie.")
+
+    # ÉTAPE 2: CONSTRUCTION DE LA REQUÊTE ET APPEL À PROWLARR
     year_filter = data.get('year')
     lang_filter = data.get('lang')
     quality_filter = data.get('quality')
     codec_filter = data.get('codec')
     source_filter = data.get('source')
 
-    # --- NOUVELLE LOGIQUE : CONSTRUCTION D'UNE REQUÊTE UNIQUE ---
     search_terms = [query]
-    if year_filter:
-        search_terms.append(year_filter)
-    if quality_filter:
-        search_terms.append(quality_filter)
-    if codec_filter:
-        search_terms.append(codec_filter)
-    if source_filter:
-        search_terms.append(source_filter)
+    if year_filter: search_terms.append(year_filter)
+    if quality_filter: search_terms.append(quality_filter)
+    if codec_filter: search_terms.append(codec_filter)
+    if source_filter: search_terms.append(source_filter)
 
-    # Combine tous les termes en une seule chaîne de recherche
     final_query = " ".join(search_terms)
 
-    logging.info(f"Recherche DÉLÉGUÉE à Prowlarr pour '{final_query}' (Lang: {lang_filter})")
+    logging.info(f"Recherche '{search_type}' pour '{final_query}' avec les catégories: {categories_to_use}")
 
-    # Appel à Prowlarr avec la requête complète
-    results = search_prowlarr(query=final_query, lang=lang_filter)
+    results = search_prowlarr(query=final_query, categories=categories_to_use, lang=lang_filter)
+
     if results is None:
         return jsonify({"error": "Erreur lors de la communication avec Prowlarr."}), 500
 
-    logging.info(f"Prowlarr a retourné {len(results)} résultats pour la recherche déléguée.")
-
-    # Plus besoin de filtrer. On renvoie directement les résultats de Prowlarr.
+    logging.info(f"Prowlarr a retourné {len(results)} résultats pour la recherche '{search_type}'.")
     return jsonify(results)
 
 

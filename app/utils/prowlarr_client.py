@@ -84,11 +84,9 @@ def search_prowlarr(query, categories=None, lang=None):
 
     params = {'query': effective_query, 'type': 'search'}
 
-    # --- LA SEULE MODIFICATION EST ICI ---
     if categories:
         # Prowlarr API expects categories as a comma-separated string of IDs
         category_str = ",".join(map(str, categories))
         params['category'] = category_str
-        logging.debug(f"Prowlarr search: using categories {category_str}")
 
     return _make_prowlarr_request('search', params)
