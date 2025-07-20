@@ -32,8 +32,8 @@ $(document).ready(function() {
 // =================================================================
     // ### GESTIONNAIRE UNIQUE ET CORRECT POUR LA RECHERCHE PRINCIPALE ###
     // =================================================================
-    $('body').on('click', '#execute-prowlarr-search-btn', function() {
-        const form = $('#search-form');
+    $('#execute-prowlarr-search-btn').on('click', function() {
+        const form = $(this).closest('form');
         const query = form.find('[name="query"]').val();
         if (!query) {
             alert("Veuillez entrer un terme à rechercher.");
