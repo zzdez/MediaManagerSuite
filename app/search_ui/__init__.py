@@ -42,7 +42,9 @@ def prowlarr_search():
         return jsonify({"error": "La requête de recherche est vide."}), 400
 
     # ÉTAPE 1: DÉTERMINER LES CATÉGORIES À UTILISER
-    search_type = data.get('search_type', 'sonarr')
+    search_type = data.get('search_type', 'tv') # 'tv' (sonarr) ou 'movie' (radarr)
+    instance_type = 'sonarr' if search_type == 'tv' else 'radarr'
+
 
     search_config = load_search_categories()
     categories_to_use = search_config.get(f"{search_type}_categories", [])
@@ -65,14 +67,14 @@ def prowlarr_search():
 
     final_query = " ".join(search_terms)
 
-    logging.info(f"Recherche '{search_type}' pour '{final_query}' avec les catégories: {categories_to_use}")
+    logging.info(f"Recherche '{instance_type}' pour '{final_query}' avec les catégories: {categories_to_use}")
 
     results = search_prowlarr(query=final_query, categories=categories_to_use, lang=lang_filter)
 
     if results is None:
         return jsonify({"error": "Erreur lors de la communication avec Prowlarr."}), 500
 
-    logging.info(f"Prowlarr a retourné {len(results)} résultats pour la recherche '{search_type}'.")
+    logging.info(f"Prowlarr a retourné {len(results)} résultats pour la recherche '{instance_type}'.")
     return jsonify(results)
 
 

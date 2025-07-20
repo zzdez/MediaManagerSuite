@@ -46,7 +46,7 @@ $(document).ready(function() {
         // Construction du payload COMPLET et CORRECT
         const payload = {
             query: query,
-            search_type: form.find('[name="search_type"]:checked').val(), // La clé du problème
+            search_type: $('#search-form-media-type').val(), // La clé du problème
             year: form.find('[name="year"]').val(),
             lang: form.find('[name="lang"]').val(),
             quality: $('#filterQuality').val(),
