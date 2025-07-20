@@ -50,17 +50,9 @@ def prowlarr_search():
     if raw_results is None:
         return jsonify({"error": "Erreur lors de la communication avec Prowlarr."}), 500
 
-    # --- DÉBUT DU BLOC DE DIAGNOSTIC ---
-    logging.info("--- DIAGNOSTIC GUESSIT (5 premiers résultats) ---")
-    for i, result in enumerate(raw_results[:5]):
-        title = result.get('title', '')
-        info = guessit(title)
-        logging.info(f"TITRE: '{title}' ===> GUESSIT: {info}")
-    logging.info("--- FIN DU DIAGNOSTIC ---")
-    # --- FIN DU BLOC DE DIAGNOSTIC ---
-
     has_advanced_filters = any([quality_filter, codec_filter, source_filter])
     if not has_advanced_filters:
+        logging.info(f"Aucun filtre avancé, retour de {len(raw_results)} résultats bruts.")
         return jsonify(raw_results)
 
     filtered_results = []
@@ -68,9 +60,32 @@ def prowlarr_search():
         title = result.get('title', '')
         info = guessit(title)
 
+        # --- LOGIQUE DE FILTRAGE FINALE ET CORRIGÉE ---
+
+        # Qualité : comparaison directe
         quality_match = (not quality_filter) or (quality_filter.lower() in str(info.get('screen_size', '')).lower())
-        codec_match = (not codec_filter) or (codec_filter.lower() in str(info.get('video_codec', '')).lower())
-        source_match = (not source_filter) or (source_filter.lower() in str(info.get('source', '')).lower())
+
+        # Codec : gère les alias (x264/h.264, x265/hevc)
+        codec_match = True
+        if codec_filter:
+            detected_codec = str(info.get('video_codec', '')).lower()
+            if codec_filter == 'x264':
+                codec_match = 'x264' in detected_codec or 'h.264' in detected_codec
+            elif codec_filter == 'x265':
+                codec_match = 'x265' in detected_codec or 'hevc' in detected_codec
+            else:
+                codec_match = codec_filter in detected_codec
+
+        # Source : gère les alias (web-dl/web, bluray/blu-ray)
+        source_match = True
+        if source_filter:
+            detected_source = str(info.get('source', '')).lower()
+            if source_filter == 'web-dl':
+                source_match = 'web' in detected_source # guessit retourne 'Web' pour 'WEB-DL'
+            elif source_filter == 'bluray':
+                source_match = 'blu' in detected_source # Accepte 'Blu-ray' et 'bluray'
+            else:
+                source_match = source_filter in detected_source
 
         if quality_match and codec_match and source_match:
             filtered_results.append(result)
