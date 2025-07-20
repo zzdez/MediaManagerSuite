@@ -1,5 +1,6 @@
 # app/search_ui/__init__.py
 
+import logging
 from flask import Blueprint, render_template, request, flash, jsonify, Response, stream_with_context, current_app
 from app.auth import login_required
 from config import Config
@@ -7,6 +8,7 @@ from app.utils import arr_client
 from Levenshtein import distance as levenshtein_distance
 from app.utils.arr_client import parse_media_name
 from guessit import guessit
+from app.utils.prowlarr_client import search_prowlarr
 
 # 1. Définition du Blueprint (seul code global avec les imports "sûrs")
 search_ui_bp = Blueprint(
@@ -21,70 +23,71 @@ search_ui_bp = Blueprint(
 @search_ui_bp.route('/', methods=['GET'])
 @login_required
 def search_page():
-    # Imports locaux
-    from app.utils.prowlarr_client import search_prowlarr
-    from guessit import guessit
+    """Affiche la page de recherche principale."""
+    return render_template('search_ui/search.html')
 
-    # --- Étape 1: Récupération de tous les filtres ---
-    query = request.args.get('query', '').strip()
-    year_str = request.args.get('year') # Renommé en year_str
-    lang = request.args.get('lang')
-    quality = request.args.get('quality') 
-    codec = request.args.get('codec')
-    release_type = request.args.get('release_type')
+# --- API Routes ---
 
-    results = None
+@search_ui_bp.route('/api/prowlarr/search', methods=['POST'])
+@login_required
+def prowlarr_search():
+    """
+    Reçoit une requête de recherche, interroge Prowlarr, filtre les résultats
+    en fonction des critères avancés et les renvoie.
+    """
+    data = request.get_json()
+    query = data.get('query')
+    if not query:
+        return jsonify({"error": "La requête de recherche est vide."}), 400
 
-    if query:
-        # --- Étape 2: Appel à Prowlarr ---
-        raw_results = search_prowlarr(query, lang=lang)
+    # --- ÉTAPE 1: Récupération des filtres ---
+    quality_filter = data.get('quality') # ex: "1080p"
+    codec_filter = data.get('codec')       # ex: "x265"
+    source_filter = data.get('source')     # ex: "bluray"
 
-        if raw_results is None:
-            flash("Erreur de communication avec Prowlarr.", "danger")
-            results = []
-        else:
-            # --- Étape 3: Filtrage intelligent en Python (Logique Corrigée) ---
-            filtered_results = []
-            year_filter = int(year_str) if year_str and year_str.isdigit() else None
+    logging.info(f"Recherche Prowlarr pour '{query}' avec les filtres: Qualité={quality_filter}, Codec={codec_filter}, Source={source_filter}")
 
-            for result in raw_results:
-                title = result.get('title', '')
-                parsed_info = guessit(title)
-                
-                # Filtre par Année (CORRIGÉ AVEC TOLÉRANCE)
-                if year_filter:
-                    parsed_year = parsed_info.get('year')
-                    # On ne filtre QUE si guessit a trouvé une année.
-                    if parsed_year:
-                        try:
-                            # Tolérance de +/- 1 an
-                            if abs(int(parsed_year) - year_filter) > 1:
-                                continue # Rejeter si l'écart est trop grand
-                        except (ValueError, TypeError):
-                            continue # Ignorer si l'année n'est pas un nombre valide
-                
-                # Filtre par Qualité
-                if quality and quality.lower() not in parsed_info.get('screen_size', '').lower():
-                    continue
+    # --- ÉTAPE 2: Recherche large sur Prowlarr ---
+    raw_results = search_prowlarr(query)
+    if raw_results is None:
+        return jsonify({"error": "Erreur lors de la communication avec Prowlarr."}), 500
 
-                # Filtre par Codec
-                if codec and codec.lower() not in parsed_info.get('video_codec', '').lower():
-                    continue
+    # --- ÉTAPE 3: Logique de filtrage avec guessit ---
+    # Si aucun filtre n'est sélectionné, on ne filtre pas.
+    if not quality_filter and not codec_filter and not source_filter:
+        return jsonify(raw_results)
 
-                # Filtre par Type de Release
-                if release_type == 'season' and 'season' not in parsed_info:
-                    continue
-                if release_type == 'complete' and 'complete' not in title.lower():
-                    continue
+    filtered_results = []
+    for result in raw_results:
+        title = result.get('title', '')
+        info = guessit(title)
 
-                filtered_results.append(result)
-            
-            results = filtered_results
+        # Le résultat doit correspondre à TOUS les filtres actifs
+        matches = True
 
-    sonarr_url = current_app.config.get('SONARR_URL', '')
-    radarr_url = current_app.config.get('RADARR_URL', '')
+        # Vérification de la qualité (screen_size chez guessit)
+        if quality_filter:
+            # On vérifie si la qualité du titre contient la qualité demandée (ex: "1080p" est dans "1080p")
+            if 'screen_size' not in info or quality_filter.lower() not in info['screen_size'].lower():
+                matches = False
 
-    return render_template('search_ui/search.html', title="Recherche", results=results, query=query, sonarr_url=sonarr_url, radarr_url=radarr_url)
+        # Vérification du codec
+        if matches and codec_filter:
+            if 'video_codec' not in info or codec_filter.lower() not in info['video_codec'].lower():
+                matches = False
+
+        # Vérification de la source
+        if matches and source_filter:
+            if 'source' not in info or source_filter.lower() not in info['source'].lower():
+                matches = False
+
+        if matches:
+            filtered_results.append(result)
+
+    logging.info(f"{len(raw_results)} résultats bruts, {len(filtered_results)} après filtrage.")
+
+    # --- ÉTAPE 4: Renvoi de la liste filtrée ---
+    return jsonify(filtered_results)
 
 
 @search_ui_bp.route('/api/search/lookup', methods=['POST'])
