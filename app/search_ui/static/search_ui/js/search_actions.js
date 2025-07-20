@@ -102,4 +102,94 @@ $(document).ready(function() {
 
     // --- AUTRES GESTIONNAIRES (Enrichissement, Sélection, etc.) ---
     // Ils devraient continuer à fonctionner car ils sont attachés au 'body'
+
+    $('#prowlarr-search-form').on('submit', function(e) {
+        e.preventDefault();
+
+        const query = $('#prowlarr-search-query').val();
+        if (!query) {
+            // Optionnel : Afficher un message si la recherche est vide
+            // console.log("La requête de recherche est vide.");
+            return;
+        }
+
+        // Afficher l'indicateur de chargement
+        const resultsContainer = $('#prowlarr-results-container');
+        const loadingIndicator = $('#loading-indicator');
+        resultsContainer.empty();
+        loadingIndicator.show();
+
+        // ---- NOUVELLE PARTIE : Récupération des valeurs des filtres ----
+        const qualityFilter = $('#filterQuality').val();
+        const codecFilter = $('#filterCodec').val();
+        const sourceFilter = $('#filterSource').val();
+
+        // ---- MISE À JOUR : Création du payload complet ----
+        const payload = {
+            query: query,
+            quality: qualityFilter,
+            codec: codecFilter,
+            source: sourceFilter
+        };
+
+        fetch('/search/api/prowlarr/search', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload) // Envoi du payload complet
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Erreur réseau: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            loadingIndicator.hide();
+            // Le reste de la logique pour afficher les résultats reste inchangé...
+            if (data.error) {
+                resultsContainer.html(`<div class="alert alert-danger">${data.error}</div>`);
+                return;
+            }
+            if (data.length === 0) {
+                resultsContainer.html('<div class="alert alert-info">Aucun résultat trouvé.</div>');
+                return;
+            }
+
+            let resultsHtml = '<ul class="list-group">';
+            data.forEach(item => {
+                // ... (la construction du HTML pour chaque item reste la même)
+                const cleanedTitle = item.title.replace(/\./g, ' ');
+                const sizeInGB = (item.size / (1024 * 1024 * 1024)).toFixed(2);
+                const seedersClass = item.seeders > 0 ? 'text-success' : 'text-danger';
+
+                resultsHtml += `
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong class="me-2">${cleanedTitle}</strong>
+                            <br>
+                            <small class="text-muted">
+                                Taille: ${sizeInGB} GB | Seeders: <span class="${seedersClass}">${item.seeders}</span> | Leechers: ${item.leechers}
+                            </small>
+                        </div>
+                        <div>
+                            <button class="btn btn-sm btn-primary me-2 check-media-status-btn" data-title="${cleanedTitle}">
+                                Vérifier Statut
+                            </button>
+                            <button class="btn btn-sm btn-success map-btn" data-title="${cleanedTitle}">
+                                & Mapper
+                            </button>
+                        </div>
+                    </li>
+                `;
+            });
+            resultsHtml += '</ul>';
+            resultsContainer.html(resultsHtml);
+        })
+        .catch(error => {
+            loadingIndicator.hide();
+            resultsContainer.html(`<div class="alert alert-danger">Une erreur est survenue: ${error.message}</div>`);
+        });
+    });
 });
