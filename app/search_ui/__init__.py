@@ -31,67 +31,47 @@ def search_page():
 @search_ui_bp.route('/api/prowlarr/search', methods=['POST'])
 @login_required
 def prowlarr_search():
+    """
+    Reçoit une requête de recherche, construit une requête complète avec tous les filtres,
+    et délègue la recherche à Prowlarr.
+    """
     data = request.get_json()
     query = data.get('query')
     if not query:
         return jsonify({"error": "La requête de recherche est vide."}), 400
 
+    # Récupération de tous les filtres
     year_filter = data.get('year')
     lang_filter = data.get('lang')
     quality_filter = data.get('quality')
     codec_filter = data.get('codec')
     source_filter = data.get('source')
 
-    search_query = f"{query} {year_filter if year_filter else ''}".strip()
+    # --- NOUVELLE LOGIQUE : CONSTRUCTION D'UNE REQUÊTE UNIQUE ---
+    search_terms = [query]
+    if year_filter:
+        search_terms.append(year_filter)
+    if quality_filter:
+        search_terms.append(quality_filter)
+    if codec_filter:
+        search_terms.append(codec_filter)
+    if source_filter:
+        search_terms.append(source_filter)
 
-    logging.info(f"Recherche Prowlarr pour '{search_query}' (Lang: {lang_filter}) avec filtres: Q={quality_filter}, C={codec_filter}, S={source_filter}")
+    # Combine tous les termes en une seule chaîne de recherche
+    final_query = " ".join(search_terms)
 
-    raw_results = search_prowlarr(query=search_query, lang=lang_filter)
-    if raw_results is None:
+    logging.info(f"Recherche DÉLÉGUÉE à Prowlarr pour '{final_query}' (Lang: {lang_filter})")
+
+    # Appel à Prowlarr avec la requête complète
+    results = search_prowlarr(query=final_query, lang=lang_filter)
+    if results is None:
         return jsonify({"error": "Erreur lors de la communication avec Prowlarr."}), 500
 
-    has_advanced_filters = any([quality_filter, codec_filter, source_filter])
-    if not has_advanced_filters:
-        logging.info(f"Aucun filtre avancé, retour de {len(raw_results)} résultats bruts.")
-        return jsonify(raw_results)
+    logging.info(f"Prowlarr a retourné {len(results)} résultats pour la recherche déléguée.")
 
-    filtered_results = []
-    for result in raw_results:
-        title = result.get('title', '')
-        info = guessit(title)
-
-        # --- LOGIQUE DE FILTRAGE FINALE ET CORRIGÉE ---
-
-        # Qualité : comparaison directe
-        quality_match = (not quality_filter) or (quality_filter.lower() in str(info.get('screen_size', '')).lower())
-
-        # Codec : gère les alias (x264/h.264, x265/hevc)
-        codec_match = True
-        if codec_filter:
-            detected_codec = str(info.get('video_codec', '')).lower()
-            if codec_filter == 'x264':
-                codec_match = 'x264' in detected_codec or 'h.264' in detected_codec
-            elif codec_filter == 'x265':
-                codec_match = 'x265' in detected_codec or 'hevc' in detected_codec
-            else:
-                codec_match = codec_filter in detected_codec
-
-        # Source : gère les alias (web-dl/web, bluray/blu-ray)
-        source_match = True
-        if source_filter:
-            detected_source = str(info.get('source', '')).lower()
-            if source_filter == 'web-dl':
-                source_match = 'web' in detected_source # guessit retourne 'Web' pour 'WEB-DL'
-            elif source_filter == 'bluray':
-                source_match = 'blu' in detected_source # Accepte 'Blu-ray' et 'bluray'
-            else:
-                source_match = source_filter in detected_source
-
-        if quality_match and codec_match and source_match:
-            filtered_results.append(result)
-
-    logging.info(f"{len(raw_results)} résultats bruts, {len(filtered_results)} après filtrage.")
-    return jsonify(filtered_results)
+    # Plus besoin de filtrer. On renvoie directement les résultats de Prowlarr.
+    return jsonify(results)
 
 
 @search_ui_bp.route('/api/search/lookup', methods=['POST'])
