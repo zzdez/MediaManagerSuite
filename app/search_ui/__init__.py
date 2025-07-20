@@ -31,6 +31,10 @@ def search_page():
 @search_ui_bp.route('/api/prowlarr/search', methods=['POST'])
 @login_required
 def prowlarr_search():
+    """
+    Reçoit une requête de recherche, interroge Prowlarr, filtre les résultats
+    en fonction des critères avancés et les renvoie.
+    """
     data = request.get_json()
     query = data.get('query')
     if not query:
@@ -43,6 +47,7 @@ def prowlarr_search():
     source_filter = data.get('source')
 
     search_query = f"{query} {year_filter if year_filter else ''}".strip()
+
     logging.info(f"Recherche Prowlarr pour '{search_query}' (Lang: {lang_filter}) avec filtres: Q={quality_filter}, C={codec_filter}, S={source_filter}")
 
     raw_results = search_prowlarr(query=search_query, lang=lang_filter)
@@ -51,6 +56,7 @@ def prowlarr_search():
 
     has_advanced_filters = any([quality_filter, codec_filter, source_filter])
     if not has_advanced_filters:
+        logging.info(f"Aucun filtre avancé, retour de {len(raw_results)} résultats bruts.")
         return jsonify(raw_results)
 
     filtered_results = []
@@ -58,15 +64,14 @@ def prowlarr_search():
         title = result.get('title', '')
         info = guessit(title)
 
-        matches = True
-        if quality_filter and quality_filter.lower() not in info.get('screen_size', '').lower():
-            matches = False
-        if matches and codec_filter and codec_filter.lower() not in info.get('video_codec', '').lower():
-            matches = False
-        if matches and source_filter and source_filter.lower() not in info.get('source', '').lower():
-            matches = False
+        # --- NOUVELLE LOGIQUE DE FILTRAGE ROBUSTE ---
+        # Un item correspond si le filtre n'est pas défini OU si le filtre correspond.
 
-        if matches:
+        quality_match = (not quality_filter) or (quality_filter.lower() in info.get('screen_size', '').lower())
+        codec_match = (not codec_filter) or (codec_filter.lower() in info.get('video_codec', '').lower())
+        source_match = (not source_filter) or (source_filter.lower() in info.get('source', '').lower())
+
+        if quality_match and codec_match and source_match:
             filtered_results.append(result)
 
     logging.info(f"{len(raw_results)} résultats bruts, {len(filtered_results)} après filtrage.")
