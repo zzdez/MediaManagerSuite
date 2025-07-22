@@ -32,48 +32,62 @@ def search_page():
 @search_ui_bp.route('/api/prowlarr/search', methods=['POST'])
 @login_required
 def prowlarr_search():
-    """
-    Reçoit une requête, charge les catégories appropriées (Sonarr/Radarr),
-    construit une requête complète et la délègue à Prowlarr.
-    """
     data = request.get_json()
     query = data.get('query')
     if not query:
-        return jsonify({"error": "La requête de recherche est vide."}), 400
+        return jsonify({"error": "La requête est vide."}), 400
 
-    # ÉTAPE 1: DÉTERMINER LES CATÉGORIES À UTILISER
     search_type = data.get('search_type', 'sonarr')
-
     search_config = load_search_categories()
-    categories_to_use = search_config.get(f"{search_type}_categories", [])
+    categories_to_filter = set(search_config.get(f"{search_type}_categories", []))
 
-    if not categories_to_use:
-        logging.warning(f"Aucune catégorie n'est configurée pour la recherche '{search_type}'. La recherche se fera sans filtre de catégorie.")
+    # --- NOUVELLE STRATÉGIE DE FILTRAGE CÔTÉ CLIENT ---
 
-    # ÉTAPE 2: CONSTRUCTION DE LA REQUÊTE ET APPEL À PROWLARR
-    year_filter = data.get('year')
-    lang_filter = data.get('lang')
-    quality_filter = data.get('quality')
-    codec_filter = data.get('codec')
-    source_filter = data.get('source')
+    # 1. On lance une recherche large sur Prowlarr, sans filtre de catégorie
+    logging.info(f"Recherche Prowlarr large pour '{query}'...")
+    raw_results = search_prowlarr(query=query, lang=data.get('lang'))
 
-    search_terms = [query]
-    if year_filter: search_terms.append(year_filter)
-    if quality_filter: search_terms.append(quality_filter)
-    if codec_filter: search_terms.append(codec_filter)
-    if source_filter: search_terms.append(source_filter)
+    if raw_results is None:
+        return jsonify({"error": "Erreur de communication avec Prowlarr."}), 500
 
-    final_query = " ".join(search_terms)
+    logging.info(f"Prowlarr a retourné {len(raw_results)} résultats bruts. Application du filtre local...")
 
-    logging.info(f"Recherche '{search_type}' pour '{final_query}' avec les catégories: {categories_to_use}")
+    # 2. On filtre les résultats nous-mêmes en Python
+    if not categories_to_filter:
+        logging.warning(f"Aucune catégorie configurée pour '{search_type}'. Aucun filtre appliqué.")
+        filtered_by_category = raw_results
+    else:
+        filtered_by_category = []
+        for result in raw_results:
+            result_categories = {cat.get('id') for cat in result.get('categories', [])}
+            # Si l'intersection entre les catégories du résultat et nos catégories n'est pas vide, on garde
+            if not categories_to_filter.isdisjoint(result_categories):
+                filtered_by_category.append(result)
 
-    results = search_prowlarr(query=final_query, categories=categories_to_use, lang=lang_filter)
+    logging.info(f"{len(filtered_by_category)} résultats après filtrage par catégorie.")
 
-    if results is None:
-        return jsonify({"error": "Erreur lors de la communication avec Prowlarr."}), 500
+    # 3. On applique les filtres avancés sur la liste déjà filtrée par catégorie
+    quality = data.get('quality')
+    codec = data.get('codec')
+    source = data.get('source')
 
-    logging.info(f"Prowlarr a retourné {len(results)} résultats pour la recherche '{search_type}'.")
-    return jsonify(results)
+    if not any([quality, codec, source]):
+         return jsonify(filtered_by_category)
+
+    from guessit import guessit
+    final_results = []
+    for result in filtered_by_category:
+        title = result.get('title', '')
+        parsed = guessit(title)
+
+        if quality and quality.lower() not in parsed.get('screen_size', '').lower(): continue
+        if codec and codec.lower() not in parsed.get('video_codec', '').lower(): continue
+        if source and source.lower() not in parsed.get('source', '').lower(): continue
+
+        final_results.append(result)
+
+    logging.info(f"{len(final_results)} résultats après filtrage avancé.")
+    return jsonify(final_results)
 
 
 @search_ui_bp.route('/api/search/lookup', methods=['POST'])
