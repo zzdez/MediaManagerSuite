@@ -41,20 +41,20 @@ def prowlarr_search():
     search_config = load_search_categories()
     categories_to_filter = set(search_config.get(f"{search_type}_categories", []))
 
-    # --- NOUVELLE STRATÉGIE DE FILTRAGE CÔTÉ CLIENT ---
-
-    # 1. On lance une recherche large sur Prowlarr, sans filtre de catégorie
+    # --- STRATÉGIE DE FILTRAGE CÔTÉ CLIENT ---
+    
+    # 1. On lance une recherche large sur Prowlarr
     logging.info(f"Recherche Prowlarr large pour '{query}'...")
     raw_results = search_prowlarr(query=query, lang=data.get('lang'))
 
     if raw_results is None:
         return jsonify({"error": "Erreur de communication avec Prowlarr."}), 500
-
+    
     logging.info(f"Prowlarr a retourné {len(raw_results)} résultats bruts. Application du filtre local...")
 
     # 2. On filtre les résultats nous-mêmes en Python
     if not categories_to_filter:
-        logging.warning(f"Aucune catégorie configurée pour '{search_type}'. Aucun filtre appliqué.")
+        logging.warning(f"Aucune catégorie configurée pour '{search_type}'. Aucun filtre par catégorie appliqué.")
         filtered_by_category = raw_results
     else:
         filtered_by_category = []
@@ -63,14 +63,14 @@ def prowlarr_search():
             # Si l'intersection entre les catégories du résultat et nos catégories n'est pas vide, on garde
             if not categories_to_filter.isdisjoint(result_categories):
                 filtered_by_category.append(result)
-
+    
     logging.info(f"{len(filtered_by_category)} résultats après filtrage par catégorie.")
-
-    # 3. On applique les filtres avancés sur la liste déjà filtrée par catégorie
+    
+    # 3. On applique les filtres avancés (Qualité, etc.)
     quality = data.get('quality')
     codec = data.get('codec')
     source = data.get('source')
-
+    
     if not any([quality, codec, source]):
          return jsonify(filtered_by_category)
 
@@ -79,13 +79,13 @@ def prowlarr_search():
     for result in filtered_by_category:
         title = result.get('title', '')
         parsed = guessit(title)
-
+        
         if quality and quality.lower() not in parsed.get('screen_size', '').lower(): continue
         if codec and codec.lower() not in parsed.get('video_codec', '').lower(): continue
         if source and source.lower() not in parsed.get('source', '').lower(): continue
-
+        
         final_results.append(result)
-
+    
     logging.info(f"{len(final_results)} résultats après filtrage avancé.")
     return jsonify(final_results)
 
