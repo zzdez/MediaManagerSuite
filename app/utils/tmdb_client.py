@@ -1,7 +1,6 @@
-# app/utils/tmdb_client.py
+# app/utils/tmdb_client.py (LA VRAIE CORRECTION)
 import logging
 from flask import current_app
-# CORRECTION : 'Details' a été retiré de la ligne suivante
 from tmdbv3api import TMDb, Movie
 
 logger = logging.getLogger(__name__)
@@ -23,19 +22,25 @@ class TheMovieDBClient:
             logger.error("La clé API TMDb n'est pas disponible.")
             return None
 
+        # ** LA CORRECTION CRUCIALE EST ICI **
+        original_lang = self.tmdb.language
         try:
             logger.info(f"Récupération des détails TMDb pour l'ID : {tmdb_id} en langue '{lang}'")
+
+            # 1. On change la langue de l'instance
+            self.tmdb.language = lang
+
             movie_api = Movie()
 
-            # La bibliothèque tmdbv3api utilise 'language' comme nom de paramètre.
-            movie = movie_api.details(tmdb_id, language=lang)
+            # 2. On fait l'appel SANS le paramètre 'language'
+            movie = movie_api.details(tmdb_id)
 
+            # 3. On construit le dictionnaire de retour avec les bons noms de clés
             details = {
                 'id': movie.id,
                 'title': movie.title,
                 'overview': movie.overview,
                 'poster': f"https://image.tmdb.org/t/p/w500{movie.poster_path}" if movie.poster_path else "",
-                'release_date': movie.release_date if hasattr(movie, 'release_date') else 'N/A',
                 'year': movie.release_date.split('-')[0] if hasattr(movie, 'release_date') and movie.release_date else 'N/A',
                 'status': movie.status,
             }
@@ -43,3 +48,6 @@ class TheMovieDBClient:
         except Exception as e:
             logger.error(f"Erreur lors de la récupération des détails TMDb pour {tmdb_id}: {e}", exc_info=True)
             return None
+        finally:
+            # 4. On restaure la langue d'origine, quoi qu'il arrive
+            self.tmdb.language = original_lang
