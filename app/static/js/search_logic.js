@@ -1,11 +1,14 @@
-// Fichier : app/static/js/search_logic.js (Nouveau Nom !)
-// Version : Contournement Final
+// Fichier : app/static/js/search_logic.js (Version unifiée et corrigée)
 
 $(document).ready(function() {
-    console.log(">>>>>> SCRIPT 'search_logic.js' CHARGÉ AVEC SUCCÈS <<<<<<");
+    console.log(">>>>>> SCRIPT UNIFIÉ 'search_logic.js' CHARGÉ (Recherche + Modale) <<<<<<");
+
+    const modalEl = $('#sonarrRadarrSearchModal');
+    const modalBody = modalEl.find('.modal-body');
 
     // =================================================================
-    // ### GESTIONNAIRE DE RECHERCHE PRINCIPALE (PROWLARR) ###
+    // ### PARTIE 1 : GESTIONNAIRE DE RECHERCHE PRINCIPALE (PROWLARR) ###
+    // (Ce code est celui qui fonctionne déjà et que nous conservons)
     // =================================================================
     $('body').on('click', '#execute-prowlarr-search-btn', function() {
         const form = $('#search-form');
@@ -20,7 +23,7 @@ $(document).ready(function() {
 
         const payload = {
             query: query,
-            search_type: $('input[name="search_type"]:checked').val(),
+            search_type: $('input[name="search_type"]:checked').val(), // Correction cruciale qui fonctionne
             year: form.find('[name="year"]').val(),
             lang: form.find('[name="lang"]').val(),
             quality: $('#filterQuality').val(),
@@ -28,34 +31,41 @@ $(document).ready(function() {
             source: $('#filterSource').val()
         };
         
-        console.log("Payload envoyé :", payload); // Log pour le navigateur
+        console.log("Payload de recherche principale envoyé :", payload);
 
         fetch('/search/api/prowlarr/search', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) throw new Error(`Erreur réseau: ${response.statusText}`);
+            return response.json();
+        })
         .then(data => {
             if (data.error) {
                 resultsContainer.html(`<div class="alert alert-danger">${data.error}</div>`);
                 return;
             }
             if (!data || data.length === 0) {
-                resultsContainer.html('<div class="alert alert-info mt-3">Aucun résultat trouvé avec les filtres actuels.</div>');
+                resultsContainer.html('<div class="alert alert-info mt-3">Aucun résultat trouvé pour cette recherche avec les filtres actuels.</div>');
                 return;
             }
-            let resultsHtml = `<hr><h4 class="mb-3">Résultats (${data.length})</h4><ul class="list-group">`;
+
+            let resultsHtml = `<hr><h4 class="mb-3">Résultats pour "${payload.query}" (${data.length})</h4><ul class="list-group">`;
             data.forEach(result => {
                 const sizeInGB = (result.size / 1024**3).toFixed(2);
                 const seedersClass = result.seeders > 0 ? 'text-success' : 'text-danger';
+
                 resultsHtml += `
                     <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap">
                         <div class="me-auto" style="flex-basis: 60%; min-width: 300px;">
                             <strong>${result.title}</strong><br>
-                            <small class="text-muted">Indexer: ${result.indexer} | Taille: ${sizeInGB} GB | Seeders: <span class="${seedersClass}">${result.seeders}</span></small>
+                            <small class="text-muted">
+                                Indexer: ${result.indexer} | Taille: ${sizeInGB} GB | Seeders: <span class="${seedersClass}">${result.seeders}</span>
+                            </small>
                         </div>
-                        <div class="status-cell p-2" style="min-width: 150px; text-align: center;">
+                        <div class="p-2" style="min-width: 150px; text-align: center;">
                             <button class="btn btn-sm btn-outline-info check-status-btn" data-guid="${result.guid}" data-title="${result.title}">Vérifier Statut</button>
                             <div class="spinner-border spinner-border-sm d-none" role="status"></div>
                         </div>
@@ -71,11 +81,110 @@ $(document).ready(function() {
             resultsContainer.html(resultsHtml);
         })
         .catch(error => {
-            console.error("Erreur Prowlarr:", error);
-            resultsContainer.html(`<div class="alert alert-danger">${error.message}</div>`);
+            console.error("Erreur lors de la recherche Prowlarr:", error);
+            resultsContainer.html(`<div class="alert alert-danger">Une erreur est survenue: ${error.message}</div>`);
         });
     });
-    
-    // --- NOTE : Le reste du code pour les modales, etc. est omis pour ce test ---
-    // Nous le rajouterons une fois que la recherche principale sera confirmée fonctionnelle.
+
+    // =================================================================
+    // ### PARTIE 2 : LOGIQUE DE LA MODALE "& MAPPER" ###
+    // (Ce code est migré depuis search_actions.js)
+    // =================================================================
+
+    // --- FONCTION UTILITAIRE POUR AFFICHER LES RÉSULTATS DANS LA MODALE ---
+    function displayResults(resultsData, mediaType) {
+        const resultsContainer = modalBody.find('#lookup-results-container');
+        let itemsHtml = '';
+        if (resultsData && resultsData.length > 0) {
+            itemsHtml = resultsData.map(item => {
+                const bestMatchClass = item.is_best_match ? 'best-match' : '';
+                return `
+                    <div class="list-group-item d-flex justify-content-between align-items-center ${bestMatchClass}">
+                        <span><strong>${item.title}</strong> (${item.year})</span>
+                        <button class="btn btn-sm btn-outline-primary enrich-details-btn" data-media-id="${item.tvdbId || item.tmdbId}" data-media-type="${mediaType}">
+                            Voir les détails
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        } else {
+            itemsHtml = '<div class="alert alert-info mt-3">Aucun résultat trouvé. Essayez une recherche manuelle.</div>';
+        }
+        resultsContainer.html(`<div class="list-group list-group-flush">${itemsHtml}</div>`);
+    }
+
+    // --- OUVRE ET CONSTRUIT LA MODALE AU CLIC SUR "& MAPPER" ---
+    $('body').on('click', '.download-and-map-btn', function(event) {
+        event.preventDefault();
+        const button = $(this);
+        const releaseTitle = button.data('title');
+        // Le media_type est déterminé par le bouton radio de la recherche principale
+        const mediaType = $('input[name="search_type"]:checked').val() === 'sonarr' ? 'tv' : 'movie';
+
+        modalEl.find('.modal-title').text(`Mapper : ${releaseTitle}`);
+        modalBody.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div><p class="mt-2">Recherche des correspondances...</p></div>');
+        new bootstrap.Modal(modalEl[0]).show();
+
+        console.log(`Lookup pour: "${releaseTitle}", Type: "${mediaType}"`);
+
+        fetch('/search/api/search/lookup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ term: releaseTitle, media_type: mediaType })
+        })
+        .then(response => response.json())
+        .then(data => {
+            const idPlaceholder = mediaType === 'tv' ? 'ID TVDB...' : 'ID TMDb...';
+            const modalHtml = `
+                <div data-media-type="${mediaType}">
+                    <p class="text-muted small">Le meilleur résultat est surligné. Si ce n'est pas le bon, utilisez la recherche manuelle.</p>
+                    <h6>Recherche manuelle par Titre</h6>
+                    <div class="input-group mb-2">
+                        <input type="text" id="manual-search-input" class="form-control" value="${data.cleaned_query}">
+                    </div>
+                    <div class="text-center text-muted my-2 small">OU</div>
+                    <h6>Recherche manuelle par ID</h6>
+                    <div class="input-group mb-3">
+                        <input type="number" id="manual-id-input" class="form-control" placeholder="${idPlaceholder}">
+                    </div>
+                    <button id="unified-search-button" class="btn btn-primary w-100 mb-3">Rechercher manuellement</button>
+                    <hr>
+                    <div id="lookup-results-container"></div>
+                </div>
+            `;
+            modalBody.html(modalHtml);
+            displayResults(data.results, mediaType);
+        });
+    });
+
+    // --- GESTIONNAIRE DE LA RECHERCHE MANUELLE UNIFIÉE DANS LA MODALE ---
+    modalBody.on('click', '#unified-search-button', function() {
+        const button = $(this);
+        const mediaType = button.closest('[data-media-type]').data('media-type');
+        const titleQuery = $('#manual-search-input').val();
+        const idQuery = $('#manual-id-input').val();
+
+        let payload = { media_type: mediaType };
+        if (idQuery) {
+            payload.media_id = idQuery;
+        } else if (titleQuery) {
+            payload.term = titleQuery;
+        } else {
+            alert("Veuillez entrer un titre ou un ID.");
+            return;
+        }
+
+        const resultsContainer = modalBody.find('#lookup-results-container');
+        resultsContainer.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div></div>');
+
+        fetch('/search/api/search/lookup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(response => response.json())
+        .then(data => {
+            displayResults(data.results, mediaType);
+        });
+    });
 });

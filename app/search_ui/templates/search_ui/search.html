@@ -135,37 +135,26 @@
     </div>
 
     <!-- ================================================================== -->
-    <!-- ### MODALE POUR LE MAPPING SONARR/RADARR (AJOUTÉE ICI) ### -->
+    <!-- ### MODALE POUR LE MAPPING SONARR/RADARR (Coquille Vide) ### -->
     <!-- ================================================================== -->
     <div class="modal fade" id="sonarrRadarrSearchModal" tabindex="-1" aria-labelledby="sonarrRadarrModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="sonarrRadarrModalLabel">Mapper et Télécharger</h5>
+                    <h5 class="modal-title" id="sonarrRadarrModalLabel">Initialisation...</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <p>Recherchez la série ou le film correspondant à la release sélectionnée.</p>
-                    
-                    <div class="mb-3 text-center">
-                        <input type="radio" class="btn-check" name="mapInstanceType" id="mapSonarrRadio" value="sonarr" autocomplete="off" checked>
-                        <label class="btn btn-outline-primary" for="mapSonarrRadio">Sonarr (Série)</label>
-
-                        <input type="radio" class="btn-check" name="mapInstanceType" id="mapRadarrRadio" value="radarr" autocomplete="off">
-                        <label class="btn btn-outline-secondary" for="mapRadarrRadio">Radarr (Film)</label>
-                    </div>
-
-                    <div class="input-group mb-3">
-                        <input type="text" class="form-control" id="sonarrRadarrQuery" placeholder="Titre de la série/film...">
-                        <button class="btn btn-info" type="button" id="executeSonarrRadarrSearch">Rechercher</button>
-                    </div>
-
-                    <div id="prowlarrModalSearchResults" class="list-group" style="max-height: 300px; overflow-y: auto;">
-                        <!-- Les résultats de la recherche Sonarr/Radarr s'afficheront ici -->
+                    <!-- Ce contenu sera remplacé dynamiquement par search_logic.js -->
+                    <div class="text-center p-4">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <!-- Les boutons de confirmation seront ajoutés dynamiquement si nécessaire -->
                 </div>
             </div>
         </div>
