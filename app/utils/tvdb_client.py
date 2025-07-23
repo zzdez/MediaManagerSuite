@@ -1,4 +1,4 @@
-# Fichier : app/utils/tvdb_client.py
+# Fichier : app/utils/tvdb_client.py (Version avec construction de l'URL du poster)
 
 import logging
 from tvdb_v4_official import TVDB
@@ -31,7 +31,7 @@ class CustomTVDBClient:
 
     def get_series_details_by_id(self, tvdb_id, lang='fra'):
         """
-        Récupère les détails d'une série. Corrigé pour lire la réponse directe.
+        Récupère les détails d'une série et construit une URL d'image complète.
         """
         if not self.client:
             logger.error("Fatal: Le client TVDB ne peut pas être initialisé.")
@@ -39,26 +39,26 @@ class CustomTVDBClient:
 
         logger.info(f"Recherche TVDB pour l'ID : {tvdb_id}")
         try:
-            # Étape 1: Récupération des données de base
             base_data = self.client.get_series(tvdb_id)
-
-            # La réponse est directement le dictionnaire de données.
             if not base_data or not isinstance(base_data, dict):
-                logger.warning(f"Aucune donnée valide (ou dictionnaire vide) reçue pour l'ID TVDB {tvdb_id}")
+                logger.warning(f"Aucune donnée valide reçue pour l'ID TVDB {tvdb_id}")
                 return None
 
-            logger.info(f"Données de base trouvées pour {tvdb_id}. Nom: {base_data.get('seriesName')}")
+            # --- CORRECTION MAJEURE ICI ---
+            # On récupère le chemin relatif de l'image.
+            image_path = base_data.get('image')
+            # On construit l'URL complète si le chemin existe.
+            full_image_url = f"https://artworks.thetvdb.com{image_path}" if image_path else ""
 
             details = {
                 'tvdb_id': base_data.get('id'),
                 'name': base_data.get('seriesName'),
                 'overview': base_data.get('overview', 'Aucun synopsis disponible.'),
-                'status': base_data.get('status', {}).get('name', 'Inconnu'), # Accès plus sûr
+                'status': base_data.get('status', {}).get('name', 'Inconnu'),
                 'year': base_data.get('year'),
-                'image_url': base_data.get('image')
+                'image_url': full_image_url # On utilise notre URL complète.
             }
 
-            # Étape 2: Tentative d'enrichissement avec la traduction
             try:
                 translation_response = self.client.get_series_translation(tvdb_id, lang)
                 if translation_response and translation_response.get('overview'):
