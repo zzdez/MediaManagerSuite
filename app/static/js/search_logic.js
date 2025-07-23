@@ -1,15 +1,12 @@
-// Fichier : app/static/js/search_logic.js (Version unifiée et corrigée)
+// Fichier : app/static/js/search_logic.js (Version unifiée + Enrichissement)
 
 $(document).ready(function() {
-    console.log(">>>>>> SCRIPT UNIFIÉ 'search_logic.js' CHARGÉ (Recherche + Modale) <<<<<<");
+    console.log(">>>>>> SCRIPT UNIFIÉ 'search_logic.js' CHARGÉ (Recherche + Modale + Enrichissement) <<<<<<");
 
     const modalEl = $('#sonarrRadarrSearchModal');
     const modalBody = modalEl.find('.modal-body');
 
-    // =================================================================
-    // ### PARTIE 1 : GESTIONNAIRE DE RECHERCHE PRINCIPALE (PROWLARR) ###
-    // (Ce code est celui qui fonctionne déjà et que nous conservons)
-    // =================================================================
+    // (Le code de la recherche principale reste identique)
     $('body').on('click', '#execute-prowlarr-search-btn', function() {
         const form = $('#search-form');
         const query = form.find('[name="query"]').val();
@@ -17,22 +14,18 @@ $(document).ready(function() {
             alert("Veuillez entrer un terme à rechercher.");
             return;
         }
-
         const resultsContainer = $('#search-results-container');
         resultsContainer.html('<div class="text-center p-5"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Recherche en cours...</p></div>');
-
         const payload = {
             query: query,
-            search_type: $('input[name="search_type"]:checked').val(), // Correction cruciale qui fonctionne
+            search_type: $('input[name="search_type"]:checked').val(),
             year: form.find('[name="year"]').val(),
             lang: form.find('[name="lang"]').val(),
             quality: $('#filterQuality').val(),
             codec: $('#filterCodec').val(),
             source: $('#filterSource').val()
         };
-        
         console.log("Payload de recherche principale envoyé :", payload);
-
         fetch('/search/api/prowlarr/search', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -51,12 +44,10 @@ $(document).ready(function() {
                 resultsContainer.html('<div class="alert alert-info mt-3">Aucun résultat trouvé pour cette recherche avec les filtres actuels.</div>');
                 return;
             }
-
             let resultsHtml = `<hr><h4 class="mb-3">Résultats pour "${payload.query}" (${data.length})</h4><ul class="list-group">`;
             data.forEach(result => {
                 const sizeInGB = (result.size / 1024**3).toFixed(2);
                 const seedersClass = result.seeders > 0 ? 'text-success' : 'text-danger';
-
                 resultsHtml += `
                     <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap">
                         <div class="me-auto" style="flex-basis: 60%; min-width: 300px;">
@@ -86,22 +77,18 @@ $(document).ready(function() {
         });
     });
 
-    // =================================================================
-    // ### PARTIE 2 : LOGIQUE DE LA MODALE "& MAPPER" ###
-    // (Ce code est migré depuis search_actions.js)
-    // =================================================================
-
-    // --- FONCTION UTILITAIRE POUR AFFICHER LES RÉSULTATS DANS LA MODALE ---
+    // (Le code d'ouverture de la modale reste identique)
     function displayResults(resultsData, mediaType) {
         const resultsContainer = modalBody.find('#lookup-results-container');
         let itemsHtml = '';
         if (resultsData && resultsData.length > 0) {
             itemsHtml = resultsData.map(item => {
                 const bestMatchClass = item.is_best_match ? 'best-match' : '';
+                const itemID = mediaType === 'tv' ? item.tvdbId : item.tmdbId;
                 return `
-                    <div class="list-group-item d-flex justify-content-between align-items-center ${bestMatchClass}">
+                    <div class="list-group-item list-group-item-action d-flex justify-content-between align-items-center ${bestMatchClass}" data-result-item>
                         <span><strong>${item.title}</strong> (${item.year})</span>
-                        <button class="btn btn-sm btn-outline-primary enrich-details-btn" data-media-id="${item.tvdbId || item.tmdbId}" data-media-type="${mediaType}">
+                        <button class="btn btn-sm btn-outline-primary enrich-details-btn" data-media-id="${itemID}" data-media-type="${mediaType}">
                             Voir les détails
                         </button>
                     </div>
@@ -113,20 +100,15 @@ $(document).ready(function() {
         resultsContainer.html(`<div class="list-group list-group-flush">${itemsHtml}</div>`);
     }
 
-    // --- OUVRE ET CONSTRUIT LA MODALE AU CLIC SUR "& MAPPER" ---
     $('body').on('click', '.download-and-map-btn', function(event) {
         event.preventDefault();
         const button = $(this);
         const releaseTitle = button.data('title');
-        // Le media_type est déterminé par le bouton radio de la recherche principale
         const mediaType = $('input[name="search_type"]:checked').val() === 'sonarr' ? 'tv' : 'movie';
-
         modalEl.find('.modal-title').text(`Mapper : ${releaseTitle}`);
         modalBody.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div><p class="mt-2">Recherche des correspondances...</p></div>');
         new bootstrap.Modal(modalEl[0]).show();
-
         console.log(`Lookup pour: "${releaseTitle}", Type: "${mediaType}"`);
-
         fetch('/search/api/search/lookup', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -157,13 +139,11 @@ $(document).ready(function() {
         });
     });
 
-    // --- GESTIONNAIRE DE LA RECHERCHE MANUELLE UNIFIÉE DANS LA MODALE ---
     modalBody.on('click', '#unified-search-button', function() {
         const button = $(this);
         const mediaType = button.closest('[data-media-type]').data('media-type');
         const titleQuery = $('#manual-search-input').val();
         const idQuery = $('#manual-id-input').val();
-
         let payload = { media_type: mediaType };
         if (idQuery) {
             payload.media_id = idQuery;
@@ -173,10 +153,8 @@ $(document).ready(function() {
             alert("Veuillez entrer un titre ou un ID.");
             return;
         }
-
         const resultsContainer = modalBody.find('#lookup-results-container');
         resultsContainer.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div></div>');
-
         fetch('/search/api/search/lookup', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -185,6 +163,53 @@ $(document).ready(function() {
         .then(response => response.json())
         .then(data => {
             displayResults(data.results, mediaType);
+        });
+    });
+
+    // =================================================================
+    // ### NOUVEAU GESTIONNAIRE : ENRICHISSEMENT DES DÉTAILS ###
+    // =================================================================
+    modalBody.on('click', '.enrich-details-btn', function() {
+        const button = $(this);
+        const container = button.closest('[data-result-item]');
+        const mediaId = button.data('media-id');
+        const mediaType = button.data('media-type');
+
+        container.html('<div class="d-flex justify-content-center align-items-center p-3"><div class="spinner-border spinner-border-sm"></div></div>');
+
+        fetch('/search/api/enrich/details', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ media_id: mediaId, media_type: mediaType })
+        })
+        .then(response => response.json())
+        .then(details => {
+            if (details.error) {
+                container.html(`<div class="text-danger">${details.error}</div>`);
+                return;
+            }
+            const enrichedHtml = `
+                <div class="card bg-dark text-white">
+                    <div class="row g-0">
+                        <div class="col-md-3">
+                            <img src="${details.poster}" class="img-fluid rounded-start" alt="Poster">
+                        </div>
+                        <div class="col-md-9">
+                            <div class="card-body">
+                                <h5 class="card-title">${details.title} (${details.year})</h5>
+                                <p class="card-text_small" style="font-size: 0.8rem;"><strong>Statut:</strong> ${details.status}</p>
+                                <p class="card-text" style="max-height: 150px; overflow-y: auto;">${details.overview || 'Synopsis non disponible.'}</p>
+                                <button class="btn btn-sm btn-primary confirm-mapping-btn" data-media-id="${details.id}">Choisir ce média</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.removeClass('list-group-item-action').html(enrichedHtml);
+        })
+        .catch(err => {
+            container.html('<div class="text-danger">Erreur de communication.</div>');
+            console.error("Erreur d'enrichissement:", err);
         });
     });
 });
