@@ -41,9 +41,6 @@ def prowlarr_search():
     search_config = load_search_categories()
     categories_to_filter = set(search_config.get(f"{search_type}_categories", []))
 
-    # --- STRATÉGIE DE FILTRAGE CÔTÉ CLIENT ---
-    
-    # 1. On lance une recherche large sur Prowlarr
     logging.info(f"Recherche Prowlarr large pour '{query}'...")
     raw_results = search_prowlarr(query=query, lang=data.get('lang'))
 
@@ -52,7 +49,6 @@ def prowlarr_search():
     
     logging.info(f"Prowlarr a retourné {len(raw_results)} résultats bruts. Application du filtre local...")
 
-    # 2. On filtre les résultats nous-mêmes en Python
     if not categories_to_filter:
         logging.warning(f"Aucune catégorie configurée pour '{search_type}'. Aucun filtre par catégorie appliqué.")
         filtered_by_category = raw_results
@@ -60,19 +56,19 @@ def prowlarr_search():
         filtered_by_category = []
         for result in raw_results:
             result_categories = {cat.get('id') for cat in result.get('categories', [])}
-            # Si l'intersection entre les catégories du résultat et nos catégories n'est pas vide, on garde
             if not categories_to_filter.isdisjoint(result_categories):
                 filtered_by_category.append(result)
     
     logging.info(f"{len(filtered_by_category)} résultats après filtrage par catégorie.")
     
-    # 3. On applique les filtres avancés (Qualité, etc.)
+    # === BLOC DE FILTRAGE AVANCÉ AMÉLIORÉ ===
     quality = data.get('quality')
     codec = data.get('codec')
     source = data.get('source')
     
     if not any([quality, codec, source]):
-         return jsonify(filtered_by_category)
+        current_app.logger.info("Aucun filtre avancé spécifié. Retour des résultats filtrés par catégorie.")
+        return jsonify(filtered_by_category)
 
     from guessit import guessit
     final_results = []
@@ -80,9 +76,27 @@ def prowlarr_search():
         title = result.get('title', '')
         parsed = guessit(title)
         
-        if quality and quality.lower() not in parsed.get('screen_size', '').lower(): continue
-        if codec and codec.lower() not in parsed.get('video_codec', '').lower(): continue
-        if source and source.lower() not in parsed.get('source', '').lower(): continue
+        # Filtre Qualité (plus flexible)
+        if quality:
+            quality_val = quality.replace('p', '')
+            screen_size = str(parsed.get('screen_size', ''))
+            if quality_val not in screen_size:
+                continue
+
+        # Filtre Codec (avec alias)
+        if codec:
+            video_codec = parsed.get('video_codec', '').lower()
+            codec_aliases = {
+                'x265': ['x265', 'hevc'],
+                'x264': ['x264', 'avc'],
+                'av1': ['av1']
+            }
+            if not any(alias in video_codec for alias in codec_aliases.get(codec, [codec])):
+                continue
+
+        # Filtre Source
+        if source and source.lower() not in parsed.get('source', '').lower():
+            continue
         
         final_results.append(result)
     
@@ -158,13 +172,8 @@ def api_search_lookup():
 
 @search_ui_bp.route('/api/enrich/details', methods=['POST'])
 def enrich_details():
-    # Imports locaux
     from app.utils.tvdb_client import CustomTVDBClient
-    from app.utils.tmdb_client import TheMovieDBClient  # CORRIGÉ
-
-    # Initialisation des clients ici
-    tvdb_client = CustomTVDBClient()  # CORRIGÉ
-    tmdb_client = TheMovieDBClient()  # CORRIGÉ
+    from app.utils.tmdb_client import TheMovieDBClient
 
     data = request.get_json()
     media_id = data.get('media_id')
@@ -175,31 +184,20 @@ def enrich_details():
 
     try:
         if media_type == 'tv':
+            tvdb_client = CustomTVDBClient()
             details = tvdb_client.get_series_details_by_id(media_id, lang='fra')
-            if details:
-                formatted_details = {
-                    'id': details.get('tvdb_id'),
-                    'title': details.get('name'),
-                    'year': details.get('year'),
-                    'overview': details.get('overview'),
-                    'poster': details.get('image_url'),
-                    'status': details.get('status')
-                }
-                return jsonify(formatted_details)
         elif media_type == 'movie':
+            tmdb_client = TheMovieDBClient()
             details = tmdb_client.get_movie_details(media_id, lang='fr-FR')
-            if details:
-                formatted_details = {
-                    'id': details.get('id'),
-                    'title': details.get('title'),
-                    'year': details.get('release_date', 'N/A')[:4],
-                    'overview': details.get('overview'),
-                    'poster': f"https://image.tmdb.org/t/p/w500{details.get('poster_path')}" if details.get('poster_path') else '',
-                    'status': details.get('status')
-                }
-                return jsonify(formatted_details)
+        else:
+            details = None
 
-        return jsonify({'error': 'Media not found'}), 404
+        if details:
+            # === CORRECTION MAJEURE ===
+            # On ne reformate plus, on fait confiance au dictionnaire du client.
+            return jsonify(details)
+
+        return jsonify({'error': 'Media not found or details could not be retrieved'}), 404
 
     except Exception as e:
         current_app.logger.error(f"Erreur dans enrich_details: {e}", exc_info=True)
