@@ -1,4 +1,4 @@
-# Fichier : app/utils/tvdb_client.py (Version avec construction de l'URL du poster)
+# Fichier : app/utils/tvdb_client.py (Version Robuste avec recherche d'artwork)
 
 import logging
 from tvdb_v4_official import TVDB
@@ -29,9 +29,25 @@ class CustomTVDBClient:
             logger.error(f"Failed to initialize TVDB client: {e}", exc_info=True)
             self.client = None
 
+    def _get_poster_url(self, tvdb_id):
+        """Fonction interne pour trouver la première URL de poster disponible."""
+        try:
+            # On demande spécifiquement les posters (type=2)
+            artworks = self.client.get_series_artworks(tvdb_id, type=2)
+            if artworks and isinstance(artworks, list) and len(artworks) > 0:
+                # On prend la première image de la liste et on retourne son URL
+                poster_url = artworks[0].get('image')
+                if poster_url:
+                    return poster_url
+        except Exception as e:
+            logger.warning(f"Impossible de récupérer les artworks pour la série {tvdb_id}: {e}")
+
+        # Fallback au cas où il n'y aurait pas d'artwork ou une erreur
+        return ""
+
     def get_series_details_by_id(self, tvdb_id, lang='fra'):
         """
-        Récupère les détails d'une série et construit une URL d'image complète.
+        Récupère les détails d'une série et trouve son poster de manière robuste.
         """
         if not self.client:
             logger.error("Fatal: Le client TVDB ne peut pas être initialisé.")
@@ -44,11 +60,9 @@ class CustomTVDBClient:
                 logger.warning(f"Aucune donnée valide reçue pour l'ID TVDB {tvdb_id}")
                 return None
 
-            # --- CORRECTION MAJEURE ICI ---
-            # On récupère le chemin relatif de l'image.
-            image_path = base_data.get('image')
-            # On construit l'URL complète si le chemin existe.
-            full_image_url = f"https://artworks.thetvdb.com{image_path}" if image_path else ""
+            # --- CORRECTION FINALE ---
+            # On appelle notre nouvelle fonction interne pour trouver l'URL du poster.
+            poster_url = self._get_poster_url(tvdb_id)
 
             details = {
                 'tvdb_id': base_data.get('id'),
@@ -56,7 +70,7 @@ class CustomTVDBClient:
                 'overview': base_data.get('overview', 'Aucun synopsis disponible.'),
                 'status': base_data.get('status', {}).get('name', 'Inconnu'),
                 'year': base_data.get('year'),
-                'image_url': full_image_url # On utilise notre URL complète.
+                'image_url': poster_url # On utilise notre URL trouvée de manière fiable.
             }
 
             try:
