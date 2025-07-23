@@ -1,7 +1,7 @@
 # app/utils/tmdb_client.py
 import logging
 from flask import current_app
-from tmdbv3api import TMDb, Movie
+from tmdbv3api import TMDb, Movie, Details
 
 logger = logging.getLogger(__name__)
 
@@ -12,29 +12,37 @@ class TheMovieDBClient:
             raise ValueError("La clé API TMDb (TMDB_API_KEY) n'est pas configurée.")
         self.tmdb = TMDb()
         self.tmdb.api_key = self.api_key
-        self.tmdb.language = 'fr-FR' # Demander les infos en français par défaut
+        self.tmdb.language = 'fr' # Langue par défaut
 
-    def get_movie_details(self, tmdb_id):
+    # MODIFIÉ : La signature de la fonction accepte maintenant le paramètre 'lang'
+    def get_movie_details(self, tmdb_id, lang='fr-FR'):
         """
-        Récupère les détails d'un film depuis TMDb en utilisant son ID.
+        Récupère les détails d'un film depuis TMDb en utilisant son ID et une langue spécifique.
         """
         if not self.api_key:
             logger.error("La clé API TMDb n'est pas disponible.")
             return None
 
         try:
-            logger.info(f"Récupération des détails TMDb pour l'ID : {tmdb_id}")
+            logger.info(f"Récupération des détails TMDb pour l'ID : {tmdb_id} en langue '{lang}'")
             movie_api = Movie()
-            movie = movie_api.details(tmdb_id)
 
+            # MODIFIÉ : On passe le paramètre 'language' à l'appel de l'API
+            # La bibliothèque tmdbv3api utilise 'language' comme nom de paramètre.
+            movie = movie_api.details(tmdb_id, language=lang)
+
+            # La réponse de l'API est déjà un objet avec des attributs.
+            # On les utilise pour construire notre dictionnaire.
             details = {
+                'id': movie.id,
                 'title': movie.title,
-                'original_title': movie.original_title,
                 'overview': movie.overview,
-                'poster_path': f"https://image.tmdb.org/t/p/w500{movie.poster_path}" if movie.poster_path else None,
-                'year': movie.release_date.split('-')[0] if movie.release_date else None,
+                'poster_path': movie.poster_path, # Le JS ajoutera la base de l'URL
+                'release_date': movie.release_date if hasattr(movie, 'release_date') else 'N/A',
+                'status': movie.status,
             }
             return details
         except Exception as e:
-            logger.error(f"Erreur lors de la récupération des détails TMDb pour {tmdb_id}: {e}")
+            # Correction du logger pour afficher l'erreur correctement
+            logger.error(f"Erreur lors de la récupération des détails TMDb pour {tmdb_id}: {e}", exc_info=True)
             return None
