@@ -183,19 +183,39 @@ def enrich_details():
         return jsonify({'error': 'Missing media_id or media_type'}), 400
 
     try:
+        details = None
+        formatted_details = {} # Dictionnaire unifié
+
         if media_type == 'tv':
             tvdb_client = CustomTVDBClient()
             details = tvdb_client.get_series_details_by_id(media_id, lang='fra')
+            if details:
+                # On normalise la sortie de TVDB
+                formatted_details = {
+                    'id': details.get('tvdb_id'),
+                    'title': details.get('name'),
+                    'year': details.get('year'),
+                    'overview': details.get('overview'),
+                    'poster': details.get('image_url'), # <-- La correction clé est ici
+                    'status': details.get('status')
+                }
+
         elif media_type == 'movie':
             tmdb_client = TheMovieDBClient()
             details = tmdb_client.get_movie_details(media_id, lang='fr-FR')
-        else:
-            details = None
+            if details:
+                # On normalise la sortie de TMDB (même si elle est déjà correcte)
+                formatted_details = {
+                    'id': details.get('id'),
+                    'title': details.get('title'),
+                    'year': details.get('year'),
+                    'overview': details.get('overview'),
+                    'poster': details.get('poster'), # <-- La clé est déjà 'poster'
+                    'status': details.get('status')
+                }
 
-        if details:
-            # === CORRECTION MAJEURE ===
-            # On ne reformate plus, on fait confiance au dictionnaire du client.
-            return jsonify(details)
+        if formatted_details:
+            return jsonify(formatted_details)
 
         return jsonify({'error': 'Media not found or details could not be retrieved'}), 404
 
