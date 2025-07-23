@@ -1,12 +1,15 @@
-// Fichier : app/static/js/search_logic.js (Version unifiée + Enrichissement)
+// Fichier : app/static/js/search_logic.js (Version avec event delegation corrigée)
 
 $(document).ready(function() {
-    console.log(">>>>>> SCRIPT UNIFIÉ 'search_logic.js' CHARGÉ (Recherche + Modale + Enrichissement) <<<<<<");
+    console.log(">>>>>> SCRIPT UNIFIÉ 'search_logic.js' CHARGÉ (Recherche + Modale + Enrichissement V2) <<<<<<");
 
     const modalEl = $('#sonarrRadarrSearchModal');
     const modalBody = modalEl.find('.modal-body');
 
-    // (Le code de la recherche principale reste identique)
+    // =================================================================
+    // ### PARTIE 1 : GESTIONNAIRE DE RECHERCHE PRINCIPALE (PROWLARR) ###
+    // (Ce code est correct et inchangé)
+    // =================================================================
     $('body').on('click', '#execute-prowlarr-search-btn', function() {
         const form = $('#search-form');
         const query = form.find('[name="query"]').val();
@@ -77,7 +80,11 @@ $(document).ready(function() {
         });
     });
 
-    // (Le code d'ouverture de la modale reste identique)
+    // =================================================================
+    // ### PARTIE 2 : LOGIQUE DE LA MODALE "& MAPPER" ###
+    // (Section avec les corrections d'event delegation)
+    // =================================================================
+
     function displayResults(resultsData, mediaType) {
         const resultsContainer = modalBody.find('#lookup-results-container');
         let itemsHtml = '';
@@ -86,7 +93,7 @@ $(document).ready(function() {
                 const bestMatchClass = item.is_best_match ? 'best-match' : '';
                 const itemID = mediaType === 'tv' ? item.tvdbId : item.tmdbId;
                 return `
-                    <div class="list-group-item list-group-item-action d-flex justify-content-between align-items-center ${bestMatchClass}" data-result-item>
+                    <div class="list-group-item d-flex justify-content-between align-items-center ${bestMatchClass}" data-result-item>
                         <span><strong>${item.title}</strong> (${item.year})</span>
                         <button class="btn btn-sm btn-outline-primary enrich-details-btn" data-media-id="${itemID}" data-media-type="${mediaType}">
                             Voir les détails
@@ -108,7 +115,6 @@ $(document).ready(function() {
         modalEl.find('.modal-title').text(`Mapper : ${releaseTitle}`);
         modalBody.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div><p class="mt-2">Recherche des correspondances...</p></div>');
         new bootstrap.Modal(modalEl[0]).show();
-        console.log(`Lookup pour: "${releaseTitle}", Type: "${mediaType}"`);
         fetch('/search/api/search/lookup', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -121,39 +127,31 @@ $(document).ready(function() {
                 <div data-media-type="${mediaType}">
                     <p class="text-muted small">Le meilleur résultat est surligné. Si ce n'est pas le bon, utilisez la recherche manuelle.</p>
                     <h6>Recherche manuelle par Titre</h6>
-                    <div class="input-group mb-2">
-                        <input type="text" id="manual-search-input" class="form-control" value="${data.cleaned_query}">
-                    </div>
+                    <div class="input-group mb-2"><input type="text" id="manual-search-input" class="form-control" value="${data.cleaned_query}"></div>
                     <div class="text-center text-muted my-2 small">OU</div>
                     <h6>Recherche manuelle par ID</h6>
-                    <div class="input-group mb-3">
-                        <input type="number" id="manual-id-input" class="form-control" placeholder="${idPlaceholder}">
-                    </div>
+                    <div class="input-group mb-3"><input type="number" id="manual-id-input" class="form-control" placeholder="${idPlaceholder}"></div>
                     <button id="unified-search-button" class="btn btn-primary w-100 mb-3">Rechercher manuellement</button>
                     <hr>
                     <div id="lookup-results-container"></div>
-                </div>
-            `;
+                </div>`;
             modalBody.html(modalHtml);
             displayResults(data.results, mediaType);
         });
     });
 
-    modalBody.on('click', '#unified-search-button', function() {
+    // ### CORRECTION : L'écouteur est maintenant attaché à 'body', comme les autres ###
+    $('body').on('click', '#sonarrRadarrSearchModal #unified-search-button', function() {
         const button = $(this);
         const mediaType = button.closest('[data-media-type]').data('media-type');
         const titleQuery = $('#manual-search-input').val();
         const idQuery = $('#manual-id-input').val();
         let payload = { media_type: mediaType };
-        if (idQuery) {
-            payload.media_id = idQuery;
-        } else if (titleQuery) {
-            payload.term = titleQuery;
-        } else {
-            alert("Veuillez entrer un titre ou un ID.");
-            return;
-        }
-        const resultsContainer = modalBody.find('#lookup-results-container');
+        if (idQuery) { payload.media_id = idQuery; }
+        else if (titleQuery) { payload.term = titleQuery; }
+        else { alert("Veuillez entrer un titre ou un ID."); return; }
+
+        const resultsContainer = $('#lookup-results-container');
         resultsContainer.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div></div>');
         fetch('/search/api/search/lookup', {
             method: 'POST',
@@ -161,15 +159,11 @@ $(document).ready(function() {
             body: JSON.stringify(payload)
         })
         .then(response => response.json())
-        .then(data => {
-            displayResults(data.results, mediaType);
-        });
+        .then(data => { displayResults(data.results, mediaType); });
     });
 
-    // =================================================================
-    // ### NOUVEAU GESTIONNAIRE : ENRICHISSEMENT DES DÉTAILS ###
-    // =================================================================
-    modalBody.on('click', '.enrich-details-btn', function() {
+    // ### CORRECTION : L'écouteur est maintenant attaché à 'body', comme les autres ###
+    $('body').on('click', '#sonarrRadarrSearchModal .enrich-details-btn', function() {
         const button = $(this);
         const container = button.closest('[data-result-item]');
         const mediaId = button.data('media-id');
@@ -197,15 +191,14 @@ $(document).ready(function() {
                         <div class="col-md-9">
                             <div class="card-body">
                                 <h5 class="card-title">${details.title} (${details.year})</h5>
-                                <p class="card-text_small" style="font-size: 0.8rem;"><strong>Statut:</strong> ${details.status}</p>
-                                <p class="card-text" style="max-height: 150px; overflow-y: auto;">${details.overview || 'Synopsis non disponible.'}</p>
+                                <p class="card-text small"><strong>Statut:</strong> ${details.status}</p>
+                                <p class="card-text small" style="max-height: 150px; overflow-y: auto;">${details.overview || 'Synopsis non disponible.'}</p>
                                 <button class="btn btn-sm btn-primary confirm-mapping-btn" data-media-id="${details.id}">Choisir ce média</button>
                             </div>
                         </div>
                     </div>
-                </div>
-            `;
-            container.removeClass('list-group-item-action').html(enrichedHtml);
+                </div>`;
+            container.removeClass('list-group-item d-flex justify-content-between align-items-center').html(enrichedHtml);
         })
         .catch(err => {
             container.html('<div class="text-danger">Erreur de communication.</div>');
