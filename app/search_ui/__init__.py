@@ -168,60 +168,53 @@ def api_search_lookup():
         'results': final_results,
         'cleaned_query': clean_title or search_term
     })
-
+    
+# Dans app/search_ui/__init__.py, remplacez SEULEMENT cette fonction :
 
 @search_ui_bp.route('/api/enrich/details', methods=['POST'])
 def enrich_details():
     from app.utils.tvdb_client import CustomTVDBClient
     from app.utils.tmdb_client import TheMovieDBClient
+    from flask import current_app
 
     data = request.get_json()
     media_id = data.get('media_id')
     media_type = data.get('media_type')
 
     if not media_id or not media_type:
-        return jsonify({'error': 'Missing media_id or media_type'}), 400
+        return jsonify({'error': 'ID ou type de média manquant'}), 400
 
     try:
-        details = None
-        formatted_details = {} # Dictionnaire unifié
-
         if media_type == 'tv':
-            tvdb_client = CustomTVDBClient()
-            details = tvdb_client.get_series_details_by_id(media_id, lang='fra')
-            if details:
-                # On normalise la sortie de TVDB
-                formatted_details = {
-                    'id': details.get('tvdb_id'),
-                    'title': details.get('name'),
-                    'year': details.get('year'),
-                    'overview': details.get('overview'),
-                    'poster': details.get('image_url'), # <-- La correction clé est ici
-                    'status': details.get('status')
-                }
+            client = CustomTVDBClient()
+            details = client.get_series_details_by_id(media_id, lang='fra')
+            if not details: return jsonify({'error': 'Série non trouvée'}), 404
 
-        elif media_type == 'movie':
-            tmdb_client = TheMovieDBClient()
-            details = tmdb_client.get_movie_details(media_id, lang='fr-FR')
-            if details:
-                # On normalise la sortie de TMDB (même si elle est déjà correcte)
-                formatted_details = {
-                    'id': details.get('id'),
-                    'title': details.get('title'),
-                    'year': details.get('year'),
-                    'overview': details.get('overview'),
-                    'poster': details.get('poster'), # <-- La clé est déjà 'poster'
-                    'status': details.get('status')
-                }
-
-        if formatted_details:
+            # === LA CORRECTION FINALE ET DÉCISIVE EST ICI ===
+            # On ne reconstruit PAS l'URL. On prend celle fournie par la bibliothèque.
+            poster_url = details.get('image', '') 
+            
+            formatted_details = {
+                'id': details.get('id'),
+                'title': details.get('seriesName'),
+                'year': details.get('year'),
+                'overview': details.get('overview'),
+                'poster': poster_url, # L'URL est maintenant correcte.
+                'status': details.get('status', {}).get('name', 'Inconnu')
+            }
             return jsonify(formatted_details)
 
-        return jsonify({'error': 'Media not found or details could not be retrieved'}), 404
+        elif media_type == 'movie':
+            client = TheMovieDBClient()
+            details = client.get_movie_details(media_id, lang='fr-FR')
+            if not details: return jsonify({'error': 'Film non trouvé'}), 404
+
+            # La sortie du client TMDB est déjà parfaite, on la transmet.
+            return jsonify(details)
 
     except Exception as e:
         current_app.logger.error(f"Erreur dans enrich_details: {e}", exc_info=True)
-        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+        return jsonify({'error': f"Erreur serveur : {e}"}), 500
 
 # NOTE: Les autres routes de l'ancien fichier 'routes.py' comme '/download-and-map', etc.
 # doivent aussi être migrées ici en utilisant le même pattern d'imports locaux si elles
