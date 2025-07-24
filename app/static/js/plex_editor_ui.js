@@ -122,6 +122,30 @@ $(document).ready(function() {
             $('#rejectShowTitle').text(rejectShowBtn.data('title'));
             $('#confirmRejectShowBtn').data('ratingKey', ratingKey);
         }
+
+        // --- ACTION : SETUP MODALE GÉRER SÉRIE ---
+        const manageSeriesBtn = event.target.closest('.manage-series-btn');
+        if (manageSeriesBtn) {
+            const ratingKey = $(manageSeriesBtn).data('ratingKey');
+            const seriesTitle = $(manageSeriesBtn).data('title');
+            const modalBody = $('#series-management-modal .modal-body');
+
+            $('#seriesManagementModalLabel').text(`Gestion de la Série : ${seriesTitle}`);
+            modalBody.html('<div class="text-center my-5"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Chargement...</p></div>');
+
+            // On lance la requête pour obtenir le contenu de la modale
+            fetch(`/plex/api/series_details/${ratingKey}`, {
+                method: 'POST', // On passe à POST pour envoyer le userId
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: userSelect.val() }) // On envoie l'ID de l'utilisateur
+            })
+            .then(response => response.text())
+            .then(html => modalBody.html(html))
+            .catch(error => {
+                console.error("Erreur chargement détails série:", error);
+                modalBody.html(`<div class="alert alert-danger">Erreur de communication : ${error.message}</div>`);
+            });
+        }
     });
 
     // --- B. Écouteurs d'événements pour les boutons de CONFIRMATION des modales ---
