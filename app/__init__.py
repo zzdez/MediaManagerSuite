@@ -168,7 +168,28 @@ def create_app(config_class=Config):
         logger.error(f"Erreur interne du serveur (500): {error}", exc_info=True)
         # db.session.rollback() # Si tu utilises une base de données
         return render_template('500.html', title="Erreur Interne du Serveur"), 500 # CHEMIN CORRIGÉ
-
+    # === ROUTE DE DÉBOGAGE TEMPORAIRE ===
+    @app.route('/debug-config')
+    def debug_config():
+        # On utilise print() pour que la sortie soit très visible dans le terminal
+        print("\n" + "="*50)
+        print("DEBUGGING FLASK CONFIGURATION")
+        print(f"  - app.secret_key: {current_app.secret_key}")
+        print(f"  - SESSION_COOKIE_DOMAIN: {current_app.config.get('SESSION_COOKIE_DOMAIN')}")
+        print(f"  - SESSION_COOKIE_SECURE: {current_app.config.get('SESSION_COOKIE_SECURE')}")
+        print(f"  - SESSION_COOKIE_SAMESITE: {current_app.config.get('SESSION_COOKIE_SAMESITE')}")
+        print("="*50 + "\n")
+        return "Configuration de débogage imprimée dans le terminal."
+    # === FIN DE LA ROUTE DE DÉBOGAGE ===
+    # === ROUTE DE DÉBOGAGE POUR VOIR LA SESSION ===
+    @app.route('/debug-session')
+    def debug_session():
+        print("\n" + "#"*50)
+        print("DEBUGGING FLASK SESSION CONTENT")
+        print(f"  - Contenu de la session: {dict(session)}")
+        print("#"*50 + "\n")
+        return "Contenu de la session imprimé dans le terminal."
+    # === FIN DE LA ROUTE DE DÉBOGAGE ===    
     logger.info("Application MediaManagerSuite créée et configurée.")
 
     # Initialize and start the scheduler only if it's not already running

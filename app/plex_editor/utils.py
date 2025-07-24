@@ -5,7 +5,7 @@ from flask import current_app, flash
 
 # --- Fonctions d'aide pour la configuration (celles qui restent utiles ici) ---
 def _is_dry_run_mode():
-    return not current_app.config.get('PERFORM_ACTUAL_DELETION', False)
+    return not current_app.config.get('ORPHAN_CLEANER_PERFORM_DELETION', False)
 
 def _get_orphan_extensions():
     return current_app.config.get('ORPHAN_CLEANER_EXTENSIONS', [])

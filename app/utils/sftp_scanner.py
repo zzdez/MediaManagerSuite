@@ -88,81 +88,70 @@ def _list_remote_files(sftp, remote_path):
 def _download_item(sftp, remote_item_path, local_staging_path, item_name):
     """
     Downloads an item (file or directory) from SFTP server to local staging.
+    Uses a robust manual recursive download for directories to avoid pysftp bugs.
     Returns True if download was successful, False otherwise.
     """
     local_item_path = Path(local_staging_path) / item_name
+
     try:
+        # La logique pour les fichiers uniques est correcte et reste inchangée
         if sftp.isfile(remote_item_path):
             current_app.logger.info(f"Downloading file: {remote_item_path} to {local_item_path}")
             sftp.get(remote_item_path, str(local_item_path))
             current_app.logger.info(f"Successfully downloaded file: {item_name}")
             return True
+
+        # === NOUVELLE LOGIQUE DE COPIE DE DOSSIER VIA WALKTREE CORRECTEMENT UTILISÉ ===
         elif sftp.isdir(remote_item_path):
-            current_app.logger.info(f"Attempting to download directory: {remote_item_path} to {local_item_path}")
-            try:
-                # Ensure the local target directory exists
-                os.makedirs(local_item_path, exist_ok=True)
-                current_app.logger.info(f"Ensured local directory exists for item '{item_name}': {local_item_path}")
+            current_app.logger.info(f"Starting robust directory download for: {remote_item_path}")
 
-                original_cwd = sftp.pwd
+            # On s'assure que le dossier de destination racine existe
+            os.makedirs(local_item_path, exist_ok=True)
 
-                # Calculate remote parent path and ensure it uses forward slashes
-                remote_item_path_obj = Path(remote_item_path) # Assuming remote_item_path is initially a string with server's separators (usually /)
-                remote_parent_path_obj = remote_item_path_obj.parent
+            # --- Définition des fonctions de rappel (callbacks) ---
+            def file_callback(remotefile):
+                # On calcule le chemin relatif pour préserver la structure
+                relative_path = os.path.relpath(remotefile, start=remote_item_path).replace('\\', '/')
+                local_file = local_item_path / Path(relative_path)
+                
+                # On s'assure que le dossier parent local existe
+                os.makedirs(local_file.parent, exist_ok=True)
 
-                # Convert to string and ensure forward slashes for SFTP server
-                # The remote_item_path string (e.g. '/downloads/Termines/sonarr_downloads/item') should already be using forward slashes
-                # if it comes directly from sftp.listdir_attr or similar. Path().parent should preserve this.
-                # The key is that the SFTP server expects forward slashes.
-                # Let's ensure the path given to sftp.cwd is in posix format.
-                remote_parent_dir_for_sftp = remote_parent_path_obj.as_posix()
+                current_app.logger.debug(f"Copying remote file '{remotefile}' to '{local_file}'")
+                sftp.get(remotefile, str(local_file), preserve_mtime=True)
 
-                item_basename = remote_item_path_obj.name # Get name from Path object
+            def dir_callback(remotedir):
+                # Optionnel : on peut créer les dossiers ici aussi
+                relative_path = os.path.relpath(remotedir, start=remote_item_path).replace('\\', '/')
+                if relative_path != '.':
+                    local_dir = local_item_path / Path(relative_path)
+                    os.makedirs(local_dir, exist_ok=True)
 
-                current_app.logger.info(f"Attempting to download directory '{item_basename}'. Remote original CWD: {original_cwd}. Target remote parent for SFTP: '{remote_parent_dir_for_sftp}'.")
+            def unknown_callback(remote_unknown):
+                current_app.logger.warning(f"Skipping unknown item type during walktree: {remote_unknown}")
+            # --- Fin de la définition des callbacks ---
 
-                sftp.cwd(remote_parent_dir_for_sftp) # Use the posix-style path
-                current_app.logger.info(f"Changed remote CWD to: {sftp.pwd}. Downloading item (basename): '{item_basename}'")
+            # On appelle walktree avec la bonne syntaxe
+            sftp.walktree(remote_item_path, file_callback, dir_callback, unknown_callback)
+            
+            current_app.logger.info(f"Successfully downloaded directory '{item_name}' using walktree method.")
+            return True
 
-                # Perform the recursive get using the item's basename relative to the new CWD
-                sftp.get_r(item_basename, str(local_item_path), preserve_mtime=True)
-
-                if original_cwd: # Restore original CWD
-                    sftp.cwd(original_cwd)
-                current_app.logger.info(f"Restored remote CWD to: {sftp.pwd if original_cwd else 'not changed'}")
-
-                current_app.logger.info(f"Successfully downloaded directory '{item_name}' from '{remote_item_path}' to '{local_item_path}' using CWD strategy.")
-                return True
-            except Exception as e_dir_download:
-                current_app.logger.error(f"Error during directory download for '{item_name}' from '{remote_item_path}' to '{local_item_path}': {e_dir_download}")
-                # Attempt to clean up partially created local directory if download failed
-                if local_item_path.exists(): # Check if directory was created by makedirs or partially by get_r
-                    current_app.logger.warning(f"Attempting to cleanup partially downloaded directory: {local_item_path}")
-                    try:
-                        import shutil
-                        shutil.rmtree(local_item_path)
-                        current_app.logger.info(f"Successfully cleaned up directory: {local_item_path}")
-                    except Exception as cleanup_e:
-                        current_app.logger.error(f"Error cleaning up directory {local_item_path}: {cleanup_e}")
-                else:
-                    current_app.logger.info(f"Local item path {local_item_path} does not exist, no cleanup needed for this path.")
-                return False
         else:
             current_app.logger.warning(f"Item {remote_item_path} is not a file or directory. Skipping.")
             return False
+            
     except Exception as e:
-        current_app.logger.error(f"Error downloading {remote_item_path} to {local_item_path}: {e}")
-        # Clean up partially downloaded item if it exists
-        if local_item_path.exists():
+        current_app.logger.error(f"FATAL error during download of {remote_item_path}: {e}", exc_info=True)
+        # Nettoyage en cas d'erreur
+        if local_item_path.exists() and local_item_path.is_dir():
+            current_app.logger.warning(f"Attempting to cleanup partially downloaded item: {local_item_path}")
             try:
-                if local_item_path.is_file():
-                    local_item_path.unlink()
-                elif local_item_path.is_dir():
-                    # shutil.rmtree(local_item_path) # Requires import shutil - This is now handled in the directory download specific exception block
-                    # For now, just log, or implement recursive delete if necessary for atomicity
-                    current_app.logger.warning(f"Partial download cleanup for directory {local_item_path} might be needed (this path should ideally not be hit if dir download fails).")
+                import shutil
+                shutil.rmtree(local_item_path)
+                current_app.logger.info(f"Cleanup successful for {local_item_path}")
             except Exception as cleanup_e:
-                current_app.logger.error(f"Error cleaning up {local_item_path}: {cleanup_e}")
+                current_app.logger.error(f"Error during cleanup of {local_item_path}: {cleanup_e}")
         return False
 
 def _notify_arr_instance(arr_type, downloaded_item_name, local_staging_dir):

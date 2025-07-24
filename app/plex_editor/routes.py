@@ -110,7 +110,25 @@ def get_user_libraries(user_id):
     except Exception as e:
         current_app.logger.error(f"Erreur API lors de la récupération des bibliothèques pour l'utilisateur {user_id} : {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
+        
+@plex_editor_bp.route('/select_user', methods=['POST'])
+@login_required
+def select_user_route():
+    """Stocke l'ID et le titre de l'utilisateur Plex sélectionné dans la session."""
+    data = request.json
+    user_id = data.get('id')
+    user_title = data.get('title')
 
+    if not user_id or not user_title:
+        return jsonify({'status': 'error', 'message': 'ID ou titre manquant.'}), 400
+
+    session['plex_user_id'] = user_id
+    session['plex_user_title'] = user_title
+    session.permanent = True
+    session.modified = True
+    current_app.logger.info(f"Utilisateur Plex sélectionné et enregistré en session: '{user_title}' (ID: {user_id})")
+    return jsonify({'status': 'success', 'message': f"Utilisateur '{user_title}' sélectionné."})
+    
 @plex_editor_bp.route('/api/media_items', methods=['POST'])
 @login_required
 def get_media_items():
@@ -1126,85 +1144,85 @@ def archive_show_route():
     data = request.get_json()
     rating_key = data.get('ratingKey')
     options = data.get('options', {})
+    user_id = data.get('userId')
 
-    if not rating_key:
-        return jsonify({'status': 'error', 'message': 'Missing ratingKey.'}), 400
-
-    user_plex_server = get_user_specific_plex_server()
-    if not user_plex_server:
-        return jsonify({'status': 'error', 'message': 'Could not get user-specific Plex connection.'}), 500
+    if not rating_key or not user_id:
+        return jsonify({'status': 'error', 'message': 'Missing ratingKey or userId.'}), 400
 
     try:
+        admin_plex_server = get_plex_admin_server()
+        if not admin_plex_server:
+            return jsonify({'status': 'error', 'message': 'Could not get admin Plex connection.'}), 500
+
+        main_account = admin_plex_server.myPlexAccount()
+        user_plex_server = None
+
+        if str(main_account.id) == user_id:
+            user_plex_server = admin_plex_server
+        else:
+            user_to_impersonate = next((u for u in main_account.users() if str(u.id) == user_id), None)
+            if user_to_impersonate:
+                managed_user_token = user_to_impersonate.get_token(admin_plex_server.machineIdentifier)
+                user_plex_server = PlexServer(current_app.config.get('PLEX_URL'), managed_user_token)
+            else:
+                return jsonify({'status': 'error', 'message': f"User with ID {user_id} not found."}), 404
+
+        if not user_plex_server:
+            return jsonify({'status': 'error', 'message': 'Could not create user-specific Plex server instance.'}), 500
+
         show = user_plex_server.fetchItem(int(rating_key))
         if not show or show.type != 'show':
             return jsonify({'status': 'error', 'message': 'Show not found or not a show item.'}), 404
 
         if show.viewedLeafCount != show.leafCount:
-            error_msg = f"Not all episodes are marked as watched in Plex (Viewed: {show.viewedLeafCount}, Total: {show.leafCount})."
+            error_msg = f"Not all episodes are marked as watched (Viewed: {show.viewedLeafCount}, Total: {show.leafCount})."
             return jsonify({'status': 'error', 'message': error_msg}), 400
 
-        sonarr_series = None
-        for guid_obj in show.guids:
-            sonarr_series = get_sonarr_series_by_guid(guid_obj.id)
-            if sonarr_series: break
-
+        sonarr_series = next((s for g in show.guids if (s := get_sonarr_series_by_guid(g.id))), None)
         if not sonarr_series:
             return jsonify({'status': 'error', 'message': 'Show not found in Sonarr.'}), 404
 
-        if sonarr_series.get('status', 'continuing') != 'ended':
-            return jsonify({'status': 'error', 'message': f"Cannot archive. Show '{show.title}' is not 'ended' in Sonarr."}), 400
-
+        # --- Logique Sonarr (fonctionnait déjà) ---
         if options.get('unmonitor') or options.get('addTag'):
-            series_id = sonarr_series['id']
-            full_series_data = get_sonarr_series_by_id(series_id)
-            if not full_series_data:
-                return jsonify({'status': 'error', 'message': 'Could not fetch full series details from Sonarr.'}), 500
-
-            if options.get('unmonitor'):
-                full_series_data['monitored'] = False
+            full_series_data = get_sonarr_series_by_id(sonarr_series['id'])
+            if not full_series_data: return jsonify({'status': 'error', 'message': 'Could not fetch full series details from Sonarr.'}), 500
+            if options.get('unmonitor'): full_series_data['monitored'] = False
             if options.get('addTag'):
-                vu_tag_id = get_sonarr_tag_id('vu')
-                vu_complet_tag_id = get_sonarr_tag_id('vu-complet')
-                if vu_tag_id and vu_tag_id not in full_series_data.get('tags', []):
-                    full_series_data['tags'].append(vu_tag_id)
-                if vu_complet_tag_id and vu_complet_tag_id not in full_series_data.get('tags', []):
-                    full_series_data['tags'].append(vu_complet_tag_id)
-
+                tags_to_add = ['vu', 'vu-complet']
+                for tag_label in tags_to_add:
+                    tag_id = get_sonarr_tag_id(tag_label)
+                    if tag_id and tag_id not in full_series_data.get('tags', []):
+                        full_series_data['tags'].append(tag_id)
             if not update_sonarr_series(full_series_data):
                 return jsonify({'status': 'error', 'message': 'Failed to update series in Sonarr.'}), 500
 
+        # --- Logique de suppression de fichiers (RESTAURÉE) ---
         if options.get('deleteFiles'):
             episode_files = get_sonarr_episode_files(sonarr_series['id'])
             if episode_files is None:
-                return jsonify({'status': 'error', 'message': 'Could not retrieve episode file list.'}), 500
+                return jsonify({'status': 'error', 'message': 'Could not retrieve episode file list from Sonarr.'}), 500
 
             last_deleted_filepath = None
+            deleted_count = 0
             for file_info in episode_files:
                 media_filepath = file_info.get('path')
                 if media_filepath and os.path.exists(media_filepath):
                     try:
                         if not _is_dry_run_mode(): os.remove(media_filepath)
                         last_deleted_filepath = media_filepath
+                        deleted_count += 1
                         current_app.logger.info(f"ARCHIVE SHOW: {'[SIMULATION] ' if _is_dry_run_mode() else ''}Deleting file: {media_filepath}")
                     except Exception as e_file:
                         current_app.logger.error(f"Failed to delete file {media_filepath}: {e_file}")
 
             if last_deleted_filepath:
-                admin_plex_server = get_plex_admin_server()
-                if admin_plex_server:
-                    library_sections = admin_plex_server.library.sections()
-                    temp_roots = {os.path.normpath(loc) for lib in library_sections for loc in lib.locations}
-                    temp_guards = {os.path.normpath(os.path.splitdrive(r)[0] + os.sep) if os.path.splitdrive(r)[0] else os.path.normpath(os.sep + r.split(os.sep)[1]) for r in temp_roots if r}
-                    cleanup_parent_directory_recursively(last_deleted_filepath, list(temp_roots), list(temp_guards))
-
-        try:
-            admin_plex_server = get_plex_admin_server()
-            if admin_plex_server:
-                show_library = admin_plex_server.library.section(show.librarySectionTitle)
-                if not _is_dry_run_mode(): show_library.update()
-                flash(f"Scan de la bibliothèque '{show_library.title}' déclenché.", "info")
-        except Exception as e_scan:
-            current_app.logger.error(f"Échec du déclenchement du scan Plex: {e_scan}")
+                # On a déjà 'admin_plex_server', on peut l'utiliser pour le nettoyage
+                library_sections = admin_plex_server.library.sections()
+                temp_roots = {os.path.normpath(loc) for lib in library_sections for loc in lib.locations}
+                temp_guards = {os.path.normpath(os.path.splitdrive(r)[0] + os.sep) if os.path.splitdrive(r)[0] else os.path.normpath(os.sep + r.split(os.sep)[1]) for r in temp_roots if r}
+                cleanup_parent_directory_recursively(last_deleted_filepath, list(temp_roots), list(temp_guards))
+            
+            flash(f"{deleted_count} fichier(s) supprimés (ou leur suppression simulée).", "success")
 
         return jsonify({'status': 'success', 'message': f"Série '{show.title}' archivée avec succès."})
 
