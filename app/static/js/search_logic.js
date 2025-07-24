@@ -110,6 +110,13 @@ $(document).ready(function() {
     $('body').on('click', '.download-and-map-btn', function(event) {
         event.preventDefault();
         const button = $(this);
+        // On stocke les informations essentielles de la release directement sur l'élément de la modale
+        modalEl.data('release-details', {
+            title: button.data('title'),
+            downloadLink: button.data('download-link'),
+            guid: button.data('guid'),
+            indexerId: button.data('indexer-id')
+        });
         const releaseTitle = button.data('title');
         const mediaType = $('input[name="search_type"]:checked').val() === 'sonarr' ? 'tv' : 'movie';
         modalEl.find('.modal-title').text(`Mapper : ${releaseTitle}`);
@@ -203,6 +210,50 @@ $(document).ready(function() {
         .catch(err => {
             container.html('<div class="text-danger">Erreur de communication.</div>');
             console.error("Erreur d'enrichissement:", err);
+        });
+    });
+    // ### NOUVEAU BLOC : GESTIONNAIRE POUR "CHOISIR CE MEDIA" ###
+    $('body').on('click', '#sonarrRadarrSearchModal .confirm-mapping-btn', function() {
+        const button = $(this);
+        const selectedMediaId = button.data('media-id');
+        const mediaType = button.closest('[data-media-type]').data('media-type');
+        
+        // On récupère les détails de la release que nous avons stockés à l'étape 1
+        const releaseDetails = modalEl.data('release-details');
+
+        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Confirmation...');
+
+        const finalPayload = {
+            releaseName: releaseDetails.title,
+            downloadLink: releaseDetails.downloadLink,
+            guid: releaseDetails.guid,
+            indexerId: releaseDetails.indexerId,
+            instanceType: mediaType, // 'tv' or 'movie'
+            mediaId: selectedMediaId
+        };
+
+        console.log("Envoi du payload de mapping final :", finalPayload);
+
+        fetch('/search/download-and-map', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(finalPayload)
+        })
+        .then(response => response.json())
+        .then(data => {
+            const modalInstance = bootstrap.Modal.getInstance(modalEl[0]);
+            if (data.status === 'success') {
+                if(modalInstance) modalInstance.hide();
+                alert("Succès ! La release a été envoyée au téléchargement et sera mappée.");
+            } else {
+                alert("Erreur : " + data.message);
+                button.prop('disabled', false).text('Choisir ce média');
+            }
+        })
+        .catch(error => {
+            console.error("Erreur lors du mapping final:", error);
+            alert("Une erreur de communication est survenue.");
+            button.prop('disabled', false).text('Choisir ce média');
         });
     });
 });
