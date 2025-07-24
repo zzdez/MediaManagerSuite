@@ -123,6 +123,53 @@ $(document).ready(function() {
             $('#confirmRejectShowBtn').data('ratingKey', ratingKey);
         }
 
+        // --- ACTION : SETUP MODALE DÉTAILS DU MÉDIA ---
+        const titleLink = event.target.closest('.item-title-link');
+        if (titleLink) {
+            event.preventDefault(); // Empêche le lien de remonter en haut de la page
+            const ratingKey = $(titleLink).data('ratingKey');
+            const modalElement = document.getElementById('item-details-modal');
+            const modalTitle = modalElement.querySelector('#itemDetailsModalLabel');
+            const modalBody = modalElement.querySelector('.modal-body');
+
+            // Affiche le loader et réinitialise le contenu
+            modalTitle.textContent = 'Chargement des détails...';
+            modalBody.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>';
+
+            fetch(`/plex/api/media_details/${ratingKey}`)
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(errData => { throw new Error(errData.error || `Erreur HTTP ${response.status}`); });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    modalTitle.textContent = data.title || 'Détails du Média';
+                    const posterHtml = data.poster_url ? `<img src="${data.poster_url}" class="img-fluid rounded mb-3">` : '<p class="text-muted">Aucune affiche disponible.</p>';
+                    const durationHtml = data.duration_readable ? `<p><strong>Durée:</strong> ${data.duration_readable}</p>` : '';
+                    const ratingHtml = data.rating ? `<p><strong>Note:</strong> ${data.rating} / 10</p>` : '<p><strong>Note:</strong> Non noté</p>';
+
+                    modalBody.innerHTML = `
+                        <div class="row">
+                            <div class="col-md-4">${posterHtml}</div>
+                            <div class="col-md-8">
+                                <h4>${data.title || 'Titre inconnu'} ${data.year ? `(${data.year})` : ''}</h4>
+                                <p class="fst-italic text-muted">${data.tagline || ''}</p>
+                                <p>${data.summary || 'Aucun résumé.'}</p>
+                                <p><strong>Genres:</strong> ${data.genres && data.genres.length > 0 ? data.genres.join(', ') : 'Non spécifiés'}</p>
+                                ${ratingHtml}
+                                ${durationHtml}
+                            </div>
+                        </div>
+                    `;
+                })
+                .catch(error => {
+                    modalTitle.textContent = 'Erreur';
+                    modalBody.innerHTML = `<div class="alert alert-danger">${error.message}</div>`;
+                    console.error("Erreur chargement détails:", error);
+                });
+        }
+
         // --- ACTION : SETUP MODALE GÉRER SÉRIE ---
         const manageSeriesBtn = event.target.closest('.manage-series-btn');
         if (manageSeriesBtn) {
