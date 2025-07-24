@@ -47,20 +47,18 @@
 
             <div class="tab-pane fade {% if request.args.get('mode') == 'free_search' %}show active{% endif %}" id="free-search" role="tabpanel">
                 <p>Recherchez n'importe quel terme sur vos indexers.</p>
-                <form id="search-form" method="GET" action="{{ url_for('search_ui.search_page') }}">
-                    <div class="row g-2 mb-3">
-                        <div class="col-12">
+                <form id="search-form">
+                    <div class="row g-2">
+                        <div class="col-12 mb-3">
                             <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="radio" name="media_type" id="media_type_tv" value="tv" {% if request.args.get('media_type', 'tv') == 'tv' %}checked{% endif %}>
-                                <label class="form-check-label" for="media_type_tv">Série TV</label>
+                                <input class="form-check-input" type="radio" name="search_type" id="search_type_sonarr" value="sonarr" checked>
+                                <label class="form-check-label" for="search_type_sonarr">Recherche Sonarr</label>
                             </div>
                             <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="radio" name="media_type" id="media_type_movie" value="movie" {% if request.args.get('media_type') == 'movie' %}checked{% endif %}>
-                                <label class="form-check-label" for="media_type_movie">Film</label>
+                                <input class="form-check-input" type="radio" name="search_type" id="search_type_radarr" value="radarr">
+                                <label class="form-check-label" for="search_type_radarr">Recherche Radarr</label>
                             </div>
                         </div>
-                    </div>
-                    <div class="row g-2">
                         <div class="col-md-6">
                             <input type="text" name="query" class="form-control" placeholder="Titre du film ou de la série..." value="{{ query or '' }}">
                         </div>
@@ -76,102 +74,87 @@
                             </select>
                         </div>
                         <div class="col-md-2">
-                            <button type="submit" class="btn btn-primary w-100">Rechercher</button>
+                            <button type="button" id="execute-prowlarr-search-btn" class="btn btn-primary w-100">Rechercher</button>
                         </div>
                     </div>
                     <input type="hidden" name="mode" value="free_search">
                     <input type="hidden" id="search-form-media-type" value="{{ request.args.get('media_type', 'tv') }}">
                 </form>
                 
-                {% if results is not none and request.args.get('mode') == 'free_search' %}
-                    <div id="search-results-container"> {# AJOUTÉ CE CONTENEUR AVEC ID #}
-                        <hr>
-                        <h3>Résultats pour "{{ query }}" ({{ results|length }})</h3>
-                        {% if results %}
-                            <ul class="list-group">
-                                {% for result in results %}
-                                <li class="list-group-item d-flex justify-content-between align-items-center">
-                                <div style="flex-grow: 1; margin-right: 15px;">
-                                    <strong>{{ result.title }}</strong><br>
-                                    <small class="text-muted">Indexer: {{ result.indexer }} | Taille: {{ (result.size / 1024**3)|round(2) }} GB</small>
-                                    {# Ancien emplacement du statut (et le <br> précédent) est retiré #}
-                                </div>
-                                <div class="status-cell px-2" style="min-width: 150px; text-align: center;"> {# status-cell pour JS, px-2 pour un peu d'espacement #}
-                                    <button class="btn btn-sm btn-outline-info check-status-btn"
-                                            data-guid="{{ result.guid }}"
-                                            data-title="{{ result.title|e }}">
-                                        Vérifier Statut
-                                    </button>
-                                    <div class="spinner-border spinner-border-sm d-none" role="status"></div>
-                                </div>
-                                <div class="flex-shrink-0">
-                                    {# La condition pour afficher le bouton de téléchargement sera affectée car result.status_info n'existe plus ici.
-                                       Le bouton de téléchargement sera toujours affiché initialement.
-                                       Une logique JS pourrait le cacher/modifier après vérification du statut si nécessaire.
-                                       Pour l'instant, on enlève la condition. #}
-                                    <a href="#" class="btn btn-sm btn-success download-and-map-btn"
-                                       data-title="{{ result.title|e }}"
-                                       data-download-link="{{ result.download }}"
-                                       data-guid="{{ result.guid }}"
-                                       data-indexer-id="{{ result.indexerId }}">
-                                        <i class="fas fa-cogs"></i> & Mapper
-                                    </a>
-                                    {# Bouton pour télécharger le fichier .torrent via le nouveau proxy intelligent #}
-                                    {% if not result.downloadUrl.startswith('magnet:') %}
-                                    {# Assumant que result.indexerId et result.guid sont disponibles. #}
-                                    <a href="{{ url_for('search_ui.download_torrent_proxy', url=result.downloadUrl, indexer_id=result.indexerId, release_name=result.title, guid=result.guid) }}"
-                                       class="btn btn-sm btn-outline-secondary ms-2"
-                                       title="Télécharger le fichier .torrent (via Proxy)"
-                                       target="_blank"> {# target="_blank" pour ouvrir dans un nouvel onglet/télécharger sans quitter la page #}
-                                        <i class="fas fa-file-arrow-down"></i>
-                                    </a>
-                                    {% endif %}
-                                    {# The orphaned endif that was here (around line 99) is now removed. #}
-                                </div>
-                            </li>
-                            {% endfor %}
-                        </ul>
-                    {% else %}
-                        <div class="alert alert-warning mt-3">Aucun résultat trouvé pour cette recherche.</div>
-                    {% endif %}
-                    </div> {# FERMETURE DU DIV #search-results-container #}
-                {% endif %}
+                <!-- Bouton pour déplier les filtres avancés -->
+                <div class="d-grid gap-2 d-md-flex justify-content-md-end mb-3">
+                    <button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#advancedFilters" aria-expanded="false" aria-controls="advancedFilters">
+                        <i class="fas fa-sliders-h"></i> Filtres avancés
+                    </button>
+                </div>
+
+                <!-- Section des filtres avancés repliable -->
+                <div class="collapse" id="advancedFilters">
+                    <div class="card card-body mb-3">
+                        <div class="row g-3">
+                            <!-- Filtre par Qualité -->
+                            <div class="col-md-4">
+                                <label for="filterQuality" class="form-label">Qualité</label>
+                                <select id="filterQuality" class="form-select">
+                                    <option value="" selected>Toutes</option>
+                                    <option value="2160p">2160p (4K)</option>
+                                    <option value="1080p">1080p</option>
+                                    <option value="720p">720p</option>
+                                    <option value="480p">SD (480p)</option>
+                                </select>
+                            </div>
+
+                            <!-- Filtre par Codec -->
+                            <div class="col-md-4">
+                                <label for="filterCodec" class="form-label">Codec Vidéo</label>
+                                <select id="filterCodec" class="form-select">
+                                    <option value="" selected>Tous</option>
+                                    <option value="x265">x265 / HEVC</option>
+                                    <option value="x264">x264 / AVC</option>
+                                    <option value="av1">AV1</option>
+                                </select>
+                            </div>
+
+                            <!-- Filtre par Source -->
+                            <div class="col-md-4">
+                                <label for="filterSource" class="form-label">Source</label>
+                                <select id="filterSource" class="form-select">
+                                    <option value="" selected>Toutes</option>
+                                    <option value="bluray">Blu-ray</option>
+                                    <option value="web-dl">WEB-DL</option>
+                                    <option value="remux">Remux</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="search-results-container" class="mt-3"></div>
             </div>
         </div>
     </div>
 
     <!-- ================================================================== -->
-    <!-- ### MODALE POUR LE MAPPING SONARR/RADARR (AJOUTÉE ICI) ### -->
+    <!-- ### MODALE POUR LE MAPPING SONARR/RADARR (Coquille Vide) ### -->
     <!-- ================================================================== -->
     <div class="modal fade" id="sonarrRadarrSearchModal" tabindex="-1" aria-labelledby="sonarrRadarrModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="sonarrRadarrModalLabel">Mapper et Télécharger</h5>
+                    <h5 class="modal-title" id="sonarrRadarrModalLabel">Initialisation...</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <p>Recherchez la série ou le film correspondant à la release sélectionnée.</p>
-                    
-                    <div class="mb-3 text-center">
-                        <input type="radio" class="btn-check" name="mapInstanceType" id="mapSonarrRadio" value="sonarr" autocomplete="off" checked>
-                        <label class="btn btn-outline-primary" for="mapSonarrRadio">Sonarr (Série)</label>
-
-                        <input type="radio" class="btn-check" name="mapInstanceType" id="mapRadarrRadio" value="radarr" autocomplete="off">
-                        <label class="btn btn-outline-secondary" for="mapRadarrRadio">Radarr (Film)</label>
-                    </div>
-
-                    <div class="input-group mb-3">
-                        <input type="text" class="form-control" id="sonarrRadarrQuery" placeholder="Titre de la série/film...">
-                        <button class="btn btn-info" type="button" id="executeSonarrRadarrSearch">Rechercher</button>
-                    </div>
-
-                    <div id="prowlarrModalSearchResults" class="list-group" style="max-height: 300px; overflow-y: auto;">
-                        <!-- Les résultats de la recherche Sonarr/Radarr s'afficheront ici -->
+                    <!-- Ce contenu sera remplacé dynamiquement par search_logic.js -->
+                    <div class="text-center p-4">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <!-- Les boutons de confirmation seront ajoutés dynamiquement si nécessaire -->
                 </div>
             </div>
         </div>
@@ -185,8 +168,9 @@
 {% block scripts %}
     {# jQuery and Bootstrap JS are inherited from layout.html (jQuery 3.7.1, Bootstrap 5.3.2) #}
     
-    <script src="{{ url_for('static', filename='js/seedbox_ui_modals.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/search_actions.js') }}"></script>
+     <script src="{{ url_for('static', filename='js/seedbox_ui_modals.js') }}"></script> 
+    {# <script src="{{ url_for('static', filename='js/search_actions.js') }}"></script> #}
+    <script src="{{ url_for('static', filename='js/search_logic.js') }}"></script>
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {

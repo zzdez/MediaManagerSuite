@@ -66,29 +66,28 @@ def save_config():
     try:
         dotenv_path = os.path.join(current_app.root_path, '..', '.env')
         
-        env_vars_to_save = {}
-        sonarr_cats_to_save = []
-        radarr_cats_to_save = []
+        # --- LOGIQUE DE SAUVEGARDE DES CATÉGORIES CORRIGÉE ---
+        # Utilise getlist pour récupérer toutes les valeurs des checkboxes
+        sonarr_cats_to_save = request.form.getlist('sonarr_categories', type=int)
+        radarr_cats_to_save = request.form.getlist('radarr_categories', type=int)
 
-        for key, value in request.form.items():
-            if key.startswith('sonarr_categories'):
-                sonarr_cats_to_save.append(int(value))
-            elif key.startswith('radarr_categories'):
-                radarr_cats_to_save.append(int(value))
-            else:
-                env_vars_to_save[key] = value
-
-        # Sauvegarde des variables .env
-        for key, value in env_vars_to_save.items():
-            set_key(dotenv_path, key, value)
-        
-        # Sauvegarde des catégories
-        search_settings = {'sonarr_categories': sonarr_cats_to_save, 'radarr_categories': radarr_cats_to_save}
+        search_settings = {
+            'sonarr_categories': sonarr_cats_to_save,
+            'radarr_categories': radarr_cats_to_save
+        }
         save_search_categories(search_settings)
+        logging.info(f"Catégories de recherche sauvegardées : Sonarr={sonarr_cats_to_save}, Radarr={radarr_cats_to_save}")
 
-        flash("Configuration sauvegardée avec succès. Certains changements peuvent nécessiter un redémarrage.", "success")
+        # --- LOGIQUE DE SAUVEGARDE DU .ENV (INCHANGÉE) ---
+        # On ignore les clés de catégories pour ne pas les écrire dans le .env
+        env_keys_to_ignore = ['sonarr_categories', 'radarr_categories']
+        for key, value in request.form.items():
+            if key not in env_keys_to_ignore:
+                set_key(dotenv_path, key, value)
+
+        flash("Configuration sauvegardée avec succès.", "success")
     except Exception as e:
-        logger.error(f"Erreur lors de la sauvegarde de la configuration : {e}", exc_info=True)
+        logging.error(f"Erreur lors de la sauvegarde de la configuration : {e}", exc_info=True)
         flash(f"Une erreur est survenue lors de la sauvegarde : {e}", "danger")
     
     return redirect(url_for('config_ui.show_config'))

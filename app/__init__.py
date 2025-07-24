@@ -167,8 +167,7 @@ def create_app(config_class=Config):
     def internal_error(error):
         logger.error(f"Erreur interne du serveur (500): {error}", exc_info=True)
         # db.session.rollback() # Si tu utilises une base de données
-        return render_template('500.html', title="Erreur Interne du Serveur"), 500 # CHEMIN CORRIGÉ
-
+        return render_template('500.html', title="Erreur Interne du Serveur"), 500 # CHEMIN CORRIGÉ  
     logger.info("Application MediaManagerSuite créée et configurée.")
 
     # Initialize and start the scheduler only if it's not already running

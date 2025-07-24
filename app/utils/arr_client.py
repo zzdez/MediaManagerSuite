@@ -375,13 +375,58 @@ def get_all_sonarr_series():
 
 def check_sonarr_episode_exists(series_title: str, season_number: int, episode_number: int) -> bool:
     """
-    Checks if a specific TV show episode exists in Sonarr and has a file.
+    Checks if a specific TV show episode OR ANY EPISODE in a season exists in Sonarr and has a file.
+    If 'episode_number' is None, it checks for the presence of the whole season.
     """
     logger.debug(f"check_sonarr_episode_exists: Called with series='{series_title}', S{season_number}E{episode_number}")
+    
+    # --- DÉBUT DU NOUVEAU BLOC DE LOGIQUE ---
+    if episode_number is None:
+        # This is a season pack check
+        logger.info(f"Sonarr: Checking season pack S{season_number:02d} for series '{series_title}'.")
+        # For a season pack, Presence = Not all episodes of the season have a file.
+        # Absence = All episodes of the season are missing files.
+        # This logic is complex. For now, a simplified check: does the series exist and is the season monitored?
+        # A simple proxy for "do we want this season pack?"
+        all_series = get_all_sonarr_series()
+        if not all_series:
+            logger.error(f"Sonarr: Could not get series list for season pack check of '{series_title}'.")
+            return False # Cannot determine, assume absent to allow download.
+
+        found_series = None
+        normalized_search_title = re.sub(r'[^\w\s]', '', series_title).lower()
+        for series in all_series:
+            normalized_api_title = re.sub(r'[^\w\s]', '', series.get('title', '')).lower()
+            if normalized_api_title == normalized_search_title:
+                found_series = series
+                break
+        
+        if not found_series:
+            logger.info(f"Sonarr: Series '{series_title}' not in Sonarr. Guardrail considers season ABSENT.")
+            return False # Series not even added, so we want the pack.
+
+        # Check if the specific season is monitored
+        for season_data in found_series.get('seasons', []):
+            if season_data.get('seasonNumber') == season_number:
+                if season_data.get('monitored', False):
+                    # Season is monitored, which implies we want episodes from it.
+                    # A more complex check could see if 'statistics.percentOfEpisodes' is 100
+                    # but for Guardrail, if it's monitored, we assume a new pack is potentially useful.
+                    logger.info(f"Sonarr: S{season_number:02d} of '{series_title}' is Monitored. Guardrail will assume it could be incomplete and considers it ABSENT to allow download.")
+                    return False # Treat as "missing" to allow the download
+                else:
+                    logger.info(f"Sonarr: S{season_number:02d} of '{series_title}' is NOT Monitored. Guardrail will consider it PRESENT to block download.")
+                    return True # Treat as "present" to block download of an unmonitored season.
+        
+        logger.info(f"Sonarr: S{season_number:02d} not found in season list for '{series_title}'. Guardrail considers it ABSENT.")
+        return False # Season number doesn't exist for the series
+    # --- FIN DU NOUVEAU BLOC DE LOGIQUE ---
+
+    # Le reste du code de la fonction (pour les épisodes individuels) est inchangé
     logger.info(f"Sonarr: Checking if episode exists: {series_title} S{season_number:02d}E{episode_number:02d}")
 
     logger.debug("check_sonarr_episode_exists: About to call get_all_sonarr_series()")
-    all_series = get_all_sonarr_series() # Uses the existing function
+    all_series = get_all_sonarr_series()
     logger.debug(f"check_sonarr_episode_exists: get_all_sonarr_series() returned (first 50 chars): {str(all_series)[:50] if all_series else 'None'}")
     if not all_series:
         logger.error(f"Sonarr: Could not retrieve series list to find '{series_title}'.")

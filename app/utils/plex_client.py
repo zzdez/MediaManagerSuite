@@ -47,59 +47,60 @@ def get_plex_admin_server():
         return None
 
 def get_user_specific_plex_server():
-    current_app.logger.debug("--- Appel de get_user_specific_plex_server ---")
     """
     Returns a PlexServer instance connected as the user in session.
     Handles impersonation for managed users. Returns None on failure.
     """
+    current_app.logger.debug("--- Appel de get_user_specific_plex_server ---")
     if 'plex_user_id' not in session:
-        flash("Session utilisateur invalide. Veuillez vous reconnecter.", "danger")
+        flash("Session utilisateur invalide ou expirée. Veuillez sélectionner un utilisateur.", "danger")
+        current_app.logger.warning("get_user_specific_plex_server: 'plex_user_id' non trouvé dans la session.")
         return None
 
     plex_url = current_app.config.get('PLEX_URL')
     admin_token = current_app.config.get('PLEX_TOKEN')
 
-    try:
-        # This connection is primarily to get the main account or for impersonation token generation.
-        # It's an admin connection.
-        plex_admin_server_for_setup = PlexServer(plex_url, admin_token)
-        # Note: get_main_plex_account_object itself creates a PlexServer instance.
-        # To avoid creating two admin PlexServer objects back-to-back when not strictly necessary,
-        # consider passing plex_admin_server_for_setup to get_main_plex_account_object
-        # or refactoring get_main_plex_account_object.
-        # For now, let's keep it as is, assuming the overhead is acceptable.
-        main_account = get_main_plex_account_object()
-        if not main_account: return None
+    # --- CORRECTION MAJEURE : On sort cet appel du bloc try/except ---
+    # get_main_plex_account_object a sa propre gestion d'erreurs robuste.
+    main_account = get_main_plex_account_object()
+    if not main_account:
+        # Si cette fonction échoue, elle a déjà flashé un message. On s'arrête ici.
+        current_app.logger.error("get_user_specific_plex_server: Échec de la récupération du compte principal Plex.")
+        return None
 
+    try:
         user_id_in_session = session.get('plex_user_id')
+        # On vérifie que user_id_in_session n'est pas None
+        if not user_id_in_session:
+            flash("ID utilisateur manquant dans la session. Veuillez sélectionner un utilisateur.", "danger")
+            return None
 
         if str(main_account.id) == user_id_in_session:
             current_app.logger.debug("Contexte: Utilisateur Principal (Admin).")
-            # Return a direct admin connection
-            return PlexServer(plex_url, admin_token)
+            # On réutilise la fonction get_plex_admin_server pour la cohérence
+            return get_plex_admin_server()
 
+        # Emprunt d'identité pour un utilisateur géré
         user_to_impersonate = next((u for u in main_account.users() if str(u.id) == user_id_in_session), None)
         if user_to_impersonate:
-            try:
-                # The machineIdentifier of the server is needed to get a token for a managed user.
-                # We use the plex_admin_server_for_setup for this.
-                managed_user_token = user_to_impersonate.get_token(plex_admin_server_for_setup.machineIdentifier)
-                current_app.logger.debug(f"Contexte: Emprunt d'identité pour '{user_to_impersonate.title}'.")
-                return PlexServer(plex_url, managed_user_token)
-            except Exception as e:
-                current_app.logger.error(f"Échec de l'emprunt d'identité pour {user_to_impersonate.title}: {e}")
-                flash(f"Impossible d'emprunter l'identité de {user_to_impersonate.title}. Action annulée.", "danger")
+            admin_server_for_token = get_plex_admin_server()
+            if not admin_server_for_token:
+                # get_plex_admin_server gère déjà le flash
                 return None
+            managed_user_token = user_to_impersonate.get_token(admin_server_for_token.machineIdentifier)
+            current_app.logger.debug(f"Contexte: Emprunt d'identité pour '{user_to_impersonate.title}'.")
+            return PlexServer(plex_url, managed_user_token)
         else:
-            flash(f"Utilisateur de la session non trouvé. Reconnexion requise.", "warning")
+            flash(f"Utilisateur de la session (ID: {user_id_in_session}) non trouvé parmi les utilisateurs gérés. Reconnexion requise.", "warning")
             return None
 
-    except Unauthorized: # Specifically catch Unauthorized for the initial PlexServer(plex_url, admin_token)
-        current_app.logger.error("get_user_specific_plex_server: Token Plex admin invalide pour la configuration initiale.")
-        flash("Erreur de configuration serveur (token admin).", "danger")
+    except Unauthorized as e:
+        current_app.logger.error(f"Erreur d'autorisation dans get_user_specific_plex_server: {e}")
+        flash("Erreur d'autorisation. Le token Plex est peut-être invalide.", "danger")
         return None
     except Exception as e:
-        current_app.logger.error(f"Erreur majeure lors de l'obtention de la connexion utilisateur Plex : {e}", exc_info=True)
+        current_app.logger.error(f"Erreur majeure dans get_user_specific_plex_server : {e}", exc_info=True)
+        flash(f"Une erreur inattendue est survenue: {e}", "danger")
         return None
 
 def find_plex_media_by_external_id(plex_server, external_id_str: str, media_type_from_guessit: str):

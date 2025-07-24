@@ -1,5 +1,6 @@
 # app/search_ui/__init__.py
 
+import logging
 from flask import Blueprint, render_template, request, flash, jsonify, Response, stream_with_context, current_app
 from app.auth import login_required
 from config import Config
@@ -7,6 +8,8 @@ from app.utils import arr_client
 from Levenshtein import distance as levenshtein_distance
 from app.utils.arr_client import parse_media_name
 from guessit import guessit
+from app.utils.prowlarr_client import search_prowlarr
+from app.utils.config_manager import load_search_categories
 
 # 1. Définition du Blueprint (seul code global avec les imports "sûrs")
 search_ui_bp = Blueprint(
@@ -21,70 +24,84 @@ search_ui_bp = Blueprint(
 @search_ui_bp.route('/', methods=['GET'])
 @login_required
 def search_page():
-    # Imports locaux
-    from app.utils.prowlarr_client import search_prowlarr
+    """Affiche la page de recherche principale."""
+    return render_template('search_ui/search.html')
+
+# --- API Routes ---
+
+@search_ui_bp.route('/api/prowlarr/search', methods=['POST'])
+@login_required
+def prowlarr_search():
+    data = request.get_json()
+    query = data.get('query')
+    if not query:
+        return jsonify({"error": "La requête est vide."}), 400
+
+    search_type = data.get('search_type', 'sonarr')
+    search_config = load_search_categories()
+    categories_to_filter = set(search_config.get(f"{search_type}_categories", []))
+
+    logging.info(f"Recherche Prowlarr large pour '{query}'...")
+    raw_results = search_prowlarr(query=query, lang=data.get('lang'))
+
+    if raw_results is None:
+        return jsonify({"error": "Erreur de communication avec Prowlarr."}), 500
+    
+    logging.info(f"Prowlarr a retourné {len(raw_results)} résultats bruts. Application du filtre local...")
+
+    if not categories_to_filter:
+        logging.warning(f"Aucune catégorie configurée pour '{search_type}'. Aucun filtre par catégorie appliqué.")
+        filtered_by_category = raw_results
+    else:
+        filtered_by_category = []
+        for result in raw_results:
+            result_categories = {cat.get('id') for cat in result.get('categories', [])}
+            if not categories_to_filter.isdisjoint(result_categories):
+                filtered_by_category.append(result)
+    
+    logging.info(f"{len(filtered_by_category)} résultats après filtrage par catégorie.")
+    
+    # === BLOC DE FILTRAGE AVANCÉ AMÉLIORÉ ===
+    quality = data.get('quality')
+    codec = data.get('codec')
+    source = data.get('source')
+    
+    if not any([quality, codec, source]):
+        current_app.logger.info("Aucun filtre avancé spécifié. Retour des résultats filtrés par catégorie.")
+        return jsonify(filtered_by_category)
+
     from guessit import guessit
+    final_results = []
+    for result in filtered_by_category:
+        title = result.get('title', '')
+        parsed = guessit(title)
+        
+        # Filtre Qualité (plus flexible)
+        if quality:
+            quality_val = quality.replace('p', '')
+            screen_size = str(parsed.get('screen_size', ''))
+            if quality_val not in screen_size:
+                continue
 
-    # --- Étape 1: Récupération de tous les filtres ---
-    query = request.args.get('query', '').strip()
-    year_str = request.args.get('year') # Renommé en year_str
-    lang = request.args.get('lang')
-    quality = request.args.get('quality') 
-    codec = request.args.get('codec')
-    release_type = request.args.get('release_type')
+        # Filtre Codec (avec alias)
+        if codec:
+            video_codec = parsed.get('video_codec', '').lower()
+            codec_aliases = {
+                'x265': ['x265', 'hevc'],
+                'x264': ['x264', 'avc'],
+                'av1': ['av1']
+            }
+            if not any(alias in video_codec for alias in codec_aliases.get(codec, [codec])):
+                continue
 
-    results = None
-
-    if query:
-        # --- Étape 2: Appel à Prowlarr ---
-        raw_results = search_prowlarr(query, lang=lang)
-
-        if raw_results is None:
-            flash("Erreur de communication avec Prowlarr.", "danger")
-            results = []
-        else:
-            # --- Étape 3: Filtrage intelligent en Python (Logique Corrigée) ---
-            filtered_results = []
-            year_filter = int(year_str) if year_str and year_str.isdigit() else None
-
-            for result in raw_results:
-                title = result.get('title', '')
-                parsed_info = guessit(title)
-                
-                # Filtre par Année (CORRIGÉ AVEC TOLÉRANCE)
-                if year_filter:
-                    parsed_year = parsed_info.get('year')
-                    # On ne filtre QUE si guessit a trouvé une année.
-                    if parsed_year:
-                        try:
-                            # Tolérance de +/- 1 an
-                            if abs(int(parsed_year) - year_filter) > 1:
-                                continue # Rejeter si l'écart est trop grand
-                        except (ValueError, TypeError):
-                            continue # Ignorer si l'année n'est pas un nombre valide
-                
-                # Filtre par Qualité
-                if quality and quality.lower() not in parsed_info.get('screen_size', '').lower():
-                    continue
-
-                # Filtre par Codec
-                if codec and codec.lower() not in parsed_info.get('video_codec', '').lower():
-                    continue
-
-                # Filtre par Type de Release
-                if release_type == 'season' and 'season' not in parsed_info:
-                    continue
-                if release_type == 'complete' and 'complete' not in title.lower():
-                    continue
-
-                filtered_results.append(result)
-            
-            results = filtered_results
-
-    sonarr_url = current_app.config.get('SONARR_URL', '')
-    radarr_url = current_app.config.get('RADARR_URL', '')
-
-    return render_template('search_ui/search.html', title="Recherche", results=results, query=query, sonarr_url=sonarr_url, radarr_url=radarr_url)
+        # Filtre Source
+        if source and source.lower() not in parsed.get('source', '').lower():
+            continue
+        
+        final_results.append(result)
+    
+    logging.info(f"{len(final_results)} résultats après filtrage avancé.")
+    return jsonify(final_results)
 
 
 @search_ui_bp.route('/api/search/lookup', methods=['POST'])
@@ -151,56 +168,53 @@ def api_search_lookup():
         'results': final_results,
         'cleaned_query': clean_title or search_term
     })
-
+    
+# Dans app/search_ui/__init__.py, remplacez SEULEMENT cette fonction :
 
 @search_ui_bp.route('/api/enrich/details', methods=['POST'])
 def enrich_details():
-    # Imports locaux
     from app.utils.tvdb_client import CustomTVDBClient
-    from app.utils.tmdb_client import TheMovieDBClient  # CORRIGÉ
-
-    # Initialisation des clients ici
-    tvdb_client = CustomTVDBClient()  # CORRIGÉ
-    tmdb_client = TheMovieDBClient()  # CORRIGÉ
+    from app.utils.tmdb_client import TheMovieDBClient
+    from flask import current_app
 
     data = request.get_json()
     media_id = data.get('media_id')
     media_type = data.get('media_type')
 
     if not media_id or not media_type:
-        return jsonify({'error': 'Missing media_id or media_type'}), 400
+        return jsonify({'error': 'ID ou type de média manquant'}), 400
 
     try:
         if media_type == 'tv':
-            details = tvdb_client.get_series_details_by_id(media_id, lang='fra')
-            if details:
-                formatted_details = {
-                    'id': details.get('tvdb_id'),
-                    'title': details.get('name'),
-                    'year': details.get('year'),
-                    'overview': details.get('overview'),
-                    'poster': details.get('image_url'),
-                    'status': details.get('status')
-                }
-                return jsonify(formatted_details)
-        elif media_type == 'movie':
-            details = tmdb_client.get_movie_details(media_id, lang='fr-FR')
-            if details:
-                formatted_details = {
-                    'id': details.get('id'),
-                    'title': details.get('title'),
-                    'year': details.get('release_date', 'N/A')[:4],
-                    'overview': details.get('overview'),
-                    'poster': f"https://image.tmdb.org/t/p/w500{details.get('poster_path')}" if details.get('poster_path') else '',
-                    'status': details.get('status')
-                }
-                return jsonify(formatted_details)
+            client = CustomTVDBClient()
+            details = client.get_series_details_by_id(media_id, lang='fra')
+            if not details: return jsonify({'error': 'Série non trouvée'}), 404
 
-        return jsonify({'error': 'Media not found'}), 404
+            # === LA CORRECTION FINALE ET DÉCISIVE EST ICI ===
+            # On ne reconstruit PAS l'URL. On prend celle fournie par la bibliothèque.
+            poster_url = details.get('image', '') 
+            
+            formatted_details = {
+                'id': details.get('id'),
+                'title': details.get('seriesName'),
+                'year': details.get('year'),
+                'overview': details.get('overview'),
+                'poster': poster_url, # L'URL est maintenant correcte.
+                'status': details.get('status', {}).get('name', 'Inconnu')
+            }
+            return jsonify(formatted_details)
+
+        elif media_type == 'movie':
+            client = TheMovieDBClient()
+            details = client.get_movie_details(media_id, lang='fr-FR')
+            if not details: return jsonify({'error': 'Film non trouvé'}), 404
+
+            # La sortie du client TMDB est déjà parfaite, on la transmet.
+            return jsonify(details)
 
     except Exception as e:
         current_app.logger.error(f"Erreur dans enrich_details: {e}", exc_info=True)
-        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+        return jsonify({'error': f"Erreur serveur : {e}"}), 500
 
 # NOTE: Les autres routes de l'ancien fichier 'routes.py' comme '/download-and-map', etc.
 # doivent aussi être migrées ici en utilisant le même pattern d'imports locaux si elles
@@ -277,43 +291,74 @@ def prepare_mapping_details():
 @search_ui_bp.route('/download-and-map', methods=['POST'])
 @login_required
 def download_and_map():
-    # Imports locaux
+    # Imports locaux pour cette fonction spécifique
     import requests
     from app.utils.rtorrent_client import add_torrent_data_and_get_hash_robustly, add_magnet_and_get_hash_robustly
     from app.utils.mapping_manager import add_or_update_torrent_in_map
-    from app.utils.arr_client import (
-        get_sonarr_series_by_id, update_sonarr_series, update_radarr_movie,
-        _radarr_api_request, add_series_by_title_to_sonarr, add_movie_by_title_to_radarr,
-        parse_media_name
-    )
+    from urllib.parse import urlparse
+
+    logger = current_app.logger
 
     data = request.get_json()
     release_name = data.get('releaseName')
     download_link = data.get('downloadLink')
     indexer_id = data.get('indexerId')
     guid = data.get('guid')
-    instance_type = data.get('instanceType') # 'tv' or 'movie'
+    instance_type = data.get('instanceType') # 'tv' ou 'movie'
     media_id = data.get('mediaId')
-    action_type = data.get('actionType', 'map_existing')
 
-    if not all([release_name, download_link, indexer_id, guid, instance_type, media_id]):
+    if not all([release_name, download_link, instance_type, media_id]):
+        logger.error("Requête /download-and-map invalide, données manquantes.")
         return jsonify({'status': 'error', 'message': 'Données manquantes dans la requête.'}), 400
 
     internal_instance_type = 'sonarr' if instance_type == 'tv' else 'radarr'
+    torrent_hash = None
 
     try:
-        # Logique de gestion du téléchargement et mapping...
-        # Ce code est complexe et on suppose qu'il est correct pour le moment.
-        # On se contente de le restaurer.
-        # ...
-        # Pour simplifier, on retourne un succès placeholder
-        current_app.logger.info(f"Route /download-and-map appelée pour {release_name}")
-        return jsonify({'status': 'success', 'message': 'Logique de mapping et téléchargement restaurée.'})
+        logger.info(f"Début du traitement pour '{release_name}'")
+
+        # 1. Déterminer si c'est un magnet ou un lien .torrent
+        if download_link.startswith('magnet:'):
+            logger.info("Lien magnet détecté. Envoi à rTorrent.")
+            torrent_hash = add_magnet_and_get_hash_robustly(download_link)
+        else:
+            logger.info("Lien .torrent détecté. Utilisation du proxy de téléchargement.")
+            proxy_url = f"http://127.0.0.1:{current_app.config.get('FLASK_RUN_PORT', 5001)}/search/download_torrent_proxy"
+            params = {'url': download_link, 'release_name': release_name, 'indexer_id': indexer_id, 'guid': guid}
+            
+            # On simule une session pour passer les cookies de login
+            session_cookie_name = current_app.config.get("SESSION_COOKIE_NAME", "session")
+            cookies = {session_cookie_name: request.cookies.get(session_cookie_name)}
+
+            response = requests.get(proxy_url, params=params, cookies=cookies, timeout=60)
+            response.raise_for_status()
+            
+            torrent_content = response.content
+            logger.info(f"{len(torrent_content)} bytes de données de torrent reçues du proxy.")
+            torrent_hash = add_torrent_data_and_get_hash_robustly(
+                torrent_content_bytes=torrent_content,
+                filename_for_rtorrent=f"{release_name}.torrent",
+                label=internal_instance_type # <--- AJOUTÉ : On passe 'sonarr' ou 'radarr'
+            )
+
+        # 2. Vérifier si on a un hash VALIDE (une chaîne de caractères) avant de sauvegarder
+        if torrent_hash and isinstance(torrent_hash, str):
+            logger.info(f"Torrent ajouté avec succès. Hash : {torrent_hash}. Sauvegarde du mapping.")
+            add_or_update_torrent_in_map(
+                torrent_hash=torrent_hash,
+                release_name=release_name,
+                app_type=internal_instance_type,      # CORRIGÉ: renommé en 'app_type'
+                target_id=str(media_id),              # CORRIGÉ: renommé en 'target_id'
+                label=internal_instance_type,         # AJOUTÉ: le paramètre 'label' est obligatoire
+                seedbox_download_path="N/A_added_from_search" # AJOUTÉ: le paramètre 'seedbox_download_path' est obligatoire
+            )
+            return jsonify({'status': 'success', 'message': 'Torrent ajouté et mappé avec succès.'})
+        else:
+            raise Exception("Le hash du torrent n'a pas pu être récupéré depuis rTorrent.")
 
     except Exception as e:
-        current_app.logger.error(f"Erreur majeure dans /download-and-map pour '{release_name}': {e}", exc_info=True)
+        logger.error(f"Erreur majeure dans /download-and-map pour '{release_name}': {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': f"Erreur serveur inattendue: {str(e)}"}), 500
-
 # =====================================================================
 # ROUTES DE PROXY DE TÉLÉCHARGEMENT RESTAURÉES
 # =====================================================================
