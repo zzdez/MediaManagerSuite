@@ -1503,7 +1503,7 @@ def get_series_details_for_management(rating_key):
         if not series or series.type != 'show':
             return f'<div class="alert alert-warning">Série non trouvée.</div>', 404
 
-        # (Logique Sonarr inchangée)
+        # (Logique de récupération de la série Sonarr - inchangée)
         sonarr_series_full_details = None; sonarr_series_id_val = None; is_monitored_global_status = False
         tvdb_id = next((g.id.replace('tvdb://', '') for g in series.guids if g.id.startswith('tvdb://')), None)
         if tvdb_id:
@@ -1513,7 +1513,12 @@ def get_series_details_for_management(rating_key):
                 sonarr_series_full_details = get_sonarr_series_by_id(sonarr_series_id_val)
                 if sonarr_series_full_details: is_monitored_global_status = sonarr_series_full_details.get('monitored', False)
 
-        # === BLOC DE CONSTRUCTION DES DONNÉES ENTIÈREMENT RESTAURÉ ===
+        # --- NOUVEAU : On récupère tous les fichiers d'épisodes de Sonarr EN UNE SEULE FOIS ---
+        sonarr_episode_files = []
+        if sonarr_series_id_val:
+            sonarr_episode_files = get_sonarr_episode_files(sonarr_series_id_val) or []
+        # --- FIN DE L'AJOUT ---
+
         seasons_list = []
         total_series_size = 0
         viewed_seasons_count = 0
@@ -1522,44 +1527,41 @@ def get_series_details_for_management(rating_key):
             if season.isWatched: viewed_seasons_count += 1
             sonarr_season_info = next((s for s in sonarr_series_full_details.get('seasons', []) if s.get('seasonNumber') == season.seasonNumber), None) if sonarr_series_full_details else None
             
-            # --- BOUCLE POUR LES ÉPISODES (RESTAURÉE) ---
             episodes_list_for_season = []
             total_season_size = 0
             for episode in season.episodes():
                 size_bytes = getattr(episode.media[0].parts[0], 'size', 0) if episode.media and episode.media[0].parts else 0
                 total_season_size += size_bytes
+
+                # --- NOUVEAU : On cherche l'épisode Sonarr correspondant ---
+                sonarr_episode_data = next((e for e in sonarr_episode_files if e.get('seasonNumber') == episode.seasonNumber and e.get('episodeNumber') == episode.index), None)
+
                 episodes_list_for_season.append({
                     'title': episode.title,
                     'isWatched': episode.isWatched,
-                    'size_on_disk': size_bytes
+                    'size_on_disk': size_bytes,
+                    'sonarr_episodeFileId': sonarr_episode_data.get('id') if sonarr_episode_data else None,
+                    'isMonitored_sonarr': sonarr_episode_data.get('monitored', False) if sonarr_episode_data else False
                 })
-            # --- FIN DE LA BOUCLE ÉPISODES ---
+                # --- FIN DE L'AJOUT ---
 
             total_series_size += total_season_size
 
             seasons_list.append({
-                'title': season.title,
-                'ratingKey': season.ratingKey,
-                'seasonNumber': season.seasonNumber,
-                'total_episodes': season.leafCount,
+                'title': season.title, 'ratingKey': season.ratingKey,
+                'seasonNumber': season.seasonNumber, 'total_episodes': season.leafCount,
                 'viewed_episodes': season.viewedLeafCount,
                 'is_monitored_season': sonarr_season_info.get('monitored', False) if sonarr_season_info else False,
-                'total_size_on_disk': total_season_size,
-                'episodes': episodes_list_for_season # <-- On ajoute la liste des épisodes
+                'total_size_on_disk': total_season_size, 'episodes': episodes_list_for_season
             })
 
         series_data = {
-            'title': series.title,
-            'ratingKey': series.ratingKey,
+            'title': series.title, 'ratingKey': series.ratingKey,
             'plex_status': getattr(series, 'status', 'unknown'),
-            'total_seasons_plex': series.childCount,
-            'viewed_seasons_plex': viewed_seasons_count,
-            'is_monitored_global': is_monitored_global_status,
-            'sonarr_series_id': sonarr_series_id_val,
-            'total_size_on_disk': total_series_size,
-            'seasons': seasons_list
+            'total_seasons_plex': series.childCount, 'viewed_seasons_plex': viewed_seasons_count,
+            'is_monitored_global': is_monitored_global_status, 'sonarr_series_id': sonarr_series_id_val,
+            'total_size_on_disk': total_series_size, 'seasons': seasons_list
         }
-        # === FIN DU BLOC DE CONSTRUCTION RESTAURÉ ===
         
         return render_template('plex_editor/_series_management_modal_content.html', series=series_data)
 
