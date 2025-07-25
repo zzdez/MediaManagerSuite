@@ -1476,10 +1476,10 @@ def get_series_details_for_management(rating_key):
     data = request.get_json()
     user_id = data.get('userId')
 
-    if not user_id:
-        return '<div class="alert alert-danger">Erreur: ID utilisateur manquant.</div>', 400
+    if not user_id: return '<div class="alert alert-danger">Erreur: ID utilisateur manquant.</div>', 400
 
     try:
+        # ... (La logique de connexion est correcte et reste la même)
         admin_plex_server_for_token = get_plex_admin_server()
         if not admin_plex_server_for_token: return ('<div class="alert alert-danger">Erreur: Connexion admin.</div>', 500)
         main_account = admin_plex_server_for_token.myPlexAccount()
@@ -1497,68 +1497,56 @@ def get_series_details_for_management(rating_key):
         if not user_plex_server: return ('<div class="alert alert-danger">Erreur: Connexion Plex utilisateur.</div>', 500)
 
         series = user_plex_server.fetchItem(rating_key)
-        if not series or series.type != 'show':
-            return f'<div class="alert alert-warning">Série non trouvée.</div>', 404
+        if not series or series.type != 'show': return f'<div class="alert alert-warning">Série non trouvée.</div>', 404
 
-        sonarr_series_full_details = None; sonarr_series_id_val = None; is_monitored_global_status = False
+        # --- ÉTAPE 1 : LOGGING DES DONNÉES SONARR ---
+        sonarr_series_full_details = None; sonarr_series_id_val = None
         tvdb_id = next((g.id.replace('tvdb://', '') for g in series.guids if g.id.startswith('tvdb://')), None)
         if tvdb_id:
             sonarr_series_info = get_sonarr_series_by_guid(f"tvdb://{tvdb_id}")
-            if sonarr_series_info and sonarr_series_info.get('id'):
-                sonarr_series_id_val = sonarr_series_info['id']
-                sonarr_series_full_details = get_sonarr_series_by_id(sonarr_series_id_val)
-                if sonarr_series_full_details: is_monitored_global_status = sonarr_series_full_details.get('monitored', False)
+            if sonarr_series_info: sonarr_series_id_val = sonarr_series_info.get('id')
 
         sonarr_episode_files = get_sonarr_episode_files(sonarr_series_id_val) if sonarr_series_id_val else []
+        current_app.logger.info("\n\n" + "="*20 + " DÉBUT DIAGNOSTIC " + "="*20)
+        current_app.logger.info(f"SÉRIE TROUVÉE DANS SONARR AVEC ID: {sonarr_series_id_val}")
+        current_app.logger.info(f"NOMBRE TOTAL D'ÉPISODES TROUVÉS DANS SONARR: {len(sonarr_episode_files)}")
+        if sonarr_episode_files:
+            current_app.logger.info(f"EXEMPLE DE DONNÉES D'UN ÉPISODE SONARR:\n{sonarr_episode_files[0]}")
 
+        # --- ÉTAPE 2 : COMPARAISON ÉPISODE PAR ÉPISODE ---
         seasons_list = []
-        total_series_size = 0
-        viewed_seasons_count = 0
-
         for season in series.seasons():
-            if season.isWatched: viewed_seasons_count += 1
-            sonarr_season_info = next((s for s in sonarr_series_full_details.get('seasons', []) if s.get('seasonNumber') == season.seasonNumber), None) if sonarr_series_full_details else None
-
             episodes_list_for_season = []
-            total_season_size = 0
+            current_app.logger.info(f"\n--- Parcours de la saison Plex : {season.title} (S{season.seasonNumber}) ---")
             for episode in season.episodes():
-                size_bytes = getattr(episode.media[0].parts[0], 'size', 0) if episode.media and episode.media[0].parts else 0
-                total_season_size += size_bytes
+                plex_season_num = getattr(episode, 'seasonNumber', 'N/A')
+                plex_episode_num = getattr(episode, 'index', 'N/A') # On utilise 'index' comme dans le code original
 
-                sonarr_episode_data = next((e for e in sonarr_episode_files if e.get('seasonNumber') == episode.seasonNumber and e.get('episodeNumber') == episode.episodeNumber), None)
+                current_app.logger.info(f"  -> PLEX EP: S{plex_season_num} E{plex_episode_num}. Tentative de correspondance...")
+
+                # On fait la correspondance en se basant sur les données vues dans le log
+                sonarr_episode_data = next((e for e in sonarr_episode_files if e.get('seasonNumber') == plex_season_num and e.get('episodeNumber') == plex_episode_num), None)
+
+                if sonarr_episode_data:
+                    current_app.logger.info(f"     -> SUCCÈS: Match trouvé pour S{plex_season_num}E{plex_episode_num}")
+                else:
+                    current_app.logger.warning(f"     -> ÉCHEC: Aucun match pour S{plex_season_num}E{plex_episode_num}")
 
                 episodes_list_for_season.append({
                     'title': episode.title, 'isWatched': episode.isWatched,
-                    'size_on_disk': size_bytes,
                     'sonarr_episodeFileId': sonarr_episode_data.get('id') if sonarr_episode_data else None,
                     'isMonitored_sonarr': sonarr_episode_data.get('monitored', False) if sonarr_episode_data else False
                 })
 
-            total_series_size += total_season_size
+            seasons_list.append({ 'episodes': episodes_list_for_season })
 
-            seasons_list.append({
-                'title': season.title, 'ratingKey': season.ratingKey,
-                'seasonNumber': season.seasonNumber, 'total_episodes': season.leafCount,
-                'viewed_episodes': season.viewedLeafCount,
-                'is_monitored_season': sonarr_season_info.get('monitored', False) if sonarr_season_info else False,
-                'total_size_on_disk': total_season_size, 'episodes': episodes_list_for_season
-            })
+        current_app.logger.info("\n" + "="*20 + " FIN DIAGNOSTIC " + "="*20 + "\n\n")
+        # On retourne une erreur simple pour ne pas recréer tout le dictionnaire pour ce test
+        return '<div class="alert alert-info">Diagnostic terminé. Vérifiez les logs du terminal.</div>'
 
-        series_data = {
-            'title': series.title, 'ratingKey': series.ratingKey,
-            'plex_status': getattr(series, 'status', 'unknown'),
-            'total_seasons_plex': series.childCount, 'viewed_seasons_plex': viewed_seasons_count,
-            'is_monitored_global': is_monitored_global_status, 'sonarr_series_id': sonarr_series_id_val,
-            'total_size_on_disk': total_series_size, 'seasons': seasons_list
-        }
-        
-        return render_template('plex_editor/_series_management_modal_content.html', series=series_data)
-
-    except NotFound:
-        return f'<div class="alert alert-warning">Série {rating_key} non trouvée.</div>', 404
     except Exception as e:
-        current_app.logger.error(f"Erreur API (series_details): {e}", exc_info=True)
-        return f'<div class="alert alert-danger">Erreur serveur: {str(e)}</div>', 500
+        current_app.logger.error(f"Erreur API (series_details_debug): {e}", exc_info=True)
+        return f'<div class="alert alert-danger">Erreur serveur pendant le diagnostic: {str(e)}</div>', 500
         
 @plex_editor_bp.route('/api/season/<int:season_plex_id>/toggle_monitor', methods=['POST'])
 @login_required
