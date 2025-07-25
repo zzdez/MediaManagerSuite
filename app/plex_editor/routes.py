@@ -200,9 +200,16 @@ def get_media_items():
                         item_from_lib.poster_url = None
                     # --- FIN DE L'AJOUT ---
 
-                    # --- AJOUTE CE BLOC POUR LE CHEMIN DU FICHIER ---
-                    item_from_lib.file_path = get_media_filepath(item_from_lib)
-                    # --- FIN DE L'AJOUT ---
+                    # --- BLOC CORRIGÉ POUR LE CHEMIN DU FICHIER ---
+                    if item_from_lib.type == 'movie':
+                        # Pour les films, on prend le chemin du premier fichier
+                        item_from_lib.file_path = getattr(item_from_lib.media[0].parts[0], 'file', None) if item_from_lib.media and item_from_lib.media[0].parts else None
+                    elif item_from_lib.type == 'show':
+                        # Pour les séries, on prend le chemin du premier dossier de la bibliothèque
+                        item_from_lib.file_path = item_from_lib.locations[0] if item_from_lib.locations else None
+                    else:
+                        item_from_lib.file_path = None
+                    # --- FIN DE LA CORRECTION ---
 
                     try:
                         # ... (calcul de la taille, etc. - code inchangé)
