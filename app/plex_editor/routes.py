@@ -21,7 +21,7 @@ from .utils import cleanup_parent_directory_recursively, get_media_filepath, _is
 from app.utils.arr_client import (
     get_radarr_tag_id, get_radarr_movie_by_guid, update_radarr_movie,
     get_sonarr_tag_id, get_sonarr_series_by_guid, get_sonarr_series_by_id,
-    update_sonarr_series, get_sonarr_episode_files,
+    update_sonarr_series, get_sonarr_episode_files, get_sonarr_episodes_by_series_id,
     get_all_sonarr_series # <--- AJOUT ICI
 )
 
