@@ -193,7 +193,7 @@ def get_media_items():
                     item_from_lib.original_title = getattr(item_from_lib, 'originalTitle', None)
 
                     # --- AJOUTE CE BLOC POUR LE POSTER ---
-                    thumb_path = getattr(item_from_lib, 'thumbUrl', None)
+                    thumb_path = getattr(item_from_lib, 'thumb', None) 
                     if thumb_path:
                         item_from_lib.poster_url = target_plex_server.url(thumb_path, includeToken=True)
                     else:
