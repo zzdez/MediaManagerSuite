@@ -342,6 +342,48 @@ $(document).ready(function() {
                 });
             }
 
+// --- ACTION : SAUVEGARDER LES CHANGEMENTS DE MONITORING ---
+            if (targetElement.id === 'save-monitoring-btn') {
+                const btn = $(targetElement);
+                const toggles = $(seriesModalElement).find('.episode-monitor-toggle');
+
+                const episodesToUpdate = toggles.map(function() {
+                    const toggle = $(this);
+                    // On ne prend que ceux qui ont un ID valide
+                    if (toggle.data('episode-id')) {
+                        return {
+                            episodeId: toggle.data('episode-id'),
+                            monitored: toggle.is(':checked')
+                        };
+                    }
+                }).get();
+
+                if (episodesToUpdate.length === 0) {
+                    alert("Aucun épisode avec un statut de monitoring modifiable n'a été trouvé.");
+                    return;
+                }
+
+                btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Sauvegarde...');
+
+                fetch('/plex/api/episodes/update_monitoring', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ episodes: episodesToUpdate })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        alert("Les statuts de monitoring ont été sauvegardés !");
+                    } else {
+                        alert('Erreur: ' + data.message);
+                    }
+                })
+                .catch(error => { console.error(error); alert("Erreur de communication."); })
+                .finally(() => {
+                    btn.prop('disabled', false).html('<i class="bi bi-save"></i> Sauvegarder Monitoring');
+                });
+            }
+
             // (Votre logique existante pour "Supprimer Saison" va ici)
             if (event.target.closest('.delete-season-btn')) {
                 const deleteBtn = event.target.closest('.delete-season-btn');

@@ -1804,6 +1804,38 @@ def bulk_delete_episodes():
         flash(f"[SIMULATION] {len(episode_file_ids)} fichier(s) d'épisode(s) seraient supprimés via Sonarr.", "info")
         return jsonify({'status': 'success', 'message': 'Suppression simulée.'})
 
+@plex_editor_bp.route('/api/episodes/update_monitoring', methods=['POST'])
+@login_required
+def update_episodes_monitoring():
+    """Met à jour le statut de monitoring pour une liste d'épisodes."""
+    data = request.get_json()
+    episodes_to_update = data.get('episodes', [])
+
+    if not episodes_to_update:
+        return jsonify({'status': 'warning', 'message': 'Aucune donnée de monitoring reçue.'}), 400
+
+    # N'oublions pas l'import ! Il est local pour ne pas surcharger.
+    from app.utils.arr_client import sonarr_update_episode_monitoring
+
+    success_count = 0
+    error_count = 0
+
+    for episode in episodes_to_update:
+        ep_id = episode.get('episodeId')
+        status = episode.get('monitored')
+        if ep_id is not None and status is not None:
+            if sonarr_update_episode_monitoring(ep_id, status):
+                success_count += 1
+            else:
+                error_count += 1
+
+    if error_count > 0:
+        message = f"{success_count} épisodes mis à jour, mais {error_count} ont échoué."
+        return jsonify({'status': 'error', 'message': message}), 500
+
+    flash(f"{success_count} épisode(s) ont été mis à jour avec succès dans Sonarr.", "success")
+    return jsonify({'status': 'success', 'message': 'Mise à jour réussie.'})
+
 @plex_editor_bp.route('/api/series/<int:sonarr_series_id>/toggle_monitor_global', methods=['POST'])
 @login_required
 def toggle_global_series_monitoring(sonarr_series_id):
