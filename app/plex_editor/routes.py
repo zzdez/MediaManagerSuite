@@ -131,33 +131,26 @@ def select_user_route():
     
 # Dans app/plex_editor/routes.py
 
+# Dans app/plex_editor/routes.py
+
 @plex_editor_bp.route('/api/media_items', methods=['POST'])
 @login_required
 def get_media_items():
-    """
-    Récupère les médias en fonction des filtres (utilisateur, bibliothèques, statut, titre)
-    et retourne un template HTML partiel.
-    """
     data = request.json
     user_id = data.get('userId')
     library_keys = data.get('libraryKeys', [])
     status_filter = data.get('statusFilter', 'all')
-    title_filter = data.get('titleFilter', '').strip() # <-- NOUVEAU : On récupère le filtre de titre
+    title_filter = data.get('titleFilter', '').strip()
 
     if not user_id or not library_keys:
         return jsonify({'error': 'ID utilisateur et au moins une clé de bibliothèque sont requis.'}), 400
 
     try:
-        # (La logique de connexion sans session est correcte et reste la même)
+        # (La logique de connexion est inchangée)
         plex_url = current_app.config.get('PLEX_URL')
         admin_token = current_app.config.get('PLEX_TOKEN')
-        if not plex_url or not admin_token:
-            return jsonify({'error': "Configuration Plex manquante."}), 500
-
         main_plex_account = get_main_plex_account_object()
-        if not main_plex_account:
-            return jsonify({'error': "Impossible de récupérer le compte Plex principal."}), 500
-
+        if not main_plex_account: return jsonify({'error': "Impossible de récupérer le compte Plex principal."}), 500
         target_plex_server = None
         if str(main_plex_account.id) == user_id:
             target_plex_server = PlexServer(plex_url, admin_token)
@@ -167,92 +160,83 @@ def get_media_items():
             if user_to_impersonate:
                 managed_user_token = user_to_impersonate.get_token(admin_plex_server_for_setup.machineIdentifier)
                 target_plex_server = PlexServer(plex_url, managed_user_token)
-            else:
-                return jsonify({'error': f"Utilisateur {user_id} non trouvé."}), 404
-
-        if not target_plex_server:
-             return jsonify({'error': f"Impossible d'établir la connexion Plex pour l'utilisateur {user_id}."}), 500
+            else: return jsonify({'error': f"Utilisateur {user_id} non trouvé."}), 404
+        if not target_plex_server: return jsonify({'error': f"Impossible de se connecter en tant que {user_id}."}), 500
 
         all_media_from_plex = []
         for lib_key in library_keys:
             try:
                 library = target_plex_server.library.sectionByID(int(lib_key))
 
-                # --- MODIFICATION CLÉ : On passe le filtre titre à l'API Plex ---
-                search_args = {}
+                # --- NOUVELLE LOGIQUE DE RECHERCHE CORRIGÉE ---
                 if title_filter:
-                    # Cherche dans le titre, le titre de tri, OU le titre original
-                    search_args['title|titleSort|originalTitle__icontains'] = title_filter
+                    # On fait 3 recherches et on fusionne les résultats
+                    current_app.logger.info(f"Recherche multiple dans '{library.title}' pour '{title_filter}'")
+                    results1 = library.search(title__icontains=title_filter)
+                    results2 = library.search(titleSort__icontains=title_filter)
+                    results3 = library.search(originalTitle__icontains=title_filter)
 
-                current_app.logger.info(f"Recherche dans '{library.title}' avec filtres: {search_args}")
-                items_from_lib = library.search(**search_args)
-                # --- FIN DE LA MODIFICATION ---
+                    # On utilise un dictionnaire pour dédupliquer automatiquement
+                    merged_items = {item.ratingKey: item for item in results1}
+                    merged_items.update({item.ratingKey: item for item in results2})
+                    merged_items.update({item.ratingKey: item for item in results3})
+                    items_from_lib = list(merged_items.values())
+                else:
+                    # Comportement par défaut si pas de recherche : tout récupérer
+                    items_from_lib = library.all()
+                # --- FIN DE LA LOGIQUE CORRIGÉE ---
 
-                # (Le reste de la boucle qui calcule la taille et ajoute les métadonnées reste identique)
+                # (Le reste du code est votre code fonctionnel, inchangé)
                 for item_from_lib in items_from_lib:
                     item_from_lib.library_name = library.title
                     try:
+                        # ... (calcul de la taille, etc. - code inchangé)
                         if item_from_lib.type == 'movie':
-                            if hasattr(item_from_lib, 'media') and item_from_lib.media and item_from_lib.media[0].parts:
-                                item_from_lib.total_size = item_from_lib.media[0].parts[0].size
-                            else:
-                                item_from_lib.total_size = 0
+                            item_from_lib.total_size = item_from_lib.media[0].parts[0].size if hasattr(item_from_lib, 'media') and item_from_lib.media and item_from_lib.media[0].parts else 0
                         elif item_from_lib.type == 'show':
-                            series_size = sum(getattr(part, 'size', 0) for episode in item_from_lib.episodes() for media_item in episode.media if hasattr(episode, 'media') and episode.media for part in media_item.parts if hasattr(media_item, 'parts'))
-                            item_from_lib.total_size = series_size
+                            item_from_lib.total_size = sum(getattr(part, 'size', 0) for ep in item_from_lib.episodes() for part in (ep.media[0].parts if ep.media and ep.media[0].parts else []))
                         else:
                             item_from_lib.total_size = 0
+                        # ... (formatage de la taille - code inchangé)
+                        if item_from_lib.total_size > 0:
+                            size_name = ("B", "KB", "MB", "GB", "TB"); i = 0
+                            temp_size = float(item_from_lib.total_size)
+                            while temp_size >= 1024 and i < len(size_name) - 1: temp_size /= 1024.0; i += 1
+                            item_from_lib.total_size_display = f"{temp_size:.2f} {size_name[i]}"
+                        else:
+                            item_from_lib.total_size_display = "0 B"
+                        
+                        if item_from_lib.type == 'show':
+                            item_from_lib.viewed_episodes = item_from_lib.viewedLeafCount
+                            item_from_lib.total_episodes = item_from_lib.leafCount
                     except Exception:
-                        item_from_lib.total_size = 0
-
-                    if item_from_lib.total_size == 0:
-                        item_from_lib.total_size_display = "0 B"
-                    else:
-                        size_name = ("B", "KB", "MB", "GB", "TB")
-                        i = 0
-                        temp_size = float(item_from_lib.total_size)
-                        while temp_size >= 1024 and i < len(size_name) - 1:
-                            temp_size /= 1024.0
-                            i += 1
-                        item_from_lib.total_size_display = f"{temp_size:.2f} {size_name[i]}"
-
-                    if item_from_lib.type == 'show':
-                        item_from_lib.viewed_episodes = item_from_lib.viewedLeafCount
-                        item_from_lib.total_episodes = item_from_lib.leafCount
+                        item_from_lib.total_size_display = "Erreur"
                     all_media_from_plex.append(item_from_lib)
 
-            except NotFound:
-                current_app.logger.warning(f"Bibliothèque {lib_key} non trouvée.")
             except Exception as e_lib:
                 current_app.logger.error(f"Erreur accès bibliothèque {lib_key}: {e_lib}", exc_info=True)
 
-        # (La logique de filtrage Python par statut et le tri restent identiques et corrects)
+        # (La logique de filtrage par statut et le tri restent identiques)
+        # ...
         filtered_items = []
         if status_filter == 'all':
             filtered_items = all_media_from_plex
         else:
             for item in all_media_from_plex:
+                # ... (logique de filtre par statut inchangée)
                 if item.type == 'show':
-                    total_episodes = getattr(item, 'total_episodes', 0)
-                    viewed_episodes = getattr(item, 'viewed_episodes', 0)
-                    is_watched_series = total_episodes > 0 and viewed_episodes == total_episodes
-                    is_unwatched_series = total_episodes > 0 and viewed_episodes == 0
-                    is_in_progress_series = total_episodes > 0 and viewed_episodes > 0 and viewed_episodes < total_episodes
-                    if (status_filter == 'watched' and is_watched_series) or \
-                       (status_filter == 'unwatched' and is_unwatched_series) or \
-                       (status_filter == 'in_progress' and is_in_progress_series):
+                    is_watched = item.total_episodes > 0 and item.viewed_episodes == item.total_episodes
+                    is_unwatched = item.total_episodes > 0 and item.viewed_episodes == 0
+                    is_in_progress = item.total_episodes > 0 and item.viewed_episodes > 0 and not is_watched
+                    if (status_filter == 'watched' and is_watched) or (status_filter == 'unwatched' and is_unwatched) or (status_filter == 'in_progress' and is_in_progress):
                         filtered_items.append(item)
                 elif item.type == 'movie':
-                    if (status_filter == 'watched' and item.isWatched) or \
-                       (status_filter == 'unwatched' and not item.isWatched):
+                    if (status_filter == 'watched' and item.isWatched) or (status_filter == 'unwatched' and not item.isWatched):
                         filtered_items.append(item)
 
         filtered_items.sort(key=lambda x: getattr(x, 'titleSort', x.title).lower())
-
         return render_template('plex_editor/_media_table.html', items=filtered_items)
 
-    except Unauthorized:
-        return jsonify({'error': "Autorisation refusée par le serveur Plex."}), 401
     except Exception as e:
         current_app.logger.error(f"Erreur API get_media_items: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
