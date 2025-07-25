@@ -200,6 +200,10 @@ def get_media_items():
                         item_from_lib.poster_url = None
                     # --- FIN DE L'AJOUT ---
 
+                    # --- AJOUTE CE BLOC POUR LE CHEMIN DU FICHIER ---
+                    item_from_lib.file_path = get_media_filepath(item_from_lib)
+                    # --- FIN DE L'AJOUT ---
+
                     try:
                         # ... (calcul de la taille, etc. - code inchangé)
                         if item_from_lib.type == 'movie':
