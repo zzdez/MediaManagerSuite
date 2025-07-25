@@ -1468,9 +1468,12 @@ def get_media_details_for_modal(rating_key): # Renommé pour clarté, bien que l
 
 # Dans app/plex_editor/routes.py
 
+# Dans app/plex_editor/routes.py
+
 @plex_editor_bp.route('/api/series_details/<int:rating_key>', methods=['POST'])
 @login_required
 def get_series_details_for_management(rating_key):
+    """Récupère les détails complets d'une série pour la modale de gestion."""
     data = request.get_json()
     user_id = data.get('userId')
 
@@ -1478,7 +1481,8 @@ def get_series_details_for_management(rating_key):
         return '<div class="alert alert-danger">Erreur: ID utilisateur manquant.</div>', 400
 
     try:
-        # (La logique de connexion est correcte et reste la même)
+        # (La logique de connexion sans session est correcte et reste la même)
+        # ...
         admin_plex_server_for_token = get_plex_admin_server()
         if not admin_plex_server_for_token: return '<div class="alert alert-danger">Erreur: Connexion admin.</div>', 500
         main_account = admin_plex_server_for_token.myPlexAccount()
@@ -1500,43 +1504,62 @@ def get_series_details_for_management(rating_key):
             return f'<div class="alert alert-warning">Série non trouvée.</div>', 404
 
         # (Logique Sonarr inchangée)
-        sonarr_series_full_details = None
-        # ...
+        sonarr_series_full_details = None; sonarr_series_id_val = None; is_monitored_global_status = False
         tvdb_id = next((g.id.replace('tvdb://', '') for g in series.guids if g.id.startswith('tvdb://')), None)
         if tvdb_id:
             sonarr_series_info = get_sonarr_series_by_guid(f"tvdb://{tvdb_id}")
             if sonarr_series_info and sonarr_series_info.get('id'):
-                sonarr_series_full_details = get_sonarr_series_by_id(sonarr_series_info['id'])
+                sonarr_series_id_val = sonarr_series_info['id']
+                sonarr_series_full_details = get_sonarr_series_by_id(sonarr_series_id_val)
+                if sonarr_series_full_details: is_monitored_global_status = sonarr_series_full_details.get('monitored', False)
 
-        # === BLOC CORRIGÉ AVEC LES BONS NOMS DE CLÉS ===
+        # === BLOC DE CONSTRUCTION DES DONNÉES ENTIÈREMENT RESTAURÉ ===
         seasons_list = []
         total_series_size = 0
+        viewed_seasons_count = 0
 
         for season in series.seasons():
+            if season.isWatched: viewed_seasons_count += 1
             sonarr_season_info = next((s for s in sonarr_series_full_details.get('seasons', []) if s.get('seasonNumber') == season.seasonNumber), None) if sonarr_series_full_details else None
             
-            total_season_size = sum(getattr(p, 'size', 0) for e in season.episodes() for p in e.media[0].parts if e.media and e.media[0].parts)
+            # --- BOUCLE POUR LES ÉPISODES (RESTAURÉE) ---
+            episodes_list_for_season = []
+            total_season_size = 0
+            for episode in season.episodes():
+                size_bytes = getattr(episode.media[0].parts[0], 'size', 0) if episode.media and episode.media[0].parts else 0
+                total_season_size += size_bytes
+                episodes_list_for_season.append({
+                    'title': episode.title,
+                    'isWatched': episode.isWatched,
+                    'size_on_disk': size_bytes
+                })
+            # --- FIN DE LA BOUCLE ÉPISODES ---
+
             total_series_size += total_season_size
 
             seasons_list.append({
                 'title': season.title,
                 'ratingKey': season.ratingKey,
                 'seasonNumber': season.seasonNumber,
-                'total_episodes': season.leafCount, # <-- CORRIGÉ
-                'viewed_episodes': season.viewedLeafCount, # <-- CORRIGÉ
+                'total_episodes': season.leafCount,
+                'viewed_episodes': season.viewedLeafCount,
                 'is_monitored_season': sonarr_season_info.get('monitored', False) if sonarr_season_info else False,
-                'total_size_on_disk': total_season_size
+                'total_size_on_disk': total_season_size,
+                'episodes': episodes_list_for_season # <-- On ajoute la liste des épisodes
             })
 
         series_data = {
             'title': series.title,
             'ratingKey': series.ratingKey,
-            'is_monitored_global': sonarr_series_full_details.get('monitored', False) if sonarr_series_full_details else False,
-            'sonarr_series_id': sonarr_series_full_details.get('id') if sonarr_series_full_details else None,
+            'plex_status': getattr(series, 'status', 'unknown'),
+            'total_seasons_plex': series.childCount,
+            'viewed_seasons_plex': viewed_seasons_count,
+            'is_monitored_global': is_monitored_global_status,
+            'sonarr_series_id': sonarr_series_id_val,
             'total_size_on_disk': total_series_size,
             'seasons': seasons_list
         }
-        # === FIN DU BLOC CORRIGÉ ===
+        # === FIN DU BLOC DE CONSTRUCTION RESTAURÉ ===
         
         return render_template('plex_editor/_series_management_modal_content.html', series=series_data)
 
@@ -1545,7 +1568,7 @@ def get_series_details_for_management(rating_key):
     except Exception as e:
         current_app.logger.error(f"Erreur API (series_details): {e}", exc_info=True)
         return f'<div class="alert alert-danger">Erreur serveur: {str(e)}</div>', 500
-
+        
 @plex_editor_bp.route('/api/season/<int:season_plex_id>/toggle_monitor', methods=['POST'])
 @login_required
 def toggle_season_monitoring(season_plex_id):
