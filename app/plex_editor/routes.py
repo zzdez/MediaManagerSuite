@@ -189,6 +189,8 @@ def get_media_items():
                 # (Le reste du code est votre code fonctionnel, inchangé)
                 for item_from_lib in items_from_lib:
                     item_from_lib.library_name = library.title
+                    item_from_lib.title_sort = getattr(item_from_lib, 'titleSort', None)
+                    item_from_lib.original_title = getattr(item_from_lib, 'originalTitle', None)
                     try:
                         # ... (calcul de la taille, etc. - code inchangé)
                         if item_from_lib.type == 'movie':

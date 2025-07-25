@@ -22,6 +22,15 @@
                     {{ item.title }}
                 </a>
                 <small class="d-block text-muted">Année: {{ item.year }}</small>
+
+                {# --- NOUVEAU BLOC POUR LES TITRES ALTERNATIFS --- #}
+                {% if item.original_title and item.original_title|lower != item.title|lower %}
+                    <small class="d-block" style="color: #6c757d; font-style: italic;">(Titre Original: {{ item.original_title }})</small>
+                {% endif %}
+                {% if item.title_sort and item.title_sort|lower != item.title|lower %}
+                    <small class="d-block" style="color: #6c757d; font-style: italic;">(Titre de Tri: {{ item.title_sort }})</small>
+                {% endif %}
+                {# --- FIN DU NOUVEAU BLOC --- #}
             </td>
             <td><span class="badge bg-secondary">{{ item.library_name }}</span></td>
             <td>{{ item.total_size_display if item.total_size_display else 'N/A' }}</td> {# MODIFIED CELLULE #}
