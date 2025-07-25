@@ -66,6 +66,7 @@ $(document).ready(function() {
         const userId = userSelect.val();
         const selectedLibraries = librarySelect.val();
         const statusFilter = $('#status-filter').val();
+        const titleFilter = $('#title-filter-input').val().trim(); // <-- On récupère le texte de la recherche
 
         if (!userId || !selectedLibraries || selectedLibraries.length === 0) {
             itemsContainer.html('<p class="text-center text-warning">Veuillez sélectionner un utilisateur et une bibliothèque.</p>');
@@ -81,7 +82,8 @@ $(document).ready(function() {
             body: JSON.stringify({
                 userId: userId,
                 libraryKeys: selectedLibraries,
-                statusFilter: statusFilter
+                statusFilter: statusFilter,
+                titleFilter: titleFilter // <-- On ajoute le texte au payload
             })
         })
         .then(response => response.text())

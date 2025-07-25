@@ -18,14 +18,19 @@
                     </select>
                 </div>
                 <!-- Filtre Bibliothèque -->
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <label for="library-select" class="form-label">Bibliothèque(s)</label>
                     <select id="library-select" class="form-select" multiple disabled>
                         {# La liste des bibliothèques sera chargée ici par JS #}
                     </select>
                 </div>
-                <!-- Autres filtres (statut, etc.) -->
+                <!-- Filtre par Titre -->
                 <div class="col-md-3">
+                    <label for="title-filter-input" class="form-label">Titre contient</label>
+                    <input type="text" id="title-filter-input" class="form-control" placeholder="Rechercher un titre...">
+                </div>
+                <!-- Autres filtres (statut, etc.) -->
+                <div class="col-md-2">
                     <label for="status-filter" class="form-label">Statut</label>
                     <select id="status-filter" class="form-select">
                         <option value="all" selected>Tous les statuts</option>
