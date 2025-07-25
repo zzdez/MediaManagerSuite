@@ -1534,7 +1534,7 @@ def get_series_details_for_management(rating_key):
                 total_season_size += size_bytes
 
                 # --- NOUVEAU : On cherche l'épisode Sonarr correspondant ---
-                sonarr_episode_data = next((e for e in sonarr_episode_files if e.get('seasonNumber') == episode.seasonNumber and e.get('episodeNumber') == episode.index), None)
+                sonarr_episode_data = next((e for e in sonarr_episode_files if e.get('seasonNumber') == episode.seasonNumber and e.get('episodeNumber') == episode.episodeNumber), None)
 
                 episodes_list_for_season.append({
                     'title': episode.title,
