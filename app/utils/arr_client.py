@@ -897,3 +897,28 @@ def get_sonarr_episodes_by_series_id(series_id):
     except Exception as e:
         current_app.logger.error(f"Erreur lors de la récupération des épisodes pour la série Sonarr ID {series_id}: {e}", exc_info=True)
         return None
+
+# Dans app/utils/arr_client.py
+
+def sonarr_delete_episode_files_bulk(episode_file_ids):
+    """
+    Supprime une liste de fichiers d'épisodes dans Sonarr en utilisant leurs episodeFileId.
+    """
+    if not episode_file_ids:
+        return False
+    try:
+        # L'API Sonarr v3 attend un payload JSON avec les IDs
+        payload = {"episodeFileIds": episode_file_ids}
+        # L'endpoint pour la suppression en masse est 'episodefile/bulk' avec la méthode DELETE
+        response = _sonarr_api_request("DELETE", "episodefile/bulk", data=payload)
+
+        # L'API renvoie une liste vide en cas de succès
+        if response is not None:
+            current_app.logger.info(f"Sonarr a confirmé la suppression de {len(episode_file_ids)} fichier(s).")
+            return True
+        else:
+            current_app.logger.error(f"La suppression en masse via Sonarr a échoué. Réponse invalide: {response}")
+            return False
+    except Exception as e:
+        current_app.logger.error(f"Exception lors de la suppression en masse des épisodes Sonarr: {e}", exc_info=True)
+        return False
