@@ -1473,7 +1473,6 @@ def get_media_details_for_modal(rating_key): # Renommé pour clarté, bien que l
 @plex_editor_bp.route('/api/series_details/<int:rating_key>', methods=['POST'])
 @login_required
 def get_series_details_for_management(rating_key):
-    """Récupère les détails complets d'une série pour la modale de gestion."""
     data = request.get_json()
     user_id = data.get('userId')
 
@@ -1481,8 +1480,7 @@ def get_series_details_for_management(rating_key):
         return '<div class="alert alert-danger">Erreur: ID utilisateur manquant.</div>', 400
 
     try:
-        # (La logique de connexion sans session est correcte et reste la même)
-        # ...
+        # ... (La logique de connexion reste la même)
         admin_plex_server_for_token = get_plex_admin_server()
         if not admin_plex_server_for_token: return '<div class="alert alert-danger">Erreur: Connexion admin.</div>', 500
         main_account = admin_plex_server_for_token.myPlexAccount()
@@ -1503,7 +1501,6 @@ def get_series_details_for_management(rating_key):
         if not series or series.type != 'show':
             return f'<div class="alert alert-warning">Série non trouvée.</div>', 404
 
-        # (Logique de récupération de la série Sonarr - inchangée)
         sonarr_series_full_details = None; sonarr_series_id_val = None; is_monitored_global_status = False
         tvdb_id = next((g.id.replace('tvdb://', '') for g in series.guids if g.id.startswith('tvdb://')), None)
         if tvdb_id:
@@ -1513,60 +1510,50 @@ def get_series_details_for_management(rating_key):
                 sonarr_series_full_details = get_sonarr_series_by_id(sonarr_series_id_val)
                 if sonarr_series_full_details: is_monitored_global_status = sonarr_series_full_details.get('monitored', False)
 
-        # --- NOUVEAU : On récupère tous les fichiers d'épisodes de Sonarr EN UNE SEULE FOIS ---
+        # === BLOC DE DÉBOGAGE ===
         sonarr_episode_files = []
         if sonarr_series_id_val:
             sonarr_episode_files = get_sonarr_episode_files(sonarr_series_id_val) or []
-        # --- FIN DE L'AJOUT ---
+        current_app.logger.info(f"DEBUG: Nombre d'épisodes récupérés de Sonarr: {len(sonarr_episode_files)}")
+        if sonarr_episode_files:
+            current_app.logger.info(f"DEBUG: Premier épisode de Sonarr: {sonarr_episode_files[0]}")
+        # === FIN BLOC DE DÉBOGAGE ===
 
         seasons_list = []
-        total_series_size = 0
-        viewed_seasons_count = 0
+        # ...
 
         for season in series.seasons():
-            if season.isWatched: viewed_seasons_count += 1
-            sonarr_season_info = next((s for s in sonarr_series_full_details.get('seasons', []) if s.get('seasonNumber') == season.seasonNumber), None) if sonarr_series_full_details else None
-            
+            # ...
             episodes_list_for_season = []
             total_season_size = 0
+            current_app.logger.info(f"DEBUG: Parcours de la saison Plex : {season.title} (S{season.seasonNumber})")
             for episode in season.episodes():
-                size_bytes = getattr(episode.media[0].parts[0], 'size', 0) if episode.media and episode.media[0].parts else 0
-                total_season_size += size_bytes
-
-                # --- NOUVEAU : On cherche l'épisode Sonarr correspondant ---
+                # === BLOC DE DÉBOGAGE PAR ÉPISODE ===
+                current_app.logger.info(f"  -> PLEX EP: S{episode.seasonNumber} E{episode.episodeNumber} (Type S:{type(episode.seasonNumber)}, Type E:{type(episode.episodeNumber)})")
                 sonarr_episode_data = next((e for e in sonarr_episode_files if e.get('seasonNumber') == episode.seasonNumber and e.get('episodeNumber') == episode.episodeNumber), None)
 
+                if sonarr_episode_data:
+                    current_app.logger.info(f"     -> MATCH TROUVÉ DANS SONARR: {sonarr_episode_data}")
+                else:
+                    current_app.logger.warning(f"     -> AUCUN MATCH TROUVÉ DANS SONARR pour S{episode.seasonNumber}E{episode.episodeNumber}")
+                # === FIN BLOC DE DÉBOGAGE PAR ÉPISODE ===
+
+                size_bytes = getattr(episode.media[0].parts[0], 'size', 0) if episode.media and episode.media[0].parts else 0
+                total_season_size += size_bytes
                 episodes_list_for_season.append({
-                    'title': episode.title,
-                    'isWatched': episode.isWatched,
+                    'title': episode.title, 'isWatched': episode.isWatched,
                     'size_on_disk': size_bytes,
                     'sonarr_episodeFileId': sonarr_episode_data.get('id') if sonarr_episode_data else None,
                     'isMonitored_sonarr': sonarr_episode_data.get('monitored', False) if sonarr_episode_data else False
                 })
-                # --- FIN DE L'AJOUT ---
 
-            total_series_size += total_season_size
+            # ... (le reste de la fonction est inchangé)
+            seasons_list.append({ 'title': season.title, 'ratingKey': season.ratingKey, 'seasonNumber': season.seasonNumber, 'total_episodes': season.leafCount, 'viewed_episodes': season.viewedLeafCount, 'is_monitored_season': False, 'total_size_on_disk': total_season_size, 'episodes': episodes_list_for_season })
 
-            seasons_list.append({
-                'title': season.title, 'ratingKey': season.ratingKey,
-                'seasonNumber': season.seasonNumber, 'total_episodes': season.leafCount,
-                'viewed_episodes': season.viewedLeafCount,
-                'is_monitored_season': sonarr_season_info.get('monitored', False) if sonarr_season_info else False,
-                'total_size_on_disk': total_season_size, 'episodes': episodes_list_for_season
-            })
-
-        series_data = {
-            'title': series.title, 'ratingKey': series.ratingKey,
-            'plex_status': getattr(series, 'status', 'unknown'),
-            'total_seasons_plex': series.childCount, 'viewed_seasons_plex': viewed_seasons_count,
-            'is_monitored_global': is_monitored_global_status, 'sonarr_series_id': sonarr_series_id_val,
-            'total_size_on_disk': total_series_size, 'seasons': seasons_list
-        }
+        series_data = { 'title': series.title, 'ratingKey': series.ratingKey, 'plex_status': getattr(series, 'status', 'unknown'), 'total_seasons_plex': series.childCount, 'viewed_seasons_plex': 0, 'is_monitored_global': is_monitored_global_status, 'sonarr_series_id': sonarr_series_id_val, 'total_size_on_disk': 0, 'seasons': seasons_list }
         
         return render_template('plex_editor/_series_management_modal_content.html', series=series_data)
 
-    except NotFound:
-        return f'<div class="alert alert-warning">Série {rating_key} non trouvée.</div>', 404
     except Exception as e:
         current_app.logger.error(f"Erreur API (series_details): {e}", exc_info=True)
         return f'<div class="alert alert-danger">Erreur serveur: {str(e)}</div>', 500
