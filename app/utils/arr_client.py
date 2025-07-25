@@ -910,7 +910,7 @@ def sonarr_delete_episode_files_bulk(episode_file_ids):
         # L'API Sonarr v3 attend un payload JSON avec les IDs
         payload = {"episodeFileIds": episode_file_ids}
         # L'endpoint pour la suppression en masse est 'episodefile/bulk' avec la méthode DELETE
-        response = _sonarr_api_request("DELETE", "episodefile/bulk", data=payload)
+        response = _sonarr_api_request("DELETE", "episodefile/bulk", json=payload)
 
         # L'API renvoie une liste vide en cas de succès
         if response is not None:
