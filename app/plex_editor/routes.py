@@ -1774,6 +1774,41 @@ def delete_season_files_and_unmonitor(season_plex_id):
         current_app.logger.error(f"Erreur API delete_season pour saison {season_plex_id}: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+@plex_editor_bp.route('/api/episodes/delete_bulk', methods=['POST'])
+@login_required
+def bulk_delete_episodes():
+    """Supprime une liste de fichiers d'épisodes via Sonarr."""
+    data = request.get_json()
+    episode_file_ids = data.get('episodeFileIds', [])
+
+    if not episode_file_ids:
+        return jsonify({'status': 'warning', 'message': 'Aucun épisode sélectionné.'}), 400
+
+    # On s'assure que les IDs sont bien des entiers
+    try:
+        episode_file_ids = [int(id) for id in episode_file_ids]
+    except (ValueError, TypeError):
+        return jsonify({'status': 'error', 'message': 'Liste d_IDs invalide.'}), 400
+
+    is_simulating = _is_dry_run_mode()
+    dry_run_prefix = "[SIMULATION] " if is_simulating else ""
+
+    current_app.logger.info(f"{dry_run_prefix}Demande de suppression pour {len(episode_file_ids)} fichier(s) via Sonarr.")
+
+    if not is_simulating:
+        # On importe la fonction utilitaire de arr_client
+        from app.utils.arr_client import sonarr_delete_episode_files_bulk
+        success = sonarr_delete_episode_files_bulk(episode_file_ids)
+        if success:
+            flash(f"{len(episode_file_ids)} fichier(s) d'épisode(s) ont été supprimés avec succès via Sonarr.", "success")
+            return jsonify({'status': 'success', 'message': 'Fichiers supprimés.'})
+        else:
+            flash("Une erreur est survenue lors de la suppression des fichiers via Sonarr.", "danger")
+            return jsonify({'status': 'error', 'message': 'Échec de la suppression via Sonarr.'}), 500
+    else: # En mode simulation
+        flash(f"[SIMULATION] {len(episode_file_ids)} fichier(s) d'épisode(s) seraient supprimés via Sonarr.", "info")
+        return jsonify({'status': 'success', 'message': 'Suppression simulée.'})
+
 @plex_editor_bp.route('/api/series/<int:sonarr_series_id>/toggle_monitor_global', methods=['POST'])
 @login_required
 def toggle_global_series_monitoring(sonarr_series_id):

@@ -290,4 +290,96 @@ $(document).ready(function() {
         .finally(() => btn.prop('disabled', false).text('Oui, rejeter et supprimer'));
     });
 
+    // --- Logique pour la modale de gestion de série ---
+    const seriesModalElement = document.getElementById('series-management-modal');
+
+    // ### NOUVEAU BLOC POUR LES ACTIONS DE LA MODALE ###
+    if (seriesModalElement) {
+        $(seriesModalElement).on('click', function(event) {
+            const targetElement = event.target;
+
+            // --- ACTION : SUPPRIMER LES ÉPISODES SÉLECTIONNÉS ---
+            if (targetElement.id === 'delete-selected-episodes-btn') {
+                const btn = $(targetElement);
+                const checked_boxes = $(seriesModalElement).find('.episode-delete-checkbox:checked');
+
+                if (checked_boxes.length === 0) {
+                    alert("Veuillez cocher au moins un épisode à supprimer.");
+                    return;
+                }
+
+                if (!confirm(`Êtes-vous sûr de vouloir supprimer définitivement les fichiers des ${checked_boxes.length} épisodes sélectionnés ?`)) {
+                    return;
+                }
+
+                const episodeFileIds = checked_boxes.map(function() {
+                    return $(this).val();
+                }).get();
+
+                btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Suppression...');
+
+                fetch('/plex/api/episodes/delete_bulk', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ episodeFileIds: episodeFileIds })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        alert(`Suppression de ${checked_boxes.length} épisode(s) lancée.`);
+                        // On grise les lignes supprimées
+                        checked_boxes.each(function() {
+                            $(this).closest('li').addClass('opacity-50 text-decoration-line-through');
+                            $(this).prop('checked', false).prop('disabled', true);
+                        });
+                    } else {
+                        alert('Erreur: ' + data.message);
+                    }
+                })
+                .catch(error => { console.error(error); alert("Erreur de communication."); })
+                .finally(() => {
+                    btn.prop('disabled', false).html('<i class="bi bi-trash"></i> Supprimer la Sélection');
+                });
+            }
+
+            // (Votre logique existante pour "Supprimer Saison" va ici)
+            if (event.target.closest('.delete-season-btn')) {
+                const deleteBtn = event.target.closest('.delete-season-btn');
+                const seasonId = $(deleteBtn).data('season-id');
+                const seasonTitle = $(deleteBtn).data('season-title');
+                if (confirm(`Êtes-vous sûr de vouloir supprimer tous les fichiers de la saison "${seasonTitle}" et la dé-monitorer ?`)) {
+                    // ... (code AJAX pour supprimer la saison)
+                }
+            }
+        });
+
+        $(seriesModalElement).on('change', '.season-monitor-toggle', function() {
+            const seasonId = $(this).data('season-id');
+            const isChecked = $(this).is(':checked');
+            // ... (code AJAX pour changer le monitoring de la saison)
+        });
+
+        $(seriesModalElement).on('change', '.series-global-monitor-toggle', function() {
+            const sonarrSeriesId = $(this).data('sonarr-series-id');
+            const isChecked = $(this).is(':checked');
+            const url = `/plex/api/series/${sonarrSeriesId}/toggle_monitor_global`;
+
+            fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status !== 'success') {
+                    alert('Erreur: ' + data.message);
+                    $(this).prop('checked', !isChecked);
+                }
+            })
+            .catch(error => {
+                console.error('Erreur:', error);
+                alert('Une erreur de communication est survenue.');
+                $(this).prop('checked', !isChecked);
+            });
+        });
+    }
 }); // Fin de $(document).ready
