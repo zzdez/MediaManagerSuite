@@ -886,3 +886,14 @@ def add_movie_by_title_to_radarr(movie_title: str, movie_year: int = None):
 
     logger.info(f"Radarr: Successfully added movie '{added_movie_details.get('title')}' with Radarr ID {added_movie_details.get('id')}.")
     return added_movie_details
+
+def get_sonarr_episodes_by_series_id(series_id):
+    """Récupère TOUS les épisodes d'une série depuis Sonarr, pas seulement ceux avec des fichiers."""
+    if not series_id:
+        return None
+    try:
+        # L'endpoint 'episode' retourne tous les épisodes d'une série
+        return _sonarr_api_request("GET", "episode", params={'seriesId': series_id})
+    except Exception as e:
+        current_app.logger.error(f"Erreur lors de la récupération des épisodes pour la série Sonarr ID {series_id}: {e}", exc_info=True)
+        return None
