@@ -111,7 +111,8 @@
                                    id="delete-ep-{{ episode.sonarr_episodeFileId }}"
                                    {% if not episode.sonarr_episodeFileId %}disabled{% endif %}>
                             <label class="form-check-label" for="delete-ep-{{ episode.sonarr_episodeFileId }}">
-                                <small>{{ episode.title }}</small>
+                                {# On ajoute le numéro de l'épisode (formaté sur 2 chiffres) #}
+                                <small>E{{ '%02d'|format(episode.episodeNumber) }} - {{ episode.title }}</small>
                             </label>
                         </div>
 
