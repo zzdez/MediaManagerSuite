@@ -125,6 +125,23 @@ $(document).ready(function() {
             $('#confirmRejectShowBtn').data('ratingKey', ratingKey);
         }
 
+// --- ACTION : COPIER LE CHEMIN DU FICHIER ---
+        const copyPathBtn = event.target.closest('.copy-path-btn');
+        if (copyPathBtn) {
+            const path = $(copyPathBtn).data('path');
+            navigator.clipboard.writeText(path).then(() => {
+                // Succès ! On change l'icône temporairement pour donner un feedback.
+                const originalIcon = $(copyPathBtn).html();
+                $(copyPathBtn).html('<i class="bi bi-check-lg text-success"></i>');
+                setTimeout(() => {
+                    $(copyPathBtn).html(originalIcon);
+                }, 1500); // Rétablir l'icône après 1.5 secondes
+            }).catch(err => {
+                console.error('Erreur de copie dans le presse-papiers:', err);
+                alert("La copie a échoué. Vérifiez les permissions de votre navigateur.");
+            });
+        }
+
         // --- ACTION : SETUP MODALE DÉTAILS DU MÉDIA ---
         const titleLink = event.target.closest('.item-title-link');
         if (titleLink) {

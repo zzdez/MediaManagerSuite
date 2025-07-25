@@ -42,6 +42,19 @@
                         {% endif %}
                     </div>
                 </div>
+
+                {# --- AJOUTE CE BLOC ENTIER --- #}
+                {% if item.file_path %}
+                <div class="mt-2" style="font-size: 0.8em;">
+                    <code class="text-muted">{{ item.file_path }}</code>
+                    <button class="btn btn-outline-secondary btn-sm ms-2 py-0 copy-path-btn"
+                            title="Copier le chemin"
+                            data-path="{{ item.file_path }}">
+                        <i class="bi bi-clipboard"></i>
+                    </button>
+                </div>
+                {% endif %}
+                {# --- FIN DU BLOC À AJOUTER --- #}
             </td>
             <td><span class="badge bg-secondary">{{ item.library_name }}</span></td>
             <td>{{ item.total_size_display if item.total_size_display else 'N/A' }}</td> {# MODIFIED CELLULE #}
