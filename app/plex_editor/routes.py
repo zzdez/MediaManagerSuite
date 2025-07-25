@@ -181,7 +181,8 @@ def get_media_items():
                 # --- MODIFICATION CLÉ : On passe le filtre titre à l'API Plex ---
                 search_args = {}
                 if title_filter:
-                    search_args['title__icontains'] = title_filter
+                    # Cherche dans le titre, le titre de tri, OU le titre original
+                    search_args['title|titleSort|originalTitle__icontains'] = title_filter
 
                 current_app.logger.info(f"Recherche dans '{library.title}' avec filtres: {search_args}")
                 items_from_lib = library.search(**search_args)
@@ -1422,6 +1423,7 @@ def get_media_details_for_modal(rating_key): # Renommé pour clarté, bien que l
         # Adapter les noms des attributs aux vrais noms de l'API Plex via plexapi.
         details = {
             'title': getattr(item, 'title', 'Titre inconnu'),
+            'originalTitle': getattr(item, 'originalTitle', None), # <-- AJOUTE CETTE LIGNE
             'year': getattr(item, 'year', ''),
             'summary': getattr(item, 'summary', 'Aucun résumé disponible.'),
             'tagline': getattr(item, 'tagline', ''), # Souvent appelé 'tagline' dans Plex
