@@ -922,3 +922,28 @@ def sonarr_delete_episode_files_bulk(episode_file_ids):
     except Exception as e:
         current_app.logger.error(f"Exception lors de la suppression en masse des épisodes Sonarr: {e}", exc_info=True)
         return False
+
+def sonarr_update_episode_monitoring(episode_id, monitored_status):
+    """
+    Met à jour le statut de monitoring d'un seul épisode dans Sonarr.
+    """
+    try:
+        # Étape 1: Récupérer l'objet épisode complet depuis Sonarr
+        episode_data = _sonarr_api_request("GET", f"episode/{episode_id}")
+        if not episode_data:
+            current_app.logger.error(f"Impossible de récupérer les détails de l'épisode ID {episode_id} depuis Sonarr.")
+            return False
+
+        # Étape 2: Modifier la clé 'monitored'
+        episode_data['monitored'] = monitored_status
+
+        # Étape 3: Renvoyer l'objet modifié complet à Sonarr
+        response = _sonarr_api_request("PUT", "episode", json_data=episode_data)
+
+        if response and response.get('id'):
+            current_app.logger.info(f"Statut de monitoring pour l'épisode {episode_id} mis à jour à '{monitored_status}'.")
+            return True
+        return False
+    except Exception as e:
+        current_app.logger.error(f"Exception lors de la mise à jour du monitoring pour l'épisode {episode_id}: {e}", exc_info=True)
+        return False
