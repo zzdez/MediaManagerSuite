@@ -191,6 +191,15 @@ def get_media_items():
                     item_from_lib.library_name = library.title
                     item_from_lib.title_sort = getattr(item_from_lib, 'titleSort', None)
                     item_from_lib.original_title = getattr(item_from_lib, 'originalTitle', None)
+
+                    # --- AJOUTE CE BLOC POUR LE POSTER ---
+                    thumb_path = getattr(item_from_lib, 'thumbUrl', None)
+                    if thumb_path:
+                        item_from_lib.poster_url = target_plex_server.url(thumb_path, includeToken=True)
+                    else:
+                        item_from_lib.poster_url = None
+                    # --- FIN DE L'AJOUT ---
+
                     try:
                         # ... (calcul de la taille, etc. - code inchangé)
                         if item_from_lib.type == 'movie':
