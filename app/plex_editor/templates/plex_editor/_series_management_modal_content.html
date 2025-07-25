@@ -122,9 +122,9 @@
                             <!-- NOUVEAU : Switch de monitoring pour l'épisode -->
                             <div class="form-check form-switch me-2" title="Surveiller cet épisode dans Sonarr">
                                 <input class="form-check-input episode-monitor-toggle" type="checkbox" role="switch"
-                                       data-episode-id="{{ episode.sonarr_episodeFileId }}"
+                                       data-sonarr-episode-id="{{ episode.sonarr_episodeId }}"
                                        {% if episode.isMonitored_sonarr %}checked{% endif %}
-                                       {% if not episode.sonarr_episodeFileId %}disabled{% endif %}>
+                                       {% if not episode.sonarr_episodeId %}disabled{% endif %}>
                             </div>
 
                             {% if episode.isWatched %}

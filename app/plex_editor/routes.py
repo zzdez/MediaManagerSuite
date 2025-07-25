@@ -1533,10 +1533,11 @@ def get_series_details_for_management(rating_key):
 
                 episodes_list_for_season.append({
                     'title': episode.title,
-                    'episodeNumber': episode.index, # <-- CORRECTION 2 : On ajoute le numéro de l'épisode
+                    'episodeNumber': episode.index,
                     'isWatched': episode.isWatched,
                     'size_on_disk': size_bytes,
-                    'sonarr_episodeFileId': sonarr_file_id if sonarr_file_id > 0 else None,
+                    'sonarr_episodeId': sonarr_episode_data.get('id') if sonarr_episode_data else None,
+                    'sonarr_episodeFileId': sonarr_file_id,
                     'isMonitored_sonarr': sonarr_episode_data.get('monitored', False) if sonarr_episode_data else False
                 })
 
@@ -1807,34 +1808,31 @@ def bulk_delete_episodes():
 @plex_editor_bp.route('/api/episodes/update_monitoring', methods=['POST'])
 @login_required
 def update_episodes_monitoring():
-    """Met à jour le statut de monitoring pour une liste d'épisodes."""
     data = request.get_json()
     episodes_to_update = data.get('episodes', [])
-
     if not episodes_to_update:
-        return jsonify({'status': 'warning', 'message': 'Aucune donnée de monitoring reçue.'}), 400
+        return jsonify({'status': 'warning', 'message': 'Aucune donnée reçue.'}), 400
 
-    # N'oublions pas l'import ! Il est local pour ne pas surcharger.
-    from app.utils.arr_client import sonarr_update_episode_monitoring
+    # On importe la NOUVELLE fonction
+    from app.utils.arr_client import sonarr_update_episodes_monitoring_bulk
 
-    success_count = 0
-    error_count = 0
+    # On regroupe les épisodes par statut
+    to_monitor = [ep.get('episodeId') for ep in episodes_to_update if ep.get('monitored') is True and ep.get('episodeId')]
+    to_unmonitor = [ep.get('episodeId') for ep in episodes_to_update if ep.get('monitored') is False and ep.get('episodeId')]
 
-    for episode in episodes_to_update:
-        ep_id = episode.get('episodeId')
-        status = episode.get('monitored')
-        if ep_id is not None and status is not None:
-            if sonarr_update_episode_monitoring(ep_id, status):
-                success_count += 1
-            else:
-                error_count += 1
+    success = True
+    if to_monitor:
+        if not sonarr_update_episodes_monitoring_bulk(to_monitor, True):
+            success = False
+    if to_unmonitor:
+        if not sonarr_update_episodes_monitoring_bulk(to_unmonitor, False):
+            success = False
 
-    if error_count > 0:
-        message = f"{success_count} épisodes mis à jour, mais {error_count} ont échoué."
-        return jsonify({'status': 'error', 'message': message}), 500
+    if success:
+        flash(f"{len(episodes_to_update)} statut(s) de monitoring mis à jour.", "success")
+        return jsonify({'status': 'success', 'message': 'Mise à jour réussie.'})
 
-    flash(f"{success_count} épisode(s) ont été mis à jour avec succès dans Sonarr.", "success")
-    return jsonify({'status': 'success', 'message': 'Mise à jour réussie.'})
+    return jsonify({'status': 'error', 'message': 'Une ou plusieurs mises à jour ont échoué.'}), 500
 
 @plex_editor_bp.route('/api/series/<int:sonarr_series_id>/toggle_monitor_global', methods=['POST'])
 @login_required

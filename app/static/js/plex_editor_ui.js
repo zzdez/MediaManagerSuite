@@ -350,9 +350,9 @@ $(document).ready(function() {
                 const episodesToUpdate = toggles.map(function() {
                     const toggle = $(this);
                     // On ne prend que ceux qui ont un ID valide
-                    if (toggle.data('episode-id')) {
+                    if (toggle.data('sonarr-episode-id')) {
                         return {
-                            episodeId: toggle.data('episode-id'),
+                            episodeId: toggle.data('sonarr-episode-id'),
                             monitored: toggle.is(':checked')
                         };
                     }
