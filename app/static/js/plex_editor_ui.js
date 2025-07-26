@@ -395,10 +395,43 @@ $(document).ready(function() {
             }
         });
 
+        // --- NOUVEAU : GESTION DU TOGGLE DE MONITORING PAR SAISON ---
         $(seriesModalElement).on('change', '.season-monitor-toggle', function() {
-            const seasonId = $(this).data('season-id');
-            const isChecked = $(this).is(':checked');
-            // ... (code AJAX pour changer le monitoring de la saison)
+            const toggle = $(this);
+            const seasonRow = toggle.closest('.season-row');
+            const sonarrSeriesId = seasonRow.data('sonarr-series-id');
+            const seasonNumber = seasonRow.data('season-number');
+            const isMonitored = toggle.is(':checked');
+
+            // Affiche un spinner sur la ligne de la saison pour montrer que quelque chose se passe
+            seasonRow.addClass('opacity-50');
+
+            fetch('/plex/api/season/update_monitoring', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    sonarrSeriesId: sonarrSeriesId,
+                    seasonNumber: seasonNumber,
+                    monitored: isMonitored
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status !== 'success') {
+                    alert('Erreur: ' + data.message);
+                    // En cas d'erreur, on remet le toggle à son état précédent
+                    toggle.prop('checked', !isMonitored);
+                }
+            })
+            .catch(error => {
+                console.error(error);
+                alert("Erreur de communication.");
+                toggle.prop('checked', !isMonitored);
+            })
+            .finally(() => {
+                // On retire le spinner
+                seasonRow.removeClass('opacity-50');
+            });
         });
 
         $(seriesModalElement).on('change', '.series-global-monitor-toggle', function() {

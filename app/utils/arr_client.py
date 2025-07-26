@@ -941,3 +941,27 @@ def sonarr_update_episodes_monitoring_bulk(episode_ids, monitored_status):
     except Exception as e:
         current_app.logger.error(f"Exception lors de la mise à jour en masse du monitoring: {e}", exc_info=True)
         return False
+
+def sonarr_update_season_monitoring(series_id, season_number, monitored_status):
+    """Met à jour le statut de monitoring pour une saison spécifique."""
+    try:
+        # On doit récupérer l'objet série complet
+        series_data = get_sonarr_series_by_id(series_id)
+        if not series_data:
+            return False
+
+        # On trouve la bonne saison et on modifie son statut
+        season_found = False
+        for season in series_data.get('seasons', []):
+            if season.get('seasonNumber') == int(season_number):
+                season['monitored'] = monitored_status
+                season_found = True
+                break
+
+        if not season_found: return False # La saison n'existe pas dans Sonarr
+
+        # On renvoie l'objet série complet modifié
+        return update_sonarr_series(series_data)
+    except Exception as e:
+        current_app.logger.error(f"Exception lors de la mise à jour du monitoring pour la saison {season_number} de la série {series_id}: {e}", exc_info=True)
+        return False
