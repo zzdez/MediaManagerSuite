@@ -434,6 +434,47 @@ $(document).ready(function() {
             });
         });
 
+        // --- NOUVEAU : GESTION DU TOGGLE DE MONITORING PAR ÉPISODE (EFFET IMMÉDIAT) ---
+        $(seriesModalElement).on('change', '.episode-monitor-toggle', function() {
+            const toggle = $(this);
+            const episodeRow = toggle.closest('li');
+            const episodeId = toggle.data('sonarr-episode-id');
+            const isMonitored = toggle.is(':checked');
+
+            if (!episodeId) {
+                console.error("ID d'épisode Sonarr manquant.");
+                return;
+            }
+
+            // Affiche un feedback visuel
+            episodeRow.addClass('opacity-50');
+
+            fetch('/plex/api/episodes/update_monitoring_single', { // On utilise une nouvelle route
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    episodeId: episodeId,
+                    monitored: isMonitored
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status !== 'success') {
+                    alert('Erreur: ' + data.message);
+                    toggle.prop('checked', !isMonitored); // On annule le changement en cas d'erreur
+                }
+            })
+            .catch(error => {
+                console.error(error);
+                alert("Erreur de communication.");
+                toggle.prop('checked', !isMonitored);
+            })
+            .finally(() => {
+                // On retire le feedback visuel
+                episodeRow.removeClass('opacity-50');
+            });
+        });
+
         $(seriesModalElement).on('change', '.series-global-monitor-toggle', function() {
             const sonarrSeriesId = $(this).data('sonarr-series-id');
             const isChecked = $(this).is(':checked');
