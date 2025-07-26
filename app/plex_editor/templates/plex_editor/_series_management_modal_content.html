@@ -16,11 +16,11 @@
     </div>
     {% if series.sonarr_series_id %}
     <div class="form-check form-switch fs-5">
-        <input class="form-check-input series-global-monitor-toggle" type="checkbox" role="switch"
-               id="monitor-series-{{ series.ratingKey }}"
+        <input class="form-check-input" type="checkbox" role="switch"
+               id="series-monitor-toggle"
                data-sonarr-series-id="{{ series.sonarr_series_id }}"
                {% if series.is_monitored_global %}checked{% endif %}>
-        <label class="form-check-label small" for="monitor-series-{{ series.ratingKey }}">Surveiller Série (Sonarr)</label>
+        <label class="form-check-label small" for="series-monitor-toggle">Surveiller Série (Sonarr)</label>
     </div>
     {% else %}
     <small class="text-warning">Série non trouvée dans Sonarr pour gestion du monitoring global.</small>

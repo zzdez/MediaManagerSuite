@@ -293,208 +293,112 @@ $(document).ready(function() {
     // --- Logique pour la modale de gestion de série ---
     const seriesModalElement = document.getElementById('series-management-modal');
 
-    // ### NOUVEAU BLOC POUR LES ACTIONS DE LA MODALE ###
     if (seriesModalElement) {
-        $(seriesModalElement).on('click', function(event) {
-            const targetElement = event.target;
+        // --- GESTION DU TOGGLE GLOBAL DE LA SÉRIE ---
+        $(seriesModalElement).on('change', '#series-monitor-toggle', function() {
+            const seriesToggle = $(this);
+            const isMonitored = seriesToggle.is(':checked');
 
-            // --- ACTION : SUPPRIMER LES ÉPISODES SÉLECTIONNÉS ---
-            if (targetElement.id === 'delete-selected-episodes-btn') {
-                const btn = $(targetElement);
-                const checked_boxes = $(seriesModalElement).find('.episode-delete-checkbox:checked');
+            // Étape 1 : On met à jour visuellement tous les toggles de saison
+            const seasonToggles = $(seriesModalElement).find('.season-monitor-toggle');
+            seasonToggles.prop('checked', isMonitored);
 
-                if (checked_boxes.length === 0) {
-                    alert("Veuillez cocher au moins un épisode à supprimer.");
-                    return;
-                }
-
-                if (!confirm(`Êtes-vous sûr de vouloir supprimer définitivement les fichiers des ${checked_boxes.length} épisodes sélectionnés ?`)) {
-                    return;
-                }
-
-                const episodeFileIds = checked_boxes.map(function() {
-                    return $(this).val();
-                }).get();
-
-                btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Suppression...');
-
-                fetch('/plex/api/episodes/delete_bulk', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ episodeFileIds: episodeFileIds })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.status === 'success') {
-                        alert(`Suppression de ${checked_boxes.length} épisode(s) lancée.`);
-                        // On grise les lignes supprimées
-                        checked_boxes.each(function() {
-                            $(this).closest('li').addClass('opacity-50 text-decoration-line-through');
-                            $(this).prop('checked', false).prop('disabled', true);
-                        });
-                    } else {
-                        alert('Erreur: ' + data.message);
-                    }
-                })
-                .catch(error => { console.error(error); alert("Erreur de communication."); })
-                .finally(() => {
-                    btn.prop('disabled', false).html('<i class="bi bi-trash"></i> Supprimer la Sélection');
-                });
-            }
-
-// --- ACTION : SAUVEGARDER LES CHANGEMENTS DE MONITORING ---
-            if (targetElement.id === 'save-monitoring-btn') {
-                const btn = $(targetElement);
-                const toggles = $(seriesModalElement).find('.episode-monitor-toggle');
-
-                const episodesToUpdate = toggles.map(function() {
-                    const toggle = $(this);
-                    // On ne prend que ceux qui ont un ID valide
-                    if (toggle.data('sonarr-episode-id')) {
-                        return {
-                            episodeId: toggle.data('sonarr-episode-id'),
-                            monitored: toggle.is(':checked')
-                        };
-                    }
-                }).get();
-
-                if (episodesToUpdate.length === 0) {
-                    alert("Aucun épisode avec un statut de monitoring modifiable n'a été trouvé.");
-                    return;
-                }
-
-                btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Sauvegarde...');
-
-                fetch('/plex/api/episodes/update_monitoring', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ episodes: episodesToUpdate })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.status === 'success') {
-                        alert("Les statuts de monitoring ont été sauvegardés !");
-                    } else {
-                        alert('Erreur: ' + data.message);
-                    }
-                })
-                .catch(error => { console.error(error); alert("Erreur de communication."); })
-                .finally(() => {
-                    btn.prop('disabled', false).html('<i class="bi bi-save"></i> Sauvegarder Monitoring');
-                });
-            }
-
-            // (Votre logique existante pour "Supprimer Saison" va ici)
-            if (event.target.closest('.delete-season-btn')) {
-                const deleteBtn = event.target.closest('.delete-season-btn');
-                const seasonId = $(deleteBtn).data('season-id');
-                const seasonTitle = $(deleteBtn).data('season-title');
-                if (confirm(`Êtes-vous sûr de vouloir supprimer tous les fichiers de la saison "${seasonTitle}" et la dé-monitorer ?`)) {
-                    // ... (code AJAX pour supprimer la saison)
-                }
-            }
+            // Étape 2 : On déclenche leur événement "change" pour que la cascade se produise
+            // et que les appels API pour chaque saison soient lancés.
+            seasonToggles.trigger('change');
         });
 
-        // --- NOUVEAU : GESTION DU TOGGLE DE MONITORING PAR SAISON ---
+        // --- GESTION DU TOGGLE PAR SAISON ---
         $(seriesModalElement).on('change', '.season-monitor-toggle', function() {
-            const toggle = $(this);
-            const seasonRow = toggle.closest('.season-row');
+            const seasonToggle = $(this);
+            const seasonRow = seasonToggle.closest('.season-row');
+            const isMonitored = seasonToggle.is(':checked');
+
+            // On lance l'appel API (code existant et correct)
             const sonarrSeriesId = seasonRow.data('sonarr-series-id');
             const seasonNumber = seasonRow.data('season-number');
-            const isMonitored = toggle.is(':checked');
-
-            // Affiche un spinner sur la ligne de la saison pour montrer que quelque chose se passe
             seasonRow.addClass('opacity-50');
-
             fetch('/plex/update_season_monitoring', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    sonarrSeriesId: sonarrSeriesId,
-                    seasonNumber: seasonNumber,
-                    monitored: isMonitored
-                })
+                body: JSON.stringify({ sonarrSeriesId: sonarrSeriesId, seasonNumber: seasonNumber, monitored: isMonitored })
             })
             .then(response => response.json())
-            .then(data => {
-                if (data.status !== 'success') {
-                    alert('Erreur: ' + data.message);
-                    // En cas d'erreur, on remet le toggle à son état précédent
-                    toggle.prop('checked', !isMonitored);
-                }
-            })
-            .catch(error => {
-                console.error(error);
-                alert("Erreur de communication.");
-                toggle.prop('checked', !isMonitored);
-            })
-            .finally(() => {
-                // On retire le spinner
-                seasonRow.removeClass('opacity-50');
-            });
+            .then(data => { if (data.status !== 'success') seasonToggle.prop('checked', !isMonitored); })
+            .catch(() => seasonToggle.prop('checked', !isMonitored))
+            .finally(() => seasonRow.removeClass('opacity-50'));
+
+            // **LA CASCADE** : On met à jour visuellement tous les épisodes de la saison
+            const collapseTargetSelector = seasonRow.find('[data-bs-toggle="collapse"]').data('bs-target');
+            const episodeToggles = $(collapseTargetSelector).find('.episode-monitor-toggle');
+            episodeToggles.prop('checked', isMonitored);
+
+            // On déclenche l'événement "change" pour chaque épisode pour lancer leurs appels API
+            episodeToggles.trigger('change');
         });
 
-        // --- NOUVEAU : GESTION DU TOGGLE DE MONITORING PAR ÉPISODE (EFFET IMMÉDIAT) ---
+        // --- GESTION DU TOGGLE PAR ÉPISODE (EFFET IMMÉDIAT) ---
         $(seriesModalElement).on('change', '.episode-monitor-toggle', function() {
-            const toggle = $(this);
-            const episodeRow = toggle.closest('li');
-            const episodeId = toggle.data('sonarr-episode-id');
-            const isMonitored = toggle.is(':checked');
+            const episodeToggle = $(this);
+            const episodeRow = episodeToggle.closest('li');
+            const episodeId = episodeToggle.data('sonarr-episode-id');
+            const isMonitored = episodeToggle.is(':checked');
 
-            if (!episodeId) {
-                console.error("ID d'épisode Sonarr manquant.");
+            if (!episodeId) return;
+
+            episodeRow.addClass('opacity-50');
+            fetch('/plex/api/episodes/update_monitoring_single', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ episodeId: episodeId, monitored: isMonitored })
+            })
+            .then(response => response.json())
+            .then(data => { if (data.status !== 'success') episodeToggle.prop('checked', !isMonitored); })
+            .catch(() => episodeToggle.prop('checked', !isMonitored))
+            .finally(() => episodeRow.removeClass('opacity-50'));
+        });
+
+        // --- GESTION DU BOUTON DE SUPPRESSION ---
+        $(seriesModalElement).on('click', '#delete-selected-episodes-btn', function() {
+            const btn = $(this);
+            const checked_boxes = $(seriesModalElement).find('.episode-delete-checkbox:checked');
+
+            if (checked_boxes.length === 0) {
+                alert("Veuillez cocher au moins un épisode à supprimer.");
                 return;
             }
 
-            // Affiche un feedback visuel
-            episodeRow.addClass('opacity-50');
+            if (!confirm(`Êtes-vous sûr de vouloir supprimer définitivement les fichiers des ${checked_boxes.length} épisodes sélectionnés ?`)) {
+                return;
+            }
 
-            fetch('/plex/api/episodes/update_monitoring_single', { // On utilise une nouvelle route
+            const episodeFileIds = checked_boxes.map(function() {
+                return $(this).val();
+            }).get();
+
+            btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Suppression...');
+
+            fetch('/plex/api/episodes/delete_bulk', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    episodeId: episodeId,
-                    monitored: isMonitored
-                })
+                body: JSON.stringify({ episodeFileIds: episodeFileIds })
             })
             .then(response => response.json())
             .then(data => {
-                if (data.status !== 'success') {
+                if (data.status === 'success') {
+                    alert(`Suppression de ${checked_boxes.length} épisode(s) lancée.`);
+                    // On grise les lignes supprimées
+                    checked_boxes.each(function() {
+                        $(this).closest('li').addClass('opacity-50 text-decoration-line-through');
+                        $(this).prop('checked', false).prop('disabled', true);
+                    });
+                } else {
                     alert('Erreur: ' + data.message);
-                    toggle.prop('checked', !isMonitored); // On annule le changement en cas d'erreur
                 }
             })
-            .catch(error => {
-                console.error(error);
-                alert("Erreur de communication.");
-                toggle.prop('checked', !isMonitored);
-            })
+            .catch(error => { console.error(error); alert("Erreur de communication."); })
             .finally(() => {
-                // On retire le feedback visuel
-                episodeRow.removeClass('opacity-50');
-            });
-        });
-
-        $(seriesModalElement).on('change', '.series-global-monitor-toggle', function() {
-            const sonarrSeriesId = $(this).data('sonarr-series-id');
-            const isChecked = $(this).is(':checked');
-            const url = `/plex/api/series/${sonarrSeriesId}/toggle_monitor_global`;
-
-            fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status !== 'success') {
-                    alert('Erreur: ' + data.message);
-                    $(this).prop('checked', !isChecked);
-                }
-            })
-            .catch(error => {
-                console.error('Erreur:', error);
-                alert('Une erreur de communication est survenue.');
-                $(this).prop('checked', !isChecked);
+                btn.prop('disabled', false).html('<i class="bi bi-trash"></i> Supprimer la Sélection');
             });
         });
     }
