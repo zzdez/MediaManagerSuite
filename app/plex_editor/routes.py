@@ -386,6 +386,50 @@ def index():
     """Affiche le nouveau tableau de bord unifié."""
     return render_template('plex_editor/index.html')
 
+@plex_editor_bp.route('/toggle_watched_status', methods=['POST'])
+@login_required
+def toggle_watched_status():
+    data = request.get_json()
+    rating_key = data.get('ratingKey')
+    user_id = data.get('userId') # On utilise la nouvelle méthode "stateless"
+
+    if not rating_key or not user_id:
+        return jsonify({'status': 'error', 'message': 'Données manquantes.'}), 400
+
+    try:
+        # On reconstruit la connexion utilisateur sans dépendre de la session
+        user_plex_server = get_user_specific_plex_server_from_id(user_id)
+        if not user_plex_server:
+            return jsonify({'status': 'error', 'message': 'Impossible d_établir la connexion Plex.'}), 500
+
+        item = user_plex_server.fetchItem(int(rating_key))
+
+        if item.isWatched:
+            item.markUnwatched()
+            new_status = 'Non Vu'
+        else:
+            item.markWatched()
+            new_status = 'Vu'
+
+        current_app.logger.info(f"Statut de '{item.title}' changé en '{new_status}' pour l'utilisateur ID {user_id}.")
+
+        # On doit renvoyer le nouveau badge HTML au frontend
+        # Cette logique est simplifiée, elle pourrait être améliorée
+        # pour gérer le statut "en cours" des séries.
+        if item.type == 'show':
+            # Pour une série, le statut est plus complexe, on doit la rafraîchir
+            refreshed_item = user_plex_server.fetchItem(int(rating_key))
+            new_html = render_template('plex_editor/_media_status_cell.html', item=refreshed_item)
+        else: # film
+            refreshed_item = user_plex_server.fetchItem(int(rating_key))
+            new_html = render_template('plex_editor/_media_status_cell.html', item=refreshed_item)
+
+        return jsonify({'status': 'success', 'new_status_html': new_html})
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur toggle_watched_status: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 # @plex_editor_bp.route('/libraries')
 # @login_required
 # def list_libraries():
