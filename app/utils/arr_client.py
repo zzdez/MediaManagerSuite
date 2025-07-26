@@ -923,23 +923,24 @@ def sonarr_delete_episode_files_bulk(episode_file_ids):
         current_app.logger.error(f"Exception lors de la suppression en masse des épisodes Sonarr: {e}", exc_info=True)
         return False
 
-def sonarr_update_episodes_monitoring_bulk(episode_ids, monitored_status):
-    """Met à jour le statut de monitoring pour une liste d'IDs d'épisodes."""
-    if not episode_ids:
-        return False
+def sonarr_update_episode_monitoring(episode_id, monitored_status):
+    """Met à jour le statut de monitoring d'un seul épisode dans Sonarr."""
     try:
-        payload = {
-            "episodeIds": episode_ids,
-            "monitored": monitored_status
-        }
-        # On utilise l'éditeur d'épisodes en masse
-        response = _sonarr_api_request("PUT", "episode/monitor", json_data=payload)
-        if response:
-            current_app.logger.info(f"Mise à jour du monitoring pour {len(episode_ids)} épisodes à '{monitored_status}' réussie.")
+        episode_data = _sonarr_api_request("GET", f"episode/{episode_id}")
+        if not episode_data:
+            current_app.logger.error(f"Impossible de récupérer les détails de l_épisode ID {episode_id} de Sonarr.")
+            return False
+
+        episode_data['monitored'] = monitored_status
+
+        # L'API attend une modification sur l'endpoint 'episode' avec l'objet complet
+        response = _sonarr_api_request("PUT", "episode", json_data=episode_data)
+
+        if response and response.get('id'):
             return True
         return False
     except Exception as e:
-        current_app.logger.error(f"Exception lors de la mise à jour en masse du monitoring: {e}", exc_info=True)
+        current_app.logger.error(f"Exception lors de la mise à jour du monitoring pour l_épisode {episode_id}: {e}", exc_info=True)
         return False
 
 def sonarr_update_season_monitoring(series_id, season_number, monitored_status):

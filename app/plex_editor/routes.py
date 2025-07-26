@@ -1887,6 +1887,24 @@ def update_season_monitoring():
 
     return jsonify({'status': 'error', 'message': 'Échec de la mise à jour dans Sonarr.'}), 500
 
+@plex_editor_bp.route('/api/episodes/update_monitoring_single', methods=['POST'])
+@login_required
+def update_single_episode_monitoring():
+    data = request.get_json()
+    episode_id = data.get('episodeId')
+    status = data.get('monitored')
+
+    if episode_id is None or status is None:
+        return jsonify({'status': 'error', 'message': 'Données manquantes.'}), 400
+
+    # On importe la fonction que nous avions déjà créée
+    from app.utils.arr_client import sonarr_update_episode_monitoring
+
+    if sonarr_update_episode_monitoring(episode_id, status):
+        return jsonify({'status': 'success', 'message': 'Statut de l_épisode mis à jour.'})
+
+    return jsonify({'status': 'error', 'message': 'Échec de la mise à jour dans Sonarr.'}), 500
+
 # --- Gestionnaires d'erreur ---
 #@app.errorhandler(404)
 #def page_not_found(e):
