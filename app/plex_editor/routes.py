@@ -133,6 +133,37 @@ def select_user_route():
 
 # Dans app/plex_editor/routes.py
 
+def get_user_specific_plex_server_from_id(user_id):
+    """
+    Helper function to get a PlexServer instance for a specific user ID,
+    handling impersonation. Returns None on failure.
+    """
+    # On a besoin de l'accès admin pour trouver d'autres utilisateurs
+    admin_server = get_plex_admin_server()
+    if not admin_server:
+        current_app.logger.error("Helper get_user_specific_plex_server_from_id: Impossible d'obtenir la connexion admin.")
+        return None
+
+    main_account = get_main_plex_account_object()
+    if not main_account:
+        current_app.logger.error("Helper get_user_specific_plex_server_from_id: Impossible de récupérer le compte principal.")
+        return None
+
+    # Cas 1: L'utilisateur est l'admin
+    if str(main_account.id) == user_id:
+        return admin_server
+
+    # Cas 2: L'utilisateur est un utilisateur géré
+    user_to_impersonate = next((u for u in main_account.users() if str(u.id) == user_id), None)
+    if user_to_impersonate:
+        token = user_to_impersonate.get_token(admin_server.machineIdentifier)
+        plex_url = current_app.config.get('PLEX_URL')
+        return PlexServer(plex_url, token)
+
+    # Si l'ID n'a pas été trouvé
+    current_app.logger.warning(f"Helper get_user_specific_plex_server_from_id: Utilisateur avec ID '{user_id}' non trouvé.")
+    return None
+
 @plex_editor_bp.route('/api/media_items', methods=['POST'])
 @login_required
 def get_media_items():
