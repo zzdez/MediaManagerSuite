@@ -1,4 +1,4 @@
-// Fichier : app/static/js/plex_editor_ui.js (Version Complète et Définitive)
+// Fichier : app/static/js/plex_editor_ui.js (Version Finale et Propre)
 
 $(document).ready(function() {
 
@@ -18,9 +18,7 @@ $(document).ready(function() {
         .then(users => {
             userSelect.html('<option value="" selected disabled>Choisir un utilisateur...</option>');
             if (users && users.length > 0) {
-                users.forEach(user => {
-                    userSelect.append(new Option(user.text, user.id));
-                });
+                users.forEach(user => userSelect.append(new Option(user.text, user.id)));
             }
             const lastUserId = localStorage.getItem(LAST_USER_KEY);
             if (lastUserId && userSelect.find(`option[value="${lastUserId}"]`).length) {
@@ -37,7 +35,6 @@ $(document).ready(function() {
         localStorage.setItem(LAST_USER_KEY, userId);
         librarySelect.html('<option selected disabled>Chargement...</option>').prop('disabled', true);
 
-        // On informe le serveur pour mettre la session à jour
         fetch('/plex/select_user', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -66,12 +63,9 @@ $(document).ready(function() {
         const userId = userSelect.val();
         const selectedLibraries = librarySelect.val();
         const statusFilter = $('#status-filter').val();
-        const titleFilter = $('#title-filter-input').val().trim(); // <-- On récupère le texte de la recherche
+        const titleFilter = $('#title-filter-input').val().trim();
 
-        if (!userId || !selectedLibraries || selectedLibraries.length === 0) {
-            itemsContainer.html('<p class="text-center text-warning">Veuillez sélectionner un utilisateur et une bibliothèque.</p>');
-            return;
-        }
+        if (!userId || !selectedLibraries || selectedLibraries.length === 0) { return; }
 
         loader.show();
         itemsContainer.html('');
@@ -83,7 +77,7 @@ $(document).ready(function() {
                 userId: userId,
                 libraryKeys: selectedLibraries,
                 statusFilter: statusFilter,
-                titleFilter: titleFilter // <-- On ajoute le texte au payload
+                titleFilter: titleFilter
             })
         })
         .then(response => response.text())
@@ -94,21 +88,53 @@ $(document).ready(function() {
     });
 
     // =================================================================
-    // ### PARTIE 2 : GESTION DES ACTIONS (Archivage, Rejet, etc.) ###
+    // ### PARTIE 2 : GESTION DES ACTIONS SUR LA LISTE DES MÉDIAS ###
     // =================================================================
-
-    // --- A. Écouteur d'événements délégué pour SETUP les modales ---
-    // Cet unique écouteur gère les clics sur les boutons qui ouvrent les modales
     itemsContainer.on('click', function(event) {
         const target = $(event.target);
 
+        // --- ACTION : BASCULER VU/NON VU ---
+        const toggleBtn = target.closest('.toggle-watched-btn');
+        if (toggleBtn) {
+            const button = $(toggleBtn);
+            const ratingKey = button.data('ratingKey');
+            const userId = userSelect.val();
+            const statusCell = button.closest('tr').find('.media-status-cell');
+            const originalHtml = button.html();
+            button.html('<span class="spinner-border spinner-border-sm"></span>').prop('disabled', true);
+            fetch('/plex/toggle_watched_status', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ratingKey: ratingKey, userId: userId })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success' && data.new_status_html) {
+                    statusCell.html(data.new_status_html);
+                } else { alert('Erreur: ' + (data.message || 'Inconnue')); }
+            })
+            .catch(error => { console.error(error); alert("Erreur de communication."); })
+            .finally(() => button.html(originalHtml).prop('disabled', false));
+        }
+
+        // --- ACTION : COPIER LE CHEMIN ---
+        const copyPathBtn = target.closest('.copy-path-btn');
+        if (copyPathBtn) {
+            const path = $(copyPathBtn).data('path');
+            navigator.clipboard.writeText(path).then(() => {
+                const originalIcon = $(copyPathBtn).html();
+                $(copyPathBtn).html('<i class="bi bi-check-lg text-success"></i>');
+                setTimeout(() => $(copyPathBtn).html(originalIcon), 1500);
+            }).catch(err => console.error('Erreur copie:', err));
+        }
+
+        // --- SETUP MODALES (ARCHIVER, REJETER, GÉRER, DÉTAILS) ---
         const archiveMovieBtn = target.closest('.archive-movie-btn');
         if (archiveMovieBtn) {
             const ratingKey = archiveMovieBtn.data('ratingKey');
             $('#archiveMovieTitle').text(archiveMovieBtn.data('title'));
             $('#confirmArchiveMovieBtn').data('ratingKey', ratingKey);
         }
-
         const archiveShowBtn = target.closest('.archive-show-btn');
         if (archiveShowBtn) {
             const ratingKey = archiveShowBtn.data('ratingKey');
@@ -117,71 +143,13 @@ $(document).ready(function() {
             $('#archiveShowViewedCount').text(archiveShowBtn.data('viewed-leaf-count'));
             $('#confirmArchiveShowBtn').data('ratingKey', ratingKey);
         }
-
         const rejectShowBtn = target.closest('.reject-show-btn');
         if (rejectShowBtn) {
             const ratingKey = rejectShowBtn.data('ratingKey');
             $('#rejectShowTitle').text(rejectShowBtn.data('title'));
             $('#confirmRejectShowBtn').data('ratingKey', ratingKey);
         }
-
-// --- ACTION : BASCULER LE STATUT VU/NON VU ---
-        const toggleBtn = event.target.closest('.toggle-watched-btn');
-        if (toggleBtn) {
-            const button = $(toggleBtn);
-            const ratingKey = button.data('ratingKey');
-            const userId = userSelect.val(); // On récupère l'utilisateur sélectionné
-            const statusCell = button.closest('tr').find('.media-status-cell');
-
-            // Affiche un spinner temporaire
-            const originalHtml = button.html();
-            button.html('<span class="spinner-border spinner-border-sm"></span>');
-            button.prop('disabled', true);
-
-            fetch('/plex/toggle_watched_status', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    ratingKey: ratingKey,
-                    userId: userId
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'success' && data.new_status_html) {
-                    // On remplace le contenu de la cellule de statut avec le nouveau HTML
-                    statusCell.html(data.new_status_html);
-                } else {
-                    alert('Erreur: ' + (data.message || 'Une erreur inconnue est survenue.'));
-                }
-            })
-            .catch(error => { console.error(error); alert("Erreur de communication."); })
-            .finally(() => {
-                // Restaure le bouton
-                button.html(originalHtml);
-                button.prop('disabled', false);
-            });
-        }
-
-// --- ACTION : COPIER LE CHEMIN DU FICHIER ---
-        const copyPathBtn = event.target.closest('.copy-path-btn');
-        if (copyPathBtn) {
-            const path = $(copyPathBtn).data('path');
-            navigator.clipboard.writeText(path).then(() => {
-                // Succès ! On change l'icône temporairement pour donner un feedback.
-                const originalIcon = $(copyPathBtn).html();
-                $(copyPathBtn).html('<i class="bi bi-check-lg text-success"></i>');
-                setTimeout(() => {
-                    $(copyPathBtn).html(originalIcon);
-                }, 1500); // Rétablir l'icône après 1.5 secondes
-            }).catch(err => {
-                console.error('Erreur de copie dans le presse-papiers:', err);
-                alert("La copie a échoué. Vérifiez les permissions de votre navigateur.");
-            });
-        }
-
-        // --- ACTION : SETUP MODALE DÉTAILS DU MÉDIA ---
-        const titleLink = event.target.closest('.item-title-link');
+        const titleLink = target.closest('.item-title-link');
         if (titleLink) {
             event.preventDefault(); // Empêche le lien de remonter en haut de la page
             const ratingKey = $(titleLink).data('ratingKey');
@@ -226,9 +194,7 @@ $(document).ready(function() {
                     console.error("Erreur chargement détails:", error);
                 });
         }
-
-        // --- ACTION : SETUP MODALE GÉRER SÉRIE ---
-        const manageSeriesBtn = event.target.closest('.manage-series-btn');
+        const manageSeriesBtn = target.closest('.manage-series-btn');
         if (manageSeriesBtn) {
             const ratingKey = $(manageSeriesBtn).data('ratingKey');
             const seriesTitle = $(manageSeriesBtn).data('title');
@@ -252,33 +218,12 @@ $(document).ready(function() {
         }
     });
 
-    // --- B. Écouteurs d'événements pour les boutons de CONFIRMATION des modales ---
+    // =================================================================
+    // ### PARTIE 3 : GESTION DES ACTIONS DANS LES MODALES ###
+    // =================================================================
+    const seriesModalElement = $('#series-management-modal');
 
-    $('#confirmArchiveMovieBtn').on('click', function() {
-        const btn = $(this);
-        const ratingKey = btn.data('ratingKey');
-        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Archivage...');
-        const options = {
-            deleteFiles: $('#archiveMovieDeleteFiles').is(':checked'),
-            unmonitor: $('#archiveMovieUnmonitor').is(':checked'),
-            addTag: $('#archiveMovieAddTag').is(':checked')
-        };
-        fetch('/plex/archive_movie', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ratingKey: ratingKey, options: options })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === 'success') {
-                $(`.archive-movie-btn[data-rating-key='${ratingKey}']`).closest('tr').remove();
-                bootstrap.Modal.getInstance(document.getElementById('archiveMovieModal')).hide();
-            } else { alert('Erreur: ' + data.message); }
-        })
-        .catch(error => { console.error(error); alert('Erreur de communication.'); })
-        .finally(() => btn.prop('disabled', false).html('Confirmer l\'archivage'));
-    });
-
+    // --- Actions de confirmation (hors modale de gestion) ---
     $('#confirmArchiveShowBtn').on('click', function() {
         const btn = $(this);
         const ratingKey = btn.data('ratingKey');
@@ -307,7 +252,6 @@ $(document).ready(function() {
         .catch(error => { console.error(error); alert('Erreur de communication.'); })
         .finally(() => btn.prop('disabled', false).html('Confirmer l\'archivage'));
     });
-
     $('#confirmRejectShowBtn').on('click', function() {
         const btn = $(this);
         const ratingKey = btn.data('ratingKey');
@@ -328,9 +272,7 @@ $(document).ready(function() {
         .finally(() => btn.prop('disabled', false).text('Oui, rejeter et supprimer'));
     });
 
-    // --- Logique pour la modale de gestion de série ---
-    const seriesModalElement = document.getElementById('series-management-modal');
-
+    // --- Actions spécifiques à la modale de gestion de série ---
     if (seriesModalElement) {
         // --- GESTION DU TOGGLE GLOBAL DE LA SÉRIE ---
         $(seriesModalElement).on('change', '#series-monitor-toggle', function() {
@@ -440,4 +382,4 @@ $(document).ready(function() {
             });
         });
     }
-}); // Fin de $(document).ready
+});
