@@ -933,8 +933,8 @@ def sonarr_update_episode_monitoring(episode_id, monitored_status):
 
         episode_data['monitored'] = monitored_status
 
-        # L'API attend une modification sur l'endpoint 'episode' avec l'objet complet
-        response = _sonarr_api_request("PUT", "episode", json_data=episode_data)
+        # L'API attend une modification sur l'endpoint spécifique de l'épisode
+        response = _sonarr_api_request("PUT", f"episode/{episode_id}", json_data=episode_data)
 
         if response and response.get('id'):
             return True
