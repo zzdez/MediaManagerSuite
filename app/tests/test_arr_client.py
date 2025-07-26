@@ -49,7 +49,7 @@ class TestArrClient(unittest.TestCase):
         mock_api_request.side_effect = [
             ([{"id": 123, "title": "Test Series", "titleSlug": "test-series"}]),
             ([
-                {"seriesId": 123, "seasonNumber": 1, "episodeNumber": 1, "hasFile": True, "episodeFileId": 10, "monitored": True},
+                {"seriesId": 123, "seasonNumber": 1, "episodeNumber": 1, "hasFile": True, "episodeFileId": 10, "monitored": True, "episodeFile": {"path": "/path/to/file", "size": 1000}},
                 {"seriesId": 123, "seasonNumber": 1, "episodeNumber": 2, "hasFile": False, "episodeFileId": 0, "monitored": True}
             ])
         ]
@@ -58,7 +58,7 @@ class TestArrClient(unittest.TestCase):
     @patch('app.utils.arr_client._radarr_api_request')
     def test_check_radarr_movie_exists_success(self, mock_api_request):
         mock_api_request.return_value = [
-            {"title": "Test Movie", "year": 2021, "hasFile": True, "sizeOnDisk": 1000, "id": 1}
+            {"title": "Test Movie", "year": 2021, "hasFile": True, "sizeOnDisk": 1000, "id": 1, "movieFile": {"path": "/path/to/file"}}
         ]
         self.assertTrue(arr_client.check_radarr_movie_exists("Test Movie", 2021))
 
@@ -76,6 +76,35 @@ class TestArrClient(unittest.TestCase):
             {"title": "Test Movie", "year": 2021, "hasFile": False, "sizeOnDisk": 0, "id": 1}
         ]
         self.assertFalse(arr_client.check_radarr_movie_exists("Test Movie", 2021))
+
+    @patch('app.utils.arr_client._sonarr_api_request')
+    def test_sonarr_update_episode_monitoring_success(self, mock_api_request):
+        # Mock the GET request to return a sample episode object
+        mock_api_request.side_effect = [
+            # Response for GET "episode/{episode_id}"
+            {"id": 5, "seriesId": 1, "episodeFileId": 123, "seasonNumber": 1, "episodeNumber": 1, "title": "Test Episode", "monitored": False},
+            # Response for PUT "episode"
+            {"id": 5, "seriesId": 1, "episodeFileId": 123, "seasonNumber": 1, "episodeNumber": 1, "title": "Test Episode", "monitored": True}
+        ]
+
+        result = arr_client.sonarr_update_episode_monitoring(5, True)
+
+        self.assertTrue(result)
+        # Verify the GET call
+        mock_api_request.assert_any_call("GET", "episode/5")
+        # Verify the PUT call
+        expected_put_data = {"id": 5, "seriesId": 1, "episodeFileId": 123, "seasonNumber": 1, "episodeNumber": 1, "title": "Test Episode", "monitored": True}
+        mock_api_request.assert_any_call("PUT", "episode", json_data=expected_put_data)
+
+    @patch('app.utils.arr_client._sonarr_api_request')
+    def test_sonarr_update_episode_monitoring_failure(self, mock_api_request):
+        # Mock the GET request to return None, simulating a failure
+        mock_api_request.side_effect = [None]
+
+        result = arr_client.sonarr_update_episode_monitoring(5, True)
+
+        self.assertFalse(result)
+        mock_api_request.assert_called_once_with("GET", "episode/5")
 
 if __name__ == '__main__':
     unittest.main()

@@ -21,7 +21,7 @@ from .utils import cleanup_parent_directory_recursively, get_media_filepath, _is
 from app.utils.arr_client import (
     get_radarr_tag_id, get_radarr_movie_by_guid, update_radarr_movie,
     get_sonarr_tag_id, get_sonarr_series_by_guid, get_sonarr_series_by_id,
-    update_sonarr_series, get_sonarr_episode_files,
+    update_sonarr_series, get_sonarr_episode_files, get_sonarr_episodes_by_series_id,
     get_all_sonarr_series # <--- AJOUT ICI
 )
 
@@ -1470,6 +1470,8 @@ def get_media_details_for_modal(rating_key): # Renommé pour clarté, bien que l
 
 # Dans app/plex_editor/routes.py
 
+# Dans app/plex_editor/routes.py
+
 @plex_editor_bp.route('/api/series_details/<int:rating_key>', methods=['POST'])
 @login_required
 def get_series_details_for_management(rating_key):
@@ -1484,83 +1486,79 @@ def get_series_details_for_management(rating_key):
         # (La logique de connexion sans session est correcte et reste la même)
         # ...
         admin_plex_server_for_token = get_plex_admin_server()
-        if not admin_plex_server_for_token: return '<div class="alert alert-danger">Erreur: Connexion admin.</div>', 500
+        if not admin_plex_server_for_token: return ('<div class="alert alert-danger">Erreur: Connexion admin.</div>', 500)
         main_account = admin_plex_server_for_token.myPlexAccount()
         user_plex_server = None
         plex_url = current_app.config.get('PLEX_URL')
-        if str(main_account.id) == user_id:
-            user_plex_server = admin_plex_server_for_token
+        if str(main_account.id) == user_id: user_plex_server = admin_plex_server_for_token
         else:
             user_to_impersonate = next((u for u in main_account.users() if str(u.id) == user_id), None)
             if user_to_impersonate:
                 token = user_to_impersonate.get_token(admin_plex_server_for_token.machineIdentifier)
                 user_plex_server = PlexServer(plex_url, token)
-            else:
-                return f'<div class="alert alert-danger">Erreur: Utilisateur {user_id} non trouvé.</div>', 404
-        if not user_plex_server: return '<div class="alert alert-danger">Erreur: Connexion Plex utilisateur.</div>', 500
+            else: return f'<div class="alert alert-danger">Erreur: Utilisateur {user_id} non trouvé.</div>', 404
+        if not user_plex_server: return ('<div class="alert alert-danger">Erreur: Connexion Plex utilisateur.</div>', 500)
 
         series = user_plex_server.fetchItem(rating_key)
-        if not series or series.type != 'show':
-            return f'<div class="alert alert-warning">Série non trouvée.</div>', 404
+        if not series or series.type != 'show': return f'<div class="alert alert-warning">Série non trouvée.</div>', 404
 
-        # (Logique Sonarr inchangée)
+        # (Logique Sonarr inchangée et correcte)
         sonarr_series_full_details = None; sonarr_series_id_val = None; is_monitored_global_status = False
         tvdb_id = next((g.id.replace('tvdb://', '') for g in series.guids if g.id.startswith('tvdb://')), None)
         if tvdb_id:
             sonarr_series_info = get_sonarr_series_by_guid(f"tvdb://{tvdb_id}")
-            if sonarr_series_info and sonarr_series_info.get('id'):
-                sonarr_series_id_val = sonarr_series_info['id']
+            if sonarr_series_info: sonarr_series_id_val = sonarr_series_info.get('id')
+            if sonarr_series_id_val:
                 sonarr_series_full_details = get_sonarr_series_by_id(sonarr_series_id_val)
                 if sonarr_series_full_details: is_monitored_global_status = sonarr_series_full_details.get('monitored', False)
 
-        # === BLOC DE CONSTRUCTION DES DONNÉES ENTIÈREMENT RESTAURÉ ===
+        all_sonarr_episodes = get_sonarr_episodes_by_series_id(sonarr_series_id_val) if sonarr_series_id_val else []
+
         seasons_list = []
-        total_series_size = 0
-        viewed_seasons_count = 0
+        total_series_size = 0; viewed_seasons_count = 0
 
         for season in series.seasons():
             if season.isWatched: viewed_seasons_count += 1
             sonarr_season_info = next((s for s in sonarr_series_full_details.get('seasons', []) if s.get('seasonNumber') == season.seasonNumber), None) if sonarr_series_full_details else None
-            
-            # --- BOUCLE POUR LES ÉPISODES (RESTAURÉE) ---
+
             episodes_list_for_season = []
             total_season_size = 0
             for episode in season.episodes():
+                # --- CORRECTION 1 : On restaure la taille depuis PLEX ---
                 size_bytes = getattr(episode.media[0].parts[0], 'size', 0) if episode.media and episode.media[0].parts else 0
                 total_season_size += size_bytes
+
+                sonarr_episode_data = next((e for e in all_sonarr_episodes if e.get('seasonNumber') == episode.seasonNumber and e.get('episodeNumber') == episode.index), None)
+                sonarr_file_id = sonarr_episode_data.get('episodeFileId', 0) if sonarr_episode_data else 0
+
                 episodes_list_for_season.append({
                     'title': episode.title,
+                    'episodeNumber': episode.index,
                     'isWatched': episode.isWatched,
-                    'size_on_disk': size_bytes
+                    'size_on_disk': size_bytes,
+                    'sonarr_episodeId': sonarr_episode_data.get('id') if sonarr_episode_data else None,
+                    'sonarr_episodeFileId': sonarr_file_id,
+                    'isMonitored_sonarr': sonarr_episode_data.get('monitored', False) if sonarr_episode_data else False
                 })
-            # --- FIN DE LA BOUCLE ÉPISODES ---
 
             total_series_size += total_season_size
 
             seasons_list.append({
-                'title': season.title,
-                'ratingKey': season.ratingKey,
-                'seasonNumber': season.seasonNumber,
-                'total_episodes': season.leafCount,
+                'title': season.title, 'ratingKey': season.ratingKey,
+                'seasonNumber': season.seasonNumber, 'total_episodes': season.leafCount,
                 'viewed_episodes': season.viewedLeafCount,
                 'is_monitored_season': sonarr_season_info.get('monitored', False) if sonarr_season_info else False,
-                'total_size_on_disk': total_season_size,
-                'episodes': episodes_list_for_season # <-- On ajoute la liste des épisodes
+                'total_size_on_disk': total_season_size, 'episodes': episodes_list_for_season
             })
 
         series_data = {
-            'title': series.title,
-            'ratingKey': series.ratingKey,
+            'title': series.title, 'ratingKey': series.ratingKey,
             'plex_status': getattr(series, 'status', 'unknown'),
-            'total_seasons_plex': series.childCount,
-            'viewed_seasons_plex': viewed_seasons_count,
-            'is_monitored_global': is_monitored_global_status,
-            'sonarr_series_id': sonarr_series_id_val,
-            'total_size_on_disk': total_series_size,
-            'seasons': seasons_list
+            'total_seasons_plex': series.childCount, 'viewed_seasons_plex': viewed_seasons_count,
+            'is_monitored_global': is_monitored_global_status, 'sonarr_series_id': sonarr_series_id_val,
+            'total_size_on_disk': total_series_size, 'seasons': seasons_list
         }
-        # === FIN DU BLOC DE CONSTRUCTION RESTAURÉ ===
-        
+
         return render_template('plex_editor/_series_management_modal_content.html', series=series_data)
 
     except NotFound:
@@ -1771,6 +1769,70 @@ def delete_season_files_and_unmonitor(season_plex_id):
     except Exception as e:
         current_app.logger.error(f"Erreur API delete_season pour saison {season_plex_id}: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@plex_editor_bp.route('/api/episodes/delete_bulk', methods=['POST'])
+@login_required
+def bulk_delete_episodes():
+    """Supprime une liste de fichiers d'épisodes via Sonarr."""
+    data = request.get_json()
+    episode_file_ids = data.get('episodeFileIds', [])
+
+    if not episode_file_ids:
+        return jsonify({'status': 'warning', 'message': 'Aucun épisode sélectionné.'}), 400
+
+    # On s'assure que les IDs sont bien des entiers
+    try:
+        episode_file_ids = [int(id) for id in episode_file_ids]
+    except (ValueError, TypeError):
+        return jsonify({'status': 'error', 'message': 'Liste d_IDs invalide.'}), 400
+
+    is_simulating = _is_dry_run_mode()
+    dry_run_prefix = "[SIMULATION] " if is_simulating else ""
+
+    current_app.logger.info(f"{dry_run_prefix}Demande de suppression pour {len(episode_file_ids)} fichier(s) via Sonarr.")
+
+    if not is_simulating:
+        # On importe la fonction utilitaire de arr_client
+        from app.utils.arr_client import sonarr_delete_episode_files_bulk
+        success = sonarr_delete_episode_files_bulk(episode_file_ids)
+        if success:
+            flash(f"{len(episode_file_ids)} fichier(s) d'épisode(s) ont été supprimés avec succès via Sonarr.", "success")
+            return jsonify({'status': 'success', 'message': 'Fichiers supprimés.'})
+        else:
+            flash("Une erreur est survenue lors de la suppression des fichiers via Sonarr.", "danger")
+            return jsonify({'status': 'error', 'message': 'Échec de la suppression via Sonarr.'}), 500
+    else: # En mode simulation
+        flash(f"[SIMULATION] {len(episode_file_ids)} fichier(s) d'épisode(s) seraient supprimés via Sonarr.", "info")
+        return jsonify({'status': 'success', 'message': 'Suppression simulée.'})
+
+@plex_editor_bp.route('/api/episodes/update_monitoring', methods=['POST'])
+@login_required
+def update_episodes_monitoring():
+    data = request.get_json()
+    episodes_to_update = data.get('episodes', [])
+    if not episodes_to_update:
+        return jsonify({'status': 'warning', 'message': 'Aucune donnée reçue.'}), 400
+
+    # On importe la NOUVELLE fonction
+    from app.utils.arr_client import sonarr_update_episodes_monitoring_bulk
+
+    # On regroupe les épisodes par statut
+    to_monitor = [ep.get('episodeId') for ep in episodes_to_update if ep.get('monitored') is True and ep.get('episodeId')]
+    to_unmonitor = [ep.get('episodeId') for ep in episodes_to_update if ep.get('monitored') is False and ep.get('episodeId')]
+
+    success = True
+    if to_monitor:
+        if not sonarr_update_episodes_monitoring_bulk(to_monitor, True):
+            success = False
+    if to_unmonitor:
+        if not sonarr_update_episodes_monitoring_bulk(to_unmonitor, False):
+            success = False
+
+    if success:
+        flash(f"{len(episodes_to_update)} statut(s) de monitoring mis à jour.", "success")
+        return jsonify({'status': 'success', 'message': 'Mise à jour réussie.'})
+
+    return jsonify({'status': 'error', 'message': 'Une ou plusieurs mises à jour ont échoué.'}), 500
 
 @plex_editor_bp.route('/api/series/<int:sonarr_series_id>/toggle_monitor_global', methods=['POST'])
 @login_required

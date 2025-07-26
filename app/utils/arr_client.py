@@ -886,3 +886,58 @@ def add_movie_by_title_to_radarr(movie_title: str, movie_year: int = None):
 
     logger.info(f"Radarr: Successfully added movie '{added_movie_details.get('title')}' with Radarr ID {added_movie_details.get('id')}.")
     return added_movie_details
+
+def get_sonarr_episodes_by_series_id(series_id):
+    """Récupère TOUS les épisodes d'une série depuis Sonarr, pas seulement ceux avec des fichiers."""
+    if not series_id:
+        return None
+    try:
+        # L'endpoint 'episode' retourne tous les épisodes d'une série
+        return _sonarr_api_request("GET", "episode", params={'seriesId': series_id})
+    except Exception as e:
+        current_app.logger.error(f"Erreur lors de la récupération des épisodes pour la série Sonarr ID {series_id}: {e}", exc_info=True)
+        return None
+
+# Dans app/utils/arr_client.py
+
+def sonarr_delete_episode_files_bulk(episode_file_ids):
+    """
+    Supprime une liste de fichiers d'épisodes dans Sonarr en utilisant leurs episodeFileId.
+    """
+    if not episode_file_ids:
+        return False
+    try:
+        # L'API Sonarr v3 attend un payload JSON avec les IDs
+        payload = {"episodeFileIds": episode_file_ids}
+        # L'endpoint pour la suppression en masse est 'episodefile/bulk' avec la méthode DELETE
+        response = _sonarr_api_request("DELETE", "episodefile/bulk", json_data=payload)
+
+        # L'API renvoie une liste vide en cas de succès
+        if response is not None:
+            current_app.logger.info(f"Sonarr a confirmé la suppression de {len(episode_file_ids)} fichier(s).")
+            return True
+        else:
+            current_app.logger.error(f"La suppression en masse via Sonarr a échoué. Réponse invalide: {response}")
+            return False
+    except Exception as e:
+        current_app.logger.error(f"Exception lors de la suppression en masse des épisodes Sonarr: {e}", exc_info=True)
+        return False
+
+def sonarr_update_episodes_monitoring_bulk(episode_ids, monitored_status):
+    """Met à jour le statut de monitoring pour une liste d'IDs d'épisodes."""
+    if not episode_ids:
+        return False
+    try:
+        payload = {
+            "episodeIds": episode_ids,
+            "monitored": monitored_status
+        }
+        # On utilise l'éditeur d'épisodes en masse
+        response = _sonarr_api_request("PUT", "episode/monitor", json_data=payload)
+        if response:
+            current_app.logger.info(f"Mise à jour du monitoring pour {len(episode_ids)} épisodes à '{monitored_status}' réussie.")
+            return True
+        return False
+    except Exception as e:
+        current_app.logger.error(f"Exception lors de la mise à jour en masse du monitoring: {e}", exc_info=True)
+        return False

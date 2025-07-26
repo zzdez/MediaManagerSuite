@@ -29,88 +29,119 @@
 
 <hr>
 
-<!-- Liste des saisons -->
-{% if series.seasons %}
-<ul class="list-group list-group-flush">
-    {% for season in series.seasons %}
-    <li class="list-group-item list-group-item-dark p-0 mb-1 rounded"> {# Retiré list-group-item-dark pour que le contenu interne définisse mieux le style #}
-        <!-- Ligne principale avec les infos et actions de la saison -->
-        <div class="d-flex justify-content-between align-items-center p-2">
-            <div class="flex-grow-1">
-                <strong>{{ season.title }}</strong>
-                {% if season.total_episodes > 0 %}
-                    <small class="d-block text-muted">
-                        {% if season.viewed_episodes == 0 %}
-                            Non commencée
-                        {% elif season.viewed_episodes == season.total_episodes %}
-                            Terminée
-                        {% else %}
-                            En cours
-                        {% endif %}
-                        ({{ season.viewed_episodes }} / {{ season.total_episodes }} ép.)
-                        | Taille: {{ (season.total_size_on_disk / (1024*1024)) | round(2) }} MB
-                    </small>
-                {% else %}
-                     <small class="d-block text-muted">Aucun épisode listé dans Plex. (Taille: {{ (season.total_size_on_disk / (1024*1024)) | round(2) }} MB)</small>
-                {% endif %}
-            </div>
-            <div class="d-flex align-items-center ms-2">
-                <!-- Bouton pour afficher/cacher les épisodes -->
-                {% if season.episodes and season.episodes|length > 0 %}
-                <button class="btn btn-sm btn-outline-secondary me-2"
-                        type="button"
-                        data-bs-toggle="collapse"
-                        data-bs-target="#episodes-for-season-{{ season.ratingKey }}"
-                        aria-expanded="false"
-                        aria-controls="episodes-for-season-{{ season.ratingKey }}"
-                        title="Afficher/Masquer les épisodes">
-                    <i class="bi bi-list-ol"></i> <span class="d-none d-sm-inline">Épisodes</span>
-                </button>
-                {% endif %}
-                <!-- Switch de surveillance -->
-                {% if series.sonarr_series_id %}
-                <div class="form-check form-switch me-2"> {# me-2 au lieu de me-3 pour compacité #}
-                    <input class="form-check-input season-monitor-toggle" type="checkbox" role="switch"
-                           id="monitor-season-{{ season.ratingKey }}"
-                           data-season-id="{{ season.ratingKey }}"
-                           {% if season.is_monitored_season %}checked{% endif %}>
-                    {# <label class="form-check-label small" for="monitor-season-{{ season.ratingKey }}">Surv.</label> Pas de label pour compacité #}
+<!-- NOUVEAU : Formulaire et Boutons d'Action Globaux -->
+<form id="manage-episodes-form">
+    <div class="d-flex justify-content-end mb-3">
+        <button type="button" class="btn btn-warning me-2" id="save-monitoring-btn">
+            <i class="bi bi-save"></i> Sauvegarder Monitoring
+        </button>
+        <button type="button" class="btn btn-danger" id="delete-selected-episodes-btn">
+            <i class="bi bi-trash"></i> Supprimer la Sélection
+        </button>
+    </div>
+
+    <!-- Liste des saisons (avec modifications à l'intérieur) -->
+    {% if series.seasons %}
+    <ul class="list-group list-group-flush">
+        {% for season in series.seasons %}
+        <li class="list-group-item list-group-item-dark p-0 mb-1 rounded">
+            <!-- Ligne principale de la saison (inchangée) -->
+            <div class="d-flex justify-content-between align-items-center p-2">
+                <div class="flex-grow-1">
+                    <strong>{{ season.title }}</strong>
+                    {% if season.total_episodes > 0 %}
+                        <small class="d-block text-muted">
+                            {% if season.viewed_episodes == 0 %}
+                                Non commencée
+                            {% elif season.viewed_episodes == season.total_episodes %}
+                                Terminée
+                            {% else %}
+                                En cours
+                            {% endif %}
+                            ({{ season.viewed_episodes }} / {{ season.total_episodes }} ép.)
+                            | Taille: {{ (season.total_size_on_disk / (1024*1024)) | round(2) }} MB
+                        </small>
+                    {% else %}
+                         <small class="d-block text-muted">Aucun épisode listé dans Plex. (Taille: {{ (season.total_size_on_disk / (1024*1024)) | round(2) }} MB)</small>
+                    {% endif %}
                 </div>
-                <!-- Bouton Supprimer -->
-                <button class="btn btn-sm btn-outline-danger delete-season-btn"
-                        data-season-id="{{ season.ratingKey }}"
-                        data-season-title="{{ season.title }}"
-                        title="Supprimer les fichiers de la saison et la dé-monitorer">
-                    <i class="bi bi-trash"></i>
-                </button>
-                {% else %}
-                {# Si la série Sonarr n'est pas liée, on n'affiche pas les contrôles Sonarr pour la saison #}
-                {% endif %}
-            </div>
-        </div>
-        <!-- Conteneur "Collapse" pour la liste des épisodes (caché par défaut) -->
-        {% if season.episodes and season.episodes|length > 0 %}
-        <div class="collapse pt-1" id="episodes-for-season-{{ season.ratingKey }}">
-            <ul class="list-group list-group-flush">
-                {% for episode in season.episodes %}
-                <li class="list-group-item {% if episode.isWatched %}list-group-item-light text-muted{% else %}list-group-item-secondary{% endif %} d-flex justify-content-between align-items-center py-1 px-2">
-                    <small>{{ episode.title }}</small>
-                    <div>
-                        <span class="badge bg-dark me-2">{{ (episode.size_on_disk / (1024*1024)) | round(1) }} MB</span>
-                        {% if episode.isWatched %}
-                            <i class="bi bi-check-circle-fill text-success" title="Vu"></i>
-                        {% else %}
-                            <i class="bi bi-circle" title="Non vu"></i>
-                        {% endif %}
+                <div class="d-flex align-items-center ms-2">
+                    <!-- Bouton pour afficher/cacher les épisodes -->
+                    {% if season.episodes and season.episodes|length > 0 %}
+                    <button class="btn btn-sm btn-outline-secondary me-2"
+                            type="button"
+                            data-bs-toggle="collapse"
+                            data-bs-target="#episodes-for-season-{{ season.ratingKey }}"
+                            aria-expanded="false"
+                            aria-controls="episodes-for-season-{{ season.ratingKey }}"
+                            title="Afficher/Masquer les épisodes">
+                        <i class="bi bi-list-ol"></i> <span class="d-none d-sm-inline">Épisodes</span>
+                    </button>
+                    {% endif %}
+                    <!-- Switch de surveillance -->
+                    {% if series.sonarr_series_id %}
+                    <div class="form-check form-switch me-2">
+                        <input class="form-check-input season-monitor-toggle" type="checkbox" role="switch"
+                               id="monitor-season-{{ season.ratingKey }}"
+                               data-season-id="{{ season.ratingKey }}"
+                               {% if season.is_monitored_season %}checked{% endif %}>
                     </div>
-                </li>
-                {% endfor %}
-            </ul>
-        </div>
-        {% endif %}
-    </li>
-    {% endfor %}
-</ul>
-{% else %}
-<div class="alert alert-info">Aucune saison trouvée pour cette série dans Plex.</div>
-{% endif %}
+                    <!-- Bouton Supprimer -->
+                    <button class="btn btn-sm btn-outline-danger delete-season-btn"
+                            data-season-id="{{ season.ratingKey }}"
+                            data-season-title="{{ season.title }}"
+                            title="Supprimer les fichiers de la saison et la dé-monitorer">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Conteneur "Collapse" pour la liste des épisodes (modifié) -->
+            {% if season.episodes and season.episodes|length > 0 %}
+            <div class="collapse pt-1" id="episodes-for-season-{{ season.ratingKey }}">
+                <ul class="list-group list-group-flush">
+                    {% for episode in season.episodes %}
+                    <li class="list-group-item {% if episode.isWatched %}list-group-item-light text-muted{% else %}list-group-item-secondary{% endif %} d-flex justify-content-between align-items-center py-1 px-2">
+
+                        <!-- NOUVEAU : Case à cocher pour la suppression -->
+                        <div class="form-check">
+                            <input class="form-check-input episode-delete-checkbox" type="checkbox"
+                                   value="{{ episode.sonarr_episodeFileId }}"
+                                   id="delete-ep-{{ episode.sonarr_episodeFileId }}"
+                                   {% if not episode.sonarr_episodeFileId %}disabled{% endif %}>
+                            <label class="form-check-label" for="delete-ep-{{ episode.sonarr_episodeFileId }}">
+                                {# On ajoute le numéro de l'épisode (formaté sur 2 chiffres) #}
+                                <small>E{{ '%02d'|format(episode.episodeNumber) }} - {{ episode.title }}</small>
+                            </label>
+                        </div>
+
+                        <div class="d-flex align-items-center">
+                            <span class="badge bg-dark me-2">{{ (episode.size_on_disk / (1024*1024)) | round(1) }} MB</span>
+
+                            <!-- NOUVEAU : Switch de monitoring pour l'épisode -->
+                            <div class="form-check form-switch me-2" title="Surveiller cet épisode dans Sonarr">
+                                <input class="form-check-input episode-monitor-toggle" type="checkbox" role="switch"
+                                       data-sonarr-episode-id="{{ episode.sonarr_episodeId }}"
+                                       {% if episode.isMonitored_sonarr %}checked{% endif %}
+                                       {% if not episode.sonarr_episodeId %}disabled{% endif %}>
+                            </div>
+
+                            {% if episode.isWatched %}
+                                <i class="bi bi-check-circle-fill text-success" title="Vu"></i>
+                            {% else %}
+                                <i class="bi bi-circle" title="Non vu"></i>
+                            {% endif %}
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <div class="alert alert-info">Aucune saison trouvée pour cette série dans Plex.</div>
+    {% endif %}
+</form> <!-- Fin du formulaire -->
