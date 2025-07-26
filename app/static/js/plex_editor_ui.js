@@ -406,7 +406,7 @@ $(document).ready(function() {
             // Affiche un spinner sur la ligne de la saison pour montrer que quelque chose se passe
             seasonRow.addClass('opacity-50');
 
-            fetch('/plex/api/season/update_monitoring', {
+            fetch('/plex/update_season_monitoring', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
