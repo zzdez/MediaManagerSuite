@@ -1869,6 +1869,24 @@ def toggle_global_series_monitoring(sonarr_series_id):
         current_app.logger.error(f"Erreur API toggle_global_series_monitoring pour série Sonarr ID {sonarr_series_id}: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+@plex_editor_bp.route('/update_season_monitoring', methods=['POST'])
+@login_required
+def update_season_monitoring():
+    data = request.get_json()
+    series_id = data.get('sonarrSeriesId')
+    season_number = data.get('seasonNumber')
+    status = data.get('monitored')
+
+    if series_id is None or season_number is None or status is None:
+        return jsonify({'status': 'error', 'message': 'Données manquantes.'}), 400
+
+    from app.utils.arr_client import sonarr_update_season_monitoring
+
+    if sonarr_update_season_monitoring(series_id, season_number, status):
+        return jsonify({'status': 'success', 'message': 'Statut de la saison mis à jour.'})
+
+    return jsonify({'status': 'error', 'message': 'Échec de la mise à jour dans Sonarr.'}), 500
+
 # --- Gestionnaires d'erreur ---
 #@app.errorhandler(404)
 #def page_not_found(e):
