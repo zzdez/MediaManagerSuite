@@ -125,44 +125,6 @@ $(document).ready(function() {
             $('#confirmRejectShowBtn').data('ratingKey', ratingKey);
         }
 
-// --- ACTION : BASCULER LE STATUT VU/NON VU ---
-        const toggleBtn = event.target.closest('.toggle-watched-btn');
-        if (toggleBtn) {
-            const button = $(toggleBtn);
-            const ratingKey = button.data('ratingKey');
-            const userId = userSelect.val(); // On récupère l'utilisateur sélectionné
-            const statusCell = button.closest('tr').find('.media-status-cell');
-
-            // Affiche un spinner temporaire
-            const originalHtml = button.html();
-            button.html('<span class="spinner-border spinner-border-sm"></span>');
-            button.prop('disabled', true);
-
-            fetch('/plex/toggle_watched_status', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    ratingKey: ratingKey,
-                    userId: userId
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'success' && data.new_status_html) {
-                    // On remplace le contenu de la cellule de statut avec le nouveau HTML
-                    statusCell.html(data.new_status_html);
-                } else {
-                    alert('Erreur: ' + (data.message || 'Une erreur inconnue est survenue.'));
-                }
-            })
-            .catch(error => { console.error(error); alert("Erreur de communication."); })
-            .finally(() => {
-                // Restaure le bouton
-                button.html(originalHtml);
-                button.prop('disabled', false);
-            });
-        }
-
 // --- ACTION : COPIER LE CHEMIN DU FICHIER ---
         const copyPathBtn = event.target.closest('.copy-path-btn');
         if (copyPathBtn) {
@@ -440,4 +402,39 @@ $(document).ready(function() {
             });
         });
     }
+    // =================================================================
+    // ### LOGIQUE POUR BASCULER LE STATUT VU/NON-VU ###
+    // =================================================================
+    itemsContainer.on('click', '.toggle-watched-btn', function() {
+        const button = $(this);
+        const ratingKey = button.data('ratingKey');
+        const userId = userSelect.val(); // On récupère l'ID de l'utilisateur depuis le dropdown.
+        const statusCell = button.closest('tr').find('.media-status-cell');
+        const originalIcon = button.html();
+
+        // Feedback visuel immédiat
+        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+        fetch('/plex/toggle_watched_status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ratingKey: ratingKey, userId: userId })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success' && data.new_status_html) {
+                statusCell.html(data.new_status_html);
+            } else {
+                alert('Erreur: ' + (data.message || 'Une erreur est survenue.'));
+            }
+        })
+        .catch(error => {
+            console.error("Erreur lors de la bascule du statut 'vu':", error);
+            alert("Erreur de communication pour la mise à jour du statut.");
+        })
+        .finally(() => {
+            button.prop('disabled', false).html(originalIcon);
+        });
+    });
+
 }); // Fin de $(document).ready

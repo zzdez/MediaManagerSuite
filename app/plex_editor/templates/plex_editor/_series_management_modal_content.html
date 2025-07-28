@@ -126,11 +126,16 @@
                                        {% if not episode.sonarr_episodeId %}disabled{% endif %}>
                             </div>
 
+                            {# --- Icône cliquable pour basculer le statut Vu/Non Vu --- #}
+                            <a href="#" class="toggle-episode-watched-btn" 
+                               data-rating-key="{{ episode.ratingKey }}" 
+                               title="Basculer Vu/Non Vu">
                             {% if episode.isWatched %}
-                                <i class="bi bi-check-circle-fill text-success" title="Vu"></i>
+                                <i class="bi bi-check-circle-fill text-success"></i>
                             {% else %}
-                                <i class="bi bi-circle" title="Non vu"></i>
+                                <i class="bi bi-circle"></i>
                             {% endif %}
+                            </a>
                         </div>
                     </li>
                     {% endfor %}

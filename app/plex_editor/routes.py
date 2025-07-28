@@ -422,40 +422,34 @@ def index():
 def toggle_watched_status():
     data = request.get_json()
     rating_key = data.get('ratingKey')
-    user_id = data.get('userId') # On utilise la nouvelle méthode "stateless"
+    user_id = data.get('userId')
 
     if not rating_key or not user_id:
         return jsonify({'status': 'error', 'message': 'Données manquantes.'}), 400
 
     try:
-        # On reconstruit la connexion utilisateur sans dépendre de la session
         user_plex_server = get_user_specific_plex_server_from_id(user_id)
         if not user_plex_server:
-            return jsonify({'status': 'error', 'message': 'Impossible d_établir la connexion Plex.'}), 500
+            return jsonify({'status': 'error', 'message': 'Connexion Plex impossible.'}), 500
 
         item = user_plex_server.fetchItem(int(rating_key))
-
+        
         if item.isWatched:
             item.markUnwatched()
-            new_status = 'Non Vu'
+            new_status_text = 'Non Vu'
         else:
             item.markWatched()
-            new_status = 'Vu'
+            new_status_text = 'Vu'
+            
+        # Pour le rafraîchissement de la table principale, on a toujours besoin du HTML
+        refreshed_item = user_plex_server.fetchItem(int(rating_key))
+        new_html = render_template('plex_editor/_media_status_cell.html', item=refreshed_item)
 
-        current_app.logger.info(f"Statut de '{item.title}' changé en '{new_status}' pour l'utilisateur ID {user_id}.")
-
-        # On doit renvoyer le nouveau badge HTML au frontend
-        # Cette logique est simplifiée, elle pourrait être améliorée
-        # pour gérer le statut "en cours" des séries.
-        if item.type == 'show':
-            # Pour une série, le statut est plus complexe, on doit la rafraîchir
-            refreshed_item = user_plex_server.fetchItem(int(rating_key))
-            new_html = render_template('plex_editor/_media_status_cell.html', item=refreshed_item)
-        else: # film
-            refreshed_item = user_plex_server.fetchItem(int(rating_key))
-            new_html = render_template('plex_editor/_media_status_cell.html', item=refreshed_item)
-
-        return jsonify({'status': 'success', 'new_status_html': new_html})
+        return jsonify({
+            'status': 'success',
+            'new_status': new_status_text, # Info pour les icônes de la modale
+            'new_status_html': new_html   # Info pour la table principale
+        })
 
     except Exception as e:
         current_app.logger.error(f"Erreur toggle_watched_status: {e}", exc_info=True)
@@ -1609,6 +1603,7 @@ def get_series_details_for_management(rating_key):
                 episodes_list_for_season.append({
                     'title': episode.title,
                     'episodeNumber': episode.index,
+                    'ratingKey': episode.ratingKey,
                     'isWatched': episode.isWatched,
                     'size_on_disk': size_bytes,
                     'sonarr_episodeId': sonarr_episode_data.get('id') if sonarr_episode_data else None,
