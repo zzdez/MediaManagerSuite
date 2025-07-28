@@ -30,6 +30,9 @@
             <li class="nav-item">
                 <a class="nav-link" href="{{ url_for('config_ui.show_config') }}"><i class="bi bi-gear-fill"></i> Configuration</a>
             </li>
+            <li class="nav-item">
+                <a class="nav-link" href="{{ url_for('ygg_cookie_ui.refresh_ygg_cookie') }}" onclick="return confirm('Êtes-vous sûr de vouloir rafraîchir le cookie YGGTorrent ?');"><i class="bi bi-arrow-clockwise"></i> Refresh YGG Cookie</a>
+            </li>
         </ul>
         <div class="sidebar-footer">
             <!-- Vérifier si la route 'main.logout' existe, sinon l'adapter -->
