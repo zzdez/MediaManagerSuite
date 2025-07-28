@@ -72,6 +72,11 @@ class Config:
     YGG_BASE_URL = os.getenv('YGG_BASE_URL', 'https://www.yggtorrent.top')
     YGG_COOKIE = os.getenv('YGG_COOKIE')
     YGG_USER_AGENT = os.getenv('YGG_USER_AGENT', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36')
+    # --- YGG Cookie Refresh ---
+    MMS_ENV_FILE_PATH = os.getenv('MMS_ENV_FILE_PATH', os.path.join(basedir, '.env'))
+    YGG_DOMAIN = os.getenv('YGG_DOMAIN', 'www.yggtorrent.top')
+    COOKIE_DOWNLOAD_PATH = os.getenv('COOKIE_DOWNLOAD_PATH')
+    MMS_RESTART_COMMAND = os.getenv('MMS_RESTART_COMMAND')
 
     # --- API Externes ---
     TVDB_API_KEY = os.getenv('TVDB_API_KEY')

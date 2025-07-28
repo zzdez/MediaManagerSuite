@@ -77,6 +77,14 @@ def create_app(config_class=Config):
         logger.error(f"Erreur lors de l'import ou de l'enregistrement du blueprint config_ui: {e}")
     # FIN DE L'AJOUT
 
+    # Register YGG Cookie UI blueprint
+    try:
+        from app.ygg_cookie_ui import ygg_cookie_ui_bp
+        app.register_blueprint(ygg_cookie_ui_bp, url_prefix='/ygg-cookie')
+        logger.info("Blueprint 'ygg_cookie_ui' enregistré avec succès.")
+    except ImportError as e:
+        logger.error(f"Erreur lors de l'import ou de l'enregistrement du blueprint ygg_cookie_ui: {e}")
+
     try:
         from app.search_ui import search_ui_bp
         app.register_blueprint(search_ui_bp, url_prefix='/search')
