@@ -46,6 +46,51 @@ def get_plex_admin_server():
         flash("Erreur de connexion au serveur Plex admin.", "danger")
         return None
 
+def get_user_specific_plex_server_from_id(user_id):
+    """
+    Returns a PlexServer instance for a specific user ID.
+    Handles impersonation for managed users. Returns None on failure.
+    """
+    current_app.logger.debug(f"--- Appel de get_user_specific_plex_server_from_id pour user_id: {user_id} ---")
+    if not user_id:
+        flash("Aucun ID utilisateur fourni.", "danger")
+        current_app.logger.warning("get_user_specific_plex_server_from_id: 'user_id' manquant.")
+        return None
+
+    plex_url = current_app.config.get('PLEX_URL')
+    admin_token = current_app.config.get('PLEX_TOKEN')
+
+    main_account = get_main_plex_account_object()
+    if not main_account:
+        current_app.logger.error("get_user_specific_plex_server_from_id: Échec de la récupération du compte principal Plex.")
+        return None
+
+    try:
+        if str(main_account.id) == user_id:
+            current_app.logger.debug("Contexte: Utilisateur Principal (Admin).")
+            return get_plex_admin_server()
+
+        user_to_impersonate = next((u for u in main_account.users() if str(u.id) == user_id), None)
+        if user_to_impersonate:
+            admin_server_for_token = get_plex_admin_server()
+            if not admin_server_for_token:
+                return None
+            managed_user_token = user_to_impersonate.get_token(admin_server_for_token.machineIdentifier)
+            current_app.logger.debug(f"Contexte: Emprunt d'identité pour '{user_to_impersonate.title}'.")
+            return PlexServer(plex_url, managed_user_token)
+        else:
+            flash(f"Utilisateur (ID: {user_id}) non trouvé. Reconnexion requise.", "warning")
+            return None
+
+    except Unauthorized as e:
+        current_app.logger.error(f"Erreur d'autorisation dans get_user_specific_plex_server_from_id: {e}")
+        flash("Erreur d'autorisation. Le token Plex est peut-être invalide.", "danger")
+        return None
+    except Exception as e:
+        current_app.logger.error(f"Erreur majeure dans get_user_specific_plex_server_from_id : {e}", exc_info=True)
+        flash(f"Une erreur inattendue est survenue: {e}", "danger")
+        return None
+
 def get_user_specific_plex_server():
     """
     Returns a PlexServer instance connected as the user in session.

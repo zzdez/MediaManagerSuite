@@ -133,6 +133,37 @@ def select_user_route():
 
 # Dans app/plex_editor/routes.py
 
+def get_user_specific_plex_server_from_id(user_id):
+    """
+    Helper function to get a PlexServer instance for a specific user ID,
+    handling impersonation. Returns None on failure.
+    """
+    # On a besoin de l'accès admin pour trouver d'autres utilisateurs
+    admin_server = get_plex_admin_server()
+    if not admin_server:
+        current_app.logger.error("Helper get_user_specific_plex_server_from_id: Impossible d'obtenir la connexion admin.")
+        return None
+
+    main_account = get_main_plex_account_object()
+    if not main_account:
+        current_app.logger.error("Helper get_user_specific_plex_server_from_id: Impossible de récupérer le compte principal.")
+        return None
+
+    # Cas 1: L'utilisateur est l'admin
+    if str(main_account.id) == user_id:
+        return admin_server
+
+    # Cas 2: L'utilisateur est un utilisateur géré
+    user_to_impersonate = next((u for u in main_account.users() if str(u.id) == user_id), None)
+    if user_to_impersonate:
+        token = user_to_impersonate.get_token(admin_server.machineIdentifier)
+        plex_url = current_app.config.get('PLEX_URL')
+        return PlexServer(plex_url, token)
+
+    # Si l'ID n'a pas été trouvé
+    current_app.logger.warning(f"Helper get_user_specific_plex_server_from_id: Utilisateur avec ID '{user_id}' non trouvé.")
+    return None
+
 @plex_editor_bp.route('/api/media_items', methods=['POST'])
 @login_required
 def get_media_items():
@@ -385,6 +416,44 @@ def toggle_watched_status_api(rating_key): # Nom de fonction unique
 def index():
     """Affiche le nouveau tableau de bord unifié."""
     return render_template('plex_editor/index.html')
+
+@plex_editor_bp.route('/toggle_watched_status', methods=['POST'])
+@login_required
+def toggle_watched_status():
+    data = request.get_json()
+    rating_key = data.get('ratingKey')
+    user_id = data.get('userId')
+
+    if not rating_key or not user_id:
+        return jsonify({'status': 'error', 'message': 'Données manquantes.'}), 400
+
+    try:
+        user_plex_server = get_user_specific_plex_server_from_id(user_id)
+        if not user_plex_server:
+            return jsonify({'status': 'error', 'message': 'Connexion Plex impossible.'}), 500
+
+        item = user_plex_server.fetchItem(int(rating_key))
+        
+        if item.isWatched:
+            item.markUnwatched()
+            new_status_text = 'Non Vu'
+        else:
+            item.markWatched()
+            new_status_text = 'Vu'
+            
+        # Pour le rafraîchissement de la table principale, on a toujours besoin du HTML
+        refreshed_item = user_plex_server.fetchItem(int(rating_key))
+        new_html = render_template('plex_editor/_media_status_cell.html', item=refreshed_item)
+
+        return jsonify({
+            'status': 'success',
+            'new_status': new_status_text, # Info pour les icônes de la modale
+            'new_status_html': new_html   # Info pour la table principale
+        })
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur toggle_watched_status: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 # @plex_editor_bp.route('/libraries')
 # @login_required
@@ -1534,6 +1603,7 @@ def get_series_details_for_management(rating_key):
                 episodes_list_for_season.append({
                     'title': episode.title,
                     'episodeNumber': episode.index,
+                    'ratingKey': episode.ratingKey,
                     'isWatched': episode.isWatched,
                     'size_on_disk': size_bytes,
                     'sonarr_episodeId': sonarr_episode_data.get('id') if sonarr_episode_data else None,
