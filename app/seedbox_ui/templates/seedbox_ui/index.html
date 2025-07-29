@@ -77,7 +77,8 @@
                         data-item-path="{{ node.path_for_actions }}"
                         data-item-type="{{ 'directory' if node.is_dir else 'file' }}"
                         data-app-type="sonarr"
-                        title="Rechercher et mapper manuellement avec Sonarr">
+                        title="Rechercher et mapper manuellement avec Sonarr"
+                        onclick="openSonarrSearchModal('{{ node.path_for_actions | e }}', '{{ 'directory' if node.is_dir else 'file' }}')">
                     <i class="fas fa-search"></i> <span class="d-none d-md-inline">Mapper Sonarr</span>
                 </button>
 
@@ -87,7 +88,8 @@
                         data-item-path="{{ node.path_for_actions }}"
                         data-item-type="{{ 'directory' if node.is_dir else 'file' }}"
                         data-app-type="radarr"
-                        title="Rechercher et mapper manuellement avec Radarr">
+                        title="Rechercher et mapper manuellement avec Radarr"
+                        onclick="openRadarrSearchModal('{{ node.path_for_actions | e }}', '{{ 'directory' if node.is_dir else 'file' }}')">
                     <i class="fas fa-search"></i> <span class="d-none d-md-inline">Mapper Radarr</span>
                 </button>
                 {% endif %}
