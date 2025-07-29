@@ -22,10 +22,20 @@ function getCleanedSearchTerm(itemName) {
     cleanedName = cleanedName.replace(/[\.\[\(]?\d{3,4}p[\.\]\)]?/ig, ' ');
     // --- LA CORRECTION EST SUR CETTE LIGNE ---
     // On remplace les tags par un espace pour éviter que les mots se collent.
-    cleanedName = cleanedName.replace(/[\._\-\(\[]?(hdtv|web-dl|webrip|bluray|x264|x265|h264|h265|hevc|ac3|dts|multi|vfq|vff|vof|french|truefrench|fanart|pack)[\._\-\)\]]?/ig, ' ');
+    cleanedName = cleanedName.replace(/[\._\-\(\[]?(hdtv|web-dl|webrip|bluray|x264|x265|h264|h265|hevc|ac3|dts|multi|vfq|vff|vof|french|truefrench|fanart|pack|aac|720p|1080p|2160p)[\._\-\)\]]?/ig, ' ');
     cleanedName = cleanedName.replace(/[\.\[\(]?S\d{1,3}(E\d{1,3}(-E?\d{1,3}(\s?-\s?E?\d{1,3})?)?)?[\.\]\)]?/ig, ' ');
     cleanedName = cleanedName.replace(/[\.\[\(]?\d{4}[\.\]\)]?/g, ' '); // Nettoie aussi les années
     
+    // Tentative de suppression du nom de la team/release, souvent après le dernier '-'
+    const lastDashIndex = cleanedName.lastIndexOf('-');
+    if (lastDashIndex > cleanedName.length / 2) { // Heuristique : le nom de la team est plutôt vers la fin
+        const potentialTeamName = cleanedName.substring(lastDashIndex + 1).trim();
+        // Si la "team" ne contient pas de chiffres (peu probable pour un titre) et est courte, on la supprime.
+        if (!/\d/.test(potentialTeamName) && potentialTeamName.length < 10) {
+             cleanedName = cleanedName.substring(0, lastDashIndex);
+        }
+    }
+
     // Nettoyage final des séparateurs et des espaces multiples
     cleanedName = cleanedName.replace(/[\._-]+/g, ' ').replace(/\s+/g, ' ').trim();
 
