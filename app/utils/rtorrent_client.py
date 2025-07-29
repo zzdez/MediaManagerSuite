@@ -511,3 +511,58 @@ def add_torrent_data_and_get_hash_robustly(torrent_content_bytes, filename_for_r
     except Exception as e:
         current_app.logger.error(f"Erreur inattendue dans add_torrent_data_and_get_hash_robustly: {e}", exc_info=True)
         return None # Échec
+        
+def _decode_bencode_name(bencoded_data):
+    """
+    Minimalistic bencode decoder to find info['name'].
+    Returns the value of info['name'] as a string, or None if not found or error.
+    Expects bencoded_data as bytes.
+    """
+    try:
+        # Find '4:infod' (start of info dict)
+        info_dict_match = re.search(b'4:infod', bencoded_data)
+        if not info_dict_match:
+            # Use current_app.logger if available and in context, otherwise module logger
+            try: current_app.logger.debug("Bencode: '4:infod' not found.")
+            except RuntimeError: logger.debug("Bencode: '4:infod' not found (no app context).")
+            return None
+
+        start_index = info_dict_match.end(0) # Position after '4:infod'
+
+        name_key_match = re.search(b'4:name', bencoded_data[start_index:])
+        if not name_key_match:
+            try: current_app.logger.debug("Bencode: '4:name' not found after '4:infod'.")
+            except RuntimeError: logger.debug("Bencode: '4:name' not found after '4:infod' (no app context).")
+            return None
+
+        pos_after_name_key = start_index + name_key_match.end(0)
+
+        len_match = re.match(rb'(\d+):', bencoded_data[pos_after_name_key:])
+        if not len_match:
+            try: current_app.logger.debug("Bencode: Length prefix for name value not found.")
+            except RuntimeError: logger.debug("Bencode: Length prefix for name value not found (no app context).")
+            return None
+
+        str_len = int(len_match.group(1))
+        pos_after_len_colon = pos_after_name_key + len_match.end(0)
+
+        if (pos_after_len_colon + str_len) > len(bencoded_data):
+            try: current_app.logger.debug(f"Bencode: Declared name length {str_len} is out of bounds.")
+            except RuntimeError: logger.debug(f"Bencode: Declared name length {str_len} is out of bounds (no app context).")
+            return None
+
+        name_bytes = bencoded_data[pos_after_len_colon : pos_after_len_colon + str_len]
+
+        try:
+            return name_bytes.decode('utf-8')
+        except UnicodeDecodeError:
+            try:
+                return name_bytes.decode('latin-1')
+            except UnicodeDecodeError:
+                return name_bytes.decode('utf-8', errors='replace')
+
+    except Exception as e:
+        # Use current_app.logger if available and in context, otherwise module logger
+        try: current_app.logger.warning(f"Exception in _decode_bencode_name: {e}", exc_info=True)
+        except RuntimeError: logger.warning(f"Exception in _decode_bencode_name (no app context): {e}", exc_info=True)
+        return None        

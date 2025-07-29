@@ -1,7 +1,7 @@
 # app/search_ui/__init__.py
 
 import logging
-from flask import Blueprint, render_template, request, flash, jsonify, Response, stream_with_context, current_app
+from flask import Blueprint, render_template, request, flash, jsonify, Response, stream_with_context, current_app, url_for
 from app.auth import login_required
 from config import Config
 from app.utils import arr_client
@@ -291,73 +291,116 @@ def prepare_mapping_details():
 @search_ui_bp.route('/download-and-map', methods=['POST'])
 @login_required
 def download_and_map():
-    # Imports locaux pour cette fonction spécifique
+    # --- Imports pour la logique qui fonctionne ---
     import requests
-    from app.utils.rtorrent_client import add_torrent_data_and_get_hash_robustly, add_magnet_and_get_hash_robustly
+    import time
+    import urllib.parse
+    import base64
+    from pathlib import Path
+    from app.utils.rtorrent_client import (
+        _decode_bencode_name,
+        add_magnet as rtorrent_add_magnet, # Renommé pour clarté
+        add_torrent_file as rtorrent_add_torrent_file,
+        get_torrent_hash_by_name
+    )
     from app.utils.mapping_manager import add_or_update_torrent_in_map
-    from urllib.parse import urlparse
+    # --- Fin des imports ---
 
     logger = current_app.logger
-
     data = request.get_json()
-    release_name = data.get('releaseName')
+    release_name_original = data.get('releaseName')
     download_link = data.get('downloadLink')
     indexer_id = data.get('indexerId')
     guid = data.get('guid')
     instance_type = data.get('instanceType') # 'tv' ou 'movie'
     media_id = data.get('mediaId')
 
-    if not all([release_name, download_link, instance_type, media_id]):
+    if not all([release_name_original, download_link, instance_type, media_id]):
         logger.error("Requête /download-and-map invalide, données manquantes.")
         return jsonify({'status': 'error', 'message': 'Données manquantes dans la requête.'}), 400
 
     internal_instance_type = 'sonarr' if instance_type == 'tv' else 'radarr'
-    torrent_hash = None
 
     try:
-        logger.info(f"Début du traitement pour '{release_name}'")
+        logger.info(f"Début du traitement pour '{release_name_original}'")
 
-        # 1. Déterminer si c'est un magnet ou un lien .torrent
-        if download_link.startswith('magnet:'):
-            logger.info("Lien magnet détecté. Envoi à rTorrent.")
-            torrent_hash = add_magnet_and_get_hash_robustly(download_link)
+        # --- Début de la logique copiée de seedbox_ui/routes.py ---
+        # 1. Déterminer le label et le chemin de destination
+        if internal_instance_type == 'sonarr':
+            rtorrent_label = current_app.config.get('RTORRENT_LABEL_SONARR')
+            rtorrent_download_dir = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_SONARR_PATH')
+        else: # radarr
+            rtorrent_label = current_app.config.get('RTORRENT_LABEL_RADARR')
+            rtorrent_download_dir = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_RADARR_PATH')
+
+        if not rtorrent_label or not rtorrent_download_dir:
+            return jsonify({'status': 'error', 'message': f"Configuration rTorrent (label/dir) manquante pour {internal_instance_type}."}), 500
+
+        # 2. Préparer l'ajout
+        release_name_for_map = None
+        torrent_content_bytes = None
+        is_magnet = download_link.startswith('magnet:')
+        
+        if is_magnet:
+            parsed_magnet = urllib.parse.parse_qs(urllib.parse.urlparse(download_link).query)
+            display_names = parsed_magnet.get('dn')
+            release_name_for_map = display_names[0].strip() if display_names and display_names[0] else release_name_original.strip()
         else:
-            logger.info("Lien .torrent détecté. Utilisation du proxy de téléchargement.")
-            proxy_url = f"http://127.0.0.1:{current_app.config.get('FLASK_RUN_PORT', 5001)}/search/download_torrent_proxy"
-            params = {'url': download_link, 'release_name': release_name, 'indexer_id': indexer_id, 'guid': guid}
-            
-            # On simule une session pour passer les cookies de login
+            proxy_url = url_for('search_ui.download_torrent_proxy', _external=True)
+            params = {'url': download_link, 'release_name': release_name_original, 'indexer_id': indexer_id, 'guid': guid}
             session_cookie_name = current_app.config.get("SESSION_COOKIE_NAME", "session")
             cookies = {session_cookie_name: request.cookies.get(session_cookie_name)}
 
             response = requests.get(proxy_url, params=params, cookies=cookies, timeout=60)
             response.raise_for_status()
+            torrent_content_bytes = response.content
             
-            torrent_content = response.content
-            logger.info(f"{len(torrent_content)} bytes de données de torrent reçues du proxy.")
-            torrent_hash = add_torrent_data_and_get_hash_robustly(
-                torrent_content_bytes=torrent_content,
-                filename_for_rtorrent=f"{release_name}.torrent",
-                label=internal_instance_type # <--- AJOUTÉ : On passe 'sonarr' ou 'radarr'
-            )
+            # Utiliser le nom décodé du torrent comme nom de release fiable
+            release_name_for_map = _decode_bencode_name(torrent_content_bytes) or release_name_original.replace('.torrent', '').strip()
 
-        # 2. Vérifier si on a un hash VALIDE (une chaîne de caractères) avant de sauvegarder
-        if torrent_hash and isinstance(torrent_hash, str):
-            logger.info(f"Torrent ajouté avec succès. Hash : {torrent_hash}. Sauvegarde du mapping.")
-            add_or_update_torrent_in_map(
-                torrent_hash=torrent_hash,
-                release_name=release_name,
-                app_type=internal_instance_type,      # CORRIGÉ: renommé en 'app_type'
-                target_id=str(media_id),              # CORRIGÉ: renommé en 'target_id'
-                label=internal_instance_type,         # AJOUTÉ: le paramètre 'label' est obligatoire
-                seedbox_download_path="N/A_added_from_search" # AJOUTÉ: le paramètre 'seedbox_download_path' est obligatoire
-            )
-            return jsonify({'status': 'success', 'message': 'Torrent ajouté et mappé avec succès.'})
-        else:
-            raise Exception("Le hash du torrent n'a pas pu être récupéré depuis rTorrent.")
+        # 3. Ajouter à rTorrent avec la méthode qui fonctionne
+        success_add, error_msg_add = False, "Action non initialisée"
+        if is_magnet:
+            success_add, error_msg_add = rtorrent_add_magnet(download_link, rtorrent_label, rtorrent_download_dir)
+        elif torrent_content_bytes:
+            success_add, error_msg_add = rtorrent_add_torrent_file(torrent_content_bytes, f"{release_name_original}.torrent", rtorrent_label, rtorrent_download_dir)
+
+        if not success_add:
+            return jsonify({'status': 'error', 'message': f"Erreur rTorrent: {error_msg_add}"}), 500
+        
+        # 4. Attendre et récupérer le hash (avec fallback)
+        time.sleep(current_app.config.get('RTORRENT_POST_ADD_DELAY_SECONDS', 3))
+        
+        # Plan A : Essayer avec le nom décodé du torrent (le plus fiable)
+        actual_hash = get_torrent_hash_by_name(release_name_for_map)
+        
+        # Plan B : Si le plan A échoue, essayer avec le nom de fichier original de Prowlarr
+        if not actual_hash:
+            cleaned_original_name = release_name_original.replace('.torrent', '').strip()
+            if cleaned_original_name != release_name_for_map: # Éviter de chercher deux fois la même chose
+                logger.info(f"Hash non trouvé pour '{release_name_for_map}', tentative avec le nom de fichier original '{cleaned_original_name}'.")
+                actual_hash = get_torrent_hash_by_name(cleaned_original_name)
+
+        if not actual_hash:
+            msg = f"Torrent ajouté à rTorrent, mais son hash n'a pas pu être récupéré immédiatement. Le mapping automatique a échoué et devra être fait manuellement."
+            logger.warning(msg)
+            return jsonify({"status": "warning", "message": msg}), 202 # 202 Accepted
+
+        # 5. Sauvegarder le mapping
+        seedbox_full_path = str(Path(rtorrent_download_dir) / release_name_for_map).replace('\\', '/')
+        add_or_update_torrent_in_map(
+            torrent_hash=actual_hash,
+            release_name=release_name_for_map,
+            app_type=internal_instance_type,
+            target_id=str(media_id),
+            label=rtorrent_label,
+            seedbox_download_path=seedbox_full_path,
+            original_torrent_name=release_name_original
+        )
+        return jsonify({'status': 'success', 'message': f"Torrent '{release_name_for_map}' ajouté et mappé avec succès."})
 
     except Exception as e:
-        logger.error(f"Erreur majeure dans /download-and-map pour '{release_name}': {e}", exc_info=True)
+        logger.error(f"Erreur majeure dans /download-and-map pour '{release_name_original}': {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': f"Erreur serveur inattendue: {str(e)}"}), 500
 # =====================================================================
 # ROUTES DE PROXY DE TÉLÉCHARGEMENT RESTAURÉES
