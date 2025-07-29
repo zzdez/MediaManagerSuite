@@ -1278,339 +1278,179 @@ def build_file_tree(directory_path, staging_root_for_relative_path, pending_asso
 # ==============================================================================
 # NOUVELLES FONCTIONS HELPER REFACTORISÉES POUR L'IMPORT MMS
 # ==============================================================================
-def _execute_mms_sonarr_import(item_name_in_staging, # Nom du fichier/dossier dans le staging local (relatif à STAGING_DIR)
-                               series_id_target,
-                               original_release_folder_name_in_staging, # Nom du dossier de premier niveau dans le staging à nettoyer
-                               user_forced_season=None, # Saison fournie par l'utilisateur si discordance
-                               torrent_hash_for_status_update=None, # Pour mettre à jour le map
-                               is_automated_flow=False): # Pour adapter les logs/retours
-    """
-    Logique principale pour l'import Sonarr par MediaManagerSuite:
-    - Déplace le(s) fichier(s) vidéo du staging vers la destination finale de la série.
-    - Déclenche un RescanSeries.
-    - Nettoie le dossier de release original dans le staging.
-    Retourne un dictionnaire: {"success": bool, "message": str, "manual_required": bool (optionnel)}
-    """
+def _execute_mms_sonarr_import(item_name_in_staging, series_id_target, original_release_folder_name_in_staging, user_forced_season=None, torrent_hash_for_status_update=None, is_automated_flow=False):
     logger = current_app.logger
-    log_prefix = f"EXEC_MMS_SONARR (Item:'{item_name_in_staging}', SeriesID:{series_id_target}, CleanupFolder:'{original_release_folder_name_in_staging}', ForcedS:{user_forced_season}, Hash:{torrent_hash_for_status_update}, Auto:{is_automated_flow}): "
+    log_prefix = f"EXEC_MMS_SONARR (Item:'{item_name_in_staging}', SeriesID:{series_id_target}): "
     logger.info(f"{log_prefix}Début de l'import MMS.")
-
+    
+    # --- Configuration ---
     sonarr_url = current_app.config.get('SONARR_URL')
     sonarr_api_key = current_app.config.get('SONARR_API_KEY')
-    staging_dir_str = current_app.config.get('LOCAL_STAGING_PATH') or current_app.config.get('STAGING_DIR')
-    orphan_exts = current_app.config.get('ORPHAN_EXTENSIONS', [])
+    staging_dir_str = current_app.config.get('LOCAL_STAGING_PATH')
+    orphan_exts = current_app.config.get('ORPHAN_CLEANER_EXTENSIONS', [])
 
     path_of_item_in_staging_abs = (Path(staging_dir_str) / item_name_in_staging).resolve()
-
     if not path_of_item_in_staging_abs.exists():
-        err_msg = f"Item '{item_name_in_staging}' non trouvé à '{path_of_item_in_staging_abs}'."
-        logger.error(f"{log_prefix}{err_msg}")
-        if torrent_hash_for_status_update and is_automated_flow:
-            torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_mms_staging_path_missing", err_msg)
-        {"success": False, "message": err_msg, "manual_required": True if is_automated_flow else False}
+        return {"success": False, "message": f"Item '{item_name_in_staging}' non trouvé."}
 
-    # Récupérer les détails de la série pour le chemin racine
+    # --- Récupération des détails de la série ---
     series_details_url = f"{sonarr_url.rstrip('/')}/api/v3/series/{series_id_target}"
-    series_data, error_series_data = _make_arr_request('GET', series_details_url, sonarr_api_key)
-    if error_series_data or not series_data:
-        err_msg = f"Impossible de récupérer détails série Sonarr ID {series_id_target}: {error_series_data}"
-        logger.error(f"{log_prefix}{err_msg}")
-        if torrent_hash_for_status_update and is_automated_flow:
-             torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_mms_sonarr_api", err_msg)
-        {"success": False, "message": err_msg, "manual_required": True if is_automated_flow else False}
+    series_data, error_msg = _make_arr_request('GET', series_details_url, sonarr_api_key)
+    if error_msg or not series_data:
+        return {"success": False, "message": f"Erreur Sonarr API: {error_msg}"}
 
-    series_root_folder_path_str = series_data.get('path')
-    series_title_from_sonarr = series_data.get('title', 'Série Inconnue')
-    if not series_root_folder_path_str:
-        err_msg = f"Chemin racine pour série '{series_title_from_sonarr}' (ID {series_id_target}) non trouvé dans Sonarr."
-        logger.error(f"{log_prefix}{err_msg}")
-        if torrent_hash_for_status_update and is_automated_flow:
-             torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_mms_sonarr_config", err_msg)
-        {"success": False, "message": err_msg, "manual_required": True if is_automated_flow else False}
-    series_root_path = Path(series_root_folder_path_str)
+    series_root_folder = series_data.get('path')
+    series_title = series_data.get('title', 'Série Inconnue')
+    if not series_root_folder:
+        return {"success": False, "message": f"Chemin de destination manquant dans Sonarr pour '{series_title}'."}
 
+    # --- Logique de traitement de tous les fichiers vidéo ---
     video_files_to_process = []
     if path_of_item_in_staging_abs.is_file():
         if any(str(path_of_item_in_staging_abs).lower().endswith(ext) for ext in ['.mkv', '.mp4', '.avi', '.mov']):
-            video_files_to_process.append({"path": path_of_item_in_staging_abs, "original_filename": path_of_item_in_staging_abs.name})
-        else: # Ne devrait pas arriver si les checks en amont sont bons
-            err_msg = f"L'item '{item_name_in_staging}' est un fichier mais pas une vidéo reconnue."
-            logger.error(f"{log_prefix}{err_msg}")
-            return {"success": False, "message": err_msg, "manual_required": True if is_automated_flow else False}
+            video_files_to_process.append(path_of_item_in_staging_abs)
     elif path_of_item_in_staging_abs.is_dir():
         for root, _, files in os.walk(path_of_item_in_staging_abs):
             for file_name in files:
                 if any(file_name.lower().endswith(ext) for ext in ['.mkv', '.mp4', '.avi', '.mov']):
-                    video_files_to_process.append({"path": Path(root) / file_name, "original_filename": file_name})
-        if not video_files_to_process:
-            err_msg = f"Aucun fichier vidéo trouvé dans le dossier '{item_name_in_staging}'."
-            logger.error(f"{log_prefix}{err_msg}")
-            # Pas besoin de mettre à jour le map ici, car l'item est toujours dans le staging.
-            return {"success": False, "message": err_msg, "manual_required": True if is_automated_flow else False}
-    else: # Symlink ou autre, non géré
-        err_msg = f"Type d'item non supporté dans le staging: {item_name_in_staging}"
-        logger.error(f"{log_prefix}{err_msg}")
-        return {"success": False, "message": err_msg, "manual_required": True if is_automated_flow else False}
+                    video_files_to_process.append(Path(root) / file_name)
 
-    logger.info(f"{log_prefix} Fichiers vidéo à traiter: {[str(f['path']) for f in video_files_to_process]}")
+    if not video_files_to_process:
+        return {"success": False, "message": f"Aucun fichier vidéo trouvé dans '{item_name_in_staging}'."}
+
+    logger.info(f"{log_prefix}{len(video_files_to_process)} fichier(s) vidéo à traiter pour '{series_title}'.")
+    
     successful_moves = 0
     failed_moves_details = []
-    processed_filenames_for_message = []
 
-    for video_file_info in video_files_to_process:
-        current_video_file_path = video_file_info["path"]
-        original_video_filename = video_file_info["original_filename"]
-        logger.info(f"{log_prefix}Traitement du fichier vidéo: {original_video_filename}")
-
-        season_for_this_file = None
-        if user_forced_season is not None:
-            season_for_this_file = int(user_forced_season)
-            logger.info(f"{log_prefix}Utilisation saison forcée S{season_for_this_file} pour '{original_video_filename}'.")
-        else:
+    for video_file_path in video_files_to_process:
+        season_num = user_forced_season
+        if season_num is None:
             # Tenter de parser depuis le nom de fichier
-            s_match = re.search(r'[._\s\[\(-]S(\d{1,3})([E._\s-](\d{1,3}))?', original_video_filename, re.IGNORECASE)
+            s_match = re.search(r'[._\s\[\(-]S(\d{1,3})', video_file_path.name, re.IGNORECASE)
             if s_match:
-                try: season_for_this_file = int(s_match.group(1))
-                except (ValueError, IndexError): pass
+                season_num = int(s_match.group(1))
+        
+        if season_num is None:
+            failed_moves_details.append(f"{video_file_path.name} (saison introuvable)")
+            logger.error(f"{log_prefix}Impossible de déterminer la saison pour '{video_file_path.name}'.")
+            continue
 
-            if season_for_this_file is not None:
-                logger.info(f"{log_prefix}Saison S{season_for_this_file} parsée du nom de fichier '{original_video_filename}'.")
-            else:
-                # Si pas de saison forcée ET pas de parsing possible, on pourrait essayer de demander à Sonarr
-                # via manualimport, mais cela complexifie le flux "MMS Import".
-                # Pour l'instant, si pas de saison déterminable, c'est un échec pour ce fichier.
-                err_msg_file = f"Impossible de déterminer la saison pour '{original_video_filename}' (pas de saison forcée et parsing échoué)."
-                logger.error(f"{log_prefix}{err_msg_file}")
-                failed_moves_details.append({"file": original_video_filename, "reason": err_msg_file})
-                if torrent_hash_for_status_update and is_automated_flow:
-                     torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_mms_sonarr_season_undefined", err_msg_file)
-                continue # Passer au fichier suivant
-
-        dest_season_folder_name = f"Season {str(season_for_this_file).zfill(2)}"
-        dest_season_path_abs = series_root_path / dest_season_folder_name
-        dest_file_path_abs = dest_season_path_abs / original_video_filename # Utiliser le nom de fichier original
-
-        logger.info(f"{log_prefix}Déplacement MMS: '{current_video_file_path}' vers '{dest_file_path_abs}'")
+        dest_season_folder = Path(series_root_folder) / f"Season {str(season_num).zfill(2)}"
+        dest_file_path = dest_season_folder / video_file_path.name
+        
         try:
-            dest_season_path_abs.mkdir(parents=True, exist_ok=True)
-            if current_video_file_path.resolve() != dest_file_path_abs.resolve():
-                shutil.move(str(current_video_file_path), str(dest_file_path_abs))
-            else:
-                logger.warning(f"{log_prefix}Source et destination identiques pour {original_video_filename}.")
+            dest_season_folder.mkdir(parents=True, exist_ok=True)
+            logger.info(f"{log_prefix}Déplacement: '{video_file_path}' -> '{dest_file_path}'")
+            shutil.move(str(video_file_path), str(dest_file_path))
             successful_moves += 1
-            processed_filenames_for_message.append(original_video_filename)
-        except Exception as e_move:
-            logger.error(f"{log_prefix}Erreur déplacement '{original_video_filename}': {e_move}. Tentative copie/suppr.")
-            try:
-                if current_video_file_path.parent.exists(): # S'assurer que le parent source existe toujours
-                    shutil.copy2(str(current_video_file_path), str(dest_file_path_abs))
-                    os.remove(str(current_video_file_path))
-                    successful_moves += 1
-                    processed_filenames_for_message.append(original_video_filename)
-                else:
-                    logger.error(f"{log_prefix}Parent source {current_video_file_path.parent} inexistant. Échec copie/suppression pour {original_video_filename}")
-                    failed_moves_details.append({"file": original_video_filename, "reason": f"Erreur de déplacement (parent source manquant): {e_move}"})
-            except Exception as e_copy:
-                logger.error(f"{log_prefix}Erreur copie/suppr '{original_video_filename}': {e_copy}")
-                failed_moves_details.append({"file": original_video_filename, "reason": f"Échec copie/suppression: {e_copy}"})
+        except Exception as e:
+            logger.error(f"{log_prefix}Échec du déplacement de '{video_file_path.name}': {e}")
+            failed_moves_details.append(f"{video_file_path.name} ({e})")
 
-    if successful_moves == 0 and video_files_to_process: # Si aucun fichier n'a pu être déplacé
-        final_err_msg = "Aucun fichier vidéo n'a pu être déplacé."
-        if failed_moves_details: final_err_msg += f" Premier échec: {failed_moves_details[0]['reason']}"
-        logger.error(f"{log_prefix}{final_err_msg}")
-        if torrent_hash_for_status_update and is_automated_flow:
-            torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_mms_all_files_failed_move", final_err_msg)
-        return {"success": False, "message": final_err_msg, "manual_required": True if is_automated_flow else False}
+    if successful_moves == 0:
+        return {"success": False, "message": "Aucun fichier n'a pu être déplacé. Raison: " + (failed_moves_details[0] if failed_moves_details else "inconnue")}
 
-    # Nettoyage du dossier de release original dans le staging
+    # --- Nettoyage ---
     path_to_cleanup_abs = (Path(staging_dir_str) / original_release_folder_name_in_staging).resolve()
-    if path_to_cleanup_abs.exists() and path_to_cleanup_abs.is_dir():
-        logger.info(f"{log_prefix}Nettoyage du dossier de staging: {path_to_cleanup_abs}")
-        time.sleep(1)
-        try:
+    logger.info(f"{log_prefix}Déplacement terminé. Nettoyage de '{path_to_cleanup_abs}'")
+    if path_to_cleanup_abs.exists():
+        if path_to_cleanup_abs.is_dir():
             cleanup_staging_subfolder_recursively(str(path_to_cleanup_abs), staging_dir_str, orphan_exts)
-        except Exception as e_cleanup:
-            logger.error(f"{log_prefix}Erreur lors du nettoyage de {path_to_cleanup_abs}: {e_cleanup}")
+        else:
+            logger.info(f"{log_prefix}L'item était un fichier unique, déjà déplacé. Pas de nettoyage de dossier.")
     else:
-        logger.warning(f"{log_prefix}Dossier à nettoyer '{path_to_cleanup_abs}' (depuis '{original_release_folder_name_in_staging}') non trouvé ou n'est pas un dossier.")
+        logger.warning(f"{log_prefix}Le dossier de cleanup '{path_to_cleanup_abs}' n'existe plus.")
+        
+    # --- Rescan Sonarr ---
+    rescan_payload = {"name": "RescanSeries", "seriesId": int(series_id_target)}
+    _, error_rescan = _make_arr_request('POST', f"{sonarr_url.rstrip('/')}/api/v3/command", sonarr_api_key, json_data=rescan_payload)
 
-    # Rescan Sonarr
-    rescan_payload = {"name": "RescanSeries", "seriesId": series_id_target}
-    command_url = f"{sonarr_url.rstrip('/')}/api/v3/command"
-    _, error_rescan = _make_arr_request('POST', command_url, sonarr_api_key, json_data=rescan_payload)
+    final_message = f"{successful_moves} fichier(s) pour '{series_title}' déplacé(s). Échecs: {len(failed_moves_details)}. "
+    final_message += "Rescan Sonarr initié." if not error_rescan else f"Échec Rescan Sonarr: {error_rescan}"
 
-    final_message = f"{successful_moves} fichier(s) pour '{series_title_from_sonarr}' déplacé(s) par MMS."
-    if processed_filenames_for_message:
-        final_message += f" Fichiers: {', '.join(processed_filenames_for_message[:3])}{'...' if len(processed_filenames_for_message) > 3 else ''}."
-    if failed_moves_details:
-        final_message += f" {len(failed_moves_details)} fichier(s) ont échoué (voir logs)."
-
-    if error_rescan:
-        final_message += f" Échec du Rescan Sonarr: {error_rescan}."
-        logger.warning(f"{log_prefix}Rescan Sonarr échoué: {error_rescan}")
-    else:
-        final_message += " Rescan Sonarr initié."
-        logger.info(f"{log_prefix}Rescan Sonarr initié pour série ID {series_id_target}.")
-
-    if torrent_hash_for_status_update and is_automated_flow:
-        current_status_update_map = "imported_by_mms" if not failed_moves_details else "imported_partial_mms_error"
-        torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, current_status_update_map, final_message)
-        if not failed_moves_details and current_app.config.get('AUTO_REMOVE_SUCCESSFUL_FROM_MAP', True):
-           if torrent_map_manager.remove_torrent_from_map(torrent_hash_for_status_update):
-               logger.info(f"{log_prefix} Association pour hash {torrent_hash_for_status_update} supprimée après import MMS réussi.")
-
-    return {"success": True if not failed_moves_details else False,
-            "message": final_message,
-            "manual_required": bool(failed_moves_details) if is_automated_flow else False }
+    return {"success": True, "message": final_message}
 
 
-def _execute_mms_radarr_import(item_name_in_staging, # Nom du fichier/dossier dans le staging local (relatif à STAGING_DIR)
-                               movie_id_target,
-                               original_release_folder_name_in_staging, # Nom du dossier de premier niveau dans le staging à nettoyer
-                               torrent_hash_for_status_update=None, # Pour mettre à jour le map
-                               is_automated_flow=False): # Pour adapter les logs/retours
-    """
-    Logique principale pour l'import Radarr par MediaManagerSuite:
-    - Déplace le fichier vidéo principal du staging vers la destination finale du film.
-    - Déclenche un RescanMovie.
-    - Nettoie le dossier de release original dans le staging.
-    Retourne un dictionnaire: {"success": bool, "message": str, "manual_required": bool (optionnel)}
-    """
+def _execute_mms_radarr_import(item_name_in_staging, movie_id_target, original_release_folder_name_in_staging, torrent_hash_for_status_update=None, is_automated_flow=False):
     logger = current_app.logger
-    log_prefix = f"EXEC_MMS_RADARR (Item:'{item_name_in_staging}', MovieID:{movie_id_target}, CleanupFolder:'{original_release_folder_name_in_staging}', Hash:{torrent_hash_for_status_update}, Auto:{is_automated_flow}): "
+    log_prefix = f"EXEC_MMS_RADARR (Item:'{item_name_in_staging}', MovieID:{movie_id_target}): "
     logger.info(f"{log_prefix}Début de l'import MMS.")
 
+    # --- Configuration ---
     radarr_url = current_app.config.get('RADARR_URL')
     radarr_api_key = current_app.config.get('RADARR_API_KEY')
-    staging_dir_str = current_app.config.get('LOCAL_STAGING_PATH') or current_app.config.get('STAGING_DIR')
-    orphan_exts = current_app.config.get('ORPHAN_EXTENSIONS', [])
+    staging_dir_str = current_app.config.get('LOCAL_STAGING_PATH')
+    orphan_exts = current_app.config.get('ORPHAN_CLEANER_EXTENSIONS', [])
 
     path_of_item_in_staging_abs = (Path(staging_dir_str) / item_name_in_staging).resolve()
-
     if not path_of_item_in_staging_abs.exists():
-        err_msg = f"Item '{item_name_in_staging}' non trouvé à '{path_of_item_in_staging_abs}'."
-        logger.error(f"{log_prefix}{err_msg}")
-        if torrent_hash_for_status_update and is_automated_flow:
-            torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_mms_staging_path_missing", err_msg)
-        return {"success": False, "message": err_msg, "manual_required": True if is_automated_flow else False}
+        return {"success": False, "message": f"Item '{item_name_in_staging}' non trouvé."}
 
-    # Identifier le fichier vidéo principal
-    main_video_file_abs_path_in_staging = None
-    original_filename_of_video = None
+    # --- Récupération des détails du film (pour le chemin de destination) ---
+    movie_details_url = f"{radarr_url.rstrip('/')}/api/v3/movie/{movie_id_target}"
+    movie_data, error_msg = _make_arr_request('GET', movie_details_url, radarr_api_key)
+    if error_msg or not movie_data:
+        return {"success": False, "message": f"Erreur Radarr API: {error_msg}"}
+
+    movie_folder_path = movie_data.get('path')
+    movie_title = movie_data.get('title', 'Film Inconnu')
+    if not movie_folder_path:
+        return {"success": False, "message": f"Chemin de destination manquant dans Radarr pour '{movie_title}'."}
+
+    destination_folder_abs = Path(movie_folder_path)
+
+    # --- Logique de traitement de tous les fichiers vidéo ---
+    video_files_to_process = []
     if path_of_item_in_staging_abs.is_file():
         if any(str(path_of_item_in_staging_abs).lower().endswith(ext) for ext in ['.mkv', '.mp4', '.avi', '.mov']):
-            main_video_file_abs_path_in_staging = path_of_item_in_staging_abs
-            original_filename_of_video = path_of_item_in_staging_abs.name
-        else:
-            err_msg = f"L'item '{item_name_in_staging}' est un fichier mais pas une vidéo reconnue."
-            logger.error(f"{log_prefix}{err_msg}")
-            return {"success": False, "message": err_msg, "manual_required": True if is_automated_flow else False}
+            video_files_to_process.append(path_of_item_in_staging_abs)
     elif path_of_item_in_staging_abs.is_dir():
         for root, _, files in os.walk(path_of_item_in_staging_abs):
             for file_name in files:
                 if any(file_name.lower().endswith(ext) for ext in ['.mkv', '.mp4', '.avi', '.mov']):
-                    main_video_file_abs_path_in_staging = Path(root) / file_name
-                    original_filename_of_video = file_name # Utiliser le nom du fichier trouvé
-                    break
-            if main_video_file_abs_path_in_staging: break
-        if not main_video_file_abs_path_in_staging:
-            err_msg = f"Aucun fichier vidéo trouvé dans le dossier '{item_name_in_staging}'."
-            logger.error(f"{log_prefix}{err_msg}")
-            return {"success": False, "message": err_msg, "manual_required": True if is_automated_flow else False}
-    else:
-        err_msg = f"Type d'item non supporté dans le staging: {item_name_in_staging}"
-        logger.error(f"{log_prefix}{err_msg}")
-        return {"success": False, "message": err_msg, "manual_required": True if is_automated_flow else False}
+                    video_files_to_process.append(Path(root) / file_name)
 
-    logger.info(f"{log_prefix}Fichier vidéo principal identifié: {main_video_file_abs_path_in_staging} (nom original: {original_filename_of_video})")
+    if not video_files_to_process:
+        return {"success": False, "message": f"Aucun fichier vidéo trouvé dans '{item_name_in_staging}'."}
 
-    # Récupérer les détails du film pour le chemin racine
-    movie_details_url = f"{radarr_url.rstrip('/')}/api/v3/movie/{movie_id_target}"
-    movie_data, error_movie_data = _make_arr_request('GET', movie_details_url, radarr_api_key)
-    if error_movie_data or not movie_data or not isinstance(movie_data, dict):
-        err_msg = f"Erreur détails film Radarr ID {movie_id_target}: {error_movie_data or 'Pas de données Radarr'}"
-        logger.error(f"{log_prefix}{err_msg}")
-        if torrent_hash_for_status_update and is_automated_flow:
-             torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_mms_radarr_api", err_msg)
-        return {"success": False, "message": err_msg, "manual_required": True if is_automated_flow else False}
+    logger.info(f"{log_prefix}{len(video_files_to_process)} fichier(s) vidéo à déplacer vers '{destination_folder_abs}'.")
 
-    movie_folder_path_from_radarr_api = movie_data.get('path')
-    movie_title = movie_data.get('title', 'Film Inconnu')
-    if not movie_folder_path_from_radarr_api:
-        err_msg = f"Chemin ('path') manquant pour film ID {movie_id_target} ('{movie_title}') dans Radarr."
-        logger.error(f"{log_prefix}{err_msg}")
-        if torrent_hash_for_status_update and is_automated_flow:
-             torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_mms_radarr_config", err_msg)
-        {"success": False, "message": err_msg, "manual_required": True if is_automated_flow else False}
-
-    destination_movie_folder_abs = Path(movie_folder_path_from_radarr_api).resolve()
-    destination_video_file_abs = destination_movie_folder_abs / original_filename_of_video
-
-    logger.info(f"{log_prefix}Déplacement MMS: '{main_video_file_abs_path_in_staging}' vers '{destination_video_file_abs}'")
-    imported_successfully = False
-    try:
-        destination_movie_folder_abs.mkdir(parents=True, exist_ok=True)
-        if main_video_file_abs_path_in_staging.resolve() != destination_video_file_abs.resolve():
-            shutil.move(str(main_video_file_abs_path_in_staging), str(destination_video_file_abs))
-        else:
-            logger.warning(f"{log_prefix}Source et destination identiques: {main_video_file_abs_path_in_staging}")
-        imported_successfully = True
-    except Exception as e_move:
-        logger.error(f"{log_prefix}Erreur move '{original_filename_of_video}': {e_move}. Tentative copie/suppr.")
+    successful_moves = 0
+    for video_file_path in video_files_to_process:
         try:
-            if main_video_file_abs_path_in_staging.parent.exists():
-                shutil.copy2(str(main_video_file_abs_path_in_staging), str(destination_video_file_abs))
-                os.remove(str(main_video_file_abs_path_in_staging))
-                imported_successfully = True
-            else: # Source parent does not exist
-                logger.error(f"{log_prefix}Parent du fichier source {main_video_file_abs_path_in_staging.parent} n'existe pas. Abandon copie/suppr.")
-                # Pas besoin de mettre à jour le map ici, l'erreur sera retournée.
-        except Exception as e_copy:
-            err_msg = f"Échec du déplacement (copie/suppression) du fichier '{original_filename_of_video}': {e_copy}"
-            logger.error(f"{log_prefix}{err_msg}")
-            if torrent_hash_for_status_update and is_automated_flow:
-                 torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_mms_file_move", err_msg)
-            return {"success": False, "message": err_msg, "manual_required": True if is_automated_flow else False}
+            destination_file_path = destination_folder_abs / video_file_path.name
+            destination_folder_abs.mkdir(parents=True, exist_ok=True)
+            logger.info(f"{log_prefix}Déplacement: '{video_file_path}' -> '{destination_file_path}'")
+            shutil.move(str(video_file_path), str(destination_file_path))
+            successful_moves += 1
+        except Exception as e:
+            logger.error(f"{log_prefix}Échec du déplacement de '{video_file_path.name}': {e}")
 
-    if not imported_successfully: # Si on arrive ici, c'est que le fallback a échoué ou n'a pas été tenté
-        err_msg = f"Échec inattendu du déplacement de '{original_filename_of_video}' (après tentatives)."
-        logger.error(f"{log_prefix}{err_msg}")
-        if torrent_hash_for_status_update and is_automated_flow: # Mettre à jour le map seulement si le hash est fourni
-             torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "error_mms_file_move_final", err_msg)
-        return {"success": False, "message": err_msg, "manual_required": True if is_automated_flow else False}
+    if successful_moves == 0:
+        return {"success": False, "message": "Aucun fichier n'a pu être déplacé."}
 
-    # Nettoyage du dossier de release original dans le staging
+    # --- Nettoyage ---
+    # Le dossier à nettoyer est toujours le dossier de premier niveau dans le staging
     path_to_cleanup_abs = (Path(staging_dir_str) / original_release_folder_name_in_staging).resolve()
-    if path_to_cleanup_abs.exists() and path_to_cleanup_abs.is_dir():
-        logger.info(f"{log_prefix}Nettoyage du dossier de staging: {path_to_cleanup_abs}")
-        time.sleep(1)
-        try:
-            cleanup_staging_subfolder_recursively(str(path_to_cleanup_abs), staging_dir_str, orphan_exts)
-        except Exception as e_cleanup:
-            logger.error(f"{log_prefix}Erreur lors du nettoyage de {path_to_cleanup_abs}: {e_cleanup}")
+    logger.info(f"{log_prefix}Déplacement terminé. Nettoyage de '{path_to_cleanup_abs}'")
+    if path_to_cleanup_abs.exists():
+        if path_to_cleanup_abs.is_dir():
+             cleanup_staging_subfolder_recursively(str(path_to_cleanup_abs), staging_dir_str, orphan_exts)
+        else: # Si c'était un fichier seul, il a déjà été déplacé, donc il n'existe plus.
+             logger.info(f"{log_prefix}L'item était un fichier unique, déjà déplacé. Pas de nettoyage de dossier.")
     else:
-         logger.warning(f"{log_prefix}Dossier à nettoyer '{path_to_cleanup_abs}' (depuis '{original_release_folder_name_in_staging}') non trouvé ou n'est pas un dossier.")
+        logger.warning(f"{log_prefix}Le dossier de cleanup '{path_to_cleanup_abs}' n'existe plus (probablement un fichier seul qui a été déplacé).")
 
-    # Rescan Radarr
-    rescan_payload = {"name": "RescanMovie", "movieId": int(movie_id_target)} # movieId doit être un int
-    command_url = f"{radarr_url.rstrip('/')}/api/v3/command"
-    _, error_rescan = _make_arr_request('POST', command_url, radarr_api_key, json_data=rescan_payload)
 
-    final_message = f"Fichier pour '{movie_title}' déplacé par MMS."
-    if error_rescan:
-        final_message += f" Échec du Rescan Radarr: {error_rescan}."
-        logger.warning(f"{log_prefix}Rescan Radarr échoué: {error_rescan}")
-    else:
-        final_message += " Rescan Radarr initié."
-        logger.info(f"{log_prefix}Rescan Radarr initié pour movie ID {movie_id_target}.")
-
-    if torrent_hash_for_status_update and is_automated_flow:
-        torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "imported_by_mms", final_message)
-        if current_app.config.get('AUTO_REMOVE_SUCCESSFUL_FROM_MAP', True):
-            if torrent_map_manager.remove_torrent_from_map(torrent_hash_for_status_update):
-                logger.info(f"{log_prefix} Association pour hash {torrent_hash_for_status_update} supprimée après import MMS réussi.")
-
-    return {"success": True, "message": final_message, "manual_required": False}
+    # --- Rescan Radarr ---
+    rescan_payload = {"name": "RescanMovie", "movieId": int(movie_id_target)}
+    _, error_rescan = _make_arr_request('POST', f"{radarr_url.rstrip('/')}/api/v3/command", radarr_api_key, json_data=rescan_payload)
+    
+    final_message = f"{successful_moves} fichier(s) pour '{movie_title}' déplacé(s). "
+    final_message += "Rescan Radarr initié." if not error_rescan else f"Échec Rescan Radarr: {error_rescan}"
+    
+    return {"success": True, "message": final_message}
 
 # FIN DES NOUVELLES FONCTIONS HELPER REFACTORISÉES
 # ==============================================================================

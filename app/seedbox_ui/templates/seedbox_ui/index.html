@@ -71,15 +71,22 @@
          {% if not node.name.endswith("(Erreur de lecture)") %}
              {% if level == 0 %}
                 {% if can_scan_sonarr %}
-                <button class="btn btn-sm btn-outline-primary mb-1"
-                        onclick='openSonarrSearchModal({{ node.path_for_actions | tojson | safe }}, "{{ 'directory' if node.is_dir else 'file' }}")'
+                <button class="btn btn-sm btn-outline-primary mb-1 open-map-modal-btn"
+                        data-bs-toggle="modal"
+                        data-bs-target="#sonarrSearchModal"
+                        data-item-path="{{ node.path_for_actions }}"
+                        data-item-type="{{ 'directory' if node.is_dir else 'file' }}"
+                        data-app-type="sonarr"
                         title="Rechercher et mapper manuellement avec Sonarr">
                     <i class="fas fa-search"></i> <span class="d-none d-md-inline">Mapper Sonarr</span>
                 </button>
-                {% endif %}
-                {% if can_scan_radarr %}
-                <button class="btn btn-sm btn-outline-warning text-dark mb-1"
-                        onclick='openRadarrSearchModal({{ node.path_for_actions | tojson | safe }}, "{{ 'directory' if node.is_dir else 'file' }}")'
+
+                <button class="btn btn-sm btn-outline-warning text-dark mb-1 open-map-modal-btn"
+                        data-bs-toggle="modal"
+                        data-bs-target="#radarrSearchModal"
+                        data-item-path="{{ node.path_for_actions }}"
+                        data-item-type="{{ 'directory' if node.is_dir else 'file' }}"
+                        data-app-type="radarr"
                         title="Rechercher et mapper manuellement avec Radarr">
                     <i class="fas fa-search"></i> <span class="d-none d-md-inline">Mapper Radarr</span>
                 </button>
