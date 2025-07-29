@@ -11,16 +11,35 @@ function escapeJsString(str) {
     if (str === null || typeof str === 'undefined') { return ''; }
     return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t').replace(/</g, '\\u003C').replace(/>/g, '\\u003E').replace(/&/g, '\\u0026');
 }
+// C'est votre fonction originale, mais rendue plus fiable
 
 function getCleanedSearchTerm(itemName) {
     const baseNameForSearch = itemName.split(/[\\/]/).pop();
     let cleanedName = baseNameForSearch;
+    
+    // On retire les tags un par un. C'est plus sûr.
     cleanedName = cleanedName.replace(/\.(mkv|mp4|avi|srt|nfo|jpg|png)$/i, '');
-    cleanedName = cleanedName.replace(/[\.\[\(]?\d{3,4}p[\.\]\)]?/i, '');
-    cleanedName = cleanedName.replace(/[\.\[\(]?(hdtv|web-dl|webrip|bluray|x264|x265|h264|h265|hevc|ac3|dts|multi|vf|vof|french|truefrench|fanart|pack)[\.\]\)]?/gi, '');
-    cleanedName = cleanedName.replace(/[\.\[\(]?S\d{1,3}(E\d{1,3}(-E?\d{1,3}(\s?-\s?E?\d{1,3})?)?)?[\.\]\)]?/i, '');
-    cleanedName = cleanedName.replace(/[\.\[\(]?\d{4}[\.\]\)]?$/, '');
+    cleanedName = cleanedName.replace(/[\.\[\(]?\d{3,4}p[\.\]\)]?/ig, ' ');
+    // --- LA CORRECTION EST SUR CETTE LIGNE ---
+    // On remplace les tags par un espace pour éviter que les mots se collent.
+    cleanedName = cleanedName.replace(/[\._\-\(\[]?(hdtv|web-dl|webrip|bluray|x264|x265|h264|h265|hevc|ac3|dts|multi|vfq|vff|vof|french|truefrench|fanart|pack|aac|720p|1080p|2160p)[\._\-\)\]]?/ig, ' ');
+    cleanedName = cleanedName.replace(/[\.\[\(]?S\d{1,3}(E\d{1,3}(-E?\d{1,3}(\s?-\s?E?\d{1,3})?)?)?[\.\]\)]?/ig, ' ');
+    cleanedName = cleanedName.replace(/[\.\[\(]?\d{4}[\.\]\)]?/g, ' '); // Nettoie aussi les années
+    
+    // Tentative de suppression du nom de la team/release, souvent après le dernier '-'
+    const lastDashIndex = cleanedName.lastIndexOf('-');
+    if (lastDashIndex > cleanedName.length / 2) { // Heuristique : le nom de la team est plutôt vers la fin
+        const potentialTeamName = cleanedName.substring(lastDashIndex + 1).trim();
+        // Si la "team" ne contient pas de chiffres (peu probable pour un titre) et est courte, on la supprime.
+        if (!/\d/.test(potentialTeamName) && potentialTeamName.length < 10) {
+             cleanedName = cleanedName.substring(0, lastDashIndex);
+        }
+    }
+
+    // Nettoyage final des séparateurs et des espaces multiples
     cleanedName = cleanedName.replace(/[\._-]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+    // Si après tout ça, le nom est vide, on retourne un fallback simple.
     return cleanedName || baseNameForSearch.split('.')[0];
 }
 
@@ -87,6 +106,10 @@ function openSonarrSearchModal(itemPathForAction, itemType) {
     document.getElementById('sonarrOriginalItemType').value = itemType;
     document.getElementById('sonarrItemType').textContent = itemType === 'directory' ? 'Dossier (Staging)' : 'Fichier (Staging)';
     document.getElementById('sonarrSearchQuery').value = getCleanedSearchTerm(itemPathForAction);
+        
+    // --- LIGNE AJOUTÉE ---
+    executeSonarrSearch(); // Pour lancer la recherche automatiquement après avoir rempli le champ
+
     document.getElementById('sonarrSearchResults').innerHTML = '';
     document.getElementById('sonarrSearchModalFeedbackZone').innerHTML = ''; // Clear previous feedback
     document.getElementById('sonarrSelectedSeriesId').value = '';
@@ -102,11 +125,12 @@ function openSonarrSearchModal(itemPathForAction, itemType) {
         modalMapButton.className = 'btn btn-primary';
 
         modalMapButton.onclick = function() {
+            // ... (le reste de votre fonction onclick reste identique)
             const seriesTitle = document.getElementById('sonarrSelectedSeriesTitle').innerText.replace('Série sélectionnée : ', '');
             const userForcedSeason = document.getElementById('sonarrManualSeasonInput').value;
             const isNewMedia = sonarrModalElement.getAttribute('data-is-new-media') === 'true';
             const mediaIdForPayload = sonarrModalElement.getAttribute('data-selected-media-id');
-            const mediaTitleForAdd = sonarrModalElement.getAttribute('data-selected-media-title'); // Used by promptAndAddArrItemForLocalStaging
+            const mediaTitleForAdd = sonarrModalElement.getAttribute('data-selected-media-title');
             const currentAction = sonarrModalElement.getAttribute('data-current-action');
 
             if (!mediaIdForPayload) {
@@ -116,14 +140,9 @@ function openSonarrSearchModal(itemPathForAction, itemType) {
 
             if (currentAction === 'mapIndividualStaging' && isNewMedia) {
                 const mediaYear = sonarrModalElement.getAttribute('data-selected-media-year');
-                const searchResultData = {
-                    id: mediaIdForPayload, // This is tvdbId for new media
-                    title: mediaTitleForAdd,
-                    year: parseInt(mediaYear) || 0 // Assurer que c'est un nombre
-                };
+                const searchResultData = { id: mediaIdForPayload, title: mediaTitleForAdd, year: parseInt(mediaYear) || 0 };
                 promptAndAddArrItemForLocalStaging(searchResultData, 'sonarr', sonarrModalElement);
             } else {
-                // Fallback to existing logic for existing media or other actions
                 triggerSonarrManualImportWithSeason(mediaIdForPayload, seriesTitle, userForcedSeason);
             }
         };
@@ -137,20 +156,23 @@ function openRadarrSearchModal(itemPathForAction, itemType) {
     const radarrModalElement = document.getElementById('radarrSearchModal');
     if (!radarrModalElement) { console.error("Modal Radarr (ID: radarrSearchModal) non trouvé!"); return; }
 
-    radarrModalElement.setAttribute('data-current-action', 'mapIndividualStaging'); // AJOUT DE CETTE LIGNE
-    radarrModalElement.removeAttribute('data-is-new-media'); // Assurer la cohérence avec Sonarr
-    radarrModalElement.removeAttribute('data-selected-media-id'); // Assurer la cohérence
-    radarrModalElement.removeAttribute('data-selected-media-title'); // Assurer la cohérence
-    radarrModalElement.removeAttribute('data-selected-media-year'); // Assurer la cohérence
-    radarrModalElement.removeAttribute('data-problem-torrent-hash'); // Assurer la cohérence
+    radarrModalElement.setAttribute('data-current-action', 'mapIndividualStaging');
+    radarrModalElement.removeAttribute('data-is-new-media');
+    radarrModalElement.removeAttribute('data-selected-media-id');
+    radarrModalElement.removeAttribute('data-selected-media-title');
+    radarrModalElement.removeAttribute('data-selected-media-year');
+    radarrModalElement.removeAttribute('data-problem-torrent-hash');
 
     document.getElementById('radarrItemToMap').textContent = itemNameForDisplay;
     document.getElementById('radarrOriginalItemName').value = itemPathForAction;
     document.getElementById('radarrOriginalItemType').value = itemType;
     document.getElementById('radarrItemType').textContent = itemType === 'directory' ? 'Dossier (Staging)' : 'Fichier (Staging)';
     document.getElementById('radarrSearchQuery').value = getCleanedSearchTerm(itemPathForAction);
+
+    // --- LIGNE AJOUTÉE ---
+    executeRadarrSearch(); // Pour lancer la recherche automatiquement après avoir rempli le champ
+
     document.getElementById('radarrSearchResults').innerHTML = '';
-    // Assuming radarrSearchModal also has a feedback zone
     const radarrFeedbackZone = document.getElementById('radarrSearchModalFeedbackZone');
     if (radarrFeedbackZone) radarrFeedbackZone.innerHTML = '';
     document.getElementById('radarrSelectedMovieId').value = '';
@@ -162,14 +184,12 @@ function openRadarrSearchModal(itemPathForAction, itemType) {
         modalMapButton.disabled = true;
         modalMapButton.className = 'btn btn-primary';
         modalMapButton.onclick = function() {
-            const radarrModalElement = document.getElementById('radarrSearchModal'); // Ensure we have the modal element
+            // ... (le reste de votre fonction onclick reste identique)
+            const radarrModalElement = document.getElementById('radarrSearchModal');
             const isNewMedia = radarrModalElement.getAttribute('data-is-new-media') === 'true';
-            const mediaIdForPayload = radarrModalElement.getAttribute('data-selected-media-id'); // This is tmdbId for new media
+            const mediaIdForPayload = radarrModalElement.getAttribute('data-selected-media-id');
             const mediaTitleForAdd = radarrModalElement.getAttribute('data-selected-media-title');
-            let currentAction = radarrModalElement.getAttribute('data-current-action'); // Déclaré une seule fois
-            console.log("radarrModalMapButton onclick - data-is-new-media (attr):", radarrModalElement.getAttribute('data-is-new-media'), "isNewMedia (boolean eval):", isNewMedia, "currentAction:", currentAction); // AJOUT CONSOLE.LOG
-
-            // const currentAction = radarrModalElement.getAttribute('data-current-action'); // Suppression de la re-déclaration
+            let currentAction = radarrModalElement.getAttribute('data-current-action');
 
             if (!mediaIdForPayload) {
                 alert("Veuillez sélectionner un film.");
@@ -178,14 +198,9 @@ function openRadarrSearchModal(itemPathForAction, itemType) {
 
             if (currentAction === 'mapIndividualStaging' && isNewMedia) {
                 const mediaYear = radarrModalElement.getAttribute('data-selected-media-year');
-                const searchResultData = {
-                    id: mediaIdForPayload, // This is tmdbId for new media
-                    title: mediaTitleForAdd,
-                    year: parseInt(mediaYear) || 0 // Assurer que c'est un nombre
-                };
+                const searchResultData = { id: mediaIdForPayload, title: mediaTitleForAdd, year: parseInt(mediaYear) || 0 };
                 promptAndAddArrItemForLocalStaging(searchResultData, 'radarr', radarrModalElement);
             } else {
-                // Fallback to existing logic for existing media or other actions
                 triggerRadarrManualImport(mediaIdForPayload, mediaTitleForAdd);
             }
         };
@@ -514,7 +529,8 @@ async function triggerSonarrManualImportWithSeason(mediaIdFromSelection, seriesT
     if (modalMapButton) modalMapButton.disabled = true;
 
     try {
-        const response = await fetch(window.appUrls.triggerSonarrImport, {
+        const actionUrl = document.getElementById('sonarrModalMapButton').dataset.actionUrl;
+        const response = await fetch(actionUrl, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
         });
         const result = await response.json();
@@ -557,7 +573,8 @@ async function triggerRadarrManualImport(radarrMovieId, movieTitleForDisplay) {
     if(modalMapButton) modalMapButton.disabled = true;
 
     try {
-        const response = await fetch(window.appUrls.triggerRadarrImport, {
+        const actionUrl = document.getElementById('radarrModalMapButton').dataset.actionUrl;
+        const response = await fetch(actionUrl, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
         });
         const result = await response.json();

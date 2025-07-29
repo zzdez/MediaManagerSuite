@@ -966,3 +966,19 @@ def sonarr_update_season_monitoring(series_id, season_number, monitored_status):
     except Exception as e:
         current_app.logger.error(f"Exception lors de la mise à jour du monitoring pour la saison {season_number} de la série {series_id}: {e}", exc_info=True)
         return False
+        
+def get_sonarr_episode_file_ids_for_season(series_id, season_number):
+    """
+    Récupère une liste d'ID de fichiers d'épisodes pour une saison spécifique d'une série.
+    """
+    try:
+        all_episode_files = get_sonarr_episode_files(series_id) or []
+        file_ids_for_season = [
+            file_info['id']
+            for file_info in all_episode_files
+            if file_info.get('seasonNumber') == int(season_number)
+        ]
+        return file_ids_for_season
+    except (TypeError, ValueError) as e:
+        current_app.logger.error(f"Erreur lors du filtrage des fichiers d'épisodes pour la saison {season_number} de la série {series_id}: {e}")
+        return []        

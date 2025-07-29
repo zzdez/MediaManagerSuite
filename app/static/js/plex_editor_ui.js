@@ -336,6 +336,41 @@ $(document).ready(function() {
             // On déclenche l'événement "change" pour chaque épisode pour lancer leurs appels API
             episodeToggles.trigger('change');
         });
+        // --- GESTION DE LA SUPPRESSION D'UNE SAISON ---
+        $(seriesModalElement).on('click', '.delete-season-btn', function() {
+            const btn = $(this);
+            const seasonRow = btn.closest('.season-row');
+            const seasonId = btn.data('season-id'); // C'est le ratingKey de la saison
+            const seasonTitle = btn.data('season-title');
+
+            if (!confirm(`Êtes-vous sûr de vouloir supprimer tous les fichiers de "${seasonTitle}" et la dé-monitorer dans Sonarr ? Cette action est irréversible.`)) {
+                return;
+            }
+
+            btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+            // --- CORRECTION : On utilise la bonne URL et la bonne méthode (DELETE) ---
+            fetch(`/plex/api/season/${seasonId}`, {
+                method: 'DELETE'
+                // Pas besoin de headers ou de body, l'ID est dans l'URL
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    // On grise la ligne et désactive les contrôles
+                    seasonRow.addClass('opacity-50 text-decoration-line-through');
+                    seasonRow.find('input, button').prop('disabled', true);
+                    alert(`La saison "${seasonTitle}" a été traitée avec succès.`);
+                } else {
+                    alert('Erreur: ' + data.message);
+                }
+            })
+            .catch(error => { console.error(error); alert("Erreur de communication."); })
+            .finally(() => {
+                // On change l'icône en succès pour confirmer
+                btn.removeClass('btn-outline-danger').addClass('btn-success').html('<i class="bi bi-check-lg"></i>');
+            });
+        });
 
         // --- GESTION DU TOGGLE PAR ÉPISODE (EFFET IMMÉDIAT) ---
         $(seriesModalElement).on('change', '.episode-monitor-toggle', function() {

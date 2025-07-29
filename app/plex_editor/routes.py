@@ -1734,7 +1734,7 @@ def delete_season_files_and_unmonitor(season_plex_id):
         if not plex_season or plex_season.type != 'season':
             return jsonify({'status': 'error', 'message': "Saison Plex non trouvée ou type incorrect."}), 404
 
-        plex_series = plex_season.parent
+        plex_series = plex_season.show()
         if not plex_series:
             return jsonify({'status': 'error', 'message': "Série parente non trouvée pour cette saison."}), 404
 
@@ -1815,6 +1815,27 @@ def delete_season_files_and_unmonitor(season_plex_id):
             else:
                  current_app.logger.info(f"[SIMULATION] {len(episode_file_ids_to_delete)} fichier(s) de la saison {target_sonarr_season_number} seraient supprimés via Sonarr.")
 
+        # --- NOUVEAU : NETTOYAGE DU DOSSIER DE LA SAISON SI NÉCESSAIRE ---
+        last_deleted_filepath = None
+        if episode_file_ids_to_delete:
+            # On a besoin d'un chemin de fichier pour démarrer le nettoyage
+            # On prend le premier fichier de la liste pour trouver son chemin
+            first_file_details = next((ep for ep in all_episode_files if ep['id'] == episode_file_ids_to_delete[0]), None)
+            if first_file_details:
+                last_deleted_filepath = first_file_details.get('path')
+
+        if last_deleted_filepath and not is_simulating:
+            try:
+                current_app.logger.info("Lancement du nettoyage de dossier après suppression des fichiers de la saison.")
+                # On a déjà 'admin_plex_server', on peut l'utiliser
+                library_sections = admin_plex_server.library.sections()
+                root_paths = {os.path.normpath(loc) for lib in library_sections for loc in lib.locations}
+                guard_paths = {os.path.normpath(os.path.splitdrive(r)[0] + os.sep) if os.path.splitdrive(r)[0] else os.path.normpath(os.sep + r.split(os.sep)[1]) for r in root_paths if r}
+                
+                cleanup_parent_directory_recursively(last_deleted_filepath, list(root_paths), list(guard_paths))
+            except Exception as e_cleanup:
+                current_app.logger.error(f"Erreur pendant le nettoyage du dossier : {e_cleanup}", exc_info=True)
+        # --- FIN DU NOUVEAU BLOC ---
 
         # 4. Déclencher un scan de la bibliothèque Plex
         try:
