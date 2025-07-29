@@ -19,7 +19,7 @@ def process_and_update_mms():
         mms_restart_command = current_app.config.get("MMS_RESTART_COMMAND")
 
         # --- Verifications ---
-        if not mms_env_file_path or not os.path.exists(mms_env_file_path):
+        if not os.path.exists(mms_env_file_path):
             raise FileNotFoundError(f"Chemin invalide pour le .env de MMS : '{mms_env_file_path}'")
         if not ygg_domain:
             raise ValueError("Le domaine YGG_DOMAIN est manquant dans votre fichier .env")
