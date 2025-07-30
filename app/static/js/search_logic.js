@@ -420,7 +420,7 @@ $(document).ready(function() {
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ data: addPayload })
+            body: JSON.stringify(addPayload)
         })
         .then(response => {
             if (!response.ok) {
