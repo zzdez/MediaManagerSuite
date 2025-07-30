@@ -231,55 +231,82 @@ $(document).ready(function() {
         const mediaType = button.data('media-type'); // 'tv' or 'movie'
         const instanceType = mediaType === 'tv' ? 'sonarr' : 'radarr';
         const externalId = button.data('ext-id');
-        const title = button.data('title');
-        const year = button.data('year');
 
         const optionsContainer = modalBody.find('#add-item-options-container');
         const lookupContainer = modalBody.find('#initial-lookup-content');
         const finalButton = modalEl.find('#confirm-add-and-map-btn');
+        const detailsContainer = optionsContainer.find('#new-media-details-container');
 
         // Stocker les données nécessaires pour l'étape finale
         optionsContainer.data('external-id', externalId);
         optionsContainer.data('media-type', mediaType);
 
-        // Transition de l'interface : cacher la recherche, montrer les options d'ajout
+        // Transition de l'interface
         lookupContainer.hide();
         optionsContainer.removeClass('d-none');
         finalButton.removeClass('d-none');
-
-        // Remplir les informations du média à ajouter
-        optionsContainer.find('#add-item-title').text(title);
-        optionsContainer.find('#add-item-year').text(year);
-
-        // Réinitialiser et préparer les champs du formulaire d'ajout
+        detailsContainer.html('<div class="d-flex justify-content-center align-items-center p-3"><div class="spinner-border spinner-border-sm"></div><span class="ms-2">Chargement des détails...</span></div>');
         optionsContainer.find('select').empty().prop('disabled', true).html('<option>Chargement...</option>');
         optionsContainer.find('#add-item-error-container').empty();
         optionsContainer.find('#language-profile-select').parent().toggle(instanceType === 'sonarr');
 
-        // Récupérer les options (dossiers, profils) depuis le backend
-        let rootFolderUrl, qualityProfileUrl;
+        // --- Début des appels API parallèles ---
 
-        // CORRECTION : Utiliser les bonnes URL avec le préfixe du blueprint pour chaque instance
+        // 1. Appel pour les détails enrichis (poster, synopsis...)
+        const enrichPromise = fetch('/search/api/enrich/details', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ media_id: externalId, media_type: mediaType, is_new: true })
+        }).then(res => res.ok ? res.json() : Promise.reject('enrichDetails'));
+
+        // 2. Appels pour les options d'ajout (dossiers, profils...)
+        let rootFolderUrl, qualityProfileUrl;
         if (instanceType === 'radarr') {
             rootFolderUrl = '/seedbox/api/get-radarr-rootfolders';
-            qualityProfileUrl = '/seedbox/api/get-radarr-qualityprofiles'; // sans tiret
-        } else { // sonarr
+            qualityProfileUrl = '/seedbox/api/get-radarr-qualityprofiles';
+        } else {
             rootFolderUrl = '/seedbox/api/get-sonarr-rootfolders';
             qualityProfileUrl = '/seedbox/api/get-sonarr-quality-profiles';
         }
 
-        const apiCalls = [
+        const optionApiCalls = [
             fetch(rootFolderUrl).then(res => res.ok ? res.json() : Promise.reject('rootFolders')),
             fetch(qualityProfileUrl).then(res => res.ok ? res.json() : Promise.reject('qualityProfiles'))
         ];
 
         if (instanceType === 'sonarr') {
             const languageProfileUrl = '/seedbox/api/get-sonarr-language-profiles';
-            apiCalls.push(fetch(languageProfileUrl).then(res => res.ok ? res.json() : Promise.reject('languageProfiles')));
+            optionApiCalls.push(fetch(languageProfileUrl).then(res => res.ok ? res.json() : Promise.reject('languageProfiles')));
         }
+        const optionsPromise = Promise.all(optionApiCalls);
 
-        Promise.all(apiCalls).then(([rootFolders, qualityProfiles, languageProfiles]) => {
-            // Peupler le menu des dossiers racines
+        // --- Traitement des résultats des appels ---
+
+        Promise.all([enrichPromise, optionsPromise]).then(([details, options]) => {
+            // Traiter les détails enrichis
+            if (details.error) {
+                detailsContainer.html(`<div class="text-danger">${details.error}</div>`);
+            } else {
+                const enrichedHtml = `
+                    <div class="card bg-dark text-white">
+                        <div class="row g-0">
+                            <div class="col-md-3">
+                                <img src="${details.poster}" class="img-fluid rounded-start" alt="Poster">
+                            </div>
+                            <div class="col-md-9">
+                                <div class="card-body">
+                                    <h5 class="card-title">${details.title} (${details.year})</h5>
+                                    <p class="card-text small"><strong>Statut:</strong> ${details.status}</p>
+                                    <p class="card-text small" style="max-height: 100px; overflow-y: auto;">${details.overview || 'Synopsis non disponible.'}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>`;
+                detailsContainer.html(enrichedHtml);
+            }
+
+            // Traiter les options d'ajout
+            const [rootFolders, qualityProfiles, languageProfiles] = options;
             const rootFolderSelect = $('#root-folder-select').empty();
             if (rootFolders && rootFolders.length > 0) {
                 rootFolders.forEach(folder => rootFolderSelect.append(new Option(folder.path, folder.id)));
@@ -288,7 +315,6 @@ $(document).ready(function() {
                 rootFolderSelect.html('<option>Aucun dossier trouvé</option>');
             }
 
-            // Peupler le menu des profils de qualité
             const qualityProfileSelect = $('#quality-profile-select').empty();
             if (qualityProfiles && qualityProfiles.length > 0) {
                 qualityProfiles.forEach(profile => qualityProfileSelect.append(new Option(profile.name, profile.id)));
@@ -297,7 +323,6 @@ $(document).ready(function() {
                 qualityProfileSelect.html('<option>Aucun profil trouvé</option>');
             }
 
-            // Peupler le menu des profils de langue (Sonarr uniquement)
             if (languageProfiles) {
                 const languageProfileSelect = $('#language-profile-select').empty();
                 if (languageProfiles.length > 0) {
@@ -308,8 +333,8 @@ $(document).ready(function() {
                 }
             }
         }).catch(error => {
-            console.error("Erreur lors de la récupération des options d'ajout:", error);
-            optionsContainer.find('#add-item-error-container').text("Une erreur critique est survenue lors de la récupération des options. Veuillez vérifier les logs.");
+            console.error("Erreur lors de la récupération des données pour l'ajout:", error);
+            optionsContainer.find('#add-item-error-container').text("Une erreur critique est survenue. Veuillez vérifier les logs.");
         });
     });
 
