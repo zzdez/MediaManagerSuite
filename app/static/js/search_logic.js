@@ -298,6 +298,7 @@ $(document).ready(function() {
                                     <h5 class="card-title">${details.title} (${details.year})</h5>
                                     <p class="card-text small"><strong>Statut:</strong> ${details.status}</p>
                                     <p class="card-text small" style="max-height: 100px; overflow-y: auto;">${details.overview || 'Synopsis non disponible.'}</p>
+                                <button class="btn btn-sm btn-secondary back-to-lookup-btn mt-2">Retour à la liste</button>
                                 </div>
                             </div>
                         </div>
@@ -338,7 +339,49 @@ $(document).ready(function() {
         });
     });
 
-    // ### CORRECTION : L'écouteur est maintenant attaché à 'body', comme les autres ###
+    // ### NOUVEAU BLOC : GESTIONNAIRE POUR LE BOUTON "RETOUR À LA LISTE" ###
+    $('body').on('click', '#sonarrRadarrSearchModal .back-to-lookup-btn', function() {
+        const releaseDetails = modalEl.data('release-details');
+        if (!releaseDetails) {
+            console.error("Impossible de revenir en arrière : les détails de la release sont introuvables.");
+            return;
+        }
+
+        // On réutilise la logique de la fonction 'download-and-map-btn' pour relancer le lookup
+        const releaseTitle = releaseDetails.title;
+        const mediaType = $('input[name="search_type"]:checked').val() === 'sonarr' ? 'tv' : 'movie';
+
+        // --- Préparation de la modale pour la vue de recherche ---
+        modalBody.find('#add-item-options-container').addClass('d-none');
+        modalEl.find('#confirm-add-and-map-btn').addClass('d-none');
+        const lookupContent = modalBody.find('#initial-lookup-content').removeClass('d-none').show();
+        lookupContent.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div><p class="mt-2">Retour à la liste...</p></div>');
+
+        fetch('/search/api/search/lookup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ term: releaseTitle, media_type: mediaType })
+        })
+        .then(response => response.json())
+        .then(data => {
+            const idPlaceholder = mediaType === 'tv' ? 'ID TVDB...' : 'ID TMDb...';
+            const modalHtml = `
+                <div data-media-type="${mediaType}">
+                    <p class="text-muted small">Le meilleur résultat est surligné. Si ce n'est pas le bon, utilisez la recherche manuelle.</p>
+                    <h6>Recherche manuelle par Titre</h6>
+                    <div class="input-group mb-2"><input type="text" id="manual-search-input" class="form-control" value="${data.cleaned_query}"></div>
+                    <div class="text-center text-muted my-2 small">OU</div>
+                    <h6>Recherche manuelle par ID</h6>
+                    <div class="input-group mb-3"><input type="number" id="manual-id-input" class="form-control" placeholder="${idPlaceholder}"></div>
+                    <button id="unified-search-button" class="btn btn-primary w-100 mb-3">Rechercher manuellement</button>
+                    <hr>
+                    <div id="lookup-results-container"></div>
+                </div>`;
+            lookupContent.html(modalHtml);
+            displayResults(data.results, mediaType);
+        });
+    });
+
     $('body').on('click', '#sonarrRadarrSearchModal #unified-search-button', function() {
         const button = $(this);
         const mediaType = button.closest('[data-media-type]').data('media-type');
@@ -470,7 +513,8 @@ $(document).ready(function() {
                                 <h5 class="card-title">${details.title} (${details.year})</h5>
                                 <p class="card-text small"><strong>Statut:</strong> ${details.status}</p>
                                 <p class="card-text small" style="max-height: 150px; overflow-y: auto;">${details.overview || 'Synopsis non disponible.'}</p>
-                                <button class="btn btn-sm btn-primary confirm-mapping-btn" data-media-id="${details.id}">Choisir ce média</button>
+                                <button class="btn btn-sm btn-primary confirm-mapping-btn me-2" data-media-id="${details.id}">Choisir ce média</button>
+                                <button class="btn btn-sm btn-secondary back-to-lookup-btn">Retour à la liste</button>
                             </div>
                         </div>
                     </div>
