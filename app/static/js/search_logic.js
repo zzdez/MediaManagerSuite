@@ -414,7 +414,9 @@ $(document).ready(function() {
         // 2. Appeler l'API pour ajouter le média et récupérer son ID interne
         fetch('/seedbox/api/add-arr-item-and-get-id', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json'
+            },
             body: JSON.stringify(addPayload)
         })
         .then(response => {
