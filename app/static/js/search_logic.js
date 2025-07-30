@@ -231,6 +231,7 @@ $(document).ready(function() {
         const mediaType = button.data('media-type'); // 'tv' or 'movie'
         const instanceType = mediaType === 'tv' ? 'sonarr' : 'radarr';
         const externalId = button.data('ext-id');
+        const title = button.data('title'); // Récupérer le titre
 
         const optionsContainer = modalBody.find('#add-item-options-container');
         const lookupContainer = modalBody.find('#initial-lookup-content');
@@ -240,6 +241,7 @@ $(document).ready(function() {
         // Stocker les données nécessaires pour l'étape finale
         optionsContainer.data('external-id', externalId);
         optionsContainer.data('media-type', mediaType);
+        optionsContainer.data('title', title); // Stocker le titre
 
         // Transition de l'interface
         lookupContainer.hide();
@@ -402,19 +404,22 @@ $(document).ready(function() {
         const instanceType = mediaType === 'tv' ? 'sonarr' : 'radarr';
 
         const addPayload = {
-            instanceType: instanceType,
-            externalId: optionsContainer.data('external-id'),
-            rootFolder: $('#root-folder-select').val(),
-            qualityProfileId: $('#quality-profile-select').val(),
+            app_type: instanceType,
+            external_id: optionsContainer.data('external-id'),
+            title: optionsContainer.data('title'),
+            root_folder_path: $('#root-folder-select').find('option:selected').text(),
+            quality_profile_id: $('#quality-profile-select').val(),
             searchForMovie: $('#search-on-add-check').is(':checked')
         };
 
         console.log("Payload d'ajout:", addPayload);
 
         // 2. Appeler l'API pour ajouter le média et récupérer son ID interne
-        fetch('/api/add-arr-item-and-get-id', {
+        fetch('/seedbox/api/add-arr-item-and-get-id', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json'
+            },
             body: JSON.stringify(addPayload)
         })
         .then(response => {
