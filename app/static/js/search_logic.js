@@ -263,22 +263,16 @@ $(document).ready(function() {
         let rootFolderUrl, qualityProfileUrl;
         if (instanceType === 'radarr') {
             rootFolderUrl = '/seedbox/api/get-radarr-rootfolders';
-            qualityProfileUrl = '/seedbox/api/get-radarr-qualityprofiles'; // sans tiret
-        } else { // sonarr
+            qualityProfileUrl = '/seedbox/api/get-radarr-qualityprofiles';
+        } else {
             rootFolderUrl = '/seedbox/api/get-sonarr-rootfolders';
-            qualityProfileUrl = '/seedbox/api/get-sonarr-qualityprofiles'; // sans tiret
+            qualityProfileUrl = '/seedbox/api/get-sonarr-qualityprofiles';
         }
 
-        const optionApiCalls = [
+        const optionsPromise = Promise.all([
             fetch(rootFolderUrl).then(res => res.ok ? res.json() : Promise.reject('rootFolders')),
             fetch(qualityProfileUrl).then(res => res.ok ? res.json() : Promise.reject('qualityProfiles'))
-        ];
-
-        if (instanceType === 'sonarr') {
-            const languageProfileUrl = '/seedbox/api/get-sonarr-language-profiles';
-            optionApiCalls.push(fetch(languageProfileUrl).then(res => res.ok ? res.json() : Promise.reject('languageProfiles')));
-        }
-        const optionsPromise = Promise.all(optionApiCalls);
+        ]);
 
         // --- Traitement des résultats des appels ---
 
@@ -307,7 +301,7 @@ $(document).ready(function() {
             }
 
             // Traiter les options d'ajout
-            const [rootFolders, qualityProfiles, languageProfiles] = options;
+            const [rootFolders, qualityProfiles] = options;
             const rootFolderSelect = $('#root-folder-select').empty();
             if (rootFolders && rootFolders.length > 0) {
                 rootFolders.forEach(folder => rootFolderSelect.append(new Option(folder.path, folder.id)));
@@ -322,16 +316,6 @@ $(document).ready(function() {
                 qualityProfileSelect.prop('disabled', false);
             } else {
                 qualityProfileSelect.html('<option>Aucun profil trouvé</option>');
-            }
-
-            if (languageProfiles) {
-                const languageProfileSelect = $('#language-profile-select').empty();
-                if (languageProfiles.length > 0) {
-                    languageProfiles.forEach(profile => languageProfileSelect.append(new Option(profile.name, profile.id)));
-                    languageProfileSelect.prop('disabled', false);
-                } else {
-                    languageProfileSelect.html('<option>Aucun profil trouvé</option>');
-                }
             }
         }).catch(error => {
             console.error("Erreur lors de la récupération des données pour l'ajout:", error);
@@ -422,7 +406,6 @@ $(document).ready(function() {
             externalId: optionsContainer.data('external-id'),
             rootFolder: $('#root-folder-select').val(),
             qualityProfileId: $('#quality-profile-select').val(),
-            languageProfileId: (instanceType === 'sonarr') ? $('#language-profile-select').val() : null,
             searchForMovie: $('#search-on-add-check').is(':checked')
         };
 
