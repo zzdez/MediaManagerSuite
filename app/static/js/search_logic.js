@@ -257,8 +257,16 @@ $(document).ready(function() {
         optionsContainer.find('#language-profile-select').parent().toggle(instanceType === 'sonarr');
 
         // Récupérer les options (dossiers, profils) depuis le backend
-        const rootFolderUrl = '/api/get-' + instanceType + '-rootfolders';
-        const qualityProfileUrl = '/api/get-' + instanceType + '-quality-profiles';
+        let rootFolderUrl, qualityProfileUrl;
+
+        // CORRECTION : Utiliser les bonnes URL avec le préfixe du blueprint pour chaque instance
+        if (instanceType === 'radarr') {
+            rootFolderUrl = '/seedbox/api/get-radarr-rootfolders';
+            qualityProfileUrl = '/seedbox/api/get-radarr-qualityprofiles'; // sans tiret
+        } else { // sonarr
+            rootFolderUrl = '/seedbox/api/get-sonarr-rootfolders';
+            qualityProfileUrl = '/seedbox/api/get-sonarr-quality-profiles';
+        }
 
         const apiCalls = [
             fetch(rootFolderUrl).then(res => res.ok ? res.json() : Promise.reject('rootFolders')),
@@ -266,7 +274,7 @@ $(document).ready(function() {
         ];
 
         if (instanceType === 'sonarr') {
-            const languageProfileUrl = '/api/get-sonarr-language-profiles';
+            const languageProfileUrl = '/seedbox/api/get-sonarr-language-profiles';
             apiCalls.push(fetch(languageProfileUrl).then(res => res.ok ? res.json() : Promise.reject('languageProfiles')));
         }
 
