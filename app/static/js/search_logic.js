@@ -263,10 +263,10 @@ $(document).ready(function() {
         let rootFolderUrl, qualityProfileUrl;
         if (instanceType === 'radarr') {
             rootFolderUrl = '/seedbox/api/get-radarr-rootfolders';
-            qualityProfileUrl = '/seedbox/api/get-radarr-qualityprofiles';
-        } else {
+            qualityProfileUrl = '/seedbox/api/get-radarr-qualityprofiles'; // sans tiret
+        } else { // sonarr
             rootFolderUrl = '/seedbox/api/get-sonarr-rootfolders';
-            qualityProfileUrl = '/seedbox/api/get-sonarr-quality-profiles';
+            qualityProfileUrl = '/seedbox/api/get-sonarr-qualityprofiles'; // sans tiret
         }
 
         const optionApiCalls = [
