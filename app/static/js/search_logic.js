@@ -404,11 +404,11 @@ $(document).ready(function() {
         const instanceType = mediaType === 'tv' ? 'sonarr' : 'radarr';
 
         const addPayload = {
-            instanceType: instanceType,
-            externalId: optionsContainer.data('external-id'),
-            title: optionsContainer.data('title'), // Ajouter le titre au payload
-            rootFolder: $('#root-folder-select').val(),
-            qualityProfileId: $('#quality-profile-select').val(),
+            app_type: instanceType,
+            external_id: optionsContainer.data('external-id'),
+            title: optionsContainer.data('title'),
+            root_folder_path: $('#root-folder-select').val(),
+            quality_profile_id: $('#quality-profile-select').val(),
             searchForMovie: $('#search-on-add-check').is(':checked')
         };
 
