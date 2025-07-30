@@ -231,6 +231,7 @@ $(document).ready(function() {
         const mediaType = button.data('media-type'); // 'tv' or 'movie'
         const instanceType = mediaType === 'tv' ? 'sonarr' : 'radarr';
         const externalId = button.data('ext-id');
+        const title = button.data('title'); // Récupérer le titre
 
         const optionsContainer = modalBody.find('#add-item-options-container');
         const lookupContainer = modalBody.find('#initial-lookup-content');
@@ -240,6 +241,7 @@ $(document).ready(function() {
         // Stocker les données nécessaires pour l'étape finale
         optionsContainer.data('external-id', externalId);
         optionsContainer.data('media-type', mediaType);
+        optionsContainer.data('title', title); // Stocker le titre
 
         // Transition de l'interface
         lookupContainer.hide();
@@ -404,6 +406,7 @@ $(document).ready(function() {
         const addPayload = {
             instanceType: instanceType,
             externalId: optionsContainer.data('external-id'),
+            title: optionsContainer.data('title'), // Ajouter le titre au payload
             rootFolder: $('#root-folder-select').val(),
             qualityProfileId: $('#quality-profile-select').val(),
             searchForMovie: $('#search-on-add-check').is(':checked')
