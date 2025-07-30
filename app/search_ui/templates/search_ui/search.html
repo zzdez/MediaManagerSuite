@@ -145,16 +145,43 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <!-- Ce contenu sera remplacé dynamiquement par search_logic.js -->
-                    <div class="text-center p-4">
-                        <div class="spinner-border text-primary" role="status">
-                            <span class="visually-hidden">Loading...</span>
+                    <!-- ### Zone pour les options d'ajout d'un nouveau média (cachée par défaut) ### -->
+                    <div id="add-item-options-container" class="d-none">
+                        <!-- Ce conteneur recevra la carte de détails enrichis (poster, synopsis...) -->
+                        <div id="new-media-details-container" class="mb-3"></div>
+
+                        <h5 class="mb-3">Options d'ajout</h5>
+
+                        <!-- Le contenu (menus déroulants, etc.) sera injecté ici par JS -->
+                        <div class="mb-3">
+                            <label for="root-folder-select" class="form-label">Dossier Racine</label>
+                            <select id="root-folder-select" class="form-select"></select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="quality-profile-select" class="form-label">Profil de Qualité</label>
+                            <select id="quality-profile-select" class="form-select"></select>
+                        </div>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="search-on-add-check" checked>
+                            <label class="form-check-label" for="search-on-add-check">
+                                Lancer la recherche du média après l'ajout
+                            </label>
+                        </div>
+                        <div id="add-item-error-container" class="text-danger small mt-2"></div>
+                    </div>
+
+                    <!-- Ce contenu sera remplacé dynamiquement par search_logic.js lors du lookup initial -->
+                    <div id="initial-lookup-content">
+                        <div class="text-center p-4">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
                         </div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
-                    <!-- Les boutons de confirmation seront ajoutés dynamiquement si nécessaire -->
+                    <button type="button" class="btn btn-primary d-none" id="confirm-add-and-map-btn">Ajouter, Télécharger & Mapper</button>
                 </div>
             </div>
         </div>
