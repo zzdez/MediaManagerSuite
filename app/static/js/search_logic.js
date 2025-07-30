@@ -407,7 +407,7 @@ $(document).ready(function() {
             app_type: instanceType,
             external_id: optionsContainer.data('external-id'),
             title: optionsContainer.data('title'),
-            root_folder_path: $('#root-folder-select').val(),
+            root_folder_path: $('#root-folder-select').find('option:selected').text(),
             quality_profile_id: $('#quality-profile-select').val(),
             searchForMovie: $('#search-on-add-check').is(':checked')
         };
