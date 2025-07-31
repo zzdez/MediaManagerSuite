@@ -574,7 +574,7 @@
             }
 
             // Helper function to load content for maintenance sections
-            function loadMaintenanceContent(buttonId, containerId, loaderId, url) {
+            function loadMaintenanceContent(buttonId, containerId, loaderId, url, appType) {
                 const button = document.getElementById(buttonId);
                 const container = document.getElementById(containerId);
                 const loader = document.getElementById(loaderId);
@@ -587,6 +587,11 @@
                 button.addEventListener('click', function() {
                     loader.style.display = 'block';
                     container.innerHTML = ''; // Clear previous content
+                    if (appType) {
+                        container.dataset.appType = appType; // Store appType for later use
+                    } else {
+                        delete container.dataset.appType;
+                    }
 
                     fetch(url)
                         .then(response => {
@@ -597,6 +602,8 @@
                         })
                         .then(html => {
                             container.innerHTML = html;
+                            // After loading content, ensure the delete button state is updated
+                            updateWorkdirDeleteButtonState();
                         })
                         .catch(error => {
                             console.error('Erreur chargement contenu maintenance:', error);
@@ -617,15 +624,17 @@
             );
             loadMaintenanceContent(
                 'load-sonarr-workdir-btn',
-                'workdir-container', // Both Sonarr and Radarr workdir buttons load into the same container
+                'workdir-container',
                 'workdir-loader',
-                "{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='sonarr_working') }}"
+                "{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='sonarr_working') }}",
+                'sonarr'
             );
             loadMaintenanceContent(
                 'load-radarr-workdir-btn',
-                'workdir-container', // Both Sonarr and Radarr workdir buttons load into the same container
+                'workdir-container',
                 'workdir-loader',
-                "{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='radarr_working') }}"
+                "{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='radarr_working') }}",
+                'radarr'
             );
 
             // Event delegation for dynamically loaded *Arr Queue checkboxes
@@ -643,6 +652,62 @@
                     // Écouteur pour les cases à cocher des dossiers de travail
                     if (event.target.classList.contains('workdir-item-checkbox')) {
                         updateWorkdirDeleteButtonState();
+                    }
+                });
+
+                // --- AJOUTE CE NOUVEL ÉCOUTEUR DE CLIC CI-DESSOUS ---
+                maintenanceContainer.addEventListener('click', function(event) {
+                    if (event.target.id === 'delete-workdir-selection-btn') {
+                        event.preventDefault();
+
+                        const container = document.querySelector('#workdir-container');
+                        if (!container) return;
+
+                        const checkedCheckboxes = container.querySelectorAll('.workdir-item-checkbox:checked');
+                        if (checkedCheckboxes.length === 0) {
+                            alert('Veuillez sélectionner au moins un élément à supprimer.');
+                            return;
+                        }
+
+                        if (!confirm(`Êtes-vous sûr de vouloir supprimer ${checkedCheckboxes.length} élément(s) de la seedbox ? Cette action est irréversible.`)) {
+                            return;
+                        }
+
+                        const appType = container.dataset.appType;
+                        if (!appType) {
+                            alert('Erreur : Type d\'application (Sonarr/Radarr) non trouvé. Suppression annulée.');
+                            return;
+                        }
+
+                        const itemsToDelete = Array.from(checkedCheckboxes).map(cb => {
+                            return {
+                                path: cb.dataset.path,
+                                type: cb.dataset.type
+                            };
+                        });
+
+                        const url = `{{ url_for('seedbox_ui.sftp_delete_items_action') }}`.replace('__DUMMY__', appType);
+
+                        fetch(url, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ items: itemsToDelete, app_type_source: appType + '_working' })
+                        })
+                        .then(response => response.json().then(data => ({ ok: response.ok, data })))
+                        .then(({ ok, data }) => {
+                            if (ok) {
+                                alert(data.message || 'Suppression réussie !');
+                                const reloadButtonId = `#load-${appType}-workdir-btn`;
+                                const reloadButton = document.querySelector(reloadButtonId);
+                                if (reloadButton) reloadButton.click();
+                            } else {
+                                throw new Error(data.error || 'Une erreur est survenue.');
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Erreur lors de la suppression SFTP:', error);
+                            alert(`Erreur: ${error.message}`);
+                        });
                     }
                 });
             }

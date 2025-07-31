@@ -2432,14 +2432,19 @@ def sftp_retrieve_and_process_action():
 @seedbox_ui_bp.route('/sftp-delete-items', methods=['POST'])
 @login_required
 def sftp_delete_items_action():
-    selected_paths_to_delete = request.form.getlist('selected_items_paths') # Ce sont des chemins POSIX complets
-    app_type_source_page = request.form.get('app_type_source', 'sonarr_working') # Pour la redirection
+    data = request.get_json()
+    if not data:
+        return jsonify({"success": False, "error": "Requête invalide, pas de corps JSON."}), 400
 
-    logger.info(f"Demande de suppression SFTP pour les items : {selected_paths_to_delete}")
+    items_to_delete = data.get('items', []) # Liste de dicts {'path': '...', 'type': '...'}
+    app_type_source = data.get('app_type_source') # Pour le logging/contexte
+
+    selected_paths_to_delete = [item['path'] for item in items_to_delete if 'path' in item]
+
+    logger.info(f"Demande de suppression SFTP (JSON) pour les items : {selected_paths_to_delete}. Contexte: {app_type_source}")
 
     if not selected_paths_to_delete:
-        flash("Aucun item sélectionné pour la suppression.", "warning")
-        return redirect(url_for('seedbox_ui.remote_seedbox_view', app_type_target=app_type_source_page))
+        return jsonify({"success": False, "error": "Aucun item sélectionné pour la suppression."}), 400
 
     sftp_host = current_app.config.get('SEEDBOX_SFTP_HOST')
     sftp_port = current_app.config.get('SEEDBOX_SFTP_PORT')
@@ -2447,15 +2452,14 @@ def sftp_delete_items_action():
     sftp_password = current_app.config.get('SEEDBOX_SFTP_PASSWORD')
 
     if not all([sftp_host, sftp_port, sftp_user, sftp_password]):
-        flash("Configuration SFTP manquante.", "danger")
         logger.error("sftp_delete_items_action: Configuration SFTP manquante.")
-        return redirect(url_for('seedbox_ui.remote_seedbox_view', app_type_target=app_type_source_page))
+        return jsonify({"success": False, "error": "Configuration SFTP du serveur incomplète."}), 500
 
     sftp_client = None
     transport = None
     success_count = 0
     failure_count = 0
-    failed_items = []
+    failed_items_details = []
 
     try:
         transport = paramiko.Transport((sftp_host, int(sftp_port)))
@@ -2465,34 +2469,38 @@ def sftp_delete_items_action():
         logger.info(f"SFTP (delete items): Connecté à {sftp_host}.")
 
         for remote_path_posix in selected_paths_to_delete:
-            # Sécurité: Assurer que le chemin est bien dans un des dossiers autorisés (Termines ou Travail)
-            # Cette vérification est importante pour éviter de supprimer n'importe quoi.
-            # Pour l'instant, on fait confiance aux chemins venant du formulaire,
-            # mais une validation plus poussée serait bien (ex: vérifier que ça commence par un des SEEDBOX_..._PATH)
-
             if sftp_delete_recursive(sftp_client, remote_path_posix, logger):
                 success_count += 1
             else:
                 failure_count += 1
-                failed_items.append(Path(remote_path_posix).name)
+                failed_items_details.append({"path": remote_path_posix, "name": Path(remote_path_posix).name})
 
+        message = f"{success_count} item(s) supprimé(s) avec succès de la seedbox."
         if failure_count > 0:
-            flash(f"Suppression SFTP terminée avec {failure_count} échec(s) sur {len(selected_paths_to_delete)} item(s). Items échoués: {', '.join(failed_items)}", "warning")
-        else:
-            flash(f"{success_count} item(s) supprimé(s) avec succès de la seedbox.", "success")
+            message = f"Suppression SFTP terminée avec {failure_count} échec(s) sur {len(selected_paths_to_delete)} item(s)."
+            logger.warning(f"{message} Items échoués: {[item['name'] for item in failed_items_details]}")
+            return jsonify({
+                "success": False, # Succès partiel est un échec pour l'alerte JS
+                "error": message,
+                "details": {
+                    "success_count": success_count,
+                    "failure_count": failure_count,
+                    "failed_items": failed_items_details
+                }
+            }), 207 # Multi-Status
+
+        return jsonify({"success": True, "message": message})
 
     except paramiko.ssh_exception.AuthenticationException as e_auth:
         logger.error(f"SFTP (delete items): Erreur d'authentification: {e_auth}")
-        flash("Erreur d'authentification SFTP. Vérifiez vos identifiants.", "danger")
+        return jsonify({"success": False, "error": "Erreur d'authentification SFTP. Vérifiez vos identifiants."}), 401
     except Exception as e_sftp:
         logger.error(f"SFTP (delete items): Erreur générale SFTP: {e_sftp}", exc_info=True)
-        flash(f"Erreur SFTP lors de la suppression: {e_sftp}", "danger")
+        return jsonify({"success": False, "error": f"Erreur SFTP lors de la suppression: {e_sftp}"}), 500
     finally:
         if sftp_client: sftp_client.close()
         if transport: transport.close()
         logger.debug("SFTP (delete items): Connexion fermée.")
-
-    return redirect(url_for('seedbox_ui.remote_seedbox_view', app_type_target=app_type_source_page))
 # ------------------------------------------------------------------------------
 # FONCTION trigger_sonarr_import
 # ------------------------------------------------------------------------------
