@@ -4025,7 +4025,7 @@ def delete_sonarr_queue_items():
         # Convertir le booléen Python en chaîne 'true'/'false' pour l'API
         params = {
             'removeFromClient': str(remove_from_client).lower(),
-            'blocklist': 'false'
+            'blacklist': 'false'
         }
         logger.debug(f"Appel DELETE Sonarr: {api_endpoint} avec params: {params}")
         response_status, error_msg = _make_arr_request('DELETE', api_endpoint, sonarr_api_key, params=params)
