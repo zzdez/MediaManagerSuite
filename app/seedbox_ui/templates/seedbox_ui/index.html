@@ -630,5 +630,73 @@
 
         });
         // END: Page-specific JavaScript for index.html
+            // AJOUTE CE CODE DANS LE SCRIPT DE index.html
+
+    // Cible le conteneur principal qui existe toujours
+    const maintenanceContainer = document.querySelector('#maintenance-content');
+
+    if (maintenanceContainer) {
+        // On écoute les clics sur tout le conteneur de l'onglet Maintenance
+        maintenanceContainer.addEventListener('submit', function(event) {
+            
+            // On vérifie si l'événement de soumission vient de nos formulaires
+            if (event.target.id === 'sonarrQueueForm' || event.target.id === 'radarrQueueForm') {
+                
+                event.preventDefault(); // EMPÊCHE LA SOUMISSION NORMALE
+                
+                console.log(`DEBOGAGE : Soumission interceptée pour ${event.target.id}`);
+
+                const form = event.target;
+                const arrType = (event.target.id === 'sonarrQueueForm') ? 'sonarr' : 'radarr';
+                const url = form.action;
+
+                const selectedCheckboxes = form.querySelectorAll('input[name="selected_item_ids"]:checked');
+                const selectedIds = Array.from(selectedCheckboxes).map(cb => cb.value);
+                
+                const removeFromClientCheckbox = form.querySelector(`input[name^="removeFromClient"]`);
+                const removeFromClient = removeFromClientCheckbox ? removeFromClientCheckbox.checked : false;
+
+                const dataToSend = {
+                    ids: selectedIds,
+                    removeFromClient: removeFromClient
+                };
+
+                const container = document.querySelector('#arr-queue-container');
+                if (!container) {
+                    console.error("Conteneur #arr-queue-container introuvable.");
+                    return;
+                }
+                container.innerHTML = `<div class="text-center mt-5"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div><p>Suppression en cours...</p></div>`;
+
+                fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(dataToSend)
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(errorData => { throw new Error(errorData.message || `Erreur: ${response.statusText}`); });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.status === 'success') {
+                        const reloadButton = document.querySelector('#load-arr-queue-btn');
+                        if (reloadButton) reloadButton.click();
+                    } else {
+                        throw new Error(data.message || 'Erreur inconnue.');
+                    }
+                })
+                .catch(error => {
+                    console.error('Erreur lors de la suppression:', error);
+                    alert(`Erreur: ${error.message}`);
+                    const reloadButton = document.querySelector('#load-arr-queue-btn');
+                    if (reloadButton) reloadButton.click();
+                });
+            }
+        });
+    }
     </script>
 {% endblock %}
