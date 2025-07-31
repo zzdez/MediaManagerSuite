@@ -215,47 +215,48 @@ def add_torrent_to_rutorrent(logger, torrent_url_or_magnet, download_dir, label,
 # ------------------------------------------------------------------------------
 # --- Fonctions Utilitaires pour les API Sonarr/Radarr ---
 # ------------------------------------------------------------------------------
-def _make_arr_request(method, url, api_key, params=None, json_data=None, timeout=30):
-    """Fonction helper pour faire des requêtes génériques aux API *Arr."""
-    headers = {
-        'X-Api-Key': api_key,
-        'Content-Type': 'application/json'
-    }
+def _make_arr_request(method, api_endpoint, api_key, params=None, json_data=None):
+    headers = {'X-Api-Key': api_key}
     try:
-        if method.upper() == 'POST' and json_data:
-            import json
-            logger.debug(f"RAW JSON PAYLOAD BEING SENT TO {url}:\n{json.dumps(json_data, indent=4)}")
+        logger.debug(f"Envoi de la requête *Arr : {method} {api_endpoint}")
+        if params:
+            logger.debug(f"Avec les paramètres : {params}")
+        if json_data:
+            logger.debug(f"Avec le corps JSON : {json_data}")
 
-        response = requests.request(method, url, headers=headers, params=params, json=json_data, timeout=timeout)
-        response.raise_for_status() # Lève une exception pour les codes 4xx/5xx
+        response = requests.request(method, api_endpoint, headers=headers, params=params, json=json_data, timeout=30)
 
-        # Pour les commandes POST qui retournent 201 ou 202, ou GET qui retourne 200
-        if response.status_code in [200, 201, 202]:
-            # Si la réponse est JSON, la retourner, sinon True pour succès
+        # --- CHANGEMENT 1 : LOGGING DÉTAILLÉ DE LA RÉPONSE BRUTE ---
+        # C'est la ligne la plus importante. Elle nous montrera la vérité.
+        logger.debug(f"Réponse brute de l'API *Arr - Statut: {response.status_code}, Contenu: {response.text}")
+        # --- FIN DU CHANGEMENT 1 ---
+
+        # --- CHANGEMENT 2 : GESTION PLUS STRICTE DES ERREURS ---
+        # Si le statut est une erreur client ou serveur, on la traite immédiatement.
+        if not response.ok: # .ok est True pour les statuts 200-299
+            error_message = f"Erreur API {response.status_code}."
             try:
-                return response.json(), None
-            except requests.exceptions.JSONDecodeError:
-                return True, None # Succès sans corps JSON (ex: 201 Created)
-        else:
-            logger.warning(f"Réponse inattendue de {url} (Code: {response.status_code}): {response.text}")
-            return None, f"Réponse inattendue de l'API (Code: {response.status_code})."
+                # Essaye de récupérer un message d'erreur plus précis du JSON
+                error_details = response.json()
+                error_message += f" Détails: {error_details}"
+            except ValueError: # Si la réponse n'est pas un JSON
+                error_message += f" Réponse brute: {response.text}"
 
-    except RequestException as e:
-        logger.error(f"Erreur de communication avec l'API {url}: {e}")
-        error_details = str(e)
-        if "Failed to establish a new connection" in error_details:
-            return None, f"Erreur : Impossible de se connecter. L'URL est-elle correcte et l'application *Arr est-elle lancée ?"
-        elif "401" in error_details: # Unauthorized
-             return None, f"Erreur 401 : Non autorisé. La clé API est-elle correcte ?"
-        elif "403" in error_details: # Forbidden (souvent pour IP Whitelisting ou mauvais base URL)
-            return None, f"Erreur 403 : Interdit. Vérifiez la configuration de l'API (ex: IP whitelist, base URL)."
-        elif "404" in error_details: # Not Found
-             return None, f"Erreur 404 : Non trouvé. L'URL de l'API ({url}) est-elle correcte ?"
-        else:
-            return None, f"Erreur de communication avec l'API : {error_details}"
-    except Exception as e:
-        logger.error(f"Erreur inattendue lors de l'appel API vers {url}: {e}")
-        return None, f"Erreur inattendue : {e}"
+            logger.error(error_message)
+            return None, error_message # Retourne l'erreur clairement
+
+        # --- CHANGEMENT 3 : GESTION SPÉCIFIQUE DU SUCCÈS POUR DELETE ---
+        # Pour une suppression, un statut 200 (OK) ou 204 (No Content) est un succès.
+        if method.upper() == 'DELETE' and response.status_code in [200, 204]:
+            logger.info("Requête DELETE réussie avec le statut {response.status_code}.")
+            return True, None # Succès clair
+
+        # Pour les autres requêtes, on retourne le JSON
+        return response.json(), None
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Erreur de communication avec l'API *Arr : {e}", exc_info=True)
+        return None, str(e)
 # ... (après _make_arr_request) ...
 
 #FONCTION DE NETTOYAGE RÉCURSIVE
@@ -2432,14 +2433,19 @@ def sftp_retrieve_and_process_action():
 @seedbox_ui_bp.route('/sftp-delete-items', methods=['POST'])
 @login_required
 def sftp_delete_items_action():
-    selected_paths_to_delete = request.form.getlist('selected_items_paths') # Ce sont des chemins POSIX complets
-    app_type_source_page = request.form.get('app_type_source', 'sonarr_working') # Pour la redirection
+    data = request.get_json()
+    if not data:
+        return jsonify({"success": False, "error": "Requête invalide, pas de corps JSON."}), 400
 
-    logger.info(f"Demande de suppression SFTP pour les items : {selected_paths_to_delete}")
+    items_to_delete = data.get('items', []) # Liste de dicts {'path': '...', 'type': '...'}
+    app_type_source = data.get('app_type_source') # Pour le logging/contexte
+
+    selected_paths_to_delete = [item['path'] for item in items_to_delete if 'path' in item]
+
+    logger.info(f"Demande de suppression SFTP (JSON) pour les items : {selected_paths_to_delete}. Contexte: {app_type_source}")
 
     if not selected_paths_to_delete:
-        flash("Aucun item sélectionné pour la suppression.", "warning")
-        return redirect(url_for('seedbox_ui.remote_seedbox_view', app_type_target=app_type_source_page))
+        return jsonify({"success": False, "error": "Aucun item sélectionné pour la suppression."}), 400
 
     sftp_host = current_app.config.get('SEEDBOX_SFTP_HOST')
     sftp_port = current_app.config.get('SEEDBOX_SFTP_PORT')
@@ -2447,15 +2453,14 @@ def sftp_delete_items_action():
     sftp_password = current_app.config.get('SEEDBOX_SFTP_PASSWORD')
 
     if not all([sftp_host, sftp_port, sftp_user, sftp_password]):
-        flash("Configuration SFTP manquante.", "danger")
         logger.error("sftp_delete_items_action: Configuration SFTP manquante.")
-        return redirect(url_for('seedbox_ui.remote_seedbox_view', app_type_target=app_type_source_page))
+        return jsonify({"success": False, "error": "Configuration SFTP du serveur incomplète."}), 500
 
     sftp_client = None
     transport = None
     success_count = 0
     failure_count = 0
-    failed_items = []
+    failed_items_details = []
 
     try:
         transport = paramiko.Transport((sftp_host, int(sftp_port)))
@@ -2465,34 +2470,38 @@ def sftp_delete_items_action():
         logger.info(f"SFTP (delete items): Connecté à {sftp_host}.")
 
         for remote_path_posix in selected_paths_to_delete:
-            # Sécurité: Assurer que le chemin est bien dans un des dossiers autorisés (Termines ou Travail)
-            # Cette vérification est importante pour éviter de supprimer n'importe quoi.
-            # Pour l'instant, on fait confiance aux chemins venant du formulaire,
-            # mais une validation plus poussée serait bien (ex: vérifier que ça commence par un des SEEDBOX_..._PATH)
-
             if sftp_delete_recursive(sftp_client, remote_path_posix, logger):
                 success_count += 1
             else:
                 failure_count += 1
-                failed_items.append(Path(remote_path_posix).name)
+                failed_items_details.append({"path": remote_path_posix, "name": Path(remote_path_posix).name})
 
+        message = f"{success_count} item(s) supprimé(s) avec succès de la seedbox."
         if failure_count > 0:
-            flash(f"Suppression SFTP terminée avec {failure_count} échec(s) sur {len(selected_paths_to_delete)} item(s). Items échoués: {', '.join(failed_items)}", "warning")
-        else:
-            flash(f"{success_count} item(s) supprimé(s) avec succès de la seedbox.", "success")
+            message = f"Suppression SFTP terminée avec {failure_count} échec(s) sur {len(selected_paths_to_delete)} item(s)."
+            logger.warning(f"{message} Items échoués: {[item['name'] for item in failed_items_details]}")
+            return jsonify({
+                "success": False, # Succès partiel est un échec pour l'alerte JS
+                "error": message,
+                "details": {
+                    "success_count": success_count,
+                    "failure_count": failure_count,
+                    "failed_items": failed_items_details
+                }
+            }), 207 # Multi-Status
+
+        return jsonify({"success": True, "message": message})
 
     except paramiko.ssh_exception.AuthenticationException as e_auth:
         logger.error(f"SFTP (delete items): Erreur d'authentification: {e_auth}")
-        flash("Erreur d'authentification SFTP. Vérifiez vos identifiants.", "danger")
+        return jsonify({"success": False, "error": "Erreur d'authentification SFTP. Vérifiez vos identifiants."}), 401
     except Exception as e_sftp:
         logger.error(f"SFTP (delete items): Erreur générale SFTP: {e_sftp}", exc_info=True)
-        flash(f"Erreur SFTP lors de la suppression: {e_sftp}", "danger")
+        return jsonify({"success": False, "error": f"Erreur SFTP lors de la suppression: {e_sftp}"}), 500
     finally:
         if sftp_client: sftp_client.close()
         if transport: transport.close()
         logger.debug("SFTP (delete items): Connexion fermée.")
-
-    return redirect(url_for('seedbox_ui.remote_seedbox_view', app_type_target=app_type_source_page))
 # ------------------------------------------------------------------------------
 # FONCTION trigger_sonarr_import
 # ------------------------------------------------------------------------------
@@ -3998,87 +4007,93 @@ def queue_manager_view():
 @seedbox_ui_bp.route('/queue/sonarr/delete', methods=['POST'])
 @login_required
 def delete_sonarr_queue_items():
-    logger.info("Demande de suppression d'items de la file d'attente Sonarr.")
-    selected_ids = request.form.getlist('selected_item_ids')
-    # Récupérer l'état de la case à cocher. Si elle n'est pas cochée, la clé ne sera pas dans request.form.
-    remove_from_client_flag_str = request.form.get('removeFromClientSonarr', 'false') # défaut à 'false' string si non présent
-    remove_from_client = remove_from_client_flag_str.lower() == 'true'
+    logger.info("Demande de suppression d'items de la file d'attente Sonarr via API.")
+    
+    # --- CHANGEMENT 1 : Récupérer les données depuis un corps JSON ---
+    # Le JavaScript enverra maintenant un JSON, c'est plus propre que les formulaires.
+    data = request.get_json()
+    if not data:
+        return jsonify({'status': 'error', 'message': 'Requête invalide.'}), 400
 
+    selected_ids = data.get('ids', [])
+    remove_from_client = data.get('removeFromClient', False)
+    
     logger.info(f"Suppression items Sonarr. IDs: {selected_ids}, removeFromClient: {remove_from_client}")
 
     sonarr_url = current_app.config.get('SONARR_URL')
     sonarr_api_key = current_app.config.get('SONARR_API_KEY')
 
+    # --- CHANGEMENT 2 : Retourner des erreurs JSON au lieu de flash/redirect ---
     if not sonarr_url or not sonarr_api_key:
-        flash("Sonarr n'est pas configuré.", 'danger')
-        return redirect(url_for('seedbox_ui.queue_manager_view', _anchor='sonarr-tab'))
+        return jsonify({'status': 'error', 'message': 'Sonarr n\'est pas configuré.'}), 500
 
     if not selected_ids:
-        flash("Aucun item Sonarr sélectionné pour la suppression.", 'warning')
-        return redirect(url_for('seedbox_ui.queue_manager_view', _anchor='sonarr-tab'))
+        return jsonify({'status': 'error', 'message': 'Aucun item Sonarr sélectionné.'}), 400
 
     success_count = 0
     error_count = 0
+    errors = []
 
     for item_id in selected_ids:
         api_endpoint = f"{sonarr_url.rstrip('/')}/api/v3/queue/{item_id}"
-        # Convertir le booléen Python en chaîne 'true'/'false' pour l'API
         params = {
             'removeFromClient': str(remove_from_client).lower(),
-            'blocklist': 'false'
+            'blacklist': 'false'
         }
         logger.debug(f"Appel DELETE Sonarr: {api_endpoint} avec params: {params}")
         response_status, error_msg = _make_arr_request('DELETE', api_endpoint, sonarr_api_key, params=params)
 
-        if error_msg: # S'il y a une erreur de communication ou une réponse 4xx/5xx gérée par _make_arr_request
+        if error_msg:
             logger.error(f"Erreur suppression item Sonarr ID {item_id}: {error_msg}")
             error_count += 1
-        elif response_status is True or (isinstance(response_status, dict) and response_status.get('status') == 'success'): # Succès
-            # Sonarr DELETE /queue/{id} retourne 200 OK avec un corps vide en cas de succès.
-            # _make_arr_request retourne True dans ce cas.
+            errors.append(f"ID {item_id}: {error_msg}")
+        else:
             logger.info(f"Item Sonarr ID {item_id} supprimé de la file d'attente avec succès.")
             success_count += 1
-        else: # Cas inattendu où response_status n'est ni True ni une erreur gérée
-            logger.error(f"Réponse inattendue lors de la suppression de l'item Sonarr ID {item_id}. Statut/Réponse: {response_status}")
-            error_count += 1
 
-    if success_count > 0:
-        flash(f"{success_count} item(s) supprimé(s) de la file d'attente Sonarr.", 'success')
+    # --- CHANGEMENT 3 : Construire une réponse JSON finale ---
     if error_count > 0:
-        flash(f"Échec de la suppression de {error_count} item(s) de la file d'attente Sonarr. Consultez les logs.", 'danger')
-
-    return redirect(url_for('seedbox_ui.queue_manager_view', _anchor='sonarr-tab'))
+        message = f"{success_count} item(s) supprimé(s). Échec pour {error_count} item(s). Erreurs: {'; '.join(errors)}"
+        return jsonify({'status': 'error', 'message': message}), 500
+    else:
+        message = f"{success_count} item(s) supprimé(s) de la file d'attente Sonarr avec succès."
+        return jsonify({'status': 'success', 'message': message})
 
 
 @seedbox_ui_bp.route('/queue/radarr/delete', methods=['POST'])
 @login_required
 def delete_radarr_queue_items():
-    logger.info("Demande de suppression d'items de la file d'attente Radarr.")
-    selected_ids = request.form.getlist('selected_item_ids')
-    remove_from_client_flag_str = request.form.get('removeFromClientRadarr', 'false')
-    remove_from_client = remove_from_client_flag_str.lower() == 'true'
+    logger.info("Demande de suppression d'items de la file d'attente Radarr via API.")
+
+    # --- CHANGEMENT 1 : Récupérer les données depuis un corps JSON ---
+    data = request.get_json()
+    if not data:
+        return jsonify({'status': 'error', 'message': 'Requête invalide.'}), 400
+
+    selected_ids = data.get('ids', [])
+    remove_from_client = data.get('removeFromClient', False)
 
     logger.info(f"Suppression items Radarr. IDs: {selected_ids}, removeFromClient: {remove_from_client}")
 
     radarr_url = current_app.config.get('RADARR_URL')
     radarr_api_key = current_app.config.get('RADARR_API_KEY')
 
+    # --- CHANGEMENT 2 : Retourner des erreurs JSON au lieu de flash/redirect ---
     if not radarr_url or not radarr_api_key:
-        flash("Radarr n'est pas configuré.", 'danger')
-        return redirect(url_for('seedbox_ui.queue_manager_view', _anchor='radarr-tab'))
+        return jsonify({'status': 'error', 'message': 'Radarr n\'est pas configuré.'}), 500
 
     if not selected_ids:
-        flash("Aucun item Radarr sélectionné pour la suppression.", 'warning')
-        return redirect(url_for('seedbox_ui.queue_manager_view', _anchor='radarr-tab'))
+        return jsonify({'status': 'error', 'message': 'Aucun item Radarr sélectionné.'}), 400
 
     success_count = 0
     error_count = 0
+    errors = []
 
     for item_id in selected_ids:
         api_endpoint = f"{radarr_url.rstrip('/')}/api/v3/queue/{item_id}"
         params = {
             'removeFromClient': str(remove_from_client).lower(),
-            'blacklist': 'false'  # Radarr utilise 'blacklist' et non 'blocklist'
+            'blacklist': 'false'
         }
         logger.debug(f"Appel DELETE Radarr: {api_endpoint} avec params: {params}")
         response_status, error_msg = _make_arr_request('DELETE', api_endpoint, radarr_api_key, params=params)
@@ -4086,21 +4101,19 @@ def delete_radarr_queue_items():
         if error_msg:
             logger.error(f"Erreur suppression item Radarr ID {item_id}: {error_msg}")
             error_count += 1
-        elif response_status is True or (isinstance(response_status, dict) and response_status.get('status') == 'success'): # Succès
-            # Radarr DELETE /queue/{id} retourne 200 OK avec un corps vide.
+            errors.append(f"ID {item_id}: {error_msg}")
+        else:
             logger.info(f"Item Radarr ID {item_id} supprimé de la file d'attente avec succès.")
             success_count += 1
-        else:
-            logger.error(f"Réponse inattendue lors de la suppression de l'item Radarr ID {item_id}. Statut/Réponse: {response_status}")
-            error_count += 1
-
-    if success_count > 0:
-        flash(f"{success_count} item(s) supprimé(s) de la file d'attente Radarr.", 'success')
+            
+    # --- CHANGEMENT 3 : Construire une réponse JSON finale ---
     if error_count > 0:
-        flash(f"Échec de la suppression de {error_count} item(s) de la file d'attente Radarr. Consultez les logs.", 'danger')
-
-    return redirect(url_for('seedbox_ui.queue_manager_view', _anchor='radarr-tab'))
-
+        message = f"{success_count} item(s) supprimé(s). Échec pour {error_count} item(s). Erreurs: {'; '.join(errors)}"
+        return jsonify({'status': 'error', 'message': message}), 500
+    else:
+        message = f"{success_count} item(s) supprimé(s) de la file d'attente Radarr avec succès."
+        return jsonify({'status': 'success', 'message': message})
+        
 # ==============================================================================
 # --- ROUTE POUR SFTP -> AJOUT ARR -> RAPATRIEMENT -> IMPORT MMS ---
 # ==============================================================================
