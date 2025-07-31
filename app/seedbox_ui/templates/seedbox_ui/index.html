@@ -365,32 +365,298 @@
             }
         }
 
-        // --- Les fonctions d'update des boutons restent les mêmes ---
-        function updateDeleteButtonState(arrType) {
-            const form = document.querySelector(`#${arrType}QueueForm`);
-            if (!form) return;
+        function openBatchSonarrMapModal() {
+            updateBatchActionButtonState();
+            if (selectedStagingItemsForBatch.length === 0) {
+                alert("Veuillez sélectionner au moins un item du staging.");
+                return;
+            }
+            console.log("Batch Map (Staging): Ouvrir modal pour items:", selectedStagingItemsForBatch);
+            const sonarrModalElement = document.getElementById('sonarrSearchModal');
+            if (!sonarrModalElement) {
+                console.error("Modal Sonarr (ID: sonarrSearchModal) non trouvé !");
+                return;
+            }
+            sonarrModalElement.setAttribute('data-current-action', 'batchMapStaging');
+            document.getElementById('sonarrSearchQuery').value = '';
+            document.getElementById('sonarrSearchResults').innerHTML = `<p class="text-muted">Recherchez une série Sonarr pour mapper les <strong>${selectedStagingItemsForBatch.length} items</strong> sélectionnés du staging.</p>`;
+            document.getElementById('sonarrSelectedSeriesId').value = '';
+            document.getElementById('sonarrSelectedSeriesTitle').innerText = 'Aucune série sélectionnée';
+            document.getElementById('sonarrManualSeasonDiv').style.display = 'none';
+            if (typeof currentlySelectedSonarrSeriesIdInModal !== 'undefined') {
+                 currentlySelectedSonarrSeriesIdInModal = null;
+            }
+            const modalMapButton = document.getElementById('sonarrModalMapButton');
+            if (modalMapButton) {
+                modalMapButton.innerHTML = '<i class="fas fa-object-group"></i> Mapper Sélection à cette Série';
+                modalMapButton.disabled = true;
+                modalMapButton.className = 'btn btn-primary';
+                modalMapButton.onclick = function() {
+                    const seriesId = document.getElementById('sonarrSelectedSeriesId').value;
+                    if (seriesId) {
+                        triggerBatchSonarrMapAction(seriesId);
+                    } else {
+                        alert("Veuillez d'abord rechercher et sélectionner une série Sonarr.");
+                    }
+                };
+            }
+            var modal = new bootstrap.Modal(sonarrModalElement);
+            modal.show();
+        }
 
-            const checkedCheckboxes = form.querySelectorAll(`.arr-item-checkbox:checked`);
-            const deleteButton = form.querySelector(`button[name="delete_${arrType}_selection"]`);
+        async function triggerBatchSonarrMapAction(selectedSeriesIdForBatch) {
+            updateBatchActionButtonState();
+            if (!selectedSeriesIdForBatch) {
+                alert("Aucune série Sonarr n'a été sélectionnée.");
+                return;
+            }
+            if (selectedStagingItemsForBatch.length === 0) {
+                alert("Aucun item du staging n'est sélectionné pour le mappage groupé.");
+                return;
+            }
 
-            if (deleteButton) {
-                deleteButton.disabled = checkedCheckboxes.length === 0;
+            const payload = {
+                item_names: selectedStagingItemsForBatch,
+                series_id: parseInt(selectedSeriesIdForBatch)
+            };
+            const resultsDivInModal = document.getElementById('sonarrSearchResults');
+            if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-info">Traitement groupé pour le staging en cours (${selectedStagingItemsForBatch.length} items)...</div>`;
+            const modalMapButton = document.getElementById('sonarrModalMapButton');
+            if(modalMapButton) modalMapButton.disabled = true;
+
+            try {
+                const response = await fetch(window.appUrls.batchMapToSonarrSeries, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+                if (response.ok && result.success) {
+                    let message = `Traitement groupé du staging terminé. ${result.processed_count || 0} items traités.`;
+                    if (result.errors_count && result.errors_count > 0) {
+                        message += ` ${result.errors_count} items ont échoué ou nécessité une attention.`;
+                    }
+                    if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-${(result.errors_count && result.errors_count > 0) ? 'warning' : 'success'}">${escapeJsString(message)}</div>`;
+                    if (typeof flashMessageGlobally === "function" && typeof escapeJsString === "function") {
+                        flashMessageGlobally(message, (result.errors_count && result.errors_count > 0) ? 'warning' : 'success');
+                    } else {
+                        alert(message);
+                    }
+                    setTimeout(() => {
+                        const modalInstance = bootstrap.Modal.getInstance(document.getElementById('sonarrSearchModal'));
+                        if (modalInstance) modalInstance.hide();
+                        window.location.reload();
+                    }, 3500);
+                } else {
+                    throw new Error(result.error || `Erreur HTTP ${response.status}`);
+                }
+            } catch (error) {
+                const errorMessage = (typeof escapeJsString === "function") ? escapeJsString(error.message) : error.message;
+                if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-danger">Erreur: ${errorMessage}</div>`;
+                if (typeof flashMessageGlobally === "function") {
+                    flashMessageGlobally(`Erreur lors du mapping groupé du staging: ${errorMessage}`, 'danger');
+                } else {
+                     alert(`Erreur lors du mapping groupé du staging: ${errorMessage}`);
+                }
+            } finally {
+                 if(modalMapButton) modalMapButton.disabled = false;
             }
         }
 
-        function updateWorkdirDeleteButtonState() {
-            const container = document.querySelector('#workdir-container'); // Le conteneur pour les fichiers de travail
-            if (!container) return;
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.file-tree .toggle-children').forEach(toggler => {
+                toggler.addEventListener('click', function (event) {
+                    event.preventDefault();
+                    const childrenList = this.closest('li').querySelector('.children-list');
+                    const icon = this.querySelector('i');
+                    if (childrenList) {
+                        if (childrenList.style.display === 'none' || childrenList.style.display === '') {
+                            childrenList.style.display = 'block';
+                            icon.classList.remove('fa-plus-square');
+                            icon.classList.add('fa-minus-square');
+                        } else {
+                            childrenList.style.display = 'none';
+                            icon.classList.remove('fa-minus-square');
+                            icon.classList.add('fa-plus-square');
+                        }
+                    }
+                });
+            });
 
-            const checkedCheckboxes = container.querySelectorAll('.workdir-item-checkbox:checked');
-            const deleteButton = container.querySelector('#delete-workdir-selection-btn');
+            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            tooltipTriggerList.map(function (tooltipTriggerEl) { return new bootstrap.Tooltip(tooltipTriggerEl); });
 
-            if (deleteButton) {
-                deleteButton.disabled = checkedCheckboxes.length === 0;
+            const addTorrentModalEl = document.getElementById('addTorrentModal');
+            if (addTorrentModalEl) {
+                if (typeof initializeAddTorrentModal === 'function') {
+                    addTorrentModalEl.addEventListener('show.bs.modal', initializeAddTorrentModal);
+                } else {
+                    console.error('initializeAddTorrentModal function not found. Check seedbox_ui_modals.js loading.');
+                }
             }
-        }
+
+            function loadTabContent(tabSelector, contentContainerSelector, loaderSelector, url) {
+                const tab = document.querySelector(tabSelector);
+                const contentContainer = document.querySelector(contentContainerSelector);
+                const loader = document.querySelector(loaderSelector);
+                let isContentLoaded = false;
+
+                if (tab && contentContainer && loader) {
+                    tab.addEventListener('shown.bs.tab', function(event) {
+                        if (!isContentLoaded || event.target.id === 'finished-files-tab' || event.target.id === 'rtorrent-view-tab') {
+                            loader.style.display = 'block';
+                            contentContainer.innerHTML = '';
+
+                            fetch(url)
+                                .then(response => {
+                                    if (!response.ok) {
+                                        throw new Error(`Erreur réseau ${response.status} lors du chargement de ${url}`);
+                                    }
+                                    return response.text();
+                                })
+                                .then(html => {
+                                    contentContainer.innerHTML = html;
+                                    if (event.target.id !== 'finished-files-tab' && event.target.id !== 'rtorrent-view-tab') {
+                                       isContentLoaded = true;
+                                    }
+                                })
+                                .catch(error => {
+                                    console.error('Erreur chargement onglet:', error);
+                                    contentContainer.innerHTML = `<div class="alert alert-danger">Impossible de charger le contenu: ${error.message}</div>`;
+                                })
+                                .finally(() => {
+                                    loader.style.display = 'none';
+                                });
+                        }
+                    });
+                    if (tab.classList.contains('active')) {
+                        var shownEvent = new Event('shown.bs.tab', { bubbles: true, cancelable: true });
+                        tab.dispatchEvent(shownEvent);
+                    }
+                } else {
+                    console.warn(`Un ou plusieurs éléments manquants pour le chargement de l'onglet : ${tabSelector}, ${contentContainerSelector}, ${loaderSelector}`);
+                }
+            }
+
+            loadTabContent(
+                '#finished-files-tab',
+                '#finished-files-container',
+                '#finished-files-loader',
+                "{{ url_for('seedbox_ui.unified_finished_list') }}"
+            );
+
+            loadTabContent(
+                '#rtorrent-view-tab',
+                '#rtorrent-content-container',
+                '#rtorrent-loader',
+                "{{ url_for('seedbox_ui.rtorrent_list_view') }}"
+            );
+
+            stagingItemCheckboxes.forEach(checkbox => {
+                checkbox.addEventListener('change', updateBatchActionButtonState);
+            });
+
+            if (batchMapButton) {
+                 updateBatchActionButtonState();
+            }
+
+            // Helper function to load content for maintenance sections
+            function loadMaintenanceContent(buttonId, containerId, loaderId, url) {
+                const button = document.getElementById(buttonId);
+                const container = document.getElementById(containerId);
+                const loader = document.getElementById(loaderId);
+
+                if (!button || !container || !loader) {
+                    console.error(`Missing elements for maintenance loader: ${buttonId}, ${containerId}, ${loaderId}`);
+                    return;
+                }
+
+                button.addEventListener('click', function() {
+                    loader.style.display = 'block';
+                    container.innerHTML = ''; // Clear previous content
+
+                    fetch(url)
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error(`Erreur réseau ${response.status} lors du chargement de ${url}`);
+                            }
+                            return response.text();
+                        })
+                        .then(html => {
+                            container.innerHTML = html;
+                        })
+                        .catch(error => {
+                            console.error('Erreur chargement contenu maintenance:', error);
+                            container.innerHTML = `<div class="alert alert-danger mt-2">Impossible de charger le contenu: ${error.message}</div>`;
+                        })
+                        .finally(() => {
+                            loader.style.display = 'none';
+                        });
+                });
+            }
+
+            // Loaders for Maintenance Tab sections
+            loadMaintenanceContent(
+                'load-arr-queue-btn',
+                'arr-queue-container',
+                'arr-queue-loader',
+                "{{ url_for('seedbox_ui.queue_manager_view') }}"
+            );
+            loadMaintenanceContent(
+                'load-sonarr-workdir-btn',
+                'workdir-container', // Both Sonarr and Radarr workdir buttons load into the same container
+                'workdir-loader',
+                "{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='sonarr_working') }}"
+            );
+            loadMaintenanceContent(
+                'load-radarr-workdir-btn',
+                'workdir-container', // Both Sonarr and Radarr workdir buttons load into the same container
+                'workdir-loader',
+                "{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='radarr_working') }}"
+            );
+
+            const maintenanceContainer = document.getElementById('maintenance-content');
+            if (maintenanceContainer) {
+                // --- UN SEUL ÉCOUTEUR "INTELLIGENT" POUR LES CLICS ---
+                maintenanceContainer.addEventListener('click', function(event) {
+
+                    // Cible le bouton cliqué, même si on clique sur une icône à l'intérieur
+                    const button = event.target.closest('button');
+                    if (!button) return; // Si ce n'est pas un clic sur un bouton, on ignore
+
+                    // --- AIGUILLEUR : Quelle action doit-on lancer ? ---
+
+                    // ACTION 1 : Suppression de la file d'attente *Arr
+                    if (button.name === 'delete_sonarr_selection' || button.name === 'delete_radarr_selection') {
+                        event.preventDefault(); // Empêche la soumission du formulaire
+
+                        const form = button.closest('form');
+                        const arrType = (button.name === 'delete_sonarr_selection') ? 'sonarr' : 'radarr';
+                        handleArrDelete(form, arrType);
+                    }
+
+                    // ACTION 2 : Suppression des fichiers des dossiers de travail
+                    if (button.id === 'delete-workdir-selection-btn') {
+                        event.preventDefault();
+                        handleWorkdirDelete(button);
+                    }
+                });
+
+                // --- UN SEUL ÉCOUTEUR POUR LES "CHANGE" (cases à cocher) ---
+                maintenanceContainer.addEventListener('change', function(event) {
+                    if (event.target.classList.contains('arr-item-checkbox')) {
+                        const arrType = event.target.dataset.arrType;
+                        if (arrType) updateDeleteButtonState(arrType);
+                    }
+                    if (event.target.classList.contains('workdir-item-checkbox')) {
+                        updateWorkdirDeleteButtonState();
+                    }
+                });
+            }
+        });
 
         // --- DÉPLACE LES LOGIQUES DANS DES FONCTIONS SÉPARÉES POUR LA CLARTÉ ---
+
         function handleArrDelete(form, arrType) {
             console.log(`DEBOGAGE : Lancement de la suppression pour ${arrType}`);
             const url = form.action;
@@ -412,16 +678,25 @@
             }
 
             fetch(url, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(dataToSend) })
-                .then(response => response.json().then(data => ({ ok: response.ok, data })))
-                .then(({ ok, data }) => {
-                    if (ok) {
-                        alert(data.message || 'Suppression réussie !');
-                        document.querySelector('#load-arr-queue-btn')?.click();
-                    } else { throw new Error(data.message || data.error || 'Erreur inconnue'); }
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(errorData => { throw new Error(errorData.message || `Erreur: ${response.statusText}`); });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.status === 'success') {
+                        const reloadButton = document.querySelector('#load-arr-queue-btn');
+                        if (reloadButton) reloadButton.click();
+                    } else {
+                        throw new Error(data.message || 'Erreur inconnue.');
+                    }
                 })
                 .catch(error => {
+                    console.error('Erreur lors de la suppression:', error);
                     alert(`Erreur: ${error.message}`);
-                    document.querySelector('#load-arr-queue-btn')?.click();
+                    const reloadButton = document.querySelector('#load-arr-queue-btn');
+                    if (reloadButton) reloadButton.click();
                 });
         }
 
@@ -454,7 +729,9 @@
                 .then(({ ok, data }) => {
                     if (ok) {
                         alert(data.message || 'Suppression réussie !');
-                        document.querySelector(`#load-${appType}-workdir-btn`)?.click();
+                        const reloadButtonId = `#load-${appType}-workdir-btn`;
+                        const reloadButton = document.querySelector(reloadButtonId);
+                        if (reloadButton) reloadButton.click();
                     } else { throw new Error(data.error || 'Une erreur est survenue.'); }
                 })
                 .catch(error => {
@@ -463,45 +740,28 @@
                 });
         }
 
-        document.addEventListener('DOMContentLoaded', function() {
-            // ... (code for .file-tree .toggle-children remains the same) ...
+        function updateDeleteButtonState(arrType) {
+            const form = document.querySelector(`#${arrType}QueueForm`);
+            if (!form) return;
 
-            // --- Maintenance Tab Logic ---
-            const maintenanceContainer = document.getElementById('maintenance-content');
-            if (maintenanceContainer) {
-                // --- UN SEUL ÉCOUTEUR "INTELLIGENT" POUR LES CLICS ---
-                maintenanceContainer.addEventListener('click', function(event) {
-                    const button = event.target.closest('button');
-                    if (!button) return;
+            const checkedCheckboxes = form.querySelectorAll(`.arr-item-checkbox:checked`);
+            const deleteButton = form.querySelector(`button[name="delete_${arrType}_selection"]`);
 
-                    // ACTION 1 : Suppression de la file d'attente *Arr
-                    if (button.name === 'delete_sonarr_selection' || button.name === 'delete_radarr_selection') {
-                        event.preventDefault();
-                        const form = button.closest('form');
-                        const arrType = (button.name === 'delete_sonarr_selection') ? 'sonarr' : 'radarr';
-                        handleArrDelete(form, arrType);
-                    }
-
-                    // ACTION 2 : Suppression des fichiers des dossiers de travail
-                    if (button.id === 'delete-workdir-selection-btn') {
-                        event.preventDefault();
-                        handleWorkdirDelete(button);
-                    }
-                });
-
-                // --- UN SEUL ÉCOUTEUR POUR LES "CHANGE" (cases à cocher) ---
-                maintenanceContainer.addEventListener('change', function(event) {
-                    if (event.target.classList.contains('arr-item-checkbox')) {
-                        const arrType = event.target.dataset.arrType;
-                        if (arrType) updateDeleteButtonState(arrType);
-                    }
-                    if (event.target.classList.contains('workdir-item-checkbox')) {
-                        updateWorkdirDeleteButtonState();
-                    }
-                });
+            if (deleteButton) {
+                deleteButton.disabled = checkedCheckboxes.length === 0;
             }
+        }
 
-            // ... (The rest of the DOMContentLoaded logic for other tabs remains the same) ...
-        });
+        function updateWorkdirDeleteButtonState() {
+            const container = document.querySelector('#workdir-container');
+            if (!container) return;
+
+            const checkedCheckboxes = container.querySelectorAll('.workdir-item-checkbox:checked');
+            const deleteButton = container.querySelector('#delete-workdir-selection-btn');
+
+            if (deleteButton) {
+                deleteButton.disabled = checkedCheckboxes.length === 0;
+            }
+        }
     </script>
 {% endblock %}
