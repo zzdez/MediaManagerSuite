@@ -170,7 +170,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
-                <button type="button" class="btn btn-primary" id="sonarrModalMapButton">Mapper</button> {# Texte et action gérés par JS #}
+                <button type="button" class="btn btn-primary" id="sonarrModalMapButton" data-action-url="{{ url_for('seedbox_ui.trigger_sonarr_import') }}">Mapper</button> {# Texte et action gérés par JS #}
             </div>
         </div>
     </div>
@@ -236,7 +236,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
-                <button type="button" class="btn btn-primary" id="radarrModalMapButton">Mapper</button> {# Texte et action gérés par JS #}
+                <button type="button" class="btn btn-primary" id="radarrModalMapButton" data-action-url="{{ url_for('seedbox_ui.trigger_radarr_import') }}">Mapper</button> {# Texte et action gérés par JS #}
             </div>
         </div>
     </div>
