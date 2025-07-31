@@ -615,6 +615,19 @@
                 "{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='radarr_working') }}"
             );
 
+            // Event delegation for dynamically loaded *Arr Queue checkboxes
+            const maintenanceContainer = document.getElementById('maintenance-content');
+            if (maintenanceContainer) {
+                maintenanceContainer.addEventListener('change', function(event) {
+                    if (event.target.classList.contains('arr-item-checkbox')) {
+                        const arrType = event.target.dataset.arrType;
+                        if (arrType) {
+                            updateDeleteButtonState(arrType);
+                        }
+                    }
+                });
+            }
+
         });
         // END: Page-specific JavaScript for index.html
     </script>

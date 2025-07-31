@@ -1119,5 +1119,48 @@ async function promptAndAddArrItemForLocalStaging(searchResultData, arrAppType, 
 }
 
 
+// ========================================================================== //
+// --- *Arr Queue Management Functions ---
+// ========================================================================== //
+
+function updateDeleteButtonState(arrType) {
+    // This function is now global and relies on the specific structure of queue_manager.html
+    const container = document.querySelector('#arr-queue-container');
+    if (!container) return; // If the queue manager isn't loaded, do nothing.
+
+    const checkboxes = container.querySelectorAll(`.${arrType}-item-checkbox:checked`);
+    const deleteButton = container.querySelector(`button[name="delete_${arrType}_selection"]`);
+
+    if (deleteButton) {
+        deleteButton.disabled = checkboxes.length === 0;
+    }
+}
+
+function toggleSelectAll(arrType, selectAllButton) {
+    const container = document.querySelector('#arr-queue-container');
+    if (!container) return;
+
+    const checkboxes = container.querySelectorAll(`.${arrType}-item-checkbox`);
+    let allSelectedCurrently = checkboxes.length > 0; // Start by assuming true if there are any checkboxes
+
+    checkboxes.forEach(checkbox => {
+        if (!checkbox.checked) {
+            allSelectedCurrently = false;
+        }
+    });
+
+    const newCheckedState = !allSelectedCurrently;
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = newCheckedState;
+    });
+
+    updateDeleteButtonState(arrType);
+
+    if(selectAllButton) {
+        selectAllButton.textContent = newCheckedState ? 'Tout désélectionner' : 'Tout sélectionner';
+    }
+}
+
+
 console.log("seedbox_ui_modals.js loaded successfully and completely.");
 // [end of app/static/js/seedbox_ui_modals.js]

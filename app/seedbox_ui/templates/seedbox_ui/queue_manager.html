@@ -59,7 +59,7 @@
                         {% for item in sonarr_queue_data.records %}
                         <tr>
                             <td>
-                                <input type="checkbox" class="form-check-input sonarr-item-checkbox" name="selected_item_ids" value="{{ item.id }}" onchange="updateDeleteButtonState('sonarr')">
+                                <input type="checkbox" class="form-check-input sonarr-item-checkbox arr-item-checkbox" name="selected_item_ids" value="{{ item.id }}" data-arr-type="sonarr">
                             </td>
                             <td title="{{ item.title }}">{{ item.title | truncate(70) }}</td>
                             <td>
@@ -138,7 +138,7 @@
                         {% for item in radarr_queue_data.records %}
                         <tr>
                             <td>
-                                <input type="checkbox" class="form-check-input radarr-item-checkbox" name="selected_item_ids" value="{{ item.id }}" onchange="updateDeleteButtonState('radarr')">
+                                <input type="checkbox" class="form-check-input radarr-item-checkbox arr-item-checkbox" name="selected_item_ids" value="{{ item.id }}" data-arr-type="radarr">
                             </td>
                             <td title="{{ item.movie.title if item.movie and item.movie.title else item.title }}">{{ (item.movie.title if item.movie and item.movie.title else item.title) | truncate(70) }}</td>
                             <td>
@@ -173,75 +173,3 @@
         {% endif %}
     </div>
 </div>
-
-<script>
-    // This script is now part of the fragment and will be executed when loaded.
-    // Ensure functions are either self-contained or rely on globally available functions
-    // from index.html or seedbox_ui_modals.js if this fragment is loaded by JS.
-    // If loaded by a full page refresh (less likely now), this is fine.
-
-    function updateDeleteButtonState(arrType) {
-        const checkboxes = document.querySelectorAll(`.${arrType}-item-checkbox:checked`);
-        // Query within the scope of the current document fragment if possible,
-        // or ensure IDs are unique if querying document.
-        const deleteButton = document.querySelector(`#arrQueueTabsContent button[name="delete_${arrType}_selection"]`);
-        if (deleteButton) {
-            deleteButton.disabled = checkboxes.length === 0;
-        }
-    }
-
-    function toggleSelectAll(arrType, selectAllButton) {
-        const checkboxes = document.querySelectorAll(`#arrQueueTabsContent .${arrType}-item-checkbox`);
-        let allSelectedCurrently = true; // Assume all are selected
-        if (checkboxes.length === 0) allSelectedCurrently = false; // No checkboxes, so not all selected
-
-        checkboxes.forEach(checkbox => {
-            if (!checkbox.checked) {
-                allSelectedCurrently = false;
-            }
-        });
-
-        const newCheckedState = !allSelectedCurrently;
-        checkboxes.forEach(checkbox => {
-            checkbox.checked = newCheckedState;
-        });
-        updateDeleteButtonState(arrType);
-        if(selectAllButton) { // Check if button exists
-            selectAllButton.textContent = newCheckedState ? 'Tout désélectionner' : 'Tout sélectionner';
-        }
-    }
-
-    // Initial state update for buttons on fragment load.
-    // This needs to run after this specific HTML is injected and parsed.
-    // If this content is loaded via fetch(), this script block will execute.
-    // We need to ensure the elements are queryable from this script's context.
-    // It's generally safer to re-run these initializations after content injection.
-    // For now, let's assume this script runs correctly after injection.
-
-    // Re-querying buttons within this specific context after it's loaded.
-    // This is safer than relying on document.addEventListener('DOMContentLoaded')
-    // which might have already fired on the main page.
-
-    // Sonarr tab might be active by default, so update its button state.
-    updateDeleteButtonState('sonarr');
-    // Radarr tab might not be, but no harm in trying.
-    updateDeleteButtonState('radarr');
-
-    // Handle tab persistence if the content is reloaded by the maintenance tab button.
-    // This specific script block will re-run each time this fragment is loaded.
-    var arrQueueTabs = document.getElementById('arrQueueTabs');
-    if (arrQueueTabs) {
-        var activeTab = arrQueueTabs.querySelector('.nav-link.active');
-        var activeTabId = localStorage.getItem('activeArrQueueTab');
-        if (activeTabId) {
-            var newActiveTabEl = arrQueueTabs.querySelector(`button[data-bs-target="${activeTabId}"]`);
-            if (newActiveTabEl && activeTab && newActiveTabEl !== activeTab) {
-                 new bootstrap.Tab(newActiveTabEl).show();
-            }
-        }
-
-        arrQueueTabs.addEventListener('shown.bs.tab', function (event) {
-            localStorage.setItem('activeArrQueueTab', event.target.dataset.bsTarget);
-        });
-    }
-</script>
