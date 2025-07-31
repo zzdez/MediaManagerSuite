@@ -215,47 +215,48 @@ def add_torrent_to_rutorrent(logger, torrent_url_or_magnet, download_dir, label,
 # ------------------------------------------------------------------------------
 # --- Fonctions Utilitaires pour les API Sonarr/Radarr ---
 # ------------------------------------------------------------------------------
-def _make_arr_request(method, url, api_key, params=None, json_data=None, timeout=30):
-    """Fonction helper pour faire des requêtes génériques aux API *Arr."""
-    headers = {
-        'X-Api-Key': api_key,
-        'Content-Type': 'application/json'
-    }
+def _make_arr_request(method, api_endpoint, api_key, params=None, json_data=None):
+    headers = {'X-Api-Key': api_key}
     try:
-        if method.upper() == 'POST' and json_data:
-            import json
-            logger.debug(f"RAW JSON PAYLOAD BEING SENT TO {url}:\n{json.dumps(json_data, indent=4)}")
+        logger.debug(f"Envoi de la requête *Arr : {method} {api_endpoint}")
+        if params:
+            logger.debug(f"Avec les paramètres : {params}")
+        if json_data:
+            logger.debug(f"Avec le corps JSON : {json_data}")
 
-        response = requests.request(method, url, headers=headers, params=params, json=json_data, timeout=timeout)
-        response.raise_for_status() # Lève une exception pour les codes 4xx/5xx
+        response = requests.request(method, api_endpoint, headers=headers, params=params, json=json_data, timeout=30)
 
-        # Pour les commandes POST qui retournent 201 ou 202, ou GET qui retourne 200
-        if response.status_code in [200, 201, 202]:
-            # Si la réponse est JSON, la retourner, sinon True pour succès
+        # --- CHANGEMENT 1 : LOGGING DÉTAILLÉ DE LA RÉPONSE BRUTE ---
+        # C'est la ligne la plus importante. Elle nous montrera la vérité.
+        logger.debug(f"Réponse brute de l'API *Arr - Statut: {response.status_code}, Contenu: {response.text}")
+        # --- FIN DU CHANGEMENT 1 ---
+
+        # --- CHANGEMENT 2 : GESTION PLUS STRICTE DES ERREURS ---
+        # Si le statut est une erreur client ou serveur, on la traite immédiatement.
+        if not response.ok: # .ok est True pour les statuts 200-299
+            error_message = f"Erreur API {response.status_code}."
             try:
-                return response.json(), None
-            except requests.exceptions.JSONDecodeError:
-                return True, None # Succès sans corps JSON (ex: 201 Created)
-        else:
-            logger.warning(f"Réponse inattendue de {url} (Code: {response.status_code}): {response.text}")
-            return None, f"Réponse inattendue de l'API (Code: {response.status_code})."
+                # Essaye de récupérer un message d'erreur plus précis du JSON
+                error_details = response.json()
+                error_message += f" Détails: {error_details}"
+            except ValueError: # Si la réponse n'est pas un JSON
+                error_message += f" Réponse brute: {response.text}"
 
-    except RequestException as e:
-        logger.error(f"Erreur de communication avec l'API {url}: {e}")
-        error_details = str(e)
-        if "Failed to establish a new connection" in error_details:
-            return None, f"Erreur : Impossible de se connecter. L'URL est-elle correcte et l'application *Arr est-elle lancée ?"
-        elif "401" in error_details: # Unauthorized
-             return None, f"Erreur 401 : Non autorisé. La clé API est-elle correcte ?"
-        elif "403" in error_details: # Forbidden (souvent pour IP Whitelisting ou mauvais base URL)
-            return None, f"Erreur 403 : Interdit. Vérifiez la configuration de l'API (ex: IP whitelist, base URL)."
-        elif "404" in error_details: # Not Found
-             return None, f"Erreur 404 : Non trouvé. L'URL de l'API ({url}) est-elle correcte ?"
-        else:
-            return None, f"Erreur de communication avec l'API : {error_details}"
-    except Exception as e:
-        logger.error(f"Erreur inattendue lors de l'appel API vers {url}: {e}")
-        return None, f"Erreur inattendue : {e}"
+            logger.error(error_message)
+            return None, error_message # Retourne l'erreur clairement
+
+        # --- CHANGEMENT 3 : GESTION SPÉCIFIQUE DU SUCCÈS POUR DELETE ---
+        # Pour une suppression, un statut 200 (OK) ou 204 (No Content) est un succès.
+        if method.upper() == 'DELETE' and response.status_code in [200, 204]:
+            logger.info("Requête DELETE réussie avec le statut {response.status_code}.")
+            return True, None # Succès clair
+
+        # Pour les autres requêtes, on retourne le JSON
+        return response.json(), None
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Erreur de communication avec l'API *Arr : {e}", exc_info=True)
+        return None, str(e)
 # ... (après _make_arr_request) ...
 
 #FONCTION DE NETTOYAGE RÉCURSIVE
