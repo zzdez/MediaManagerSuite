@@ -365,6 +365,19 @@
             }
         }
 
+        // AJOUTE CETTE NOUVELLE FONCTION
+        function updateWorkdirDeleteButtonState() {
+            const container = document.querySelector('#workdir-container'); // Le conteneur pour les fichiers de travail
+            if (!container) return;
+
+            const checkedCheckboxes = container.querySelectorAll('.workdir-item-checkbox:checked');
+            const deleteButton = container.querySelector('#delete-workdir-selection-btn');
+
+            if (deleteButton) {
+                deleteButton.disabled = checkedCheckboxes.length === 0;
+            }
+        }
+
         function openBatchSonarrMapModal() {
             updateBatchActionButtonState();
             if (selectedStagingItemsForBatch.length === 0) {
@@ -624,6 +637,12 @@
                         if (arrType) {
                             updateDeleteButtonState(arrType);
                         }
+                    }
+
+                    // --- AJOUTE CE NOUVEL ÉCOUTEUR JUSTE ICI ---
+                    // Écouteur pour les cases à cocher des dossiers de travail
+                    if (event.target.classList.contains('workdir-item-checkbox')) {
+                        updateWorkdirDeleteButtonState();
                     }
                 });
             }

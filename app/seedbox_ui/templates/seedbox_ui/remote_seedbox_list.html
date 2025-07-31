@@ -17,7 +17,7 @@
   <li style="margin-left: {{ level * 20 }}px;">
     <div class="tree-node-item d-flex align-items-center">
       <span style="width: 30px; flex-shrink: 0; text-align: center; padding-right: 5px;">
-          <input type="checkbox" class="form-check-input batch-action-item-checkbox"
+          <input type="checkbox" class="form-check-input batch-action-item-checkbox workdir-item-checkbox"
                  name="selected_items_paths"
                  value="{{ node.path_for_actions | e }}"
                  data-item-name="{{ node.name | e }}"
@@ -95,7 +95,7 @@
     {% endif %}
     {% endif %}
     <div class="btn-group me-2" role="group" aria-label="Groupe d'action de suppression">
-        <button type="button" class="btn btn-danger btn-sm" id="batchDeleteBtn" disabled>
+        <button type="button" class="btn btn-danger btn-sm" id="delete-workdir-selection-btn" disabled>
             <i class="fas fa-trash-alt"></i> Supprimer Sélection de la Seedbox
         </button>
     </div>
