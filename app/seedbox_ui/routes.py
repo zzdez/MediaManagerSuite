@@ -3786,26 +3786,16 @@ def delete_problematic_association_action(torrent_hash):
     logger.info(f"Demande de suppression de l'association pour le torrent hash: {torrent_hash}")
 
     association_data = torrent_map_manager.get_torrent_by_hash(torrent_hash)
-    release_name_for_flash = association_data.get('release_name', 'Hash Inconnu') if association_data else f"Hash: {torrent_hash}"
+    release_name_for_log = association_data.get('release_name', 'Hash Inconnu') if association_data else f"Hash: {torrent_hash}"
 
     if torrent_map_manager.remove_torrent_from_map(torrent_hash):
-        flash(f"L'association pour '{release_name_for_flash}' a été supprimée.", "success")
-        logger.info(f"Association pour hash {torrent_hash} ('{release_name_for_flash}') supprimée avec succès.")
+        message = f"L'association pour '{release_name_for_log}' a été supprimée."
+        logger.info(f"Association pour hash {torrent_hash} ('{release_name_for_log}') supprimée avec succès.")
+        return jsonify({'status': 'success', 'message': message})
     else:
-        # Si get_torrent_by_hash a retourné None, remove_torrent_from_map retournera False car le hash n'est pas trouvé.
-        flash(f"Impossible de trouver ou de supprimer l'association pour '{release_name_for_flash}'.", "danger")
-        logger.warning(f"Tentative de suppression d'une association inexistante ou échec pour hash {torrent_hash} ('{release_name_for_flash}').")
-
-    return redirect(url_for('seedbox_ui.index'))
-if __name__ == '__main__':
-    app = create_app() # Ou comment vous créez votre instance d'app
-
-    print("\n" + "="*30 + " Routes Enregistrées " + "="*30)
-    for rule in app.url_map.iter_rules():
-        print(f"Endpoint: {rule.endpoint:<30} Methods: {str(list(rule.methods)):<30} URL: {str(rule)}")
-    print("="*80 + "\n")
-
-    app.run(host='0.0.0.0', port=5001, debug=True, use_reloader=False) # Mettez use_reloader=False pour ce test pour être sûr
+        message = f"Impossible de trouver ou de supprimer l'association pour '{release_name_for_log}'."
+        logger.warning(f"Tentative de suppression d'une association inexistante ou échec pour hash {torrent_hash} ('{release_name_for_log}').")
+        return jsonify({'status': 'error', 'message': message}), 404 # 404 Not Found est approprié ici
 # ==============================================================================
 # ROUTE POUR LE RAPATRIEMENT SFTP GROUPÉ DEPUIS LA SEEDBOX
 # ==============================================================================
