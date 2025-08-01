@@ -616,6 +616,69 @@
                 }
             });
         }
+
+        // --- Logique pour les actions sur les "Items en Attente" ---
+        const dashboardContainer = document.getElementById('dashboard-content');
+        if (dashboardContainer) {
+            dashboardContainer.addEventListener('click', function(event) {
+                const button = event.target.closest('button');
+                if (!button) return;
+
+                const torrentHash = button.dataset.torrentHash;
+                if (!torrentHash) return;
+
+                // AIGUILLEUR : Quelle action lancer ?
+                if (button.classList.contains('retry-import-btn')) {
+                    console.log("Action: Réessayer l'import pour le hash:", torrentHash);
+                    if (confirm("Voulez-vous vraiment réessayer l'importation pour cet item ?")) {
+                        fetch(`/seedbox/problematic-import/retry/${torrentHash}`, {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                        })
+                        .then(response => {
+                            if (response.ok) {
+                                // The backend will flash a message and redirect,
+                                // so we just need to reload the page to see the result.
+                                window.location.reload();
+                            } else {
+                                // If the backend returns a JSON error, we could show it
+                                response.json().then(data => {
+                                    alert(`Erreur: ${data.error || 'Une erreur est survenue.'}`);
+                                }).catch(() => {
+                                    alert('Une erreur de communication est survenue.');
+                                });
+                            }
+                        }).catch(error => {
+                            console.error('Erreur fetch:', error);
+                            alert('Une erreur de communication est survenue.');
+                        });
+                    }
+                }
+                else if (button.classList.contains('delete-association-btn')) {
+                    console.log("Action: Oublier l'association pour le hash:", torrentHash);
+                    if (confirm("Êtes-vous sûr de vouloir oublier cette association ? L'item devra être re-mappé manuellement s'il est encore nécessaire.")) {
+                        fetch(`/seedbox/problematic-association/delete/${torrentHash}`, {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                        })
+                        .then(response => {
+                            if (response.ok) {
+                                window.location.reload();
+                            } else {
+                                response.json().then(data => {
+                                    alert(`Erreur: ${data.error || 'Une erreur est survenue.'}`);
+                                }).catch(() => {
+                                    alert('Une erreur de communication est survenue.');
+                                });
+                            }
+                        }).catch(error => {
+                            console.error('Erreur fetch:', error);
+                            alert('Une erreur de communication est survenue.');
+                        });
+                    }
+                }
+            });
+        }
         
         // --- Logique pour les onglets principaux ---
         document.querySelectorAll('#finished-files-tab, #rtorrent-view-tab').forEach(tab => {
