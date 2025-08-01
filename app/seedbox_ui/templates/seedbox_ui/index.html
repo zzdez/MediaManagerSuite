@@ -637,11 +637,8 @@
                         })
                         .then(response => {
                             if (response.ok) {
-                                // The backend will flash a message and redirect,
-                                // so we just need to reload the page to see the result.
                                 window.location.reload();
                             } else {
-                                // If the backend returns a JSON error, we could show it
                                 response.json().then(data => {
                                     alert(`Erreur: ${data.error || 'Une erreur est survenue.'}`);
                                 }).catch(() => {
@@ -654,30 +651,21 @@
                         });
                     }
                 }
-                } else if (button.classList.contains('delete-association-btn')) {
-                    event.preventDefault(); // Bonne pratique pour éviter tout comportement par défaut
-
+                
+                if (button.classList.contains('delete-association-btn')) {
+                    event.preventDefault();
                     if (!confirm("Êtes-vous sûr de vouloir supprimer cette association ?")) {
                         return;
                     }
-
-                    // On construit l'URL dynamiquement avec url_for pour plus de robustesse
                     const url = `{{ url_for('seedbox_ui.delete_problematic_association_action', torrent_hash='__HASH__') }}`.replace('__HASH__', torrentHash);
-
                     fetch(url, {
                         method: 'POST',
-                        // On retire l'en-tête Content-Type car nous n'envoyons pas de corps JSON.
-                        // C'est plus propre et évite toute confusion.
                     })
                     .then(response => {
-                        // On s'attend toujours à une réponse JSON, même pour les erreurs
                         return response.json().then(data => ({ ok: response.ok, data }));
                     })
                     .then(({ ok, data }) => {
-                        // On affiche le message renvoyé par le serveur, qu'il soit un succès ou une erreur
                         alert(data.message || "L'opération est terminée.");
-
-                        // On ne recharge la page que si l'opération a réussi
                         if (ok) {
                             window.location.reload();
                         }
@@ -689,7 +677,7 @@
                 }
             });
         }
-
+            
         // --- Logique pour les onglets principaux ---
         document.querySelectorAll('#finished-files-tab, #rtorrent-view-tab').forEach(tab => {
             let isContentLoaded = false;
