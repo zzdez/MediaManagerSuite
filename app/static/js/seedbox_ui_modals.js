@@ -304,7 +304,7 @@ async function executeSonarrSearch() {
         if (results.length === 0) { resultsDiv.innerHTML = '<p class="text-muted">Aucune série trouvée.</p>'; return; }
         let html = '<ul class="list-group mt-3">';
         results.forEach(series => {
-            let posterUrl = series.remotePoster || (series.images && series.images.length > 0 ? series.images.find(img => img.coverType === 'poster')?.remoteUrl : 'https://via.placeholder.com/60x90?text=N/A');
+            let posterUrl = series.remotePoster || (series.images && series.images.length > 0 ? series.images.find(img => img.coverType === 'poster')?.remoteUrl : 'data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%2260%22%20height%3D%2290%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2060%2090%22%20preserveAspectRatio%3D%22none%22%3E%3Cdefs%3E%3Cstyle%20type%3D%22text%2Fcss%22%3E%23holder_1582426688c%20text%20%7B%20fill%3A%23AAAAAA%3Bfont-weight%3Abold%3Bfont-family%3AArial%2C%20Helvetica%2C%20Open%20Sans%2C%20sans-serif%2C%20monospace%3Bfont-size%3A10pt%20%7D%20%3C%2Fstyle%3E%3C%2Fdefs%3E%3Cg%20id%3D%22holder_1582426688c%22%3E%3Crect%20width%3D%2260%22%20height%3D%2290%22%20fill%3D%22%23EEEEEE%22%3E%3C%2Frect%3E%3Cg%3E%3Ctext%20x%3D%2213.171875%22%20y%3D%2249.5%22%3EN/A%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E');
             const escapedSeriesTitle = escapeJsString(series.title);
             const sonarrIdAsInt = parseInt(series.id);
             const isAlreadyInSonarr = !isNaN(sonarrIdAsInt) && sonarrIdAsInt > 0;
@@ -368,7 +368,7 @@ async function executeRadarrSearch() {
         if (results.length === 0) { resultsDiv.innerHTML = '<p class="text-muted">Aucun film trouvé.</p>'; return; }
         let html = '<ul class="list-group mt-3">';
         results.forEach(movie => {
-            let posterUrl = movie.remotePoster || (movie.images && movie.images.length > 0 ? movie.images.find(img => img.coverType === 'poster')?.remoteUrl : 'https://via.placeholder.com/60x90?text=N/A');
+            let posterUrl = movie.remotePoster || (movie.images && movie.images.length > 0 ? movie.images.find(img => img.coverType === 'poster')?.remoteUrl : 'data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%2260%22%20height%3D%2290%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2060%2090%22%20preserveAspectRatio%3D%22none%22%3E%3Cdefs%3E%3Cstyle%20type%3D%22text%2Fcss%22%3E%23holder_1582426688c%20text%20%7B%20fill%3A%23AAAAAA%3Bfont-weight%3Abold%3Bfont-family%3AArial%2C%20Helvetica%2C%20Open%20Sans%2C%20sans-serif%2C%20monospace%3Bfont-size%3A10pt%20%7D%20%3C%2Fstyle%3E%3C%2Fdefs%3E%3Cg%20id%3D%22holder_1582426688c%22%3E%3Crect%20width%3D%2260%22%20height%3D%2290%22%20fill%3D%22%23EEEEEE%22%3E%3C%2Frect%3E%3Cg%3E%3Ctext%20x%3D%2213.171875%22%20y%3D%2249.5%22%3EN/A%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E');
             const escapedMovieTitle = escapeJsString(movie.title);
             const isAlreadyInRadarr = movie.id && movie.id > 0;
             console.log("executeRadarrSearch - movie.id:", movie.id, "isAlreadyInRadarr:", isAlreadyInRadarr); // AJOUT CONSOLE.LOG
@@ -517,7 +517,7 @@ async function triggerSonarrManualImportWithSeason(mediaIdFromSelection, seriesT
     const problemTorrentHash = sonarrModalElement ? sonarrModalElement.getAttribute('data-problem-torrent-hash') : null;
     const payload = {
         item_name: originalItemName, is_new_series: isNewSeries,
-        problem_torrent_hash: (problemTorrentHash && problemTorrentHash !== '') ? problemTorrentHash : undefined
+        problem_torrent_hash: (problemTorrentHash && problemTorrentHash !== '') ? problemTorrentHash : null
     };
     if (isNewSeries) {
         payload.tvdb_id = parseInt(mediaIdFromSelection);
@@ -529,7 +529,7 @@ async function triggerSonarrManualImportWithSeason(mediaIdFromSelection, seriesT
     if (modalMapButton) modalMapButton.disabled = true;
 
     try {
-        const actionUrl = document.getElementById('sonarrModalMapButton').dataset.actionUrl;
+        const actionUrl = window.appUrls.sonarrManualImport;
         const response = await fetch(actionUrl, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
         });
@@ -573,7 +573,7 @@ async function triggerRadarrManualImport(radarrMovieId, movieTitleForDisplay) {
     if(modalMapButton) modalMapButton.disabled = true;
 
     try {
-        const actionUrl = document.getElementById('radarrModalMapButton').dataset.actionUrl;
+        const actionUrl = window.appUrls.radarrManualImport;
         const response = await fetch(actionUrl, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
         });
@@ -711,7 +711,7 @@ function renderArrSearchResultsForAddTorrent(results, appType, resultsDivId) {
     results.forEach(item => {
         const title = escapeJsString(item.title);
         const year = item.year || 'N/A';
-        let posterUrl = item.remotePoster || (item.images && item.images.length > 0 ? item.images.find(img => img.coverType === 'poster')?.remoteUrl : null) || 'https://via.placeholder.com/40x60?text=N/A';
+        let posterUrl = item.remotePoster || (item.images && item.images.length > 0 ? item.images.find(img => img.coverType === 'poster')?.remoteUrl : null) || 'data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%2260%22%20height%3D%2290%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2060%2090%22%20preserveAspectRatio%3D%22none%22%3E%3Cdefs%3E%3Cstyle%20type%3D%22text%2Fcss%22%3E%23holder_1582426688c%20text%20%7B%20fill%3A%23AAAAAA%3Bfont-weight%3Abold%3Bfont-family%3AArial%2C%20Helvetica%2C%20Open%20Sans%2C%20sans-serif%2C%20monospace%3Bfont-size%3A10pt%20%7D%20%3C%2Fstyle%3E%3C%2Fdefs%3E%3Cg%20id%3D%22holder_1582426688c%22%3E%3Crect%20width%3D%2260%22%20height%3D%2290%22%20fill%3D%22%23EEEEEE%22%3E%3C%2Frect%3E%3Cg%3E%3Ctext%20x%3D%2213.171875%22%20y%3D%2249.5%22%3EN/A%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E';
         let isAlreadyAdded = false, idForSelection = null, idTypeForDisplay = "", externalIdForDisplay = "", internalIdDisplay = "";
         if (appType === 'sonarr') {
             const sonarrId = parseInt(item.id); isAlreadyAdded = !isNaN(sonarrId) && sonarrId > 0;
