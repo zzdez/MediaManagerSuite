@@ -124,28 +124,31 @@ function openSonarrSearchModal(itemPathForAction, itemType) {
         modalMapButton.disabled = true;
         modalMapButton.className = 'btn btn-primary';
 
-        modalMapButton.onclick = function() {
-            // ... (le reste de votre fonction onclick reste identique)
-            const seriesTitle = document.getElementById('sonarrSelectedSeriesTitle').innerText.replace('Série sélectionnée : ', '');
-            const userForcedSeason = document.getElementById('sonarrManualSeasonInput').value;
-            const isNewMedia = sonarrModalElement.getAttribute('data-is-new-media') === 'true';
-            const mediaIdForPayload = sonarrModalElement.getAttribute('data-selected-media-id');
-            const mediaTitleForAdd = sonarrModalElement.getAttribute('data-selected-media-title');
-            const currentAction = sonarrModalElement.getAttribute('data-current-action');
+    modalMapButton.onclick = function() {
+        const seriesTitle = sonarrModalElement.getAttribute('data-selected-media-title');
+        const userForcedSeason = document.getElementById('sonarrManualSeasonInput').value;
+        const isNewMedia = sonarrModalElement.getAttribute('data-is-new-media') === 'true';
+        const mediaIdForPayload = sonarrModalElement.getAttribute('data-selected-media-id');
+        const currentAction = sonarrModalElement.getAttribute('data-current-action');
 
-            if (!mediaIdForPayload) {
-                alert("Veuillez sélectionner une série.");
-                return;
-            }
+        if (!mediaIdForPayload) {
+            alert("Veuillez sélectionner une série.");
+            return;
+        }
 
-            if (currentAction === 'mapIndividualStaging' && isNewMedia) {
-                const mediaYear = sonarrModalElement.getAttribute('data-selected-media-year');
-                const searchResultData = { id: mediaIdForPayload, title: mediaTitleForAdd, year: parseInt(mediaYear) || 0 };
-                promptAndAddArrItemForLocalStaging(searchResultData, 'sonarr', sonarrModalElement);
-            } else {
-                triggerSonarrManualImportWithSeason(mediaIdForPayload, seriesTitle, userForcedSeason);
-            }
-        };
+        // Si c'est une nouvelle série, on utilise la logique d'ajout
+        if (isNewMedia) {
+            const mediaYear = sonarrModalElement.getAttribute('data-selected-media-year');
+            const searchResultData = { id: mediaIdForPayload, title: seriesTitle, year: parseInt(mediaYear) || 0 };
+            // Assure-toi que cette fonction existe et est correcte
+            promptAndAddArrItemForLocalStaging(searchResultData, 'sonarr', sonarrModalElement);
+        } else {
+            // Si c'est une série existante, on utilise la logique de mapping
+            // --- C'EST LA CORRECTION ---
+            // On passe les bons paramètres dans le bon ordre
+            triggerSonarrManualImportWithSeason(mediaIdForPayload, userForcedSeason, isNewMedia);
+        }
+    };
     }
     var modal = new bootstrap.Modal(sonarrModalElement);
     modal.show();
@@ -504,26 +507,43 @@ function handleGenericRadarrMovieSelection(mediaId, movieTitle, isAlreadyInArr, 
 }
 
 
-async function triggerSonarrManualImportWithSeason(mediaIdFromSelection, seriesTitleForDisplay, userForcedSeason, isNewSeries_OBSOLETE, mediaTitleForAdd_OBSOLETE) {
-    const originalItemName = document.getElementById('sonarrOriginalItemName').value;
-    const feedbackDiv = document.getElementById('sonarrSearchModalFeedbackZone'); // Use dedicated feedback zone
+async function triggerSonarrManualImportWithSeason(seriesId, seasonNumber, isNewSeries) {
     const sonarrModalElement = document.getElementById('sonarrSearchModal');
-    if (!mediaIdFromSelection && mediaIdFromSelection !== 0) { alert("Aucun ID de série valide."); return; }
+    const originalItemName = document.getElementById('sonarrOriginalItemName').value;
+    const feedbackDiv = document.getElementById('sonarrSearchModalFeedbackZone');
+    const seriesTitleForDisplay = sonarrModalElement.getAttribute('data-selected-media-title'); // On récupère le titre stocké
 
-    if (feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-info">Import pour '${escapeJsString(originalItemName.split(/[\\/]/).pop())}' vers la série '${escapeJsString(seriesTitleForDisplay)}'...</div>`;
-    else { console.warn("sonarrSearchModalFeedbackZone not found for in-modal messages.");}
+    if (!seriesId) {
+        alert("Aucun ID de série valide.");
+        return;
+    }
 
+    if (feedbackDiv) {
+        feedbackDiv.innerHTML = `<div class="alert alert-info">Traitement pour '${escapeJsString(originalItemName.split(/[\\/]/).pop())}' vers la série '${escapeJsString(seriesTitleForDisplay)}'...</div>`;
+    }
 
-    const problemTorrentHash = sonarrModalElement ? sonarrModalElement.getAttribute('data-problem-torrent-hash') : null;
+    const problemTorrentHash = sonarrModalElement.getAttribute('data-problem-torrent-hash');
+    
+    // Construction du payload, maintenant correcte
     const payload = {
-        item_name: originalItemName, is_new_series: isNewSeries,
+        item_name: originalItemName,
+        is_new_series: isNewSeries, // Utilise la variable passée en paramètre
         problem_torrent_hash: (problemTorrentHash && problemTorrentHash !== '') ? problemTorrentHash : undefined
     };
+
     if (isNewSeries) {
-        payload.tvdb_id = parseInt(mediaIdFromSelection);
-        payload.series_title_for_add = mediaTitleForAdd;
-    } else { payload.series_id = parseInt(mediaIdFromSelection); }
-    if (userForcedSeason && userForcedSeason.trim() !== '') { payload.user_forced_season = parseInt(userForcedSeason); }
+        // Pour une nouvelle série, l'ID est le TVDB ID
+        payload.tvdb_id = parseInt(seriesId);
+        payload.series_title_for_add = seriesTitleForDisplay;
+    } else {
+        // Pour une série existante, l'ID est l'ID Sonarr
+        payload.series_id = parseInt(seriesId);
+    }
+
+    // On ajoute la saison si elle a été spécifiée
+    if (seasonNumber && seasonNumber.trim() !== '') {
+        payload.user_forced_season = parseInt(seasonNumber);
+    }
 
     const modalMapButton = document.getElementById('sonarrModalMapButton');
     if (modalMapButton) modalMapButton.disabled = true;
@@ -531,28 +551,37 @@ async function triggerSonarrManualImportWithSeason(mediaIdFromSelection, seriesT
     try {
         const actionUrl = document.getElementById('sonarrModalMapButton').dataset.actionUrl;
         const response = await fetch(actionUrl, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
         });
         const result = await response.json();
-        if (!response.ok && !(response.status === 200 && result.action_required)) { throw new Error(result.error || `Erreur HTTP: ${response.status}`); }
+        if (!response.ok) { // Gestion d'erreur améliorée
+            throw new Error(result.error || `Erreur HTTP: ${response.status}`);
+        }
 
         if (result.success === true) {
             if (feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-success">${escapeJsString(result.message) || 'Action initiée.'}</div>`;
-            else console.log("Success message (no feedback div):", result.message);
             flashMessageGlobally(result.message || `Action pour '${escapeJsString(originalItemName.split(/[\\/]/).pop())}' initiée.`, 'success');
             setTimeout(() => {
                 const modalInstance = bootstrap.Modal.getInstance(sonarrModalElement);
-                if (modalInstance) modalInstance.hide(); window.location.reload();
+                if (modalInstance) modalInstance.hide();
+                window.location.reload();
             }, 2500);
-        } else if (result.action_required === "resolve_season_episode_mismatch") {
-            console.warn("Discordance S/E. UI dédiée nécessaire.", result.details);
-            if (feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-warning">Discordance S/E: ${escapeJsString(result.message || '')} <br>Détails: ${escapeJsString(JSON.stringify(result.details))}</div>`;
-        } else { throw new Error(result.error || "Erreur inconnue."); }
+        } else {
+            // Gère les cas où success n'est pas true (ex: action_required)
+            let errorMessage = result.error || result.message || "Une erreur inconnue est survenue.";
+            if (result.action_required === "resolve_season_episode_mismatch") {
+                errorMessage = `Discordance Saison/Épisode: ${result.message}`;
+            }
+            throw new Error(errorMessage);
+        }
     } catch (error) {
         if (feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-danger">${escapeJsString(error.message)}</div>`;
-        else console.error("Error (no feedback div):", error.message);
         flashMessageGlobally(`Erreur action Sonarr: ${escapeJsString(error.message)}`, 'danger');
-    } finally { if (modalMapButton) modalMapButton.disabled = false; }
+    } finally {
+        if (modalMapButton) modalMapButton.disabled = false;
+    }
 }
 
 async function triggerRadarrManualImport(radarrMovieId, movieTitleForDisplay) {
