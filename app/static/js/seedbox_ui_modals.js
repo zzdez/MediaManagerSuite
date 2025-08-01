@@ -1163,4 +1163,33 @@ function toggleSelectAll(arrType, selectAllButton) {
 
 
 console.log("seedbox_ui_modals.js loaded successfully and completely.");
+
+// Ajoute ce bloc de code pour gérer la fermeture propre des modales
+document.addEventListener('DOMContentLoaded', function() {
+    // Cible les deux modales de mapping
+    const sonarrModal = document.getElementById('sonarrSearchModal');
+    const radarrModal = document.getElementById('radarrSearchModal');
+
+    const handleModalClose = function() {
+        // Cherche s'il reste un overlay de modale dans le body
+        const backdrops = document.querySelectorAll('.modal-backdrop');
+        if (backdrops.length > 0) {
+            console.warn('Overlay de modale fantôme détecté. Tentative de suppression manuelle.');
+            backdrops.forEach(backdrop => backdrop.remove());
+        }
+
+        // Bootstrap ajoute aussi une classe au body qui peut bloquer le scroll
+        if (document.body.classList.contains('modal-open')) {
+            console.warn('Classe "modal-open" résiduelle détectée. Suppression.');
+            document.body.classList.remove('modal-open');
+        }
+    };
+
+    if (sonarrModal) {
+        sonarrModal.addEventListener('hidden.bs.modal', handleModalClose);
+    }
+    if (radarrModal) {
+        radarrModal.addEventListener('hidden.bs.modal', handleModalClose);
+    }
+});
 // [end of app/static/js/seedbox_ui_modals.js]
