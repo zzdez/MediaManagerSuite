@@ -654,40 +654,42 @@
                         });
                     }
                 }
-        else if (button.classList.contains('delete-association-btn')) {
-            event.preventDefault(); // Bonne pratique pour éviter tout comportement par défaut
-            
-            if (!confirm("Êtes-vous sûr de vouloir supprimer cette association ?")) {
-                return;
-            }
+                } else if (button.classList.contains('delete-association-btn')) {
+                    event.preventDefault(); // Bonne pratique pour éviter tout comportement par défaut
 
-            // On construit l'URL dynamiquement avec url_for pour plus de robustesse
-            const url = `{{ url_for('seedbox_ui.delete_problematic_association_action', torrent_hash='__HASH__') }}`.replace('__HASH__', torrentHash);
+                    if (!confirm("Êtes-vous sûr de vouloir supprimer cette association ?")) {
+                        return;
+                    }
 
-            fetch(url, {
-                method: 'POST',
-                // On retire l'en-tête Content-Type car nous n'envoyons pas de corps JSON.
-                // C'est plus propre et évite toute confusion.
-            })
-            .then(response => {
-                // On s'attend toujours à une réponse JSON, même pour les erreurs
-                return response.json().then(data => ({ ok: response.ok, data }));
-            })
-            .then(({ ok, data }) => {
-                // On affiche le message renvoyé par le serveur, qu'il soit un succès ou une erreur
-                alert(data.message || "L'opération est terminée.");
-                
-                // On ne recharge la page que si l'opération a réussi
-                if (ok) {
-                    window.location.reload();
+                    // On construit l'URL dynamiquement avec url_for pour plus de robustesse
+                    const url = `{{ url_for('seedbox_ui.delete_problematic_association_action', torrent_hash='__HASH__') }}`.replace('__HASH__', torrentHash);
+
+                    fetch(url, {
+                        method: 'POST',
+                        // On retire l'en-tête Content-Type car nous n'envoyons pas de corps JSON.
+                        // C'est plus propre et évite toute confusion.
+                    })
+                    .then(response => {
+                        // On s'attend toujours à une réponse JSON, même pour les erreurs
+                        return response.json().then(data => ({ ok: response.ok, data }));
+                    })
+                    .then(({ ok, data }) => {
+                        // On affiche le message renvoyé par le serveur, qu'il soit un succès ou une erreur
+                        alert(data.message || "L'opération est terminée.");
+
+                        // On ne recharge la page que si l'opération a réussi
+                        if (ok) {
+                            window.location.reload();
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Erreur lors de la suppression de l\'association:', error);
+                        alert('Une erreur de communication est survenue. Consultez la console pour plus de détails.');
+                    });
                 }
-            })
-            .catch(error => {
-                console.error('Erreur lors de la suppression de l\'association:', error);
-                alert('Une erreur de communication est survenue. Consultez la console pour plus de détails.');
             });
         }
-            
+
         // --- Logique pour les onglets principaux ---
         document.querySelectorAll('#finished-files-tab, #rtorrent-view-tab').forEach(tab => {
             let isContentLoaded = false;
