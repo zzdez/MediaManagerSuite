@@ -147,10 +147,7 @@ function openSonarrSearchModal(itemPathForAction, itemType) {
             }
         };
     }
-    var modal = bootstrap.Modal.getInstance(sonarrModalElement);
-    if (!modal) {
-        modal = new bootstrap.Modal(sonarrModalElement);
-    }
+    var modal = new bootstrap.Modal(sonarrModalElement);
     modal.show();
 }
 
@@ -208,10 +205,7 @@ function openRadarrSearchModal(itemPathForAction, itemType) {
             }
         };
     }
-    var modal = bootstrap.Modal.getInstance(radarrModalElement);
-    if (!modal) {
-        modal = new bootstrap.Modal(radarrModalElement);
-    }
+    var modal = new bootstrap.Modal(radarrModalElement);
     modal.show();
 }
 
@@ -253,10 +247,7 @@ function openSonarrSearchModalForProblemItem(releaseName, currentTargetId, torre
             } else { alert("Veuillez sélectionner une série."); }
         };
     }
-    var modal = bootstrap.Modal.getInstance(sonarrModalElement);
-    if (!modal) {
-        modal = new bootstrap.Modal(sonarrModalElement);
-    }
+    var modal = new bootstrap.Modal(sonarrModalElement);
     modal.show();
 }
 
@@ -289,10 +280,7 @@ function openRadarrSearchModalForProblemItem(releaseName, currentTargetId, torre
             else { alert("Veuillez sélectionner un film."); }
         };
     }
-    var modal = bootstrap.Modal.getInstance(radarrModalElement);
-    if (!modal) {
-        modal = new bootstrap.Modal(radarrModalElement);
-    }
+    var modal = new bootstrap.Modal(radarrModalElement);
     modal.show();
 }
 
@@ -316,7 +304,7 @@ async function executeSonarrSearch() {
         if (results.length === 0) { resultsDiv.innerHTML = '<p class="text-muted">Aucune série trouvée.</p>'; return; }
         let html = '<ul class="list-group mt-3">';
         results.forEach(series => {
-            let posterUrl = series.remotePoster || (series.images && series.images.length > 0 ? series.images.find(img => img.coverType === 'poster')?.remoteUrl : 'data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%2260%22%20height%3D%2290%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2060%2090%22%20preserveAspectRatio%3D%22none%22%3E%3Cdefs%3E%3Cstyle%20type%3D%22text%2Fcss%22%3E%23holder_1582426688c%20text%20%7B%20fill%3A%23AAAAAA%3Bfont-weight%3Abold%3Bfont-family%3AArial%2C%20Helvetica%2C%20Open%20Sans%2C%20sans-serif%2C%20monospace%3Bfont-size%3A10pt%20%7D%20%3C%2Fstyle%3E%3C%2Fdefs%3E%3Cg%20id%3D%22holder_1582426688c%22%3E%3Crect%20width%3D%2260%22%20height%3D%2290%22%20fill%3D%22%23EEEEEE%22%3E%3C%2Frect%3E%3Cg%3E%3Ctext%20x%3D%2213.171875%22%20y%3D%2249.5%22%3EN/A%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E');
+            let posterUrl = series.remotePoster || (series.images && series.images.length > 0 ? series.images.find(img => img.coverType === 'poster')?.remoteUrl : 'https://via.placeholder.com/60x90?text=N/A');
             const escapedSeriesTitle = escapeJsString(series.title);
             const sonarrIdAsInt = parseInt(series.id);
             const isAlreadyInSonarr = !isNaN(sonarrIdAsInt) && sonarrIdAsInt > 0;
@@ -331,7 +319,7 @@ async function executeSonarrSearch() {
             html += `
                 <li class="list-group-item" data-media-id="${idForHandler || 0}" data-instance-type="sonarr" style="cursor: pointer;">
                     <div class="row align-items-center">
-                    <div class="col-auto"><img src="${posterUrl}" alt="${escapedSeriesTitle}" class="img-fluid rounded" style="max-height: 90px;" onerror="this.onerror=null; this.src='data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%2260%22%20height%3D%2290%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2060%2090%22%20preserveAspectRatio%3D%22none%22%3E%3Cdefs%3E%3Cstyle%20type%3D%22text%2Fcss%22%3E%23holder_1582426688c%20text%20%7B%20fill%3A%23AAAAAA%3Bfont-weight%3Abold%3Bfont-family%3AArial%2C%20Helvetica%2C%20Open%20Sans%2C%20sans-serif%2C%20monospace%3Bfont-size%3A10pt%20%7D%20%3C%2Fstyle%3E%3C%2Fdefs%3E%3Cg%20id%3D%22holder_1582426688c%22%3E%3Crect%20width%3D%2260%22%20height%3D%2290%22%20fill%3D%22%23EEEEEE%22%3E%3C%2Frect%3E%3Cg%3E%3Ctext%20x%3D%2213.171875%22%20y%3D%2249.5%22%3EN/A%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E';"></div>
+                    <div class="col-auto"><img src="${posterUrl}" alt="${escapedSeriesTitle}" class="img-fluid rounded" style="max-height: 90px;" onerror="this.onerror=null; this.src='https://via.placeholder.com/60x90?text=ImgErr';"></div>
                     <div class="col">
                         <strong>${series.title}</strong> (${series.year || 'N/A'})<br>
                         <small class="text-muted">
@@ -380,12 +368,11 @@ async function executeRadarrSearch() {
         if (results.length === 0) { resultsDiv.innerHTML = '<p class="text-muted">Aucun film trouvé.</p>'; return; }
         let html = '<ul class="list-group mt-3">';
         results.forEach(movie => {
-            console.log("Movie object:", movie);
-            let posterUrl = movie.remotePoster || (movie.images && movie.images.length > 0 ? movie.images.find(img => img.coverType === 'poster')?.remoteUrl : 'data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%2260%22%20height%3D%2290%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2060%2090%22%20preserveAspectRatio%3D%22none%22%3E%3Cdefs%3E%3Cstyle%20type%3D%22text%2Fcss%22%3E%23holder_1582426688c%20text%20%7B%20fill%3A%23AAAAAA%3Bfont-weight%3Abold%3Bfont-family%3AArial%2C%20Helvetica%2C%20Open%20Sans%2C%20sans-serif%2C%20monospace%3Bfont-size%3A10pt%20%7D%20%3C%2Fstyle%3E%3C%2Fdefs%3E%3Cg%20id%3D%22holder_1582426688c%22%3E%3Crect%20width%3D%2260%22%20height%3D%2290%22%20fill%3D%22%23EEEEEE%22%3E%3C%2Frect%3E%3Cg%3E%3Ctext%20x%3D%2213.171875%22%20y%3D%2249.5%22%3EN/A%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E');
+            let posterUrl = movie.remotePoster || (movie.images && movie.images.length > 0 ? movie.images.find(img => img.coverType === 'poster')?.remoteUrl : 'https://via.placeholder.com/60x90?text=N/A');
             const escapedMovieTitle = escapeJsString(movie.title);
-            const isAlreadyInRadarr = movie.movieId && movie.movieId > 0;
-            console.log("executeRadarrSearch - movie.movieId:", movie.movieId, "isAlreadyInRadarr:", isAlreadyInRadarr); // AJOUT CONSOLE.LOG
-            const idForHandler = isAlreadyInRadarr ? movie.movieId : movie.tmdbId;
+            const isAlreadyInRadarr = !!(movie.id && movie.id > 0);
+            console.log("executeRadarrSearch - movie.id:", movie.id, "isAlreadyInRadarr:", isAlreadyInRadarr); // AJOUT CONSOLE.LOG
+            const idForHandler = isAlreadyInRadarr ? movie.id : movie.tmdbId;
             let buttonText = isAlreadyInRadarr ? "Sélectionner" : "Ajouter & Sélectionner";
             let buttonIcon = "fas fa-check-circle";
             let buttonClass = "btn-success";
@@ -399,7 +386,7 @@ async function executeRadarrSearch() {
             html += `
                 <li class="list-group-item" data-media-id="${idForHandler || 0}" data-instance-type="radarr" style="cursor: pointer;">
                     <div class="row align-items-center">
-                    <div class="col-auto"><img src="${posterUrl}" alt="Poster" class="img-fluid rounded" style="max-height: 90px;" onerror="this.onerror=null; this.src='data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%2260%22%20height%3D%2290%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2060%2090%22%20preserveAspectRatio%3D%22none%22%3E%3Cdefs%3E%3Cstyle%20type%3D%22text%2Fcss%22%3E%23holder_1582426688c%20text%20%7B%20fill%3A%23AAAAAA%3Bfont-weight%3Abold%3Bfont-family%3AArial%2C%20Helvetica%2C%20Open%20Sans%2C%20sans-serif%2C%20monospace%3Bfont-size%3A10pt%20%7D%20%3C%2Fstyle%3E%3C%2Fdefs%3E%3Cg%20id%3D%22holder_1582426688c%22%3E%3Crect%20width%3D%2260%22%20height%3D%2290%22%20fill%3D%22%23EEEEEE%22%3E%3C%2Frect%3E%3Cg%3E%3Ctext%20x%3D%2213.171875%22%20y%3D%2249.5%22%3EN/A%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E';"></div>
+                    <div class="col-auto"><img src="${posterUrl}" alt="Poster" class="img-fluid rounded" style="max-height: 90px;" onerror="this.onerror=null; this.src='https://via.placeholder.com/60x90?text=ImgErr';"></div>
                     <div class="col"><strong>${movie.title}</strong> (${movie.year || 'N/A'})<br><small class="text-muted">Statut: ${movie.status || 'N/A'} | TMDB ID: ${movie.tmdbId || 'N/A'} ${isAlreadyInRadarr ? `| Radarr ID: ${movie.id}` : ''}</small><p class="mb-0 small">${(movie.overview || '').substring(0, 120)}${(movie.overview || '').length > 120 ? '...' : ''}</p></div>
                     <div class="col-auto"><button class="btn ${buttonClass} btn-sm" onclick="handleGenericRadarrMovieSelection(${idForHandler || 0}, '${escapedMovieTitle}', ${isAlreadyInRadarr}, ${movie.year || 0})" title="${buttonTitle}" ${idForHandler ? '' : 'disabled title="ID manquant"'}><i class="${buttonIcon}"></i> ${buttonText}</button></div>
                 </div></li>`;
@@ -530,7 +517,7 @@ async function triggerSonarrManualImportWithSeason(mediaIdFromSelection, seriesT
     const problemTorrentHash = sonarrModalElement ? sonarrModalElement.getAttribute('data-problem-torrent-hash') : null;
     const payload = {
         item_name: originalItemName, is_new_series: isNewSeries,
-        problem_torrent_hash: (problemTorrentHash && problemTorrentHash !== '') ? problemTorrentHash : null
+        problem_torrent_hash: (problemTorrentHash && problemTorrentHash !== '') ? problemTorrentHash : undefined
     };
     if (isNewSeries) {
         payload.tvdb_id = parseInt(mediaIdFromSelection);
@@ -542,7 +529,7 @@ async function triggerSonarrManualImportWithSeason(mediaIdFromSelection, seriesT
     if (modalMapButton) modalMapButton.disabled = true;
 
     try {
-        const actionUrl = window.appUrls.triggerSonarrImport;
+        const actionUrl = document.getElementById('sonarrModalMapButton').dataset.actionUrl;
         const response = await fetch(actionUrl, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
         });
@@ -553,11 +540,10 @@ async function triggerSonarrManualImportWithSeason(mediaIdFromSelection, seriesT
             if (feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-success">${escapeJsString(result.message) || 'Action initiée.'}</div>`;
             else console.log("Success message (no feedback div):", result.message);
             flashMessageGlobally(result.message || `Action pour '${escapeJsString(originalItemName.split(/[\\/]/).pop())}' initiée.`, 'success');
-            const modalInstance = bootstrap.Modal.getInstance(sonarrModalElement);
-            if (modalInstance) {
-                modalInstance.hide();
-            }
-            window.location.reload();
+            setTimeout(() => {
+                const modalInstance = bootstrap.Modal.getInstance(sonarrModalElement);
+                if (modalInstance) modalInstance.hide(); window.location.reload();
+            }, 2500);
         } else if (result.action_required === "resolve_season_episode_mismatch") {
             console.warn("Discordance S/E. UI dédiée nécessaire.", result.details);
             if (feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-warning">Discordance S/E: ${escapeJsString(result.message || '')} <br>Détails: ${escapeJsString(JSON.stringify(result.details))}</div>`;
@@ -587,7 +573,7 @@ async function triggerRadarrManualImport(radarrMovieId, movieTitleForDisplay) {
     if(modalMapButton) modalMapButton.disabled = true;
 
     try {
-        const actionUrl = window.appUrls.triggerRadarrImport;
+        const actionUrl = document.getElementById('radarrModalMapButton').dataset.actionUrl;
         const response = await fetch(actionUrl, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
         });
@@ -596,11 +582,10 @@ async function triggerRadarrManualImport(radarrMovieId, movieTitleForDisplay) {
             if(feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-success">${escapeJsString(result.message) || 'Import Radarr réussi.'}</div>`;
             else console.log("Success message (no feedback div):", result.message);
             flashMessageGlobally(result.message || `Import pour '${escapeJsString(originalItemName.split(/[\\/]/).pop())}' réussi.`, 'success');
-            const modalInstance = bootstrap.Modal.getInstance(radarrModalElement);
-            if (modalInstance) {
-                modalInstance.hide();
-            }
-            window.location.reload();
+            setTimeout(() => {
+                const modalInstance = bootstrap.Modal.getInstance(radarrModalElement);
+                if (modalInstance) modalInstance.hide(); window.location.reload();
+            }, 2500);
         } else { throw new Error(result.error || "Erreur inconnue (import Radarr)."); }
     } catch (error) {
         if(feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-danger">Erreur: ${escapeJsString(error.message)}</div>`;
@@ -726,7 +711,7 @@ function renderArrSearchResultsForAddTorrent(results, appType, resultsDivId) {
     results.forEach(item => {
         const title = escapeJsString(item.title);
         const year = item.year || 'N/A';
-        let posterUrl = item.remotePoster || (item.images && item.images.length > 0 ? item.images.find(img => img.coverType === 'poster')?.remoteUrl : null) || 'data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%2260%22%20height%3D%2290%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2060%2090%22%20preserveAspectRatio%3D%22none%22%3E%3Cdefs%3E%3Cstyle%20type%3D%22text%2Fcss%22%3E%23holder_1582426688c%20text%20%7B%20fill%3A%23AAAAAA%3Bfont-weight%3Abold%3Bfont-family%3AArial%2C%20Helvetica%2C%20Open%20Sans%2C%20sans-serif%2C%20monospace%3Bfont-size%3A10pt%20%7D%20%3C%2Fstyle%3E%3C%2Fdefs%3E%3Cg%20id%3D%22holder_1582426688c%22%3E%3Crect%20width%3D%2260%22%20height%3D%2290%22%20fill%3D%22%23EEEEEE%22%3E%3C%2Frect%3E%3Cg%3E%3Ctext%20x%3D%2213.171875%22%20y%3D%2249.5%22%3EN/A%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E';
+        let posterUrl = item.remotePoster || (item.images && item.images.length > 0 ? item.images.find(img => img.coverType === 'poster')?.remoteUrl : null) || 'https://via.placeholder.com/40x60?text=N/A';
         let isAlreadyAdded = false, idForSelection = null, idTypeForDisplay = "", externalIdForDisplay = "", internalIdDisplay = "";
         if (appType === 'sonarr') {
             const sonarrId = parseInt(item.id); isAlreadyAdded = !isNaN(sonarrId) && sonarrId > 0;
@@ -743,7 +728,7 @@ function renderArrSearchResultsForAddTorrent(results, appType, resultsDivId) {
         const buttonTitle = isAlreadyAdded ? `Sélectionner: ${item.title}` : `Ajouter: ${item.title}`;
         html += `
             <li class="list-group-item"><div class="row align-items-center">
-                <div class="col-auto" style="width:50px;"><img src="${posterUrl}" alt="Poster" class="img-fluid rounded" style="max-height: 60px;" onerror="this.onerror=null; this.src='data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%2260%22%20height%3D%2290%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2060%2090%22%20preserveAspectRatio%3D%22none%22%3E%3Cdefs%3E%3Cstyle%20type%3D%22text%2Fcss%22%3E%23holder_1582426688c%20text%20%7B%20fill%3A%23AAAAAA%3Bfont-weight%3Abold%3Bfont-family%3AArial%2C%20Helvetica%2C%20Open%20Sans%2C%20sans-serif%2C%20monospace%3Bfont-size%3A10pt%20%7D%20%3C%2Fstyle%3E%3C%2Fdefs%3E%3Cg%20id%3D%22holder_1582426688c%22%3E%3Crect%20width%3D%2260%22%20height%3D%2290%22%20fill%3D%22%23EEEEEE%22%3E%3C%2Frect%3E%3Cg%3E%3Ctext%20x%3D%2213.171875%22%20y%3D%2249.5%22%3EN/A%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E';"></div>
+                <div class="col-auto" style="width:50px;"><img src="${posterUrl}" alt="Poster" class="img-fluid rounded" style="max-height: 60px;" onerror="this.src='https://via.placeholder.com/40x60?text=Err';"></div>
                 <div class="col"><strong>${item.title}</strong> (${year})<br><small class="text-muted">Statut: <span class="fw-bold ${isAlreadyAdded ? 'text-success' : 'text-primary'}">${isAlreadyAdded ? (item.status || 'Géré(e)') : 'Non Ajouté(e)'}</span> | ${idTypeForDisplay}: ${externalIdForDisplay} ${internalIdDisplay}</small></div>
                 <div class="col-auto"><button type="button" class="btn ${buttonClass} btn-sm" onclick="selectArrItemForAddTorrent(${idForSelection || 0}, '${title}', '${appType}', ${isAlreadyAdded})" title="${buttonTitle}" ${idForSelection ? '' : 'disabled title="ID manquant"'}><i class="${buttonIcon}"></i> ${buttonText}</button></div>
             </div></li>`;
@@ -1179,7 +1164,6 @@ function toggleSelectAll(arrType, selectAllButton) {
 
 console.log("seedbox_ui_modals.js loaded successfully and completely.");
 
-// Ajoute ce bloc de code pour gérer la fermeture propre des modales
 document.addEventListener('DOMContentLoaded', function() {
     // Cible les deux modales de mapping
     const sonarrModal = document.getElementById('sonarrSearchModal');
