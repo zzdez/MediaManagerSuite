@@ -1,3 +1,47 @@
+// ==================================================================== //
+// --- FICHIER : seedbox_ui_modals.js (VERSION CORRIGÉE ET STABLE) ---
+// ==================================================================== //
+
+// --- SECTION 1 : INITIALISATION GLOBALE ET GESTION DES INSTANCES ---
+
+let sonarrModalInstance = null;
+let radarrModalInstance = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('[INFO] Le DOM est chargé. Initialisation des modales et des écouteurs.');
+
+    const sonarrModalEl = document.getElementById('sonarrSearchModal');
+    if (sonarrModalEl) {
+        sonarrModalInstance = new bootstrap.Modal(sonarrModalEl);
+        sonarrModalEl.addEventListener('hidden.bs.modal', handleModalClose);
+    } else {
+        console.error('[ERREUR] Élément de la modale Sonarr introuvable.');
+    }
+
+    const radarrModalEl = document.getElementById('radarrSearchModal');
+    if (radarrModalEl) {
+        radarrModalInstance = new bootstrap.Modal(radarrModalEl);
+        radarrModalEl.addEventListener('hidden.bs.modal', handleModalClose);
+    } else {
+        console.error('[ERREUR] Élément de la modale Radarr introuvable.');
+    }
+});
+
+// --- SECTION 2 : FONCTIONS HELPER ---
+
+// Fonction de nettoyage pour l'overlay fantôme
+function handleModalClose() {
+    const backdrops = document.querySelectorAll('.modal-backdrop');
+    if (backdrops.length > 0) {
+        console.warn('Overlay de modale fantôme détecté. Suppression manuelle.');
+        backdrops.forEach(backdrop => backdrop.remove());
+    }
+    if (document.body.classList.contains('modal-open')) {
+        document.body.classList.remove('modal-open');
+        console.warn('Classe "modal-open" résiduelle détectée. Suppression.');
+    }
+}
+
 // ========================================================================== //
 // MODAL RELATED JAVASCRIPT FUNCTIONS                                         //
 // ========================================================================== //
@@ -147,8 +191,12 @@ function openSonarrSearchModal(itemPathForAction, itemType) {
             }
         };
     }
-    var modal = new bootstrap.Modal(sonarrModalElement);
-    modal.show();
+    // CORRECTION : On utilise l'instance existante
+    if (sonarrModalInstance) {
+        sonarrModalInstance.show();
+    } else {
+        console.error("L'instance de la modale Sonarr n'a pas pu être initialisée.");
+    }
 }
 
 function openRadarrSearchModal(itemPathForAction, itemType) {
@@ -205,8 +253,12 @@ function openRadarrSearchModal(itemPathForAction, itemType) {
             }
         };
     }
-    var modal = new bootstrap.Modal(radarrModalElement);
-    modal.show();
+    // CORRECTION : On utilise l'instance existante au lieu d'en créer une nouvelle
+    if (radarrModalInstance) {
+        radarrModalInstance.show();
+    } else {
+        console.error("L'instance de la modale Radarr n'a pas pu être initialisée.");
+    }
 }
 
 function openSonarrSearchModalForProblemItem(releaseName, currentTargetId, torrentHash) {
@@ -247,8 +299,12 @@ function openSonarrSearchModalForProblemItem(releaseName, currentTargetId, torre
             } else { alert("Veuillez sélectionner une série."); }
         };
     }
-    var modal = new bootstrap.Modal(sonarrModalElement);
-    modal.show();
+    // CORRECTION : On utilise l'instance existante
+    if (sonarrModalInstance) {
+        sonarrModalInstance.show();
+    } else {
+        console.error("L'instance de la modale Sonarr n'a pas pu être initialisée.");
+    }
 }
 
 function openRadarrSearchModalForProblemItem(releaseName, currentTargetId, torrentHash) {
@@ -280,8 +336,12 @@ function openRadarrSearchModalForProblemItem(releaseName, currentTargetId, torre
             else { alert("Veuillez sélectionner un film."); }
         };
     }
-    var modal = new bootstrap.Modal(radarrModalElement);
-    modal.show();
+    // CORRECTION : On utilise l'instance existante
+    if (radarrModalInstance) {
+        radarrModalInstance.show();
+    } else {
+        console.error("L'instance de la modale Radarr n'a pas pu être initialisée.");
+    }
 }
 
 async function executeSonarrSearch() {
@@ -1164,32 +1224,4 @@ function toggleSelectAll(arrType, selectAllButton) {
 
 console.log("seedbox_ui_modals.js loaded successfully and completely.");
 
-// Ajoute ce bloc de code pour gérer la fermeture propre des modales
-document.addEventListener('DOMContentLoaded', function() {
-    // Cible les deux modales de mapping
-    const sonarrModal = document.getElementById('sonarrSearchModal');
-    const radarrModal = document.getElementById('radarrSearchModal');
-
-    const handleModalClose = function() {
-        // Cherche s'il reste un overlay de modale dans le body
-        const backdrops = document.querySelectorAll('.modal-backdrop');
-        if (backdrops.length > 0) {
-            console.warn('Overlay de modale fantôme détecté. Tentative de suppression manuelle.');
-            backdrops.forEach(backdrop => backdrop.remove());
-        }
-
-        // Bootstrap ajoute aussi une classe au body qui peut bloquer le scroll
-        if (document.body.classList.contains('modal-open')) {
-            console.warn('Classe "modal-open" résiduelle détectée. Suppression.');
-            document.body.classList.remove('modal-open');
-        }
-    };
-
-    if (sonarrModal) {
-        sonarrModal.addEventListener('hidden.bs.modal', handleModalClose);
-    }
-    if (radarrModal) {
-        radarrModal.addEventListener('hidden.bs.modal', handleModalClose);
-    }
-});
 // [end of app/static/js/seedbox_ui_modals.js]
