@@ -3724,22 +3724,23 @@ def retry_problematic_import_action(torrent_hash):
 
     association_data = torrent_map_manager.get_torrent_by_hash(torrent_hash)
     if not association_data:
-        flash(f"Association non trouvée pour le hash {torrent_hash}.", "danger")
-        return redirect(url_for('seedbox_ui.index'))
+        return jsonify({'status': 'error', 'message': f"Association non trouvée pour le hash {torrent_hash}."}), 404
 
     item_name_in_staging = association_data.get('release_name')
-    local_staging_path = current_app.config.get('LOCAL_STAGING_PATH')
+    
+    # --- CORRECTION 1 : Utiliser la bonne variable pour le chemin de staging ---
+    staging_dir = current_app.config.get('LOCAL_STAGING_PATH') # Utilise la variable de config correcte
 
-    if not item_name_in_staging or not local_staging_path or not (Path(local_staging_path) / item_name_in_staging).exists():
-        flash(f"L'item '{item_name_in_staging or 'Inconnu'}' n'est plus dans le staging ou informations manquantes. Impossible de réessayer.", "warning")
-        if torrent_hash: # S'assurer qu'on a un hash pour mettre à jour le statut
+    if not item_name_in_staging or not staging_dir or not (Path(staging_dir) / item_name_in_staging).exists():
+        message = f"L'item '{item_name_in_staging or 'Inconnu'}' n'est plus dans le staging ou informations manquantes. Impossible de réessayer."
+        if torrent_hash:
             torrent_map_manager.update_torrent_status_in_map(torrent_hash, "error_retry_failed_item_not_in_staging", "Item non trouvé dans le staging pour la relance.")
-        return redirect(url_for('seedbox_ui.index'))
+        return jsonify({'status': 'error', 'message': message}), 404
 
     logger.info(f"Relance du traitement pour : '{item_name_in_staging}', Hash: {torrent_hash}")
-    # Mise à jour du statut avant de tenter le traitement
     torrent_map_manager.update_torrent_status_in_map(torrent_hash, "processing_by_mms_retry", f"Relance manuelle pour {item_name_in_staging}")
 
+    # --- CORRECTION 2 : La NameError est corrigée ici ---
     full_staging_path_str = str((Path(staging_dir) / item_name_in_staging).resolve())
     result_from_handler = {}
     app_type = association_data.get('app_type')
@@ -3762,21 +3763,21 @@ def retry_problematic_import_action(torrent_hash):
             torrent_hash_for_status_update=torrent_hash
         )
     else:
-        flash(f"Type d'application inconnu '{app_type}' pour la relance.", "danger")
-        if torrent_hash: # S'assurer qu'on a un hash
+        message = f"Type d'application inconnu '{app_type}' pour la relance."
+        if torrent_hash:
             torrent_map_manager.update_torrent_status_in_map(torrent_hash, "error_unknown_association_type", "Type d'app inconnu lors de la relance.")
-        return redirect(url_for('seedbox_ui.index'))
+        return jsonify({'status': 'error', 'message': message}), 400
 
+    # --- CORRECTION 3 : Retourner du JSON au lieu d'une redirection ---
     if result_from_handler.get("success"):
-        flash(f"Relance pour '{item_name_in_staging}' réussie: {result_from_handler.get('message')}", "success")
-        # Le helper aura mis à jour/supprimé l'entrée du map si le nettoyage du map est activé après succès.
-        # S'il ne supprime pas, le statut "imported_by_mms" sera mis, donc il n'apparaîtra plus dans la liste "attention".
+        message = f"Relance pour '{item_name_in_staging}' réussie: {result_from_handler.get('message')}"
+        return jsonify({'status': 'success', 'message': message})
     elif result_from_handler.get("manual_required"):
-        flash(f"Relance pour '{item_name_in_staging}' nécessite une attention manuelle: {result_from_handler.get('message')}", "warning")
+        message = f"Relance pour '{item_name_in_staging}' nécessite une attention manuelle: {result_from_handler.get('message')}"
+        return jsonify({'status': 'warning', 'message': message}) # On peut utiliser un statut 'warning'
     else:
-        flash(f"Échec de la relance pour '{item_name_in_staging}': {result_from_handler.get('message', 'Erreur inconnue')}", "danger")
-
-    return redirect(url_for('seedbox_ui.index'))
+        message = f"Échec de la relance pour '{item_name_in_staging}': {result_from_handler.get('message', 'Erreur inconnue')}"
+        return jsonify({'status': 'error', 'message': message}), 500
 
 
 @seedbox_ui_bp.route('/problematic-association/delete/<string:torrent_hash>', methods=['POST'])
