@@ -370,7 +370,7 @@ async function executeRadarrSearch() {
         results.forEach(movie => {
             let posterUrl = movie.remotePoster || (movie.images && movie.images.length > 0 ? movie.images.find(img => img.coverType === 'poster')?.remoteUrl : 'https://via.placeholder.com/60x90?text=N/A');
             const escapedMovieTitle = escapeJsString(movie.title);
-            const isAlreadyInRadarr = !!(movie.id && movie.id > 0);
+            const isAlreadyInRadarr = movie.id && movie.id > 0;
             console.log("executeRadarrSearch - movie.id:", movie.id, "isAlreadyInRadarr:", isAlreadyInRadarr); // AJOUT CONSOLE.LOG
             const idForHandler = isAlreadyInRadarr ? movie.id : movie.tmdbId;
             let buttonText = isAlreadyInRadarr ? "Sélectionner" : "Ajouter & Sélectionner";
