@@ -72,7 +72,6 @@
              {% if level == 0 %}
                 {% if can_scan_sonarr %}
                 <button class="btn btn-sm btn-outline-primary mb-1 open-map-modal-btn"
-                        data-bs-toggle="modal"
                         data-bs-target="#sonarrSearchModal"
                         data-item-path="{{ node.path_for_actions }}"
                         data-item-type="{{ 'directory' if node.is_dir else 'file' }}"
@@ -83,7 +82,6 @@
                 </button>
 
                 <button class="btn btn-sm btn-outline-warning text-dark mb-1 open-map-modal-btn"
-                        data-bs-toggle="modal"
                         data-bs-target="#radarrSearchModal"
                         data-item-path="{{ node.path_for_actions }}"
                         data-item-type="{{ 'directory' if node.is_dir else 'file' }}"
