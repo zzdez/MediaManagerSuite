@@ -3099,24 +3099,48 @@ def rtorrent_list_view():
         flash("Aucune donnée reçue de rTorrent.", "warning")
         torrents_data = []
 
-    # pending_associations = get_all_pending_associations() # Removed, direct lookup by hash
+    # Load the full MMS map once
+    all_mms_associations = torrent_map_manager.get_all_torrents_in_map()
+    if not isinstance(all_mms_associations, dict):
+        current_app.logger.error("torrent_map_manager.get_all_torrents_in_map() did not return a dict.")
+        all_mms_associations = {} # Ensure it's a dict for safe lookup
 
     torrents_with_assoc = []
+    local_staging_path = current_app.config.get('LOCAL_STAGING_PATH')
+
     if isinstance(torrents_data, list):
         for torrent in torrents_data: # Each 'torrent' is a dict from the new list_torrents()
             torrent_hash = torrent.get('hash')
-            association_info = None
-            if torrent_hash:
-                # get_association_by_hash returns the association data dict directly, or None
-                association_data = torrent_map_manager.get_torrent_by_hash(torrent_hash)
-                if association_data:
-                     association_info = association_data
-            # else: # No hash for the torrent, cannot look up association
-            #    current_app.logger.debug(f"Torrent '{torrent.get('name')}' has no hash, cannot look up association.")
-
+            
+            mms_status = 'unknown'
+            mms_file_exists = False
+            
+            if torrent_hash and torrent_hash in all_mms_associations:
+                assoc_data = all_mms_associations[torrent_hash]
+                mms_status = assoc_data.get('status', 'unknown')
+                
+                # Check file existence based on status and configured paths
+                if mms_status in ['pending_mms_import', 'processing_by_mms_api', 'error_staging_path_missing', 'error_mms_all_files_failed_move', 'error_sonarr_season_undefined_for_file', 'error_mms_file_move']:
+                    # These statuses imply the file should be in local staging
+                    release_name = assoc_data.get('release_name')
+                    if release_name and local_staging_path:
+                        full_path = Path(local_staging_path) / release_name
+                        mms_file_exists = full_path.exists()
+                elif mms_status == 'imported_by_mms':
+                    # For imported items, check if they exist in their final destination (more complex, might need to query Sonarr/Radarr)
+                    # For now, we'll assume if it's imported, it exists, or we'd need more specific path info from the association.
+                    # Or, if the goal is to check if it's still in staging *after* import, that's a different check.
+                    # For simplicity, if it's imported, we'll mark it as existing in its final place.
+                    # A more robust check would involve knowing the final path from the association data.
+                    # For now, we'll just assume it exists if imported.
+                    mms_file_exists = True # Placeholder, actual check would be more complex
+                
+            torrent['mms_status'] = mms_status
+            torrent['mms_file_exists'] = mms_file_exists
+            
             torrents_with_assoc.append({
                 "details": torrent,
-                "association": association_info
+                "association": all_mms_associations.get(torrent_hash) # Pass the full association data if needed
             })
     else:
         current_app.logger.error(f"rtorrent_list_torrents_api (httprpc) did not return a list. Got: {type(torrents_data)}")
