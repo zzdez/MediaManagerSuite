@@ -148,11 +148,7 @@
                 <i class="bi bi-speedometer2"></i> Tableau de Bord
             </button>
         </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link" id="finished-files-tab" data-bs-toggle="tab" data-bs-target="#finished-files-content" type="button" role="tab" aria-controls="finished-files-content" aria-selected="false">
-                <i class="bi bi-check-circle-fill"></i> Fichiers Terminés
-            </button>
-        </li>
+        
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="rtorrent-view-tab" data-bs-toggle="tab" data-bs-target="#rtorrent-view-content" type="button" role="tab" aria-controls="rtorrent-view-content" aria-selected="false">
                 <i class="bi bi-hdd-stack"></i> Vue rTorrent
@@ -252,15 +248,7 @@
             {% endif %}
         </div>
 
-        <div class="tab-pane fade" id="finished-files-content" role="tabpanel" aria-labelledby="finished-files-tab">
-            <div class="text-center mt-5" id="finished-files-loader">
-                <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status">
-                    <span class="visually-hidden">Loading...</span>
-                </div>
-                <p class="mt-2">Chargement de la liste des fichiers terminés...</p>
-            </div>
-            <div id="finished-files-container"></div>
-        </div>
+        
 
         <div class="tab-pane fade" id="rtorrent-view-content" role="tabpanel" aria-labelledby="rtorrent-view-tab">
             <div class="text-center mt-5" id="rtorrent-loader">
@@ -685,9 +673,7 @@
                     const contentContainer = document.querySelector(targetId);
                     const loader = contentContainer.querySelector('.spinner-border').parentElement;
                     let url = '';
-                    if (event.target.id === 'finished-files-tab') {
-                        url = "{{ url_for('seedbox_ui.unified_finished_list') }}";
-                    } else if (event.target.id === 'rtorrent-view-tab') {
+                    if (event.target.id === 'rtorrent-view-tab') {
                         url = "{{ url_for('seedbox_ui.rtorrent_list_view') }}";
                     }
                     
