@@ -50,6 +50,7 @@
                     <th>Statut rTorrent</th>
                     <th>Label rTorrent</th>
                     <th>Pré-association MMS</th>
+                    <th>Statut MMS</th>
                 </tr>
             </thead>
             <tbody>
@@ -85,6 +86,34 @@
                                 </span>
                             {% else %}
                                 <span class="text-muted">Aucune</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% set status = torrent.mms_status %}
+                            {% if status == 'imported_by_mms' %}
+                                <span class="badge bg-success">Traité</span>
+                            {% elif status == 'pending_mms_import' %}
+                                <span class="badge bg-warning text-dark">En Staging</span>
+                            {% elif status == 'pending_download_on_seedbox' %}
+                                <span class="badge bg-primary">Associé</span>
+                            {% elif status == 'error_staging_path_missing' %}
+                                <span class="badge bg-danger">Erreur Staging</span>
+                            {% elif status == 'error_mms_all_files_failed_move' %}
+                                <span class="badge bg-danger">Erreur Déplacement</span>
+                            {% elif status == 'error_sonarr_season_undefined_for_file' %}
+                                <span class="badge bg-danger">Saison Manquante</span>
+                            {% elif status == 'error_mms_file_move' %}
+                                <span class="badge bg-danger">Erreur Fichier</span>
+                            {% elif status == 'error_unknown_association_type' %}
+                                <span class="badge bg-danger">Type Inconnu</span>
+                            {% elif status == 'error_mms_api_processing_failed' %}
+                                <span class="badge bg-danger">Erreur Traitement API</span>
+                            {% elif status == 'processing_by_mms_api' %}
+                                <span class="badge bg-info text-dark">Traitement MMS</span>
+                            {% elif status == 'unknown' %}
+                                <span class="badge bg-secondary">Inconnu</span>
+                            {% else %}
+                                <span class="badge bg-info text-dark">{{ status | replace('_', ' ') | capitalize }}</span>
                             {% endif %}
                         </td>
                     </tr>
