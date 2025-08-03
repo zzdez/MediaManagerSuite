@@ -51,12 +51,13 @@
                     <th>Label rTorrent</th>
                     <th>Pré-association MMS</th>
                     <th>Statut MMS</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
-                {% for item in torrents_with_assoc %}
-                    {% set torrent = item.details %}
-                    {% set association = item.association %}
+                {% for torrent_item in torrents_with_assoc %}
+                    {% set torrent = torrent_item.details %}
+                    {% set association = torrent_item.association %}
                     <tr>
                         <td><span class="torrent-name" title="{{ torrent.name }}">{{ torrent.name }}</span></td>
                         <td>{{ (torrent.size_bytes / (1024*1024*1024)) | round(2) if torrent.size_bytes else '0.00' }}</td>
@@ -116,6 +117,51 @@
                                 <span class="badge bg-info text-dark">{{ status | replace('_', ' ') | capitalize }}</span>
                             {% endif %}
                         </td>
+<!-- Nouvelle cellule pour les actions -->
+<td>
+    {% set torrent = torrent_item.details %}
+    {% set association = torrent_item.association %}
+    {% set status = torrent.mms_status %}
+
+    <div class="btn-group" role="group" aria-label="Actions for torrent {{ torrent.name }}">
+
+        {# --- ACTION : MAPPER (pour les torrents inconnus) --- #}
+        {% if status == 'unknown' %}
+            <button class="btn btn-sm btn-outline-info open-mapping-modal-btn"
+                    data-torrent-name="{{ torrent.name }}"
+                    title="Associer ce torrent à un média dans Sonarr/Radarr">
+                <i class="bi bi-link-45deg"></i> Mapper
+            </button>
+        {% endif %}
+
+        {# --- ACTION : FORCER L'IMPORT (pour les torrents en staging) --- #}
+        {% if status == 'pending_mms_import' and association %}
+            <button class="btn btn-sm btn-outline-success force-import-btn"
+                    data-torrent-hash="{{ torrent.hash }}"
+                    title="Forcer le traitement de cet item depuis le staging">
+                <i class="bi bi-play-circle-fill"></i> Forcer Import
+            </button>
+        {% endif %}
+
+        {# --- ACTION : OUBLIER L'ASSOCIATION (pour tous les torrents connus de MMS) --- #}
+        {% if status != 'unknown' and association %}
+            <button class="btn btn-sm btn-outline-warning forget-association-btn"
+                    data-torrent-hash="{{ torrent.hash }}"
+                    title="Supprimer l'association MMS. Le torrent restera dans rTorrent.">
+                <i class="bi bi-eraser-fill"></i> Oublier
+            </button>
+        {% endif %}
+
+        {# --- ACTION : SUPPRIMER DE RTORRENT (toujours disponible) --- #}
+        <button class="btn btn-sm btn-outline-danger delete-rtorrent-btn"
+                data-torrent-hash="{{ torrent.hash }}"
+                data-torrent-name="{{ torrent.name }}"
+                title="Supprimer le torrent de rTorrent (avec option de supprimer les données)">
+            <i class="bi bi-trash-fill"></i> Supprimer
+        </button>
+
+    </div>
+</td>
                     </tr>
                 {% endfor %}
             </tbody>
