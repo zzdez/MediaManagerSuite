@@ -286,6 +286,10 @@ function openRadarrSearchModalForProblemItem(releaseName, currentTargetId, torre
 
 async function executeSonarrSearch() {
     const query = document.getElementById('sonarrSearchQuery').value;
+    if (!query || query.trim() === '') {
+        // Do not run search if query is empty. This prevents errors on modal auto-show/reload.
+        return;
+    }
     const resultsDiv = document.getElementById('sonarrSearchResults');
     const feedbackDiv = document.getElementById('sonarrSearchModalFeedbackZone');
     if(feedbackDiv) feedbackDiv.innerHTML = ''; // Clear previous feedback
@@ -304,7 +308,7 @@ async function executeSonarrSearch() {
         if (results.length === 0) { resultsDiv.innerHTML = '<p class="text-muted">Aucune série trouvée.</p>'; return; }
         let html = '<ul class="list-group mt-3">';
         results.forEach(series => {
-            let posterUrl = series.remotePoster || (series.images && series.images.length > 0 ? series.images.find(img => img.coverType === 'poster')?.remoteUrl : 'data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%2260%22%20height%3D%2290%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2060%2090%22%20preserveAspectRatio%3D%22none%22%3E%3Cdefs%3E%3Cstyle%20type%3D%22text%2Fcss%22%3E%23holder_1582426688c%20text%20%7B%20fill%3A%23AAAAAA%3Bfont-weight%3Abold%3Bfont-family%3AArial%2C%20Helvetica%2C%20Open%20Sans%2C%20sans-serif%2C%20monospace%3Bfont-size%3A10pt%20%7D%20%3C%2Fstyle%3E%3C%2Fdefs%3E%3Cg%20id%3D%22holder_1582426688c%22%3E%3Crect%20width%3D%2260%22%20height%3D%2290%22%20fill%3D%22%23EEEEEE%22%3E%3C%2Frect%3E%3Cg%3E%3Ctext%20x%3D%2213.171875%22%20y%3D%2249.5%22%3EN/A%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E');
+                        let posterUrl = (series.remotePoster && series.remotePoster !== 'undefined' ? series.remotePoster : series.images?.find(img => img.coverType === 'poster')?.remoteUrl) || 'data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%2260%22%20height%3D%2290%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2060%2090%22%20preserveAspectRatio%3D%22none%22%3E%3Cdefs%3E%3Cstyle%20type%3D%22text%2Fcss%22%3E%23holder_1582426688c%20text%20%7B%20fill%3A%23AAAAAA%3Bfont-weight%3Abold%3Bfont-family%3AArial%2C%20Helvetica%2C%20Open%20Sans%2C%20sans-serif%2C%20monospace%3Bfont-size%3A10pt%20%7D%20%3C%2Fstyle%3E%3C%2Fdefs%3E%3Cg%20id%3D%22holder_1582426688c%22%3E%3Crect%20width%3D%2260%22%20height%3D%2290%22%20fill%3D%22%23EEEEEE%22%3E%3C%2Frect%3E%3Cg%3E%3Ctext%20x%3D%2213.171875%22%20y%3D%2249.5%22%3EN/A%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E';
             const escapedSeriesTitle = escapeJsString(series.title);
             const sonarrIdAsInt = parseInt(series.id);
             const isAlreadyInSonarr = !isNaN(sonarrIdAsInt) && sonarrIdAsInt > 0;
@@ -350,6 +354,10 @@ async function executeSonarrSearch() {
 
 async function executeRadarrSearch() {
     const query = document.getElementById('radarrSearchQuery').value;
+    if (!query || query.trim() === '') {
+        // Do not run search if query is empty.
+        return;
+    }
     const resultsDiv = document.getElementById('radarrSearchResults');
     const feedbackDiv = document.getElementById('radarrSearchModalFeedbackZone'); // Assuming similar ID for Radarr
     if(feedbackDiv) feedbackDiv.innerHTML = '';
@@ -368,7 +376,7 @@ async function executeRadarrSearch() {
         if (results.length === 0) { resultsDiv.innerHTML = '<p class="text-muted">Aucun film trouvé.</p>'; return; }
         let html = '<ul class="list-group mt-3">';
         results.forEach(movie => {
-            let posterUrl = movie.remotePoster || (movie.images && movie.images.length > 0 ? movie.images.find(img => img.coverType === 'poster')?.remoteUrl : 'data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%2260%22%20height%3D%2290%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2060%2090%22%20preserveAspectRatio%3D%22none%22%3E%3Cdefs%3E%3Cstyle%20type%3D%22text%2Fcss%22%3E%23holder_1582426688c%20text%20%7B%20fill%3A%23AAAAAA%3Bfont-weight%3Abold%3Bfont-family%3AArial%2C%20Helvetica%2C%20Open%20Sans%2C%20sans-serif%2C%20monospace%3Bfont-size%3A10pt%20%7D%20%3C%2Fstyle%3E%3C%2Fdefs%3E%3Cg%20id%3D%22holder_1582426688c%22%3E%3Crect%20width%3D%2260%22%20height%3D%2290%22%20fill%3D%22%23EEEEEE%22%3E%3C%2Frect%3E%3Cg%3E%3Ctext%20x%3D%2213.171875%22%20y%3D%2249.5%22%3EN/A%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E');
+                        let posterUrl = (movie.remotePoster && movie.remotePoster !== 'undefined' ? movie.remotePoster : movie.images?.find(img => img.coverType === 'poster')?.remoteUrl) || 'data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%2260%22%20height%3D%2290%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2060%2090%22%20preserveAspectRatio%3D%22none%22%3E%3Cdefs%3E%3Cstyle%20type%3D%22text%2Fcss%22%3E%23holder_1582426688c%20text%20%7B%20fill%3A%23AAAAAA%3Bfont-weight%3Abold%3Bfont-family%3AArial%2C%20Helvetica%2C%20Open%20Sans%2C%20sans-serif%2C%20monospace%3Bfont-size%3A10pt%20%7D%20%3C%2Fstyle%3E%3C%2Fdefs%3E%3Cg%20id%3D%22holder_1582426688c%22%3E%3Crect%20width%3D%2260%22%20height%3D%2290%22%20fill%3D%22%23EEEEEE%22%3E%3C%2Frect%3E%3Cg%3E%3Ctext%20x%3D%2213.171875%22%20y%3D%2249.5%22%3EN/A%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E';
             const escapedMovieTitle = escapeJsString(movie.title);
             const isAlreadyInRadarr = movie.id && movie.id > 0;
             console.log("executeRadarrSearch - movie.id:", movie.id, "isAlreadyInRadarr:", isAlreadyInRadarr); // AJOUT CONSOLE.LOG
@@ -504,7 +512,7 @@ function handleGenericRadarrMovieSelection(mediaId, movieTitle, isAlreadyInArr, 
 }
 
 
-async function triggerSonarrManualImportWithSeason(mediaIdFromSelection, seriesTitleForDisplay, userForcedSeason, isNewSeries_OBSOLETE, mediaTitleForAdd_OBSOLETE) {
+async function triggerSonarrManualImportWithSeason(mediaIdFromSelection, seriesTitleForDisplay, userForcedSeason) {
     const originalItemName = document.getElementById('sonarrOriginalItemName').value;
     const feedbackDiv = document.getElementById('sonarrSearchModalFeedbackZone'); // Use dedicated feedback zone
     const sonarrModalElement = document.getElementById('sonarrSearchModal');
@@ -516,7 +524,7 @@ async function triggerSonarrManualImportWithSeason(mediaIdFromSelection, seriesT
 
     const problemTorrentHash = sonarrModalElement ? sonarrModalElement.getAttribute('data-problem-torrent-hash') : null;
     const payload = {
-        item_name: originalItemName, is_new_series: isNewSeries,
+        item_name: originalItemName,
         problem_torrent_hash: (problemTorrentHash && problemTorrentHash !== '') ? problemTorrentHash : null
     };
     if (isNewSeries) {
@@ -529,7 +537,7 @@ async function triggerSonarrManualImportWithSeason(mediaIdFromSelection, seriesT
     if (modalMapButton) modalMapButton.disabled = true;
 
     try {
-        const actionUrl = window.appUrls.sonarrManualImport;
+        const actionUrl = window.appUrls.triggerSonarrImport;
         const response = await fetch(actionUrl, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
         });
@@ -573,7 +581,7 @@ async function triggerRadarrManualImport(radarrMovieId, movieTitleForDisplay) {
     if(modalMapButton) modalMapButton.disabled = true;
 
     try {
-        const actionUrl = window.appUrls.radarrManualImport;
+        const actionUrl = window.appUrls.triggerRadarrImport;
         const response = await fetch(actionUrl, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
         });
@@ -1055,12 +1063,12 @@ async function promptAndAddArrItemForLocalStaging(searchResultData, arrAppType, 
 
             try {
                 // This is the new backend route we'll create in Phase B
-                const apiUrl = `${window.appUrls.seedboxBase}/api/add-arr-item-and-get-id`; // Utiliser une base URL si possible, ou hardcoder.
+                const apiUrl = '/seedbox/api/add-arr-item-and-get-id';
                 // Si window.appUrls.seedboxBase n'est pas défini, il faudra le hardcoder ou le rendre disponible.
                 // Pour l'instant, je vais utiliser une URL relative qui suppose que seedbox_ui_modals.js est servi depuis une page sous /seedbox/
                 // ou que window.appUrls.seedboxBase est défini comme '/seedbox' ou ''.
                 // Alternative plus sûre pour l'instant si window.appUrls.seedboxBase n'est pas garanti :
-                const response = await fetch('/seedbox/api/add-arr-item-and-get-id', {
+                const response = await fetch(apiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
