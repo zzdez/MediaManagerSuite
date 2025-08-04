@@ -2,13 +2,10 @@
 <style>
     .table th { white-space: nowrap; }
     .torrent-name {
-        max-width: 150px; /* Reduced width */
-        min-width: 100px; /* Allow shrinking */
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        display: inline-block;
-        vertical-align: middle; /* Better alignment */
+        max-width: 250px; /* Allow a reasonable max width */
+        white-space: normal; /* Allow wrapping */
+        word-break: break-all; /* Break long words */
+        vertical-align: middle;
     }
     .status-downloading { color: #007bff; }
     .status-seeding { color: #28a745; }

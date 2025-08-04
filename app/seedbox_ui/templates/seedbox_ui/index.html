@@ -10,12 +10,12 @@
         /* Styles specific to seedbox_ui/index.html */
         .action-buttons form, .action-buttons button { margin-right: 3px; margin-bottom: 3px; }
         ul.file-tree, ul.children-list { list-style-type: none; padding-left: 0; }
-        .file-tree li > div { display: flex; align-items: center; padding: 0.25rem 0.5rem; border-bottom: 1px solid #eee; }
+        .file-tree li > div { display: flex; align-items: flex-start; padding: 0.25rem 0.5rem; border-bottom: 1px solid #eee; }
         .file-tree li > div:hover { background-color: #f8f9fa; }
         .file-tree .toggle-children { cursor: pointer; color: #0d6efd; text-decoration: none; }
         .file-tree .toggle-children i { transition: transform 0.2s ease-in-out; }
         .file-tree .icon-container { width: 25px; text-align: center; flex-shrink: 0; }
-        .file-tree .item-name-details { flex-grow: 1; margin-left: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .file-tree .item-name-details { flex-grow: 1; margin-left: 5px; word-break: break-all; }
         .file-tree .item-actions { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; }
         .file-tree .btn-sm { padding: 0.15rem 0.3rem; font-size: 0.75rem; }
         .modal-lg { max-width: 800px; }
