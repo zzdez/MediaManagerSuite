@@ -30,7 +30,7 @@
 
 <div class="d-flex justify-content-between align-items-center mb-3 mt-3"> {# Added mt-3 #}
     <h4 class="mb-0">Liste des Torrents rTorrent</h4> {# Retaining a title for the section within the tab #}
-    <a href="#" onclick="event.preventDefault(); document.getElementById('rtorrent-view-tab').click(); return false;" class="btn btn-info btn-sm">
+    <a href="#" onclick="event.preventDefault(); isRtorrentContentLoaded = false; loadRtorrentView();" class="btn btn-info btn-sm">
         <i class="fas fa-sync-alt"></i> Actualiser
     </a>
 </div>
