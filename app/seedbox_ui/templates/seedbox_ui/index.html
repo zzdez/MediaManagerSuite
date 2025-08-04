@@ -16,7 +16,7 @@
         .file-tree .toggle-children i { transition: transform 0.2s ease-in-out; }
         .file-tree .icon-container { width: 25px; text-align: center; flex-shrink: 0; }
         .file-tree .item-name-details { flex-grow: 1; margin-left: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .file-tree .item-actions { margin-left: auto; flex-shrink: 0; min-width: 280px; }
+        .file-tree .item-actions { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; }
         .file-tree .btn-sm { padding: 0.15rem 0.3rem; font-size: 0.75rem; }
         .modal-lg { max-width: 800px; }
         .btn-toolbar .btn { margin-right: 0.5rem; margin-bottom: 0.5rem;}
@@ -67,7 +67,7 @@
             </div>
          {% endif %}
       </span>
-      <div class="action-buttons item-actions ms-auto" style="min-width: 300px;">
+      <div class="action-buttons item-actions ms-auto">
          {% if not node.name.endswith("(Erreur de lecture)") %}
              {% if level == 0 %}
                 {% if can_scan_sonarr %}
