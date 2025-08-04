@@ -2,11 +2,13 @@
 <style>
     .table th { white-space: nowrap; }
     .torrent-name {
-        max-width: 300px;
+        max-width: 150px; /* Reduced width */
+        min-width: 100px; /* Allow shrinking */
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
         display: inline-block;
+        vertical-align: middle; /* Better alignment */
     }
     .status-downloading { color: #007bff; }
     .status-seeding { color: #28a745; }
@@ -123,7 +125,7 @@
     {% set association = torrent_item.association %}
     {% set status = torrent.mms_status %}
 
-    <div class="btn-group" role="group" aria-label="Actions for torrent {{ torrent.name }}">
+    <div class="d-flex flex-wrap" style="gap: 3px;">
 
         {# --- ACTION : MAPPER (pour les torrents inconnus) --- #}
         {% if status == 'unknown' %}
