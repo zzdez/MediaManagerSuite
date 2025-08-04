@@ -337,6 +337,36 @@
     // --- SCRIPT SPÉCIFIQUE À LA PAGE SEEDBOX/INDEX.HTML (VERSION STABLE) ---
     // ==================================================================== //
 
+    let isRtorrentContentLoaded = false;
+    function loadRtorrentView() {
+        if (isRtorrentContentLoaded) return;
+
+        const contentContainer = document.getElementById('rtorrent-content-container');
+        const loader = document.getElementById('rtorrent-loader');
+        const url = "{{ url_for('seedbox_ui.rtorrent_list_view') }}";
+
+        if (!contentContainer || !loader) {
+            console.error("rTorrent container or loader not found.");
+            return;
+        }
+
+        loader.style.display = 'block';
+        contentContainer.innerHTML = '';
+
+        fetch(url)
+            .then(res => res.ok ? res.text() : Promise.reject(new Error('Erreur réseau')))
+            .then(html => {
+                contentContainer.innerHTML = html;
+                isRtorrentContentLoaded = true;
+            })
+            .catch(err => {
+                contentContainer.innerHTML = `<div class="alert alert-danger">${err.message}</div>`;
+            })
+            .finally(() => {
+                loader.style.display = 'none';
+            });
+    }
+
     // --- SECTION 1 : DÉFINITION DE TOUTES LES FONCTIONS "HELPER" ---
 
     let selectedStagingItemsForBatch = [];
@@ -523,11 +553,12 @@
 
         // --- Restore active tab after reload ---
         const activeTabId = sessionStorage.getItem('activeTab');
-        if (activeTabId) {
+        if (activeTabId === '#rtorrent-view-tab') {
             const tabEl = document.querySelector(activeTabId);
             if (tabEl) {
                 const tab = new bootstrap.Tab(tabEl);
                 tab.show();
+                loadRtorrentView(); // Directly load content
             }
             sessionStorage.removeItem('activeTab');
         }
@@ -746,30 +777,12 @@
         }
             
         // --- Logique pour les onglets principaux ---
-        document.querySelectorAll('#finished-files-tab, #rtorrent-view-tab').forEach(tab => {
-            let isContentLoaded = false;
-            tab.addEventListener('shown.bs.tab', function(event) {
-                if (!isContentLoaded) {
-                    const targetId = event.target.getAttribute('data-bs-target');
-                    const contentContainer = document.querySelector(targetId);
-                    const loader = contentContainer.querySelector('.spinner-border').parentElement;
-                    let url = '';
-                    if (event.target.id === 'rtorrent-view-tab') {
-                        url = "{{ url_for('seedbox_ui.rtorrent_list_view') }}";
-                    }
-                    
-                    loader.style.display = 'block';
-                    fetch(url)
-                        .then(res => res.ok ? res.text() : Promise.reject(new Error('Erreur réseau')))
-                        .then(html => {
-                            contentContainer.innerHTML = html;
-                            isContentLoaded = true;
-                        })
-                        .catch(err => contentContainer.innerHTML = `<div class="alert alert-danger">${err.message}</div>`)
-                        .finally(() => loader.style.display = 'none');
-                }
+        const rtorrentTab = document.getElementById('rtorrent-view-tab');
+        if (rtorrentTab) {
+            rtorrentTab.addEventListener('shown.bs.tab', function(event) {
+                loadRtorrentView();
             });
-        });
+        }
 
         // Ajoute ce nouvel écouteur en dehors de l'autre, mais dans DOMContentLoaded
         document.getElementById('confirmDeleteRtorrentBtn')?.addEventListener('click', function() {
