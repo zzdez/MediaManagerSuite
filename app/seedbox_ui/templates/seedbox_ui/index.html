@@ -683,7 +683,9 @@
                             .then(response => response.json().then(data => ({ ok: response.ok, data })))
                             .then(({ ok, data }) => {
                                 alert(data.message);
-                                document.querySelector('#rtorrent-view-tab')?.click(); // Recharge l'onglet
+                                if (ok) {
+                                    window.location.reload();
+                                }
                             })
                             .catch(error => alert('Erreur de communication.'));
                     }
@@ -698,7 +700,9 @@
                             .then(response => response.json().then(data => ({ ok: response.ok, data })))
                             .then(({ ok, data }) => {
                                 alert(data.message);
-                                if (ok) document.querySelector('#rtorrent-view-tab')?.click(); // Recharge l'onglet
+                                if (ok) {
+                                    window.location.reload();
+                                }
                             })
                             .catch(error => alert('Erreur de communication.'));
                     }
@@ -769,7 +773,7 @@
                 alert(data.message);
                 if (ok) {
                     bootstrap.Modal.getInstance(document.getElementById('deleteRtorrentModal')).hide();
-                    document.querySelector('#rtorrent-view-tab')?.click(); // Recharge l'onglet
+                    window.location.reload();
                 }
             })
             .catch(error => alert('Erreur de communication.'));
