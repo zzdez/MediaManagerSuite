@@ -520,6 +520,17 @@
         // --- Initialisation Générale ---
         var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
         tooltipTriggerList.map(function (tooltipTriggerEl) { return new bootstrap.Tooltip(tooltipTriggerEl); });
+
+        // --- Restore active tab after reload ---
+        const activeTabId = sessionStorage.getItem('activeTab');
+        if (activeTabId) {
+            const tabEl = document.querySelector(activeTabId);
+            if (tabEl) {
+                const tab = new bootstrap.Tab(tabEl);
+                tab.show();
+            }
+            sessionStorage.removeItem('activeTab');
+        }
         
         const addTorrentModalEl = document.getElementById('addTorrentModal');
         if (addTorrentModalEl && typeof initializeAddTorrentModal === 'function') {
@@ -684,6 +695,7 @@
                             .then(({ ok, data }) => {
                                 alert(data.message);
                                 if (ok) {
+                                    sessionStorage.setItem('activeTab', '#rtorrent-view-tab');
                                     window.location.reload();
                                 }
                             })
@@ -701,6 +713,7 @@
                             .then(({ ok, data }) => {
                                 alert(data.message);
                                 if (ok) {
+                                    sessionStorage.setItem('activeTab', '#rtorrent-view-tab');
                                     window.location.reload();
                                 }
                             })
@@ -772,6 +785,7 @@
             .then(({ ok, data }) => {
                 alert(data.message);
                 if (ok) {
+                    sessionStorage.setItem('activeTab', '#rtorrent-view-tab');
                     bootstrap.Modal.getInstance(document.getElementById('deleteRtorrentModal')).hide();
                     window.location.reload();
                 }
