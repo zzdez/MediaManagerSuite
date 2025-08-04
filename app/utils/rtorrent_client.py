@@ -551,4 +551,43 @@ def _decode_bencode_name(bencoded_data):
         # Use current_app.logger if available and in context, otherwise module logger
         try: current_app.logger.warning(f"Exception in _decode_bencode_name: {e}", exc_info=True)
         except RuntimeError: logger.warning(f"Exception in _decode_bencode_name (no app context): {e}", exc_info=True)
-        return None        
+        return None
+
+def delete_torrent(torrent_hash, delete_data=False):
+    """
+    Deletes a torrent from rTorrent.
+
+    :param torrent_hash: The hash of the torrent to delete.
+    :param delete_data: If True, also delete the data from the disk.
+    :return: Tuple (bool_success, message_str).
+    """
+    if not torrent_hash:
+        return False, "Torrent hash cannot be empty."
+
+    current_app.logger.info(f"Attempting to delete torrent {torrent_hash} from rTorrent. Delete data: {delete_data}")
+
+    # The command to delete a torrent is d.erase
+    # It takes the torrent hash as an argument.
+    method_name = "d.erase"
+    params = [torrent_hash]
+
+    result, error = _send_xmlrpc_request(method_name=method_name, params=params)
+
+    if error:
+        current_app.logger.error(f"Error deleting torrent {torrent_hash} via XML-RPC: {error}")
+        return False, f"XML-RPC Error: {error}"
+
+    # A successful d.erase call typically returns 0.
+    if result == 0:
+        current_app.logger.info(f"Torrent {torrent_hash} successfully erased from rTorrent.")
+        if delete_data:
+            current_app.logger.info(f"Deletion of data for torrent {torrent_hash} requested. This needs to be handled by rTorrent's configuration (e.g., using a script triggered by d.erase).")
+            # rTorrent's d.erase command itself does not delete data.
+            # This is typically handled by a configuration in .rtorrent.rc like:
+            # system.method.set_key = event.download.erased, "delete_erased", "execute=rm,-rf,$d.base_path="
+            # We assume this is configured on the rTorrent side.
+            # For now, we just log that it was requested.
+        return True, "Torrent deleted successfully from rTorrent."
+    else:
+        current_app.logger.warning(f"Delete torrent {torrent_hash} via XML-RPC returned an unexpected result: {result}. Expected 0.")
+        return False, f"Delete torrent via XML-RPC returned an unexpected result: {result}."

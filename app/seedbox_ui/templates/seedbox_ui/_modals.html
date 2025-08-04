@@ -108,6 +108,33 @@
     </div>
 </div>
 
+<!-- Modale de Confirmation de Suppression rTorrent -->
+<div class="modal fade" id="deleteRtorrentModal" tabindex="-1" aria-labelledby="deleteRtorrentModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content bg-dark text-white">
+      <div class="modal-header">
+        <h5 class="modal-title" id="deleteRtorrentModalLabel">Confirmation de Suppression</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p>Êtes-vous sûr de vouloir supprimer le torrent suivant de rTorrent ?</p>
+        <p><strong id="torrentNameToDelete"></strong></p>
+        <div class="form-check mt-3">
+          <input class="form-check-input" type="checkbox" id="deleteTorrentDataCheckbox">
+          <label class="form-check-label" for="deleteTorrentDataCheckbox">
+            Supprimer également les données du disque de la seedbox.
+          </label>
+        </div>
+        <input type="hidden" id="torrentHashToDelete">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+        <button type="button" class="btn btn-danger" id="confirmDeleteRtorrentBtn">Confirmer la Suppression</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 
 {# ========================================================================== #}
 {# MODAL GÉNÉRIQUE POUR RECHERCHE/MAPPING SONARR (utilisé par staging, etc.)  #}

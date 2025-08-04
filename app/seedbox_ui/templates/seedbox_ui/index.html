@@ -706,9 +706,17 @@
                 // --- Action : Supprimer de rTorrent ---
                 else if (button.classList.contains('delete-rtorrent-btn')) {
                     event.preventDefault();
-                    // La logique pour cette action est plus complexe (modale de confirmation avec options).
-                    // Pour l'instant, nous allons simplement afficher une alerte pour confirmer que le bouton est branché.
-                    alert(`Action 'Supprimer de rTorrent' cliquée pour le hash : ${torrentHash}`);
+                    const torrentName = button.dataset.torrentName;
+                    const torrentHash = button.dataset.torrentHash;
+
+                    // Prépare la modale
+                    document.getElementById('torrentNameToDelete').textContent = torrentName;
+                    document.getElementById('torrentHashToDelete').value = torrentHash;
+                    document.getElementById('deleteTorrentDataCheckbox').checked = false;
+
+                    // Ouvre la modale
+                    const deleteModal = new bootstrap.Modal(document.getElementById('deleteRtorrentModal'));
+                    deleteModal.show();
                 }
                 // --- Action : Mapper ---
                 else if (button.classList.contains('open-mapping-modal-btn')) {
@@ -744,6 +752,27 @@
                         .finally(() => loader.style.display = 'none');
                 }
             });
+        });
+
+        // Ajoute ce nouvel écouteur en dehors de l'autre, mais dans DOMContentLoaded
+        document.getElementById('confirmDeleteRtorrentBtn')?.addEventListener('click', function() {
+            const torrentHash = document.getElementById('torrentHashToDelete').value;
+            const deleteData = document.getElementById('deleteTorrentDataCheckbox').checked;
+
+            fetch("{{ url_for('seedbox_ui.delete_rtorrent_torrent') }}", {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ hash: torrentHash, delete_data: deleteData })
+            })
+            .then(response => response.json().then(data => ({ ok: response.ok, data })))
+            .then(({ ok, data }) => {
+                alert(data.message);
+                if (ok) {
+                    bootstrap.Modal.getInstance(document.getElementById('deleteRtorrentModal')).hide();
+                    document.querySelector('#rtorrent-view-tab')?.click(); // Recharge l'onglet
+                }
+            })
+            .catch(error => alert('Erreur de communication.'));
         });
     });
 </script>

@@ -31,7 +31,8 @@ from app.utils.rtorrent_client import (
     list_torrents as rtorrent_list_torrents_api,
     add_magnet as rtorrent_add_magnet_httprpc,
     add_torrent_file as rtorrent_add_torrent_file_httprpc,
-    get_torrent_hash_by_name as rtorrent_get_hash_by_name
+    get_torrent_hash_by_name as rtorrent_get_hash_by_name,
+    delete_torrent as rtorrent_delete_torrent_api,
 )
 
 # Clients Sonarr/Radarr (pour l'ajout de nouveaux médias)
@@ -3161,6 +3162,28 @@ def rtorrent_list_view():
                            error_message=None,
                            config_label_sonarr=config_label_sonarr,
                            config_label_radarr=config_label_radarr)
+
+@seedbox_ui_bp.route('/rtorrent/delete', methods=['POST'])
+@login_required
+def delete_rtorrent_torrent():
+    data = request.get_json()
+    torrent_hash = data.get('hash')
+    delete_data = data.get('delete_data', False)
+
+    if not torrent_hash:
+        return jsonify({'status': 'error', 'message': 'Hash du torrent manquant.'}), 400
+
+    try:
+        # Suppose que rtorrent_client a une méthode delete_torrent
+        # qui prend le hash et un booléen pour la suppression des données.
+        success, message = rtorrent_delete_torrent_api(torrent_hash, delete_data)
+        if success:
+            return jsonify({'status': 'success', 'message': 'Torrent supprimé avec succès de rTorrent.'})
+        else:
+            return jsonify({'status': 'error', 'message': message}), 500
+    except Exception as e:
+        logger.error(f"Erreur lors de la suppression du torrent {torrent_hash}: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @seedbox_ui_bp.route('/add-torrent-and-map', methods=['POST'])
 @login_required
