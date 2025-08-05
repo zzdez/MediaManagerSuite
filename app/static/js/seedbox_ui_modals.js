@@ -104,7 +104,12 @@ function openSonarrSearchModal(itemPathForAction, itemType) {
     document.getElementById('sonarrItemToMap').textContent = itemNameForDisplay;
     document.getElementById('sonarrOriginalItemName').value = itemPathForAction;
     document.getElementById('sonarrOriginalItemType').value = itemType;
-    document.getElementById('sonarrItemType').textContent = itemType === 'directory' ? 'Dossier (Staging)' : 'Fichier (Staging)';
+    const itemTypeText = {
+        'directory': 'Dossier (Staging)',
+        'file': 'Fichier (Staging)',
+        'torrent': 'Torrent'
+    }[itemType] || 'Item';
+    document.getElementById('sonarrItemType').textContent = itemTypeText;
     document.getElementById('sonarrSearchQuery').value = getCleanedSearchTerm(itemPathForAction);
         
     // --- LIGNE AJOUTÉE ---
@@ -125,20 +130,23 @@ function openSonarrSearchModal(itemPathForAction, itemType) {
         modalMapButton.className = 'btn btn-primary';
 
         modalMapButton.onclick = function() {
-            // ... (le reste de votre fonction onclick reste identique)
             const seriesTitle = document.getElementById('sonarrSelectedSeriesTitle').innerText.replace('Série sélectionnée : ', '');
             const userForcedSeason = document.getElementById('sonarrManualSeasonInput').value;
             const isNewMedia = sonarrModalElement.getAttribute('data-is-new-media') === 'true';
             const mediaIdForPayload = sonarrModalElement.getAttribute('data-selected-media-id');
             const mediaTitleForAdd = sonarrModalElement.getAttribute('data-selected-media-title');
             const currentAction = sonarrModalElement.getAttribute('data-current-action');
+            const currentItemType = document.getElementById('sonarrOriginalItemType').value;
+            const currentItemName = document.getElementById('sonarrOriginalItemName').value;
 
             if (!mediaIdForPayload) {
                 alert("Veuillez sélectionner une série.");
                 return;
             }
 
-            if (currentAction === 'mapIndividualStaging' && isNewMedia) {
+            if (currentItemType === 'torrent') {
+                triggerSonarrTorrentMap(currentItemName, mediaIdForPayload);
+            } else if (currentAction === 'mapIndividualStaging' && isNewMedia) {
                 const mediaYear = sonarrModalElement.getAttribute('data-selected-media-year');
                 const searchResultData = { id: mediaIdForPayload, title: mediaTitleForAdd, year: parseInt(mediaYear) || 0 };
                 promptAndAddArrItemForLocalStaging(searchResultData, 'sonarr', sonarrModalElement);
@@ -166,7 +174,12 @@ function openRadarrSearchModal(itemPathForAction, itemType) {
     document.getElementById('radarrItemToMap').textContent = itemNameForDisplay;
     document.getElementById('radarrOriginalItemName').value = itemPathForAction;
     document.getElementById('radarrOriginalItemType').value = itemType;
-    document.getElementById('radarrItemType').textContent = itemType === 'directory' ? 'Dossier (Staging)' : 'Fichier (Staging)';
+    const itemTypeText = {
+        'directory': 'Dossier (Staging)',
+        'file': 'Fichier (Staging)',
+        'torrent': 'Torrent'
+    }[itemType] || 'Item';
+    document.getElementById('radarrItemType').textContent = itemTypeText;
     document.getElementById('radarrSearchQuery').value = getCleanedSearchTerm(itemPathForAction);
 
     // --- LIGNE AJOUTÉE ---
@@ -184,19 +197,22 @@ function openRadarrSearchModal(itemPathForAction, itemType) {
         modalMapButton.disabled = true;
         modalMapButton.className = 'btn btn-primary';
         modalMapButton.onclick = function() {
-            // ... (le reste de votre fonction onclick reste identique)
             const radarrModalElement = document.getElementById('radarrSearchModal');
             const isNewMedia = radarrModalElement.getAttribute('data-is-new-media') === 'true';
             const mediaIdForPayload = radarrModalElement.getAttribute('data-selected-media-id');
             const mediaTitleForAdd = radarrModalElement.getAttribute('data-selected-media-title');
             let currentAction = radarrModalElement.getAttribute('data-current-action');
+            const currentItemType = document.getElementById('radarrOriginalItemType').value;
+            const currentItemName = document.getElementById('radarrOriginalItemName').value;
 
             if (!mediaIdForPayload) {
                 alert("Veuillez sélectionner un film.");
                 return;
             }
 
-            if (currentAction === 'mapIndividualStaging' && isNewMedia) {
+            if (currentItemType === 'torrent') {
+                triggerRadarrTorrentMap(currentItemName, mediaIdForPayload);
+            } else if (currentAction === 'mapIndividualStaging' && isNewMedia) {
                 const mediaYear = radarrModalElement.getAttribute('data-selected-media-year');
                 const searchResultData = { id: mediaIdForPayload, title: mediaTitleForAdd, year: parseInt(mediaYear) || 0 };
                 promptAndAddArrItemForLocalStaging(searchResultData, 'radarr', radarrModalElement);
@@ -600,6 +616,96 @@ async function triggerRadarrManualImport(radarrMovieId, movieTitleForDisplay) {
         else console.error("Error (no feedback div):", error.message);
         flashMessageGlobally(`Erreur import Radarr: ${escapeJsString(error.message)}`, 'danger');
     } finally { if(modalMapButton) modalMapButton.disabled = false; }
+}
+
+async function triggerSonarrTorrentMap(torrentName, seriesId) {
+    const feedbackDiv = document.getElementById('sonarrSearchModalFeedbackZone');
+    if (!seriesId) {
+        alert("Aucun ID de série valide.");
+        return;
+    }
+    if (feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-info">Mapping du torrent '${escapeJsString(torrentName)}' vers la série ID ${seriesId}...</div>`;
+
+    const payload = {
+        torrent_name: torrentName,
+        series_id: parseInt(seriesId)
+    };
+
+    const modalMapButton = document.getElementById('sonarrModalMapButton');
+    if (modalMapButton) modalMapButton.disabled = true;
+
+    try {
+        const response = await fetch(window.appUrls.rtorrentMapSonarr, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        if (!response.ok) {
+            throw new Error(result.error || `Erreur HTTP: ${response.status}`);
+        }
+
+        if (feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-success">${escapeJsString(result.message)}</div>`;
+        flashMessageGlobally(result.message, 'success');
+        setTimeout(() => {
+            const modalInstance = bootstrap.Modal.getInstance(document.getElementById('sonarrSearchModal'));
+            if (modalInstance) modalInstance.hide();
+            // Reload rtorrent view
+            sessionStorage.setItem('activeTab', '#rtorrent-view-tab');
+            window.location.reload();
+        }, 2500);
+
+    } catch (error) {
+        if (feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-danger">${escapeJsString(error.message)}</div>`;
+        flashMessageGlobally(`Erreur lors du mapping: ${escapeJsString(error.message)}`, 'danger');
+    } finally {
+        if (modalMapButton) modalMapButton.disabled = false;
+    }
+}
+
+async function triggerRadarrTorrentMap(torrentName, movieId) {
+    const feedbackDiv = document.getElementById('radarrSearchModalFeedbackZone');
+    if (!movieId) {
+        alert("Aucun ID de film valide.");
+        return;
+    }
+    if (feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-info">Mapping du torrent '${escapeJsString(torrentName)}' vers le film ID ${movieId}...</div>`;
+
+    const payload = {
+        torrent_name: torrentName,
+        movie_id: parseInt(movieId)
+    };
+
+    const modalMapButton = document.getElementById('radarrModalMapButton');
+    if (modalMapButton) modalMapButton.disabled = true;
+
+    try {
+        const response = await fetch(window.appUrls.rtorrentMapRadarr, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        if (!response.ok) {
+            throw new Error(result.error || `Erreur HTTP: ${response.status}`);
+        }
+
+        if (feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-success">${escapeJsString(result.message)}</div>`;
+        flashMessageGlobally(result.message, 'success');
+        setTimeout(() => {
+            const modalInstance = bootstrap.Modal.getInstance(document.getElementById('radarrSearchModal'));
+            if (modalInstance) modalInstance.hide();
+            // Reload rtorrent view
+            sessionStorage.setItem('activeTab', '#rtorrent-view-tab');
+            window.location.reload();
+        }, 2500);
+
+    } catch (error) {
+        if (feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-danger">${escapeJsString(error.message)}</div>`;
+        flashMessageGlobally(`Erreur lors du mapping: ${escapeJsString(error.message)}`, 'danger');
+    } finally {
+        if (modalMapButton) modalMapButton.disabled = false;
+    }
 }
 
 async function forceSonarrImport(stagingItemName, seriesId, strategy, targetSeason, targetEpisode, seriesTitleForDisplay, problemTorrentHash = null) {

@@ -328,7 +328,9 @@
             getSonarrQualityprofiles: "{{ url_for('seedbox_ui.get_sonarr_qualityprofiles_api') }}",
             getRadarrRootfolders: "{{ url_for('seedbox_ui.get_radarr_rootfolders_api') }}",
             getRadarrQualityprofiles: "{{ url_for('seedbox_ui.get_radarr_qualityprofiles_api') }}",
-            batchMapToSonarrSeries: "{{ url_for('seedbox_ui.batch_map_to_sonarr_series_action') }}"
+            batchMapToSonarrSeries: "{{ url_for('seedbox_ui.batch_map_to_sonarr_series_action') }}",
+            rtorrentMapSonarr: "{{ url_for('seedbox_ui.rtorrent_map_sonarr') }}",
+            rtorrentMapRadarr: "{{ url_for('seedbox_ui.rtorrent_map_radarr') }}"
         };
     </script>
     <script src="{{ url_for('static', filename='js/seedbox_ui_modals.js') }}"></script>
@@ -769,9 +771,15 @@
                 // --- Action : Mapper ---
                 else if (button.classList.contains('open-mapping-modal-btn')) {
                     event.preventDefault();
-                    // La logique pour cette action est plus complexe (ouvrir une modale générique).
-                    // Pour l'instant, nous allons simplement afficher une alerte.
-                    alert(`Action 'Mapper' cliquée pour le torrent : ${button.dataset.torrentName}`);
+                    const torrentName = button.dataset.torrentName;
+
+                    // Mettre à jour la modale de choix
+                    document.getElementById('torrentNameToMap').textContent = torrentName;
+                    document.getElementById('torrentNameToMapInput').value = torrentName;
+
+                    // Ouvrir la modale de choix
+                    const mappingChoiceModal = new bootstrap.Modal(document.getElementById('mappingChoiceModal'));
+                    mappingChoiceModal.show();
                 }
             });
         }
@@ -785,6 +793,21 @@
         }
 
         // Ajoute ce nouvel écouteur en dehors de l'autre, mais dans DOMContentLoaded
+        const mappingChoiceModalEl = document.getElementById('mappingChoiceModal');
+        if (mappingChoiceModalEl) {
+            document.getElementById('mapToSonarrBtn').addEventListener('click', function() {
+                const torrentName = document.getElementById('torrentNameToMapInput').value;
+                openSonarrSearchModal(torrentName, 'torrent');
+                bootstrap.Modal.getInstance(mappingChoiceModalEl).hide();
+            });
+
+            document.getElementById('mapToRadarrBtn').addEventListener('click', function() {
+                const torrentName = document.getElementById('torrentNameToMapInput').value;
+                openRadarrSearchModal(torrentName, 'torrent');
+                bootstrap.Modal.getInstance(mappingChoiceModalEl).hide();
+            });
+        }
+
         document.getElementById('confirmDeleteRtorrentBtn')?.addEventListener('click', function() {
             const torrentHash = document.getElementById('torrentHashToDelete').value;
             const deleteData = document.getElementById('deleteTorrentDataCheckbox').checked;

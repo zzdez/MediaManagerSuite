@@ -108,6 +108,33 @@
     </div>
 </div>
 
+{# ========================================================================== #}
+{# MODAL DE CHOIX POUR LE MAPPING (rTorrent View)                             #}
+{# ========================================================================== #}
+<div class="modal fade" id="mappingChoiceModal" tabindex="-1" aria-labelledby="mappingChoiceModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="mappingChoiceModalLabel">Mapper le torrent : <span id="torrentNameToMap"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Où souhaitez-vous mapper ce torrent ?</p>
+                <input type="hidden" id="torrentNameToMapInput" value="">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" id="mapToSonarrBtn">
+                    <i class="fas fa-tv"></i> Mapper à une Série (Sonarr)
+                </button>
+                <button type="button" class="btn btn-warning text-dark" id="mapToRadarrBtn">
+                    <i class="fas fa-film"></i> Mapper à un Film (Radarr)
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Modale de Confirmation de Suppression rTorrent -->
 <div class="modal fade" id="deleteRtorrentModal" tabindex="-1" aria-labelledby="deleteRtorrentModalLabel" aria-hidden="true">
   <div class="modal-dialog">
