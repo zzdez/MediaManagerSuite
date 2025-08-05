@@ -7,6 +7,7 @@ $(document).ready(function() {
     // =================================================================
     const userSelect = $('#user-select');
     const librarySelect = $('#library-select');
+    const genreSelect = $('#genre-filter');
     const applyBtn = $('#apply-filters-btn');
     const loader = $('#plex-items-loader');
     const itemsContainer = $('#plex-items-container');
@@ -58,7 +59,33 @@ $(document).ready(function() {
                 } else {
                     librarySelect.html('<option selected disabled>Aucune bibliothèque</option>');
                 }
+                librarySelect.trigger('change'); // Trigger change to load genres
             });
+    });
+
+    librarySelect.on('change', function () {
+        const selectedLibraries = $(this).val();
+        const userId = userSelect.val();
+
+        genreSelect.html('<option value="" selected>Tous les genres</option>').prop('disabled', true);
+
+        if (selectedLibraries && selectedLibraries.length > 0) {
+            fetch('/plex/api/genres', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: userId, libraryKeys: selectedLibraries })
+            })
+            .then(response => response.json())
+            .then(genres => {
+                if (genres && genres.length > 0) {
+                    genres.forEach(genre => {
+                        genreSelect.append(new Option(genre, genre));
+                    });
+                    genreSelect.prop('disabled', false);
+                }
+            })
+            .catch(error => console.error('Error fetching genres:', error));
+        }
     });
 
     // --- 3. Appliquer les filtres pour charger les médias ---
@@ -66,7 +93,8 @@ $(document).ready(function() {
         const userId = userSelect.val();
         const selectedLibraries = librarySelect.val();
         const statusFilter = $('#status-filter').val();
-        const titleFilter = $('#title-filter-input').val().trim(); // <-- On récupère le texte de la recherche
+        const titleFilter = $('#title-filter-input').val().trim();
+        const selectedGenre = genreSelect.val();
 
         if (!userId || !selectedLibraries || selectedLibraries.length === 0) {
             itemsContainer.html('<p class="text-center text-warning">Veuillez sélectionner un utilisateur et une bibliothèque.</p>');
@@ -83,7 +111,8 @@ $(document).ready(function() {
                 userId: userId,
                 libraryKeys: selectedLibraries,
                 statusFilter: statusFilter,
-                titleFilter: titleFilter // <-- On ajoute le texte au payload
+                titleFilter: titleFilter,
+                genre: selectedGenre
             })
         })
         .then(response => response.text())
