@@ -10,13 +10,13 @@
         /* Styles specific to seedbox_ui/index.html */
         .action-buttons form, .action-buttons button { margin-right: 3px; margin-bottom: 3px; }
         ul.file-tree, ul.children-list { list-style-type: none; padding-left: 0; }
-        .file-tree li > div { display: flex; align-items: center; padding: 0.25rem 0.5rem; border-bottom: 1px solid #eee; }
+        .file-tree li > div { display: flex; align-items: flex-start; padding: 0.25rem 0.5rem; border-bottom: 1px solid #eee; }
         .file-tree li > div:hover { background-color: #f8f9fa; }
         .file-tree .toggle-children { cursor: pointer; color: #0d6efd; text-decoration: none; }
         .file-tree .toggle-children i { transition: transform 0.2s ease-in-out; }
         .file-tree .icon-container { width: 25px; text-align: center; flex-shrink: 0; }
-        .file-tree .item-name-details { flex-grow: 1; margin-left: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .file-tree .item-actions { margin-left: auto; flex-shrink: 0; min-width: 280px; }
+        .file-tree .item-name-details { flex-grow: 1; margin-left: 5px; word-break: break-all; }
+        .file-tree .item-actions { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; }
         .file-tree .btn-sm { padding: 0.15rem 0.3rem; font-size: 0.75rem; }
         .modal-lg { max-width: 800px; }
         .btn-toolbar .btn { margin-right: 0.5rem; margin-bottom: 0.5rem;}
@@ -67,7 +67,7 @@
             </div>
          {% endif %}
       </span>
-      <div class="action-buttons item-actions ms-auto" style="min-width: 300px;">
+      <div class="action-buttons item-actions ms-auto">
          {% if not node.name.endswith("(Erreur de lecture)") %}
              {% if level == 0 %}
                 {% if can_scan_sonarr %}
@@ -124,7 +124,7 @@
   </li>
 {% endmacro %}
 
-<div class="container mt-4">
+<div class="container-fluid mt-4">
     <header class="pb-3 mb-4 border-bottom">
         <a href="{{ url_for('seedbox_ui.index') }}" class="d-flex align-items-center text-dark text-decoration-none">
             <span class="fs-4">MediaManagerSuite - Tableau de Bord Seedbox</span>
@@ -337,6 +337,36 @@
     // --- SCRIPT SPÉCIFIQUE À LA PAGE SEEDBOX/INDEX.HTML (VERSION STABLE) ---
     // ==================================================================== //
 
+    let isRtorrentContentLoaded = false;
+    function loadRtorrentView() {
+        if (isRtorrentContentLoaded) return;
+
+        const contentContainer = document.getElementById('rtorrent-content-container');
+        const loader = document.getElementById('rtorrent-loader');
+        const url = "{{ url_for('seedbox_ui.rtorrent_list_view') }}";
+
+        if (!contentContainer || !loader) {
+            console.error("rTorrent container or loader not found.");
+            return;
+        }
+
+        loader.style.display = 'block';
+        contentContainer.innerHTML = '';
+
+        fetch(url)
+            .then(res => res.ok ? res.text() : Promise.reject(new Error('Erreur réseau')))
+            .then(html => {
+                contentContainer.innerHTML = html;
+                isRtorrentContentLoaded = true;
+            })
+            .catch(err => {
+                contentContainer.innerHTML = `<div class="alert alert-danger">${err.message}</div>`;
+            })
+            .finally(() => {
+                loader.style.display = 'none';
+            });
+    }
+
     // --- SECTION 1 : DÉFINITION DE TOUTES LES FONCTIONS "HELPER" ---
 
     let selectedStagingItemsForBatch = [];
@@ -520,6 +550,18 @@
         // --- Initialisation Générale ---
         var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
         tooltipTriggerList.map(function (tooltipTriggerEl) { return new bootstrap.Tooltip(tooltipTriggerEl); });
+
+        // --- Restore active tab after reload ---
+        const activeTabId = sessionStorage.getItem('activeTab');
+        if (activeTabId === '#rtorrent-view-tab') {
+            const tabEl = document.querySelector(activeTabId);
+            if (tabEl) {
+                const tab = new bootstrap.Tab(tabEl);
+                tab.show();
+                loadRtorrentView(); // Directly load content
+            }
+            sessionStorage.removeItem('activeTab');
+        }
         
         const addTorrentModalEl = document.getElementById('addTorrentModal');
         if (addTorrentModalEl && typeof initializeAddTorrentModal === 'function') {
@@ -683,7 +725,10 @@
                             .then(response => response.json().then(data => ({ ok: response.ok, data })))
                             .then(({ ok, data }) => {
                                 alert(data.message);
-                                document.querySelector('#rtorrent-view-tab')?.click(); // Recharge l'onglet
+                                if (ok) {
+                                    sessionStorage.setItem('activeTab', '#rtorrent-view-tab');
+                                    window.location.reload();
+                                }
                             })
                             .catch(error => alert('Erreur de communication.'));
                     }
@@ -698,7 +743,10 @@
                             .then(response => response.json().then(data => ({ ok: response.ok, data })))
                             .then(({ ok, data }) => {
                                 alert(data.message);
-                                if (ok) document.querySelector('#rtorrent-view-tab')?.click(); // Recharge l'onglet
+                                if (ok) {
+                                    sessionStorage.setItem('activeTab', '#rtorrent-view-tab');
+                                    window.location.reload();
+                                }
                             })
                             .catch(error => alert('Erreur de communication.'));
                     }
@@ -706,9 +754,17 @@
                 // --- Action : Supprimer de rTorrent ---
                 else if (button.classList.contains('delete-rtorrent-btn')) {
                     event.preventDefault();
-                    // La logique pour cette action est plus complexe (modale de confirmation avec options).
-                    // Pour l'instant, nous allons simplement afficher une alerte pour confirmer que le bouton est branché.
-                    alert(`Action 'Supprimer de rTorrent' cliquée pour le hash : ${torrentHash}`);
+                    const torrentName = button.dataset.torrentName;
+                    const torrentHash = button.dataset.torrentHash;
+
+                    // Prépare la modale
+                    document.getElementById('torrentNameToDelete').textContent = torrentName;
+                    document.getElementById('torrentHashToDelete').value = torrentHash;
+                    document.getElementById('deleteTorrentDataCheckbox').checked = false;
+
+                    // Ouvre la modale
+                    const deleteModal = new bootstrap.Modal(document.getElementById('deleteRtorrentModal'));
+                    deleteModal.show();
                 }
                 // --- Action : Mapper ---
                 else if (button.classList.contains('open-mapping-modal-btn')) {
@@ -721,29 +777,33 @@
         }
             
         // --- Logique pour les onglets principaux ---
-        document.querySelectorAll('#finished-files-tab, #rtorrent-view-tab').forEach(tab => {
-            let isContentLoaded = false;
-            tab.addEventListener('shown.bs.tab', function(event) {
-                if (!isContentLoaded) {
-                    const targetId = event.target.getAttribute('data-bs-target');
-                    const contentContainer = document.querySelector(targetId);
-                    const loader = contentContainer.querySelector('.spinner-border').parentElement;
-                    let url = '';
-                    if (event.target.id === 'rtorrent-view-tab') {
-                        url = "{{ url_for('seedbox_ui.rtorrent_list_view') }}";
-                    }
-                    
-                    loader.style.display = 'block';
-                    fetch(url)
-                        .then(res => res.ok ? res.text() : Promise.reject(new Error('Erreur réseau')))
-                        .then(html => {
-                            contentContainer.innerHTML = html;
-                            isContentLoaded = true;
-                        })
-                        .catch(err => contentContainer.innerHTML = `<div class="alert alert-danger">${err.message}</div>`)
-                        .finally(() => loader.style.display = 'none');
-                }
+        const rtorrentTab = document.getElementById('rtorrent-view-tab');
+        if (rtorrentTab) {
+            rtorrentTab.addEventListener('shown.bs.tab', function(event) {
+                loadRtorrentView();
             });
+        }
+
+        // Ajoute ce nouvel écouteur en dehors de l'autre, mais dans DOMContentLoaded
+        document.getElementById('confirmDeleteRtorrentBtn')?.addEventListener('click', function() {
+            const torrentHash = document.getElementById('torrentHashToDelete').value;
+            const deleteData = document.getElementById('deleteTorrentDataCheckbox').checked;
+
+            fetch("{{ url_for('seedbox_ui.delete_rtorrent_torrent') }}", {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ hash: torrentHash, delete_data: deleteData })
+            })
+            .then(response => response.json().then(data => ({ ok: response.ok, data })))
+            .then(({ ok, data }) => {
+                alert(data.message);
+                if (ok) {
+                    sessionStorage.setItem('activeTab', '#rtorrent-view-tab');
+                    bootstrap.Modal.getInstance(document.getElementById('deleteRtorrentModal')).hide();
+                    window.location.reload();
+                }
+            })
+            .catch(error => alert('Erreur de communication.'));
         });
     });
 </script>
