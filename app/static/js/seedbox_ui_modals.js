@@ -121,6 +121,8 @@ function openSonarrSearchModal(itemPathForAction, itemType) {
     document.getElementById('sonarrSelectedSeriesTitle').innerText = 'Aucune série sélectionnée';
     document.getElementById('sonarrManualSeasonDiv').style.display = 'none';
     document.getElementById('sonarrManualSeasonInput').value = '';
+    document.getElementById('sonarrForceMultiPartDiv').style.display = 'none';
+    document.getElementById('sonarrForceMultiPartCheckbox').checked = false;
     currentlySelectedSonarrSeriesIdInModal = null;
 
     const modalMapButton = document.getElementById('sonarrModalMapButton');
@@ -138,6 +140,7 @@ function openSonarrSearchModal(itemPathForAction, itemType) {
             const currentAction = sonarrModalElement.getAttribute('data-current-action');
             const currentItemType = document.getElementById('sonarrOriginalItemType').value;
             const currentItemName = document.getElementById('sonarrOriginalItemName').value;
+            const forceMultiPart = document.getElementById('sonarrForceMultiPartCheckbox').checked;
 
             if (!mediaIdForPayload) {
                 alert("Veuillez sélectionner une série.");
@@ -151,7 +154,7 @@ function openSonarrSearchModal(itemPathForAction, itemType) {
                 const searchResultData = { id: mediaIdForPayload, title: mediaTitleForAdd, year: parseInt(mediaYear) || 0 };
                 promptAndAddArrItemForLocalStaging(searchResultData, 'sonarr', sonarrModalElement);
             } else {
-                triggerSonarrManualImportWithSeason(mediaIdForPayload, seriesTitle, userForcedSeason);
+                triggerSonarrManualImportWithSeason(mediaIdForPayload, seriesTitle, userForcedSeason, isNewMedia, mediaTitleForAdd, forceMultiPart);
             }
         };
     }
@@ -259,7 +262,8 @@ function openSonarrSearchModalForProblemItem(releaseName, currentTargetId, torre
             const mediaIdForPayload = sonarrModalElement.getAttribute('data-selected-media-id') || document.getElementById('sonarrSelectedSeriesId').value;
             const mediaTitleForAdd = sonarrModalElement.getAttribute('data-selected-media-title');
             if (mediaIdForPayload) {
-                triggerSonarrManualImportWithSeason(mediaIdForPayload, seriesTitle || "Série sélectionnée", userForcedSeason, isNewSeries, mediaTitleForAdd);
+                // For problem items, multi-part is not a primary use case, so we pass false.
+                triggerSonarrManualImportWithSeason(mediaIdForPayload, seriesTitle || "Série sélectionnée", userForcedSeason, isNewSeries, mediaTitleForAdd, false);
             } else { alert("Veuillez sélectionner une série."); }
         };
     }
@@ -467,12 +471,24 @@ function handleGenericSonarrSeriesSelection(mediaId, seriesTitle, isAlreadyInArr
     }
 
     const manualSeasonDiv = document.getElementById('sonarrManualSeasonDiv');
+    const forceMultiPartDiv = document.getElementById('sonarrForceMultiPartDiv');
+    const itemType = document.getElementById('sonarrOriginalItemType').value;
+
     if (manualSeasonDiv) {
         // Afficher la sélection de saison si c'est un média existant et l'action le permet
         if (isAlreadyInArr && (currentAction === 'mapIndividualStaging' || currentAction === 'mapProblemItem' || currentAction === 'sftpRetrieveAndMapIndividual')) {
             manualSeasonDiv.style.display = 'block';
         } else {
             manualSeasonDiv.style.display = 'none';
+        }
+    }
+
+    if (forceMultiPartDiv) {
+        // Afficher la case multi-partie seulement pour les dossiers du staging mappés à une série existante
+        if (isAlreadyInArr && currentAction === 'mapIndividualStaging' && itemType === 'directory') {
+            forceMultiPartDiv.style.display = 'block';
+        } else {
+            forceMultiPartDiv.style.display = 'none';
         }
     }
 
@@ -528,7 +544,7 @@ function handleGenericRadarrMovieSelection(mediaId, movieTitle, isAlreadyInArr, 
 }
 
 
-async function triggerSonarrManualImportWithSeason(mediaIdFromSelection, seriesTitleForDisplay, userForcedSeason) {
+async function triggerSonarrManualImportWithSeason(mediaIdFromSelection, seriesTitleForDisplay, userForcedSeason, isNewSeries, mediaTitleForAdd, forceMultiPart) {
     const originalItemName = document.getElementById('sonarrOriginalItemName').value;
     const feedbackDiv = document.getElementById('sonarrSearchModalFeedbackZone'); // Use dedicated feedback zone
     const sonarrModalElement = document.getElementById('sonarrSearchModal');
@@ -541,13 +557,19 @@ async function triggerSonarrManualImportWithSeason(mediaIdFromSelection, seriesT
     const problemTorrentHash = sonarrModalElement ? sonarrModalElement.getAttribute('data-problem-torrent-hash') : null;
     const payload = {
         item_name: originalItemName,
-        problem_torrent_hash: (problemTorrentHash && problemTorrentHash !== '') ? problemTorrentHash : null
+        problem_torrent_hash: (problemTorrentHash && problemTorrentHash !== '') ? problemTorrentHash : null,
+        force_multi_part: forceMultiPart || false // Ajout de la nouvelle donnée
     };
+
     if (isNewSeries) {
         payload.tvdb_id = parseInt(mediaIdFromSelection);
         payload.series_title_for_add = mediaTitleForAdd;
-    } else { payload.series_id = parseInt(mediaIdFromSelection); }
-    if (userForcedSeason && userForcedSeason.trim() !== '') { payload.user_forced_season = parseInt(userForcedSeason); }
+    } else {
+        payload.series_id = parseInt(mediaIdFromSelection);
+    }
+    if (userForcedSeason && userForcedSeason.trim() !== '') {
+        payload.user_forced_season = parseInt(userForcedSeason);
+    }
 
     const modalMapButton = document.getElementById('sonarrModalMapButton');
     if (modalMapButton) modalMapButton.disabled = true;

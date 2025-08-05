@@ -1280,10 +1280,10 @@ def build_file_tree(directory_path, staging_root_for_relative_path, pending_asso
 # ==============================================================================
 # NOUVELLES FONCTIONS HELPER REFACTORISÉES POUR L'IMPORT MMS
 # ==============================================================================
-def _execute_mms_sonarr_import(item_name_in_staging, series_id_target, original_release_folder_name_in_staging, user_forced_season=None, torrent_hash_for_status_update=None, is_automated_flow=False):
+def _execute_mms_sonarr_import(item_name_in_staging, series_id_target, original_release_folder_name_in_staging, user_forced_season=None, torrent_hash_for_status_update=None, is_automated_flow=False, force_multi_part=False):
     logger = current_app.logger
     log_prefix = f"EXEC_MMS_SONARR (Item:'{item_name_in_staging}', SeriesID:{series_id_target}): "
-    logger.info(f"{log_prefix}Début de l'import MMS.")
+    logger.info(f"{log_prefix}Début de l'import MMS. Force Multi-Part: {force_multi_part}")
     
     # --- Configuration ---
     sonarr_url = current_app.config.get('SONARR_URL')
@@ -1325,32 +1325,65 @@ def _execute_mms_sonarr_import(item_name_in_staging, series_id_target, original_
     successful_moves = 0
     failed_moves_details = []
 
-    for video_file_path in video_files_to_process:
+    # --- NOUVELLE LOGIQUE POUR GÉRER LE MULTI-PARTIES ---
+    if force_multi_part and len(video_files_to_process) > 0:
+        logger.info(f"{log_prefix}Traitement en mode forcé multi-parties.")
+        video_files_to_process.sort(key=lambda p: p.name) # Trier pour un ordre cohérent (part1, part2, ...)
+
+        # La saison doit être la même pour toutes les parties. On la détermine une seule fois.
         season_num = user_forced_season
         if season_num is None:
-            # Tenter de parser depuis le nom de fichier
-            s_match = re.search(r'[._\s\[\(-]S(\d{1,3})', video_file_path.name, re.IGNORECASE)
+            # Essayer de parser depuis le premier fichier
+            s_match = re.search(r'[._\s\[\(-]S(\d{1,3})', video_files_to_process[0].name, re.IGNORECASE)
             if s_match:
                 season_num = int(s_match.group(1))
-        
+
         if season_num is None:
-            failed_moves_details.append(f"{video_file_path.name} (saison introuvable)")
-            logger.error(f"{log_prefix}Impossible de déterminer la saison pour '{video_file_path.name}'.")
-            continue
+            return {"success": False, "message": f"Impossible de déterminer la saison pour le pack multi-parties '{video_files_to_process[0].name}'. L'import a échoué."}
 
         dest_season_folder = Path(series_root_folder) / f"Season {str(season_num).zfill(2)}"
-        dest_file_path = dest_season_folder / video_file_path.name
-        
-        try:
-            dest_season_folder.mkdir(parents=True, exist_ok=True)
-            logger.info(f"{log_prefix}Déplacement: '{video_file_path}' -> '{dest_file_path}'")
-            shutil.move(str(video_file_path), str(dest_file_path))
-            successful_moves += 1
-        except Exception as e:
-            logger.error(f"{log_prefix}Échec du déplacement de '{video_file_path.name}': {e}")
-            failed_moves_details.append(f"{video_file_path.name} ({e})")
+        dest_season_folder.mkdir(parents=True, exist_ok=True)
 
-    if successful_moves == 0:
+        for i, video_file_path in enumerate(video_files_to_process):
+            base_name, ext = os.path.splitext(video_file_path.name)
+            new_filename = f"{base_name} - part{i+1}{ext}"
+            dest_file_path = dest_season_folder / new_filename
+
+            try:
+                logger.info(f"{log_prefix}Déplacement (multi-part): '{video_file_path}' -> '{dest_file_path}'")
+                shutil.move(str(video_file_path), str(dest_file_path))
+                successful_moves += 1
+            except Exception as e:
+                logger.error(f"{log_prefix}Échec du déplacement de '{video_file_path.name}': {e}")
+                failed_moves_details.append(f"{video_file_path.name} ({e})")
+
+    else: # --- LOGIQUE EXISTANTE (NON-MULTI-PART) ---
+        for video_file_path in video_files_to_process:
+            season_num = user_forced_season
+            if season_num is None:
+                # Tenter de parser depuis le nom de fichier
+                s_match = re.search(r'[._\s\[\(-]S(\d{1,3})', video_file_path.name, re.IGNORECASE)
+                if s_match:
+                    season_num = int(s_match.group(1))
+
+            if season_num is None:
+                failed_moves_details.append(f"{video_file_path.name} (saison introuvable)")
+                logger.error(f"{log_prefix}Impossible de déterminer la saison pour '{video_file_path.name}'.")
+                continue
+
+            dest_season_folder = Path(series_root_folder) / f"Season {str(season_num).zfill(2)}"
+            dest_file_path = dest_season_folder / video_file_path.name
+
+            try:
+                dest_season_folder.mkdir(parents=True, exist_ok=True)
+                logger.info(f"{log_prefix}Déplacement: '{video_file_path}' -> '{dest_file_path}'")
+                shutil.move(str(video_file_path), str(dest_file_path))
+                successful_moves += 1
+            except Exception as e:
+                logger.error(f"{log_prefix}Échec du déplacement de '{video_file_path.name}': {e}")
+                failed_moves_details.append(f"{video_file_path.name} ({e})")
+
+    if successful_moves == 0 and video_files_to_process:
         return {"success": False, "message": "Aucun fichier n'a pu être déplacé. Raison: " + (failed_moves_details[0] if failed_moves_details else "inconnue")}
 
     # --- Nettoyage ---
@@ -2613,17 +2646,21 @@ def trigger_sonarr_import():
         logger.info(f"TRIGGER_SONARR_IMPORT: Pas de validation S/E effectuée (Sonarr n'a pas identifié l'épisode pour '{main_video_filename_for_validation}' ou pas de fichier vidéo principal trouvé).")
 
     # Si pas de discordance bloquante, appeler le handler _execute_mms_sonarr_import.
-    # original_release_folder_name_in_staging est item_name_from_frontend car pour un item du staging,
-    # le "dossier de release" est l'item lui-même (s'il est un dossier) ou son parent (s'il est un fichier,
-    # mais item_name_from_frontend est typiquement le nom du dossier de release).
-    # Pour la logique de nettoyage, _execute_mms_sonarr_import s'attend au nom du dossier de premier niveau.
+    user_forced_season_str = data.get('user_forced_season')
+    user_forced_season = int(user_forced_season_str) if user_forced_season_str else None
+    force_multi_part = data.get('force_multi_part', False)
+    problem_torrent_hash = data.get('problem_torrent_hash')
+
+    logger.info(f"TRIGGER_SONARR_IMPORT: Appel du handler avec: user_forced_season={user_forced_season}, force_multi_part={force_multi_part}")
+
     result_dict = _execute_mms_sonarr_import(
         item_name_in_staging=item_name_from_frontend,
         series_id_target=series_id_from_frontend,
-        original_release_folder_name_in_staging=item_name_from_frontend, # L'item lui-même est le dossier de release
-        user_forced_season=None, # Pas de saison forcée dans ce flux normal
-        torrent_hash_for_status_update=problem_torrent_hash if 'problem_torrent_hash' in data else None,
-        is_automated_flow=False # Action manuelle depuis l'UI
+        original_release_folder_name_in_staging=item_name_from_frontend,
+        user_forced_season=user_forced_season,
+        torrent_hash_for_status_update=problem_torrent_hash,
+        is_automated_flow=False, # Action manuelle depuis l'UI
+        force_multi_part=force_multi_part
     )
 
     if result_dict.get("success"): # Pas besoin de vérifier action_required ici, _execute_mms gère le retour final
