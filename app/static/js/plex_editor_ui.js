@@ -94,7 +94,8 @@ $(document).ready(function() {
         const selectedLibraries = librarySelect.val();
         const statusFilter = $('#status-filter').val();
         const titleFilter = $('#title-filter-input').val().trim();
-        const selectedGenre = genreSelect.val();
+        const selectedGenres = genreSelect.val();
+        const genreLogic = $('input[name="genre-logic"]:checked').val();
 
         if (!userId || !selectedLibraries || selectedLibraries.length === 0) {
             itemsContainer.html('<p class="text-center text-warning">Veuillez sélectionner un utilisateur et une bibliothèque.</p>');
@@ -112,7 +113,8 @@ $(document).ready(function() {
                 libraryKeys: selectedLibraries,
                 statusFilter: statusFilter,
                 titleFilter: titleFilter,
-                genre: selectedGenre
+                genres: selectedGenres,
+                genreLogic: genreLogic
             })
         })
         .then(response => response.text())

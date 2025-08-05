@@ -9,33 +9,22 @@
         <div class="card-body">
             <h5 class="card-title">Filtres</h5>
             <div class="row g-3 align-items-end">
-                <!-- Filtre Utilisateur -->
-                <div class="col-md-2">
+                <!-- Filtres de base -->
+                <div class="col-md-3">
                     <label for="user-select" class="form-label">Utilisateur</label>
                     <select id="user-select" class="form-select">
                         <option selected>Chargement...</option>
                     </select>
                 </div>
-                <!-- Filtre Bibliothèque -->
-                <div class="col-md-2">
+                <div class="col-md-3">
                     <label for="library-select" class="form-label">Bibliothèque(s)</label>
-                    <select id="library-select" class="form-select" multiple disabled>
-                    </select>
+                    <select id="library-select" class="form-select" multiple disabled></select>
                 </div>
-                <!-- Filtre Genre -->
-                <div class="col-md-2">
-                    <label for="genre-filter" class="form-label">Genre</label>
-                    <select id="genre-filter" class="form-select" disabled>
-                        <option value="" selected>Tous les genres</option>
-                    </select>
-                </div>
-                <!-- Filtre par Titre -->
-                <div class="col-md-2">
+                <div class="col-md-3">
                     <label for="title-filter-input" class="form-label">Titre</label>
                     <input type="text" id="title-filter-input" class="form-control" placeholder="Rechercher...">
                 </div>
-                <!-- Filtre Statut -->
-                <div class="col-md-2">
+                <div class="col-md-3">
                     <label for="status-filter" class="form-label">Statut</label>
                     <select id="status-filter" class="form-select">
                         <option value="all" selected>Tous</option>
@@ -44,9 +33,45 @@
                         <option value="watched">Vu</option>
                     </select>
                 </div>
-                <!-- Bouton d'application -->
-                <div class="col-md-2">
-                    <button id="apply-filters-btn" class="btn btn-primary w-100">Appliquer</button>
+            </div>
+
+            <!-- Filtres avancés -->
+            <div class="row mt-3">
+                <div class="col-md-6">
+                    <button class="btn btn-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#advanced-filters" aria-expanded="false" aria-controls="advanced-filters">
+                        Filtres Avancés
+                    </button>
+                </div>
+            </div>
+
+            <div class="collapse mt-3" id="advanced-filters">
+                <div class="card card-body bg-secondary">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-4">
+                            <label for="genre-filter" class="form-label">Genre(s)</label>
+                            <select id="genre-filter" class="form-select" multiple disabled>
+                                <!-- Options chargées par JS -->
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Logique des genres</label>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="genre-logic" id="genre-logic-or" value="or" checked>
+                                <label class="form-check-label" for="genre-logic-or">OU</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="genre-logic" id="genre-logic-and" value="and">
+                                <label class="form-check-label" for="genre-logic-and">ET</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bouton d'application -->
+            <div class="row mt-3">
+                <div class="col-12">
+                    <button id="apply-filters-btn" class="btn btn-primary w-100">Appliquer les filtres</button>
                 </div>
             </div>
         </div>

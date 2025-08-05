@@ -203,7 +203,8 @@ def get_media_items():
     library_keys = data.get('libraryKeys', [])
     status_filter = data.get('statusFilter', 'all')
     title_filter = data.get('titleFilter', '').strip()
-    genre_filter = data.get('genre')
+    genres_filter = data.get('genres')
+    genre_logic = data.get('genreLogic', 'or')
 
     if not user_id or not library_keys:
         return jsonify({'error': 'ID utilisateur et au moins une clé de bibliothèque sont requis.'}), 400
@@ -219,26 +220,26 @@ def get_media_items():
                 library = target_plex_server.library.sectionByID(int(lib_key))
 
                 search_args = {}
-                if genre_filter:
-                    search_args['genre'] = genre_filter
+                if genres_filter:
+                    search_args['genre'] = genres_filter
 
                 if title_filter:
-                    # The triple search logic is complex to merge with other args.
-                    # For now, we search with genre first, then filter by title in python.
-                    # This is less efficient but guarantees correctness.
-                    items_from_lib = library.search(**search_args)
+                    search_args['title__icontains'] = title_filter
 
-                    # Manual title filtering
-                    title_filtered_items = []
-                    for item in items_from_lib:
-                        title = getattr(item, 'title', '').lower()
-                        title_sort = getattr(item, 'titleSort', '').lower()
-                        original_title = getattr(item, 'originalTitle', '').lower()
-                        if title_filter.lower() in title or                            title_filter.lower() in title_sort or                            title_filter.lower() in original_title:
-                            title_filtered_items.append(item)
-                    items_from_lib = title_filtered_items
-                else:
+                if search_args:
                     items_from_lib = library.search(**search_args)
+                else:
+                    items_from_lib = library.all()
+
+                # "AND" logic for genres is applied after the main search
+                if genres_filter and genre_logic == 'and':
+                    required_genres_set = set(genres_filter)
+                    and_filtered_items = []
+                    for item in items_from_lib:
+                        item_genres_set = {g.tag for g in item.genres}
+                        if required_genres_set.issubset(item_genres_set):
+                            and_filtered_items.append(item)
+                    items_from_lib = and_filtered_items
 
                 for item_from_lib in items_from_lib:
                     item_from_lib.library_name = library.title
