@@ -3826,6 +3826,92 @@ def retry_problematic_import_action(torrent_hash):
         message = f"Échec de la relance pour '{item_name_in_staging}': {result_from_handler.get('message', 'Erreur inconnue')}"
         return jsonify({'status': 'error', 'message': message}), 500
 
+@seedbox_ui_bp.route('/rtorrent/map/sonarr', methods=['POST'], endpoint='rtorrent_map_sonarr')
+@login_required
+def rtorrent_map_sonarr():
+    data = request.get_json()
+    torrent_name = data.get('torrent_name')
+    series_id = data.get('series_id')
+
+    if not torrent_name or not series_id:
+        return jsonify({'success': False, 'error': 'Données manquantes (torrent_name, series_id)'}), 400
+
+    try:
+        series_id = int(series_id)
+    except ValueError:
+        return jsonify({'success': False, 'error': 'series_id doit être un entier'}), 400
+
+    torrents_data, error_msg_rtorrent = rtorrent_list_torrents_api()
+    if error_msg_rtorrent:
+        return jsonify({'success': False, 'error': f"Erreur rTorrent: {error_msg_rtorrent}"}), 500
+
+    torrent_info = next((t for t in torrents_data if t.get('name') == torrent_name), None)
+
+    if not torrent_info:
+        return jsonify({'success': False, 'error': f"Torrent '{torrent_name}' non trouvé dans rTorrent."}), 404
+
+    torrent_hash = torrent_info.get('hash')
+    download_path = torrent_info.get('path')
+
+    success = torrent_map_manager.add_or_update_torrent_in_map(
+        torrent_hash=torrent_hash,
+        release_name=torrent_name,
+        app_type='sonarr',
+        target_id=series_id,
+        label=current_app.config.get('RTORRENT_LABEL_SONARR', 'sonarr'),
+        seedbox_download_path=download_path,
+        original_torrent_name=torrent_name,
+        initial_status='mapped_by_user'
+    )
+
+    if success:
+        return jsonify({'success': True, 'message': f"Torrent '{torrent_name}' mappé avec succès à la série ID {series_id}."})
+    else:
+        return jsonify({'success': False, 'error': 'Erreur lors de la sauvegarde du mapping.'}), 500
+
+@seedbox_ui_bp.route('/rtorrent/map/radarr', methods=['POST'], endpoint='rtorrent_map_radarr')
+@login_required
+def rtorrent_map_radarr():
+    data = request.get_json()
+    torrent_name = data.get('torrent_name')
+    movie_id = data.get('movie_id')
+
+    if not torrent_name or not movie_id:
+        return jsonify({'success': False, 'error': 'Données manquantes (torrent_name, movie_id)'}), 400
+
+    try:
+        movie_id = int(movie_id)
+    except ValueError:
+        return jsonify({'success': False, 'error': 'movie_id doit être un entier'}), 400
+
+    torrents_data, error_msg_rtorrent = rtorrent_list_torrents_api()
+    if error_msg_rtorrent:
+        return jsonify({'success': False, 'error': f"Erreur rTorrent: {error_msg_rtorrent}"}), 500
+
+    torrent_info = next((t for t in torrents_data if t.get('name') == torrent_name), None)
+
+    if not torrent_info:
+        return jsonify({'success': False, 'error': f"Torrent '{torrent_name}' non trouvé dans rTorrent."}), 404
+
+    torrent_hash = torrent_info.get('hash')
+    download_path = torrent_info.get('path')
+
+    success = torrent_map_manager.add_or_update_torrent_in_map(
+        torrent_hash=torrent_hash,
+        release_name=torrent_name,
+        app_type='radarr',
+        target_id=movie_id,
+        label=current_app.config.get('RTORRENT_LABEL_RADARR', 'radarr'),
+        seedbox_download_path=download_path,
+        original_torrent_name=torrent_name,
+        initial_status='mapped_by_user'
+    )
+
+    if success:
+        return jsonify({'success': True, 'message': f"Torrent '{torrent_name}' mappé avec succès au film ID {movie_id}."})
+    else:
+        return jsonify({'success': False, 'error': 'Erreur lors de la sauvegarde du mapping.'}), 500
+
 
 @seedbox_ui_bp.route('/problematic-association/delete/<string:torrent_hash>', methods=['POST'])
 @login_required
