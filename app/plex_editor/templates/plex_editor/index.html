@@ -54,14 +54,13 @@
                             </select>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label">Logique des genres</label>
-                            <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="radio" name="genre-logic" id="genre-logic-or" value="or" checked>
-                                <label class="form-check-label" for="genre-logic-or">OU</label>
-                            </div>
-                            <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="radio" name="genre-logic" id="genre-logic-and" value="and">
-                                <label class="form-check-label" for="genre-logic-and">ET</label>
+                            <label class="form-label">Logique des Genres</label>
+                            <div class="btn-group" role="group" aria-label="Logique du filtre des genres">
+                                <input type="radio" class="btn-check" name="genre-logic" id="genre-logic-or" value="or" autocomplete="off" checked>
+                                <label class="btn btn-outline-primary" for="genre-logic-or">OU</label>
+
+                                <input type="radio" class="btn-check" name="genre-logic" id="genre-logic-and" value="and" autocomplete="off">
+                                <label class="btn btn-outline-primary" for="genre-logic-and">ET</label>
                             </div>
                         </div>
                     </div>
