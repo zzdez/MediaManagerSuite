@@ -233,13 +233,37 @@ def get_media_items():
 
                 # "AND" logic for genres is applied after the main search
                 if genres_filter and genre_logic == 'and':
-                    required_genres_set = set(genres_filter)
-                    and_filtered_items = []
+                    print(f"--- DÉBUT FILTRAGE 'ET' ---")
+                    print(f"Genres requis : {genres_filter}")
+
+                    items_with_all_genres = []
+                    required_genres_set = {genre.lower() for genre in genres_filter} # Convertir en minuscules pour être sûr
+
+                    print(f"Set de genres requis (lowercase): {required_genres_set}")
+
                     for item in items_from_lib:
-                        item_genres_set = {g.tag for g in item.genres}
-                        if required_genres_set.issubset(item_genres_set):
-                            and_filtered_items.append(item)
-                    items_from_lib = and_filtered_items
+                        print(f"  > Traitement de l'item : '{item.title}'")
+                        try:
+                            # Sécuriser l'accès aux genres
+                            if hasattr(item, 'genres') and item.genres:
+                                item_genres_set = {g.tag.lower() for g in item.genres} # Convertir aussi en minuscules
+                                print(f"    Genres de l'item (lowercase): {item_genres_set}")
+
+                                # Vérification
+                                is_subset = required_genres_set.issubset(item_genres_set)
+                                print(f"    Est-ce un sous-ensemble ? -> {is_subset}")
+
+                                if is_subset:
+                                    items_with_all_genres.append(item)
+                            else:
+                                print(f"    L'item n'a pas de genres ou l'attribut est vide.")
+
+                        except Exception as e:
+                            # Attraper toute autre erreur inattendue pour ne pas crasher
+                            print(f"    !!!! ERREUR LORS DU TRAITEMENT DES GENRES DE CET ITEM: {e} !!!!")
+
+                    items_from_lib = items_with_all_genres
+                    print(f"--- FIN FILTRAGE 'ET'. Nombre d'items correspondants : {len(items_from_lib)} ---")
 
                 for item_from_lib in items_from_lib:
                     item_from_lib.library_name = library.title
