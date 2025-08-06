@@ -389,12 +389,6 @@ def get_media_items():
 
                 if cleaned_resolutions:
                     search_args['resolution'] = cleaned_resolutions
-                if actor_filter:
-                    search_args['actor__icontains'] = actor_filter
-                if director_filter:
-                    search_args['director__icontains'] = director_filter
-                if writer_filter:
-                    search_args['writer__icontains'] = writer_filter
                 if cleaned_studios:
                     search_args['studio'] = cleaned_studios
 
@@ -413,6 +407,37 @@ def get_media_items():
                                 items_with_all_genres.append(item)
 
                     items_from_lib = items_with_all_genres
+
+                # Le filtrage "AND" se fait maintenant ici, sur les résultats pré-filtrés
+                if cleaned_genres and genre_logic == 'and':
+                    items_with_all_genres = []
+                    # On a déjà filtré sur le premier genre, donc on vérifie les autres
+                    required_genres_set = {genre.lower() for genre in cleaned_genres}
+
+                    for item in items_from_lib:
+                        if hasattr(item, 'genres') and item.genres:
+                            item_genres_set = {g.tag.lower() for g in item.genres}
+                            if required_genres_set.issubset(item_genres_set):
+                                items_with_all_genres.append(item)
+
+                    items_from_lib = items_with_all_genres
+
+                # Filtrage en Python pour les acteurs, réalisateurs et scénaristes
+                if actor_filter:
+                    items_from_lib = [
+                        item for item in items_from_lib
+                        if hasattr(item, 'actors') and any(actor_filter.lower() in actor.tag.lower() for actor in item.actors)
+                    ]
+                if director_filter:
+                    items_from_lib = [
+                        item for item in items_from_lib
+                        if hasattr(item, 'directors') and any(director_filter.lower() in director.tag.lower() for director in item.directors)
+                    ]
+                if writer_filter:
+                    items_from_lib = [
+                        item for item in items_from_lib
+                        if hasattr(item, 'writers') and any(writer_filter.lower() in writer.tag.lower() for writer in item.writers)
+                    ]
 
                 for item_from_lib in items_from_lib:
                     item_from_lib.library_name = library.title
