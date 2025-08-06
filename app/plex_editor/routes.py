@@ -159,7 +159,7 @@ def get_collections_for_libraries():
         all_collections = set()
         for key in library_keys:
             library = user_plex.library.sectionByID(int(key))
-            all_collections.update([collection.tag for collection in library.collections()])
+            all_collections.update([collection.title for collection in library.collections()])
         return jsonify(sorted(list(all_collections)))
     except Exception as e:
         current_app.logger.error(f"Erreur API /api/collections: {e}", exc_info=True)
