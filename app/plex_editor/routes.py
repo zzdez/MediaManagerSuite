@@ -203,8 +203,10 @@ def get_media_items():
     library_keys = data.get('libraryKeys', [])
     status_filter = data.get('statusFilter', 'all')
     title_filter = data.get('titleFilter', '').strip()
-    genres_filter = data.get('genres')
+    genres_filter = data.get('genres', [])
     genre_logic = data.get('genreLogic', 'or')
+
+    cleaned_genres = [genre for genre in genres_filter if genre]
 
     if not user_id or not library_keys:
         return jsonify({'error': 'ID utilisateur et au moins une clé de bibliothèque sont requis.'}), 400
@@ -220,21 +222,25 @@ def get_media_items():
                 library = target_plex_server.library.sectionByID(int(lib_key))
 
                 search_args = {}
-                if genres_filter:
-                    search_args['genre'] = genres_filter
+                # Pour la logique 'AND', on ne met qu'un seul genre dans la recherche initiale
+                # pour filtrer un minimum côté serveur, le reste sera fait en Python.
+                # Pour 'OR', on peut tout passer.
+                if cleaned_genres:
+                    if genre_logic == 'and':
+                        search_args['genre'] = cleaned_genres[0]
+                    else: # 'or'
+                        search_args['genre'] = cleaned_genres
 
                 if title_filter:
                     search_args['title__icontains'] = title_filter
 
-                if search_args:
-                    items_from_lib = library.search(**search_args)
-                else:
-                    items_from_lib = library.all()
+                items_from_lib = library.search(**search_args)
 
-                # "AND" logic for genres is applied after the main search
-                if genres_filter and genre_logic == 'and':
+                # Le filtrage "AND" se fait maintenant ici, sur les résultats pré-filtrés
+                if cleaned_genres and genre_logic == 'and':
                     items_with_all_genres = []
-                    required_genres_set = {genre.lower() for genre in genres_filter}
+                    # On a déjà filtré sur le premier genre, donc on vérifie les autres
+                    required_genres_set = {genre.lower() for genre in cleaned_genres}
 
                     for item in items_from_lib:
                         if hasattr(item, 'genres') and item.genres:
