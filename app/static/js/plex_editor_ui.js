@@ -69,6 +69,7 @@ $(document).ready(function() {
 
         genreSelect.html('<option value="" selected>Tous les genres</option>').prop('disabled', true);
         $('#collection-filter').html('').prop('disabled', true);
+        $('#resolution-filter').html('').prop('disabled', true);
 
         if (selectedLibraries && selectedLibraries.length > 0) {
             const payload = { userId: userId, libraryKeys: selectedLibraries };
@@ -107,6 +108,21 @@ $(document).ready(function() {
             })
             .catch(error => console.error('Error fetching collections:', error));
 
+            // Fetch Resolutions
+            fetch('/plex/api/resolutions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(response => response.json())
+            .then(resolutions => {
+                const resolutionSelect = $('#resolution-filter');
+                resolutionSelect.empty();
+                if (resolutions && resolutions.length > 0) {
+                    resolutions.forEach(resolution => resolutionSelect.append(new Option(resolution, resolution)));
+                    resolutionSelect.prop('disabled', false);
+                }
+            });
         }
     });
 
@@ -146,6 +162,9 @@ $(document).ready(function() {
         const ratingFilterOperator = $('#rating-filter-operator').val();
         const ratingFilterValue = $('#rating-filter-value').val();
         const selectedCollections = $('#collection-filter').val();
+        const selectedResolutions = $('#resolution-filter').val();
+        const actorFilter = $('#actor-filter').val().trim();
+        const directorFilter = $('#director-filter').val().trim();
 
         if (!userId || !selectedLibraries || selectedLibraries.length === 0) {
             itemsContainer.html('<p class="text-center text-warning">Veuillez sélectionner un utilisateur et une bibliothèque.</p>');
@@ -176,7 +195,10 @@ $(document).ready(function() {
                     operator: ratingFilterOperator,
                     value: ratingFilterValue
                 },
-                collections: selectedCollections
+                collections: selectedCollections,
+                resolutions: selectedResolutions,
+                actor: actorFilter,
+                director: directorFilter
             })
         })
         .then(response => response.text())

@@ -165,6 +165,29 @@ def get_collections_for_libraries():
         current_app.logger.error(f"Erreur API /api/collections: {e}", exc_info=True)
         return jsonify(error=str(e)), 500
 
+@plex_editor_bp.route('/api/resolutions', methods=['POST'])
+def get_resolutions_for_libraries():
+    data = request.json
+    user_id = data.get('userId')
+    library_keys = data.get('libraryKeys', [])
+
+    if not user_id or not library_keys:
+        return jsonify(error="User ID and library keys are required."), 400
+
+    try:
+        user_plex = get_user_specific_plex_server_from_id(user_id)
+        if not user_plex:
+            return jsonify(error="Plex user not found."), 404
+
+        all_resolutions = set()
+        for key in library_keys:
+            library = user_plex.library.sectionByID(int(key))
+            all_resolutions.update([res.tag for res in library.resolutions()])
+        return jsonify(sorted(list(all_resolutions)))
+    except Exception as e:
+        current_app.logger.error(f"Erreur API /api/resolutions: {e}", exc_info=True)
+        return jsonify(error=str(e)), 500
+
 @plex_editor_bp.route('/select_user', methods=['POST'])
 @login_required
 def select_user_route():
@@ -230,9 +253,14 @@ def get_media_items():
     genres_filter = data.get('genres', [])
     genre_logic = data.get('genreLogic', 'or')
     collections_filter = data.get('collections', [])
+    resolutions_filter = data.get('resolutions', [])
+    actor_filter = data.get('actor')
+    director_filter = data.get('director')
+
 
     cleaned_genres = [genre for genre in genres_filter if genre]
     cleaned_collections = [c for c in collections_filter if c]
+    cleaned_resolutions = [r for r in resolutions_filter if r]
 
     if not user_id or not library_keys:
         return jsonify({'error': 'ID utilisateur et au moins une clé de bibliothèque sont requis.'}), 400
@@ -326,6 +354,13 @@ def get_media_items():
 
                 if cleaned_collections:
                     search_args['collection'] = cleaned_collections
+
+                if cleaned_resolutions:
+                    search_args['resolution'] = cleaned_resolutions
+                if actor_filter:
+                    search_args['actor'] = actor_filter
+                if director_filter:
+                    search_args['director'] = director_filter
 
                 items_from_lib = library.search(**search_args)
 
