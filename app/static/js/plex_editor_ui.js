@@ -69,7 +69,6 @@ $(document).ready(function() {
 
         genreSelect.html('<option value="" selected>Tous les genres</option>').prop('disabled', true);
         $('#collection-filter').html('').prop('disabled', true);
-        $('#label-filter').html('').prop('disabled', true);
 
         if (selectedLibraries && selectedLibraries.length > 0) {
             const payload = { userId: userId, libraryKeys: selectedLibraries };
@@ -88,33 +87,26 @@ $(document).ready(function() {
                 }
             });
 
-            // Fetch Collections
+            // **LOGIQUE MANQUANTE À AJOUTER CI-DESSOUS**
+            const collectionSelect = $('#collection-filter');
             fetch('/plex/api/collections', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+                body: JSON.stringify({ userId: userId, libraryKeys: selectedLibraries })
             })
             .then(response => response.json())
             .then(collections => {
-                if (collections && collections.length > 0) {
-                    collections.forEach(collection => $('#collection-filter').append(new Option(collection, collection)));
-                    $('#collection-filter').prop('disabled', false);
-                }
-            });
-
-            // Fetch Labels
-            fetch('/plex/api/labels', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+                collectionSelect.empty(); // Vider le sélecteur
+                collections.forEach(collection => {
+                    collectionSelect.append($('<option>', {
+                        value: collection,
+                        text: collection
+                    }));
+                });
+                collectionSelect.prop('disabled', false);
             })
-            .then(response => response.json())
-            .then(labels => {
-                if (labels && labels.length > 0) {
-                    labels.forEach(label => $('#label-filter').append(new Option(label, label)));
-                    $('#label-filter').prop('disabled', false);
-                }
-            });
+            .catch(error => console.error('Error fetching collections:', error));
+
         }
     });
 
@@ -154,7 +146,6 @@ $(document).ready(function() {
         const ratingFilterOperator = $('#rating-filter-operator').val();
         const ratingFilterValue = $('#rating-filter-value').val();
         const selectedCollections = $('#collection-filter').val();
-        const selectedLabels = $('#label-filter').val();
 
         if (!userId || !selectedLibraries || selectedLibraries.length === 0) {
             itemsContainer.html('<p class="text-center text-warning">Veuillez sélectionner un utilisateur et une bibliothèque.</p>');
@@ -185,8 +176,7 @@ $(document).ready(function() {
                     operator: ratingFilterOperator,
                     value: ratingFilterValue
                 },
-                collections: selectedCollections,
-                labels: selectedLabels
+                collections: selectedCollections
             })
         })
         .then(response => response.text())
