@@ -89,25 +89,17 @@ $(document).ready(function() {
     });
 
     // --- 3. Appliquer les filtres pour charger les médias ---
-    // Logique pour gérer l'affichage dynamique des filtres de date
+    // Remplace l'ancienne logique de gestion des dates par celle-ci
     $('#date-filter-type').on('change', function() {
         const type = $(this).val();
-        const operatorSelect = $('#date-filter-operator');
-        const dateFieldsContainer = $('#date-fields-container');
-        if (type) {
-            operatorSelect.prop('disabled', false);
-            dateFieldsContainer.show();
-        } else {
-            operatorSelect.prop('disabled', true);
-            dateFieldsContainer.hide();
+        $('#date-filter-preset').prop('disabled', !type);
+        if (!type) {
+            $('#custom-date-fields-container').hide();
         }
     });
 
-    $('#date-filter-operator').on('change', function() {
-        const operator = $(this).val();
-        const endDateContainer = $('#end-date-container');
-        $('#start-date-label').text(operator === 'between' ? 'Date de Début' : 'Date');
-        endDateContainer.toggle(operator === 'between');
+    $('#date-filter-preset').on('change', function() {
+        $('#custom-date-fields-container').toggle($(this).val() === 'custom');
     });
 
     applyBtn.on('click', function() {
@@ -118,7 +110,7 @@ $(document).ready(function() {
         const selectedGenres = genreSelect.val();
         const genreLogic = $('input[name="genre-logic"]:checked').val();
         const dateFilterType = $('#date-filter-type').val();
-        const dateFilterOperator = $('#date-filter-operator').val();
+        const dateFilterPreset = $('#date-filter-preset').val();
         const dateFilterStart = $('#date-filter-start').val();
         const dateFilterEnd = $('#date-filter-end').val();
 
@@ -142,7 +134,7 @@ $(document).ready(function() {
                 genreLogic: genreLogic,
                 dateFilter: {
                     type: dateFilterType,
-                    operator: dateFilterOperator,
+                    preset: dateFilterPreset,
                     start: dateFilterStart,
                     end: dateFilterEnd
                 }

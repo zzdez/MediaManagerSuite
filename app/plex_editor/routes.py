@@ -5,7 +5,7 @@ import os
 from app.auth import login_required
 from flask import (render_template, current_app, flash, abort, url_for,
                    redirect, request, session, jsonify)
-from datetime import datetime
+from datetime import datetime, timedelta
 from plexapi.server import PlexServer
 from plexapi.exceptions import NotFound, Unauthorized, BadRequest
 
@@ -235,18 +235,40 @@ def get_media_items():
                     search_args['title__icontains'] = title_filter
 
                 date_filter = data.get('dateFilter', {})
-                if date_filter and date_filter.get('type') and date_filter.get('start'):
-                    date_type = date_filter['type']      # 'lastViewedAt' ou 'addedAt'
-                    operator = date_filter['operator']  # 'after', 'before', 'between'
-                    start_date = date_filter['start']
-                    end_date = date_filter.get('end')
+                date_type = date_filter.get('type')
 
-                    if operator == 'after':
+                if date_type and date_filter.get('preset'):
+                    preset = date_filter['preset']
+                    today = datetime.now()
+                    start_date, end_date = None, None
+
+                    if preset == 'today':
+                        start_date = today.replace(hour=0, minute=0, second=0)
+                        end_date = today.replace(hour=23, minute=59, second=59)
+                    elif preset == 'last7days':
+                        start_date = today - timedelta(days=7)
+                        end_date = today
+                    elif preset == 'last30days':
+                        start_date = today - timedelta(days=30)
+                        end_date = today
+                    elif preset == 'thisMonth':
+                        start_date = today.replace(day=1, hour=0, minute=0, second=0)
+                        end_date = today
+                    elif preset == 'lastMonth':
+                        end_of_last_month = today.replace(day=1) - timedelta(days=1)
+                        start_date = end_of_last_month.replace(day=1, hour=0, minute=0, second=0)
+                        end_date = end_of_last_month.replace(hour=23, minute=59, second=59)
+                    elif preset == 'custom':
+                        start_date_str = date_filter.get('start')
+                        end_date_str = date_filter.get('end')
+                        if start_date_str:
+                            start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+                        if end_date_str:
+                            end_date = datetime.strptime(end_date_str, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+
+                    if start_date:
                         search_args[f'{date_type}>>'] = start_date
-                    elif operator == 'before':
-                        search_args[f'{date_type}<<'] = start_date
-                    elif operator == 'between' and end_date:
-                        search_args[f'{date_type}>>'] = start_date
+                    if end_date:
                         search_args[f'{date_type}<<'] = end_date
 
                 items_from_lib = library.search(**search_args)
