@@ -285,6 +285,7 @@ def get_media_items():
     resolutions_filter = data.get('resolutions', [])
     actor_filter = data.get('actor')
     director_filter = data.get('director')
+    writer_filter = data.get('writer')
     studios_filter = data.get('studios', [])
 
 
@@ -392,6 +393,8 @@ def get_media_items():
                     search_args['actor'] = actor_filter
                 if director_filter:
                     search_args['director'] = director_filter
+                if writer_filter:
+                    search_args['writer'] = writer_filter
                 if cleaned_studios:
                     search_args['studio'] = cleaned_studios
 

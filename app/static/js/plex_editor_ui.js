@@ -182,6 +182,7 @@ $(document).ready(function() {
         const selectedResolutions = $('#resolution-filter').val();
         const actorFilter = $('#actor-filter').val().trim();
         const directorFilter = $('#director-filter').val().trim();
+        const writerFilter = $('#writer-filter').val().trim();
         const selectedStudios = $('#studio-filter').val();
 
         if (!userId || !selectedLibraries || selectedLibraries.length === 0) {
@@ -217,6 +218,7 @@ $(document).ready(function() {
                 resolutions: selectedResolutions,
                 actor: actorFilter,
                 director: directorFilter,
+                writer: writerFilter,
                 studios: selectedStudios
             })
         })
