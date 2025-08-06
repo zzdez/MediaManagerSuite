@@ -182,10 +182,34 @@ def get_resolutions_for_libraries():
         all_resolutions = set()
         for key in library_keys:
             library = user_plex.library.sectionByID(int(key))
-            all_resolutions.update([res.tag for res in library.resolutions()])
+            all_resolutions.update([res.title for res in library.resolutions()])
         return jsonify(sorted(list(all_resolutions)))
     except Exception as e:
         current_app.logger.error(f"Erreur API /api/resolutions: {e}", exc_info=True)
+        return jsonify(error=str(e)), 500
+
+@plex_editor_bp.route('/api/studios', methods=['POST'])
+def get_studios_for_libraries():
+    data = request.json
+    user_id = data.get('userId')
+    library_keys = data.get('libraryKeys', [])
+
+    if not user_id or not library_keys:
+        return jsonify(error="User ID and library keys are required."), 400
+
+    try:
+        user_plex = get_user_specific_plex_server_from_id(user_id)
+        if not user_plex:
+            return jsonify(error="Plex user not found."), 404
+
+        all_studios = set()
+        for key in library_keys:
+            library = user_plex.library.sectionByID(int(key))
+            # L'API utilise .studios() pour lister les studios
+            all_studios.update([studio.tag for studio in library.studios()])
+        return jsonify(sorted(list(all_studios)))
+    except Exception as e:
+        current_app.logger.error(f"Erreur API /api/studios: {e}", exc_info=True)
         return jsonify(error=str(e)), 500
 
 @plex_editor_bp.route('/select_user', methods=['POST'])
@@ -256,11 +280,13 @@ def get_media_items():
     resolutions_filter = data.get('resolutions', [])
     actor_filter = data.get('actor')
     director_filter = data.get('director')
+    studios_filter = data.get('studios', [])
 
 
     cleaned_genres = [genre for genre in genres_filter if genre]
     cleaned_collections = [c for c in collections_filter if c]
     cleaned_resolutions = [r for r in resolutions_filter if r]
+    cleaned_studios = [s for s in studios_filter if s]
 
     if not user_id or not library_keys:
         return jsonify({'error': 'ID utilisateur et au moins une clé de bibliothèque sont requis.'}), 400
@@ -358,9 +384,11 @@ def get_media_items():
                 if cleaned_resolutions:
                     search_args['resolution'] = cleaned_resolutions
                 if actor_filter:
-                    search_args['actor'] = actor_filter
+                    search_args['actor__icontains'] = actor_filter
                 if director_filter:
-                    search_args['director'] = director_filter
+                    search_args['director__icontains'] = director_filter
+                if cleaned_studios:
+                    search_args['studio'] = cleaned_studios
 
                 items_from_lib = library.search(**search_args)
 

@@ -70,6 +70,7 @@ $(document).ready(function() {
         genreSelect.html('<option value="" selected>Tous les genres</option>').prop('disabled', true);
         $('#collection-filter').html('').prop('disabled', true);
         $('#resolution-filter').html('').prop('disabled', true);
+        $('#studio-filter').html('').prop('disabled', true);
 
         if (selectedLibraries && selectedLibraries.length > 0) {
             const payload = { userId: userId, libraryKeys: selectedLibraries };
@@ -123,6 +124,22 @@ $(document).ready(function() {
                     resolutionSelect.prop('disabled', false);
                 }
             });
+
+            // Fetch Studios
+            fetch('/plex/api/studios', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(response => response.json())
+            .then(studios => {
+                const studioSelect = $('#studio-filter');
+                studioSelect.empty();
+                if (studios && studios.length > 0) {
+                    studios.forEach(studio => studioSelect.append(new Option(studio, studio)));
+                    studioSelect.prop('disabled', false);
+                }
+            });
         }
     });
 
@@ -165,6 +182,7 @@ $(document).ready(function() {
         const selectedResolutions = $('#resolution-filter').val();
         const actorFilter = $('#actor-filter').val().trim();
         const directorFilter = $('#director-filter').val().trim();
+        const selectedStudios = $('#studio-filter').val();
 
         if (!userId || !selectedLibraries || selectedLibraries.length === 0) {
             itemsContainer.html('<p class="text-center text-warning">Veuillez sélectionner un utilisateur et une bibliothèque.</p>');
@@ -198,7 +216,8 @@ $(document).ready(function() {
                 collections: selectedCollections,
                 resolutions: selectedResolutions,
                 actor: actorFilter,
-                director: directorFilter
+                director: directorFilter,
+                studios: selectedStudios
             })
         })
         .then(response => response.text())
