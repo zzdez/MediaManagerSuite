@@ -110,6 +110,37 @@ def get_user_libraries(user_id):
     except Exception as e:
         current_app.logger.error(f"Erreur API lors de la récupération des bibliothèques pour l'utilisateur {user_id} : {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
+
+@plex_editor_bp.route('/api/genres', methods=['POST'])
+@login_required
+def get_genres_for_libraries():
+    data = request.json
+    user_id = data.get('userId')
+    library_keys = data.get('libraryKeys', [])
+
+    if not user_id or not library_keys:
+        return jsonify(error="User ID and library keys are required."), 400
+
+    try:
+        user_plex = get_user_specific_plex_server_from_id(user_id)
+        if not user_plex:
+            return jsonify(error="Plex user not found."), 404
+
+        all_genres = set()
+        for key in library_keys:
+            library = user_plex.library.sectionByID(int(key))
+            # The .genres() method does not exist on a library.
+            # We must iterate through items to find all genres.
+            for item in library.all():
+                if hasattr(item, 'genres'):
+                    for genre in item.genres:
+                        all_genres.add(genre.tag)
+
+        return jsonify(sorted(list(all_genres)))
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur API /api/genres: {e}", exc_info=True)
+        return jsonify(error=str(e)), 500
         
 @plex_editor_bp.route('/select_user', methods=['POST'])
 @login_required
@@ -172,52 +203,53 @@ def get_media_items():
     library_keys = data.get('libraryKeys', [])
     status_filter = data.get('statusFilter', 'all')
     title_filter = data.get('titleFilter', '').strip()
+    genres_filter = data.get('genres', [])
+    genre_logic = data.get('genreLogic', 'or')
+
+    cleaned_genres = [genre for genre in genres_filter if genre]
 
     if not user_id or not library_keys:
         return jsonify({'error': 'ID utilisateur et au moins une clé de bibliothèque sont requis.'}), 400
 
     try:
-        # (La logique de connexion est inchangée)
-        plex_url = current_app.config.get('PLEX_URL')
-        admin_token = current_app.config.get('PLEX_TOKEN')
-        main_plex_account = get_main_plex_account_object()
-        if not main_plex_account: return jsonify({'error': "Impossible de récupérer le compte Plex principal."}), 500
-        target_plex_server = None
-        if str(main_plex_account.id) == user_id:
-            target_plex_server = PlexServer(plex_url, admin_token)
-        else:
-            admin_plex_server_for_setup = PlexServer(plex_url, admin_token)
-            user_to_impersonate = next((u for u in main_plex_account.users() if str(u.id) == user_id), None)
-            if user_to_impersonate:
-                managed_user_token = user_to_impersonate.get_token(admin_plex_server_for_setup.machineIdentifier)
-                target_plex_server = PlexServer(plex_url, managed_user_token)
-            else: return jsonify({'error': f"Utilisateur {user_id} non trouvé."}), 404
-        if not target_plex_server: return jsonify({'error': f"Impossible de se connecter en tant que {user_id}."}), 500
+        target_plex_server = get_user_specific_plex_server_from_id(user_id)
+        if not target_plex_server:
+            return jsonify({'error': f"Impossible de se connecter en tant que {user_id}."}), 500
 
         all_media_from_plex = []
         for lib_key in library_keys:
             try:
                 library = target_plex_server.library.sectionByID(int(lib_key))
 
-                # --- NOUVELLE LOGIQUE DE RECHERCHE CORRIGÉE ---
+                search_args = {}
+                # Pour la logique 'AND', on ne met qu'un seul genre dans la recherche initiale
+                # pour filtrer un minimum côté serveur, le reste sera fait en Python.
+                # Pour 'OR', on peut tout passer.
+                if cleaned_genres:
+                    if genre_logic == 'and':
+                        search_args['genre'] = cleaned_genres[0]
+                    else: # 'or'
+                        search_args['genre'] = cleaned_genres
+
                 if title_filter:
-                    # On fait 3 recherches et on fusionne les résultats
-                    current_app.logger.info(f"Recherche multiple dans '{library.title}' pour '{title_filter}'")
-                    results1 = library.search(title__icontains=title_filter)
-                    results2 = library.search(titleSort__icontains=title_filter)
-                    results3 = library.search(originalTitle__icontains=title_filter)
+                    search_args['title__icontains'] = title_filter
 
-                    # On utilise un dictionnaire pour dédupliquer automatiquement
-                    merged_items = {item.ratingKey: item for item in results1}
-                    merged_items.update({item.ratingKey: item for item in results2})
-                    merged_items.update({item.ratingKey: item for item in results3})
-                    items_from_lib = list(merged_items.values())
-                else:
-                    # Comportement par défaut si pas de recherche : tout récupérer
-                    items_from_lib = library.all()
-                # --- FIN DE LA LOGIQUE CORRIGÉE ---
+                items_from_lib = library.search(**search_args)
 
-                # (Le reste du code est votre code fonctionnel, inchangé)
+                # Le filtrage "AND" se fait maintenant ici, sur les résultats pré-filtrés
+                if cleaned_genres and genre_logic == 'and':
+                    items_with_all_genres = []
+                    # On a déjà filtré sur le premier genre, donc on vérifie les autres
+                    required_genres_set = {genre.lower() for genre in cleaned_genres}
+
+                    for item in items_from_lib:
+                        if hasattr(item, 'genres') and item.genres:
+                            item_genres_set = {g.tag.lower() for g in item.genres}
+                            if required_genres_set.issubset(item_genres_set):
+                                items_with_all_genres.append(item)
+
+                    items_from_lib = items_with_all_genres
+
                 for item_from_lib in items_from_lib:
                     item_from_lib.library_name = library.title
                     item_from_lib.title_sort = getattr(item_from_lib, 'titleSort', None)
