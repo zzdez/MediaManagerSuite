@@ -69,6 +69,8 @@ $(document).ready(function() {
 
         genreSelect.html('<option value="" selected>Tous les genres</option>').prop('disabled', true);
         $('#collection-filter').html('').prop('disabled', true);
+        $('#resolution-filter').html('').prop('disabled', true);
+        $('#studio-filter').html('').prop('disabled', true);
 
         if (selectedLibraries && selectedLibraries.length > 0) {
             const payload = { userId: userId, libraryKeys: selectedLibraries };
@@ -107,6 +109,37 @@ $(document).ready(function() {
             })
             .catch(error => console.error('Error fetching collections:', error));
 
+            // Fetch Resolutions
+            fetch('/plex/api/resolutions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(response => response.json())
+            .then(resolutions => {
+                const resolutionSelect = $('#resolution-filter');
+                resolutionSelect.empty();
+                if (resolutions && resolutions.length > 0) {
+                    resolutions.forEach(resolution => resolutionSelect.append(new Option(resolution, resolution)));
+                    resolutionSelect.prop('disabled', false);
+                }
+            });
+
+            // Fetch Studios
+            fetch('/plex/api/studios', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(response => response.json())
+            .then(studios => {
+                const studioSelect = $('#studio-filter');
+                studioSelect.empty();
+                if (studios && studios.length > 0) {
+                    studios.forEach(studio => studioSelect.append(new Option(studio, studio)));
+                    studioSelect.prop('disabled', false);
+                }
+            });
         }
     });
 
@@ -146,6 +179,11 @@ $(document).ready(function() {
         const ratingFilterOperator = $('#rating-filter-operator').val();
         const ratingFilterValue = $('#rating-filter-value').val();
         const selectedCollections = $('#collection-filter').val();
+        const selectedResolutions = $('#resolution-filter').val();
+        const actorFilter = $('#actor-filter').val().trim();
+        const directorFilter = $('#director-filter').val().trim();
+        const writerFilter = $('#writer-filter').val().trim();
+        const selectedStudios = $('#studio-filter').val();
 
         if (!userId || !selectedLibraries || selectedLibraries.length === 0) {
             itemsContainer.html('<p class="text-center text-warning">Veuillez sélectionner un utilisateur et une bibliothèque.</p>');
@@ -176,7 +214,12 @@ $(document).ready(function() {
                     operator: ratingFilterOperator,
                     value: ratingFilterValue
                 },
-                collections: selectedCollections
+                collections: selectedCollections,
+                resolutions: selectedResolutions,
+                actor: actorFilter,
+                director: directorFilter,
+                writer: writerFilter,
+                studios: selectedStudios
             })
         })
         .then(response => response.text())

@@ -165,6 +165,58 @@ def get_collections_for_libraries():
         current_app.logger.error(f"Erreur API /api/collections: {e}", exc_info=True)
         return jsonify(error=str(e)), 500
 
+@plex_editor_bp.route('/api/resolutions', methods=['POST'])
+def get_resolutions_for_libraries():
+    data = request.json
+    user_id = data.get('userId')
+    library_keys = data.get('libraryKeys', [])
+
+    if not user_id or not library_keys:
+        return jsonify(error="User ID and library keys are required."), 400
+
+    try:
+        user_plex = get_user_specific_plex_server_from_id(user_id)
+        if not user_plex:
+            return jsonify(error="Plex user not found."), 404
+
+        all_resolutions = set()
+        for key in library_keys:
+            library = user_plex.library.sectionByID(int(key))
+            for item in library.all():
+                if hasattr(item, 'media') and item.media:
+                    for media in item.media:
+                        if hasattr(media, 'videoResolution') and media.videoResolution:
+                            all_resolutions.add(media.videoResolution)
+        return jsonify(sorted(list(all_resolutions)))
+    except Exception as e:
+        current_app.logger.error(f"Erreur API /api/resolutions: {e}", exc_info=True)
+        return jsonify(error=str(e)), 500
+
+@plex_editor_bp.route('/api/studios', methods=['POST'])
+def get_studios_for_libraries():
+    data = request.json
+    user_id = data.get('userId')
+    library_keys = data.get('libraryKeys', [])
+
+    if not user_id or not library_keys:
+        return jsonify(error="User ID and library keys are required."), 400
+
+    try:
+        user_plex = get_user_specific_plex_server_from_id(user_id)
+        if not user_plex:
+            return jsonify(error="Plex user not found."), 404
+
+        all_studios = set()
+        for key in library_keys:
+            library = user_plex.library.sectionByID(int(key))
+            for item in library.all():
+                if hasattr(item, 'studio') and item.studio:
+                    all_studios.add(item.studio)
+        return jsonify(sorted(list(all_studios)))
+    except Exception as e:
+        current_app.logger.error(f"Erreur API /api/studios: {e}", exc_info=True)
+        return jsonify(error=str(e)), 500
+
 @plex_editor_bp.route('/select_user', methods=['POST'])
 @login_required
 def select_user_route():
@@ -230,9 +282,17 @@ def get_media_items():
     genres_filter = data.get('genres', [])
     genre_logic = data.get('genreLogic', 'or')
     collections_filter = data.get('collections', [])
+    resolutions_filter = data.get('resolutions', [])
+    actor_filter = data.get('actor')
+    director_filter = data.get('director')
+    writer_filter = data.get('writer')
+    studios_filter = data.get('studios', [])
+
 
     cleaned_genres = [genre for genre in genres_filter if genre]
     cleaned_collections = [c for c in collections_filter if c]
+    cleaned_resolutions = [r for r in resolutions_filter if r]
+    cleaned_studios = [s for s in studios_filter if s]
 
     if not user_id or not library_keys:
         return jsonify({'error': 'ID utilisateur et au moins une clé de bibliothèque sont requis.'}), 400
@@ -327,6 +387,11 @@ def get_media_items():
                 if cleaned_collections:
                     search_args['collection'] = cleaned_collections
 
+                if cleaned_resolutions:
+                    search_args['resolution'] = cleaned_resolutions
+                if cleaned_studios:
+                    search_args['studio'] = cleaned_studios
+
                 items_from_lib = library.search(**search_args)
 
                 # Le filtrage "AND" se fait maintenant ici, sur les résultats pré-filtrés
@@ -342,6 +407,37 @@ def get_media_items():
                                 items_with_all_genres.append(item)
 
                     items_from_lib = items_with_all_genres
+
+                # Le filtrage "AND" se fait maintenant ici, sur les résultats pré-filtrés
+                if cleaned_genres and genre_logic == 'and':
+                    items_with_all_genres = []
+                    # On a déjà filtré sur le premier genre, donc on vérifie les autres
+                    required_genres_set = {genre.lower() for genre in cleaned_genres}
+
+                    for item in items_from_lib:
+                        if hasattr(item, 'genres') and item.genres:
+                            item_genres_set = {g.tag.lower() for g in item.genres}
+                            if required_genres_set.issubset(item_genres_set):
+                                items_with_all_genres.append(item)
+
+                    items_from_lib = items_with_all_genres
+
+                # Filtrage en Python pour les acteurs, réalisateurs et scénaristes
+                if actor_filter:
+                    items_from_lib = [
+                        item for item in items_from_lib
+                        if hasattr(item, 'actors') and any(actor_filter.lower() in actor.tag.lower() for actor in item.actors)
+                    ]
+                if director_filter:
+                    items_from_lib = [
+                        item for item in items_from_lib
+                        if hasattr(item, 'directors') and any(director_filter.lower() in director.tag.lower() for director in item.directors)
+                    ]
+                if writer_filter:
+                    items_from_lib = [
+                        item for item in items_from_lib
+                        if hasattr(item, 'writers') and any(writer_filter.lower() in writer.tag.lower() for writer in item.writers)
+                    ]
 
                 for item_from_lib in items_from_lib:
                     item_from_lib.library_name = library.title
