@@ -46,22 +46,21 @@
 
             <div class="collapse mt-3" id="advanced-filters">
                 <div class="card card-body bg-secondary">
-                    <div class="row g-3 align-items-end">
-                        <div class="col-md-4">
-                            <label for="genre-filter" class="form-label">Genre(s)</label>
+                    <div class="row g-3">
+                        <div class="col-md-8">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <label for="genre-filter" class="form-label mb-0">Genre(s)</label>
+                                <div class="btn-group btn-group-sm" role="group" aria-label="Logique du filtre des genres">
+                                    <input type="radio" class="btn-check" name="genre-logic" id="genre-logic-or" value="or" autocomplete="off" checked>
+                                    <label class="btn btn-outline-primary" for="genre-logic-or">OU</label>
+
+                                    <input type="radio" class="btn-check" name="genre-logic" id="genre-logic-and" value="and" autocomplete="off">
+                                    <label class="btn btn-outline-primary" for="genre-logic-and">ET</label>
+                                </div>
+                            </div>
                             <select id="genre-filter" class="form-select" multiple disabled>
                                 <!-- Options chargées par JS -->
                             </select>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">Logique des Genres</label>
-                            <div class="btn-group" role="group" aria-label="Logique du filtre des genres">
-                                <input type="radio" class="btn-check" name="genre-logic" id="genre-logic-or" value="or" autocomplete="off" checked>
-                                <label class="btn btn-outline-primary" for="genre-logic-or">OU</label>
-
-                                <input type="radio" class="btn-check" name="genre-logic" id="genre-logic-and" value="and" autocomplete="off">
-                                <label class="btn btn-outline-primary" for="genre-logic-and">ET</label>
-                            </div>
                         </div>
                     </div>
                 </div>
