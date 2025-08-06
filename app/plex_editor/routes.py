@@ -384,9 +384,9 @@ def get_media_items():
                 if cleaned_resolutions:
                     search_args['resolution'] = cleaned_resolutions
                 if actor_filter:
-                    search_args['actor__icontains'] = actor_filter
+                    search_args['actor'] = actor_filter
                 if director_filter:
-                    search_args['director__icontains'] = director_filter
+                    search_args['director'] = director_filter
                 if cleaned_studios:
                     search_args['studio'] = cleaned_studios
 
