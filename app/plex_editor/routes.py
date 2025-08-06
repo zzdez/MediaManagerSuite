@@ -142,6 +142,52 @@ def get_genres_for_libraries():
         current_app.logger.error(f"Erreur API /api/genres: {e}", exc_info=True)
         return jsonify(error=str(e)), 500
         
+@plex_editor_bp.route('/api/collections', methods=['POST'])
+def get_collections_for_libraries():
+    data = request.json
+    user_id = data.get('userId')
+    library_keys = data.get('libraryKeys', [])
+
+    if not user_id or not library_keys:
+        return jsonify(error="User ID and library keys are required."), 400
+
+    try:
+        user_plex = get_user_specific_plex_server_from_id(user_id)
+        if not user_plex:
+            return jsonify(error="Plex user not found."), 404
+
+        all_collections = set()
+        for key in library_keys:
+            library = user_plex.library.sectionByID(int(key))
+            all_collections.update([collection.tag for collection in library.collections()])
+        return jsonify(sorted(list(all_collections)))
+    except Exception as e:
+        current_app.logger.error(f"Erreur API /api/collections: {e}", exc_info=True)
+        return jsonify(error=str(e)), 500
+
+@plex_editor_bp.route('/api/labels', methods=['POST'])
+def get_labels_for_libraries():
+    data = request.json
+    user_id = data.get('userId')
+    library_keys = data.get('libraryKeys', [])
+
+    if not user_id or not library_keys:
+        return jsonify(error="User ID and library keys are required."), 400
+
+    try:
+        user_plex = get_user_specific_plex_server_from_id(user_id)
+        if not user_plex:
+            return jsonify(error="Plex user not found."), 404
+
+        all_labels = set()
+        for key in library_keys:
+            library = user_plex.library.sectionByID(int(key))
+            all_labels.update([label.tag for label in library.labels()])
+        return jsonify(sorted(list(all_labels)))
+    except Exception as e:
+        current_app.logger.error(f"Erreur API /api/labels: {e}", exc_info=True)
+        return jsonify(error=str(e)), 500
+
 @plex_editor_bp.route('/select_user', methods=['POST'])
 @login_required
 def select_user_route():
@@ -203,10 +249,15 @@ def get_media_items():
     library_keys = data.get('libraryKeys', [])
     status_filter = data.get('statusFilter', 'all')
     title_filter = data.get('titleFilter', '').strip()
+    year_filter = data.get('year')
     genres_filter = data.get('genres', [])
     genre_logic = data.get('genreLogic', 'or')
+    collections_filter = data.get('collections', [])
+    labels_filter = data.get('labels', [])
 
     cleaned_genres = [genre for genre in genres_filter if genre]
+    cleaned_collections = [c for c in collections_filter if c]
+    cleaned_labels = [l for l in labels_filter if l]
 
     if not user_id or not library_keys:
         return jsonify({'error': 'ID utilisateur et au moins une clé de bibliothèque sont requis.'}), 400
@@ -233,6 +284,12 @@ def get_media_items():
 
                 if title_filter:
                     search_args['title__icontains'] = title_filter
+
+                if year_filter:
+                    try:
+                        search_args['year'] = int(year_filter)
+                    except (ValueError, TypeError):
+                        pass # Ignorer si la valeur n'est pas un entier valide
 
                 date_filter = data.get('dateFilter', {})
                 date_type = date_filter.get('type')
@@ -291,6 +348,11 @@ def get_media_items():
                                 search_args['userRating'] = rating_value
                         except (ValueError, TypeError):
                             pass # Ignorer si la valeur n'est pas un nombre valide
+
+                if cleaned_collections:
+                    search_args['collection'] = cleaned_collections
+                if cleaned_labels:
+                    search_args['label'] = cleaned_labels
 
                 items_from_lib = library.search(**search_args)
 
