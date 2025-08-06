@@ -234,6 +234,21 @@ def get_media_items():
                 if title_filter:
                     search_args['title__icontains'] = title_filter
 
+                date_filter = data.get('dateFilter', {})
+                if date_filter and date_filter.get('type') and date_filter.get('start'):
+                    date_type = date_filter['type']      # 'lastViewedAt' ou 'addedAt'
+                    operator = date_filter['operator']  # 'after', 'before', 'between'
+                    start_date = date_filter['start']
+                    end_date = date_filter.get('end')
+
+                    if operator == 'after':
+                        search_args[f'{date_type}>>'] = start_date
+                    elif operator == 'before':
+                        search_args[f'{date_type}<<'] = start_date
+                    elif operator == 'between' and end_date:
+                        search_args[f'{date_type}>>'] = start_date
+                        search_args[f'{date_type}<<'] = end_date
+
                 items_from_lib = library.search(**search_args)
 
                 # Le filtrage "AND" se fait maintenant ici, sur les résultats pré-filtrés

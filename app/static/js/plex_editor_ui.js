@@ -89,6 +89,27 @@ $(document).ready(function() {
     });
 
     // --- 3. Appliquer les filtres pour charger les médias ---
+    // Logique pour gérer l'affichage dynamique des filtres de date
+    $('#date-filter-type').on('change', function() {
+        const type = $(this).val();
+        const operatorSelect = $('#date-filter-operator');
+        const dateFieldsContainer = $('#date-fields-container');
+        if (type) {
+            operatorSelect.prop('disabled', false);
+            dateFieldsContainer.show();
+        } else {
+            operatorSelect.prop('disabled', true);
+            dateFieldsContainer.hide();
+        }
+    });
+
+    $('#date-filter-operator').on('change', function() {
+        const operator = $(this).val();
+        const endDateContainer = $('#end-date-container');
+        $('#start-date-label').text(operator === 'between' ? 'Date de Début' : 'Date');
+        endDateContainer.toggle(operator === 'between');
+    });
+
     applyBtn.on('click', function() {
         const userId = userSelect.val();
         const selectedLibraries = librarySelect.val();
@@ -96,6 +117,10 @@ $(document).ready(function() {
         const titleFilter = $('#title-filter-input').val().trim();
         const selectedGenres = genreSelect.val();
         const genreLogic = $('input[name="genre-logic"]:checked').val();
+        const dateFilterType = $('#date-filter-type').val();
+        const dateFilterOperator = $('#date-filter-operator').val();
+        const dateFilterStart = $('#date-filter-start').val();
+        const dateFilterEnd = $('#date-filter-end').val();
 
         if (!userId || !selectedLibraries || selectedLibraries.length === 0) {
             itemsContainer.html('<p class="text-center text-warning">Veuillez sélectionner un utilisateur et une bibliothèque.</p>');
@@ -114,7 +139,13 @@ $(document).ready(function() {
                 statusFilter: statusFilter,
                 titleFilter: titleFilter,
                 genres: selectedGenres,
-                genreLogic: genreLogic
+                genreLogic: genreLogic,
+                dateFilter: {
+                    type: dateFilterType,
+                    operator: dateFilterOperator,
+                    start: dateFilterStart,
+                    end: dateFilterEnd
+                }
             })
         })
         .then(response => response.text())

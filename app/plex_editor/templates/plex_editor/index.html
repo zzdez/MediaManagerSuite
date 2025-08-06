@@ -63,6 +63,36 @@
                             </select>
                         </div>
                     </div>
+                    <hr> <!-- Séparateur visuel -->
+                    <h5>Filtre par Date</h5>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <label for="date-filter-type" class="form-label">Type de Date</label>
+                            <select id="date-filter-type" class="form-select">
+                                <option value="">Aucun</option>
+                                <option value="lastViewedAt">Date de Visionnage</option>
+                                <option value="addedAt">Date d'Ajout</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="date-filter-operator" class="form-label">Opérateur</label>
+                            <select id="date-filter-operator" class="form-select" disabled>
+                                <option value="after">Après le</option>
+                                <option value="before">Avant le</option>
+                                <option value="between">Entre le</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row mt-2" id="date-fields-container" style="display: none;">
+                        <div class="col-md-4" id="start-date-container">
+                            <label for="date-filter-start" class="form-label" id="start-date-label">Date</label>
+                            <input type="date" id="date-filter-start" class="form-control">
+                        </div>
+                        <div class="col-md-4" id="end-date-container" style="display: none;">
+                            <label for="date-filter-end" class="form-label">Date de Fin</label>
+                            <input type="date" id="date-filter-end" class="form-control">
+                        </div>
+                    </div>
                 </div>
             </div>
 
