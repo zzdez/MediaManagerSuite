@@ -390,11 +390,11 @@ def get_media_items():
                 if cleaned_resolutions:
                     search_args['resolution'] = cleaned_resolutions
                 if actor_filter:
-                    search_args['actor'] = actor_filter
+                    search_args['actor__iregex'] = actor_filter
                 if director_filter:
-                    search_args['director'] = director_filter
+                    search_args['director__iregex'] = director_filter
                 if writer_filter:
-                    search_args['writer'] = writer_filter
+                    search_args['writer__iregex'] = writer_filter
                 if cleaned_studios:
                     search_args['studio'] = cleaned_studios
 
