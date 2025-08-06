@@ -63,6 +63,40 @@
                             </select>
                         </div>
                     </div>
+                    <hr>
+                    <h5>Filtre par Date</h5>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <label for="date-filter-type" class="form-label">Type de Date</label>
+                            <select id="date-filter-type" class="form-select">
+                                <option value="">Aucun</option>
+                                <option value="lastViewedAt">Date de Visionnage</option>
+                                <option value="addedAt">Date d'Ajout</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="date-filter-preset" class="form-label">Période</label>
+                            <select id="date-filter-preset" class="form-select" disabled>
+                                <option value="today">Aujourd'hui</option>
+                                <option value="last7days">7 derniers jours</option>
+                                <option value="last30days">30 derniers jours</option>
+                                <option value="thisMonth">Mois en cours</option>
+                                <option value="lastMonth">Mois dernier</option>
+                                <option value="custom">Personnalisé...</option>
+                            </select>
+                        </div>
+                    </div>
+                    <!-- Conteneur pour les champs de date personnalisés, initialement caché -->
+                    <div class="row mt-2" id="custom-date-fields-container" style="display: none;">
+                        <div class="col-md-4">
+                            <label for="date-filter-start" class="form-label">Date de Début</label>
+                            <input type="date" id="date-filter-start" class="form-control">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="date-filter-end" class="form-label">Date de Fin</label>
+                            <input type="date" id="date-filter-end" class="form-control">
+                        </div>
+                    </div>
                 </div>
             </div>
 

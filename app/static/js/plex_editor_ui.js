@@ -89,6 +89,19 @@ $(document).ready(function() {
     });
 
     // --- 3. Appliquer les filtres pour charger les médias ---
+    // Remplace l'ancienne logique de gestion des dates par celle-ci
+    $('#date-filter-type').on('change', function() {
+        const type = $(this).val();
+        $('#date-filter-preset').prop('disabled', !type);
+        if (!type) {
+            $('#custom-date-fields-container').hide();
+        }
+    });
+
+    $('#date-filter-preset').on('change', function() {
+        $('#custom-date-fields-container').toggle($(this).val() === 'custom');
+    });
+
     applyBtn.on('click', function() {
         const userId = userSelect.val();
         const selectedLibraries = librarySelect.val();
@@ -96,6 +109,10 @@ $(document).ready(function() {
         const titleFilter = $('#title-filter-input').val().trim();
         const selectedGenres = genreSelect.val();
         const genreLogic = $('input[name="genre-logic"]:checked').val();
+        const dateFilterType = $('#date-filter-type').val();
+        const dateFilterPreset = $('#date-filter-preset').val();
+        const dateFilterStart = $('#date-filter-start').val();
+        const dateFilterEnd = $('#date-filter-end').val();
 
         if (!userId || !selectedLibraries || selectedLibraries.length === 0) {
             itemsContainer.html('<p class="text-center text-warning">Veuillez sélectionner un utilisateur et une bibliothèque.</p>');
@@ -114,7 +131,13 @@ $(document).ready(function() {
                 statusFilter: statusFilter,
                 titleFilter: titleFilter,
                 genres: selectedGenres,
-                genreLogic: genreLogic
+                genreLogic: genreLogic,
+                dateFilter: {
+                    type: dateFilterType,
+                    preset: dateFilterPreset,
+                    start: dateFilterStart,
+                    end: dateFilterEnd
+                }
             })
         })
         .then(response => response.text())
