@@ -203,6 +203,7 @@ def get_media_items():
     library_keys = data.get('libraryKeys', [])
     status_filter = data.get('statusFilter', 'all')
     title_filter = data.get('titleFilter', '').strip()
+    year_filter = data.get('year')
     genres_filter = data.get('genres', [])
     genre_logic = data.get('genreLogic', 'or')
 
@@ -233,6 +234,12 @@ def get_media_items():
 
                 if title_filter:
                     search_args['title__icontains'] = title_filter
+
+                if year_filter:
+                    try:
+                        search_args['year'] = int(year_filter)
+                    except (ValueError, TypeError):
+                        pass # Ignorer si la valeur n'est pas un entier valide
 
                 date_filter = data.get('dateFilter', {})
                 date_type = date_filter.get('type')

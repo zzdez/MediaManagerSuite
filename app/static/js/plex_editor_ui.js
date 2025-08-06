@@ -114,6 +114,7 @@ $(document).ready(function() {
         const selectedLibraries = librarySelect.val();
         const statusFilter = $('#status-filter').val();
         const titleFilter = $('#title-filter-input').val().trim();
+        const yearFilter = $('#year-filter').val(); // <-- NOUVELLE LIGNE
         const selectedGenres = genreSelect.val();
         const genreLogic = $('input[name="genre-logic"]:checked').val();
         const dateFilterType = $('#date-filter-type').val();
@@ -139,6 +140,7 @@ $(document).ready(function() {
                 libraryKeys: selectedLibraries,
                 statusFilter: statusFilter,
                 titleFilter: titleFilter,
+                year: yearFilter, // <-- NOUVELLE LIGNE
                 genres: selectedGenres,
                 genreLogic: genreLogic,
                 dateFilter: {
