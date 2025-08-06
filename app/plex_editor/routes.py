@@ -271,6 +271,27 @@ def get_media_items():
                     if end_date:
                         search_args[f'{date_type}<<'] = end_date
 
+                rating_filter = data.get('ratingFilter', {})
+                if rating_filter and rating_filter.get('operator'):
+                    operator = rating_filter['operator']
+                    value = rating_filter.get('value')
+
+                    if operator == 'is_rated':
+                        search_args['userRating>>'] = -1 # Astuce: userRating est >= 0, donc ça sélectionne tout ce qui a une note
+                    elif operator == 'is_not_rated':
+                        search_args['userRating'] = None
+                    elif value:
+                        try:
+                            rating_value = float(value)
+                            if operator == 'gte':
+                                search_args['userRating>>'] = rating_value
+                            elif operator == 'lte':
+                                search_args['userRating<<'] = rating_value
+                            elif operator == 'eq':
+                                search_args['userRating'] = rating_value
+                        except (ValueError, TypeError):
+                            pass # Ignorer si la valeur n'est pas un nombre valide
+
                 items_from_lib = library.search(**search_args)
 
                 # Le filtrage "AND" se fait maintenant ici, sur les résultats pré-filtrés

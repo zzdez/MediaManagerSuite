@@ -102,6 +102,13 @@ $(document).ready(function() {
         $('#custom-date-fields-container').toggle($(this).val() === 'custom');
     });
 
+    // Logique pour gérer l'affichage dynamique du filtre de note
+    $('#rating-filter-operator').on('change', function() {
+        const operator = $(this).val();
+        const showValueSelector = ['gte', 'lte', 'eq'].includes(operator);
+        $('#rating-value-container').toggle(showValueSelector);
+    });
+
     applyBtn.on('click', function() {
         const userId = userSelect.val();
         const selectedLibraries = librarySelect.val();
@@ -113,6 +120,8 @@ $(document).ready(function() {
         const dateFilterPreset = $('#date-filter-preset').val();
         const dateFilterStart = $('#date-filter-start').val();
         const dateFilterEnd = $('#date-filter-end').val();
+        const ratingFilterOperator = $('#rating-filter-operator').val();
+        const ratingFilterValue = $('#rating-filter-value').val();
 
         if (!userId || !selectedLibraries || selectedLibraries.length === 0) {
             itemsContainer.html('<p class="text-center text-warning">Veuillez sélectionner un utilisateur et une bibliothèque.</p>');
@@ -137,6 +146,10 @@ $(document).ready(function() {
                     preset: dateFilterPreset,
                     start: dateFilterStart,
                     end: dateFilterEnd
+                },
+                ratingFilter: {
+                    operator: ratingFilterOperator,
+                    value: ratingFilterValue
                 }
             })
         })

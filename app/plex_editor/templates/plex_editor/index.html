@@ -97,6 +97,29 @@
                             <input type="date" id="date-filter-end" class="form-control">
                         </div>
                     </div>
+                    <hr> <!-- Séparateur visuel -->
+                    <h5>Filtre par Note Personnelle</h5>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <label for="rating-filter-operator" class="form-label">Condition</label>
+                            <select id="rating-filter-operator" class="form-select">
+                                <option value="">Aucun</option>
+                                <option value="is_rated">Est Noté</option>
+                                <option value="is_not_rated">N'est Pas Noté</option>
+                                <option value="gte">Note >= à</option>
+                                <option value="lte">Note <= à</option>
+                                <option value="eq">Note = à</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4" id="rating-value-container" style="display: none;">
+                            <label for="rating-filter-value" class="form-label">Note</label>
+                            <select id="rating-filter-value" class="form-select">
+                                {% for i in range(10, 0, -1) %}
+                                <option value="{{ i }}">{{ i }} étoile(s)</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
                 </div>
             </div>
 
