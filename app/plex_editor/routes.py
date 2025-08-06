@@ -182,7 +182,11 @@ def get_resolutions_for_libraries():
         all_resolutions = set()
         for key in library_keys:
             library = user_plex.library.sectionByID(int(key))
-            all_resolutions.update([res.title for res in library.resolutions()])
+            for item in library.all():
+                if hasattr(item, 'media') and item.media:
+                    for media in item.media:
+                        if hasattr(media, 'videoResolution') and media.videoResolution:
+                            all_resolutions.add(media.videoResolution)
         return jsonify(sorted(list(all_resolutions)))
     except Exception as e:
         current_app.logger.error(f"Erreur API /api/resolutions: {e}", exc_info=True)
@@ -205,8 +209,9 @@ def get_studios_for_libraries():
         all_studios = set()
         for key in library_keys:
             library = user_plex.library.sectionByID(int(key))
-            # L'API utilise .studios() pour lister les studios
-            all_studios.update([studio.tag for studio in library.studios()])
+            for item in library.all():
+                if hasattr(item, 'studio') and item.studio:
+                    all_studios.add(item.studio)
         return jsonify(sorted(list(all_studios)))
     except Exception as e:
         current_app.logger.error(f"Erreur API /api/studios: {e}", exc_info=True)
