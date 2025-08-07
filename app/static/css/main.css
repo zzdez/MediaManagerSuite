@@ -115,3 +115,8 @@ body {
     border-radius: .375rem; /* Arrondi standard de Bootstrap */
     background-color: rgba(13, 110, 253, 0.05); /* Teinte de fond très légère */
 }
+
+.star-rating i {
+    color: #ffc107; /* Couleur "warning" de Bootstrap, un jaune doré */
+    font-size: 0.9rem; /* Légèrement plus petit pour ne pas être trop imposant */
+}
