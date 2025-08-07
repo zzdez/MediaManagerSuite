@@ -19,7 +19,7 @@
                     <label for="library-select" class="form-label small">Bibliothèque(s)</label>
                     <select id="library-select" class="form-select form-select-sm" multiple disabled></select>
                 </div>
-                <div class="col-lg-3 col-md-12 mb-2 mb-lg-0">
+                <div class="col-lg-2 col-md-12 mb-2 mb-lg-0">
                     <label for="title-filter-input" class="form-label small">Titre</label>
                     <input type="text" id="title-filter-input" class="form-control form-control-sm" placeholder="Rechercher par titre...">
                 </div>
@@ -36,18 +36,24 @@
                     <label for="year-filter" class="form-label small">Année</label>
                     <input type="number" id="year-filter" class="form-control form-control-sm" placeholder="Ex: 2023">
                 </div>
-                <div id="batch-actions-container" class="col-md-3" style="display: none;">
-                    <label class="form-label small">Actions pour <span id="selected-item-count">0</span> élément(s)</label>
-                    <div class="btn-group w-100">
-                        <button id="batch-delete-btn" class="btn btn-sm btn-danger">Supprimer</button>
-                        <!-- Ajoutez ici d'autres boutons d'action si nécessaire -->
+                <div class="col-lg-4 col-md-12 d-flex justify-content-end align-items-end">
+                    <!-- Conteneur pour les actions de masse -->
+                    <div id="batch-actions-container" style="display: none;" class="me-2">
+                        <div class="btn-group">
+                            <button id="batch-delete-btn" class="btn btn-sm btn-danger">
+                                Supprimer <span id="selected-item-count" class="badge bg-light text-dark ms-1">0</span>
+                            </button>
+                            <!-- Autres boutons d'action de masse ici -->
+                        </div>
                     </div>
-                </div>
-                <div class="col-lg-3 col-md-5 d-flex justify-content-end align-items-end">
-                    <button class="btn btn-secondary btn-sm me-2" type="button" data-bs-toggle="collapse" data-bs-target="#advanced-filters" aria-expanded="false" aria-controls="advanced-filters">
-                        Avancés
-                    </button>
-                    <button id="apply-filters-btn" class="btn btn-primary btn-sm">Appliquer</button>
+
+                    <!-- Conteneur pour les boutons de filtre -->
+                    <div class="btn-group">
+                         <button class="btn btn-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#advanced-filters" aria-expanded="false" aria-controls="advanced-filters">
+                            Avancés
+                        </button>
+                        <button id="apply-filters-btn" class="btn btn-primary btn-sm">Appliquer</button>
+                    </div>
                 </div>
             </div>
 
