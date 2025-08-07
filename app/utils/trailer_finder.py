@@ -1,4 +1,5 @@
-from urllib.parse import urlencode
+# L'import de urlencode n'est plus nécessaire car la méthode .url() s'en charge
+# si on ne construit pas nous-mêmes la query string.
 
 def find_plex_trailer(plex_item, plex_server):
     """
@@ -9,30 +10,24 @@ def find_plex_trailer(plex_item, plex_server):
 
     for extra in plex_item.extras():
         if extra.subtype == 'trailer':
-            # **NOUVELLE LOGIQUE DE CONSTRUCTION SÉCURISÉE**
+            try:
+                # ÉTAPE CRUCIALE : Accéder à la première "partie" du média
+                # C'est cette clé que le transcodeur attend.
+                media_part = extra.media[0].parts[0]
+                part_key = media_part.key
 
-            # 1. Définir les paramètres du transcodeur dans un dictionnaire
-            params = {
-                'path': extra.key, # La clé originale, ex: /library/metadata/43579
-                'mediaIndex': 0,
-                'partIndex': 0,
-                'protocol': 'hls',
-                'fastSeek': 1,
-                'directPlay': 0,
-                'directStream': 1,
-                'videoQuality': 100,
-                'maxVideoBitrate': 20000,
-                'videoResolution': '1920x1080'
-            }
+                # On construit le chemin du transcodeur en utilisant la clé de la partie
+                transcode_path = f'/video/:/transcode/universal/start.m3u8?path={part_key}'
 
-            # 2. Utiliser urlencode pour formater correctement la chaîne de requête
-            query_string = urlencode(params)
+                # La méthode .url() du serveur ajoute l'adresse, le port et le token.
+                # Elle gère aussi l'encodage nécessaire.
+                trailer_url = plex_server.url(transcode_path, includeToken=True)
+                return trailer_url
 
-            # 3. Construire le chemin final
-            transcode_path = f'/video/:/transcode/universal/start.m3u8?{query_string}'
-
-            # 4. Utiliser la méthode .url() du serveur qui gère le reste
-            trailer_url = plex_server.url(transcode_path, includeToken=True)
-            return trailer_url
+            except (IndexError, AttributeError) as e:
+                # Cette exception se produit si la bande-annonce n'a pas de média ou de partie,
+                # ce qui peut arriver. On l'ignore et on continue.
+                print(f"DEBUG: Impossible de trouver une partie média pour la bande-annonce '{extra.title}': {e}")
+                continue
 
     return None
