@@ -1,3 +1,5 @@
+from urllib.parse import urlencode
+
 def find_plex_trailer(plex_item, plex_server):
     """
     Recherche une bande-annonce pour un item Plex et retourne une URL de streaming universel.
@@ -7,13 +9,29 @@ def find_plex_trailer(plex_item, plex_server):
 
     for extra in plex_item.extras():
         if extra.subtype == 'trailer':
-            # Construire le path pour le transcodeur universel
-            transcode_path = (f'/video/:/transcode/universal/start.m3u8'
-                              f'?path={extra.key}&mediaIndex=0&partIndex=0'
-                              f'&protocol=hls&fastSeek=1&directPlay=0&directStream=1'
-                              f'&videoQuality=100&maxVideoBitrate=20000&videoResolution=1920x1080')
+            # **NOUVELLE LOGIQUE DE CONSTRUCTION SÉCURISÉE**
 
-            # Utiliser la méthode .url() du serveur pour ajouter l'adresse et le token
+            # 1. Définir les paramètres du transcodeur dans un dictionnaire
+            params = {
+                'path': extra.key, # La clé originale, ex: /library/metadata/43579
+                'mediaIndex': 0,
+                'partIndex': 0,
+                'protocol': 'hls',
+                'fastSeek': 1,
+                'directPlay': 0,
+                'directStream': 1,
+                'videoQuality': 100,
+                'maxVideoBitrate': 20000,
+                'videoResolution': '1920x1080'
+            }
+
+            # 2. Utiliser urlencode pour formater correctement la chaîne de requête
+            query_string = urlencode(params)
+
+            # 3. Construire le chemin final
+            transcode_path = f'/video/:/transcode/universal/start.m3u8?{query_string}'
+
+            # 4. Utiliser la méthode .url() du serveur qui gère le reste
             trailer_url = plex_server.url(transcode_path, includeToken=True)
             return trailer_url
 
