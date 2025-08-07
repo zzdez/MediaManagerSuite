@@ -816,4 +816,27 @@ function sortTable(table, sortBy, sortType, direction) {
         sortTable(table, 'rating', 'number', newDir === 'asc' ? 1 : -1);
     });
 
+    // Gestion de l'ouverture de la modale de la bande-annonce
+    $(document).on('click', '.open-trailer-modal-btn', function() {
+        const trailerUrl = $(this).data('trailer-url');
+        const trailerTitle = $(this).data('trailer-title');
+
+        const videoPlayer = $('#trailer-video-player');
+        const modalTitle = $('#trailerModalLabel');
+
+        // Mettre à jour le titre de la modale et la source de la vidéo
+        modalTitle.text('Bande-Annonce: ' + trailerTitle);
+        videoPlayer.attr('src', trailerUrl);
+
+        // Lancer la modale manuellement
+        const trailerModal = new bootstrap.Modal(document.getElementById('trailer-modal'));
+        trailerModal.show();
+    });
+
+    // Gestion de la fermeture de la modale pour arrêter la vidéo
+    $('#trailer-modal').on('hidden.bs.modal', function () {
+        const videoPlayer = $('#trailer-video-player');
+        videoPlayer.get(0).pause(); // Met la vidéo en pause
+        videoPlayer.attr('src', ''); // Vide la source pour stopper le chargement
+    });
 }); // Fin de $(document).ready

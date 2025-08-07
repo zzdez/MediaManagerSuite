@@ -111,14 +111,13 @@
                     <i class="bi bi-eye-fill"></i>
                 </button>
 
-                {# À placer à côté des autres boutons d'action, par exemple après le bouton 'Vu/Non Vu' #}
                 {% if item.trailer_url %}
-                    <a href="{{ item.trailer_url }}"
-                       class="btn btn-sm btn-outline-info"
-                       target="_blank"
-                       title="Voir la bande-annonce (via Plex)">
+                    <button class="btn btn-sm btn-outline-info open-trailer-modal-btn"
+                            data-trailer-url="{{ item.trailer_url }}"
+                            data-trailer-title="{{ item.title }}"
+                            title="Voir la bande-annonce">
                         <i class="bi bi-film"></i>
-                    </a>
+                    </button>
                 {% endif %}
 
                 {% if item.type == 'movie' %}
