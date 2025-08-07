@@ -8,157 +8,129 @@
     <div class="card bg-dark text-white mb-4">
         <div class="card-body">
             <h5 class="card-title">Filtres</h5>
-            <div class="row g-3 align-items-end">
-                <!-- Filtres de base -->
-                <div class="col-md-3">
-                    <label for="user-select" class="form-label">Utilisateur</label>
-                    <select id="user-select" class="form-select">
+            <div class="row g-2 align-items-end">
+                <div class="col-lg-2 col-md-6 mb-2 mb-md-0">
+                    <label for="user-select" class="form-label small">Utilisateur</label>
+                    <select id="user-select" class="form-select form-select-sm">
                         <option selected>Chargement...</option>
                     </select>
                 </div>
-                <div class="col-md-3">
-                    <label for="library-select" class="form-label">Bibliothèque(s)</label>
-                    <select id="library-select" class="form-select" multiple disabled></select>
+                <div class="col-lg-2 col-md-6 mb-2 mb-md-0">
+                    <label for="library-select" class="form-label small">Bibliothèque(s)</label>
+                    <select id="library-select" class="form-select form-select-sm" multiple disabled></select>
                 </div>
-                <div class="col-md-3">
-                    <label for="title-filter-input" class="form-label">Titre</label>
-                    <input type="text" id="title-filter-input" class="form-control" placeholder="Rechercher...">
+                <div class="col-lg-3 col-md-12 mb-2 mb-lg-0">
+                    <label for="title-filter-input" class="form-label small">Titre</label>
+                    <input type="text" id="title-filter-input" class="form-control form-control-sm" placeholder="Rechercher par titre...">
                 </div>
-                <div class="col-md-2">
-                    <label for="status-filter" class="form-label">Statut</label>
-                    <select id="status-filter" class="form-select">
+                <div class="col-lg-1 col-md-4 mb-2 mb-md-0">
+                    <label for="status-filter" class="form-label small">Statut</label>
+                    <select id="status-filter" class="form-select form-select-sm">
                         <option value="all" selected>Tous</option>
                         <option value="unwatched">Non commencé</option>
                         <option value="in_progress">En cours</option>
                         <option value="watched">Vu</option>
                     </select>
                 </div>
-                <div class="col-md-1">
-                    <label for="year-filter" class="form-label">Année</label>
-                    <input type="number" id="year-filter" class="form-control" placeholder="Ex: 2023">
+                <div class="col-lg-1 col-md-3 mb-2 mb-md-0" style="max-width: 120px;">
+                    <label for="year-filter" class="form-label small">Année</label>
+                    <input type="number" id="year-filter" class="form-control form-control-sm" placeholder="Ex: 2023">
                 </div>
-            </div>
-
-            <!-- Filtres avancés -->
-            <div class="row mt-3">
-                <div class="col-md-6">
-                    <button class="btn btn-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#advanced-filters" aria-expanded="false" aria-controls="advanced-filters">
-                        Filtres Avancés
+                <div class="col-lg-3 col-md-5 d-flex justify-content-end align-items-end">
+                    <button class="btn btn-secondary btn-sm me-2" type="button" data-bs-toggle="collapse" data-bs-target="#advanced-filters" aria-expanded="false" aria-controls="advanced-filters">
+                        Avancés
                     </button>
+                    <button id="apply-filters-btn" class="btn btn-primary btn-sm">Appliquer</button>
                 </div>
             </div>
 
             <div class="collapse mt-3" id="advanced-filters">
                 <div class="card card-body bg-secondary">
-                    <div class="row g-3">
-                        <div class="col-md-8">
-                            <div class="d-flex justify-content-between align-items-center mb-1">
-                                <label for="genre-filter" class="form-label mb-0">Genre(s)</label>
-                                <div class="btn-group btn-group-sm" role="group" aria-label="Logique du filtre des genres">
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-4">
+                            <label for="genre-filter" class="form-label small">Genre(s)</label>
+                            <div class="input-group input-group-sm">
+                                <select id="genre-filter" class="form-select form-select-sm" multiple disabled></select>
+                                <div class="btn-group" role="group">
                                     <input type="radio" class="btn-check" name="genre-logic" id="genre-logic-or" value="or" autocomplete="off" checked>
                                     <label class="btn btn-outline-primary" for="genre-logic-or">OU</label>
-
                                     <input type="radio" class="btn-check" name="genre-logic" id="genre-logic-and" value="and" autocomplete="off">
                                     <label class="btn btn-outline-primary" for="genre-logic-and">ET</label>
                                 </div>
                             </div>
-                            <select id="genre-filter" class="form-select" multiple disabled>
-                                <!-- Options chargées par JS -->
-                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label for="collection-filter" class="form-label small">Collection(s)</label>
+                            <select id="collection-filter" class="form-select form-select-sm" multiple></select>
+                        </div>
+                        <div class="col-md-2">
+                            <label for="studio-filter" class="form-label small">Studio(s)</label>
+                            <select id="studio-filter" class="form-select form-select-sm" multiple></select>
+                        </div>
+                        <div class="col-md-2">
+                            <label for="director-filter" class="form-label small">Réalisateur</label>
+                            <input type="text" id="director-filter" class="form-control form-control-sm" placeholder="Nolan">
+                        </div>
+                         <div class="col-md-2">
+                            <label for="resolution-filter" class="form-label small">Résolution(s)</label>
+                            <select id="resolution-filter" class="form-select form-select-sm" multiple></select>
                         </div>
                     </div>
-                    <hr>
-                    <h5>Filtre par Date</h5>
-                    <div class="row">
-                        <div class="col-md-4">
-                            <label for="date-filter-type" class="form-label">Type de Date</label>
-                            <select id="date-filter-type" class="form-select">
-                                <option value="">Aucun</option>
-                                <option value="lastViewedAt">Date de Visionnage</option>
-                                <option value="addedAt">Date d'Ajout</option>
-                            </select>
+                    <div class="row g-2">
+                        <div class="col-md-3">
+                            <label for="actor-filter" class="form-label small">Acteur</label>
+                            <input type="text" id="actor-filter" class="form-control form-control-sm" placeholder="Tom Hanks">
                         </div>
-                        <div class="col-md-4">
-                            <label for="date-filter-preset" class="form-label">Période</label>
-                            <select id="date-filter-preset" class="form-select" disabled>
-                                <option value="today">Aujourd'hui</option>
-                                <option value="last7days">7 derniers jours</option>
-                                <option value="last30days">30 derniers jours</option>
-                                <option value="thisMonth">Mois en cours</option>
-                                <option value="lastMonth">Mois dernier</option>
-                                <option value="custom">Personnalisé...</option>
-                            </select>
+                        <div class="col-md-3">
+                            <label for="writer-filter" class="form-label small">Scénariste</label>
+                            <input type="text" id="writer-filter" class="form-control form-control-sm" placeholder="Sorkin">
                         </div>
-                    </div>
-                    <!-- Conteneur pour les champs de date personnalisés, initialement caché -->
-                    <div class="row mt-2" id="custom-date-fields-container" style="display: none;">
-                        <div class="col-md-4">
-                            <label for="date-filter-start" class="form-label">Date de Début</label>
-                            <input type="date" id="date-filter-start" class="form-control">
+                        <div class="col-md-3">
+                            <label for="date-filter-type" class="form-label small">Type de Date</label>
+                             <div class="input-group input-group-sm">
+                                <select id="date-filter-type" class="form-select form-select-sm">
+                                    <option value="">Aucun</option>
+                                    <option value="lastViewedAt">Visionnage</option>
+                                    <option value="addedAt">Ajout</option>
+                                </select>
+                                <select id="date-filter-preset" class="form-select form-select-sm" disabled>
+                                    <option value="today">Aujourd'hui</option>
+                                    <option value="last7days">7 jours</option>
+                                    <option value="last30days">30 jours</option>
+                                    <option value="thisMonth">Ce mois-ci</option>
+                                    <option value="lastMonth">Mois dernier</option>
+                                    <option value="custom">Personnalisé</option>
+                                </select>
+                            </div>
                         </div>
-                        <div class="col-md-4">
-                            <label for="date-filter-end" class="form-label">Date de Fin</label>
-                            <input type="date" id="date-filter-end" class="form-control">
+                        <div class="col-md-3" id="custom-date-fields-container" style="display: none;">
+                               <label class="form-label small invisible">Dates Personnalisées</label>
+                                <div class="input-group input-group-sm">
+                                <input type="date" id="date-filter-start" class="form-control form-control-sm" title="Date de début">
+                                <input type="date" id="date-filter-end" class="form-control form-control-sm" title="Date de fin">
+                            </div>
                         </div>
-                    </div>
-                    <hr> <!-- Séparateur visuel -->
-                    <h5>Filtre par Note Personnelle</h5>
-                    <div class="row">
-                        <div class="col-md-4">
-                            <label for="rating-filter-operator" class="form-label">Condition</label>
-                            <select id="rating-filter-operator" class="form-select">
-                                <option value="">Aucun</option>
-                                <option value="is_rated">Est Noté</option>
-                                <option value="is_not_rated">N'est Pas Noté</option>
-                                <option value="gte">Note >= à</option>
-                                <option value="lte">Note <= à</option>
-                                <option value="eq">Note = à</option>
-                            </select>
-                        </div>
-                        <div class="col-md-4" id="rating-value-container" style="display: none;">
-                            <label for="rating-filter-value" class="form-label">Note</label>
-                            <select id="rating-filter-value" class="form-select">
-                                {% for i in range(10, 0, -1) %}
-                                <option value="{{ i }}">{{ i }} étoile(s)</option>
-                                {% endfor %}
-                            </select>
+                         <div class="col-md-3">
+                            <label for="rating-filter-operator" class="form-label small">Note Personnelle</label>
+                            <div class="input-group input-group-sm">
+                                <select id="rating-filter-operator" class="form-select form-select-sm">
+                                    <option value="">Aucun</option>
+                                    <option value="is_rated">Est Noté</option>
+                                    <option value="is_not_rated">N'est Pas Noté</option>
+                                    <option value="gte">Note >=</option>
+                                    <option value="lte">Note <=</option>
+                                    <option value="eq">Note =</option>
+                                </select>
+                                <div id="rating-value-container" style="display: none;">
+                                    <select id="rating-filter-value" class="form-select form-select-sm">
+                                        {% for i in range(10, 0, -1) %}
+                                        <option value="{{ i }}">{{ i }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    <hr>
-                    <h5>Filtre par Collection(s)</h5>
-                    <select id="collection-filter" class="form-control" multiple></select>
-                    <hr>
-                    <h5>Filtre par Résolution(s)</h5>
-                    <select id="resolution-filter" class="form-control" multiple></select>
-
-                    <hr>
-                    <h5>Filtre par Personnes</h5>
-                    <div class="row">
-                        <div class="col-md-6">
-                            <label for="actor-filter" class="form-label">Contient l'Acteur</label>
-                            <input type="text" id="actor-filter" class="form-control" placeholder="Ex: Tom Hanks">
-                        </div>
-                        <div class="col-md-6">
-                            <label for="director-filter" class="form-label">Contient le Réalisateur</label>
-                            <input type="text" id="director-filter" class="form-control" placeholder="Ex: Christopher Nolan">
-                        </div>
-                    </div>
-                    <div class="row mt-2">
-                        <div class="col-md-6">
-                            <label for="writer-filter" class="form-label">Contient le Scénariste</label>
-                            <input type="text" id="writer-filter" class="form-control" placeholder="Ex: Aaron Sorkin">
-                        </div>
-                    </div>
-                    <hr>
-                    <h5>Filtre par Studio(s)</h5>
-                    <select id="studio-filter" class="form-control" multiple></select>
-                </div>
-            </div>
-
-            <!-- Bouton d'application -->
-            <div class="row mt-3">
-                <div class="col-12">
-                    <button id="apply-filters-btn" class="btn btn-primary w-100">Appliquer les filtres</button>
                 </div>
             </div>
         </div>
