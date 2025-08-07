@@ -126,16 +126,16 @@ body {
     position: relative; /* Pour positionner l'icône */
 }
 .sortable-header::after {
-    content: '\\2195'; /* Flèche haut/bas */
+    content: '\2195'; /* Flèche haut/bas */
     opacity: 0.3;
     position: absolute;
     right: 10px;
 }
 .sortable-header.sort-asc::after {
-    content: '\\25B2'; /* Flèche vers le haut */
+    content: '\25B2'; /* Flèche vers le haut */
     opacity: 1;
 }
 .sortable-header.sort-desc::after {
-    content: '\\25BC'; /* Flèche vers le bas */
+    content: '\25BC'; /* Flèche vers le bas */
     opacity: 1;
 }

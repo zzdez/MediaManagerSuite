@@ -725,51 +725,63 @@ $(document).ready(function() {
     // ### PARTIE 4 : TRI DYNAMIQUE DU TABLEAU ###
     // =================================================================
 
-    // Fonction pour convertir les tailles de fichier en octets pour une comparaison fiable
-    function parseSize(sizeStr) {
-        if (!sizeStr || sizeStr === 'N/A') return 0;
-        const units = { 'To': 1e12, 'Go': 1e9, 'Mo': 1e6, 'Ko': 1e3 };
-        const parts = sizeStr.split(' ');
-        const value = parseFloat(parts[0].replace(',', '.'));
-        const unit = parts[1];
-        return value * (units[unit] || 1);
+// NOUVELLE FONCTION PARSESIZE ROBUSTE
+function parseSize(sizeStr) {
+    if (!sizeStr || typeof sizeStr !== 'string' || sizeStr === 'N/A') return 0;
+    const sizeMatch = sizeStr.match(/([\d,.]+)\s*(\w+)/);
+    if (!sizeMatch) return 0;
+
+    const value = parseFloat(sizeMatch[1].replace(',', '.'));
+    const unit = sizeMatch[2].toUpperCase();
+
+    switch (unit) {
+        case 'TB': case 'TO': return value * 1e12;
+        case 'GB': case 'GO': return value * 1e9;
+        case 'MB': case 'MO': return value * 1e6;
+        case 'KB': case 'KO': return value * 1e3;
+        default: return value;
     }
+}
 
-    // Fonction de tri générique
-    function sortTable(table, sortBy, sortType, direction) {
-        const tbody = table.find('tbody');
-        const rows = tbody.find('tr').toArray();
+// FONCTION SORTTABLE MISE À JOUR
+function sortTable(table, sortBy, sortType, direction) {
+    const tbody = table.find('tbody');
+    const rows = tbody.find('tr').toArray();
 
-        rows.sort(function(a, b) {
-            let valA, valB;
-            const cellIndex = $(`.sortable-header[data-sort-by="${sortBy}"]`).index();
+    rows.sort(function(a, b) {
+        let valA, valB;
+        const cellIndex = $(`.sortable-header[data-sort-by="${sortBy}"]`).index();
 
-            if (sortBy === 'title') {
-                valA = $(a).find('.item-title-link').text().trim().toLowerCase();
-                valB = $(b).find('.item-title-link').text().trim().toLowerCase();
-            } else if (sortBy === 'rating') {
-                valA = parseFloat($(a).data('rating')) || 0;
-                valB = parseFloat($(b).data('rating')) || 0;
-            } else {
-                valA = $(a).children('td').eq(cellIndex).text().trim();
-                valB = $(b).children('td').eq(cellIndex).text().trim();
-            }
+        if (sortBy === 'title') {
+            valA = $(a).find('.item-title-link').text().trim().toLowerCase();
+            valB = $(b).find('.item-title-link').text().trim().toLowerCase();
+        } else if (sortBy === 'rating') {
+            valA = parseFloat($(a).data('rating')) || 0;
+            valB = parseFloat($(b).data('rating')) || 0;
+        } else if (sortBy === 'library' || sortBy === 'status') {
+            // CORRECTION : On cible le texte à l'intérieur de la cellule
+            valA = $(a).children('td').eq(cellIndex).text().trim().toLowerCase();
+            valB = $(b).children('td').eq(cellIndex).text().trim().toLowerCase();
+        } else {
+            valA = $(a).children('td').eq(cellIndex).text().trim();
+            valB = $(b).children('td').eq(cellIndex).text().trim();
+        }
 
-            if (sortType === 'size') {
-                valA = parseSize(valA);
-                valB = parseSize(valB);
-            } else if (sortType === 'date') {
-                valA = new Date(valA).getTime() || 0;
-                valB = new Date(valB).getTime() || 0;
-            }
+        if (sortType === 'size') {
+            valA = parseSize(valA);
+            valB = parseSize(valB);
+        } else if (sortType === 'date') {
+            valA = new Date(valA).getTime() || 0;
+            valB = new Date(valB).getTime() || 0;
+        }
 
-            if (valA < valB) return -1 * direction;
-            if (valA > valB) return 1 * direction;
-            return 0;
-        });
+        if (valA < valB) return -1 * direction;
+        if (valA > valB) return 1 * direction;
+        return 0;
+    });
 
-        tbody.empty().append(rows);
-    }
+    tbody.empty().append(rows);
+}
 
     // Écouteur pour les en-têtes de colonne
     $(document).on('click', '.sortable-header', function() {
