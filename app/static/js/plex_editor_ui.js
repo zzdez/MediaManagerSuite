@@ -743,28 +743,31 @@ function parseSize(sizeStr) {
     }
 }
 
-// FONCTION SORTTABLE MISE À JOUR
 function sortTable(table, sortBy, sortType, direction) {
     const tbody = table.find('tbody');
     const rows = tbody.find('tr').toArray();
 
+    // Correction majeure : On trouve l'index de la colonne PARMI TOUS les <th>
+    const cellIndex = table.find(`th.sortable-header[data-sort-by='${sortBy}']`).index();
+
     rows.sort(function(a, b) {
         let valA, valB;
-        const cellIndex = $(`.sortable-header[data-sort-by="${sortBy}"]`).index();
 
-        if (sortBy === 'title') {
-            valA = $(a).find('.item-title-link').text().trim().toLowerCase();
-            valB = $(b).find('.item-title-link').text().trim().toLowerCase();
-        } else if (sortBy === 'rating') {
+        if (sortBy === 'rating') {
             valA = parseFloat($(a).data('rating')) || 0;
             valB = parseFloat($(b).data('rating')) || 0;
-        } else if (sortBy === 'library' || sortBy === 'status') {
-            // CORRECTION : On cible le texte à l'intérieur de la cellule
-            valA = $(a).children('td').eq(cellIndex).text().trim().toLowerCase();
-            valB = $(b).children('td').eq(cellIndex).text().trim().toLowerCase();
         } else {
-            valA = $(a).children('td').eq(cellIndex).text().trim();
-            valB = $(b).children('td').eq(cellIndex).text().trim();
+            // On utilise maintenant le cellIndex qui est fiable
+            const cellA = $(a).children('td').eq(cellIndex);
+            const cellB = $(b).children('td').eq(cellIndex);
+
+            if (sortBy === 'title') {
+                valA = cellA.find('.item-title-link').text().trim().toLowerCase();
+                valB = cellB.find('.item-title-link').text().trim().toLowerCase();
+            } else {
+                valA = cellA.text().trim();
+                valB = cellB.text().trim();
+            }
         }
 
         if (sortType === 'size') {
@@ -773,6 +776,9 @@ function sortTable(table, sortBy, sortType, direction) {
         } else if (sortType === 'date') {
             valA = new Date(valA).getTime() || 0;
             valB = new Date(valB).getTime() || 0;
+        } else if (sortType === 'text') {
+            valA = valA.toLowerCase();
+            valB = valB.toLowerCase();
         }
 
         if (valA < valB) return -1 * direction;

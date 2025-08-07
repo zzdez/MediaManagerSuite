@@ -123,19 +123,26 @@ body {
 
 .sortable-header {
     cursor: pointer;
-    position: relative; /* Pour positionner l'icône */
+    position: relative;
+    padding-left: 25px !important; /* Ajoute de l'espace pour l'icône */
 }
-.sortable-header::after {
-    content: '\2195'; /* Flèche haut/bas */
-    opacity: 0.3;
+
+.sortable-header::before {
+    content: '\2195'; /* Flèche haut/bas par défaut */
     position: absolute;
-    right: 10px;
+    left: 8px; /* Positionne à gauche */
+    opacity: 0.3;
 }
-.sortable-header.sort-asc::after {
+
+.sortable-header.sort-asc::before,
+.sortable-header.sort-desc::before {
+    opacity: 1; /* Rend l'icône active visible */
+}
+
+.sortable-header.sort-asc::before {
     content: '\25B2'; /* Flèche vers le haut */
-    opacity: 1;
 }
-.sortable-header.sort-desc::after {
+
+.sortable-header.sort-desc::before {
     content: '\25BC'; /* Flèche vers le bas */
-    opacity: 1;
 }
