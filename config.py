@@ -82,6 +82,7 @@ class Config:
     TVDB_API_KEY = os.getenv('TVDB_API_KEY')
     TVDB_PIN = os.getenv('TVDB_PIN')
     TMDB_API_KEY = os.getenv('TMDB_API_KEY')
+    YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
     GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
     # --- ADVANCED & TASKS ---

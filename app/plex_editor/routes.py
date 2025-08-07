@@ -24,7 +24,7 @@ from app.utils.arr_client import (
     update_sonarr_series, get_sonarr_episode_files, get_sonarr_episodes_by_series_id,
     get_all_sonarr_series # <--- AJOUT ICI
 )
-from app.utils.trailer_finder import find_plex_trailer
+from app.utils.trailer_finder import get_trailer
 
 # --- Routes du Blueprint ---
 
@@ -493,10 +493,13 @@ def get_media_items():
                         item_from_lib.total_size_display = "Erreur"
 
                     # Ajout de la recherche de bande-annonce
-                    item_from_lib.trailer_url = None # Initialise par défaut
-                    if item_from_lib.type == 'movie':
-                        # La variable 'target_plex_server' a été identifiée par l'analyse
-                        item_from_lib.trailer_url = find_plex_trailer(item_from_lib, target_plex_server)
+                    item_from_lib.trailer_url = get_trailer(
+                        title=item_from_lib.title,
+                        year=item_from_lib.year,
+                        media_type=item_from_lib.type,
+                        plex_item=item_from_lib,
+                        plex_server=target_plex_server
+                    )
 
                     all_media_from_plex.append(item_from_lib)
 
