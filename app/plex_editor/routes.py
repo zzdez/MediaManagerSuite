@@ -368,10 +368,15 @@ def get_media_items():
                     operator = rating_filter['operator']
                     value = rating_filter.get('value')
 
+                    # Pour 'Est Noté', on cherche les notes strictement supérieures à 0.
                     if operator == 'is_rated':
-                        search_args['userRating>>'] = -1 # Astuce: userRating est >= 0, donc ça sélectionne tout ce qui a une note
+                        search_args['userRating>>'] = 0
+                    
+                    # Pour 'N'est Pas Noté', on utilise la valeur spéciale -1 découverte par le script.
                     elif operator == 'is_not_rated':
-                        search_args['userRating'] = None
+                        search_args['userRating'] = -1
+                    
+                    # Le reste de la logique (gte, lte, eq) est correct et ne change pas.
                     elif value:
                         try:
                             rating_value = float(value)
