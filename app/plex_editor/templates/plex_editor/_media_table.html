@@ -111,6 +111,16 @@
                     <i class="bi bi-eye-fill"></i>
                 </button>
 
+                {# À placer à côté des autres boutons d'action, par exemple après le bouton 'Vu/Non Vu' #}
+                {% if item.trailer_url %}
+                    <a href="{{ item.trailer_url }}"
+                       class="btn btn-sm btn-outline-info"
+                       target="_blank"
+                       title="Voir la bande-annonce (via Plex)">
+                        <i class="bi bi-film"></i>
+                    </a>
+                {% endif %}
+
                 {% if item.type == 'movie' %}
                 <button class="btn btn-sm btn-outline-primary archive-movie-btn"
                         title="Archiver le film"
