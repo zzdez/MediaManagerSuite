@@ -721,4 +721,81 @@ $(document).ready(function() {
         }
     });
 
+    // =================================================================
+    // ### PARTIE 4 : TRI DYNAMIQUE DU TABLEAU ###
+    // =================================================================
+
+    // Fonction pour convertir les tailles de fichier en octets pour une comparaison fiable
+    function parseSize(sizeStr) {
+        if (!sizeStr || sizeStr === 'N/A') return 0;
+        const units = { 'To': 1e12, 'Go': 1e9, 'Mo': 1e6, 'Ko': 1e3 };
+        const parts = sizeStr.split(' ');
+        const value = parseFloat(parts[0].replace(',', '.'));
+        const unit = parts[1];
+        return value * (units[unit] || 1);
+    }
+
+    // Fonction de tri générique
+    function sortTable(table, sortBy, sortType, direction) {
+        const tbody = table.find('tbody');
+        const rows = tbody.find('tr').toArray();
+
+        rows.sort(function(a, b) {
+            let valA, valB;
+            const cellIndex = $(`.sortable-header[data-sort-by="${sortBy}"]`).index();
+
+            if (sortBy === 'title') {
+                valA = $(a).find('.item-title-link').text().trim().toLowerCase();
+                valB = $(b).find('.item-title-link').text().trim().toLowerCase();
+            } else if (sortBy === 'rating') {
+                valA = parseFloat($(a).data('rating')) || 0;
+                valB = parseFloat($(b).data('rating')) || 0;
+            } else {
+                valA = $(a).children('td').eq(cellIndex).text().trim();
+                valB = $(b).children('td').eq(cellIndex).text().trim();
+            }
+
+            if (sortType === 'size') {
+                valA = parseSize(valA);
+                valB = parseSize(valB);
+            } else if (sortType === 'date') {
+                valA = new Date(valA).getTime() || 0;
+                valB = new Date(valB).getTime() || 0;
+            }
+
+            if (valA < valB) return -1 * direction;
+            if (valA > valB) return 1 * direction;
+            return 0;
+        });
+
+        tbody.empty().append(rows);
+    }
+
+    // Écouteur pour les en-têtes de colonne
+    $(document).on('click', '.sortable-header', function() {
+        const header = $(this);
+        const table = $('#plex-results-table');
+        const sortBy = header.data('sort-by');
+        const sortType = header.data('sort-type') || 'text';
+
+        let currentDir = header.data('sort-direction') || 'desc';
+        let newDir = currentDir === 'asc' ? 'desc' : 'asc';
+        header.data('sort-direction', newDir);
+
+        $('.sortable-header').removeClass('sort-asc sort-desc');
+        header.addClass(newDir === 'asc' ? 'sort-asc' : 'sort-desc');
+
+        sortTable(table, sortBy, sortType, newDir === 'asc' ? 1 : -1);
+    });
+
+    // Écouteur pour le bouton de tri par note
+    $(document).on('click', '#sort-by-rating-btn', function() {
+        const table = $('#plex-results-table');
+        let newDir = $(this).data('sort-direction') === 'asc' ? 'desc' : 'asc';
+        $(this).data('sort-direction', newDir);
+
+        $('.sortable-header').removeClass('sort-asc sort-desc');
+        sortTable(table, 'rating', 'number', newDir === 'asc' ? 1 : -1);
+    });
+
 }); // Fin de $(document).ready
