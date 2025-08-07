@@ -1,18 +1,18 @@
-<table class="table table-dark table-striped table-hover mt-4 align-middle">
+<table class="table table-dark table-striped table-hover mt-4 align-middle" id="plex-results-table">
     <thead>
         <tr>
             <th scope="col" style="width: 5%;"><input type="checkbox" class="form-check-input" id="select-all-checkbox"></th>
-            <th scope="col">Titre</th>
-            <th scope="col" style="width: 15%;">Bibliothèque</th>
-            <th scope="col" style="width: 10%;">Taille Disque</th> {# NOUVELLE COLONNE #}
-            <th scope="col" style="width: 10%;">Date d'Ajout</th>
-            <th scope="col" style="width: 10%;">Statut</th>
-            <th scope="col" style="width: 15%;">Actions</th> {# Réduction de la largeur pour faire de la place #}
+            <th scope="col" class="sortable-header" data-sort-by="title">Titre</th>
+            <th scope="col" class="sortable-header" data-sort-by="library" style="width: 15%;">Bibliothèque</th>
+            <th scope="col" class="sortable-header" data-sort-by="size" data-sort-type="size" style="width: 10%;">Taille Disque</th>
+            <th scope="col" class="sortable-header" data-sort-by="added" data-sort-type="date" style="width: 10%;">Date d'Ajout</th>
+            <th scope="col" class="sortable-header" data-sort-by="status" data-sort-type="text" style="width: 10%;">Statut</th>
+            <th scope="col" style="width: 15%;">Actions</th>
         </tr>
     </thead>
     <tbody>
         {% for item in items %}
-        <tr>
+        <tr data-rating="{{ item.userRating or 0 }}">
             <td><input type="checkbox" class="form-check-input item-checkbox" data-rating-key="{{ item.ratingKey }}"></td>
             <td>
                 <div class="d-flex align-items-center">

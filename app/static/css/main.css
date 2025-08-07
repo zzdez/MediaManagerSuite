@@ -120,3 +120,29 @@ body {
     color: #ffc107; /* Couleur "warning" de Bootstrap, un jaune doré */
     font-size: 0.9rem; /* Légèrement plus petit pour ne pas être trop imposant */
 }
+
+.sortable-header {
+    cursor: pointer;
+    position: relative;
+    padding-left: 25px !important; /* Ajoute de l'espace pour l'icône */
+}
+
+.sortable-header::before {
+    content: '\2195'; /* Flèche haut/bas par défaut */
+    position: absolute;
+    left: 8px; /* Positionne à gauche */
+    opacity: 0.3;
+}
+
+.sortable-header.sort-asc::before,
+.sortable-header.sort-desc::before {
+    opacity: 1; /* Rend l'icône active visible */
+}
+
+.sortable-header.sort-asc::before {
+    content: '\25B2'; /* Flèche vers le haut */
+}
+
+.sortable-header.sort-desc::before {
+    content: '\25BC'; /* Flèche vers le bas */
+}

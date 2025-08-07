@@ -721,4 +721,99 @@ $(document).ready(function() {
         }
     });
 
+    // =================================================================
+    // ### PARTIE 4 : TRI DYNAMIQUE DU TABLEAU ###
+    // =================================================================
+
+// NOUVELLE FONCTION PARSESIZE ROBUSTE
+function parseSize(sizeStr) {
+    if (!sizeStr || typeof sizeStr !== 'string' || sizeStr === 'N/A') return 0;
+    const sizeMatch = sizeStr.match(/([\d,.]+)\s*(\w+)/);
+    if (!sizeMatch) return 0;
+
+    const value = parseFloat(sizeMatch[1].replace(',', '.'));
+    const unit = sizeMatch[2].toUpperCase();
+
+    switch (unit) {
+        case 'TB': case 'TO': return value * 1e12;
+        case 'GB': case 'GO': return value * 1e9;
+        case 'MB': case 'MO': return value * 1e6;
+        case 'KB': case 'KO': return value * 1e3;
+        default: return value;
+    }
+}
+
+function sortTable(table, sortBy, sortType, direction) {
+    const tbody = table.find('tbody');
+    const rows = tbody.find('tr').toArray();
+
+    // Correction majeure : On trouve l'index de la colonne PARMI TOUS les <th>
+    const cellIndex = table.find(`th.sortable-header[data-sort-by='${sortBy}']`).index();
+
+    rows.sort(function(a, b) {
+        let valA, valB;
+
+        if (sortBy === 'rating') {
+            valA = parseFloat($(a).data('rating')) || 0;
+            valB = parseFloat($(b).data('rating')) || 0;
+        } else {
+            // On utilise maintenant le cellIndex qui est fiable
+            const cellA = $(a).children('td').eq(cellIndex);
+            const cellB = $(b).children('td').eq(cellIndex);
+
+            if (sortBy === 'title') {
+                valA = cellA.find('.item-title-link').text().trim().toLowerCase();
+                valB = cellB.find('.item-title-link').text().trim().toLowerCase();
+            } else {
+                valA = cellA.text().trim();
+                valB = cellB.text().trim();
+            }
+        }
+
+        if (sortType === 'size') {
+            valA = parseSize(valA);
+            valB = parseSize(valB);
+        } else if (sortType === 'date') {
+            valA = new Date(valA).getTime() || 0;
+            valB = new Date(valB).getTime() || 0;
+        } else if (sortType === 'text') {
+            valA = valA.toLowerCase();
+            valB = valB.toLowerCase();
+        }
+
+        if (valA < valB) return -1 * direction;
+        if (valA > valB) return 1 * direction;
+        return 0;
+    });
+
+    tbody.empty().append(rows);
+}
+
+    // Écouteur pour les en-têtes de colonne
+    $(document).on('click', '.sortable-header', function() {
+        const header = $(this);
+        const table = $('#plex-results-table');
+        const sortBy = header.data('sort-by');
+        const sortType = header.data('sort-type') || 'text';
+
+        let currentDir = header.data('sort-direction') || 'desc';
+        let newDir = currentDir === 'asc' ? 'desc' : 'asc';
+        header.data('sort-direction', newDir);
+
+        $('.sortable-header').removeClass('sort-asc sort-desc');
+        header.addClass(newDir === 'asc' ? 'sort-asc' : 'sort-desc');
+
+        sortTable(table, sortBy, sortType, newDir === 'asc' ? 1 : -1);
+    });
+
+    // Écouteur pour le bouton de tri par note
+    $(document).on('click', '#sort-by-rating-btn', function() {
+        const table = $('#plex-results-table');
+        let newDir = $(this).data('sort-direction') === 'asc' ? 'desc' : 'asc';
+        $(this).data('sort-direction', newDir);
+
+        $('.sortable-header').removeClass('sort-asc sort-desc');
+        sortTable(table, 'rating', 'number', newDir === 'asc' ? 1 : -1);
+    });
+
 }); // Fin de $(document).ready
