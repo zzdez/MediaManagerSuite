@@ -34,6 +34,31 @@
                         </a>
                         <small class="d-block text-muted">Année: {{ item.year }}</small>
 
+                        {# --- DÉBUT DU BLOC D'ÉTOILES --- #}
+                        {% if item.userRating is not none and item.userRating > 0 %}
+                            <div class="star-rating">
+                                {# On convertit la note sur 10 en note sur 5 #}
+                                {% set star_rating = item.userRating / 2 %}
+
+                                {# Boucle pour les étoiles pleines #}
+                                {% for i in range(star_rating|int) %}
+                                    <i class="bi bi-star-fill"></i>
+                                {% endfor %}
+
+                                {# Condition pour la demi-étoile #}
+                                {% if (star_rating - (star_rating|int)) >= 0.5 %}
+                                    <i class="bi bi-star-half"></i>
+                                {% endif %}
+
+                                {# Boucle pour les étoiles vides #}
+                                {% set full_stars = (star_rating + 0.5)|int %}
+                                {% for i in range(5 - full_stars) %}
+                                    <i class="bi bi-star"></i>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                        {# --- FIN DU BLOC D'ÉTOILES --- #}
+
                         {% if item.original_title and item.original_title|lower != item.title|lower %}
                             <small class="d-block" style="color: #6c757d; font-style: italic;">(Titre Original: {{ item.original_title }})</small>
                         {% endif %}
