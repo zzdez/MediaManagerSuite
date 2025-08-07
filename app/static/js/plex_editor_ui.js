@@ -647,4 +647,78 @@ $(document).ready(function() {
         });
     });
 
+    // =================================================================
+    // ### PARTIE 3 : GESTION DES ACTIONS DE MASSE (BULK) ###
+    // =================================================================
+
+    // --- A. Logique de sélection et affichage du conteneur d'actions ---
+    $(document).on('change', '#select-all-checkbox, .item-checkbox', function() {
+        const isSelectAll = $(this).is('#select-all-checkbox');
+        const itemCheckboxes = $('.item-checkbox');
+        const selectAllCheckbox = $('#select-all-checkbox');
+
+        if (isSelectAll) {
+            // Si la case "tout sélectionner" est cochée, on coche toutes les autres
+            itemCheckboxes.prop('checked', $(this).prop('checked'));
+        } else {
+            // Si une case individuelle est décochée, on décoche "tout sélectionner"
+            if (!$(this).prop('checked')) {
+                selectAllCheckbox.prop('checked', false);
+            }
+            // Si toutes les cases sont cochées manuellement, on coche "tout sélectionner"
+            if ($('.item-checkbox:checked').length === itemCheckboxes.length) {
+                selectAllCheckbox.prop('checked', true);
+            }
+        }
+
+        const selectedCount = $('.item-checkbox:checked').length;
+        const batchActionsContainer = $('#batch-actions-container');
+        const selectedItemCountSpan = $('#selected-item-count');
+
+        selectedItemCountSpan.text(selectedCount);
+        batchActionsContainer.toggle(selectedCount > 0);
+    });
+
+    // --- B. Action de suppression en masse ---
+    $(document).on('click', '#batch-delete-btn', function() {
+        const selectedItems = $('.item-checkbox:checked');
+        const selectedItemKeys = selectedItems.map(function() {
+            return $(this).data('rating-key');
+        }).get();
+
+        if (selectedItemKeys.length === 0) {
+            alert('Veuillez sélectionner au moins un élément.');
+            return;
+        }
+
+        if (confirm(`Êtes-vous sûr de vouloir supprimer ${selectedItemKeys.length} élément(s) ? Cette action est irréversible.`)) {
+            fetch('/plex/bulk_delete_items', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({
+                    'selected_item_keys': selectedItemKeys
+                })
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.json();
+                }
+                // Si la réponse n'est pas OK, on essaie de lire le message d'erreur JSON
+                return response.json().then(errData => {
+                    throw new Error(errData.error || 'Erreur inconnue du serveur.');
+                });
+            })
+            .then(data => {
+                 alert(data.message || 'Éléments supprimés avec succès.');
+                $('#apply-filters-btn').click(); // Rafraîchir la liste
+            })
+            .catch(error => {
+                console.error('Error during batch delete:', error);
+                alert(`Une erreur est survenue lors de la suppression: ${error.message}`);
+            });
+        }
+    });
+
 }); // Fin de $(document).ready
