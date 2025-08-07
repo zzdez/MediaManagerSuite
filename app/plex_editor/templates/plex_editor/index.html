@@ -36,6 +36,13 @@
                     <label for="year-filter" class="form-label small">Année</label>
                     <input type="number" id="year-filter" class="form-control form-control-sm" placeholder="Ex: 2023">
                 </div>
+                <div id="batch-actions-container" class="col-md-3" style="display: none;">
+                    <label class="form-label small">Actions pour <span id="selected-item-count">0</span> élément(s)</label>
+                    <div class="btn-group w-100">
+                        <button id="batch-delete-btn" class="btn btn-sm btn-danger">Supprimer</button>
+                        <!-- Ajoutez ici d'autres boutons d'action si nécessaire -->
+                    </div>
+                </div>
                 <div class="col-lg-3 col-md-5 d-flex justify-content-end align-items-end">
                     <button class="btn btn-secondary btn-sm me-2" type="button" data-bs-toggle="collapse" data-bs-target="#advanced-filters" aria-expanded="false" aria-controls="advanced-filters">
                         Avancés
