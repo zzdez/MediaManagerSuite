@@ -94,6 +94,20 @@ def parse_media_name(item_name: str) -> dict:
 # --- RADARR CLIENT FUNCTIONS ---
 # ==============================================================================
 
+def get_radarr_queue():
+    """Récupère la file d'attente de téléchargement de Radarr."""
+    return _radarr_api_request("GET", "queue")
+
+def radarr_trigger_import(path, download_id):
+    """Déclenche un scan d'import pour un chemin spécifique dans Radarr."""
+    payload = {
+        'name': 'DownloadedMoviesScan',
+        'path': path,
+        'downloadId': download_id,
+        'importMode': 'Move'
+    }
+    return _radarr_api_request('POST', 'command', json_data=payload)
+
 def trigger_radarr_scan(download_path):
     """Triggers Radarr's DownloadedMoviesScan command for a specific path."""
     command_payload = {
@@ -267,6 +281,20 @@ def check_radarr_movie_exists(movie_title: str, movie_year: int = None) -> bool:
 # ==============================================================================
 # --- SONARR CLIENT FUNCTIONS ---
 # ==============================================================================
+
+def get_sonarr_queue():
+    """Récupère la file d'attente de téléchargement de Sonarr."""
+    return _sonarr_api_request("GET", "queue")
+
+def sonarr_trigger_import(path, download_id):
+    """Déclenche un scan d'import pour un chemin spécifique dans Sonarr."""
+    payload = {
+        'name': 'DownloadedEpisodesScan',
+        'path': path,
+        'downloadId': download_id,
+        'importMode': 'Move'
+    }
+    return _sonarr_api_request('POST', 'command', json_data=payload)
 
 def trigger_sonarr_scan(download_path):
     """Triggers Sonarr's DownloadedEpisodesScan command for a specific path."""

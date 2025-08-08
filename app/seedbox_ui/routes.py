@@ -36,7 +36,7 @@ from app.utils.rtorrent_client import (
 )
 
 # Clients Sonarr/Radarr (pour l'ajout de nouveaux médias)
-from app.utils.arr_client import add_new_series_to_sonarr, add_new_movie_to_radarr
+from app.utils.arr_client import add_new_series_to_sonarr, add_new_movie_to_radarr, get_sonarr_queue, sonarr_trigger_import, get_radarr_queue, radarr_trigger_import
 
 # Gestionnaire de la map des torrents (NOUVELLE FAÇON D'IMPORTER)
 # Ceci suppose que le fichier app/utils/mapping_manager.py contient le NOUVEAU code que je vous ai fourni.
@@ -609,6 +609,36 @@ def _handle_staged_sonarr_item(item_name_in_staging, series_id_target,
                                torrent_hash_for_status_update=None):
     logger = current_app.logger
     log_prefix = f"HDL_SONARR (Auto:{automated_import}, Hash:{torrent_hash_for_status_update}, Item:'{item_name_in_staging}', SeriesID:{series_id_target}, ChosenS:{user_chosen_season}): "
+
+    # --- NOUVELLE LOGIQUE DE CONTEXTE ---
+    sonarr_queue_data = get_sonarr_queue()
+    sonarr_queue = sonarr_queue_data.get('records', []) if sonarr_queue_data else []
+    matching_download = None
+    for download in sonarr_queue:
+        # Compare le nom de l'item avec le titre dans la file d'attente de Sonarr
+        if item_name_in_staging in download.get('title', ''):
+            matching_download = download
+            break
+
+    if matching_download:
+        # CAS A : L'item est dans la file d'attente de Sonarr. On délègue.
+        download_id = matching_download.get('downloadId')
+        item_path_in_staging = os.path.join(current_app.config['LOCAL_STAGING_PATH'], item_name_in_staging)
+
+        logger.info(f"{log_prefix}L'item '{item_name_in_staging}' correspond à un téléchargement connu de Sonarr (ID: {download_id}). Délégation de l'import.")
+
+        # sonarr_trigger_import retourne un objet de commande, pas un simple booléen.
+        response = sonarr_trigger_import(item_path_in_staging, download_id)
+
+        if response and response.get('name') == 'DownloadedEpisodesScan':
+            logger.info(f"{log_prefix}Commande d'import envoyée à Sonarr avec succès.")
+            return {"success": True, "message": "Import délégué à Sonarr avec succès."}
+        else:
+            logger.error(f"{log_prefix}Échec de l'envoi de la commande d'import à Sonarr. Réponse: {response}")
+            return {"success": False, "message": "Échec de la délégation de l'import à Sonarr."}
+
+    # CAS B : L'item n'est pas dans la file de Sonarr. On exécute la logique manuelle existante.
+    logger.info(f"{log_prefix}L'item '{item_name_in_staging}' n'est pas dans la file de Sonarr. Traitement manuel par MMS.")
     logger.info(f"{log_prefix}Début du traitement.")
 
     sonarr_url = current_app.config.get('SONARR_URL')
@@ -862,6 +892,32 @@ def _handle_staged_radarr_item(item_name_in_staging, movie_id_target,
     """
     logger = current_app.logger
     log_prefix = f"HELPER _handle_staged_radarr_item (Automated: {automated_import}, Hash: {torrent_hash_for_status_update}): "
+
+    # --- NOUVELLE LOGIQUE DE CONTEXTE ---
+    radarr_queue_data = get_radarr_queue()
+    radarr_queue = radarr_queue_data.get('records', []) if radarr_queue_data else []
+    matching_download = None
+    for download in radarr_queue:
+        if item_name_in_staging in download.get('title', ''):
+            matching_download = download
+            break
+
+    if matching_download:
+        download_id = matching_download.get('downloadId')
+        item_path_in_staging = os.path.join(current_app.config['LOCAL_STAGING_PATH'], item_name_in_staging)
+
+        logger.info(f"{log_prefix}L'item '{item_name_in_staging}' correspond à un téléchargement connu de Radarr (ID: {download_id}). Délégation de l'import.")
+
+        response = radarr_trigger_import(item_path_in_staging, download_id)
+
+        if response and response.get('name') == 'DownloadedMoviesScan':
+            logger.info(f"{log_prefix}Commande d'import envoyée à Radarr avec succès.")
+            return {"success": True, "message": "Import délégué à Radarr avec succès."}
+        else:
+            logger.error(f"{log_prefix}Échec de l'envoi de la commande d'import à Radarr. Réponse: {response}")
+            return {"success": False, "message": "Échec de la délégation de l'import à Radarr."}
+
+    logger.info(f"{log_prefix}L'item '{item_name_in_staging}' n'est pas dans la file de Radarr. Traitement manuel par MMS.")
     logger.info(f"{log_prefix}Traitement de '{item_name_in_staging}' pour Movie ID {movie_id_target}.")
 
     radarr_url = current_app.config.get('RADARR_URL')
