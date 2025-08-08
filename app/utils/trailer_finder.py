@@ -1,4 +1,5 @@
 from googleapiclient.discovery import build
+from app.utils.plex_client import get_user_specific_plex_server_from_id
 
 def find_plex_trailer(plex_item, plex_server):
     """
@@ -68,16 +69,22 @@ def find_youtube_trailer(title, year, api_key, media_type='movie'):
     print("DEBUG: Aucune vidéo trouvée sur YouTube.")
     return None
 
-def get_trailer(title, year, media_type, youtube_api_key, plex_item=None, plex_server=None):
+def get_trailer(title, year, media_type, youtube_api_key, rating_key=None, user_id=None):
     """
     Fonction maîtresse pour trouver une bande-annonce en utilisant plusieurs sources.
     """
     # Étage 1 : Recherche dans Plex (si possible)
-    if plex_item and plex_server:
-        plex_trailer_url = find_plex_trailer(plex_item, plex_server)
-        if plex_trailer_url:
-            print(f"DEBUG: Bande-annonce trouvée via Plex pour '{title}'.")
-            return plex_trailer_url
+    if rating_key and user_id:
+        try:
+            plex_server = get_user_specific_plex_server_from_id(user_id)
+            if plex_server:
+                plex_item = plex_server.library.fetchItem(int(rating_key))
+                plex_trailer_url = find_plex_trailer(plex_item, plex_server)
+                if plex_trailer_url:
+                    print(f"DEBUG: Bande-annonce trouvée via Plex pour '{title}'.")
+                    return plex_trailer_url
+        except Exception as e:
+            print(f"ERREUR lors de la recherche du trailer Plex pour l'item {rating_key}: {e}")
 
     # Étage 2 : Recherche sur YouTube
     youtube_trailer_url = find_youtube_trailer(title, year, youtube_api_key, media_type)

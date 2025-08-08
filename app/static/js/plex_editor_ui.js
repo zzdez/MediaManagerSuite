@@ -822,6 +822,7 @@ function sortTable(table, sortBy, sortType, direction) {
         const title = button.data('title');
         const year = button.data('year');
         const mediaType = button.data('media-type');
+        const ratingKey = button.data('rating-key'); // <-- NOUVELLE LIGNE
 
         // Afficher un indicateur de chargement sur le bouton
         button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>');
@@ -829,7 +830,12 @@ function sortTable(table, sortBy, sortType, direction) {
         fetch('/api/trailer/find', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: title, year: year, media_type: mediaType })
+            body: JSON.stringify({
+                title: title,
+                year: year,
+                media_type: mediaType,
+                ratingKey: ratingKey // <-- NOUVELLE LIGNE
+            })
         })
         .then(response => response.json())
         .then(data => {
