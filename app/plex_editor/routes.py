@@ -218,6 +218,34 @@ def get_studios_for_libraries():
         current_app.logger.error(f"Erreur API /api/studios: {e}", exc_info=True)
         return jsonify(error=str(e)), 500
 
+@plex_editor_bp.route('/api/scan_libraries', methods=['POST'])
+@login_required
+def scan_libraries():
+    data = request.json
+    library_keys = data.get('libraryKeys', [])
+    user_id = data.get('userId')
+
+    if not user_id or not library_keys:
+        return jsonify({'success': False, 'message': 'ID utilisateur ou bibliothèques manquants.'}), 400
+
+    try:
+        plex_server = get_user_specific_plex_server_from_id(user_id)
+        if not plex_server:
+            return jsonify({'success': False, 'message': 'Serveur Plex non trouvé.'}), 404
+
+        scanned_libs = []
+        for key in library_keys:
+            library = plex_server.library.sectionByID(int(key))
+            library.update() # Lance le scan
+            scanned_libs.append(library.title)
+
+        return jsonify({'success': True, 'message': f'Scan lancé pour : {", ".join(scanned_libs)}'})
+
+    except Exception as e:
+        # Gère les erreurs, y compris les problèmes de permission
+        current_app.logger.error(f"Erreur API /api/scan_libraries: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': f'Erreur lors du scan : {e}'}), 500
+
 @plex_editor_bp.route('/select_user', methods=['POST'])
 @login_required
 def select_user_route():
