@@ -820,45 +820,51 @@ function sortTable(table, sortBy, sortType, direction) {
     $(document).on('click', '.find-and-play-trailer-btn', function() {
         const button = $(this);
         const title = button.data('title');
+        const plexTrailerUrl = button.data('plex-trailer-url');
         const year = button.data('year');
         const mediaType = button.data('media-type');
-        const ratingKey = button.data('rating-key'); // <-- NOUVELLE LIGNE
 
-        // Afficher un indicateur de chargement sur le bouton
-        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>');
+        const modalTitle = $('#trailerModalLabel');
+        const videoPlayer = $('#trailer-video-player');
 
-        fetch('/api/trailer/find', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                title: title,
-                year: year,
-                media_type: mediaType,
-                ratingKey: ratingKey // <-- NOUVELLE LIGNE
+        // Logique Hybride
+        if (plexTrailerUrl) {
+            // CAS 1: L'URL Plex existe, on l'utilise directement
+            console.log("Lecture du trailer depuis Plex.");
+            modalTitle.text('Bande-Annonce (Plex): ' + title);
+            videoPlayer.attr('src', plexTrailerUrl);
+            const trailerModal = new bootstrap.Modal(document.getElementById('trailer-modal'));
+            trailerModal.show();
+        } else {
+            // CAS 2: Pas d'URL Plex, on interroge le serveur pour YouTube
+            console.log("Recherche du trailer sur YouTube...");
+            button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+            fetch('/api/trailer/find', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title: title, year: year, media_type: mediaType })
             })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                // Logique pour ouvrir la modale (inchangée)
-                const videoPlayer = $('#trailer-video-player');
-                const modalTitle = $('#trailerModalLabel');
-                modalTitle.text('Bande-Annonce: ' + title);
-                videoPlayer.attr('src', data.url);
-                const trailerModal = new bootstrap.Modal(document.getElementById('trailer-modal'));
-                trailerModal.show();
-            } else {
-                alert(data.message || 'Aucune bande-annonce trouvée.');
-            }
-        })
-        .catch(error => {
-            console.error('Erreur lors de la recherche de la bande-annonce:', error);
-            alert('Une erreur technique est survenue.');
-        })
-        .finally(() => {
-            // Rétablir l'état initial du bouton
-            button.prop('disabled', false).html('<i class="bi bi-film"></i>');
-        });
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        modalTitle.text('Bande-Annonce (YouTube): ' + title);
+                        videoPlayer.attr('src', data.url);
+                        const trailerModal = new bootstrap.Modal(document.getElementById('trailer-modal'));
+                        trailerModal.show();
+                    } else {
+                        alert(data.message || 'Aucune bande-annonce trouvée.');
+                    }
+                })
+                .catch(error => {
+                    console.error('Erreur lors de la recherche de la bande-annonce:', error);
+                    alert('Une erreur technique est survenue.');
+                })
+                .finally(() => {
+                    // Rétablir l'état initial du bouton
+                    button.prop('disabled', false).html('<i class="bi bi-film"></i>');
+                });
+        }
     });
 
     // Gestion de la fermeture de la modale pour arrêter la vidéo

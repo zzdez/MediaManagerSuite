@@ -24,7 +24,7 @@ from app.utils.arr_client import (
     update_sonarr_series, get_sonarr_episode_files, get_sonarr_episodes_by_series_id,
     get_all_sonarr_series # <--- AJOUT ICI
 )
-from app.utils.trailer_finder import get_trailer
+from app.utils.trailer_finder import find_plex_trailer
 
 # --- Routes du Blueprint ---
 
@@ -491,6 +491,10 @@ def get_media_items():
                             item_from_lib.total_episodes = item_from_lib.leafCount
                     except Exception:
                         item_from_lib.total_size_display = "Erreur"
+
+                    # Réintroduire la recherche "Eager" pour Plex
+                    # L'objet item_from_lib est déjà complet ici, pas besoin de reload
+                    item_from_lib.plex_trailer_url = find_plex_trailer(item_from_lib, target_plex_server)
 
                     all_media_from_plex.append(item_from_lib)
 
