@@ -3,6 +3,7 @@ import os
 import json
 from pathlib import Path
 import pysftp # Assuming pysftp, may need to install or change later
+import requests
 from flask import current_app
 from . import arr_client
 # Removed: from app import sftp_scan_lock
@@ -154,32 +155,6 @@ def _download_item(sftp, remote_item_path, local_staging_path, item_name):
                 current_app.logger.error(f"Error during cleanup of {local_item_path}: {cleanup_e}")
         return False
 
-def _notify_arr_instance(arr_type, downloaded_item_name, local_staging_dir):
-    """Notifies Sonarr or Radarr about the newly downloaded item."""
-    # This function will call the new methods in arr_client
-    # from . import arr_client # Ensure this is imported at the top level or passed in # This line is already handled by the import at the top of the file
-
-    # The path passed to Sonarr/Radarr should be the path of the item *within* the staging directory.
-    # Sonarr/Radarr will then move it from there.
-    item_path_in_staging = Path(local_staging_dir) / downloaded_item_name
-
-    current_app.logger.info(f"Notifying {arr_type} for item: {item_path_in_staging}")
-    success = False
-    if arr_type == "sonarr":
-        success = arr_client.trigger_sonarr_scan(str(item_path_in_staging))
-    elif arr_type == "radarr":
-        success = arr_client.trigger_radarr_scan(str(item_path_in_staging))
-
-    # Placeholder until arr_client is updated - REMOVED
-    # current_app.logger.warning(f"ARR notification for {arr_type} item {item_path_in_staging} is currently a placeholder.")
-    # success = True # Assume success for now - REMOVED
-
-    if success:
-        current_app.logger.info(f"Successfully notified {arr_type} for item: {downloaded_item_name}")
-    else:
-        current_app.logger.error(f"Failed to notify {arr_type} for item: {downloaded_item_name}")
-    return success
-
 import logging # Ajout de l'import logging
 
 def scan_sftp_and_process_items():
@@ -307,12 +282,12 @@ def scan_sftp_and_process_items():
                              current_app.logger.info(f"SFTP Scanner Task: Guardrail - Parsing insufficient for '{item_name}'. Proceeding with download.")
 
                 if _download_item(sftp, remote_item_full_path, staging_dir, item_name):
-                    if _notify_arr_instance(arr_type, item_name, staging_dir):
+                    if _trigger_mms_staging_processor(item_name):
                         processed_items.add(remote_item_full_path)
                         new_items_processed_this_run = True
                         current_app.logger.info(f"SFTP Scanner Task: Successfully processed and logged '{item_name}'.")
                     else:
-                        current_app.logger.error(f"SFTP Scanner Task: Failed to notify {arr_type} for '{item_name}'. Item will be re-processed next cycle.")
+                        current_app.logger.error(f"SFTP Scanner Task: Failed to trigger MMS processor for '{item_name}'. Item will be re-processed next cycle.")
                 else:
                     current_app.logger.error(f"SFTP Scanner Task: Failed to download '{item_name}'. It will be retried next cycle.")
 
@@ -359,3 +334,37 @@ if __name__ == '__main__':
     # if not os.path.exists(current_app.config['LOCAL_STAGING_PATH']):
     #    os.makedirs(current_app.config['LOCAL_STAGING_PATH'])
     # scan_sftp_and_process_items()
+
+def _trigger_mms_staging_processor(item_name):
+    """
+    Appelle l'endpoint de MMS pour traiter un item dans le staging.
+    """
+    try:
+        # Construit l'URL de l'endpoint. S'assure d'utiliser l'adresse locale de l'app.
+        mms_url = current_app.config.get('MMS_API_PROCESS_STAGING_URL')
+        if not mms_url:
+            current_app.logger.error("SFTP Scanner: MMS_API_PROCESS_STAGING_URL n'est pas configuré. Impossible de déclencher le traitement.")
+            return False
+
+        payload = {"item_name_in_staging": item_name}
+
+        current_app.logger.info(f"SFTP Scanner: Déclenchement du traitement de '{item_name}' via l'endpoint MMS: {mms_url}")
+
+        response = requests.post(mms_url, json=payload, timeout=300) # Timeout de 5 minutes
+
+        response.raise_for_status() # Lèvera une exception pour les codes d'erreur HTTP (4xx, 5xx)
+
+        response_data = response.json()
+        if response_data.get('status') == 'success' or response_data.get('success'):
+            current_app.logger.info(f"SFTP Scanner: Traitement de '{item_name}' réussi (confirmé par l'API).")
+            return True
+        else:
+            current_app.logger.error(f"SFTP Scanner: L'API a retourné un échec pour '{item_name}': {response_data.get('message') or response_data.get('error')}")
+            return False
+
+    except requests.exceptions.RequestException as e:
+        current_app.logger.error(f"SFTP Scanner: Erreur de communication avec l'API de staging pour '{item_name}': {e}")
+        return False
+    except Exception as e:
+        current_app.logger.error(f"SFTP Scanner: Erreur inattendue lors du déclenchement du traitement pour '{item_name}': {e}")
+        return False
