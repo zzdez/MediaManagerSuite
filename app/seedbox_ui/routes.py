@@ -510,10 +510,41 @@ def process_staging_item_api(): # Renommé pour éviter conflit si vous aviez un
     torrent_hash, mapping_data = torrent_map_manager.find_torrent_by_release_name(item_name_in_staging)
 
     if not mapping_data:
-        logger.info(f"process_staging_item_api: No pre-association found for release name: '{item_name_in_staging}'. Item will require manual mapping.")
-        # On pourrait mettre à jour un log interne ou une DB d'items non mappés ici si besoin.
-        # Le script SFTP pourrait être informé de cela pour qu'il ne retente pas indéfiniment pour cet item
-        return jsonify({"status": "no_association_found", "message": "No pre-association found. Manual mapping required."}), 202 # 202 Accepted
+        # --- NOUVELLE LOGIQUE DE DÉTECTION DE CONTEXTE ---
+        current_app.logger.info(f"Aucune pré-association trouvée. Vérification des files d'attente Sonarr/Radarr...")
+        item_path_in_staging = os.path.join(current_app.config['LOCAL_STAGING_PATH'], item_name_in_staging)
+
+        # Vérification Sonarr
+        sonarr_queue_data = get_sonarr_queue()
+        sonarr_queue = sonarr_queue_data.get('records', []) if sonarr_queue_data else []
+        matching_sonarr_download = next((d for d in sonarr_queue if item_name_in_staging in d.get('title', '')), None)
+
+        if matching_sonarr_download:
+            download_id = matching_sonarr_download.get('downloadId')
+            current_app.logger.info(f"Item trouvé dans la file de Sonarr (ID: {download_id}). Délégation de l'import.")
+            response_trigger = sonarr_trigger_import(item_path_in_staging, download_id)
+            if response_trigger and response_trigger.get('name') == 'DownloadedEpisodesScan':
+                return jsonify({'status': 'success', 'message': 'Import délégué à Sonarr.'})
+            else:
+                return jsonify({'status': 'error', 'message': 'Échec de la délégation à Sonarr.'}), 500
+
+        # Vérification Radarr (fais de même)
+        radarr_queue_data = get_radarr_queue()
+        radarr_queue = radarr_queue_data.get('records', []) if radarr_queue_data else []
+        matching_radarr_download = next((d for d in radarr_queue if item_name_in_staging in d.get('title', '')), None)
+
+        if matching_radarr_download:
+            download_id = matching_radarr_download.get('downloadId')
+            current_app.logger.info(f"Item trouvé dans la file de Radarr (ID: {download_id}). Délégation de l'import.")
+            response_trigger = radarr_trigger_import(item_path_in_staging, download_id)
+            if response_trigger and response_trigger.get('name') == 'DownloadedMoviesScan':
+                return jsonify({'status': 'success', 'message': 'Import délégué à Radarr.'})
+            else:
+                return jsonify({'status': 'error', 'message': 'Échec de la délégation à Radarr.'}), 500
+
+        # Si toujours rien, alors c'est un vrai import manuel inconnu.
+        current_app.logger.warning(f"L'item '{item_name_in_staging}' n'a pas d'association et n'est pas dans les files d'attente. Traitement manuel requis.")
+        return jsonify({'status': 'manual_required', 'message': 'Item non associé et non trouvé dans les files *Arr.'}), 202
 
     logger.info(f"process_staging_item_api: Found pre-association for '{item_name_in_staging}': Torrent Hash {torrent_hash}, Type: {mapping_data.get('app_type')}, Target ID: {mapping_data.get('target_id')}")
 
