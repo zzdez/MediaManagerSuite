@@ -1,5 +1,4 @@
 from googleapiclient.discovery import build
-from app import config # Importe notre configuration
 
 def find_plex_trailer(plex_item, plex_server):
     """
@@ -27,16 +26,16 @@ def find_plex_trailer(plex_item, plex_server):
 
     return None
 
-def find_youtube_trailer(title, year, media_type='movie'):
+def find_youtube_trailer(title, year, api_key, media_type='movie'):
     """
-    Recherche une bande-annonce sur YouTube en suivant une priorité de langues.
+    Recherche une bande-annonce sur YouTube en utilisant une clé API fournie.
     """
-    if not config.YOUTUBE_API_KEY:
-        print("AVERTISSEMENT: La clé YOUTUBE_API_KEY n'est pas configurée.")
+    if not api_key: # La vérification se fait sur le paramètre
+        print("AVERTISSEMENT: Aucune clé API YouTube n'a été fournie.")
         return None
 
     try:
-        youtube = build('youtube', 'v3', developerKey=config.YOUTUBE_API_KEY, cache_discovery=False)
+        youtube = build('youtube', 'v3', developerKey=api_key, cache_discovery=False)
 
         # Liste des requêtes par ordre de priorité
         search_queries = [
@@ -69,7 +68,7 @@ def find_youtube_trailer(title, year, media_type='movie'):
     print("DEBUG: Aucune vidéo trouvée sur YouTube.")
     return None
 
-def get_trailer(title, year, media_type, plex_item=None, plex_server=None):
+def get_trailer(title, year, media_type, youtube_api_key, plex_item=None, plex_server=None):
     """
     Fonction maîtresse pour trouver une bande-annonce en utilisant plusieurs sources.
     """
@@ -81,7 +80,7 @@ def get_trailer(title, year, media_type, plex_item=None, plex_server=None):
             return plex_trailer_url
 
     # Étage 2 : Recherche sur YouTube
-    youtube_trailer_url = find_youtube_trailer(title, year, media_type)
+    youtube_trailer_url = find_youtube_trailer(title, year, youtube_api_key, media_type)
     if youtube_trailer_url:
         print(f"DEBUG: Bande-annonce trouvée via YouTube pour '{title}'.")
         return youtube_trailer_url

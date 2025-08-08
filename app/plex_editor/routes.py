@@ -4,7 +4,7 @@
 import os
 from app.auth import login_required
 from flask import (render_template, current_app, flash, abort, url_for,
-                   redirect, request, session, jsonify)
+                   redirect, request, session, jsonify, current_app)
 from datetime import datetime, timedelta
 from plexapi.server import PlexServer
 from plexapi.exceptions import NotFound, Unauthorized, BadRequest
@@ -497,6 +497,7 @@ def get_media_items():
                         title=item_from_lib.title,
                         year=item_from_lib.year,
                         media_type=item_from_lib.type,
+                        youtube_api_key=current_app.config['YOUTUBE_API_KEY'], # Lit la config ici
                         plex_item=item_from_lib,
                         plex_server=target_plex_server
                     )
