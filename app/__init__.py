@@ -92,6 +92,13 @@ def create_app(config_class=Config):
     except ImportError as e:
         logger.error(f"Erreur lors de l'import ou de l'enregistrement du blueprint search_ui: {e}")
 
+    try:
+        from app.trailer_routes import trailer_bp
+        app.register_blueprint(trailer_bp)
+        logger.info("Blueprint 'trailer' enregistré avec succès.")
+    except ImportError as e:
+        logger.error(f"Erreur lors de l'import ou de l'enregistrement du blueprint trailer: {e}")
+
     # Route pour la page d'accueil/portail
     @app.route('/')
     @login_required

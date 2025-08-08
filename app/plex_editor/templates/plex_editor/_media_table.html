@@ -111,14 +111,13 @@
                     <i class="bi bi-eye-fill"></i>
                 </button>
 
-                {% if item.trailer_url %}
-                    <button class="btn btn-sm btn-outline-info open-trailer-modal-btn"
-                            data-trailer-url="{{ item.trailer_url }}"
-                            data-trailer-title="{{ item.title }}"
-                            title="Voir la bande-annonce">
-                        <i class="bi bi-film"></i>
-                    </button>
-                {% endif %}
+                <button class="btn btn-sm btn-outline-info find-and-play-trailer-btn"
+                        data-title="{{ item.title }}"
+                        data-year="{{ item.year }}"
+                        data-media-type="{{ item.type }}"
+                        title="Chercher et voir la bande-annonce">
+                    <i class="bi bi-film"></i>
+                </button>
 
                 {% if item.type == 'movie' %}
                 <button class="btn btn-sm btn-outline-primary archive-movie-btn"

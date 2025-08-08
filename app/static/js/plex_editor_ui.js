@@ -817,20 +817,42 @@ function sortTable(table, sortBy, sortType, direction) {
     });
 
     // Gestion de l'ouverture de la modale de la bande-annonce
-    $(document).on('click', '.open-trailer-modal-btn', function() {
-        const trailerUrl = $(this).data('trailer-url');
-        const trailerTitle = $(this).data('trailer-title');
+    $(document).on('click', '.find-and-play-trailer-btn', function() {
+        const button = $(this);
+        const title = button.data('title');
+        const year = button.data('year');
+        const mediaType = button.data('media-type');
 
-        const videoPlayer = $('#trailer-video-player');
-        const modalTitle = $('#trailerModalLabel');
+        // Afficher un indicateur de chargement sur le bouton
+        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>');
 
-        // Mettre à jour le titre de la modale et la source de la vidéo
-        modalTitle.text('Bande-Annonce: ' + trailerTitle);
-        videoPlayer.attr('src', trailerUrl);
-
-        // Lancer la modale manuellement
-        const trailerModal = new bootstrap.Modal(document.getElementById('trailer-modal'));
-        trailerModal.show();
+        fetch('/api/trailer/find', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: title, year: year, media_type: mediaType })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Logique pour ouvrir la modale (inchangée)
+                const videoPlayer = $('#trailer-video-player');
+                const modalTitle = $('#trailerModalLabel');
+                modalTitle.text('Bande-Annonce: ' + title);
+                videoPlayer.attr('src', data.url);
+                const trailerModal = new bootstrap.Modal(document.getElementById('trailer-modal'));
+                trailerModal.show();
+            } else {
+                alert(data.message || 'Aucune bande-annonce trouvée.');
+            }
+        })
+        .catch(error => {
+            console.error('Erreur lors de la recherche de la bande-annonce:', error);
+            alert('Une erreur technique est survenue.');
+        })
+        .finally(() => {
+            // Rétablir l'état initial du bouton
+            button.prop('disabled', false).html('<i class="bi bi-film"></i>');
+        });
     });
 
     // Gestion de la fermeture de la modale pour arrêter la vidéo

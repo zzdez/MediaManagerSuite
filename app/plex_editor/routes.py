@@ -492,16 +492,6 @@ def get_media_items():
                     except Exception:
                         item_from_lib.total_size_display = "Erreur"
 
-                    # Ajout de la recherche de bande-annonce
-                    item_from_lib.trailer_url = get_trailer(
-                        title=item_from_lib.title,
-                        year=item_from_lib.year,
-                        media_type=item_from_lib.type,
-                        youtube_api_key=current_app.config['YOUTUBE_API_KEY'], # Lit la config ici
-                        plex_item=item_from_lib,
-                        plex_server=target_plex_server
-                    )
-
                     all_media_from_plex.append(item_from_lib)
 
             except Exception as e_lib:
