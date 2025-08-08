@@ -347,10 +347,20 @@ def _trigger_mms_staging_processor(item_name):
             return False
 
         payload = {"item_name_in_staging": item_name}
+        api_key = current_app.config.get('INTERNAL_API_KEY')
+
+        if not api_key:
+            current_app.logger.error("SFTP Scanner: INTERNAL_API_KEY n'est pas configuré. Impossible de déclencher le traitement.")
+            return False
+
+        headers = {
+            'Content-Type': 'application/json',
+            'X-Internal-API-Key': api_key
+        }
 
         current_app.logger.info(f"SFTP Scanner: Déclenchement du traitement de '{item_name}' via l'endpoint MMS: {mms_url}")
 
-        response = requests.post(mms_url, json=payload, timeout=300) # Timeout de 5 minutes
+        response = requests.post(mms_url, json=payload, headers=headers, timeout=300) # Timeout de 5 minutes
 
         response.raise_for_status() # Lèvera une exception pour les codes d'erreur HTTP (4xx, 5xx)
 

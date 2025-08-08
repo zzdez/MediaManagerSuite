@@ -2,7 +2,7 @@
 
 # --- Imports Python Standards ---
 import os
-from app import login_required
+from app.auth import internal_api_required
 import shutil
 import logging
 import time
@@ -472,7 +472,7 @@ def sftp_build_remote_file_tree(sftp_client, remote_current_path_posix, local_st
     return tree
 
 @seedbox_ui_bp.route('/process-staging-item', methods=['POST'])
-@login_required
+@internal_api_required
 def process_staging_item_api(): # Renommé pour éviter conflit si vous aviez une var 'process_staging_item'
     """
     API endpoint to be called by sftp_downloader_notifier.py after an item
