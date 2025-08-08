@@ -79,6 +79,7 @@ def get_trailer(title, year, media_type, youtube_api_key, rating_key=None, user_
             plex_server = get_user_specific_plex_server_from_id(user_id)
             if plex_server:
                 plex_item = plex_server.library.fetchItem(int(rating_key))
+                plex_item.reload() # <--- AJOUTE CETTE LIGNE ESSENTIELLE
                 plex_trailer_url = find_plex_trailer(plex_item, plex_server)
                 if plex_trailer_url:
                     print(f"DEBUG: Bande-annonce trouvée via Plex pour '{title}'.")
