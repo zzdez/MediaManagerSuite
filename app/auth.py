@@ -1,5 +1,3 @@
-# app/auth.py
-
 from functools import wraps
 from flask import session, request, redirect, url_for, flash, jsonify, current_app
 
@@ -16,8 +14,23 @@ def login_required(f):
 def internal_api_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        api_key = request.headers.get('X-Internal-API-Key')
-        if not api_key or api_key != current_app.config['INTERNAL_API_KEY']:
+        # --- DÉBUT DU BLOC DE DÉBOGAGE ---
+        received_key = request.headers.get('X-Internal-API-Key')
+        expected_key = current_app.config.get('INTERNAL_API_KEY')
+
+        print("--- DÉBOGAGE AUTHENTIFICATION INTERNE ---")
+        print(f"Clé reçue   : '{received_key}'")
+        print(f"Clé attendue : '{expected_key}'")
+
+        if received_key and expected_key:
+            print(f"Les clés correspondent ? -> {received_key == expected_key}")
+        else:
+            print("Une des clés est manquante.")
+        print("---------------------------------------")
+        # --- FIN DU BLOC DE DÉBOGAGE ---
+
+        if not received_key or received_key != expected_key:
             return jsonify({'message': 'Accès non autorisé.'}), 403
+
         return f(*args, **kwargs)
     return decorated_function
