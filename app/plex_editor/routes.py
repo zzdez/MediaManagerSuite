@@ -99,8 +99,23 @@ def get_user_libraries(user_id):
             return jsonify({'error': f"Impossible d'établir une connexion Plex pour l'utilisateur {user_id}."}), 500
 
         libraries = target_plex_server.library.sections()
-        library_list = [{'id': lib.key, 'text': lib.title} for lib in libraries]
-        return jsonify(library_list)
+
+        # **NOUVELLE LOGIQUE DE FILTRAGE**
+        ignored_library_names = current_app.config.get('PLEX_LIBRARIES_TO_IGNORE', [])
+
+        filtered_libraries = []
+        for lib in libraries:
+            # Condition 1: La bibliothèque n'est pas dans la liste des noms à ignorer
+            is_ignored = lib.title in ignored_library_names
+
+            # Condition 2: La bibliothèque est de type 'movie' ou 'show'
+            is_valid_type = lib.type in ['movie', 'show']
+
+            if not is_ignored and is_valid_type:
+                filtered_libraries.append({'id': lib.key, 'text': lib.title})
+
+        # On renvoie la liste filtrée
+        return jsonify(filtered_libraries)
 
     except Unauthorized:
         current_app.logger.error(f"API get_user_libraries: Autorisation refusée pour l'utilisateur {user_id}. Token invalide ?", exc_info=True)

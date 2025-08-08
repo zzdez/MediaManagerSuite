@@ -24,6 +24,10 @@ class Config:
     # --- PLEX ---
     PLEX_URL = os.getenv('PLEX_URL')
     PLEX_TOKEN = os.getenv('PLEX_TOKEN')
+    # Lis la chaîne de caractères depuis le .env
+    _plex_libraries_to_ignore_str = os.getenv('PLEX_LIBRARIES_TO_IGNORE', '')
+    # Transforme la chaîne en une liste de noms, en retirant les espaces et les noms vides
+    PLEX_LIBRARIES_TO_IGNORE = [name.strip() for name in _plex_libraries_to_ignore_str.split(',') if name.strip()]
 
     # --- *ARR SUITE ---
     SONARR_URL = os.getenv('SONARR_URL')
