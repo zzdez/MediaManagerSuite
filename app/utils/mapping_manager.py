@@ -90,20 +90,23 @@ def save_torrent_map(data):
         logger.error(f"An unexpected error occurred while saving torrent map to {map_file}: {e}")
         raise
 
-def add_or_update_torrent_in_map(torrent_hash, release_name, app_type, target_id, label,
-                                 seedbox_download_path, original_torrent_name="N/A",
-                                 initial_status="pending_download_on_seedbox"):
+def add_or_update_torrent_in_map(torrent_hash, release_name, status, seedbox_download_path, app_type=None, target_id=None, label=None, original_torrent_name="N/A"):
     """
     Adds or updates a torrent's pre-association in the map.
-    'release_name' is the name of the folder/file rTorrent will create,
-                     and sftp_downloader will use (without .torrent extension).
-    'seedbox_download_path' is the full path on the seedbox where rTorrent is told to download.
+    This is the main function for adding/updating torrents.
+    The scanner will call this with app_type=None, target_id=None, label=None.
     """
     _, logger = _get_map_file_path_and_logger()
 
-    if not all([torrent_hash, release_name, app_type, target_id, label, seedbox_download_path]):
+    # The scanner does not know the app_type, target_id, or label initially.
+    # These can be added later by another process.
+    if not all([torrent_hash, release_name, status, seedbox_download_path]):
         logger.error("Missing one or more required arguments for add_or_update_torrent_in_map.")
         return False
+
+    # Set default values if not provided, for consistency in the map file
+    app_type = app_type or "unknown"
+    label = label or "unknown"
 
     # S'assurer que release_name n'a pas .torrent à la fin
     if release_name.lower().endswith(".torrent"):
@@ -114,6 +117,8 @@ def add_or_update_torrent_in_map(torrent_hash, release_name, app_type, target_id
     now_iso = datetime.utcnow().isoformat()
 
     if torrent_hash in torrents: # Update existing
+        # For now, a simple update. More sophisticated logic could be added here
+        # to decide what to do if a torrent is re-mapped (e.g., only update certain fields).
         torrents[torrent_hash].update({
             "release_name": release_name,
             "app_type": app_type,
@@ -121,9 +126,7 @@ def add_or_update_torrent_in_map(torrent_hash, release_name, app_type, target_id
             "label": label,
             "seedbox_download_path": seedbox_download_path,
             "original_torrent_name": original_torrent_name,
-            # Ne pas écraser le statut s'il est déjà plus avancé, sauf si explicitement demandé
-            # Pour l'instant, on met à jour les infos, et on ne touche au statut que s'il est "ancien"
-            "status": torrents[torrent_hash].get("status", initial_status), # Conserve le statut si déjà présent
+            "status": status, # Always update status on a new call
             "updated_at": now_iso
         })
         logger.info(f"Updated torrent {torrent_hash} ({release_name}) in map.")
@@ -135,7 +138,7 @@ def add_or_update_torrent_in_map(torrent_hash, release_name, app_type, target_id
             "label": label,
             "seedbox_download_path": seedbox_download_path,
             "original_torrent_name": original_torrent_name,
-            "status": initial_status,
+            "status": status,
             "added_at": now_iso,
             "updated_at": now_iso
         }

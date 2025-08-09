@@ -35,9 +35,9 @@
         {% if session.logged_in %}
             <div class="d-grid gap-2 mt-3"> {# Grouping admin buttons #}
                 <a href="{{ url_for('config_ui.show_config') }}" class="btn btn-lg btn-info portal-link">Configuration Application</a>
-                <button id="run-staging-processor-btn" class="btn btn-lg btn-outline-info portal-link">
-                    Lancer le Traitement du Staging
-                </button>
+                <a href="{{ url_for('trigger_sftp_scan_manual') }}" class="btn btn-lg btn-outline-info portal-link"> <!-- Using outline for secondary action -->
+                    <i class="fas fa-sync-alt"></i> Lancer Scan SFTP Manuel
+                </a>
                 <a href="{{ url_for('logout') }}" class="btn btn-lg btn-danger portal-link">Déconnexion</a>
             </div>
         {% endif %}
@@ -50,35 +50,4 @@
 
 {% block scripts %}
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const runButton = document.getElementById('run-staging-processor-btn');
-            if (runButton) {
-                runButton.addEventListener('click', function() {
-                    this.disabled = true;
-                    this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Lancement...';
-
-                    fetch("{{ url_for('seedbox_ui.run_staging_processor_endpoint') }}", {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Internal-API-Key': "{{ config.INTERNAL_API_KEY }}"
-                        }
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        alert(data.message || 'Action terminée.');
-                        runButton.disabled = false;
-                        runButton.innerHTML = 'Lancer le Traitement du Staging';
-                    })
-                    .catch(error => {
-                        console.error('Erreur:', error);
-                        alert('Une erreur est survenue.');
-                        runButton.disabled = false;
-                        runButton.innerHTML = 'Lancer le Traitement du Staging';
-                    });
-                });
-            }
-        });
-    </script>
 {% endblock %}

@@ -4,11 +4,11 @@ import logging
 from logging.handlers import RotatingFileHandler
 import os
 from datetime import datetime
-import secrets # Added import
+import secrets
 from app.auth import login_required
 
-from flask import Flask, render_template, session, flash, request, redirect, url_for, current_app # Added current_app
-from config import Config # Correct car config.py est à la racine du projet
+from flask import Flask, render_template, session, flash, request, redirect, url_for, current_app
+from config import Config
 
 # APScheduler imports
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -22,12 +22,12 @@ logger = logging.getLogger(__name__)
 
 # Global scheduler instance
 scheduler = None
-# Global lock for SFTP scan
-sftp_scan_lock = threading.Lock()
+# Global lock for SFTP scan is now obsolete as the new scanner is simpler
+# sftp_scan_lock = threading.Lock()
 
 def create_app(config_class=Config):
     app = Flask(__name__)
-    app.sftp_scan_lock = sftp_scan_lock # Attach the global lock to the app instance
+    # app.sftp_scan_lock = sftp_scan_lock # Obsolete
     app.config.from_object(config_class)
 
     # Configuration du logging de l'application
@@ -41,7 +41,7 @@ def create_app(config_class=Config):
                 os.mkdir('logs')
             file_handler = RotatingFileHandler('logs/mediamanager.log',
                                                maxBytes=10240, backupCount=10,
-                                               encoding='utf-8') # <--- AJOUTER encoding='utf-8'
+                                               encoding='utf-8')
             file_handler.setFormatter(logging.Formatter(
                 '%(asctime)s %(levelname)s: %(message)s '
                 '[in %(pathname)s:%(lineno)d]'))
@@ -57,48 +57,29 @@ def create_app(config_class=Config):
 
 
     # Enregistrement des Blueprints
-    # try/except a été temporairement retiré pour voir l'erreur d'importation réelle
     from app.plex_editor import plex_editor_bp
     app.register_blueprint(plex_editor_bp, url_prefix='/plex')
     logger.info("Blueprint 'plex_editor' enregistré avec succès.")
 
-    try:
-        from app.seedbox_ui import seedbox_ui_bp # Correct car seedbox_ui est un sous-package de app
-        app.register_blueprint(seedbox_ui_bp, url_prefix='/seedbox')
-        logger.info("Blueprint 'seedbox_ui' enregistré avec succès.")
-    except ImportError as e:
-        logger.error(f"Erreur lors de l'import ou de l'enregistrement du blueprint seedbox_ui: {e}")
+    from app.seedbox_ui import seedbox_ui_bp
+    app.register_blueprint(seedbox_ui_bp, url_prefix='/seedbox')
+    logger.info("Blueprint 'seedbox_ui' enregistré avec succès.")
 
-    # AJOUT POUR LE NOUVEAU BLUEPRINT
-    try:
-        from app.config_ui import config_ui_bp
-        app.register_blueprint(config_ui_bp, url_prefix='/configuration')
-        logger.info("Blueprint 'config_ui' enregistré avec succès.")
-    except ImportError as e:
-        logger.error(f"Erreur lors de l'import ou de l'enregistrement du blueprint config_ui: {e}")
-    # FIN DE L'AJOUT
+    from app.config_ui import config_ui_bp
+    app.register_blueprint(config_ui_bp, url_prefix='/configuration')
+    logger.info("Blueprint 'config_ui' enregistré avec succès.")
 
-    # Register YGG Cookie UI blueprint
-    try:
-        from app.ygg_cookie_ui import ygg_cookie_ui_bp
-        app.register_blueprint(ygg_cookie_ui_bp, url_prefix='/ygg-cookie')
-        logger.info("Blueprint 'ygg_cookie_ui' enregistré avec succès.")
-    except ImportError as e:
-        logger.error(f"Erreur lors de l'import ou de l'enregistrement du blueprint ygg_cookie_ui: {e}")
+    from app.ygg_cookie_ui import ygg_cookie_ui_bp
+    app.register_blueprint(ygg_cookie_ui_bp, url_prefix='/ygg-cookie')
+    logger.info("Blueprint 'ygg_cookie_ui' enregistré avec succès.")
 
-    try:
-        from app.search_ui import search_ui_bp
-        app.register_blueprint(search_ui_bp, url_prefix='/search')
-        logger.info("Blueprint 'search_ui' enregistré avec succès.")
-    except ImportError as e:
-        logger.error(f"Erreur lors de l'import ou de l'enregistrement du blueprint search_ui: {e}")
+    from app.search_ui import search_ui_bp
+    app.register_blueprint(search_ui_bp, url_prefix='/search')
+    logger.info("Blueprint 'search_ui' enregistré avec succès.")
 
-    try:
-        from app.trailer_routes import trailer_bp
-        app.register_blueprint(trailer_bp)
-        logger.info("Blueprint 'trailer' enregistré avec succès.")
-    except ImportError as e:
-        logger.error(f"Erreur lors de l'import ou de l'enregistrement du blueprint trailer: {e}")
+    from app.trailer_routes import trailer_bp
+    app.register_blueprint(trailer_bp)
+    logger.info("Blueprint 'trailer' enregistré avec succès.")
 
     # Route pour la page d'accueil/portail
     @app.route('/')
@@ -109,9 +90,6 @@ def create_app(config_class=Config):
                                title="Portail Media Manager Suite",
                                current_year=current_year)
 
-        # Option B: Rediriger vers un module par défaut
-        # return redirect(url_for('seedbox_ui.index'))
-
     @app.route('/login', methods=['GET', 'POST'])
     def login():
         if request.method == 'POST':
@@ -119,7 +97,7 @@ def create_app(config_class=Config):
             app_password = current_app.config.get('APP_PASSWORD')
             if app_password and password and secrets.compare_digest(password, app_password):
                 session['logged_in'] = True
-                session.permanent = True  # Make session permanent
+                session.permanent = True
                 flash('Connexion réussie !', 'success')
                 next_url = session.pop('next_url', None)
                 return redirect(next_url or url_for('home'))
@@ -133,32 +111,33 @@ def create_app(config_class=Config):
         flash('Vous avez été déconnecté.', 'info')
         return redirect(url_for('login'))
 
+    # Obsolete manual scan trigger route has been removed.
+
     # Gestionnaires d'erreurs HTTP globaux
     @app.errorhandler(404)
     def not_found_error(error):
         logger.warning(f"Erreur 404 - Page non trouvée: {request.url} (Référent: {request.referrer})")
-        return render_template('404.html', title="Page non trouvée"), 404 # CHEMIN CORRIGÉ
+        return render_template('404.html', title="Page non trouvée"), 404
 
     @app.errorhandler(500)
     def internal_error(error):
         logger.error(f"Erreur interne du serveur (500): {error}", exc_info=True)
-        # db.session.rollback() # Si tu utilises une base de données
-        return render_template('500.html', title="Erreur Interne du Serveur"), 500 # CHEMIN CORRIGÉ  
+        return render_template('500.html', title="Erreur Interne du Serveur"), 500
+
     logger.info("Application MediaManagerSuite créée et configurée.")
 
-    # Initialize and start the scheduler only if it's not already running
-    # This is particularly important with Flask's reloader
+    # Initialize and start the scheduler
     global scheduler
     if scheduler is None or not scheduler.running:
         scheduler = BackgroundScheduler(daemon=True)
 
-        # Get interval from config
-        sftp_scan_interval = app.config.get('SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES', 30)
+        # Get interval from config for the rTorrent scanner
+        rtorrent_scan_interval = app.config.get('SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES', 15)
 
         # Define the function for the rTorrent scanner job
         def scheduled_rtorrent_scan_job():
             with app.app_context():
-                current_app.logger.info(f"Scheduler: Triggering rTorrent scan job. Interval: {app.config.get('SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES', 15)} mins.")
+                current_app.logger.info(f"Scheduler: Triggering rTorrent scan job. Interval: {rtorrent_scan_interval} mins.")
                 scan_and_map_torrents()
 
         # Define the function for the staging processor job
@@ -171,7 +150,7 @@ def create_app(config_class=Config):
         scheduler.add_job(
             func=scheduled_rtorrent_scan_job,
             trigger='interval',
-            minutes=sftp_scan_interval,
+            minutes=rtorrent_scan_interval,
             id='rtorrent_scan_job',
             next_run_time=datetime.datetime.now() + datetime.timedelta(seconds=20),
             replace_existing=True
@@ -188,7 +167,7 @@ def create_app(config_class=Config):
         )
 
         scheduler.start()
-        app.logger.info(f"APScheduler started. rTorrent scan job scheduled every {sftp_scan_interval} minutes. Staging processor job scheduled every 1 minute.")
+        app.logger.info(f"APScheduler started. rTorrent scan job scheduled every {rtorrent_scan_interval} minutes. Staging processor job scheduled every 1 minute.")
 
         # Ensure scheduler shuts down cleanly when the app exits
         atexit.register(lambda: scheduler.shutdown() if scheduler and scheduler.running else None)
