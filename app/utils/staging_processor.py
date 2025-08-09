@@ -26,49 +26,49 @@ def _connect_sftp():
         current_app.logger.error(f"Staging Processor: SFTP connection failed for {sftp_user}@{sftp_host}:{sftp_port} - {e}")
         return None, None
 
-def _rapatriate_item(item, sftp):
+def _get_r_recursive(sftp_client, remotedir, localdir):
     """
-    Downloads an item from the seedbox to the local staging directory.
-    Handles both files and directories.
+    Recursively download a directory from a remote SFTP server.
     """
-    local_staging_path = current_app.config['LOCAL_STAGING_PATH']
-    remote_path = item['seedbox_download_path']
-    release_name = item['release_name']
-    local_item_path = os.path.join(local_staging_path, release_name)
+    for item_attr in sftp_client.listdir_attr(remotedir):
+        remote_path = os.path.join(remotedir, item_attr.filename).replace('\\', '/')
+        local_path = os.path.join(localdir, item_attr.filename)
+        if stat.S_ISDIR(item_attr.st_mode):
+            os.makedirs(local_path, exist_ok=True)
+            _get_r_recursive(sftp_client, remote_path, local_path)
+        else:
+            sftp_client.get(remote_path, local_path)
 
-    current_app.logger.info(f"Rapatriating '{release_name}' from '{remote_path}' to '{local_item_path}'")
+def _rapatriate_item(item, sftp_client):
+    release_name = item.get('release_name')
+    remote_path = item.get('seedbox_download_path')
+    local_path = os.path.join(current_app.config['LOCAL_STAGING_PATH'], release_name)
+
+    current_app.logger.info(f"Rapatriement de '{release_name}' depuis '{remote_path}' vers '{local_path}'")
 
     try:
-        remote_stat = sftp.stat(remote_path)
-        if stat.S_ISDIR(remote_stat.st_mode):
-            current_app.logger.info(f"'{release_name}' is a directory, starting recursive download.")
-            os.makedirs(local_item_path, exist_ok=True)
-            for item_attr in sftp.listdir_attr(remote_path):
-                remote_item_full_path = f"{remote_path}/{item_attr.filename}"
-                local_item_full_path = os.path.join(local_item_path, item_attr.filename)
-                if stat.S_ISDIR(item_attr.st_mode):
-                    # This part is not fully recursive in this simple example.
-                    # A true recursive download would be more complex.
-                    # For now, we'll assume a single level of directory.
-                    pass
-                else:
-                    sftp.get(remote_item_full_path, local_item_full_path)
-        else:
-            current_app.logger.info(f"'{release_name}' is a file, starting download.")
-            os.makedirs(os.path.dirname(local_item_path), exist_ok=True)
-            sftp.get(remote_path, local_item_path)
-
-        current_app.logger.info(f"Successfully rapatriated '{release_name}'.")
+        # STRATÉGIE N°1 : On suppose que c'est un DOSSIER et on tente un téléchargement récursif.
+        current_app.logger.info(f"Tentative de téléchargement de '{remote_path}' comme un dossier.")
+        os.makedirs(local_path, exist_ok=True)
+        _get_r_recursive(sftp_client, remote_path, local_path)
+        current_app.logger.info(f"Téléchargement du dossier '{remote_path}' réussi.")
         return True
-    except Exception as e:
-        current_app.logger.error(f"Failed to rapatriate '{release_name}'. Error: {e}", exc_info=True)
-        # Clean up partial download
-        if os.path.exists(local_item_path):
-            if os.path.isdir(local_item_path):
-                shutil.rmtree(local_item_path)
-            else:
-                os.remove(local_item_path)
-        return False
+    except Exception as e_dir:
+        current_app.logger.warning(f"Échec du téléchargement comme un dossier : {e_dir}. Tentative comme un fichier.")
+
+        try:
+            # STRATÉGIE N°2 (FALLBACK) : On suppose que c'est un FICHIER.
+            # On s'assure que le dossier parent existe localement.
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            sftp_client.get(remote_path, local_path)
+            current_app.logger.info(f"Téléchargement du fichier '{remote_path}' réussi.")
+            return True
+        except Exception as e_file:
+            current_app.logger.error(f"Échec final du rapatriement. Ni un dossier, ni un fichier valide à l'emplacement '{remote_path}': {e_file}", exc_info=True)
+            # On nettoie le dossier local potentiellement vide qui a été créé
+            if os.path.isdir(local_path) and not os.listdir(local_path):
+                shutil.rmtree(local_path)
+            return False
 
 def _cleanup_staging(item_name):
     """Deletes the item from the local staging directory."""
@@ -160,8 +160,8 @@ def process_pending_staging_items():
         current_app.logger.info("Staging Processor: No items pending staging.")
         return
 
-    sftp, transport = _connect_sftp()
-    if not sftp:
+    sftp_client, transport = _connect_sftp()
+    if not sftp_client:
         current_app.logger.error("Staging Processor: Could not connect to SFTP. Aborting cycle.")
         for torrent_hash in pending_items.keys():
             mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_sftp_connection', 'Could not connect to SFTP server.')
@@ -172,7 +172,7 @@ def process_pending_staging_items():
     for torrent_hash, item_data in pending_items.items():
         item_data['torrent_hash'] = torrent_hash
 
-        if _rapatriate_item(item_data, sftp):
+        if _rapatriate_item(item_data, sftp_client):
             mapping_manager.update_torrent_status_in_map(torrent_hash, 'in_staging', 'Item successfully downloaded to staging.')
 
             queue_item_sonarr = arr_client.find_in_arr_queue_by_hash('sonarr', torrent_hash)
