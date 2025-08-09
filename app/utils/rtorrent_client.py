@@ -307,6 +307,34 @@ def list_torrents():
     current_app.logger.info(f"Successfully parsed {len(simplified_torrents)} torrent(s) via XML-RPC d.multicall2.")
     return simplified_torrents, None
 
+def get_completed_torrents():
+    """
+    Retrieves a list of all torrents from rTorrent and filters them to return only
+    those that are marked as complete.
+
+    This function relies on the 'is_complete' flag set by the list_torrents function.
+
+    :return: A list of torrent dictionaries for completed torrents, or an empty list if none are found or an error occurs.
+    """
+    current_app.logger.info("Fetching completed torrents from rTorrent.")
+
+    all_torrents, error = list_torrents()
+
+    if error:
+        current_app.logger.error(f"Failed to list torrents while getting completed torrents: {error}")
+        return [] # Return an empty list to avoid breaking the caller
+
+    if not all_torrents:
+        current_app.logger.info("No torrents found in rTorrent to filter for completion.")
+        return []
+
+    completed_torrents = [
+        torrent for torrent in all_torrents if torrent.get('is_complete')
+    ]
+
+    current_app.logger.info(f"Found {len(all_torrents)} total torrents, {len(completed_torrents)} are complete.")
+    return completed_torrents
+
 # add_magnet is refactored to use XML-RPC
 def add_magnet(magnet_link, label=None, download_dir=None):
     if not magnet_link:

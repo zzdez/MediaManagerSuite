@@ -12,7 +12,7 @@ from config import Config # Correct car config.py est à la racine du projet
 
 # APScheduler imports
 from apscheduler.schedulers.background import BackgroundScheduler
-from app.utils.sftp_scanner import scan_sftp_and_process_items
+from app.utils.sftp_scanner import scan_and_map_torrents
 import datetime
 import atexit
 import threading
@@ -197,8 +197,8 @@ def create_app(config_class=Config):
         # Define the function that will be scheduled
         def scheduled_sftp_scan_job(): # Renamed to avoid confusion
             with app.app_context(): # Ensure app context is available
-                current_app.logger.info(f"Scheduler: Triggering SFTP scan job. Interval: {app.config.get('SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES', 30)} mins.")
-                scan_sftp_and_process_items()
+                current_app.logger.info(f"Scheduler: Triggering rTorrent Hash-based scan job. Interval: {app.config.get('SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES', 30)} mins.")
+                scan_and_map_torrents()
 
         # Add the job to the scheduler
         scheduler.add_job(

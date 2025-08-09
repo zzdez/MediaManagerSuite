@@ -90,6 +90,46 @@ def save_torrent_map(data):
         logger.error(f"An unexpected error occurred while saving torrent map to {map_file}: {e}")
         raise
 
+def add_torrent(release_name, torrent_hash, status='pending_staging'):
+    """
+    Adds a torrent to the map, typically when discovered by a scanner.
+    It uses default values for fields that may not be known at discovery time.
+    The torrent_hash is used as the primary key.
+    """
+    _, logger = _get_map_file_path_and_logger()
+
+    if not all([release_name, torrent_hash, status]):
+        logger.error("Missing one or more required arguments for add_torrent (release_name, torrent_hash, status).")
+        return False
+
+    torrents = load_torrent_map()
+    now_iso = datetime.utcnow().isoformat()
+
+    if torrent_hash in torrents:
+        logger.info(f"Torrent {torrent_hash} ({release_name}) already exists in map. Skipping add.")
+        return True  # Not an error, just already present
+
+    torrents[torrent_hash] = {
+        "release_name": release_name,
+        "status": status,
+        "added_at": now_iso,
+        "updated_at": now_iso,
+        # Provide default values for other fields that will be filled in later
+        "app_type": "unknown",
+        "target_id": None,
+        "label": "",
+        "seedbox_download_path": "unknown",
+        "original_torrent_name": release_name, # Best guess for now
+    }
+    logger.info(f"Added new torrent {torrent_hash} ({release_name}) to map with status '{status}'.")
+
+    try:
+        save_torrent_map(torrents)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to save torrent map after adding {torrent_hash}: {e}")
+        return False
+
 def add_or_update_torrent_in_map(torrent_hash, release_name, app_type, target_id, label,
                                  seedbox_download_path, original_torrent_name="N/A",
                                  initial_status="pending_download_on_seedbox"):
@@ -227,6 +267,16 @@ def get_all_torrents_in_map():
     _, logger = _get_map_file_path_and_logger()
     logger.debug("Loading all torrents from map.")
     return load_torrent_map()
+
+def get_all_torrent_hashes():
+    """
+    Retrieves a set of all torrent hashes currently in the map.
+    This is efficient for checking for the existence of a torrent.
+    """
+    _, logger = _get_map_file_path_and_logger()
+    logger.debug("Loading all torrent hashes from map.")
+    torrents = load_torrent_map()
+    return set(torrents.keys())
 
 # Vous pouvez ajouter ici les tests de votre __main__ si vous voulez le tester en standalone,
 # mais assurez-vous de configurer un logger basique et potentiellement de simuler current_app.config
