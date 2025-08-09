@@ -12,7 +12,8 @@ from config import Config # Correct car config.py est à la racine du projet
 
 # APScheduler imports
 from apscheduler.schedulers.background import BackgroundScheduler
-from app.utils.sftp_scanner import scan_sftp_and_process_items
+from app.utils.sftp_scanner import scan_and_map_torrents
+from app.utils.staging_processor import process_pending_staging_items
 import datetime
 import atexit
 import threading
@@ -132,46 +133,6 @@ def create_app(config_class=Config):
         flash('Vous avez été déconnecté.', 'info')
         return redirect(url_for('login'))
 
-    @app.route('/trigger-sftp-scan')
-    @login_required
-    def trigger_sftp_scan_manual():
-        global scheduler # To access the scheduler instance
-        # global sftp_scan_lock # No longer needed as global in this function scope
-
-        if current_app.sftp_scan_lock.locked(): # Use current_app.sftp_scan_lock
-            flash("An SFTP scan is already in progress. Please wait for it to complete.", "warning")
-            current_app.logger.info("Manual SFTP scan trigger aborted: scan already in progress (lock held).")
-            if request.referrer and request.referrer != request.url:
-                return redirect(request.referrer)
-            else:
-                return redirect(url_for('home'))
-
-        if scheduler and scheduler.running:
-            job = scheduler.get_job('sftp_scan_job')
-            if job:
-                try:
-                    # Reschedule to run ASAP (e.g., in 1 second)
-                    # The job is scheduled with naive datetime, so use naive here too.
-                    new_next_run_time = datetime.datetime.now() + datetime.timedelta(seconds=1)
-                    job.modify(next_run_time=new_next_run_time)
-                    flash("Manual SFTP scan requested. It will start shortly.", "success")
-                    current_app.logger.info(f"Manual SFTP scan triggered for job {job.id}. New next run time: {new_next_run_time}")
-                except Exception as e:
-                    flash(f"Error triggering scan: {str(e)}", "danger") # Use str(e) for safer flash message
-                    current_app.logger.error(f"Error modifying SFTP scan job: {e}", exc_info=True)
-            else:
-                flash("SFTP scan job ('sftp_scan_job') not found.", "warning")
-                current_app.logger.warning("Manual SFTP scan trigger failed: Job 'sftp_scan_job' not found.")
-        else:
-            flash("Scheduler not running or not initialized.", "danger")
-            current_app.logger.error("Manual SFTP scan trigger failed: Scheduler not running or not initialized.")
-
-        # Try to redirect to referrer, otherwise to home.
-        if request.referrer and request.referrer != request.url:
-             return redirect(request.referrer)
-        else:
-             return redirect(url_for('home')) # Fallback to home
-
     # Gestionnaires d'erreurs HTTP globaux
     @app.errorhandler(404)
     def not_found_error(error):
@@ -194,24 +155,40 @@ def create_app(config_class=Config):
         # Get interval from config
         sftp_scan_interval = app.config.get('SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES', 30)
 
-        # Define the function that will be scheduled
-        def scheduled_sftp_scan_job(): # Renamed to avoid confusion
-            with app.app_context(): # Ensure app context is available
-                current_app.logger.info(f"Scheduler: Triggering SFTP scan job. Interval: {app.config.get('SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES', 30)} mins.")
-                scan_sftp_and_process_items()
+        # Define the function for the rTorrent scanner job
+        def scheduled_rtorrent_scan_job():
+            with app.app_context():
+                current_app.logger.info(f"Scheduler: Triggering rTorrent scan job. Interval: {app.config.get('SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES', 15)} mins.")
+                scan_and_map_torrents()
 
-        # Add the job to the scheduler
+        # Define the function for the staging processor job
+        def scheduled_staging_processor_job():
+            with app.app_context():
+                current_app.logger.info("Scheduler: Triggering staging processor job. Interval: 1 min.")
+                process_pending_staging_items()
+
+        # Add the rTorrent scanner job
         scheduler.add_job(
-            func=scheduled_sftp_scan_job,
+            func=scheduled_rtorrent_scan_job,
             trigger='interval',
             minutes=sftp_scan_interval,
-            id='sftp_scan_job',
+            id='rtorrent_scan_job',
             next_run_time=datetime.datetime.now() + datetime.timedelta(seconds=20),
-            replace_existing=True # Good practice to avoid issues with reloader
+            replace_existing=True
+        )
+
+        # Add the staging processor job
+        scheduler.add_job(
+            func=scheduled_staging_processor_job,
+            trigger='interval',
+            minutes=1,
+            id='staging_processor_job',
+            next_run_time=datetime.datetime.now() + datetime.timedelta(seconds=10),
+            replace_existing=True
         )
 
         scheduler.start()
-        app.logger.info(f"APScheduler started. SFTP scan job scheduled every {sftp_scan_interval} minutes, first run in 20 seconds.")
+        app.logger.info(f"APScheduler started. rTorrent scan job scheduled every {sftp_scan_interval} minutes. Staging processor job scheduled every 1 minute.")
 
         # Ensure scheduler shuts down cleanly when the app exits
         atexit.register(lambda: scheduler.shutdown() if scheduler and scheduler.running else None)

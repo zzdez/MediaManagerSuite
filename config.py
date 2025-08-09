@@ -20,6 +20,7 @@ class Config:
     SECRET_KEY = os.getenv('SECRET_KEY', 'une-cle-secrete-tres-forte-et-aleatoire-a-definir-absolument')
     FLASK_DEBUG = os.getenv('FLASK_DEBUG', 'False').split('#')[0].strip().lower() in ('true', '1', 't')
     APP_PASSWORD = os.getenv('APP_PASSWORD')
+    INTERNAL_API_KEY = os.getenv('INTERNAL_API_KEY')
 
     # --- PLEX ---
     PLEX_URL = os.getenv('PLEX_URL')

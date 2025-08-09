@@ -24,6 +24,8 @@ import requests # Pour les appels API externes (Sonarr, Radarr, rTorrent)
 from requests.exceptions import RequestException # Pour gérer les erreurs de connexion
 import paramiko
 # --- Imports spécifiques à l'application MediaManagerSuite ---
+from app.auth import internal_api_required
+from app.utils import staging_processor
 
 # Client rTorrent
 from app.utils.rtorrent_client import (
@@ -2716,7 +2718,45 @@ def force_sonarr_import_action():
 # ------------------------------------------------------------------------------
 # Import stat module for checking file types from SFTP attributes
 import stat
-from app.utils.sftp_scanner import _connect_sftp, _list_remote_files # Import SFTP utilities
+import pysftp
+
+def _connect_sftp_for_unified_list():
+    """Establishes an SFTP connection using settings from current_app.config."""
+    cnopts = pysftp.CnOpts()
+    cnopts.hostkeys = None # Disable host key checking, consider security implications
+    sftp_host = current_app.config['SEEDBOX_SFTP_HOST']
+    sftp_port = current_app.config['SEEDBOX_SFTP_PORT']
+    sftp_user = current_app.config['SEEDBOX_SFTP_USER']
+    sftp_password = current_app.config['SEEDBOX_SFTP_PASSWORD']
+
+    try:
+        sftp = pysftp.Connection(
+            host=sftp_host,
+            username=sftp_user,
+            password=sftp_password,
+            port=sftp_port,
+            cnopts=cnopts
+        )
+        current_app.logger.info(f"Successfully connected to SFTP server for unified list: {sftp_host}")
+        return sftp
+    except Exception as e:
+        current_app.logger.error(f"SFTP connection failed for unified list {sftp_user}@{sftp_host}:{sftp_port} - {e}")
+        return None
+
+def _list_remote_files_for_unified_list(sftp, remote_path):
+    """Lists files and directories in a remote path, excluding '.' and '..'."""
+    items = []
+    try:
+        if sftp.exists(remote_path) and sftp.isdir(remote_path):
+            current_app.logger.info(f"Scanning remote path for unified list: {remote_path}")
+            for item_attr in sftp.listdir_attr(remote_path):
+                if item_attr.filename not in ['.', '..']:
+                    items.append(item_attr)
+        else:
+            current_app.logger.warning(f"Remote path not found or not a directory for unified list: {remote_path}")
+    except Exception as e:
+        current_app.logger.error(f"Error listing files in {remote_path} for unified list: {e}")
+    return items
 
 @seedbox_ui_bp.route('/unified_finished_list')
 # Pas besoin de @login_required ici car la page qui l'appelle (index) l'est déjà
@@ -2730,7 +2770,7 @@ def unified_finished_list():
     logger_instance = current_app.logger
 
     try:
-        sftp_client = _connect_sftp()
+        sftp_client = _connect_sftp_for_unified_list()
         if not sftp_client:
             raise Exception("Impossible de se connecter au serveur SFTP.")
 
@@ -2742,7 +2782,7 @@ def unified_finished_list():
 
             if remote_path:
                 # _list_remote_files returns a list of SFTPAttributes objects
-                sftp_items_attrs = _list_remote_files(sftp_client, remote_path)
+                sftp_items_attrs = _list_remote_files_for_unified_list(sftp_client, remote_path)
                 for item_attr in sftp_items_attrs:
                     # Check if it's a file (not a directory)
                     if not stat.S_ISDIR(item_attr.st_mode):
@@ -4456,3 +4496,13 @@ def sftp_add_and_import_arr_item_placeholder():
         "error": "Fonctionnalité non entièrement implémentée. La route /api/sftp-add-and-import-arr-item doit être finalisée.",
         "message": "Placeholder: L'ajout, le rapatriement et l'import pour un nouvel item SFTP ne sont pas encore complètement fonctionnels."
     }), 501 # 501 Not Implemented
+
+@seedbox_ui_bp.route('/run_staging_processor', methods=['POST'])
+@internal_api_required
+def run_staging_processor_endpoint():
+    try:
+        staging_processor.process_pending_staging_items()
+        return jsonify({'status': 'success', 'message': 'Staging processor job executed.'})
+    except Exception as e:
+        current_app.logger.error(f"Error running staging processor endpoint: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': str(e)}), 500

@@ -228,6 +228,28 @@ def get_all_torrents_in_map():
     logger.debug("Loading all torrents from map.")
     return load_torrent_map()
 
+def get_all_torrent_hashes():
+    """Retrieves a set of all known torrent hashes from the map."""
+    _, logger = _get_map_file_path_and_logger()
+    logger.debug("Loading all torrent hashes from map.")
+    torrents = load_torrent_map()
+    return set(torrents.keys())
+
+def add_torrent(release_name, torrent_hash, status, seedbox_download_path):
+    """
+    A simplified function to add a new torrent to the map, intended for the scanner.
+    It sets default values for fields not known by the scanner.
+    """
+    return add_or_update_torrent_in_map(
+        torrent_hash=torrent_hash,
+        release_name=release_name,
+        app_type="unknown",  # Default value
+        target_id=None,  # Default value
+        label="unknown",  # Default value
+        seedbox_download_path=seedbox_download_path,
+        initial_status=status
+    )
+
 # Vous pouvez ajouter ici les tests de votre __main__ si vous voulez le tester en standalone,
 # mais assurez-vous de configurer un logger basique et potentiellement de simuler current_app.config
 # ou de vous appuyer sur le fallback getenv pour PENDING_TORRENTS_MAP_FILE.

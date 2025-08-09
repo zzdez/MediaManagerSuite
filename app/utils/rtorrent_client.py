@@ -591,3 +591,35 @@ def delete_torrent(torrent_hash, delete_data=False):
     else:
         current_app.logger.warning(f"Delete torrent {torrent_hash} via XML-RPC returned an unexpected result: {result}. Expected 0.")
         return False, f"Delete torrent via XML-RPC returned an unexpected result: {result}."
+
+def get_completed_torrents():
+    """
+    Fetches all torrents from rTorrent and filters for completed ones.
+
+    :return: A list of dictionaries, where each dictionary represents a completed torrent.
+             Returns an empty list if there's an error or no completed torrents.
+    """
+    current_app.logger.info("rTorrent Client: Fetching completed torrents.")
+    all_torrents, error = list_torrents()
+
+    if error:
+        current_app.logger.error(f"rTorrent Client: Could not fetch torrent list to find completed ones. Error: {error}")
+        return []
+
+    if not all_torrents:
+        current_app.logger.info("rTorrent Client: No torrents found in rTorrent.")
+        return []
+
+    # The 'is_complete' key is a boolean in the dictionary returned by list_torrents()
+    completed_torrents = [
+        torrent for torrent in all_torrents if torrent.get('is_complete')
+    ]
+
+    # The `list_torrents` function returns `download_dir` which is an alias for `d.base_path`.
+    # We need to rename it to `base_path` for the scanner.
+    for torrent in completed_torrents:
+        if 'download_dir' in torrent:
+            torrent['base_path'] = torrent.pop('download_dir')
+
+    current_app.logger.info(f"rTorrent Client: Found {len(completed_torrents)} completed torrents.")
+    return completed_torrents
