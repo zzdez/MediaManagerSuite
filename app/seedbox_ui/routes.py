@@ -479,17 +479,20 @@ def process_staging_item_api():
     item_name_in_staging = request.json.get("item_name_in_staging")
     current_app.logger.info(f"Staging Processor: Demande de traitement pour '{item_name_in_staging}'.")
 
+    # Construire le chemin complet pour les handlers
+    item_path_in_staging = os.path.join(current_app.config['LOCAL_STAGING_PATH'], item_name_in_staging)
+
     # Étape 1: Chercher une pré-association MMS
-    association = torrent_map_manager.get_torrent_by_release_name(item_name_in_staging)
+    torrent_hash, association = torrent_map_manager.find_torrent_by_release_name(item_name_in_staging)
     if association:
         current_app.logger.info("Association MMS trouvée. Lancement de l'import manuel forcé.")
         arr_type = association.get('app_type')
         target_id = association.get('target_id')
         # La logique manuelle existante est appelée ici
         if arr_type == 'sonarr':
-            _handle_staged_sonarr_item(item_name_in_staging, target_id, None) # Le root_folder_path est récupéré à l'intérieur
+            _handle_staged_sonarr_item(item_name_in_staging, target_id, item_path_in_staging)
         else:
-            _handle_staged_radarr_item(item_name_in_staging, target_id, None)
+            _handle_staged_radarr_item(item_name_in_staging, target_id, item_path_in_staging)
         return jsonify({'status': 'success', 'message': f'Traitement manuel terminé pour {item_name_in_staging}.'})
 
     # Étape 2: Si pas d'association, vérifier les files d'attente *Arr
@@ -525,12 +528,12 @@ def process_staging_item_api():
     if media_type == 'tv':
         series_info = arr_client.find_sonarr_series_by_title(parsed_info.get('title'))
         if series_info:
-            _handle_staged_sonarr_item(item_name_in_staging, series_info['id'], None)
+            _handle_staged_sonarr_item(item_name_in_staging, series_info['id'], item_path_in_staging)
             return jsonify({'status': 'success', 'message': f'Import manuel réussi pour {item_name_in_staging}.'})
     elif media_type == 'movie':
         movie_info = arr_client.find_radarr_movie_by_title(parsed_info.get('title'))
         if movie_info:
-            _handle_staged_radarr_item(item_name_in_staging, movie_info['id'], None)
+            _handle_staged_radarr_item(item_name_in_staging, movie_info['id'], item_path_in_staging)
             return jsonify({'status': 'success', 'message': f'Import manuel réussi pour {item_name_in_staging}.'})
 
     current_app.logger.error(f"Échec de l'import manuel forcé pour '{item_name_in_staging}'. Média non trouvé dans Sonarr/Radarr.")
