@@ -14,13 +14,17 @@ def scan_and_map_torrents():
             download_path = torrent.get('base_path')
 
             if torrent_hash and release_name and download_path and torrent_hash not in known_hashes:
-                mapping_manager.add_torrent(
-                    release_name=release_name,
+                mapping_manager.add_or_update_torrent_in_map(
                     torrent_hash=torrent_hash,
-                    status='pending_staging',
-                    seedbox_download_path=download_path
+                    release_name=release_name,
+                    app_type='unknown',
+                    target_id='unknown', # Cannot be None due to the check in the function
+                    label='unknown',
+                    seedbox_download_path=download_path,
+                    initial_status='pending_staging'
                 )
                 new_torrents_added += 1
+                current_app.logger.info(f"rTorrent Scanner: New torrent mapped: {release_name}")
         current_app.logger.info(f"rTorrent Scanner: Added {new_torrents_added} new torrents to the map.")
     except Exception as e:
         current_app.logger.error(f"rTorrent Scanner Error: {e}", exc_info=True)
