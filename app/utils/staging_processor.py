@@ -29,16 +29,16 @@ def _connect_sftp():
         current_app.logger.error(f"Staging Processor: SFTP connection failed for {sftp_user}@{sftp_host}:{sftp_port} - {e}")
         return None
 
-def _rapatriate_item(sftp, remote_path, release_name):
+def _rapatriate_item(sftp, item):
     """
     Downloads an item (file or directory) from the seedbox to the local staging directory.
     Returns True on success, False on failure.
     """
+    release_name = item.get('release_name')
+    remote_item_path = item.get('seedbox_download_path') # This is the absolute path from rTorrent.
+
     local_staging_path = current_app.config['LOCAL_STAGING_PATH']
     local_item_path = Path(local_staging_path) / release_name
-    # The remote_path from the mapping manager is the base directory of the torrent.
-    # The release_name is the name of the file/folder within that directory.
-    remote_item_path = f"{remote_path.rstrip('/')}/{release_name}"
 
     current_app.logger.info(f"Staging Processor: Repatriating '{release_name}' from '{remote_item_path}' to '{local_item_path}'")
 
@@ -200,7 +200,7 @@ def process_pending_staging_items():
                 continue
 
             try:
-                if not _rapatriate_item(sftp, remote_path, release_name):
+                if not _rapatriate_item(sftp, item):
                     mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_repatriation', 'Failed to download from seedbox')
                     continue
 
