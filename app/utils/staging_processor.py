@@ -4,6 +4,7 @@ from . import mapping_manager, arr_client
 import os
 import shutil
 import pysftp
+import stat
 from pathlib import Path
 
 def _connect_sftp():
@@ -29,69 +30,40 @@ def _connect_sftp():
         current_app.logger.error(f"Staging Processor: SFTP connection failed for {sftp_user}@{sftp_host}:{sftp_port} - {e}")
         return None
 
-def _rapatriate_item(sftp, item):
+def _rapatriate_item(item, sftp_client):
     """
-    Downloads an item (file or directory) from the seedbox to the local staging directory.
-    Returns True on success, False on failure.
+    Rapatrie un item (dossier ou fichier) depuis la seedbox vers le staging local.
     """
     release_name = item.get('release_name')
-    remote_item_path = item.get('seedbox_download_path') # This is the absolute path from rTorrent.
+    remote_path = item.get('seedbox_download_path')
+    local_path = os.path.join(current_app.config['LOCAL_STAGING_PATH'], release_name)
 
-    local_staging_path = current_app.config['LOCAL_STAGING_PATH']
-    local_item_path = Path(local_staging_path) / release_name
-
-    current_app.logger.info(f"Staging Processor: Repatriating '{release_name}' from '{remote_item_path}' to '{local_item_path}'")
+    current_app.logger.info(f"Rapatriement de '{release_name}' depuis '{remote_path}' vers '{local_path}'")
 
     try:
-        if not sftp.exists(remote_item_path):
-            current_app.logger.error(f"Staging Processor: Remote item does not exist: {remote_item_path}")
-            return False
+        # Vérifier si le chemin distant existe et est un dossier ou un fichier
+        remote_stat = sftp_client.stat(remote_path)
 
-        if sftp.isfile(remote_item_path):
-            current_app.logger.info(f"Downloading file: {remote_item_path} to {local_item_path}")
-            sftp.get(remote_item_path, str(local_item_path), preserve_mtime=True)
-            current_app.logger.info(f"Successfully downloaded file: {release_name}")
-            return True
-
-        elif sftp.isdir(remote_item_path):
-            current_app.logger.info(f"Starting robust directory download for: {remote_item_path}")
-            os.makedirs(local_item_path, exist_ok=True)
-
-            def file_callback(remotefile):
-                relative_path = os.path.relpath(remotefile, start=remote_item_path).replace('\\', '/')
-                local_file = local_item_path / Path(relative_path)
-                os.makedirs(local_file.parent, exist_ok=True)
-                current_app.logger.debug(f"Copying remote file '{remotefile}' to '{local_file}'")
-                sftp.get(remotefile, str(local_file), preserve_mtime=True)
-
-            def dir_callback(remotedir):
-                relative_path = os.path.relpath(remotedir, start=remote_item_path).replace('\\', '/')
-                if relative_path != '.':
-                    local_dir = local_item_path / Path(relative_path)
-                    os.makedirs(local_dir, exist_ok=True)
-
-            def unknown_callback(remote_unknown):
-                current_app.logger.warning(f"Skipping unknown item type during walktree: {remote_unknown}")
-
-            sftp.walktree(remote_item_path, file_callback, dir_callback, unknown_callback)
-            current_app.logger.info(f"Successfully downloaded directory '{release_name}' using walktree method.")
-            return True
+        if stat.S_ISDIR(remote_stat.st_mode):
+            # C'est un dossier, on le télécharge récursivement
+            current_app.logger.info(f"'{remote_path}' est un dossier. Lancement du téléchargement récursif.")
+            os.makedirs(local_path, exist_ok=True)
+            sftp_client.get_r(remote_path, local_path)
+            current_app.logger.info(f"Téléchargement récursif de '{remote_path}' terminé.")
         else:
-            current_app.logger.warning(f"Item {remote_item_path} is not a file or directory. Skipping.")
-            return False
+            # C'est un fichier unique
+            current_app.logger.info(f"'{remote_path}' est un fichier. Lancement du téléchargement direct.")
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            sftp_client.get(remote_path, local_path)
+            current_app.logger.info(f"Téléchargement du fichier '{remote_path}' terminé.")
 
+        return True
+
+    except FileNotFoundError:
+        current_app.logger.error(f"Erreur de rapatriement: Le chemin distant '{remote_path}' n'existe pas.")
+        return False
     except Exception as e:
-        current_app.logger.error(f"FATAL error during download of {remote_item_path}: {e}", exc_info=True)
-        if local_item_path.exists():
-            current_app.logger.warning(f"Attempting to cleanup partially downloaded item: {local_item_path}")
-            try:
-                if local_item_path.is_dir():
-                    shutil.rmtree(local_item_path)
-                else:
-                    os.remove(local_item_path)
-                current_app.logger.info(f"Cleanup successful for {local_item_path}")
-            except Exception as cleanup_e:
-                current_app.logger.error(f"Error during cleanup of {local_item_path}: {cleanup_e}")
+        current_app.logger.error(f"Erreur inattendue lors du rapatriement de '{remote_path}': {e}", exc_info=True)
         return False
 
 def _cleanup_staging(item_name):
@@ -200,7 +172,7 @@ def process_pending_staging_items():
                 continue
 
             try:
-                if not _rapatriate_item(sftp, item):
+                if not _rapatriate_item(item, sftp):
                     mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_repatriation', 'Failed to download from seedbox')
                     continue
 
