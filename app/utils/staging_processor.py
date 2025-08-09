@@ -40,7 +40,7 @@ def get_r_recursive(sftp, remotedir, localdir):
         else:
             sftp.get(remote_path, local_path)
 
-def _rapatriate_item(item, sftp_client):
+def _rapatriate_item(item, sftp):
     """
     Downloads an item from the seedbox to the local staging directory.
     Handles both files and directories.
@@ -53,15 +53,15 @@ def _rapatriate_item(item, sftp_client):
     current_app.logger.info(f"Rapatriating '{release_name}' from '{remote_path}' to '{local_item_path}'")
 
     try:
-        remote_stat = sftp_client.stat(remote_path)
+        remote_stat = sftp.stat(remote_path)
         if stat.S_ISDIR(remote_stat.st_mode):
             current_app.logger.info(f"'{release_name}' is a directory, starting recursive download.")
             os.makedirs(local_item_path, exist_ok=True)
-            get_r_recursive(sftp_client, remote_path, local_item_path)
+            get_r_recursive(sftp, remote_path, local_item_path)
         else:
             current_app.logger.info(f"'{release_name}' is a file, starting download.")
             os.makedirs(os.path.dirname(local_item_path), exist_ok=True)
-            sftp_client.get(remote_path, local_item_path)
+            sftp.get(remote_path, local_item_path)
 
         current_app.logger.info(f"Successfully rapatriated '{release_name}'.")
         return True
@@ -174,8 +174,8 @@ def process_pending_staging_items():
         current_app.logger.info("Staging Processor: No items pending staging.")
         return
 
-    sftp_client, transport = _connect_sftp()
-    if not sftp_client:
+    sftp, transport = _connect_sftp()
+    if not sftp:
         current_app.logger.error("Staging Processor: Could not connect to SFTP. Aborting cycle.")
         for torrent_hash in pending_items.keys():
             mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_sftp_connection', 'Could not connect to SFTP server.')
@@ -188,24 +188,24 @@ def process_pending_staging_items():
         item_data['torrent_hash'] = torrent_hash
 
         # 1. Rapatriate item
-        if _rapatriate_item(item_data, sftp_client):
+        if _rapatriate_item(item_data, sftp):
             # 2. Update status to 'in_staging'
             mapping_manager.update_torrent_status_in_map(torrent_hash, 'in_staging', 'Item successfully downloaded to staging.')
 
             # 3. Check Sonarr queue
             queue_item_sonarr = arr_client.find_in_arr_queue_by_hash('sonarr', torrent_hash)
             if queue_item_sonarr:
-                _handle_automatic_import(item, queue_item_sonarr, 'sonarr')
+                _handle_automatic_import(item_data, queue_item_sonarr, 'sonarr')
                 continue
 
             # 4. Check Radarr queue
             queue_item_radarr = arr_client.find_in_arr_queue_by_hash('radarr', torrent_hash)
             if queue_item_radarr:
-                _handle_automatic_import(item, queue_item_radarr, 'radarr')
+                _handle_automatic_import(item_data, queue_item_radarr, 'radarr')
                 continue
 
             # 5. Handle as manual import
-            _handle_manual_import(item)
+            _handle_manual_import(item_data)
 
         else:
             mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_rapatriation', 'Failed to download item from seedbox.')
