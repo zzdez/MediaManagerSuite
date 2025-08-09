@@ -13,6 +13,7 @@ from config import Config # Correct car config.py est à la racine du projet
 # APScheduler imports
 from apscheduler.schedulers.background import BackgroundScheduler
 from app.utils.sftp_scanner import scan_and_map_torrents
+from app.utils import staging_processor
 import datetime
 import atexit
 import threading
@@ -208,6 +209,22 @@ def create_app(config_class=Config):
             id='sftp_scan_job',
             next_run_time=datetime.datetime.now() + datetime.timedelta(seconds=20),
             replace_existing=True # Good practice to avoid issues with reloader
+        )
+
+        # Define and add the new staging processor job
+        def scheduled_staging_processor_job():
+            with app.app_context():
+                current_app.logger.info("Scheduler: Triggering Staging Processor job.")
+                staging_processor.process_pending_staging_items()
+
+        scheduler.add_job(
+            id='staging_processor_job',
+            func=scheduled_staging_processor_job,
+            trigger='interval',
+            minutes=1,
+            next_run_time=datetime.datetime.now() + datetime.timedelta(seconds=40),
+            misfire_grace_time=60,
+            replace_existing=True
         )
 
         scheduler.start()

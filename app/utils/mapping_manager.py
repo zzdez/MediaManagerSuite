@@ -90,7 +90,7 @@ def save_torrent_map(data):
         logger.error(f"An unexpected error occurred while saving torrent map to {map_file}: {e}")
         raise
 
-def add_torrent(release_name, torrent_hash, status='pending_staging'):
+def add_torrent(release_name, torrent_hash, seedbox_download_path, status='pending_staging'):
     """
     Adds a torrent to the map, typically when discovered by a scanner.
     It uses default values for fields that may not be known at discovery time.
@@ -98,16 +98,25 @@ def add_torrent(release_name, torrent_hash, status='pending_staging'):
     """
     _, logger = _get_map_file_path_and_logger()
 
-    if not all([release_name, torrent_hash, status]):
-        logger.error("Missing one or more required arguments for add_torrent (release_name, torrent_hash, status).")
+    if not all([release_name, torrent_hash, status, seedbox_download_path]):
+        logger.error("Missing one or more required arguments for add_torrent (release_name, torrent_hash, seedbox_download_path, status).")
         return False
 
     torrents = load_torrent_map()
     now_iso = datetime.utcnow().isoformat()
 
     if torrent_hash in torrents:
-        logger.info(f"Torrent {torrent_hash} ({release_name}) already exists in map. Skipping add.")
-        return True  # Not an error, just already present
+        # Even if it exists, update the download path if it was unknown before.
+        if torrents[torrent_hash].get("seedbox_download_path") == "unknown" and seedbox_download_path != "unknown":
+            torrents[torrent_hash]["seedbox_download_path"] = seedbox_download_path
+            torrents[torrent_hash]["updated_at"] = now_iso
+            logger.info(f"Torrent {torrent_hash} ({release_name}) already exists but updated its download path.")
+        else:
+            logger.info(f"Torrent {torrent_hash} ({release_name}) already exists in map. Skipping add.")
+        # In both cases of existence, we save and return.
+        save_torrent_map(torrents)
+        return True
+
 
     torrents[torrent_hash] = {
         "release_name": release_name,
@@ -118,7 +127,7 @@ def add_torrent(release_name, torrent_hash, status='pending_staging'):
         "app_type": "unknown",
         "target_id": None,
         "label": "",
-        "seedbox_download_path": "unknown",
+        "seedbox_download_path": seedbox_download_path,
         "original_torrent_name": release_name, # Best guess for now
     }
     logger.info(f"Added new torrent {torrent_hash} ({release_name}) to map with status '{status}'.")
@@ -199,6 +208,24 @@ def get_torrent_by_hash(torrent_hash):
         logger.debug(f"No association found for torrent_hash '{torrent_hash}'.")
     return association
 
+def get_torrents_by_status(status):
+    """
+    Retrieves a list of torrents that match a specific status.
+    """
+    _, logger = _get_map_file_path_and_logger()
+    logger.debug(f"Loading torrents with status: {status}")
+    all_torrents = load_torrent_map()
+
+    matching_torrents = []
+    for torrent_hash, details in all_torrents.items():
+        if details.get('status') == status:
+            # Add the hash to the dictionary for easier processing by the caller
+            details['torrent_hash'] = torrent_hash
+            matching_torrents.append(details)
+
+    logger.info(f"Found {len(matching_torrents)} torrent(s) with status '{status}'.")
+    return matching_torrents
+
 def find_torrent_by_release_name(item_name_in_staging):
     """
     Finds a torrent entry by its release_name.
@@ -277,6 +304,26 @@ def get_all_torrent_hashes():
     logger.debug("Loading all torrent hashes from map.")
     torrents = load_torrent_map()
     return set(torrents.keys())
+
+def guess_arr_type_from_item(item):
+    """
+    Guesses if an item is for Sonarr or Radarr based on its properties.
+    Defaults to 'sonarr' as a fallback.
+    """
+    # First, check the 'app_type' field if it was set explicitly
+    app_type = item.get('app_type', 'unknown').lower()
+    if app_type in ['sonarr', 'radarr']:
+        return app_type
+
+    # If not explicit, guess from path or label
+    download_path = item.get('seedbox_download_path', '').lower()
+    label = item.get('label', '').lower()
+
+    if 'radarr' in download_path or 'radarr' in label:
+        return 'radarr'
+
+    # Default to sonarr, as it's a common setup
+    return 'sonarr'
 
 # Vous pouvez ajouter ici les tests de votre __main__ si vous voulez le tester en standalone,
 # mais assurez-vous de configurer un logger basique et potentiellement de simuler current_app.config

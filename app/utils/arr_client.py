@@ -15,15 +15,15 @@ def parse_media_name(item_name: str) -> dict:
     Parses a media item name to determine if it's a TV show or a movie and extracts details.
     """
     logger.debug(f"parse_media_name: Called with item_name='{item_name}'")
-    # Regex patterns for TV shows
+    # Regex patterns for TV shows, ordered from most specific to most general
     tv_patterns = [
-        re.compile(r"^(?P<title>.+?)[ ._]?S(?P<season>\d{1,2})E(?P<episode>\d{1,3})", re.IGNORECASE),
-        re.compile(r"^(?P<title>.+?)(?:[._\s](?P<year>(?:19|20)\d{2}))?(?:[._\s]+(?:DOC|SUBPACK|SEASON|VOL|DISC|DISQUE|PART))?[._\s]*S(?P<season>\d{1,2})(?![E\d])", re.IGNORECASE), # Refined pattern for Season-only releases
-        re.compile(r"^(?P<title>.+?)[ ._]?Season[ ._]?(?P<season>\d{1,2})[ ._]?Episode[ ._]?(?P<episode>\d{1,3})", re.IGNORECASE),
-        re.compile(r"^(?P<title>.+?)[ ._]?(?P<season>\d{1,2})x(?P<episode>\d{1,3})", re.IGNORECASE), # e.g. Show.Title.1x01
-        re.compile(r"^(?P<title>.+?)(?:[._\s]+S(?P<season>\d{1,2}))(?:[._\s]+E(?P<episode>\d{1,3}))",re.IGNORECASE), # General SxxExx with flexible separators - MODIFIED
         re.compile(r"^(?P<title>.+?)[ ._](?P<year>(?:19|20)\d{2})[ ._]S(?P<season>\d{1,2})E(?P<episode>\d{1,3})", re.IGNORECASE), # Title Year SxxExx
         re.compile(r"^(?P<title>.+?)[ ._]S(?P<season>\d{1,2})[ ._]E(?P<episode>\d{1,3})[ ._](?P<year>(?:19|20)\d{2})", re.IGNORECASE), # Title SxxExx Year
+        re.compile(r"^(?P<title>.+?)[ ._]?Season[ ._]?(?P<season>\d{1,2})[ ._]?Episode[ ._]?(?P<episode>\d{1,3})", re.IGNORECASE),
+        re.compile(r"^(?P<title>.+?)[ ._]?(?P<season>\d{1,2})x(?P<episode>\d{1,3})", re.IGNORECASE), # e.g. Show.Title.1x01
+        re.compile(r"^(?P<title>.+?)(?:[._\s]+S(?P<season>\d{1,2}))(?:[._\s]+E(?P<episode>\d{1,3}))",re.IGNORECASE), # General SxxExx with flexible separators
+        re.compile(r"^(?P<title>.+?)[ ._]?S(?P<season>\d{1,2})E(?P<episode>\d{1,3})", re.IGNORECASE), # Most generic SxxExx
+        re.compile(r"^(?P<title>.+?)(?:[._\s](?P<year>(?:19|20)\d{2}))?(?:[._\s]+(?:DOC|SUBPACK|SEASON|VOL|DISC|DISQUE|PART))?[._\s]*S(?P<season>\d{1,2})(?![E\d])", re.IGNORECASE), # Season-only releases
     ]
 
     # Regex patterns for movies
@@ -981,4 +981,79 @@ def get_sonarr_episode_file_ids_for_season(series_id, season_number):
         return file_ids_for_season
     except (TypeError, ValueError) as e:
         current_app.logger.error(f"Erreur lors du filtrage des fichiers d'épisodes pour la saison {season_number} de la série {series_id}: {e}")
-        return []        
+        return []
+
+def get_sonarr_queue():
+    """Fetches the current download queue from Sonarr."""
+    current_app.logger.info("Fetching queue from Sonarr.")
+    return _sonarr_api_request('GET', 'queue')
+
+def get_radarr_queue():
+    """Fetches the current download queue from Radarr."""
+    current_app.logger.info("Fetching queue from Radarr.")
+    return _radarr_api_request('GET', 'queue')
+
+def find_in_arr_queue_by_hash(arr_type, torrent_hash):
+    """Searches for an item in the Sonarr or Radarr queue by its torrent HASH."""
+    current_app.logger.info(f"Searching in {arr_type} queue for hash: {torrent_hash}")
+
+    if arr_type == 'sonarr':
+        queue_data = get_sonarr_queue()
+    elif arr_type == 'radarr':
+        queue_data = get_radarr_queue()
+    else:
+        current_app.logger.error(f"Invalid arr_type '{arr_type}' for queue search.")
+        return None
+
+    if not queue_data or 'records' not in queue_data:
+        current_app.logger.warning(f"Could not fetch queue for {arr_type} or queue is empty/invalid.")
+        return None
+
+    records = queue_data.get('records', [])
+    for item in records:
+        if item.get('downloadId', '').upper() == torrent_hash.upper():
+            current_app.logger.info(f"Found item in {arr_type} queue with hash {torrent_hash}: {item.get('title')}")
+            return item
+
+    current_app.logger.info(f"No item found in {arr_type} queue with hash: {torrent_hash}")
+    return None
+
+def find_sonarr_series_by_title(title):
+    """Finds a series in Sonarr's library by title."""
+    all_series = get_all_sonarr_series()
+    if not all_series:
+        return None
+
+    normalized_search_title = re.sub(r'[^\w\s]', '', title).lower()
+    for series in all_series:
+        normalized_api_title = re.sub(r'[^\w\s]', '', series.get('title', '')).lower()
+        if normalized_api_title == normalized_search_title:
+            return series
+    return None
+
+def find_radarr_movie_by_title(title):
+    """Finds a movie in Radarr's library by title."""
+    all_movies = _radarr_api_request('GET', 'movie')
+    if not all_movies:
+        return None
+
+    normalized_search_title = re.sub(r'[^\w\s]', '', title).lower()
+    for movie in all_movies:
+        normalized_api_title = re.sub(r'[^\w\s]', '', movie.get('title', '')).lower()
+        if normalized_api_title == normalized_search_title:
+            return movie
+    return None
+
+def sonarr_post_command(command_payload):
+    """Sends a generic command to Sonarr."""
+    current_app.logger.info(f"Sonarr: Sending command: {command_payload.get('name')}")
+    return _sonarr_api_request('POST', 'command', json_data=command_payload)
+
+def radarr_post_command(command_payload):
+    """Sends a generic command to Radarr."""
+    current_app.logger.info(f"Radarr: Sending command: {command_payload.get('name')}")
+    return _radarr_api_request('POST', 'command', json_data=command_payload)
+
+# Aliases for clarity in the new staging processor, pointing to existing functions
+sonarr_trigger_import = trigger_sonarr_scan
+radarr_trigger_import = trigger_radarr_scan

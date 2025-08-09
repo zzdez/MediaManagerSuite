@@ -25,16 +25,20 @@ def scan_and_map_torrents():
         for torrent in completed_torrents:
             torrent_hash = torrent.get('hash')
             release_name = torrent.get('name')
+            download_path = torrent.get('download_dir')
 
-            if torrent_hash and release_name and torrent_hash not in known_hashes:
+            if torrent_hash and release_name and download_path and torrent_hash not in known_hashes:
                 # This is a new torrent, let's add it.
                 mapping_manager.add_torrent(
                     release_name=release_name,
                     torrent_hash=torrent_hash,
+                    seedbox_download_path=download_path,
                     status='pending_staging'
                 )
                 new_torrents_added += 1
                 current_app.logger.info(f"SFTP/rTorrent Scanner: New torrent found and mapped: {release_name} (Hash: {torrent_hash})")
+            elif not download_path:
+                current_app.logger.warning(f"SFTP/rTorrent Scanner: Skipping torrent '{release_name}' because its download path is missing.")
 
         if new_torrents_added > 0:
             current_app.logger.info(f"SFTP/rTorrent Scanner: Added {new_torrents_added} new torrents to the map.")
