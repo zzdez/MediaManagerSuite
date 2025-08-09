@@ -2716,7 +2716,6 @@ def force_sonarr_import_action():
 # ------------------------------------------------------------------------------
 # Import stat module for checking file types from SFTP attributes
 import stat
-from app.utils.sftp_scanner import _connect_sftp, _list_remote_files # Import SFTP utilities
 
 @seedbox_ui_bp.route('/unified_finished_list')
 # Pas besoin de @login_required ici car la page qui l'appelle (index) l'est déjà
