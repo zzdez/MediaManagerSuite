@@ -1007,4 +1007,67 @@ def get_sonarr_episode_file_ids_for_season(series_id, season_number):
         return file_ids_for_season
     except (TypeError, ValueError) as e:
         current_app.logger.error(f"Erreur lors du filtrage des fichiers d'épisodes pour la saison {season_number} de la série {series_id}: {e}")
-        return []        
+        return []
+
+def find_sonarr_series_by_title(title, year=None):
+    """
+    Finds a series in Sonarr's library by title.
+    Returns the series object if a single, exact match is found, otherwise None.
+    """
+    logger.info(f"Searching for series '{title}' in Sonarr library.")
+    all_series = _sonarr_api_request('GET', 'series')
+    if not all_series:
+        return None
+
+    # Normalize search title for robust matching
+    normalized_search_title = re.sub(r'[^\w\s]', '', title).lower()
+
+    found_series = None
+    for series in all_series:
+        normalized_api_title = re.sub(r'[^\w\s]', '', series.get('title', '')).lower()
+        if normalized_api_title == normalized_search_title:
+            if year:
+                if series.get('year') == year:
+                    found_series = series
+                    break
+            else:
+                found_series = series
+                break
+
+    if found_series:
+        logger.info(f"Found matching series in Sonarr: '{found_series.get('title')}' (ID: {found_series.get('id')})")
+    else:
+        logger.warning(f"Series '{title}' not found in Sonarr library.")
+
+    return found_series
+
+def find_radarr_movie_by_title(title, year=None):
+    """
+    Finds a movie in Radarr's library by title.
+    Returns the movie object if a single, exact match is found, otherwise None.
+    """
+    logger.info(f"Searching for movie '{title}' in Radarr library.")
+    all_movies = _radarr_api_request('GET', 'movie')
+    if not all_movies:
+        return None
+
+    normalized_search_title = re.sub(r'[^\w\s]', '', title).lower()
+
+    found_movie = None
+    for movie in all_movies:
+        normalized_api_title = re.sub(r'[^\w\s]', '', movie.get('title', '')).lower()
+        if normalized_api_title == normalized_search_title:
+            if year:
+                if movie.get('year') == year:
+                    found_movie = movie
+                    break
+            else:
+                found_movie = movie
+                break
+
+    if found_movie:
+        logger.info(f"Found matching movie in Radarr: '{found_movie.get('title')}' (ID: {found_movie.get('id')})")
+    else:
+        logger.warning(f"Movie '{title}' not found in Radarr library.")
+
+    return found_movie

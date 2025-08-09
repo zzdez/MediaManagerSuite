@@ -38,6 +38,7 @@ from app.utils.rtorrent_client import (
 
 # Clients Sonarr/Radarr (pour l'ajout de nouveaux médias)
 from app.utils.arr_client import add_new_series_to_sonarr, add_new_movie_to_radarr, get_sonarr_queue, sonarr_trigger_import, get_radarr_queue, radarr_trigger_import
+from app.utils import arr_client
 
 # Gestionnaire de la map des torrents (NOUVELLE FAÇON D'IMPORTER)
 # Ceci suppose que le fichier app/utils/mapping_manager.py contient le NOUVEAU code que je vous ai fourni.
@@ -474,158 +475,66 @@ def sftp_build_remote_file_tree(sftp_client, remote_current_path_posix, local_st
 
 @seedbox_ui_bp.route('/process-staging-item', methods=['POST'])
 @internal_api_required
-def process_staging_item_api(): # Renommé pour éviter conflit si vous aviez une var 'process_staging_item'
-    """
-    API endpoint to be called by sftp_downloader_notifier.py after an item
-    is downloaded to the local staging directory.
-    This endpoint will try to automatically import the item using pre-associations.
-    """
-    logger = current_app.logger # Utiliser le logger de Flask
+def process_staging_item_api():
+    item_name_in_staging = request.json.get("item_name_in_staging")
+    current_app.logger.info(f"Staging Processor: Demande de traitement pour '{item_name_in_staging}'.")
 
-    auth_header = request.headers.get('Authorization')
-    # Optionnel: Sécuriser cet endpoint.
-    # Pour l'instant, on assume qu'il est appelé depuis un script local approuvé.
-    # Vous pourriez ajouter une clé API simple dans l'en-tête ou un token si nécessaire.
-    # Example:
-    # expected_token = current_app.config.get('SFTPSCRIPT_API_TOKEN')
-    # if not expected_token or not auth_header or auth_header != f"Bearer {expected_token}":
-    #     logger.warning("process_staging_item_api: Unauthorized access attempt.")
-    #     return jsonify({"status": "error", "message": "Unauthorized"}), 401
-
-    data = request.get_json()
-    if not data or 'item_name_in_staging' not in data:
-        logger.warning("process_staging_item_api: POST request missing 'item_name_in_staging' in JSON body.")
-        return jsonify({"status": "error", "message": "Missing 'item_name_in_staging' in JSON payload"}), 400
-
-    item_name_in_staging = data['item_name_in_staging']
-    # Sécurité simple: s'assurer que item_name_in_staging ne contient pas de traversée de répertoire
-    if ".." in item_name_in_staging or "/" in item_name_in_staging or "\\" in item_name_in_staging:
-        logger.error(f"process_staging_item_api: Invalid item_name_in_staging (path traversal attempt?): {item_name_in_staging}")
-        return jsonify({"status": "error", "message": "Invalid item name"}), 400
-
-    logger.info(f"process_staging_item_api: Received request to process staging item: '{item_name_in_staging}'")
-
-    # Utiliser torrent_map_manager pour trouver l'association
-    # Note: find_torrent_by_release_name s'attend au nom de la release tel qu'il est dans le staging
-    torrent_hash, mapping_data = torrent_map_manager.find_torrent_by_release_name(item_name_in_staging)
-
-    if not mapping_data:
-        # --- NOUVELLE LOGIQUE DE DÉTECTION DE CONTEXTE ---
-        current_app.logger.info(f"Aucune pré-association trouvée. Vérification des files d'attente Sonarr/Radarr...")
-        item_path_in_staging = os.path.join(current_app.config['LOCAL_STAGING_PATH'], item_name_in_staging)
-
-        # Vérification Sonarr
-        sonarr_queue_data = get_sonarr_queue()
-        sonarr_queue = sonarr_queue_data.get('records', []) if sonarr_queue_data else []
-        matching_sonarr_download = next((d for d in sonarr_queue if item_name_in_staging in d.get('title', '')), None)
-
-        if matching_sonarr_download:
-            download_id = matching_sonarr_download.get('downloadId')
-            current_app.logger.info(f"Item trouvé dans la file de Sonarr (ID: {download_id}). Délégation de l'import.")
-            response_trigger = sonarr_trigger_import(download_id)
-            if response_trigger and response_trigger.get('name') == 'DownloadedEpisodesScan':
-                return jsonify({'status': 'success', 'message': 'Import délégué à Sonarr.'})
-            else:
-                return jsonify({'status': 'error', 'message': 'Échec de la délégation à Sonarr.'}), 500
-
-        # Vérification Radarr (fais de même)
-        radarr_queue_data = get_radarr_queue()
-        radarr_queue = radarr_queue_data.get('records', []) if radarr_queue_data else []
-        matching_radarr_download = next((d for d in radarr_queue if item_name_in_staging in d.get('title', '')), None)
-
-        if matching_radarr_download:
-            download_id = matching_radarr_download.get('downloadId')
-            current_app.logger.info(f"Item trouvé dans la file de Radarr (ID: {download_id}). Délégation de l'import.")
-            response_trigger = radarr_trigger_import(download_id)
-            if response_trigger and response_trigger.get('name') == 'DownloadedMoviesScan':
-                return jsonify({'status': 'success', 'message': 'Import délégué à Radarr.'})
-            else:
-                return jsonify({'status': 'error', 'message': 'Échec de la délégation à Radarr.'}), 500
-
-        # Si toujours rien, alors c'est un vrai import manuel inconnu.
-        current_app.logger.warning(f"L'item '{item_name_in_staging}' n'a pas d'association et n'est pas dans les files d'attente. Traitement manuel requis.")
-        return jsonify({'status': 'manual_required', 'message': 'Item non associé et non trouvé dans les files *Arr.'}), 202
-
-    logger.info(f"process_staging_item_api: Found pre-association for '{item_name_in_staging}': Torrent Hash {torrent_hash}, Type: {mapping_data.get('app_type')}, Target ID: {mapping_data.get('target_id')}")
-
-    full_staging_path_str = str((Path(current_app.config['LOCAL_STAGING_PATH']) / item_name_in_staging).resolve())
-
-    # Vérifier si le chemin existe réellement dans le staging
-    if not os.path.exists(full_staging_path_str):
-        err_msg = f"Staging path '{full_staging_path_str}' does not exist for item '{item_name_in_staging}'."
-        logger.error(f"process_staging_item_api: {err_msg}")
-        torrent_map_manager.update_torrent_status_in_map(torrent_hash, "error_staging_path_missing_on_api_call", err_msg)
-        return jsonify({"status": "error", "message": err_msg}), 404 # Not Found
-
-    # Mettre à jour le statut dans la map avant de commencer le traitement
-    torrent_map_manager.update_torrent_status_in_map(
-        torrent_hash,
-        "processing_by_mms_api",
-        f"MMS API processing started for {item_name_in_staging}"
-    )
-
-    result_from_handler = {}
-    app_type = mapping_data.get('app_type')
-    target_id = mapping_data.get('target_id')
-
-    # path_to_cleanup est le nom de l'item dans le staging, car nos helpers attendent cela
-    # pour la fonction cleanup_staging_subfolder_recursively.
-    path_to_cleanup = item_name_in_staging # Le nom du dossier/fichier principal dans LOCAL_STAGING_PATH
-
-    if app_type == 'sonarr':
-        # Pour l'import automatique, on ne force pas de saison.
-        # _handle_staged_sonarr_item essaiera de la parser ou de se fier à Sonarr.
-        # Si une saison spécifique était stockée dans mapping_data, on pourrait la passer.
-        # Exemple: user_chosen_season_from_map = mapping_data.get('season_number')
-        result_from_handler = _handle_staged_sonarr_item(
-            item_name_in_staging=item_name_in_staging, # Le nom du dossier/fichier dans LOCAL_STAGING_PATH
-            series_id_target=target_id,
-            path_to_cleanup_in_staging_after_success=full_staging_path_str, # Chemin absolu de l'item à nettoyer
-            user_chosen_season=None, # Laisser le helper déterminer ou se fier à Sonarr
-            automated_import=True,
-            torrent_hash_for_status_update=torrent_hash
-        )
-    elif app_type == 'radarr':
-        result_from_handler = _handle_staged_radarr_item(
-            item_name_in_staging=item_name_in_staging, # Le nom du dossier/fichier dans LOCAL_STAGING_PATH
-            movie_id_target=target_id,
-            path_to_cleanup_in_staging_after_success=full_staging_path_str, # Chemin absolu de l'item à nettoyer
-            automated_import=True,
-            torrent_hash_for_status_update=torrent_hash
-        )
-    else:
-        err_msg = f"Unknown association type '{app_type}' for torrent {torrent_hash}, item '{item_name_in_staging}'."
-        logger.error(f"process_staging_item_api: {err_msg}")
-        torrent_map_manager.update_torrent_status_in_map(torrent_hash, "error_unknown_association_type", err_msg)
-        return jsonify({"status": "error", "message": err_msg}), 500
-
-    # Analyser le résultat du helper
-    if result_from_handler.get("success"):
-        logger.info(f"process_staging_item_api: Successfully processed '{item_name_in_staging}' for {app_type} ID {target_id}.")
-        # Le statut aura été mis à "imported_by_mms" par le helper.
-
-        # Maintenant, supprimer l'entrée du map puisque l'import est réussi.
-        if torrent_hash: # S'assurer qu'on a bien un hash (devrait toujours être le cas ici)
-            if torrent_map_manager.remove_torrent_from_map(torrent_hash):
-                logger.info(f"process_staging_item_api: Association pour torrent hash '{torrent_hash}' (Release: {item_name_in_staging}) supprimée du map après import réussi.")
-            else:
-                logger.warning(f"process_staging_item_api: Échec de la suppression de l'association pour hash '{torrent_hash}' du map, bien que l'import ait réussi.")
+    # Étape 1: Chercher une pré-association MMS
+    association = torrent_map_manager.get_torrent_by_release_name(item_name_in_staging)
+    if association:
+        current_app.logger.info("Association MMS trouvée. Lancement de l'import manuel forcé.")
+        arr_type = association.get('app_type')
+        target_id = association.get('target_id')
+        # La logique manuelle existante est appelée ici
+        if arr_type == 'sonarr':
+            _handle_staged_sonarr_item(item_name_in_staging, target_id, None) # Le root_folder_path est récupéré à l'intérieur
         else:
-            logger.warning(f"process_staging_item_api: Aucun torrent_hash disponible pour la suppression du map pour {item_name_in_staging}, bien que l'import ait réussi.")
+            _handle_staged_radarr_item(item_name_in_staging, target_id, None)
+        return jsonify({'status': 'success', 'message': f'Traitement manuel terminé pour {item_name_in_staging}.'})
 
-        return jsonify({"status": "success", "message": f"Successfully processed '{item_name_in_staging}'. Details: {result_from_handler.get('message')}"}), 200
-    elif result_from_handler.get("manual_required"):
-        logger.warning(f"process_staging_item_api: Processing '{item_name_in_staging}' requires manual intervention. Reason: {result_from_handler.get('message')}")
-        # Le statut aura déjà été mis à jour par le helper avec une erreur spécifique.
-        return jsonify({"status": "manual_intervention_required", "message": result_from_handler.get('message')}), 202 # Accepted, mais nécessite action
-    else: # Erreur générique non gérée comme "manual_required" par le helper (devrait être rare)
-        err_msg = f"Error processing '{item_name_in_staging}'. Reason: {result_from_handler.get('message', 'Unknown error from handler')}"
-        logger.error(f"process_staging_item_api: {err_msg}")
-        # Le statut peut ou peut ne pas avoir été mis à jour par le helper, s'assurer qu'il y a une indication d'erreur
-        current_status_data = torrent_map_manager.get_torrent_by_hash(torrent_hash)
-        if current_status_data and not current_status_data.get("status", "").startswith("error_"):
-             torrent_map_manager.update_torrent_status_in_map(torrent_hash, "error_mms_api_processing_failed", err_msg)
-        return jsonify({"status": "error", "message": err_msg}), 500
+    # Étape 2: Si pas d'association, vérifier les files d'attente *Arr
+    current_app.logger.info("Aucune association MMS. Vérification des files d'attente Sonarr/Radarr...")
+
+    # Sonarr
+    sonarr_queue = get_sonarr_queue().get('records', [])
+    matching_sonarr = next((d for d in sonarr_queue if item_name_in_staging in d.get('title', '')), None)
+    if matching_sonarr:
+        current_app.logger.info(f"Item trouvé dans la file de Sonarr. Délégation de l'import.")
+        if sonarr_trigger_import(matching_sonarr.get('downloadId')):
+            return jsonify({'status': 'success', 'message': 'Import délégué à Sonarr.'})
+        else:
+            return jsonify({'status': 'error', 'message': 'Échec de la délégation à Sonarr.'}), 500
+
+    # Radarr
+    radarr_queue = get_radarr_queue().get('records', [])
+    matching_radarr = next((d for d in radarr_queue if item_name_in_staging in d.get('title', '')), None)
+    if matching_radarr:
+        current_app.logger.info(f"Item trouvé dans la file de Radarr. Délégation de l'import.")
+        if radarr_trigger_import(matching_radarr.get('downloadId')):
+            return jsonify({'status': 'success', 'message': 'Import délégué à Radarr.'})
+        else:
+            return jsonify({'status': 'error', 'message': 'Échec de la délégation à Radarr.'}), 500
+
+    # Étape 3: Si toujours rien, c'est un import manuel non associé. Forcer le traitement.
+    current_app.logger.warning(f"'{item_name_in_staging}' non associé et non dans la file. Tentative d'import manuel par MMS.")
+
+    # On doit déterminer si c'est pour Sonarr ou Radarr en parsant le nom
+    parsed_info = arr_client.parse_media_name(item_name_in_staging)
+    media_type = parsed_info.get('type')
+
+    if media_type == 'tv':
+        series_info = arr_client.find_sonarr_series_by_title(parsed_info.get('title'))
+        if series_info:
+            _handle_staged_sonarr_item(item_name_in_staging, series_info['id'], None)
+            return jsonify({'status': 'success', 'message': f'Import manuel réussi pour {item_name_in_staging}.'})
+    elif media_type == 'movie':
+        movie_info = arr_client.find_radarr_movie_by_title(parsed_info.get('title'))
+        if movie_info:
+            _handle_staged_radarr_item(item_name_in_staging, movie_info['id'], None)
+            return jsonify({'status': 'success', 'message': f'Import manuel réussi pour {item_name_in_staging}.'})
+
+    current_app.logger.error(f"Échec de l'import manuel forcé pour '{item_name_in_staging}'. Média non trouvé dans Sonarr/Radarr.")
+    return jsonify({'status': 'error', 'message': 'Média non trouvé dans la librairie *Arr pour un import manuel.'}), 404
 
 
 # ==============================================================================
