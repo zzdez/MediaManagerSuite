@@ -98,11 +98,10 @@ def get_radarr_queue():
     """Récupère la file d'attente de téléchargement de Radarr."""
     return _radarr_api_request("GET", "queue")
 
-def radarr_trigger_import(path, download_id):
+def radarr_trigger_import(download_id):
     """Déclenche un scan d'import pour un chemin spécifique dans Radarr."""
     payload = {
         'name': 'DownloadedMoviesScan',
-        'path': path,
         'downloadId': download_id,
         'importMode': 'Move'
     }
@@ -286,11 +285,10 @@ def get_sonarr_queue():
     """Récupère la file d'attente de téléchargement de Sonarr."""
     return _sonarr_api_request("GET", "queue")
 
-def sonarr_trigger_import(path, download_id):
+def sonarr_trigger_import(download_id):
     """Déclenche un scan d'import pour un chemin spécifique dans Sonarr."""
     payload = {
         'name': 'DownloadedEpisodesScan',
-        'path': path,
         'downloadId': download_id,
         'importMode': 'Move'
     }

@@ -522,7 +522,7 @@ def process_staging_item_api(): # Renommé pour éviter conflit si vous aviez un
         if matching_sonarr_download:
             download_id = matching_sonarr_download.get('downloadId')
             current_app.logger.info(f"Item trouvé dans la file de Sonarr (ID: {download_id}). Délégation de l'import.")
-            response_trigger = sonarr_trigger_import(item_path_in_staging, download_id)
+            response_trigger = sonarr_trigger_import(download_id)
             if response_trigger and response_trigger.get('name') == 'DownloadedEpisodesScan':
                 return jsonify({'status': 'success', 'message': 'Import délégué à Sonarr.'})
             else:
@@ -536,7 +536,7 @@ def process_staging_item_api(): # Renommé pour éviter conflit si vous aviez un
         if matching_radarr_download:
             download_id = matching_radarr_download.get('downloadId')
             current_app.logger.info(f"Item trouvé dans la file de Radarr (ID: {download_id}). Délégation de l'import.")
-            response_trigger = radarr_trigger_import(item_path_in_staging, download_id)
+            response_trigger = radarr_trigger_import(download_id)
             if response_trigger and response_trigger.get('name') == 'DownloadedMoviesScan':
                 return jsonify({'status': 'success', 'message': 'Import délégué à Radarr.'})
             else:
@@ -660,7 +660,7 @@ def _handle_staged_sonarr_item(item_name_in_staging, series_id_target,
         logger.info(f"{log_prefix}L'item '{item_name_in_staging}' correspond à un téléchargement connu de Sonarr (ID: {download_id}). Délégation de l'import.")
 
         # sonarr_trigger_import retourne un objet de commande, pas un simple booléen.
-        response = sonarr_trigger_import(item_path_in_staging, download_id)
+        response = sonarr_trigger_import(download_id)
 
         if response and response.get('name') == 'DownloadedEpisodesScan':
             logger.info(f"{log_prefix}Commande d'import envoyée à Sonarr avec succès.")
@@ -940,7 +940,7 @@ def _handle_staged_radarr_item(item_name_in_staging, movie_id_target,
 
         logger.info(f"{log_prefix}L'item '{item_name_in_staging}' correspond à un téléchargement connu de Radarr (ID: {download_id}). Délégation de l'import.")
 
-        response = radarr_trigger_import(item_path_in_staging, download_id)
+        response = radarr_trigger_import(download_id)
 
         if response and response.get('name') == 'DownloadedMoviesScan':
             logger.info(f"{log_prefix}Commande d'import envoyée à Radarr avec succès.")
