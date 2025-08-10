@@ -230,7 +230,7 @@
                                 <td>{{ item.updated_at_human or item.added_at_human or 'N/A' }}</td>
                                 <td>
                                     {# NOUVELLE ACTION : RÉESSAYER LE RAPATRIEMENT #}
-                                    {% if item.status == 'error_rapatriation' %}
+                                    {% if item.status and item.status.strip().lower() == 'error_rapatriation' %}
                                         <button class="btn btn-sm btn-primary retry-repatriation-btn mb-1 w-100"
                                                 data-hash="{{ item.torrent_hash }}"
                                                 title="Relancer le processus de rapatriement pour cet item.">

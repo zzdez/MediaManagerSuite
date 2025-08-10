@@ -98,6 +98,8 @@
                                 <span class="badge bg-primary">Associé</span>
                             {% elif status == 'error_staging_path_missing' %}
                                 <span class="badge bg-danger">Erreur Staging</span>
+                            {% elif status == 'error_rapatriation' %}
+                                <span class="badge bg-danger">Erreur Rapatriement</span>
                             {% elif status == 'error_mms_all_files_failed_move' %}
                                 <span class="badge bg-danger">Erreur Déplacement</span>
                             {% elif status == 'error_sonarr_season_undefined_for_file' %}
@@ -125,7 +127,7 @@
     <div class="d-flex flex-wrap" style="gap: 3px;">
 
         {# --- NOUVELLE ACTION : RÉESSAYER LE RAPATRIEMENT --- #}
-        {% if status == 'error_rapatriation' %}
+        {% if status and status.strip().lower() == 'error_rapatriation' %}
             <button class="btn btn-sm btn-outline-primary retry-repatriation-btn"
                     data-hash="{{ torrent.hash }}"
                     title="Relancer le processus de rapatriement pour cet item.">
