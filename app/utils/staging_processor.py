@@ -42,7 +42,10 @@ def _get_r_recursive(sftp_client, remotedir, localdir):
 def _rapatriate_item(item, sftp_client):
     release_name = item.get('release_name')
     remote_path = item.get('seedbox_download_path')
-    local_path = os.path.join(current_app.config['LOCAL_STAGING_PATH'], release_name)
+    # On construit le chemin initial
+    raw_local_path = os.path.join(current_app.config['LOCAL_STAGING_PATH'], release_name)
+    # On le normalise pour qu'il soit propre pour Windows
+    local_path = os.path.normpath(raw_local_path)
 
     current_app.logger.info(f"Rapatriement de '{release_name}' depuis '{remote_path}' vers '{local_path}'")
 
