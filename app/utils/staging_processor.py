@@ -42,36 +42,41 @@ def _get_r_recursive(sftp_client, remotedir, localdir):
 def _rapatriate_item(item, sftp_client):
     release_name = item.get('release_name')
     remote_path = item.get('seedbox_download_path')
-    # On construit le chemin initial
     raw_local_path = os.path.join(current_app.config['LOCAL_STAGING_PATH'], release_name)
-    # On le normalise pour qu'il soit propre pour Windows
     local_path = os.path.normpath(raw_local_path)
 
     current_app.logger.info(f"Rapatriement de '{release_name}' depuis '{remote_path}' vers '{local_path}'")
 
     try:
-        # STRATÉGIE N°1 : On suppose que c'est un DOSSIER et on tente un téléchargement récursif.
-        current_app.logger.info(f"Tentative de téléchargement de '{remote_path}' comme un dossier.")
-        os.makedirs(local_path, exist_ok=True)
-        _get_r_recursive(sftp_client, remote_path, local_path)
-        current_app.logger.info(f"Téléchargement du dossier '{remote_path}' réussi.")
-        return True
-    except Exception as e_dir:
-        current_app.logger.warning(f"Échec du téléchargement comme un dossier : {e_dir}. Tentative comme un fichier.")
+        # On vérifie si le chemin distant est un dossier ou un fichier
+        file_attr = sftp_client.stat(remote_path)
+        is_directory = stat.S_ISDIR(file_attr.st_mode)
 
-        try:
-            # STRATÉGIE N°2 (FALLBACK) : On suppose que c'est un FICHIER.
-            # On s'assure que le dossier parent existe localement.
+        if is_directory:
+            # C'est un dossier, on télécharge récursivement
+            current_app.logger.info(f"'{remote_path}' est un dossier. Téléchargement récursif.")
+            os.makedirs(local_path, exist_ok=True)
+            _get_r_recursive(sftp_client, remote_path, local_path)
+            current_app.logger.info(f"Téléchargement du dossier '{remote_path}' réussi.")
+        else:
+            # C'est un fichier, on télécharge directement
+            current_app.logger.info(f"'{remote_path}' est un fichier. Téléchargement direct.")
+            # On s'assure que le dossier parent du fichier local existe
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
             sftp_client.get(remote_path, local_path)
             current_app.logger.info(f"Téléchargement du fichier '{remote_path}' réussi.")
-            return True
-        except Exception as e_file:
-            current_app.logger.error(f"Échec final du rapatriement. Ni un dossier, ni un fichier valide à l'emplacement '{remote_path}': {e_file}", exc_info=True)
-            # On nettoie le dossier local potentiellement vide qui a été créé
-            if os.path.isdir(local_path) and not os.listdir(local_path):
-                shutil.rmtree(local_path)
-            return False
+
+        return True
+
+    except FileNotFoundError:
+        current_app.logger.error(f"Le chemin distant '{remote_path}' n'existe pas.", exc_info=True)
+        return False
+    except Exception as e:
+        current_app.logger.error(f"Échec du rapatriement pour '{remote_path}': {e}", exc_info=True)
+        # Nettoyage si un dossier a été créé pour un téléchargement de dossier qui a échoué
+        if 'is_directory' in locals() and is_directory and os.path.isdir(local_path) and not os.listdir(local_path):
+             shutil.rmtree(local_path)
+        return False
 
 def _cleanup_staging(item_name):
     """Deletes the item from the local staging directory."""
