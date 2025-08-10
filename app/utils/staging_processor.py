@@ -3,6 +3,7 @@ import os
 import stat
 import shutil
 import paramiko
+import time
 from flask import current_app
 from pathlib import Path
 
@@ -134,6 +135,8 @@ def _handle_automatic_import(item, queue_item, arr_type):
     if import_triggered:
         current_app.logger.info(f"Successfully triggered {arr_type} import for '{release_name}'.")
         mapping_manager.update_torrent_status_in_map(torrent_hash, f'imported_by_{arr_type}', f'Import triggered in {arr_type}.')
+        current_app.logger.info("Attente de 15 secondes pour laisser le temps à l'import de se terminer...")
+        time.sleep(15) # Ajoute une pause de 15 secondes
         _cleanup_staging(release_name)
     else:
         current_app.logger.error(f"Failed to trigger {arr_type} import for '{release_name}'.")
@@ -160,6 +163,8 @@ def _handle_manual_import(item):
         if series_list:
             arr_client.trigger_sonarr_scan(str(item_path_in_staging))
             mapping_manager.update_torrent_status_in_map(torrent_hash, 'imported_by_sonarr_manual', f'Manual import scan triggered for series {series_list[0]["title"]}.')
+            current_app.logger.info("Attente de 15 secondes pour laisser le temps à l'import de se terminer...")
+            time.sleep(15) # Ajoute une pause de 15 secondes
             _cleanup_staging(release_name)
         else:
             mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', f'Could not find Sonarr series for title "{title}".')
@@ -168,6 +173,8 @@ def _handle_manual_import(item):
         if movie_list:
             arr_client.trigger_radarr_scan(str(item_path_in_staging))
             mapping_manager.update_torrent_status_in_map(torrent_hash, 'imported_by_radarr_manual', f'Manual import scan triggered for movie {movie_list[0]["title"]}.')
+            current_app.logger.info("Attente de 15 secondes pour laisser le temps à l'import de se terminer...")
+            time.sleep(15) # Ajoute une pause de 15 secondes
             _cleanup_staging(release_name)
         else:
             mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', f'Could not find Radarr movie for title "{title}".')
