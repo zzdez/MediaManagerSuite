@@ -90,7 +90,7 @@ def save_torrent_map(data):
         logger.error(f"An unexpected error occurred while saving torrent map to {map_file}: {e}")
         raise
 
-def add_or_update_torrent_in_map(torrent_hash, release_name, status, seedbox_download_path, app_type=None, target_id=None, label=None, original_torrent_name="N/A"):
+def add_or_update_torrent_in_map(torrent_hash, release_name, status, seedbox_download_path, folder_name=None, app_type=None, target_id=None, label=None, original_torrent_name="N/A"):
     """
     Adds or updates a torrent's pre-association in the map.
     This is the main function for adding/updating torrents.
@@ -116,6 +116,9 @@ def add_or_update_torrent_in_map(torrent_hash, release_name, status, seedbox_dow
     torrents = load_torrent_map()
     now_iso = datetime.utcnow().isoformat()
 
+    # On sauvegarde le folder_name. Si pour une raison quelconque il n'est pas fourni, on se rabat sur le release_name comme solution de secours.
+    folder_name_to_save = folder_name if folder_name else release_name
+
     if torrent_hash in torrents: # Update existing
         # For now, a simple update. More sophisticated logic could be added here
         # to decide what to do if a torrent is re-mapped (e.g., only update certain fields).
@@ -127,7 +130,8 @@ def add_or_update_torrent_in_map(torrent_hash, release_name, status, seedbox_dow
             "seedbox_download_path": seedbox_download_path,
             "original_torrent_name": original_torrent_name,
             "status": status, # Always update status on a new call
-            "updated_at": now_iso
+            "updated_at": now_iso,
+            "folder_name": folder_name_to_save
         })
         logger.info(f"Updated torrent {torrent_hash} ({release_name}) in map.")
     else: # Add new
@@ -140,7 +144,8 @@ def add_or_update_torrent_in_map(torrent_hash, release_name, status, seedbox_dow
             "original_torrent_name": original_torrent_name,
             "status": status,
             "added_at": now_iso,
-            "updated_at": now_iso
+            "updated_at": now_iso,
+            "folder_name": folder_name_to_save
         }
         logger.info(f"Added new torrent {torrent_hash} ({release_name}) to map.")
 
