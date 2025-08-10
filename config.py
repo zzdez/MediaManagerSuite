@@ -56,6 +56,7 @@ class Config:
     SEEDBOX_SFTP_PORT = int(os.getenv('SEEDBOX_SFTP_PORT', '22').split('#')[0].strip())
     SEEDBOX_SFTP_USER = os.getenv('SEEDBOX_SFTP_USER')
     SEEDBOX_SFTP_PASSWORD = os.getenv('SEEDBOX_SFTP_PASSWORD')
+    SEEDBOX_SFTP_REMOTE_PATH_MAPPING = os.getenv('SEEDBOX_SFTP_REMOTE_PATH_MAPPING', '').split('#')[0].strip()
 
     # --- PATHS & DIRECTORIES ---
     # -- Chemins LOCAUX (sur la machine qui exécute MMS) --

@@ -39,13 +39,32 @@ def _get_r_recursive(sftp_client, remotedir, localdir):
         else:
             sftp_client.get(remote_path, local_path)
 
+def _apply_path_mapping(original_path):
+    """Applies the remote path mapping from config if it exists."""
+    mapping_str = current_app.config.get('SEEDBOX_SFTP_REMOTE_PATH_MAPPING')
+    if mapping_str:
+        parts = mapping_str.split(',')
+        if len(parts) == 2:
+            to_remove = parts[0].strip()
+            to_add = parts[1].strip()
+            if original_path.startswith(to_remove):
+                # Replace only the first occurrence
+                new_path = original_path.replace(to_remove, to_add, 1)
+                current_app.logger.info(f"Path mapping applied: '{original_path}' -> '{new_path}'")
+                return new_path
+    return original_path
+
 def _rapatriate_item(item, sftp_client):
     release_name = item.get('release_name')
-    remote_path = item.get('seedbox_download_path')
+    original_remote_path = item.get('seedbox_download_path')
+    remote_path = _apply_path_mapping(original_remote_path)
+
+    # On construit le chemin initial
     raw_local_path = os.path.join(current_app.config['LOCAL_STAGING_PATH'], release_name)
+    # On le normalise pour qu'il soit propre pour Windows
     local_path = os.path.normpath(raw_local_path)
 
-    current_app.logger.info(f"Rapatriement de '{release_name}' depuis '{remote_path}' vers '{local_path}'")
+    current_app.logger.info(f"Rapatriement de '{release_name}' depuis '{remote_path}' (original: {original_remote_path}) vers '{local_path}'")
 
     try:
         # On vérifie si le chemin distant est un dossier ou un fichier
