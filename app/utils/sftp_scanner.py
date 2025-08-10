@@ -7,7 +7,7 @@ def scan_and_map_torrents():
         completed_torrents = rtorrent_client.get_completed_torrents()
 
         # On charge la map complète pour pouvoir la modifier
-        torrent_map = mapping_manager.load_torrents()
+        torrent_map = mapping_manager.load_torrent_map()
         known_hashes = set(torrent_map.keys())
 
         new_torrents_added = 0
