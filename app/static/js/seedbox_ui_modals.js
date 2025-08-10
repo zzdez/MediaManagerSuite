@@ -1298,6 +1298,50 @@ function toggleSelectAll(arrType, selectAllButton) {
 }
 
 
+function handleRetryRepatriation(button) {
+    const torrentHash = button.dataset.hash;
+    if (!torrentHash) {
+        alert('Erreur: Hash du torrent non trouvé.');
+        return;
+    }
+
+    if (!confirm("Voulez-vous vraiment relancer le processus de rapatriement pour cet item ?")) {
+        return;
+    }
+
+    const originalButtonHtml = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Relance...';
+
+    fetch('/seedbox/staging/retry_repatriation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ torrent_hash: torrentHash })
+    })
+    .then(response => response.json().then(data => ({ ok: response.ok, data })))
+    .then(({ ok, data }) => {
+        alert(data.message || 'Action terminée.');
+        if (ok) {
+            // Recharger l'onglet actif si possible
+            const activeTabId = sessionStorage.getItem('activeTab');
+            if (activeTabId) {
+                 window.location.reload();
+            } else {
+                 window.location.reload();
+            }
+        } else {
+            button.disabled = false;
+            button.innerHTML = originalButtonHtml;
+        }
+    })
+    .catch(error => {
+        console.error('Erreur:', error);
+        alert("Une erreur technique est survenue.");
+        button.disabled = false;
+        button.innerHTML = originalButtonHtml;
+    });
+}
+
 console.log("seedbox_ui_modals.js loaded successfully and completely.");
 
 // Ajoute ce bloc de code pour gérer la fermeture propre des modales

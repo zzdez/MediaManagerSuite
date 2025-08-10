@@ -124,6 +124,15 @@
 
     <div class="d-flex flex-wrap" style="gap: 3px;">
 
+        {# --- NOUVELLE ACTION : RÉESSAYER LE RAPATRIEMENT --- #}
+        {% if status == 'error_rapatriation' %}
+            <button class="btn btn-sm btn-outline-primary retry-repatriation-btn"
+                    data-hash="{{ torrent.hash }}"
+                    title="Relancer le processus de rapatriement pour cet item.">
+                <i class="bi bi-arrow-clockwise"></i> Réessayer
+            </button>
+        {% endif %}
+
         {# --- ACTION : MAPPER (pour les torrents inconnus) --- #}
         {% if status == 'unknown' %}
             <button class="btn btn-sm btn-outline-info open-mapping-modal-btn"

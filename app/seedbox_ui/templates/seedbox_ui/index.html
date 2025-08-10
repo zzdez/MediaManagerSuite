@@ -229,6 +229,15 @@
                                 </td>
                                 <td>{{ item.updated_at_human or item.added_at_human or 'N/A' }}</td>
                                 <td>
+                                    {# NOUVELLE ACTION : RÉESSAYER LE RAPATRIEMENT #}
+                                    {% if item.status == 'error_rapatriation' %}
+                                        <button class="btn btn-sm btn-primary retry-repatriation-btn mb-1 w-100"
+                                                data-hash="{{ item.torrent_hash }}"
+                                                title="Relancer le processus de rapatriement pour cet item.">
+                                            <i class="bi bi-arrow-clockwise"></i> Réessayer Rapatriement
+                                        </button>
+                                    {% endif %}
+
                                     {% if item.is_in_staging and item.target_id %}
                                         <button class="btn btn-sm btn-success retry-import-btn mb-1 w-100" data-torrent-hash="{{ item.torrent_hash }}" title="Relancer l'import MMS."><i class="bi bi-play-fill"></i> Réessayer Import</button>
                                     {% elif item.is_in_staging and not item.target_id %}
@@ -711,6 +720,8 @@
                             alert('Une erreur de communication est survenue.');
                         });
                     }
+                } else if (button.classList.contains('retry-repatriation-btn')) {
+                    handleRetryRepatriation(button);
                 }
                 
                 if (button.classList.contains('delete-association-btn')) {
@@ -765,6 +776,11 @@
                             })
                             .catch(error => alert('Erreur de communication.'));
                     }
+                }
+                // --- Action : Réessayer le Rapatriement ---
+                else if (button.classList.contains('retry-repatriation-btn')) {
+                    event.preventDefault();
+                    handleRetryRepatriation(button);
                 }
                 // --- Action : Oublier l'Association ---
                 else if (button.classList.contains('forget-association-btn')) {

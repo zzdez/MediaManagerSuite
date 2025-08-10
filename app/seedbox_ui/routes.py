@@ -4385,6 +4385,26 @@ def sftp_add_and_import_arr_item_placeholder():
         "message": "Placeholder: L'ajout, le rapatriement et l'import pour un nouvel item SFTP ne sont pas encore complètement fonctionnels."
     }), 501 # 501 Not Implemented
 
+@seedbox_ui_bp.route('/staging/retry_repatriation', methods=['POST'])
+@login_required
+def retry_repatriation_endpoint():
+    data = request.json
+    torrent_hash = data.get('torrent_hash')
+
+    if not torrent_hash:
+        return jsonify({'status': 'error', 'message': 'HASH du torrent manquant.'}), 400
+
+    try:
+        # On change simplement le statut, le processeur fera le reste.
+        success = torrent_map_manager.update_torrent_status_in_map(torrent_hash, 'pending_staging')
+        if success:
+            return jsonify({'status': 'success', 'message': f"L'item {torrent_hash} a été remis dans la file d'attente de staging."})
+        else:
+            return jsonify({'status': 'error', 'message': 'Torrent non trouvé dans la map.'}), 404
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 @seedbox_ui_bp.route('/run_staging_processor', methods=['POST'])
 @internal_api_required
 def run_staging_processor_endpoint():
