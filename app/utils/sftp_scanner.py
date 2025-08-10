@@ -5,15 +5,24 @@ def scan_and_map_torrents():
     current_app.logger.info("rTorrent Scanner: Starting scan for completed torrents.")
     try:
         completed_torrents = rtorrent_client.get_completed_torrents()
-        known_hashes = mapping_manager.get_all_torrent_hashes()
-        new_torrents_added = 0
 
+        # On charge la map complète pour pouvoir la modifier
+        torrent_map = mapping_manager.load_torrents()
+        known_hashes = set(torrent_map.keys())
+
+        new_torrents_added = 0
         for torrent in completed_torrents:
             torrent_hash = torrent.get('hash')
             release_name = torrent.get('name')
             download_path = torrent.get('base_path')
 
-            if torrent_hash and release_name and download_path and torrent_hash not in known_hashes:
+            if torrent_hash in known_hashes:
+                # CAS A: Le torrent est déjà connu (probablement un ajout manuel)
+                if torrent_map[torrent_hash].get('status') == 'pending_download_on_seedbox':
+                    mapping_manager.update_torrent_status_in_map(torrent_hash, 'pending_staging')
+                    current_app.logger.info(f"rTorrent Scanner: Torrent '{release_name}' is now complete. Marked as 'pending_staging'.")
+            else:
+                # CAS B: Le torrent est nouveau (probablement un ajout automatique par *Arr)
                 mapping_manager.add_or_update_torrent_in_map(
                     release_name=release_name,
                     torrent_hash=torrent_hash,
@@ -21,7 +30,9 @@ def scan_and_map_torrents():
                     seedbox_download_path=download_path
                 )
                 new_torrents_added += 1
-                current_app.logger.info(f"rTorrent Scanner: New torrent mapped: {release_name}")
-        current_app.logger.info(f"rTorrent Scanner: Added {new_torrents_added} new torrents to the map.")
+
+        if new_torrents_added > 0:
+            current_app.logger.info(f"rTorrent Scanner: Added {new_torrents_added} new torrents to the map.")
+
     except Exception as e:
         current_app.logger.error(f"rTorrent Scanner Error: {e}", exc_info=True)

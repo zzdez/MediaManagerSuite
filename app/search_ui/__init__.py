@@ -381,7 +381,7 @@ def download_and_map():
                 label=rtorrent_label,
                 seedbox_download_path=seedbox_full_path,
                 original_torrent_name=release_name_original,
-                status='pending_staging' # <--- AJOUTE CETTE LIGNE
+                status='pending_download_on_seedbox'
             )
             return jsonify({'status': 'success', 'message': 'Torrent ajouté et mappé avec succès.'})
         else:
