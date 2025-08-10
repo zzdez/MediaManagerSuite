@@ -55,17 +55,16 @@ def _apply_path_mapping(original_path):
                 return new_path
     return original_path
 
-def _rapatriate_item(item, sftp_client):
+def _rapatriate_item(item, sftp_client, folder_name):
     release_name = item.get('release_name')
     original_remote_path = item.get('seedbox_download_path')
     remote_path = _apply_path_mapping(original_remote_path)
 
-    # On construit le chemin initial
-    raw_local_path = os.path.join(current_app.config['LOCAL_STAGING_PATH'], release_name)
-    # On le normalise pour qu'il soit propre pour Windows
+    # Le chemin local utilise maintenant le vrai nom de dossier
+    raw_local_path = os.path.join(current_app.config['LOCAL_STAGING_PATH'], folder_name)
     local_path = os.path.normpath(raw_local_path)
 
-    current_app.logger.info(f"Rapatriement de '{release_name}' depuis '{remote_path}' (original: {original_remote_path}) vers '{local_path}'")
+    current_app.logger.info(f"Rapatriement de '{release_name}' (dossier: {folder_name}) depuis '{remote_path}' vers '{local_path}'")
 
     try:
         # On vérifie si le chemin distant est un dossier ou un fichier
@@ -114,13 +113,13 @@ def _cleanup_staging(item_name):
         current_app.logger.error(f"Error cleaning up staging for {item_path}: {e}", exc_info=True)
         return False
 
-def _handle_automatic_import(item, queue_item, arr_type):
+def _handle_automatic_import(item, queue_item, arr_type, folder_name):
     """
     Handles the import process when the item is found in Sonarr/Radarr's queue.
     """
     torrent_hash = item['torrent_hash']
     release_name = item['release_name']
-    current_app.logger.info(f"Handling automatic import for '{release_name}' (hash: {torrent_hash}) for {arr_type}.")
+    current_app.logger.info(f"Handling automatic import for '{release_name}' (folder: {folder_name}) for {arr_type}.")
 
     import_triggered = False
     if arr_type == 'sonarr':
@@ -137,26 +136,26 @@ def _handle_automatic_import(item, queue_item, arr_type):
         mapping_manager.update_torrent_status_in_map(torrent_hash, f'imported_by_{arr_type}', f'Import triggered in {arr_type}.')
         current_app.logger.info("Attente de 15 secondes pour laisser le temps à l'import de se terminer...")
         time.sleep(15) # Ajoute une pause de 15 secondes
-        _cleanup_staging(release_name)
+        _cleanup_staging(folder_name)
     else:
         current_app.logger.error(f"Failed to trigger {arr_type} import for '{release_name}'.")
         mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_auto_import', f'Failed to trigger import in {arr_type}.')
 
-def _handle_manual_import(item):
+def _handle_manual_import(item, folder_name):
     """
     Handles the import process when the item is NOT in Sonarr/Radarr's queue.
     This implies it was a manual download.
     """
     torrent_hash = item['torrent_hash']
     release_name = item['release_name']
-    current_app.logger.info(f"Handling manual import for '{release_name}'.")
+    current_app.logger.info(f"Handling manual import for '{release_name}' (folder: {folder_name}).")
 
     parsed_info = parse_media_name(release_name)
     media_type = parsed_info.get('type')
     title = parsed_info.get('title')
 
     local_staging_path = current_app.config['LOCAL_STAGING_PATH']
-    item_path_in_staging = Path(local_staging_path) / release_name
+    item_path_in_staging = Path(local_staging_path) / folder_name
 
     if media_type == 'tv':
         series_list = arr_client.search_sonarr_by_title(title)
@@ -165,7 +164,7 @@ def _handle_manual_import(item):
             mapping_manager.update_torrent_status_in_map(torrent_hash, 'imported_by_sonarr_manual', f'Manual import scan triggered for series {series_list[0]["title"]}.')
             current_app.logger.info("Attente de 15 secondes pour laisser le temps à l'import de se terminer...")
             time.sleep(15) # Ajoute une pause de 15 secondes
-            _cleanup_staging(release_name)
+            _cleanup_staging(folder_name)
         else:
             mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', f'Could not find Sonarr series for title "{title}".')
     elif media_type == 'movie':
@@ -175,7 +174,7 @@ def _handle_manual_import(item):
             mapping_manager.update_torrent_status_in_map(torrent_hash, 'imported_by_radarr_manual', f'Manual import scan triggered for movie {movie_list[0]["title"]}.')
             current_app.logger.info("Attente de 15 secondes pour laisser le temps à l'import de se terminer...")
             time.sleep(15) # Ajoute une pause de 15 secondes
-            _cleanup_staging(release_name)
+            _cleanup_staging(folder_name)
         else:
             mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', f'Could not find Radarr movie for title "{title}".')
     else:
@@ -205,21 +204,22 @@ def process_pending_staging_items():
 
     for torrent_hash, item_data in pending_items.items():
         item_data['torrent_hash'] = torrent_hash
+        folder_name = item_data.get('folder_name', item_data['release_name'])
 
-        if _rapatriate_item(item_data, sftp_client):
+        if _rapatriate_item(item_data, sftp_client, folder_name):
             mapping_manager.update_torrent_status_in_map(torrent_hash, 'in_staging', 'Item successfully downloaded to staging.')
 
             queue_item_sonarr = arr_client.find_in_arr_queue_by_hash('sonarr', torrent_hash)
             if queue_item_sonarr:
-                _handle_automatic_import(item_data, queue_item_sonarr, 'sonarr')
+                _handle_automatic_import(item_data, queue_item_sonarr, 'sonarr', folder_name)
                 continue
 
             queue_item_radarr = arr_client.find_in_arr_queue_by_hash('radarr', torrent_hash)
             if queue_item_radarr:
-                _handle_automatic_import(item_data, queue_item_radarr, 'radarr')
+                _handle_automatic_import(item_data, queue_item_radarr, 'radarr', folder_name)
                 continue
 
-            _handle_manual_import(item_data)
+            _handle_manual_import(item_data, folder_name)
         else:
             mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_rapatriation', 'Failed to download item from seedbox.')
 
