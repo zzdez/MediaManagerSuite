@@ -136,9 +136,9 @@
             <button type="button" class="btn btn-success btn-md" data-bs-toggle="modal" data-bs-target="#addTorrentModal">
                 <i class="bi bi-plus-circle-fill"></i> Ajouter un Torrent
             </button>
-            <a href="{{ url_for('trigger_sftp_scan_manual') }}" class="btn btn-info btn-md" role="button">
-                <i class="bi bi-search"></i> Lancer un Scan SFTP
-            </a>
+            <button id="run-staging-processor-btn" class="btn btn-info btn-md">
+                <i class="bi bi-gear-fill"></i> Lancer le Traitement du Staging
+            </button>
         </div>
     </div>
 
@@ -334,6 +334,37 @@
         };
     </script>
     <script src="{{ url_for('static', filename='js/seedbox_ui_modals.js') }}"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const runButton = document.getElementById('run-staging-processor-btn');
+        if (runButton) {
+            runButton.addEventListener('click', function() {
+                this.disabled = true;
+                this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Lancement...';
+
+                fetch("{{ url_for('seedbox_ui.run_staging_processor_endpoint') }}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Internal-API-Key': "{{ config.INTERNAL_API_KEY }}"
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    alert(data.message || 'Action terminée.');
+                    runButton.disabled = false;
+                    runButton.innerHTML = '<i class="bi bi-gear-fill"></i> Lancer le Traitement du Staging';
+                })
+                .catch(error => {
+                    console.error('Erreur:', error);
+                    alert('Une erreur est survenue.');
+                    runButton.disabled = false;
+                    runButton.innerHTML = '<i class="bi bi-gear-fill"></i> Lancer le Traitement du Staging';
+                });
+            });
+        }
+    });
+</script>
 <script>
     // ==================================================================== //
     // --- SCRIPT SPÉCIFIQUE À LA PAGE SEEDBOX/INDEX.HTML (VERSION STABLE) ---
