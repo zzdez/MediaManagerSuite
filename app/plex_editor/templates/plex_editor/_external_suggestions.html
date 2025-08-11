@@ -1,0 +1,18 @@
+<div class="row mb-3">
+    <div class="col-md-2">
+        <img src="{{ suggestion.poster_url }}" class="img-fluid rounded">
+    </div>
+    <div class="col-md-10">
+        <h5>{{ suggestion.title or suggestion.name }} ({{ suggestion.year }})</h5>
+        <p class="text-muted small">{{ suggestion.overview }}</p>
+        {% if suggestion.is_monitored %}
+            <span class="badge bg-success">Déjà surveillé dans Sonarr/Radarr</span>
+        {% else %}
+            <button class="btn btn-sm btn-primary add-to-arr-btn"
+                    data-media-type="{{ 'movie' if suggestion.title else 'tv' }}"
+                    data-id="{{ suggestion.id or suggestion.tvdb_id }}">
+                <i class="bi bi-plus-circle"></i> Ajouter et Rechercher
+            </button>
+        {% endif %}
+    </div>
+</div>

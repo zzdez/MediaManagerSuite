@@ -148,24 +148,28 @@ def get_radarr_tag_id(tag_label):
         return None
 
 def get_radarr_movie_by_guid(plex_guid):
-    """Finds a movie in Radarr using a Plex GUID (e.g., 'imdb://tt1234567')."""
-    if 'imdb' in plex_guid:
-        id_key = 'imdbId'
-        id_value = plex_guid.split('//')[-1]
-    elif 'tmdb' in plex_guid:
+    """Finds a movie in Radarr using a Plex GUID (e.g., 'imdb://tt1234567', 'tmdb:12345')."""
+    id_key = None
+    id_value = None
+    try:
+        if 'imdb' in plex_guid:
+            id_key = 'imdbId'
+            # Handles imdb://tt1234567
+            id_value = re.split(r'[:/]+', plex_guid)[-1]
+        elif 'tmdb' in plex_guid:
             id_key = 'tmdbId'
-            try:
-                id_value = int(plex_guid.split('//')[-1])
-            except (ValueError, IndexError):
-                current_app.logger.error(f"Impossible d'extraire un entier du tmdb_guid: {plex_guid}")
-                return None
-    else:
+            # Handles tmdb://12345 and tmdb:12345
+            id_value = int(re.split(r'[:/]+', plex_guid)[-1])
+        else:
+            return None
+    except (ValueError, IndexError):
+        current_app.logger.error(f"Could not parse ID from Radarr GUID: {plex_guid}")
         return None
 
     movies = _radarr_api_request('GET', 'movie')
     if movies:
         for movie in movies:
-            if movie.get(id_key) == id_value:
+            if movie.get(id_key) and str(movie.get(id_key)) == str(id_value):
                 return movie
     return None
 
@@ -323,24 +327,28 @@ def get_sonarr_tag_id(tag_label):
     return None
 
 def get_sonarr_series_by_guid(plex_guid):
-    """Finds a series in Sonarr using a Plex GUID (e.g., 'tvdb://12345')."""
+    """Finds a series in Sonarr using a Plex GUID (e.g., 'tvdb://12345', 'tvdb:12345')."""
+    id_key = None
     id_value = None
-    if 'tvdb' in plex_guid:
-        id_key = 'tvdbId'
-        try:
-            id_value = int(plex_guid.split('//')[-1])
-        except (ValueError, IndexError):
+    try:
+        if 'tvdb' in plex_guid:
+            id_key = 'tvdbId'
+            # Handles tvdb://12345 and tvdb:12345
+            id_value = int(re.split(r'[:/]+', plex_guid)[-1])
+        elif 'imdb' in plex_guid:
+            id_key = 'imdbId'
+            # Handles imdb://tt1234567
+            id_value = re.split(r'[:/]+', plex_guid)[-1]
+        else:
             return None
-    elif 'imdb' in plex_guid:
-        id_key = 'imdbId'
-        id_value = plex_guid.split('//')[-1]
-    else:
+    except (ValueError, IndexError):
+        current_app.logger.error(f"Could not parse ID from Sonarr GUID: {plex_guid}")
         return None
 
     all_series = _sonarr_api_request('GET', 'series')
     if all_series:
         for series in all_series:
-            if series.get(id_key) == id_value:
+            if series.get(id_key) and str(series.get(id_key)) == str(id_value):
                 return series
     return None
 

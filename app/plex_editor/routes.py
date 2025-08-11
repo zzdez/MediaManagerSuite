@@ -448,7 +448,6 @@ def get_media_items():
                     search_title = library.search(title__icontains=title_filter, **search_args)
                     search_original = library.search(originalTitle__icontains=title_filter, **search_args)
 
-                    # Logique de recherche intelligente pour titleSort
                     search_sort_smart = []
                     if title_filter.lower().startswith('the '):
                         search_term_without_article = title_filter[4:]
@@ -456,13 +455,12 @@ def get_media_items():
                     else:
                         search_sort_smart = library.search(titleSort__icontains=title_filter, **search_args)
 
-                    # Fusion des résultats directs
                     direct_results = search_title + search_original + search_sort_smart
                     merged_results = {item.ratingKey: item for item in direct_results}
 
                     # --- Palier 2 & 3 : Enrichissement et Recherche Étendue (SEULEMENT si nécessaire) ---
                     if not merged_results:
-                        current_app.logger.info("Direct Plex search yielded no results. Attempting external API enrichment.")
+                        current_app.logger.info(f"Direct Plex search for '{title_filter}' yielded no results. Attempting external API enrichment.")
                         tmdb_client = TheMovieDBClient()
                         tvdb_client = CustomTVDBClient()
 
@@ -497,6 +495,40 @@ def get_media_items():
                 else:
                     # Comportement normal si pas de filtre de titre
                     items_from_lib = library.search(**search_args)
+
+                # --- NOUVEAU BLOC DE SUGGESTIONS EXTERNES ---
+                # Si, après toutes les recherches, la liste est toujours vide
+                if not items_from_lib and title_filter:
+                    external_suggestions = []
+                    current_app.logger.info(f"No results in Plex for '{title_filter}'. Searching for external suggestions.")
+
+                    tmdb_client = TheMovieDBClient()
+                    tvdb_client = CustomTVDBClient()
+
+                    # On vérifie le statut dans Sonarr/Radarr pour chaque suggestion
+                    if library.type == 'movie':
+                        tmdb_results = tmdb_client.search_movie(title_filter)
+                        for movie in tmdb_results[:5]: # On limite à 5 suggestions
+                            tmdb_id = movie.get('id')
+                            radarr_entry = get_radarr_movie_by_guid(f'tmdb:{tmdb_id}')
+                            movie['is_monitored'] = radarr_entry is not None
+                            # Pour le template
+                            movie['poster_url'] = f"https://image.tmdb.org/t/p/w500{movie.get('poster_path')}" if movie.get('poster_path') else ''
+                            movie['year'] = movie.get('release_date', 'N/A').split('-')[0] if movie.get('release_date') else 'N/A'
+                            external_suggestions.append(movie)
+
+                    elif library.type == 'show':
+                        tvdb_results = tvdb_client.search_series(title_filter)
+                        for series in tvdb_results[:5]:
+                            tvdb_id = series.get('tvdb_id')
+                            sonarr_entry = get_sonarr_series_by_guid(f'tvdb:{tvdb_id}')
+                            series['is_monitored'] = sonarr_entry is not None
+                            # Pour le template
+                            series['poster_url'] = series.get('image_url', '')
+                            series['year'] = series.get('first_air_time', 'N/A')
+                            external_suggestions.append(series)
+
+                    return render_template('plex_editor/_media_table.html', items=[], external_suggestions=external_suggestions)
 
                 # Le filtrage "AND" se fait maintenant ici, sur les résultats pré-filtrés
                 if cleaned_genres and genre_logic == 'and':
@@ -618,7 +650,7 @@ def get_media_items():
                         filtered_items.append(item)
 
         filtered_items.sort(key=lambda x: getattr(x, 'titleSort', x.title).lower())
-        return render_template('plex_editor/_media_table.html', items=filtered_items)
+        return render_template('plex_editor/_media_table.html', items=filtered_items, external_suggestions=[])
 
     except Exception as e:
         current_app.logger.error(f"Erreur API get_media_items: {e}", exc_info=True)
