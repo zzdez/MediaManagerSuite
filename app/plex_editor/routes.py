@@ -473,7 +473,7 @@ def get_media_items():
                                     all_possible_titles.add(movie.get('title', '').lower())
                                     all_possible_titles.add(movie.get('original_title', '').lower())
                         elif library.type == 'show':
-                            tvdb_results = tvdb_client.search_series(title_filter)
+                            tvdb_results = tvdb_client.search_and_translate_series(title_filter)
                             if tvdb_results:
                                 for series in tvdb_results:
                                     all_possible_titles.add(series.get('name', '').lower())
