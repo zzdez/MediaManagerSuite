@@ -442,13 +442,23 @@ def get_media_items():
 
                 items_from_lib = []
                 if title_filter:
-                    # Recherche sur plusieurs champs si un filtre de titre est appliqué
+                    # Recherche sur les champs standards
                     search_title = library.search(title__icontains=title_filter, **search_args)
                     search_original = library.search(originalTitle__icontains=title_filter, **search_args)
-                    search_sort = library.search(titleSort__icontains=title_filter, **search_args)
 
-                    # Fusionner les résultats et supprimer les doublons
-                    merged_results = {item.ratingKey: item for item in search_title + search_original + search_sort}
+                    # Logique de recherche intelligente pour titleSort
+                    search_sort_smart = []
+                    if title_filter.lower().startswith('the '):
+                        # Si la recherche commence par "The ", on cherche la suite dans titleSort
+                        search_term_without_article = title_filter[4:]
+                        search_sort_smart = library.search(titleSort__icontains=search_term_without_article, **search_args)
+                    else:
+                        # Sinon, on fait une recherche normale sur titleSort (utile pour les titres sans article)
+                        search_sort_smart = library.search(titleSort__icontains=title_filter, **search_args)
+
+                    # Fusionner tous les résultats
+                    all_results = search_title + search_original + search_sort_smart
+                    merged_results = {item.ratingKey: item for item in all_results}
                     items_from_lib = list(merged_results.values())
                 else:
                     # Comportement normal si pas de filtre de titre
