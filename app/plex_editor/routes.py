@@ -512,6 +512,7 @@ def get_media_items():
                             tmdb_id = movie.get('id')
                             radarr_entry = get_radarr_movie_by_guid(f'tmdb:{tmdb_id}')
                             movie['is_monitored'] = radarr_entry is not None
+                            movie['source_url'] = f"https://www.themoviedb.org/movie/{movie.get('id')}"
                             # Pour le template
                             movie['poster_url'] = f"https://image.tmdb.org/t/p/w500{movie.get('poster_path')}" if movie.get('poster_path') else ''
                             movie['year'] = movie.get('release_date', 'N/A').split('-')[0] if movie.get('release_date') else 'N/A'
@@ -523,6 +524,7 @@ def get_media_items():
                             tvdb_id = series.get('tvdb_id')
                             sonarr_entry = get_sonarr_series_by_guid(f'tvdb:{tvdb_id}')
                             series['is_monitored'] = sonarr_entry is not None
+                            series['source_url'] = f"https://thetvdb.com/series/{series.get('slug')}"
                             # Pour le template
                             series['poster_url'] = series.get('image_url', '')
                             series['year'] = series.get('first_air_time', 'N/A')
