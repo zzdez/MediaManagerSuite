@@ -321,6 +321,7 @@ def get_user_specific_plex_server_from_id(user_id):
 @plex_editor_bp.route('/api/media_items', methods=['POST'])
 @login_required
 def get_media_items():
+    # --- 1. Récupération des filtres ---
     data = request.json
     user_id = data.get('userId')
     library_keys = data.get('libraryKeys', [])
@@ -336,7 +337,6 @@ def get_media_items():
     writer_filter = data.get('writer')
     studios_filter = data.get('studios', [])
 
-
     cleaned_genres = [genre for genre in genres_filter if genre]
     cleaned_collections = [c for c in collections_filter if c]
     cleaned_resolutions = [r for r in resolutions_filter if r]
@@ -346,313 +346,203 @@ def get_media_items():
         return jsonify({'error': 'ID utilisateur et au moins une clé de bibliothèque sont requis.'}), 400
 
     try:
+        # --- 2. Connexion au serveur ---
         target_plex_server = get_user_specific_plex_server_from_id(user_id)
         if not target_plex_server:
             return jsonify({'error': f"Impossible de se connecter en tant que {user_id}."}), 500
 
-        all_media_from_plex = []
+        # --- 3. NOUVELLE LOGIQUE : Recherche unifiée sur Plex d'abord ---
+        all_plex_items = {}  # Utilise un dictionnaire pour dédupliquer par ratingKey
+
         for lib_key in library_keys:
             try:
                 library = target_plex_server.library.sectionByID(int(lib_key))
 
+                # Construit les arguments de base pour cette bibliothèque
                 search_args = {}
-                # Pour la logique 'AND', on ne met qu'un seul genre dans la recherche initiale
-                # pour filtrer un minimum côté serveur, le reste sera fait en Python.
-                # Pour 'OR', on peut tout passer.
-                if cleaned_genres:
-                    if genre_logic == 'and':
-                        search_args['genre'] = cleaned_genres[0]
-                    else: # 'or'
-                        search_args['genre'] = cleaned_genres
+                # Les filtres suivants sont passés directement à l'API Plex
+                if cleaned_genres and genre_logic == 'or':
+                    search_args['genre'] = cleaned_genres
+                # Pour la logique 'AND', on filtre plus tard en Python
+                elif cleaned_genres and genre_logic == 'and':
+                    search_args['genre'] = cleaned_genres[0] # Pré-filtre sur le premier
 
                 if year_filter:
                     try:
                         search_args['year'] = int(year_filter)
-                    except (ValueError, TypeError):
-                        pass # Ignorer si la valeur n'est pas un entier valide
-
-                date_filter = data.get('dateFilter', {})
-                date_type = date_filter.get('type')
-
-                if date_type and date_filter.get('preset'):
-                    preset = date_filter['preset']
-                    today = datetime.now()
-                    start_date, end_date = None, None
-
-                    if preset == 'today':
-                        start_date = today.replace(hour=0, minute=0, second=0)
-                        end_date = today.replace(hour=23, minute=59, second=59)
-                    elif preset == 'last7days':
-                        start_date = today - timedelta(days=7)
-                        end_date = today
-                    elif preset == 'last30days':
-                        start_date = today - timedelta(days=30)
-                        end_date = today
-                    elif preset == 'thisMonth':
-                        start_date = today.replace(day=1, hour=0, minute=0, second=0)
-                        end_date = today
-                    elif preset == 'lastMonth':
-                        end_of_last_month = today.replace(day=1) - timedelta(days=1)
-                        start_date = end_of_last_month.replace(day=1, hour=0, minute=0, second=0)
-                        end_date = end_of_last_month.replace(hour=23, minute=59, second=59)
-                    elif preset == 'custom':
-                        start_date_str = date_filter.get('start')
-                        end_date_str = date_filter.get('end')
-                        if start_date_str:
-                            start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
-                        if end_date_str:
-                            end_date = datetime.strptime(end_date_str, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
-
-                    if start_date:
-                        search_args[f'{date_type}>>'] = start_date
-                    if end_date:
-                        search_args[f'{date_type}<<'] = end_date
-
-                rating_filter = data.get('ratingFilter', {})
-                if rating_filter and rating_filter.get('operator'):
-                    operator = rating_filter['operator']
-                    value = rating_filter.get('value')
-
-                    # Pour 'Est Noté', on cherche les notes strictement supérieures à 0.
-                    if operator == 'is_rated':
-                        search_args['userRating>>'] = 0
-                    
-                    # Pour 'N'est Pas Noté', on utilise la valeur spéciale -1 découverte par le script.
-                    elif operator == 'is_not_rated':
-                        search_args['userRating'] = -1
-                    
-                    # Le reste de la logique (gte, lte, eq) est correct et ne change pas.
-                    elif value:
-                        try:
-                            rating_value = float(value)
-                            if operator == 'gte':
-                                search_args['userRating>>'] = rating_value
-                            elif operator == 'lte':
-                                search_args['userRating<<'] = rating_value
-                            elif operator == 'eq':
-                                search_args['userRating'] = rating_value
-                        except (ValueError, TypeError):
-                            pass # Ignorer si la valeur n'est pas un nombre valide
-
+                    except (ValueError, TypeError): pass
                 if cleaned_collections:
                     search_args['collection'] = cleaned_collections
-
                 if cleaned_resolutions:
                     search_args['resolution'] = cleaned_resolutions
                 if cleaned_studios:
                     search_args['studio'] = cleaned_studios
 
-                items_from_lib = []
+                date_filter = data.get('dateFilter', {})
+                date_type = date_filter.get('type')
+                if date_type and date_filter.get('preset'):
+                    preset = date_filter['preset']
+                    today = datetime.now()
+                    start_date, end_date = None, None
+                    if preset == 'today':
+                        start_date, end_date = today.replace(hour=0, minute=0, second=0), today.replace(hour=23, minute=59, second=59)
+                    elif preset == 'last7days':
+                        start_date, end_date = today - timedelta(days=7), today
+                    elif preset == 'last30days':
+                        start_date, end_date = today - timedelta(days=30), today
+                    elif preset == 'thisMonth':
+                        start_date, end_date = today.replace(day=1, hour=0, minute=0, second=0), today
+                    elif preset == 'lastMonth':
+                        end_of_last_month = today.replace(day=1) - timedelta(days=1)
+                        start_date, end_date = end_of_last_month.replace(day=1, hour=0, minute=0, second=0), end_of_last_month.replace(hour=23, minute=59, second=59)
+                    elif preset == 'custom':
+                        start_date_str, end_date_str = date_filter.get('start'), date_filter.get('end')
+                        if start_date_str: start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+                        if end_date_str: end_date = datetime.strptime(end_date_str, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+                    if start_date: search_args[f'{date_type}>>'] = start_date
+                    if end_date: search_args[f'{date_type}<<'] = end_date
+
+                rating_filter = data.get('ratingFilter', {})
+                if rating_filter and rating_filter.get('operator'):
+                    operator, value = rating_filter['operator'], rating_filter.get('value')
+                    if operator == 'is_rated': search_args['userRating>>'] = 0
+                    elif operator == 'is_not_rated': search_args['userRating'] = -1
+                    elif value:
+                        try:
+                            rating_value = float(value)
+                            if operator == 'gte': search_args['userRating>>'] = rating_value
+                            elif operator == 'lte': search_args['userRating<<'] = rating_value
+                            elif operator == 'eq': search_args['userRating'] = rating_value
+                        except (ValueError, TypeError): pass
+
+                # Logique de recherche par titre unifiée
                 if title_filter:
-                    # --- Palier 1 : Recherche Directe et Rapide sur plusieurs champs ---
                     search_title = library.search(title__icontains=title_filter, **search_args)
                     search_original = library.search(originalTitle__icontains=title_filter, **search_args)
 
                     search_sort_smart = []
                     if title_filter.lower().startswith('the '):
-                        search_term_without_article = title_filter[4:]
-                        search_sort_smart = library.search(titleSort__icontains=search_term_without_article, **search_args)
+                        search_term = title_filter[4:]
+                        search_sort_smart = library.search(titleSort__icontains=search_term, **search_args)
                     else:
                         search_sort_smart = library.search(titleSort__icontains=title_filter, **search_args)
 
-                    direct_results = search_title + search_original + search_sort_smart
-                    merged_results = {item.ratingKey: item for item in direct_results}
-
-                    # --- Palier 2 & 3 : Enrichissement et Recherche Étendue (SEULEMENT si nécessaire) ---
-                    if not merged_results:
-                        current_app.logger.info(f"Direct Plex search for '{title_filter}' yielded no results. Attempting external API enrichment.")
-                        tmdb_client = TheMovieDBClient()
-                        tvdb_client = CustomTVDBClient()
-
-                        all_possible_titles = set()
-
-                        if library.type == 'movie':
-                            tmdb_results = tmdb_client.search_movie(title_filter)
-                            if tmdb_results:
-                                for movie in tmdb_results:
-                                    all_possible_titles.add(movie.get('title', '').lower())
-                                    all_possible_titles.add(movie.get('original_title', '').lower())
-                        elif library.type == 'show':
-                            tvdb_results = tvdb_client.search_and_translate_series(title_filter)
-                            if tvdb_results:
-                                for series in tvdb_results:
-                                    all_possible_titles.add(series.get('name', '').lower())
-
-                        all_possible_titles.discard('')
-                        all_possible_titles.discard(title_filter.lower())
-
-                        if all_possible_titles:
-                            extended_search_results = []
-                            for possible_title in all_possible_titles:
-                                extended_search_results.extend(library.search(title__icontains=possible_title, **search_args))
-                                extended_search_results.extend(library.search(originalTitle__icontains=possible_title, **search_args))
-
-                            for item in extended_search_results:
-                                merged_results[item.ratingKey] = item
-
-                    items_from_lib = list(merged_results.values())
-
+                    for item in search_title + search_original + search_sort_smart:
+                        all_plex_items[item.ratingKey] = item
                 else:
-                    # Comportement normal si pas de filtre de titre
-                    items_from_lib = library.search(**search_args)
-
-                # --- NOUVEAU BLOC DE SUGGESTIONS EXTERNES ---
-                # Si, après toutes les recherches, la liste est toujours vide
-                if not items_from_lib and title_filter:
-                    external_suggestions = []
-                    current_app.logger.info(f"No results in Plex for '{title_filter}'. Searching for external suggestions.")
-
-                    tmdb_client = TheMovieDBClient()
-                    tvdb_client = CustomTVDBClient()
-
-                    # On vérifie le statut dans Sonarr/Radarr pour chaque suggestion
-                    if library.type == 'movie':
-                        tmdb_results = tmdb_client.search_movie(title_filter)
-                        for movie in tmdb_results[:5]: # On limite à 5 suggestions
-                            tmdb_id = movie.get('id')
-                            radarr_entry = get_radarr_movie_by_guid(f'tmdb:{tmdb_id}')
-                            movie['is_monitored'] = radarr_entry is not None
-                            movie['source_url'] = f"https://www.themoviedb.org/movie/{movie.get('id')}"
-                            # Pour le template
-                            movie['poster_url'] = f"https://image.tmdb.org/t/p/w500{movie.get('poster_path')}" if movie.get('poster_path') else ''
-                            movie['year'] = movie.get('release_date', 'N/A').split('-')[0] if movie.get('release_date') else 'N/A'
-                            external_suggestions.append(movie)
-
-                    elif library.type == 'show':
-                        tvdb_results = tvdb_client.search_and_translate_series(title_filter)
-                        for series in tvdb_results[:5]:
-                            tvdb_id = series.get('tvdb_id')
-                            sonarr_entry = get_sonarr_series_by_guid(f'tvdb:{tvdb_id}')
-                            series['is_monitored'] = sonarr_entry is not None
-                            series['source_url'] = f"https://thetvdb.com/series/{series.get('slug')}"
-                            # Pour le template
-                            series['poster_url'] = series.get('image_url', '')
-                            series['year'] = series.get('first_air_time', 'N/A')
-                            external_suggestions.append(series)
-
-                    return render_template('plex_editor/_media_table.html', items=[], external_suggestions=external_suggestions)
-
-                # Le filtrage "AND" se fait maintenant ici, sur les résultats pré-filtrés
-                if cleaned_genres and genre_logic == 'and':
-                    items_with_all_genres = []
-                    # On a déjà filtré sur le premier genre, donc on vérifie les autres
-                    required_genres_set = {genre.lower() for genre in cleaned_genres}
-
-                    for item in items_from_lib:
-                        if hasattr(item, 'genres') and item.genres:
-                            item_genres_set = {g.tag.lower() for g in item.genres}
-                            if required_genres_set.issubset(item_genres_set):
-                                items_with_all_genres.append(item)
-
-                    items_from_lib = items_with_all_genres
-
-                # Le filtrage "AND" se fait maintenant ici, sur les résultats pré-filtrés
-                if cleaned_genres and genre_logic == 'and':
-                    items_with_all_genres = []
-                    # On a déjà filtré sur le premier genre, donc on vérifie les autres
-                    required_genres_set = {genre.lower() for genre in cleaned_genres}
-
-                    for item in items_from_lib:
-                        if hasattr(item, 'genres') and item.genres:
-                            item_genres_set = {g.tag.lower() for g in item.genres}
-                            if required_genres_set.issubset(item_genres_set):
-                                items_with_all_genres.append(item)
-
-                    items_from_lib = items_with_all_genres
-
-                # Filtrage en Python pour les acteurs, réalisateurs et scénaristes
-                if actor_filter:
-                    items_from_lib = [
-                        item for item in items_from_lib
-                        if hasattr(item, 'actors') and any(actor_filter.lower() in actor.tag.lower() for actor in item.actors)
-                    ]
-                if director_filter:
-                    items_from_lib = [
-                        item for item in items_from_lib
-                        if hasattr(item, 'directors') and any(director_filter.lower() in director.tag.lower() for director in item.directors)
-                    ]
-                if writer_filter:
-                    items_from_lib = [
-                        item for item in items_from_lib
-                        if hasattr(item, 'writers') and any(writer_filter.lower() in writer.tag.lower() for writer in item.writers)
-                    ]
-
-                for item_from_lib in items_from_lib:
-                    item_from_lib.library_name = library.title
-                    item_from_lib.title_sort = getattr(item_from_lib, 'titleSort', None)
-                    item_from_lib.original_title = getattr(item_from_lib, 'originalTitle', None)
-
-                    # --- AJOUTE CE BLOC POUR LE POSTER ---
-                    thumb_path = getattr(item_from_lib, 'thumb', None) 
-                    if thumb_path:
-                        item_from_lib.poster_url = target_plex_server.url(thumb_path, includeToken=True)
-                    else:
-                        item_from_lib.poster_url = None
-                    # --- FIN DE L'AJOUT ---
-
-                    # --- BLOC CORRIGÉ POUR LE CHEMIN DU FICHIER ---
-                    if item_from_lib.type == 'movie':
-                        # Pour les films, on prend le chemin du premier fichier
-                        item_from_lib.file_path = getattr(item_from_lib.media[0].parts[0], 'file', None) if item_from_lib.media and item_from_lib.media[0].parts else None
-                    elif item_from_lib.type == 'show':
-                        # Pour les séries, on prend le chemin du premier dossier de la bibliothèque
-                        item_from_lib.file_path = item_from_lib.locations[0] if item_from_lib.locations else None
-                    else:
-                        item_from_lib.file_path = None
-                    # --- FIN DE LA CORRECTION ---
-
-                    try:
-                        # ... (calcul de la taille, etc. - code inchangé)
-                        if item_from_lib.type == 'movie':
-                            item_from_lib.total_size = item_from_lib.media[0].parts[0].size if hasattr(item_from_lib, 'media') and item_from_lib.media and item_from_lib.media[0].parts else 0
-                        elif item_from_lib.type == 'show':
-                            item_from_lib.total_size = sum(getattr(part, 'size', 0) for ep in item_from_lib.episodes() for part in (ep.media[0].parts if ep.media and ep.media[0].parts else []))
-                        else:
-                            item_from_lib.total_size = 0
-                        # ... (formatage de la taille - code inchangé)
-                        if item_from_lib.total_size > 0:
-                            size_name = ("B", "KB", "MB", "GB", "TB"); i = 0
-                            temp_size = float(item_from_lib.total_size)
-                            while temp_size >= 1024 and i < len(size_name) - 1: temp_size /= 1024.0; i += 1
-                            item_from_lib.total_size_display = f"{temp_size:.2f} {size_name[i]}"
-                        else:
-                            item_from_lib.total_size_display = "0 B"
-                        
-                        if item_from_lib.type == 'show':
-                            item_from_lib.viewed_episodes = item_from_lib.viewedLeafCount
-                            item_from_lib.total_episodes = item_from_lib.leafCount
-                    except Exception:
-                        item_from_lib.total_size_display = "Erreur"
-
-                    # Réintroduire la recherche "Eager" pour Plex
-                    # L'objet item_from_lib est déjà complet ici, pas besoin de reload
-                    item_from_lib.plex_trailer_url = find_plex_trailer(item_from_lib, target_plex_server)
-
-                    all_media_from_plex.append(item_from_lib)
+                    for item in library.search(**search_args):
+                        all_plex_items[item.ratingKey] = item
 
             except Exception as e_lib:
                 current_app.logger.error(f"Erreur accès bibliothèque {lib_key}: {e_lib}", exc_info=True)
 
-        # (La logique de filtrage par statut et le tri restent identiques)
-        # ...
-        filtered_items = []
-        if status_filter == 'all':
-            filtered_items = all_media_from_plex
-        else:
-            for item in all_media_from_plex:
-                # ... (logique de filtre par statut inchangée)
-                if item.type == 'show':
-                    is_watched = item.total_episodes > 0 and item.viewed_episodes == item.total_episodes
-                    is_unwatched = item.total_episodes > 0 and item.viewed_episodes == 0
-                    is_in_progress = item.total_episodes > 0 and item.viewed_episodes > 0 and not is_watched
-                    if (status_filter == 'watched' and is_watched) or (status_filter == 'unwatched' and is_unwatched) or (status_filter == 'in_progress' and is_in_progress):
-                        filtered_items.append(item)
-                elif item.type == 'movie':
-                    if (status_filter == 'watched' and item.isWatched) or (status_filter == 'unwatched' and not item.isWatched):
-                        filtered_items.append(item)
+        # --- 4. LA DÉCISION : Chercher à l'extérieur ? ---
+        final_plex_results_unfiltered = list(all_plex_items.values())
+        external_suggestions = []
 
-        filtered_items.sort(key=lambda x: getattr(x, 'titleSort', x.title).lower())
-        return render_template('plex_editor/_media_table.html', items=filtered_items, external_suggestions=[])
+        if not final_plex_results_unfiltered and title_filter:
+            current_app.logger.info(f"No results in Plex across all libraries for '{title_filter}'. Searching externally.")
+
+            tmdb_client = TheMovieDBClient()
+            tvdb_client = CustomTVDBClient()
+
+            # Recherche Films (TMDb)
+            tmdb_results = tmdb_client.search_movie(title_filter)
+            for movie in tmdb_results[:3]:
+                tmdb_id = movie.get('id')
+                radarr_entry = get_radarr_movie_by_guid(f'tmdb:{tmdb_id}')
+                movie['is_monitored'] = radarr_entry is not None
+                movie['source_url'] = f"https://www.themoviedb.org/movie/{movie.get('id')}"
+                movie['poster_url'] = f"https://image.tmdb.org/t/p/w500{movie.get('poster_path')}" if movie.get('poster_path') else ''
+                movie['year'] = movie.get('release_date', 'N/A').split('-')[0] if movie.get('release_date') else 'N/A'
+                movie['type'] = 'movie'
+                external_suggestions.append(movie)
+
+            # Recherche Séries (TVDb)
+            tvdb_results = tvdb_client.search_and_translate_series(title_filter)
+            for series in tvdb_results[:3]:
+                tvdb_id = series.get('tvdb_id')
+                sonarr_entry = get_sonarr_series_by_guid(f'tvdb:{tvdb_id}')
+                series['is_monitored'] = sonarr_entry is not None
+                series['source_url'] = f"https://thetvdb.com/series/{series.get('slug')}"
+                series['poster_url'] = series.get('image_url', '')
+                series['year'] = series.get('first_air_time', 'N/A')
+                series['type'] = 'show'
+                external_suggestions.append(series)
+
+        # --- 5. Post-filtrage et Rendu ---
+        items_to_render = []
+        if final_plex_results_unfiltered:
+            items_after_python_filter = final_plex_results_unfiltered
+
+            if cleaned_genres and genre_logic == 'and':
+                required_genres_set = {genre.lower() for genre in cleaned_genres}
+                items_after_python_filter = [
+                    item for item in items_after_python_filter
+                    if hasattr(item, 'genres') and required_genres_set.issubset({g.tag.lower() for g in item.genres})
+                ]
+
+            if actor_filter:
+                items_after_python_filter = [item for item in items_after_python_filter if hasattr(item, 'actors') and any(actor_filter.lower() in actor.tag.lower() for actor in item.actors)]
+            if director_filter:
+                items_after_python_filter = [item for item in items_after_python_filter if hasattr(item, 'directors') and any(director_filter.lower() in director.tag.lower() for director in item.directors)]
+            if writer_filter:
+                items_after_python_filter = [item for item in items_after_python_filter if hasattr(item, 'writers') and any(writer_filter.lower() in writer.tag.lower() for writer in item.writers)]
+
+            final_filtered_list = []
+            if status_filter == 'all':
+                final_filtered_list = items_after_python_filter
+            else:
+                for item in items_after_python_filter:
+                    if item.type == 'show':
+                        # Recalculer les attributs ici car ils ne sont pas sur l'objet de base
+                        item.reload() # Assure que les comptes sont à jour
+                        is_watched = item.leafCount > 0 and item.viewedLeafCount == item.leafCount
+                        is_unwatched = item.leafCount > 0 and item.viewedLeafCount == 0
+                        is_in_progress = item.leafCount > 0 and item.viewedLeafCount > 0 and not is_watched
+                        if (status_filter == 'watched' and is_watched) or \
+                           (status_filter == 'unwatched' and is_unwatched) or \
+                           (status_filter == 'in_progress' and is_in_progress):
+                            final_filtered_list.append(item)
+                    elif item.type == 'movie':
+                        if (status_filter == 'watched' and item.isWatched) or \
+                           (status_filter == 'unwatched' and not item.isWatched):
+                            final_filtered_list.append(item)
+
+            for item in final_filtered_list:
+                item.library_name = item.librarySectionTitle
+                item.title_sort = getattr(item, 'titleSort', None)
+                item.original_title = getattr(item, 'originalTitle', None)
+                thumb_path = getattr(item, 'thumb', None)
+                item.poster_url = target_plex_server.url(thumb_path, includeToken=True) if thumb_path else None
+
+                if item.type == 'movie':
+                    item.file_path = getattr(item.media[0].parts[0], 'file', None) if item.media and item.media[0].parts else None
+                    item.total_size = item.media[0].parts[0].size if hasattr(item, 'media') and item.media and item.media[0].parts else 0
+                elif item.type == 'show':
+                    item.file_path = item.locations[0] if item.locations else None
+                    item.total_size = sum(getattr(part, 'size', 0) for ep in item.episodes() for part in (ep.media[0].parts if ep.media and ep.media[0].parts else []))
+                    item.viewed_episodes = item.viewedLeafCount
+                    item.total_episodes = item.leafCount
+
+                if getattr(item, 'total_size', 0) > 0:
+                    size_name = ("B", "KB", "MB", "GB", "TB"); i = 0
+                    temp_size = float(item.total_size)
+                    while temp_size >= 1024 and i < len(size_name) - 1: temp_size /= 1024.0; i += 1
+                    item.total_size_display = f"{temp_size:.2f} {size_name[i]}"
+                else:
+                    item.total_size_display = "0 B"
+
+                item.plex_trailer_url = find_plex_trailer(item, target_plex_server)
+                items_to_render.append(item)
+
+        items_to_render.sort(key=lambda x: getattr(x, 'titleSort', x.title).lower())
+
+        return render_template(
+            'plex_editor/_media_table.html',
+            items=items_to_render,
+            external_suggestions=external_suggestions
+        )
 
     except Exception as e:
         current_app.logger.error(f"Erreur API get_media_items: {e}", exc_info=True)
