@@ -363,9 +363,6 @@ def get_media_items():
                     else: # 'or'
                         search_args['genre'] = cleaned_genres
 
-                if title_filter:
-                    search_args['title__icontains'] = title_filter
-
                 if year_filter:
                     try:
                         search_args['year'] = int(year_filter)
@@ -443,7 +440,19 @@ def get_media_items():
                 if cleaned_studios:
                     search_args['studio'] = cleaned_studios
 
-                items_from_lib = library.search(**search_args)
+                items_from_lib = []
+                if title_filter:
+                    # Recherche sur plusieurs champs si un filtre de titre est appliqué
+                    search_title = library.search(title__icontains=title_filter, **search_args)
+                    search_original = library.search(originalTitle__icontains=title_filter, **search_args)
+                    search_sort = library.search(titleSort__icontains=title_filter, **search_args)
+
+                    # Fusionner les résultats et supprimer les doublons
+                    merged_results = {item.ratingKey: item for item in search_title + search_original + search_sort}
+                    items_from_lib = list(merged_results.values())
+                else:
+                    # Comportement normal si pas de filtre de titre
+                    items_from_lib = library.search(**search_args)
 
                 # Le filtrage "AND" se fait maintenant ici, sur les résultats pré-filtrés
                 if cleaned_genres and genre_logic == 'and':
