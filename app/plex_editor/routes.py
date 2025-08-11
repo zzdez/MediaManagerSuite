@@ -4,7 +4,7 @@
 import os
 from app.auth import login_required
 from flask import (render_template, current_app, flash, abort, url_for,
-                   redirect, request, session, jsonify)
+                   redirect, request, session, jsonify, current_app)
 from datetime import datetime, timedelta
 from plexapi.server import PlexServer
 from plexapi.exceptions import NotFound, Unauthorized, BadRequest
@@ -24,6 +24,7 @@ from app.utils.arr_client import (
     update_sonarr_series, get_sonarr_episode_files, get_sonarr_episodes_by_series_id,
     get_all_sonarr_series # <--- AJOUT ICI
 )
+from app.utils.trailer_finder import find_plex_trailer
 
 # --- Routes du Blueprint ---
 
@@ -98,8 +99,23 @@ def get_user_libraries(user_id):
             return jsonify({'error': f"Impossible d'établir une connexion Plex pour l'utilisateur {user_id}."}), 500
 
         libraries = target_plex_server.library.sections()
-        library_list = [{'id': lib.key, 'text': lib.title} for lib in libraries]
-        return jsonify(library_list)
+
+        # **NOUVELLE LOGIQUE DE FILTRAGE**
+        ignored_library_names = current_app.config.get('PLEX_LIBRARIES_TO_IGNORE', [])
+
+        filtered_libraries = []
+        for lib in libraries:
+            # Condition 1: La bibliothèque n'est pas dans la liste des noms à ignorer
+            is_ignored = lib.title in ignored_library_names
+
+            # Condition 2: La bibliothèque est de type 'movie' ou 'show'
+            is_valid_type = lib.type in ['movie', 'show']
+
+            if not is_ignored and is_valid_type:
+                filtered_libraries.append({'id': lib.key, 'text': lib.title})
+
+        # On renvoie la liste filtrée
+        return jsonify(filtered_libraries)
 
     except Unauthorized:
         current_app.logger.error(f"API get_user_libraries: Autorisation refusée pour l'utilisateur {user_id}. Token invalide ?", exc_info=True)
@@ -216,6 +232,36 @@ def get_studios_for_libraries():
     except Exception as e:
         current_app.logger.error(f"Erreur API /api/studios: {e}", exc_info=True)
         return jsonify(error=str(e)), 500
+
+@plex_editor_bp.route('/api/scan_libraries', methods=['POST'])
+@login_required
+def scan_libraries():
+    data = request.json
+    library_keys = data.get('libraryKeys', [])
+    # L'user_id n'est plus nécessaire pour l'action, mais on le garde pour la validation du login
+    user_id = data.get('userId')
+
+    if not user_id or not library_keys:
+        return jsonify({'success': False, 'message': 'ID utilisateur ou bibliothèques manquants.'}), 400
+
+    try:
+        # **MODIFICATION CLÉ : On utilise la connexion admin, comme pour la suppression**
+        plex_server = get_plex_admin_server()
+        if not plex_server:
+            return jsonify({'success': False, 'message': 'Connexion admin au serveur Plex impossible.'}), 404
+
+        scanned_libs = []
+        for key in library_keys:
+            # On trouve la bibliothèque sur le serveur admin
+            library = plex_server.library.sectionByID(int(key))
+            library.update() # On lance le scan avec les droits admin
+            scanned_libs.append(library.title)
+
+        return jsonify({'success': True, 'message': f'Scan lancé pour : {", ".join(scanned_libs)}'})
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur API /api/scan_libraries: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': f'Erreur lors du scan : {str(e)}'}), 500
 
 @plex_editor_bp.route('/select_user', methods=['POST'])
 @login_required
@@ -490,6 +536,11 @@ def get_media_items():
                             item_from_lib.total_episodes = item_from_lib.leafCount
                     except Exception:
                         item_from_lib.total_size_display = "Erreur"
+
+                    # Réintroduire la recherche "Eager" pour Plex
+                    # L'objet item_from_lib est déjà complet ici, pas besoin de reload
+                    item_from_lib.plex_trailer_url = find_plex_trailer(item_from_lib, target_plex_server)
+
                     all_media_from_plex.append(item_from_lib)
 
             except Exception as e_lib:

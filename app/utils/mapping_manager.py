@@ -90,20 +90,23 @@ def save_torrent_map(data):
         logger.error(f"An unexpected error occurred while saving torrent map to {map_file}: {e}")
         raise
 
-def add_or_update_torrent_in_map(torrent_hash, release_name, app_type, target_id, label,
-                                 seedbox_download_path, original_torrent_name="N/A",
-                                 initial_status="pending_download_on_seedbox"):
+def add_or_update_torrent_in_map(torrent_hash, release_name, status, seedbox_download_path, folder_name=None, app_type=None, target_id=None, label=None, original_torrent_name="N/A"):
     """
     Adds or updates a torrent's pre-association in the map.
-    'release_name' is the name of the folder/file rTorrent will create,
-                     and sftp_downloader will use (without .torrent extension).
-    'seedbox_download_path' is the full path on the seedbox where rTorrent is told to download.
+    This is the main function for adding/updating torrents.
+    The scanner will call this with app_type=None, target_id=None, label=None.
     """
     _, logger = _get_map_file_path_and_logger()
 
-    if not all([torrent_hash, release_name, app_type, target_id, label, seedbox_download_path]):
+    # The scanner does not know the app_type, target_id, or label initially.
+    # These can be added later by another process.
+    if not all([torrent_hash, release_name, status, seedbox_download_path]):
         logger.error("Missing one or more required arguments for add_or_update_torrent_in_map.")
         return False
+
+    # Set default values if not provided, for consistency in the map file
+    app_type = app_type or "unknown"
+    label = label or "unknown"
 
     # S'assurer que release_name n'a pas .torrent à la fin
     if release_name.lower().endswith(".torrent"):
@@ -113,7 +116,12 @@ def add_or_update_torrent_in_map(torrent_hash, release_name, app_type, target_id
     torrents = load_torrent_map()
     now_iso = datetime.utcnow().isoformat()
 
+    # On sauvegarde le folder_name. Si pour une raison quelconque il n'est pas fourni, on se rabat sur le release_name comme solution de secours.
+    folder_name_to_save = folder_name if folder_name else release_name
+
     if torrent_hash in torrents: # Update existing
+        # For now, a simple update. More sophisticated logic could be added here
+        # to decide what to do if a torrent is re-mapped (e.g., only update certain fields).
         torrents[torrent_hash].update({
             "release_name": release_name,
             "app_type": app_type,
@@ -121,10 +129,9 @@ def add_or_update_torrent_in_map(torrent_hash, release_name, app_type, target_id
             "label": label,
             "seedbox_download_path": seedbox_download_path,
             "original_torrent_name": original_torrent_name,
-            # Ne pas écraser le statut s'il est déjà plus avancé, sauf si explicitement demandé
-            # Pour l'instant, on met à jour les infos, et on ne touche au statut que s'il est "ancien"
-            "status": torrents[torrent_hash].get("status", initial_status), # Conserve le statut si déjà présent
-            "updated_at": now_iso
+            "status": status, # Always update status on a new call
+            "updated_at": now_iso,
+            "folder_name": folder_name_to_save
         })
         logger.info(f"Updated torrent {torrent_hash} ({release_name}) in map.")
     else: # Add new
@@ -135,9 +142,10 @@ def add_or_update_torrent_in_map(torrent_hash, release_name, app_type, target_id
             "label": label,
             "seedbox_download_path": seedbox_download_path,
             "original_torrent_name": original_torrent_name,
-            "status": initial_status,
+            "status": status,
             "added_at": now_iso,
-            "updated_at": now_iso
+            "updated_at": now_iso,
+            "folder_name": folder_name_to_save
         }
         logger.info(f"Added new torrent {torrent_hash} ({release_name}) to map.")
 
@@ -227,6 +235,78 @@ def get_all_torrents_in_map():
     _, logger = _get_map_file_path_and_logger()
     logger.debug("Loading all torrents from map.")
     return load_torrent_map()
+
+def get_all_torrent_hashes():
+    """Retrieves a set of all known torrent hashes from the map."""
+    _, logger = _get_map_file_path_and_logger()
+    logger.debug("Loading all torrent hashes from map.")
+    torrents = load_torrent_map()
+    return set(torrents.keys())
+
+def _get_ignored_torrents_file_path():
+    """
+    Returns the configured path for the ignored torrents JSON file.
+    """
+    try:
+        logger = current_app.logger
+        path = current_app.config.get('IGNORED_TORRENTS_FILE_PATH')
+        if not path:
+            path = os.path.join(current_app.instance_path, 'ignored_torrents.json')
+            logger.info(f"IGNORED_TORRENTS_FILE_PATH not set, using default: {path}")
+    except RuntimeError:
+        logger = module_logger
+        path = os.getenv('MMS_IGNORED_TORRENTS_FILE_FALLBACK', 'instance/ignored_torrents.json')
+        logger.info(f"Using fallback ignored torrents file path: {path}")
+
+    ignored_dir = os.path.dirname(path)
+    if ignored_dir and not os.path.exists(ignored_dir):
+        os.makedirs(ignored_dir)
+    return path, logger
+
+def load_ignored_hashes():
+    """Loads the set of ignored torrent hashes from its JSON file."""
+    ignored_file, logger = _get_ignored_torrents_file_path()
+    if not os.path.exists(ignored_file):
+        return set()
+    try:
+        with open(ignored_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+            if not content.strip():
+                return set()
+            data = json.loads(content)
+            if isinstance(data, list):
+                return set(data)
+            else:
+                logger.warning(f"Content of {ignored_file} is not a list. Ignoring content.")
+                return set()
+    except (json.JSONDecodeError, IOError) as e:
+        logger.error(f"Error reading or parsing ignored torrents file {ignored_file}: {e}")
+        return set()
+
+def add_hash_to_ignored_list(torrent_hash):
+    """Adds a torrent hash to the ignored list and saves it."""
+    ignored_file, logger = _get_ignored_torrents_file_path()
+    lock_file = ignored_file + ".lock"
+    lock = FileLock(lock_file, timeout=10)
+
+    try:
+        with lock:
+            ignored_hashes = load_ignored_hashes()
+            if torrent_hash in ignored_hashes:
+                logger.info(f"Hash {torrent_hash} is already in the ignored list.")
+                return True
+
+            ignored_hashes.add(torrent_hash)
+            with open(ignored_file, 'w', encoding='utf-8') as f:
+                json.dump(list(ignored_hashes), f, indent=4)
+            logger.info(f"Added hash {torrent_hash} to ignored list at {ignored_file}.")
+            return True
+    except Timeout:
+        logger.error(f"Could not acquire lock for {ignored_file} to save ignored hash.")
+        return False
+    except Exception as e:
+        logger.error(f"Failed to add hash {torrent_hash} to ignored list: {e}")
+        return False
 
 # Vous pouvez ajouter ici les tests de votre __main__ si vous voulez le tester en standalone,
 # mais assurez-vous de configurer un logger basique et potentiellement de simuler current_app.config

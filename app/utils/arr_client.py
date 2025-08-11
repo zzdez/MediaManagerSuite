@@ -981,4 +981,54 @@ def get_sonarr_episode_file_ids_for_season(series_id, season_number):
         return file_ids_for_season
     except (TypeError, ValueError) as e:
         current_app.logger.error(f"Erreur lors du filtrage des fichiers d'épisodes pour la saison {season_number} de la série {series_id}: {e}")
-        return []        
+        return []
+
+def sonarr_post_command(payload):
+    """Posts a command to Sonarr."""
+    return _sonarr_api_request('POST', 'command', json_data=payload)
+
+def radarr_post_command(payload):
+    """Posts a command to Radarr."""
+    return _radarr_api_request('POST', 'command', json_data=payload)
+
+def find_in_arr_queue_by_hash(arr_type, torrent_hash):
+    """
+    Finds an item in the Sonarr or Radarr queue by its torrent hash.
+    The 'downloadId' in the *Arr queue should correspond to the torrent hash.
+    """
+    logger.info(f"Searching {arr_type} queue for hash: {torrent_hash}")
+    queue = None
+    if arr_type == 'sonarr':
+        queue_response = _sonarr_api_request('GET', 'queue')
+        if queue_response and 'records' in queue_response:
+            queue = queue_response['records']
+    elif arr_type == 'radarr':
+        queue_response = _radarr_api_request('GET', 'queue')
+        if queue_response and 'records' in queue_response:
+            queue = queue_response['records']
+    else:
+        logger.error(f"Unknown arr_type '{arr_type}' for queue search.")
+        return None
+
+    if queue is None:
+        logger.error(f"Failed to fetch queue from {arr_type}.")
+        return None
+
+    for item in queue:
+        # The downloadId in Sonarr/Radarr should be the uppercase torrent hash
+        if item.get('downloadId', '').upper() == torrent_hash.upper():
+            logger.info(f"Found item in {arr_type} queue with hash {torrent_hash}: {item.get('title')}")
+            return item
+
+    logger.info(f"No item found in {arr_type} queue with hash {torrent_hash}.")
+    return None
+
+def sonarr_trigger_import(download_id):
+    """Triggers an import in Sonarr for a specific downloadId (torrent hash)."""
+    payload = {'name': 'DownloadedEpisodesScan', 'downloadId': download_id, 'importMode': 'Move'}
+    return sonarr_post_command(payload)
+
+def radarr_trigger_import(download_id):
+    """Triggers an import in Radarr for a specific downloadId (torrent hash)."""
+    payload = {'name': 'DownloadedMoviesScan', 'downloadId': download_id, 'importMode': 'Move'}
+    return radarr_post_command(payload)

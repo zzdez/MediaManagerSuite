@@ -111,6 +111,15 @@
                     <i class="bi bi-eye-fill"></i>
                 </button>
 
+                <button class="btn btn-sm btn-outline-info find-and-play-trailer-btn"
+                        data-title="{{ item.title }}"
+                        data-year="{{ item.year }}"
+                        data-media-type="{{ item.type }}"
+                        data-plex-trailer-url="{{ item.plex_trailer_url or '' }}"
+                        title="Chercher et voir la bande-annonce">
+                    <i class="bi bi-film"></i>
+                </button>
+
                 {% if item.type == 'movie' %}
                 <button class="btn btn-sm btn-outline-primary archive-movie-btn"
                         title="Archiver le film"

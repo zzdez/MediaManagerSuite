@@ -24,6 +24,8 @@ import requests # Pour les appels API externes (Sonarr, Radarr, rTorrent)
 from requests.exceptions import RequestException # Pour gérer les erreurs de connexion
 import paramiko
 # --- Imports spécifiques à l'application MediaManagerSuite ---
+from app.auth import internal_api_required
+from app.utils import staging_processor
 
 # Client rTorrent
 from app.utils.rtorrent_client import (
@@ -2716,80 +2718,6 @@ def force_sonarr_import_action():
 # ------------------------------------------------------------------------------
 # Import stat module for checking file types from SFTP attributes
 import stat
-from app.utils.sftp_scanner import _connect_sftp, _list_remote_files # Import SFTP utilities
-
-@seedbox_ui_bp.route('/unified_finished_list')
-# Pas besoin de @login_required ici car la page qui l'appelle (index) l'est déjà
-def unified_finished_list():
-    """
-    Scanne les dossiers terminés SFTP de Sonarr et Radarr,
-    fusionne les résultats (fichiers uniquement) et les retourne via un template partiel.
-    """
-    all_finished_files = []
-    sftp_client = None
-    logger_instance = current_app.logger
-
-    try:
-        sftp_client = _connect_sftp()
-        if not sftp_client:
-            raise Exception("Impossible de se connecter au serveur SFTP.")
-
-        # Process a given path (Sonarr or Radarr)
-        def process_sftp_path(path_config_key, app_type_name):
-            processed_files_for_path = []
-            remote_path = current_app.config.get(path_config_key)
-            logger_instance.info(f"Scan du dossier SFTP {app_type_name} terminé: {remote_path}")
-
-            if remote_path:
-                # _list_remote_files returns a list of SFTPAttributes objects
-                sftp_items_attrs = _list_remote_files(sftp_client, remote_path)
-                for item_attr in sftp_items_attrs:
-                    # Check if it's a file (not a directory)
-                    if not stat.S_ISDIR(item_attr.st_mode):
-                        size_bytes = item_attr.st_size
-                        size_readable = "0 B"
-                        if size_bytes > 0:
-                            s_name = ("B", "KB", "MB", "GB", "TB")
-                            s_idx = 0
-                            s_temp = float(size_bytes)
-                            while s_temp >= 1024 and s_idx < len(s_name) - 1:
-                                s_temp /= 1024.0
-                                s_idx += 1
-                            size_readable = f"{s_temp:.2f} {s_name[s_idx]}"
-
-                        processed_files_for_path.append({
-                            'name': item_attr.filename,
-                            'size_human': size_readable,
-                            'size_bytes': size_bytes, # Keep raw bytes if needed later
-                            'app_type': app_type_name,
-                            # 'last_modified': datetime.fromtimestamp(item_attr.st_mtime).strftime('%Y-%m-%d %H:%M:%S') # Optional
-                        })
-            else:
-                logger_instance.warning(f"{path_config_key} n'est pas configuré.")
-            return processed_files_for_path
-
-        # 1. Récupérer les fichiers Sonarr terminés
-        all_finished_files.extend(process_sftp_path('SEEDBOX_SCANNER_TARGET_SONARR_PATH', 'sonarr'))
-
-        # 2. Récupérer les fichiers Radarr terminés
-        all_finished_files.extend(process_sftp_path('SEEDBOX_SCANNER_TARGET_RADARR_PATH', 'radarr'))
-
-        # 3. Trier la liste par nom
-        all_finished_files.sort(key=lambda x: x.get('name', '').lower())
-
-    except Exception as e:
-        logger_instance.error(f"Erreur lors de la création de la liste unifiée SFTP : {e}", exc_info=True)
-        return render_template('seedbox_ui/_error_display.html', error_message=f"Erreur SFTP ou de traitement : {e}")
-    finally:
-        if sftp_client:
-            try:
-                sftp_client.close()
-                logger_instance.info("Connexion SFTP fermée.")
-            except Exception as e_close:
-                logger_instance.error(f"Erreur lors de la fermeture de la connexion SFTP: {e_close}", exc_info=True)
-
-    return render_template('seedbox_ui/_unified_file_list.html', items=all_finished_files)
-
 
 @seedbox_ui_bp.route('/trigger-radarr-import', methods=['POST'])
 @login_required
@@ -4456,3 +4384,58 @@ def sftp_add_and_import_arr_item_placeholder():
         "error": "Fonctionnalité non entièrement implémentée. La route /api/sftp-add-and-import-arr-item doit être finalisée.",
         "message": "Placeholder: L'ajout, le rapatriement et l'import pour un nouvel item SFTP ne sont pas encore complètement fonctionnels."
     }), 501 # 501 Not Implemented
+
+@seedbox_ui_bp.route('/staging/retry_repatriation', methods=['POST'])
+@login_required
+def retry_repatriation_endpoint():
+    data = request.json
+    torrent_hash = data.get('torrent_hash')
+
+    if not torrent_hash:
+        return jsonify({'status': 'error', 'message': 'HASH du torrent manquant.'}), 400
+
+    try:
+        # On change simplement le statut, le processeur fera le reste.
+        success = torrent_map_manager.update_torrent_status_in_map(torrent_hash, 'pending_staging')
+        if success:
+            return jsonify({'status': 'success', 'message': f"L'item {torrent_hash} a été remis dans la file d'attente de staging."})
+        else:
+            return jsonify({'status': 'error', 'message': 'Torrent non trouvé dans la map.'}), 404
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@seedbox_ui_bp.route('/torrent/ignore', methods=['POST'])
+@login_required
+def ignore_torrent_permanently():
+    data = request.json
+    torrent_hash = data.get('torrent_hash')
+
+    if not torrent_hash:
+        return jsonify({'status': 'error', 'message': 'HASH du torrent manquant.'}), 400
+
+    try:
+        # Add to the ignored list first
+        success_ignore = mapping_manager.add_hash_to_ignored_list(torrent_hash)
+        if not success_ignore:
+            # Logged inside the function, but we can return a specific error
+            return jsonify({'status': 'error', 'message': "Échec de l'ajout du torrent à la liste des ignorés."}), 500
+
+        # Then remove from the pending map
+        mapping_manager.remove_torrent_from_map(torrent_hash)
+
+        return jsonify({'status': 'success', 'message': f"Le torrent {torrent_hash} a été ignoré définitivement et supprimé de la liste de suivi."})
+
+    except Exception as e:
+        current_app.logger.error(f"Error in ignore_torrent_permanently for hash {torrent_hash}: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@seedbox_ui_bp.route('/run_staging_processor', methods=['POST'])
+@internal_api_required
+def run_staging_processor_endpoint():
+    try:
+        staging_processor.process_pending_staging_items()
+        return jsonify({'status': 'success', 'message': 'Staging processor job executed.'})
+    except Exception as e:
+        current_app.logger.error(f"Error running staging processor endpoint: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': str(e)}), 500

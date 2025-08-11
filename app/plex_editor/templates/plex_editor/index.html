@@ -9,21 +9,27 @@
         <div class="card-body">
             <h5 class="card-title">Filtres</h5>
             <div class="row g-2 align-items-end">
-                <div class="col-lg-2 col-md-6 mb-2 mb-md-0">
+                <div class="col-md-auto mb-2 mb-md-0">
                     <label for="user-select" class="form-label small">Utilisateur</label>
                     <select id="user-select" class="form-select form-select-sm">
                         <option selected>Chargement...</option>
                     </select>
                 </div>
-                <div class="col-lg-2 col-md-6 mb-2 mb-md-0">
+                <!-- NOUVEAU GROUPE POUR BIBLIOTHÈQUES + SCAN -->
+                <div class="col-md-auto mb-2 mb-md-0">
                     <label for="library-select" class="form-label small">Bibliothèque(s)</label>
-                    <select id="library-select" class="form-select form-select-sm" multiple disabled></select>
+                    <div class="input-group input-group-sm">
+                        <select id="library-select" class="form-select form-select-sm" multiple disabled></select>
+                        <button id="scan-libraries-btn" class="btn btn-secondary" type="button" title="Scanner les bibliothèques Plex sélectionnées">
+                            <i class="bi bi-arrow-repeat"></i> Scan
+                        </button>
+                    </div>
                 </div>
-                <div class="col-lg-2 col-md-12 mb-2 mb-lg-0">
-                    <label for="title-filter-input" class="form-label small">Titre</label>
+                <div class="col mb-2 mb-md-0">
+                    <label for="title-filter-input" class="form-label small">Titre contient</label>
                     <input type="text" id="title-filter-input" class="form-control form-control-sm" placeholder="Rechercher par titre...">
                 </div>
-                <div class="col-lg-1 col-md-4 mb-2 mb-md-0">
+                <div class="col-md-auto mb-2 mb-md-0">
                     <label for="status-filter" class="form-label small">Statut</label>
                     <select id="status-filter" class="form-select form-select-sm">
                         <option value="all" selected>Tous</option>
@@ -32,11 +38,11 @@
                         <option value="watched">Vu</option>
                     </select>
                 </div>
-                <div class="col-lg-1 col-md-3 mb-2 mb-md-0" style="max-width: 120px;">
+                <div class="col-md-auto mb-2 mb-md-0" style="max-width: 120px;">
                     <label for="year-filter" class="form-label small">Année</label>
                     <input type="number" id="year-filter" class="form-control form-control-sm" placeholder="Ex: 2023">
                 </div>
-                <div class="col-lg-4 col-md-12 d-flex justify-content-end align-items-end">
+                <div class="col-md-auto d-flex justify-content-end align-items-end">
                     <!-- Conteneur pour les actions de masse -->
                     <div id="batch-actions-container" style="display: none;" class="me-2">
                         <div class="btn-group">
@@ -179,6 +185,23 @@
                 <div id="modal-content-container" class="d-none">
                     <!-- Structure du contenu détaillé -->
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Trailer Modal -->
+<div class="modal fade" id="trailer-modal" tabindex="-1" aria-labelledby="trailerModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content bg-dark">
+            <div class="modal-header">
+                <h5 class="modal-title" id="trailerModalLabel">Bande-Annonce</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0">
+                <video id="trailer-video-player" width="100%" controls autoplay>
+                    Votre navigateur ne supporte pas le lecteur vidéo.
+                </video>
             </div>
         </div>
     </div>

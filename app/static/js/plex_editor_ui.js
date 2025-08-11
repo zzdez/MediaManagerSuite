@@ -54,6 +54,7 @@ $(document).ready(function() {
             .then(libraries => {
                 librarySelect.html('');
                 if (libraries && libraries.length > 0) {
+                    librarySelect.append($('<option>', { value: 'all', text: 'Toutes les bibliothèques' }));
                     libraries.forEach(lib => librarySelect.append(new Option(lib.text, lib.id)));
                     librarySelect.prop('disabled', false);
                 } else {
@@ -816,4 +817,102 @@ function sortTable(table, sortBy, sortType, direction) {
         sortTable(table, 'rating', 'number', newDir === 'asc' ? 1 : -1);
     });
 
+    // Gestion de l'ouverture de la modale de la bande-annonce
+    $(document).on('click', '.find-and-play-trailer-btn', function() {
+        const button = $(this);
+        const title = button.data('title');
+        const plexTrailerUrl = button.data('plex-trailer-url');
+        const year = button.data('year');
+        const mediaType = button.data('media-type');
+
+        const modalTitle = $('#trailerModalLabel');
+        const videoPlayer = $('#trailer-video-player');
+
+        // Logique Hybride
+        if (plexTrailerUrl) {
+            // CAS 1: L'URL Plex existe, on l'utilise directement
+            console.log("Lecture du trailer depuis Plex.");
+            modalTitle.text('Bande-Annonce (Plex): ' + title);
+            videoPlayer.attr('src', plexTrailerUrl);
+            const trailerModal = new bootstrap.Modal(document.getElementById('trailer-modal'));
+            trailerModal.show();
+        } else {
+            // CAS 2: Pas d'URL Plex, on interroge le serveur pour YouTube
+            console.log("Recherche du trailer sur YouTube...");
+            button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+            fetch('/api/trailer/find', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title: title, year: year, media_type: mediaType })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        modalTitle.text('Bande-Annonce (YouTube): ' + title);
+                        videoPlayer.attr('src', data.url);
+                        const trailerModal = new bootstrap.Modal(document.getElementById('trailer-modal'));
+                        trailerModal.show();
+                    } else {
+                        alert(data.message || 'Aucune bande-annonce trouvée.');
+                    }
+                })
+                .catch(error => {
+                    console.error('Erreur lors de la recherche de la bande-annonce:', error);
+                    alert('Une erreur technique est survenue.');
+                })
+                .finally(() => {
+                    // Rétablir l'état initial du bouton
+                    button.prop('disabled', false).html('<i class="bi bi-film"></i>');
+                });
+        }
+    });
+
+    // Gestion de la fermeture de la modale pour arrêter la vidéo
+    $('#trailer-modal').on('hidden.bs.modal', function () {
+        const videoPlayer = $('#trailer-video-player');
+        videoPlayer.get(0).pause(); // Met la vidéo en pause
+        videoPlayer.attr('src', ''); // Vide la source pour stopper le chargement
+    });
+
+    // NOUVEL ÉCOUTEUR D'ÉVÉNEMENT
+    $(document).on('click', '#scan-libraries-btn', function() {
+        const button = $(this);
+        const selectedLibraries = $('#library-select').val();
+        const userId = $('#user-select').val();
+        let keysToScan = [];
+
+        if (!selectedLibraries || selectedLibraries.length === 0) {
+            alert("Veuillez sélectionner au moins une bibliothèque.");
+            return;
+        }
+
+        // Gestion de l'option "Toutes"
+        if (selectedLibraries.includes('all')) {
+            keysToScan = $('#library-select option').map(function() {
+                if (this.value && this.value !== 'all') return this.value;
+            }).get();
+        } else {
+            keysToScan = selectedLibraries;
+        }
+
+        button.prop('disabled', true).find('i').addClass('fa-spin'); // Ajoute un effet de chargement
+
+        fetch('/plex/api/scan_libraries', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ libraryKeys: keysToScan, userId: userId })
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.message);
+        })
+        .catch(error => {
+            console.error('Erreur lors du scan:', error);
+            alert('Une erreur technique est survenue.');
+        })
+        .finally(() => {
+            button.prop('disabled', false).find('i').removeClass('fa-spin');
+        });
+    });
 }); // Fin de $(document).ready

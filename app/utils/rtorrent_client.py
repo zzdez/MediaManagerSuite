@@ -553,6 +553,36 @@ def _decode_bencode_name(bencoded_data):
         except RuntimeError: logger.warning(f"Exception in _decode_bencode_name (no app context): {e}", exc_info=True)
         return None
 
+def get_completed_torrents():
+    """
+    Fetches all torrents from rTorrent and filters for completed ones.
+    The dictionary key 'download_dir' is renamed to 'base_path' for consistency.
+    :return: A list of dictionaries, where each dictionary represents a completed torrent.
+             Returns an empty list if there's an error or no completed torrents.
+    """
+    current_app.logger.info("rTorrent Client: Fetching completed torrents.")
+    all_torrents, error = list_torrents()
+
+    if error:
+        current_app.logger.error(f"rTorrent Client: Could not fetch torrent list to find completed ones. Error: {error}")
+        return []
+
+    if not all_torrents:
+        current_app.logger.info("rTorrent Client: No torrents found in rTorrent.")
+        return []
+
+    completed_torrents = [
+        torrent for torrent in all_torrents if torrent.get('is_complete')
+    ]
+
+    # Rename 'download_dir' to 'base_path' for consumers of this function
+    for torrent in completed_torrents:
+        if 'download_dir' in torrent:
+            torrent['base_path'] = torrent.pop('download_dir')
+
+    current_app.logger.info(f"rTorrent Client: Found {len(completed_torrents)} completed torrents.")
+    return completed_torrents
+
 def delete_torrent(torrent_hash, delete_data=False):
     """
     Deletes a torrent from rTorrent.

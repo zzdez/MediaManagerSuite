@@ -20,10 +20,15 @@ class Config:
     SECRET_KEY = os.getenv('SECRET_KEY', 'une-cle-secrete-tres-forte-et-aleatoire-a-definir-absolument')
     FLASK_DEBUG = os.getenv('FLASK_DEBUG', 'False').split('#')[0].strip().lower() in ('true', '1', 't')
     APP_PASSWORD = os.getenv('APP_PASSWORD')
+    INTERNAL_API_KEY = os.getenv('INTERNAL_API_KEY')
 
     # --- PLEX ---
     PLEX_URL = os.getenv('PLEX_URL')
     PLEX_TOKEN = os.getenv('PLEX_TOKEN')
+    # Lis la chaîne de caractères depuis le .env
+    _plex_libraries_to_ignore_str = os.getenv('PLEX_LIBRARIES_TO_IGNORE', '')
+    # Transforme la chaîne en une liste de noms, en retirant les espaces et les noms vides
+    PLEX_LIBRARIES_TO_IGNORE = [name.strip() for name in _plex_libraries_to_ignore_str.split(',') if name.strip()]
 
     # --- *ARR SUITE ---
     SONARR_URL = os.getenv('SONARR_URL')
@@ -51,6 +56,7 @@ class Config:
     SEEDBOX_SFTP_PORT = int(os.getenv('SEEDBOX_SFTP_PORT', '22').split('#')[0].strip())
     SEEDBOX_SFTP_USER = os.getenv('SEEDBOX_SFTP_USER')
     SEEDBOX_SFTP_PASSWORD = os.getenv('SEEDBOX_SFTP_PASSWORD')
+    SEEDBOX_SFTP_REMOTE_PATH_MAPPING = os.getenv('SEEDBOX_SFTP_REMOTE_PATH_MAPPING', '').split('#')[0].strip()
 
     # --- PATHS & DIRECTORIES ---
     # -- Chemins LOCAUX (sur la machine qui exécute MMS) --
@@ -82,6 +88,7 @@ class Config:
     TVDB_API_KEY = os.getenv('TVDB_API_KEY')
     TVDB_PIN = os.getenv('TVDB_PIN')
     TMDB_API_KEY = os.getenv('TMDB_API_KEY')
+    YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
     GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
     # --- ADVANCED & TASKS ---

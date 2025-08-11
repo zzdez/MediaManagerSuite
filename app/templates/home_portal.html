@@ -35,9 +35,9 @@
         {% if session.logged_in %}
             <div class="d-grid gap-2 mt-3"> {# Grouping admin buttons #}
                 <a href="{{ url_for('config_ui.show_config') }}" class="btn btn-lg btn-info portal-link">Configuration Application</a>
-                <a href="{{ url_for('trigger_sftp_scan_manual') }}" class="btn btn-lg btn-outline-info portal-link"> <!-- Using outline for secondary action -->
-                    <i class="fas fa-sync-alt"></i> Lancer Scan SFTP Manuel
-                </a>
+                <button id="run-staging-processor-btn" class="btn btn-lg btn-outline-info portal-link">
+                    Lancer le Traitement du Staging
+                </button>
                 <a href="{{ url_for('logout') }}" class="btn btn-lg btn-danger portal-link">Déconnexion</a>
             </div>
         {% endif %}
@@ -50,4 +50,20 @@
 
 {% block scripts %}
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('run-staging-processor-btn').addEventListener('click', function() {
+            this.disabled = true;
+            fetch("{{ url_for('seedbox_ui.run_staging_processor_endpoint') }}", {
+                method: 'POST',
+                headers: { 'X-Internal-API-Key': "{{ config.INTERNAL_API_KEY }}" }
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert(data.message);
+                this.disabled = false;
+            });
+        });
+    });
+</script>
 {% endblock %}
