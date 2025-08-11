@@ -51,28 +51,34 @@ class CustomTVDBClient:
 
     def search_and_translate_series(self, title, lang='fra'):
         """
-        [VERSION DE DÉBOGAGE]
-        Recherche une série et enrichit chaque résultat avec la traduction.
+        [VERSION OPTIMISÉE]
+        Recherche une série par son titre, en ciblant le type 'series',
+        et gère la traduction de manière plus efficace.
         """
         if not self.client:
             logger.error("Client TVDB non initialisé.")
             return []
 
-        logger.info(f"--- DÉBUT RECHERCHE & TRADUCTION TVDB POUR '{title}' ---")
+        logger.info(f"--- Recherche TVDB optimisée pour '{title}' ---")
 
         try:
-            search_results = self.client.search(query=title)
+            # ÉTAPE 1: Recherche ciblée sur le type 'series'
+            search_results = self.client.search(query=title, type='series')
+
             if not search_results:
-                logger.info("  -> Recherche initiale n'a retourné aucun résultat.")
+                logger.info("  -> Aucun résultat de type 'série' trouvé.")
                 return []
 
-            logger.info(f"  -> Recherche initiale a trouvé {len(search_results)} résultat(s).")
+            logger.info(f"  -> {len(search_results)} série(s) potentielle(s) trouvée(s).")
 
             enriched_results = []
-            for i, series_summary in enumerate(search_results):
+            # On ne traite que les 5 premiers résultats pour la performance
+            for series_summary in search_results[:5]:
                 tvdb_id = series_summary.get('tvdb_id')
-                logger.info(f"\n  [Résultat {i+1}/{len(search_results)}] Traitement de l'ID TVDb : {tvdb_id} ('{series_summary.get('name')}')")
+                if not tvdb_id:
+                    continue
 
+                # On commence avec les données de base
                 series_data = {
                     'tvdb_id': tvdb_id,
                     'name': series_summary.get('name'),
@@ -81,34 +87,25 @@ class CustomTVDBClient:
                     'poster_url': series_summary.get('image_url'),
                     'slug': series_summary.get('slug')
                 }
-                logger.debug(f"    Données de base (anglais) : {series_data}")
 
+                # ÉTAPE 2: Tentative de traduction, gérée gracieusement
                 try:
-                    logger.info(f"    -> Tentative de récupération de la traduction en '{lang}'...")
                     translation = self.client.get_series_translation(tvdb_id, lang)
-
                     if translation:
-                        logger.info(f"    -> SUCCÈS : Traduction trouvée !")
-                        logger.debug(f"    Contenu de la traduction : {translation}")
-
+                        logger.info(f"  -> Traduction trouvée pour '{series_data['name']}' (ID: {tvdb_id})")
                         series_data['name'] = translation.get('name') or series_data['name']
                         series_data['overview'] = translation.get('overview') or series_data['overview']
-
-                        if translation.get('name'):
-                            logger.info(f"    -> Titre mis à jour en : '{translation.get('name')}'")
-                        if translation.get('overview'):
-                            logger.info(f"    -> Synopsis mis à jour.")
-
-                    else:
-                        logger.warning(f"    -> ÉCHEC : La fonction get_series_translation a retourné None ou vide.")
-
-                    enriched_results.append(series_data)
-
+                except ValueError as e:
+                    # Cette exception est levée par la librairie pour une "NotFoundException".
+                    # C'est un cas normal (pas de traduction), donc on ne logue qu'en DEBUG.
+                    logger.debug(f"  -> Pas de traduction '{lang}' trouvée pour l'ID {tvdb_id}. C'est un cas normal.")
                 except Exception as e_translate:
-                    logger.error(f"    -> ERREUR CRITIQUE lors de la récupération de la traduction pour l'ID {tvdb_id}: {e_translate}", exc_info=True)
-                    enriched_results.append(series_summary) # On ajoute l'original en cas d'erreur
+                    # Les autres erreurs sont plus graves
+                    logger.error(f"  -> Erreur inattendue lors de la traduction pour l'ID {tvdb_id}: {e_translate}")
 
-            logger.info("--- FIN RECHERCHE & TRADUCTION TVDB ---")
+                enriched_results.append(series_data)
+
+            logger.info("--- Fin de la recherche TVDB optimisée ---")
             return enriched_results
 
         except Exception as e:
