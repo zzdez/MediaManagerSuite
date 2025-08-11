@@ -519,7 +519,7 @@ def get_media_items():
                             external_suggestions.append(movie)
 
                     elif library.type == 'show':
-                        tvdb_results = tvdb_client.search_series(title_filter)
+                        tvdb_results = tvdb_client.search_and_translate_series(title_filter)
                         for series in tvdb_results[:5]:
                             tvdb_id = series.get('tvdb_id')
                             sonarr_entry = get_sonarr_series_by_guid(f'tvdb:{tvdb_id}')
