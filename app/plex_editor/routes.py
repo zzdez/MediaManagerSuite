@@ -444,42 +444,54 @@ def get_media_items():
 
                 items_from_lib = []
                 if title_filter:
-                    # --- NOUVELLE LOGIQUE MULTI-PALIERS ---
-                    tmdb_client = TheMovieDBClient()
-                    tvdb_client = CustomTVDBClient()
+                    # --- Palier 1 : Recherche Directe et Rapide sur plusieurs champs ---
+                    search_title = library.search(title__icontains=title_filter, **search_args)
+                    search_original = library.search(originalTitle__icontains=title_filter, **search_args)
 
-                    # --- Palier 1: Recherche Directe Rapide ---
-                    # On passe les autres filtres (année, genre, etc.) pour affiner dès le départ
-                    direct_results = library.search(title__icontains=title_filter, **search_args) + \
-                                     library.search(originalTitle__icontains=title_filter, **search_args)
+                    # Logique de recherche intelligente pour titleSort
+                    search_sort_smart = []
+                    if title_filter.lower().startswith('the '):
+                        search_term_without_article = title_filter[4:]
+                        search_sort_smart = library.search(titleSort__icontains=search_term_without_article, **search_args)
+                    else:
+                        search_sort_smart = library.search(titleSort__icontains=title_filter, **search_args)
 
-                    # --- Palier 2: Enrichissement via API Externes ---
-                    all_possible_titles = {title_filter.lower()}
-                    if library.type == 'movie':
-                        tmdb_results = tmdb_client.search_movie(title_filter)
-                        if tmdb_results:
-                            for movie in tmdb_results:
-                                all_possible_titles.add(movie.get('title', '').lower())
-                                all_possible_titles.add(movie.get('original_title', '').lower())
-                    elif library.type == 'show':
-                        tvdb_results = tvdb_client.search_series(title_filter)
-                        if tvdb_results:
-                            for series in tvdb_results:
-                                all_possible_titles.add(series.get('name', '').lower())
+                    # Fusion des résultats directs
+                    direct_results = search_title + search_original + search_sort_smart
+                    merged_results = {item.ratingKey: item for item in direct_results}
 
-                    all_possible_titles.discard('')
-                    all_possible_titles.discard(title_filter.lower()) # On l'a déjà cherché
+                    # --- Palier 2 & 3 : Enrichissement et Recherche Étendue (SEULEMENT si nécessaire) ---
+                    if not merged_results:
+                        current_app.logger.info("Direct Plex search yielded no results. Attempting external API enrichment.")
+                        tmdb_client = TheMovieDBClient()
+                        tvdb_client = CustomTVDBClient()
 
-                    # --- Palier 3: Recherche Étendue ---
-                    extended_results = []
-                    if all_possible_titles:
-                        for title in all_possible_titles:
-                            extended_results.extend(library.search(title__icontains=title, **search_args))
-                            extended_results.extend(library.search(originalTitle__icontains=title, **search_args))
+                        all_possible_titles = set()
 
-                    # --- Fusion Finale ---
-                    final_results = direct_results + extended_results
-                    merged_results = {item.ratingKey: item for item in final_results}
+                        if library.type == 'movie':
+                            tmdb_results = tmdb_client.search_movie(title_filter)
+                            if tmdb_results:
+                                for movie in tmdb_results:
+                                    all_possible_titles.add(movie.get('title', '').lower())
+                                    all_possible_titles.add(movie.get('original_title', '').lower())
+                        elif library.type == 'show':
+                            tvdb_results = tvdb_client.search_series(title_filter)
+                            if tvdb_results:
+                                for series in tvdb_results:
+                                    all_possible_titles.add(series.get('name', '').lower())
+
+                        all_possible_titles.discard('')
+                        all_possible_titles.discard(title_filter.lower())
+
+                        if all_possible_titles:
+                            extended_search_results = []
+                            for possible_title in all_possible_titles:
+                                extended_search_results.extend(library.search(title__icontains=possible_title, **search_args))
+                                extended_search_results.extend(library.search(originalTitle__icontains=possible_title, **search_args))
+
+                            for item in extended_search_results:
+                                merged_results[item.ratingKey] = item
+
                     items_from_lib = list(merged_results.values())
 
                 else:
