@@ -32,3 +32,20 @@ class CustomTVDBClient:
             return details
         except Exception:
             return None
+
+    def search_series(self, title):
+        """
+        Recherche une série par son titre.
+        """
+        if not self.client:
+            logger.error("Client TVDB non initialisé, recherche impossible.")
+            return []
+        try:
+            logger.info(f"Recherche TVDB pour le titre : '{title}'")
+            # La méthode search de la librairie retourne directement une liste de dictionnaires
+            # qui semble correspondre à ce dont la route a besoin.
+            results = self.client.search(query=title)
+            return results if results else []
+        except Exception as e:
+            logger.error(f"Erreur lors de la recherche TVDB pour '{title}': {e}", exc_info=True)
+            return []

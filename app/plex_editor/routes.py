@@ -25,6 +25,8 @@ from app.utils.arr_client import (
     get_all_sonarr_series # <--- AJOUT ICI
 )
 from app.utils.trailer_finder import find_plex_trailer
+from app.utils.tmdb_client import TheMovieDBClient
+from app.utils.tvdb_client import CustomTVDBClient
 
 # --- Routes du Blueprint ---
 
@@ -442,24 +444,44 @@ def get_media_items():
 
                 items_from_lib = []
                 if title_filter:
-                    # Recherche sur les champs standards
-                    search_title = library.search(title__icontains=title_filter, **search_args)
-                    search_original = library.search(originalTitle__icontains=title_filter, **search_args)
+                    # --- NOUVELLE LOGIQUE MULTI-PALIERS ---
+                    tmdb_client = TheMovieDBClient()
+                    tvdb_client = CustomTVDBClient()
 
-                    # Logique de recherche intelligente pour titleSort
-                    search_sort_smart = []
-                    if title_filter.lower().startswith('the '):
-                        # Si la recherche commence par "The ", on cherche la suite dans titleSort
-                        search_term_without_article = title_filter[4:]
-                        search_sort_smart = library.search(titleSort__icontains=search_term_without_article, **search_args)
-                    else:
-                        # Sinon, on fait une recherche normale sur titleSort (utile pour les titres sans article)
-                        search_sort_smart = library.search(titleSort__icontains=title_filter, **search_args)
+                    # --- Palier 1: Recherche Directe Rapide ---
+                    # On passe les autres filtres (année, genre, etc.) pour affiner dès le départ
+                    direct_results = library.search(title__icontains=title_filter, **search_args) + \
+                                     library.search(originalTitle__icontains=title_filter, **search_args)
 
-                    # Fusionner tous les résultats
-                    all_results = search_title + search_original + search_sort_smart
-                    merged_results = {item.ratingKey: item for item in all_results}
+                    # --- Palier 2: Enrichissement via API Externes ---
+                    all_possible_titles = {title_filter.lower()}
+                    if library.type == 'movie':
+                        tmdb_results = tmdb_client.search_movie(title_filter)
+                        if tmdb_results:
+                            for movie in tmdb_results:
+                                all_possible_titles.add(movie.get('title', '').lower())
+                                all_possible_titles.add(movie.get('original_title', '').lower())
+                    elif library.type == 'show':
+                        tvdb_results = tvdb_client.search_series(title_filter)
+                        if tvdb_results:
+                            for series in tvdb_results:
+                                all_possible_titles.add(series.get('name', '').lower())
+
+                    all_possible_titles.discard('')
+                    all_possible_titles.discard(title_filter.lower()) # On l'a déjà cherché
+
+                    # --- Palier 3: Recherche Étendue ---
+                    extended_results = []
+                    if all_possible_titles:
+                        for title in all_possible_titles:
+                            extended_results.extend(library.search(title__icontains=title, **search_args))
+                            extended_results.extend(library.search(originalTitle__icontains=title, **search_args))
+
+                    # --- Fusion Finale ---
+                    final_results = direct_results + extended_results
+                    merged_results = {item.ratingKey: item for item in final_results}
                     items_from_lib = list(merged_results.values())
+
                 else:
                     # Comportement normal si pas de filtre de titre
                     items_from_lib = library.search(**search_args)
