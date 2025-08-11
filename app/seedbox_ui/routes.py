@@ -4404,6 +4404,31 @@ def retry_repatriation_endpoint():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+@seedbox_ui_bp.route('/torrent/ignore', methods=['POST'])
+@login_required
+def ignore_torrent_permanently():
+    data = request.json
+    torrent_hash = data.get('torrent_hash')
+
+    if not torrent_hash:
+        return jsonify({'status': 'error', 'message': 'HASH du torrent manquant.'}), 400
+
+    try:
+        # Add to the ignored list first
+        success_ignore = mapping_manager.add_hash_to_ignored_list(torrent_hash)
+        if not success_ignore:
+            # Logged inside the function, but we can return a specific error
+            return jsonify({'status': 'error', 'message': "Échec de l'ajout du torrent à la liste des ignorés."}), 500
+
+        # Then remove from the pending map
+        mapping_manager.remove_torrent_from_map(torrent_hash)
+
+        return jsonify({'status': 'success', 'message': f"Le torrent {torrent_hash} a été ignoré définitivement et supprimé de la liste de suivi."})
+
+    except Exception as e:
+        current_app.logger.error(f"Error in ignore_torrent_permanently for hash {torrent_hash}: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 
 @seedbox_ui_bp.route('/run_staging_processor', methods=['POST'])
 @internal_api_required

@@ -243,6 +243,71 @@ def get_all_torrent_hashes():
     torrents = load_torrent_map()
     return set(torrents.keys())
 
+def _get_ignored_torrents_file_path():
+    """
+    Returns the configured path for the ignored torrents JSON file.
+    """
+    try:
+        logger = current_app.logger
+        path = current_app.config.get('IGNORED_TORRENTS_FILE_PATH')
+        if not path:
+            path = os.path.join(current_app.instance_path, 'ignored_torrents.json')
+            logger.info(f"IGNORED_TORRENTS_FILE_PATH not set, using default: {path}")
+    except RuntimeError:
+        logger = module_logger
+        path = os.getenv('MMS_IGNORED_TORRENTS_FILE_FALLBACK', 'instance/ignored_torrents.json')
+        logger.info(f"Using fallback ignored torrents file path: {path}")
+
+    ignored_dir = os.path.dirname(path)
+    if ignored_dir and not os.path.exists(ignored_dir):
+        os.makedirs(ignored_dir)
+    return path, logger
+
+def load_ignored_hashes():
+    """Loads the set of ignored torrent hashes from its JSON file."""
+    ignored_file, logger = _get_ignored_torrents_file_path()
+    if not os.path.exists(ignored_file):
+        return set()
+    try:
+        with open(ignored_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+            if not content.strip():
+                return set()
+            data = json.loads(content)
+            if isinstance(data, list):
+                return set(data)
+            else:
+                logger.warning(f"Content of {ignored_file} is not a list. Ignoring content.")
+                return set()
+    except (json.JSONDecodeError, IOError) as e:
+        logger.error(f"Error reading or parsing ignored torrents file {ignored_file}: {e}")
+        return set()
+
+def add_hash_to_ignored_list(torrent_hash):
+    """Adds a torrent hash to the ignored list and saves it."""
+    ignored_file, logger = _get_ignored_torrents_file_path()
+    lock_file = ignored_file + ".lock"
+    lock = FileLock(lock_file, timeout=10)
+
+    try:
+        with lock:
+            ignored_hashes = load_ignored_hashes()
+            if torrent_hash in ignored_hashes:
+                logger.info(f"Hash {torrent_hash} is already in the ignored list.")
+                return True
+
+            ignored_hashes.add(torrent_hash)
+            with open(ignored_file, 'w', encoding='utf-8') as f:
+                json.dump(list(ignored_hashes), f, indent=4)
+            logger.info(f"Added hash {torrent_hash} to ignored list at {ignored_file}.")
+            return True
+    except Timeout:
+        logger.error(f"Could not acquire lock for {ignored_file} to save ignored hash.")
+        return False
+    except Exception as e:
+        logger.error(f"Failed to add hash {torrent_hash} to ignored list: {e}")
+        return False
+
 # Vous pouvez ajouter ici les tests de votre __main__ si vous voulez le tester en standalone,
 # mais assurez-vous de configurer un logger basique et potentiellement de simuler current_app.config
 # ou de vous appuyer sur le fallback getenv pour PENDING_TORRENTS_MAP_FILE.

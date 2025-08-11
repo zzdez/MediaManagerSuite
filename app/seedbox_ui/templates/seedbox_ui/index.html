@@ -243,7 +243,12 @@
                                     {% elif item.is_in_staging and not item.target_id %}
                                          <button class="btn btn-sm btn-warning map-problematic-item-btn mb-1 w-100" data-torrent-hash="{{ item.torrent_hash }}" data-release-name="{{ item.release_name }}" data-app-type="{{ item.app_type }}" title="Mapper cet item."><i class="bi bi-link-45deg"></i> Mapper Item</button>
                                     {% endif %}
-                                    <button class="btn btn-sm btn-danger delete-association-btn w-100" data-torrent-hash="{{ item.torrent_hash }}" title="Supprimer cette association."><i class="bi bi-trash-fill"></i> Oublier Assoc.</button>
+                                    <button class="btn btn-sm btn-outline-warning delete-association-btn mb-1 w-100" data-torrent-hash="{{ item.torrent_hash }}" title="Supprimer cette association."><i class="bi bi-eraser"></i> Oublier</button>
+                                    <button class="btn btn-sm btn-danger ignore-torrent-btn w-100"
+                                            data-hash="{{ item.torrent_hash }}"
+                                            title="Ajouter ce torrent à la liste noire et le supprimer de la vue. Cette action est irréversible.">
+                                        <i class="bi bi-trash-fill"></i> Ignorer Déf.
+                                    </button>
                                 </td>
                             </tr>
                             {% endfor %}
@@ -722,6 +727,8 @@
                     }
                 } else if (button.classList.contains('retry-repatriation-btn')) {
                     handleRetryRepatriation(button);
+                } else if (button.classList.contains('ignore-torrent-btn')) {
+                    handleIgnoreTorrent(button);
                 }
                 
                 if (button.classList.contains('delete-association-btn')) {
@@ -781,6 +788,11 @@
                 else if (button.classList.contains('retry-repatriation-btn')) {
                     event.preventDefault();
                     handleRetryRepatriation(button);
+                }
+                // --- Action : Ignorer Définitivement ---
+                else if (button.classList.contains('ignore-torrent-btn')) {
+                    event.preventDefault();
+                    handleIgnoreTorrent(button);
                 }
                 // --- Action : Oublier l'Association ---
                 else if (button.classList.contains('forget-association-btn')) {

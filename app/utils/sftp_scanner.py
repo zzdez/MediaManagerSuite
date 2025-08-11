@@ -10,10 +10,15 @@ def scan_and_map_torrents():
         # On charge la map complète pour pouvoir la modifier
         torrent_map = mapping_manager.load_torrent_map()
         known_hashes = set(torrent_map.keys())
+        ignored_hashes = mapping_manager.load_ignored_hashes()
 
         new_torrents_added = 0
         for torrent in completed_torrents:
             torrent_hash = torrent.get('hash')
+
+            if torrent_hash in ignored_hashes:
+                continue
+
             release_name = torrent.get('name')
             download_path = torrent.get('base_path')
             folder_name = os.path.basename(download_path) if download_path else release_name
