@@ -692,70 +692,65 @@
             });
         }
 
-        // --- Logique pour les actions sur les "Items en Attente" ---
-        const dashboardContainer = document.getElementById('dashboard-content');
-        if (dashboardContainer) {
-            dashboardContainer.addEventListener('click', function(event) {
-                const button = event.target.closest('button');
-                if (!button) return;
-
-                const torrentHash = button.dataset.torrentHash;
-                if (!torrentHash) return;
-
-                // AIGUILLEUR : Quelle action lancer ?
-                if (button.classList.contains('retry-import-btn')) {
-                    console.log("Action: Réessayer l'import pour le hash:", torrentHash);
-                    if (confirm("Voulez-vous vraiment réessayer l'importation pour cet item ?")) {
-                        fetch(`/seedbox/problematic-import/retry/${torrentHash}`, {
-                            method: 'POST',
-                            headers: {'Content-Type': 'application/json'},
-                        })
-                        .then(response => {
-                            if (response.ok) {
-                                window.location.reload();
-                            } else {
-                                response.json().then(data => {
-                                    alert(`Erreur: ${data.error || 'Une erreur est survenue.'}`);
-                                }).catch(() => {
-                                    alert('Une erreur de communication est survenue.');
-                                });
-                            }
-                        }).catch(error => {
-                            console.error('Erreur fetch:', error);
-                            alert('Une erreur de communication est survenue.');
-                        });
+        // --- Logique pour les actions sur les "Items en Attente" (jQuery Event Delegation) ---
+        $(document).on('click', '.retry-import-btn', function() {
+            const torrentHash = this.dataset.torrentHash;
+            if (!torrentHash) return;
+            if (confirm("Voulez-vous vraiment réessayer l'importation pour cet item ?")) {
+                fetch(`/seedbox/problematic-import/retry/${torrentHash}`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                })
+                .then(response => response.json().then(data => ({ ok: response.ok, data })))
+                .then(({ ok, data }) => {
+                    if (ok) {
+                        alert(data.message || 'Action réussie.');
+                        window.location.reload();
+                    } else {
+                        throw new Error(data.message || 'Une erreur est survenue.');
                     }
-                } else if (button.classList.contains('retry-repatriation-btn')) {
-                    handleRetryRepatriation(button);
-                } else if (button.classList.contains('ignore-torrent-btn')) {
-                    handleIgnoreTorrent(button);
-                }
-                
-                if (button.classList.contains('delete-association-btn')) {
-                    event.preventDefault();
-                    if (!confirm("Êtes-vous sûr de vouloir supprimer cette association ?")) {
-                        return;
-                    }
-                    const url = `{{ url_for('seedbox_ui.delete_problematic_association_action', torrent_hash='__HASH__') }}`.replace('__HASH__', torrentHash);
-                    fetch(url, {
-                        method: 'POST',
-                    })
-                    .then(response => {
-                        return response.json().then(data => ({ ok: response.ok, data }));
-                    })
+                }).catch(error => {
+                    alert(`Erreur: ${error.message}`);
+                });
+            }
+        });
+
+        $(document).on('click', '.map-problematic-item-btn', function() {
+            const appType = this.dataset.appType;
+            const releaseName = this.dataset.releaseName;
+            const torrentHash = this.dataset.torrentHash;
+            if (appType === 'sonarr') {
+                openSonarrSearchModalForProblemItem(releaseName, null, torrentHash);
+            } else if (appType === 'radarr') {
+                openRadarrSearchModalForProblemItem(releaseName, null, torrentHash);
+            }
+        });
+
+        $(document).on('click', '.delete-association-btn', function(event) {
+            event.preventDefault();
+            const torrentHash = this.dataset.torrentHash;
+            if (!torrentHash) return;
+            if (confirm("Êtes-vous sûr de vouloir supprimer cette association ? L'item ne sera plus suivi.")) {
+                const url = `{{ url_for('seedbox_ui.delete_problematic_association_action', torrent_hash='__HASH__') }}`.replace('__HASH__', torrentHash);
+                fetch(url, { method: 'POST' })
+                    .then(response => response.json().then(data => ({ ok: response.ok, data })))
                     .then(({ ok, data }) => {
                         alert(data.message || "L'opération est terminée.");
-                        if (ok) {
-                            window.location.reload();
-                        }
+                        if (ok) window.location.reload();
                     })
                     .catch(error => {
                         console.error('Erreur lors de la suppression de l\'association:', error);
-                        alert('Une erreur de communication est survenue. Consultez la console pour plus de détails.');
+                        alert('Une erreur de communication est survenue.');
                     });
-                }
-            });
-        }
+            }
+        });
+
+        // --- CORRECTION APPLIQUÉE ICI ---
+        // Utilisation de la délégation d'événements jQuery sur `document`
+        $(document).on('click', '.ignore-torrent-btn', function() {
+            // `this` fait référence au bouton cliqué, ce qui est plus direct.
+            handleIgnoreTorrent(this);
+        });
 
         // --- NOUVELLE Logique pour les actions de la Vue rTorrent ---
         const rtorrentContainer = document.getElementById('rtorrent-view-content');
