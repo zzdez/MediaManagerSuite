@@ -63,7 +63,7 @@ class CustomTVDBClient:
 
         try:
             # ÉTAPE 1: Recherche ciblée sur le type 'series'
-            search_results = self.client.search(query=title, type='series')
+            search_results = self.client.search(query=title, type='series', lang=lang)
 
             if not search_results:
                 logger.info("  -> Aucun résultat de type 'série' trouvé.")
