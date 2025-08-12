@@ -241,15 +241,7 @@
                                     {% if item.is_in_staging and item.target_id %}
                                         <button class="btn btn-sm btn-success retry-import-btn mb-1 w-100" data-torrent-hash="{{ item.torrent_hash }}" title="Relancer l'import MMS."><i class="bi bi-play-fill"></i> Réessayer Import</button>
                                     {% elif item.is_in_staging and not item.target_id %}
-                                         <button class="btn btn-sm btn-warning map-problematic-item-btn mb-1 w-100"
-                                                 data-torrent-hash="{{ item.torrent_hash }}"
-                                                 data-release-name="{{ item.release_name }}"
-                                                 data-app-type="{{ item.app_type }}"
-                                                 title="Mapper cet item."
-                                                 data-bs-toggle="modal"
-                                                 data-bs-target="#{{ 'sonarrSearchModal' if item.app_type == 'sonarr' else 'radarrSearchModal' }}">
-                                             <i class="bi bi-link-45deg"></i> Mapper Item
-                                         </button>
+                                         <button class="btn btn-sm btn-warning map-problematic-item-btn mb-1 w-100" data-torrent-hash="{{ item.torrent_hash }}" data-release-name="{{ item.release_name }}" data-app-type="{{ item.app_type }}" title="Mapper cet item."><i class="bi bi-link-45deg"></i> Mapper Item</button>
                                     {% endif %}
                                     <button class="btn btn-sm btn-outline-warning delete-association-btn mb-1 w-100" data-torrent-hash="{{ item.torrent_hash }}" title="Supprimer cette association."><i class="bi bi-eraser"></i> Oublier</button>
                                     <button class="btn btn-sm btn-danger ignore-torrent-btn w-100"
@@ -340,7 +332,6 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
     <script>
         window.appUrls = {
-            searchMetadataSeriesApi: "{{ url_for('metadata.search_series_endpoint') }}",
             searchSonarrApi: "{{ url_for('seedbox_ui.search_sonarr_api') }}",
             searchRadarrApi: "{{ url_for('seedbox_ui.search_radarr_api') }}",
             triggerSonarrImport: "{{ url_for('seedbox_ui.trigger_sonarr_import') }}",
@@ -738,16 +729,6 @@
                     handleRetryRepatriation(button);
                 } else if (button.classList.contains('ignore-torrent-btn')) {
                     handleIgnoreTorrent(button);
-                } else if (button.classList.contains('map-problematic-item-btn')) {
-                    const releaseName = button.dataset.releaseName;
-                    const appType = button.dataset.appType;
-                    const torrentHash = button.dataset.torrentHash;
-                    console.log(`Mapping problematic item: ${releaseName}, type: ${appType}, hash: ${torrentHash}`);
-                    if (appType === 'sonarr') {
-                        openSonarrSearchModalForProblemItem(releaseName, null, torrentHash);
-                    } else if (appType === 'radarr') {
-                        openRadarrSearchModalForProblemItem(releaseName, null, torrentHash);
-                    }
                 }
                 
                 if (button.classList.contains('delete-association-btn')) {

@@ -319,7 +319,7 @@ async function executeSonarrSearch() {
     resultsDiv.innerHTML = `<div class="d-flex align-items-center"><strong role="status">Recherche Sonarr...</strong><div class="spinner-border ms-auto"></div></div>`;
 
     try {
-        const response = await fetch(`${window.appUrls.searchMetadataSeriesApi}?query=${encodeURIComponent(query)}`);
+        const response = await fetch(`${window.appUrls.searchSonarrApi}?query=${encodeURIComponent(query)}`);
         if (!response.ok) {
             let eD; try { eD = await response.json(); } catch (e) { eD = { error: "Erreur serveur." }; }
             throw new Error(eD.error || `HTTP ${response.status}`);

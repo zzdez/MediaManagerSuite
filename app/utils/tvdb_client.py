@@ -35,26 +35,16 @@ class CustomTVDBClient:
 
     def search_series(self, title, lang='fra'):
         """
-        Recherche une série par son titre, en priorisant une langue, et retourne des résultats formatés.
+        Recherche une série par son titre, en priorisant une langue.
         """
         if not self.client:
             logger.error("Client TVDB non initialisé, recherche impossible.")
             return []
         try:
             logger.info(f"Recherche TVDB pour le titre : '{title}' en langue '{lang}'")
+            # La librairie tvdb_v4_official permet de passer des kwargs qui sont ajoutés aux paramètres de la requête
             results = self.client.search(query=title, lang=lang)
-
-            formatted_results = []
-            if results:
-                for res in results:
-                    formatted_results.append({
-                        'id': res.get('tvdb_id'),
-                        'title': res.get('name'),
-                        'overview': res.get('overview'),
-                        'year': res.get('year'),
-                        'poster_url': res.get('image_url')
-                    })
-            return formatted_results
+            return results if results else []
         except Exception as e:
             logger.error(f"Erreur lors de la recherche TVDB pour '{title}': {e}", exc_info=True)
             return []

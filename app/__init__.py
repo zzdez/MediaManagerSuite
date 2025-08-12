@@ -81,10 +81,6 @@ def create_app(config_class=Config):
     app.register_blueprint(trailer_bp)
     logger.info("Blueprint 'trailer' enregistré avec succès.")
 
-    from app.metadata_routes import metadata_bp
-    app.register_blueprint(metadata_bp)
-    logger.info("Blueprint 'metadata' enregistré avec succès.")
-
     # Route pour la page d'accueil/portail
     @app.route('/')
     @login_required
