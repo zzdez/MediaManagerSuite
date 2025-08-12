@@ -340,6 +340,7 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
     <script>
         window.appUrls = {
+            searchMetadataSeriesApi: "{{ url_for('metadata.search_series_endpoint') }}",
             searchSonarrApi: "{{ url_for('seedbox_ui.search_sonarr_api') }}",
             searchRadarrApi: "{{ url_for('seedbox_ui.search_radarr_api') }}",
             triggerSonarrImport: "{{ url_for('seedbox_ui.trigger_sonarr_import') }}",
