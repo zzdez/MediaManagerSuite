@@ -1,3 +1,4 @@
+import os
 import requests
 from flask import current_app
 import re
@@ -17,13 +18,15 @@ def parse_media_name(item_name: str) -> dict:
     logger.debug(f"parse_media_name: Called with item_name='{item_name}'")
     # Regex patterns for TV shows
     tv_patterns = [
-        re.compile(r"^(?P<title>.+?)[ ._]?S(?P<season>\d{1,2})E(?P<episode>\d{1,3})", re.IGNORECASE),
-        re.compile(r"^(?P<title>.+?)(?:[._\s](?P<year>(?:19|20)\d{2}))?(?:[._\s]+(?:DOC|SUBPACK|SEASON|VOL|DISC|DISQUE|PART))?[._\s]*S(?P<season>\d{1,2})(?![E\d])", re.IGNORECASE), # Refined pattern for Season-only releases
-        re.compile(r"^(?P<title>.+?)[ ._]?Season[ ._]?(?P<season>\d{1,2})[ ._]?Episode[ ._]?(?P<episode>\d{1,3})", re.IGNORECASE),
-        re.compile(r"^(?P<title>.+?)[ ._]?(?P<season>\d{1,2})x(?P<episode>\d{1,3})", re.IGNORECASE), # e.g. Show.Title.1x01
-        re.compile(r"^(?P<title>.+?)(?:[._\s]+S(?P<season>\d{1,2}))(?:[._\s]+E(?P<episode>\d{1,3}))",re.IGNORECASE), # General SxxExx with flexible separators - MODIFIED
-        re.compile(r"^(?P<title>.+?)[ ._](?P<year>(?:19|20)\d{2})[ ._]S(?P<season>\d{1,2})E(?P<episode>\d{1,3})", re.IGNORECASE), # Title Year SxxExx
-        re.compile(r"^(?P<title>.+?)[ ._]S(?P<season>\d{1,2})[ ._]E(?P<episode>\d{1,3})[ ._](?P<year>(?:19|20)\d{2})", re.IGNORECASE), # Title SxxExx Year
+        # More specific patterns first
+        re.compile(r"^(?P<title>.+?)[._\s](?P<year>(?:19|20)\d{2})[._\s]S(?P<season>\d{1,2})[._\s]?[E.]?(?P<episode>\d{1,3})", re.IGNORECASE), # Title.Year.S01.E01
+        re.compile(r"^(?P<title>.+?)[._\s]S(?P<season>\d{1,2})[._\s]?[E.]?(?P<episode>\d{1,3})[._\s](?P<year>(?:19|20)\d{2})", re.IGNORECASE), # Title.S01.E01.Year
+        re.compile(r"^(?P<title>.+?)[._\s]Season[._\s]?(?P<season>\d{1,2})[._\s]?Episode[._\s]?(?P<episode>\d{1,3})", re.IGNORECASE), # Title.Season.01.Episode.01
+        re.compile(r"^(?P<title>.+?)[._\s]?(?P<season>\d{1,2})x(?P<episode>\d{1,3})", re.IGNORECASE), # Title.1x01
+        # Generic SxxExx
+        re.compile(r"^(?P<title>.+?)[._\s]S(?P<season>\d{1,2})[._\s]?[E.]?(?P<episode>\d{1,3})", re.IGNORECASE),
+        # Season pack
+        re.compile(r"^(?P<title>.+?)(?:[._\s](?P<year>(?:19|20)\d{2}))?(?:[._\s]+(?:DOC|SUBPACK|SEASON|VOL|DISC|DISQUE|PART))?[._\s]*S(?P<season>\d{1,2})(?![E\d])", re.IGNORECASE),
     ]
 
     # Regex patterns for movies
@@ -80,12 +83,13 @@ def parse_media_name(item_name: str) -> dict:
     # If no pattern matched strongly
     logger.info(f"Could not determine type for: {item_name}, returning as 'unknown'")
     # Attempt to clean title even if unknown type
-    cleaned_title = re.sub(r'[\._]', ' ', item_name) # Replace dots/underscores with spaces
+    base_name, _ = os.path.splitext(item_name)
+    cleaned_title = re.sub(r'[\._]', ' ', base_name) # Replace dots/underscores with spaces
     cleaned_title = re.sub(r'\s{2,}', ' ', cleaned_title).strip() # Remove multiple spaces
     # Try to remove common tags like 1080p, WEB-DL etc. for a cleaner unknown title
     common_tags_pattern = r'(1080p|720p|4K|WEB-DL|WEBRip|BluRay|x264|x265|AAC|DTS|HDRip|HDTV|XviD|DivX).*$'
     cleaned_title = re.sub(common_tags_pattern, '', cleaned_title, flags=re.IGNORECASE).strip()
-    result["title"] = cleaned_title if cleaned_title else item_name
+    result["title"] = cleaned_title if cleaned_title else base_name
 
     logger.debug(f"parse_media_name: Returning: {result}")
     return result

@@ -316,10 +316,11 @@ async function executeSonarrSearch() {
 
     if (!resultsDiv) { console.error("Div 'sonarrSearchResults' non trouvée."); return; }
     if (!query.trim()) { resultsDiv.innerHTML = '<p class="text-warning">Terme de recherche manquant.</p>'; return; }
-    resultsDiv.innerHTML = `<div class="d-flex align-items-center"><strong role="status">Recherche Sonarr...</strong><div class="spinner-border ms-auto"></div></div>`;
+    resultsDiv.innerHTML = `<div class="d-flex align-items-center"><strong role="status">Recherche TVDB...</strong><div class="spinner-border ms-auto"></div></div>`;
 
     try {
-        const response = await fetch(`${window.appUrls.searchSonarrApi}?query=${encodeURIComponent(query)}`);
+        // MODIFICATION: Call the new TVDB search endpoint
+        const response = await fetch(`/api/tvdb/search_series?query=${encodeURIComponent(query)}`);
         if (!response.ok) {
             let eD; try { eD = await response.json(); } catch (e) { eD = { error: "Erreur serveur." }; }
             throw new Error(eD.error || `HTTP ${response.status}`);

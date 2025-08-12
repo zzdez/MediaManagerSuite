@@ -1406,6 +1406,15 @@ def _execute_mms_sonarr_import(item_name_in_staging, series_id_target, original_
     final_message = f"{successful_moves} fichier(s) pour '{series_title}' déplacé(s). Échecs: {len(failed_moves_details)}. "
     final_message += "Rescan Sonarr initié." if not error_rescan else f"Échec Rescan Sonarr: {error_rescan}"
 
+    # Bug Fix: Update status for manual imports
+    if successful_moves > 0 and not is_automated_flow and torrent_hash_for_status_update:
+        logger.info(f"{log_prefix}Manual import successful. Updating torrent map status for hash {torrent_hash_for_status_update}.")
+        torrent_map_manager.update_torrent_status_in_map(
+            torrent_hash_for_status_update,
+            'completed_manual',
+            'Import manuel réussi via UI.'
+        )
+
     return {"success": True, "message": final_message}
 
 
@@ -1707,6 +1716,52 @@ def search_sonarr_api():
     # Exemple: logger.info(f"Résultats recherche Sonarr pour '{query}': {results}")
     return jsonify(results if results else [])
 
+
+# Import the tvdb_client
+from app.utils.tvdb_client import CustomTVDBClient
+
+@seedbox_ui_bp.route('/api/tvdb/search_series')
+@login_required
+def search_tvdb_series_api():
+    """
+    New API endpoint to search for series using the internal TVDB client.
+    Returns results in a format compatible with the existing Sonarr search modal.
+    """
+    logger = current_app.logger
+    query = request.args.get('query')
+    if not query:
+        return jsonify({"error": "Terme de recherche manquant"}), 400
+
+    try:
+        tvdb_client = CustomTVDBClient()
+        logger.info(f"TVDB API: Searching for series with query: '{query}'")
+        search_results = tvdb_client.search_and_translate_series(query, lang='fr')
+
+        # The frontend expects a specific structure, similar to what the old Sonarr API returned.
+        # We need to map the fields from our tvdb_client to the expected fields.
+        # Expected by JS: remotePoster, title, year, overview, tvdbId, id (Sonarr internal ID, which will be null)
+        formatted_results = []
+        for item in search_results:
+            formatted_item = {
+                "title": item.get('name'),
+                "year": item.get('year'),
+                "overview": item.get('overview'),
+                "remotePoster": item.get('poster_url'),
+                "tvdbId": item.get('tvdb_id'),
+                "id": None,  # This indicates the series is not yet in Sonarr
+                "status": "Not Added", # Custom status for the UI
+                "images": [
+                    {"coverType": "poster", "remoteUrl": item.get('poster_url')}
+                ]
+            }
+            formatted_results.append(formatted_item)
+
+        logger.info(f"TVDB API: Found {len(formatted_results)} results for query '{query}'.")
+        return jsonify(formatted_results)
+
+    except Exception as e:
+        logger.error(f"Error in search_tvdb_series_api for query '{query}': {e}", exc_info=True)
+        return jsonify({"error": "An internal error occurred while searching TVDB."}), 500
 
 @seedbox_ui_bp.route('/search-radarr-api') # GET request
 @login_required
