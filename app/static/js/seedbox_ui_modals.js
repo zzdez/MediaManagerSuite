@@ -320,7 +320,7 @@ async function executeSonarrSearch() {
 
     try {
         // MODIFICATION: Call the new TVDB search endpoint
-        const response = await fetch(`/api/tvdb/search_series?query=${encodeURIComponent(query)}`);
+        const response = await fetch(`/seedbox/api/tvdb/search_series?query=${encodeURIComponent(query)}`);
         if (!response.ok) {
             let eD; try { eD = await response.json(); } catch (e) { eD = { error: "Erreur serveur." }; }
             throw new Error(eD.error || `HTTP ${response.status}`);
