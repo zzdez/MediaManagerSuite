@@ -178,8 +178,9 @@ def update_radarr_movie(movie_data):
     return _radarr_api_request('PUT', f"movie/{movie_data['id']}", json_data=movie_data)
 
 def search_radarr_by_title(title):
-    """Searches for movies in Radarr by title using the lookup endpoint."""
-    return _radarr_api_request('GET', 'movie/lookup', params={'term': title})
+    """Searches for movies in Radarr by title using the lookup endpoint, forcing French language."""
+    params = {'term': title, 'language': 'fr'}
+    return _radarr_api_request('GET', 'movie/lookup', params=params)
 
 def check_radarr_movie_exists(movie_title: str, movie_year: int = None) -> bool:
     """
@@ -370,9 +371,9 @@ def delete_sonarr_episode_file(episode_file_id):
     return _sonarr_api_request('DELETE', f'episodefile/{episode_file_id}')
 
 def search_sonarr_by_title(title):
-    """Searches for series in Sonarr by title."""
-    # L'endpoint de lookup de Sonarr est différent de celui de Radarr
-    return _sonarr_api_request('GET', 'series/lookup', params={'term': title})
+    """Searches for series in Sonarr by title, forcing French language."""
+    params = {'term': title, 'language': 'fr'}
+    return _sonarr_api_request('GET', 'series/lookup', params=params)
 
 # ... (après les autres fonctions sonarr)
 
