@@ -4452,13 +4452,13 @@ def ignore_torrent_permanently():
 
     try:
         # Add to the ignored list first
-        success_ignore = mapping_manager.add_hash_to_ignored_list(torrent_hash)
+        success_ignore = torrent_map_manager.add_hash_to_ignored_list(torrent_hash)
         if not success_ignore:
             # Logged inside the function, but we can return a specific error
             return jsonify({'status': 'error', 'message': "Échec de l'ajout du torrent à la liste des ignorés."}), 500
 
         # Then remove from the pending map
-        mapping_manager.remove_torrent_from_map(torrent_hash)
+        torrent_map_manager.remove_torrent_from_map(torrent_hash)
 
         return jsonify({'status': 'success', 'message': f"Le torrent {torrent_hash} a été ignoré définitivement et supprimé de la liste de suivi."})
 
