@@ -345,7 +345,7 @@ async function executeSonarrSearch() {
 
             const title = enrichedData.seriesName || series.title;
             const overview = enrichedData.overview || series.overview;
-            const posterUrl = (series.remotePoster && series.remotePoster !== 'undefined' ? series.remotePoster : series.images?.find(img => img.coverType === 'poster')?.remoteUrl) || 'data:image/svg+xml;...';
+            const posterUrl = enrichedData.image || series.remotePoster || (series.images?.find(img => img.coverType === 'poster')?.remoteUrl) || '/static/img/placeholder.png';
             const escapedTitle = escapeJsString(title);
             const isAlreadyInSonarr = series.id && parseInt(series.id) > 0;
             const idForHandler = isAlreadyInSonarr ? series.id : (parseInt(series.tvdbId) || 0);
