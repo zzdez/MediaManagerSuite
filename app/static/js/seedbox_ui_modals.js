@@ -327,22 +327,26 @@ async function executeSonarrSearch() {
             return;
         }
 
-        resultsDiv.innerHTML = `<div class="d-flex align-items-center"><strong role="status">Enrichissement des données via TVDB...</strong><div class="spinner-border ms-auto"></div></div><ul class="list-group mt-3"></ul>`;
-        const listElement = resultsDiv.querySelector('.list-group');
+        resultsDiv.innerHTML = `<div class="d-flex align-items-center"><strong role="status">Enrichissement des données via TVDB...</strong><div class="spinner-border ms-auto"></div></div>`;
 
-        for (const series of results) {
-            let enrichedData = {};
+        // Use Promise.all to fetch all enrichment data in parallel
+        const enrichmentPromises = results.map(series => {
             if (series.tvdbId) {
-                try {
-                    const enrichResponse = await fetch(`/seedbox/api/tvdb/enrich?tvdb_id=${series.tvdbId}`);
-                    if (enrichResponse.ok) {
-                        enrichedData = await enrichResponse.json();
-                    }
-                } catch (e) {
-                    console.warn(`Failed to enrich data for TVDB ID ${series.tvdbId}:`, e);
-                }
+                return fetch(`/seedbox/api/tvdb/enrich?tvdb_id=${series.tvdbId}`)
+                    .then(response => response.ok ? response.json() : {})
+                    .catch(e => {
+                        console.warn(`Failed to enrich data for TVDB ID ${series.tvdbId}:`, e);
+                        return {}; // Return empty object on failure
+                    });
             }
+            return Promise.resolve({}); // Resolve immediately if no tvdbId
+        });
 
+        const enrichedResults = await Promise.all(enrichmentPromises);
+
+        let html = '<ul class="list-group mt-3">';
+        results.forEach((series, index) => {
+            const enrichedData = enrichedResults[index] || {};
             const title = enrichedData.seriesName || series.title;
             const overview = enrichedData.overview || series.overview;
             const posterUrl = enrichedData.image || series.remotePoster || (series.images?.find(img => img.coverType === 'poster')?.remoteUrl) || '/static/img/placeholder.png';
@@ -355,7 +359,7 @@ async function executeSonarrSearch() {
             const buttonTitle = isAlreadyInSonarr ? `Mapper à la série existante : ${title}` : `Ajouter la série '${title}' à Sonarr et la sélectionner`;
             const disabledReason = !idForHandler ? "ID externe/interne manquant ou invalide" : "";
 
-            const listItemHtml = `
+            html += `
                 <li class="list-group-item" data-media-id="${idForHandler || 0}" data-instance-type="sonarr" style="cursor: pointer;">
                     <div class="row align-items-center">
                         <div class="col-auto"><img src="${posterUrl}" alt="${escapedTitle}" class="img-fluid rounded" style="max-height: 90px;" onerror="this.onerror=null; this.src='https://via.placeholder.com/60x90?text=ImgErr';"></div>
@@ -377,11 +381,9 @@ async function executeSonarrSearch() {
                         </div>
                     </div>
                 </li>`;
-            listElement.innerHTML += listItemHtml;
-        }
-         // Remove the "Enriching..." spinner
-        const spinnerDiv = resultsDiv.querySelector('div.d-flex');
-        if (spinnerDiv) spinnerDiv.remove();
+        });
+        html += '</ul>';
+        resultsDiv.innerHTML = html;
 
     } catch (error) {
         resultsDiv.innerHTML = '';
