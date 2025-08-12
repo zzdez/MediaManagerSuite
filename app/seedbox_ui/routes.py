@@ -3747,9 +3747,7 @@ def retry_problematic_import_action(torrent_hash):
         return jsonify({'status': 'error', 'message': f"Association non trouvée pour le hash {torrent_hash}."}), 404
 
     item_name_in_staging = association_data.get('release_name')
-    
-    # --- CORRECTION 1 : Utiliser la bonne variable pour le chemin de staging ---
-    staging_dir = current_app.config.get('LOCAL_STAGING_PATH') # Utilise la variable de config correcte
+    staging_dir = current_app.config.get('LOCAL_STAGING_PATH')
 
     if not item_name_in_staging or not staging_dir or not (Path(staging_dir) / item_name_in_staging).exists():
         message = f"L'item '{item_name_in_staging or 'Inconnu'}' n'est plus dans le staging ou informations manquantes. Impossible de réessayer."
@@ -3760,44 +3758,44 @@ def retry_problematic_import_action(torrent_hash):
     logger.info(f"Relance du traitement pour : '{item_name_in_staging}', Hash: {torrent_hash}")
     torrent_map_manager.update_torrent_status_in_map(torrent_hash, "processing_by_mms_retry", f"Relance manuelle pour {item_name_in_staging}")
 
-    # --- CORRECTION 2 : La NameError est corrigée ici ---
     full_staging_path_str = str((Path(staging_dir) / item_name_in_staging).resolve())
-    result_from_handler = {}
     app_type = association_data.get('app_type')
     target_id = association_data.get('target_id')
 
-    if app_type == 'sonarr':
-        result_from_handler = _handle_staged_sonarr_item(
-            item_name_in_staging=item_name_in_staging,
-            series_id_target=target_id,
-            path_to_cleanup_in_staging_after_success=full_staging_path_str,
-            automated_import=True,
-            torrent_hash_for_status_update=torrent_hash
-        )
-    elif app_type == 'radarr':
-        result_from_handler = _handle_staged_radarr_item(
-            item_name_in_staging=item_name_in_staging,
-            movie_id_target=target_id,
-            path_to_cleanup_in_staging_after_success=full_staging_path_str,
-            automated_import=True,
-            torrent_hash_for_status_update=torrent_hash
-        )
-    else:
-        message = f"Type d'application inconnu '{app_type}' pour la relance."
-        if torrent_hash:
-            torrent_map_manager.update_torrent_status_in_map(torrent_hash, "error_unknown_association_type", "Type d'app inconnu lors de la relance.")
-        return jsonify({'status': 'error', 'message': message}), 400
+    try:
+        if app_type == 'sonarr':
+            _handle_staged_sonarr_item(
+                item_name_in_staging=item_name_in_staging,
+                series_id_target=target_id,
+                path_to_cleanup_in_staging_after_success=full_staging_path_str,
+                automated_import=True, # Le flux de retry est considéré comme automatisé dans le handler
+                torrent_hash_for_status_update=torrent_hash
+            )
+        elif app_type == 'radarr':
+            _handle_staged_radarr_item(
+                item_name_in_staging=item_name_in_staging,
+                movie_id_target=target_id,
+                path_to_cleanup_in_staging_after_success=full_staging_path_str,
+                automated_import=True, # Le flux de retry est considéré comme automatisé dans le handler
+                torrent_hash_for_status_update=torrent_hash
+            )
+        else:
+            message = f"Type d'application inconnu '{app_type}' pour la relance."
+            if torrent_hash:
+                torrent_map_manager.update_torrent_status_in_map(torrent_hash, "error_unknown_association_type", "Type d'app inconnu lors de la relance.")
+            return jsonify({'status': 'error', 'message': message}), 400
 
-    # --- CORRECTION 3 : Retourner du JSON au lieu d'une redirection ---
-    if result_from_handler.get("success"):
-        message = f"Relance pour '{item_name_in_staging}' réussie: {result_from_handler.get('message')}"
+        # SI ON ARRIVE ICI, C'EST UN SUCCÈS
+        torrent_map_manager.update_torrent_status_in_map(torrent_hash, "completed_manual", "Import manuel réussi via le bouton Réessayer.")
+        message = f"L'import manuel pour '{item_name_in_staging}' a été lancé avec succès."
         return jsonify({'status': 'success', 'message': message})
-    elif result_from_handler.get("manual_required"):
-        message = f"Relance pour '{item_name_in_staging}' nécessite une attention manuelle: {result_from_handler.get('message')}"
-        return jsonify({'status': 'warning', 'message': message}) # On peut utiliser un statut 'warning'
-    else:
-        message = f"Échec de la relance pour '{item_name_in_staging}': {result_from_handler.get('message', 'Erreur inconnue')}"
-        return jsonify({'status': 'error', 'message': message}), 500
+
+    except Exception as e:
+        # Si une erreur se produit dans les handlers, on la capture ici
+        current_app.logger.error(f"Échec de la relance pour '{item_name_in_staging}': {e}", exc_info=True)
+        # Le statut dans le mapping a probablement déjà été mis en erreur par le handler, mais on peut s'en assurer
+        torrent_map_manager.update_torrent_status_in_map(torrent_hash, "error_mms_api_processing_failed", str(e))
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @seedbox_ui_bp.route('/rtorrent/map/sonarr', methods=['POST'], endpoint='rtorrent_map_sonarr')
 @login_required
@@ -3834,7 +3832,7 @@ def rtorrent_map_sonarr():
         label=current_app.config.get('RTORRENT_LABEL_SONARR', 'sonarr'),
         seedbox_download_path=download_path,
         original_torrent_name=torrent_name,
-        initial_status='mapped_by_user'
+        status='mapped_by_user'
     )
 
     if success:
@@ -3877,7 +3875,7 @@ def rtorrent_map_radarr():
         label=current_app.config.get('RTORRENT_LABEL_RADARR', 'radarr'),
         seedbox_download_path=download_path,
         original_torrent_name=torrent_name,
-        initial_status='mapped_by_user'
+        status='mapped_by_user'
     )
 
     if success:
