@@ -14,7 +14,7 @@ class TheMovieDBClient:
         self.tmdb.api_key = self.api_key
         self.tmdb.language = 'fr' # Langue par défaut
 
-    def get_movie_details(self, tmdb_id, lang='fr-FR'):
+    def get_movie_details(self, tmdb_id, lang='fr'):
         """
         Récupère les détails d'un film depuis TMDb en utilisant son ID et une langue spécifique.
         """
@@ -22,18 +22,14 @@ class TheMovieDBClient:
             logger.error("La clé API TMDb n'est pas disponible.")
             return None
 
-        # ** LA CORRECTION CRUCIALE EST ICI **
-        original_lang = self.tmdb.language
         try:
             logger.info(f"Récupération des détails TMDb pour l'ID : {tmdb_id} en langue '{lang}'")
 
-            # 1. On change la langue de l'instance
-            self.tmdb.language = lang
-
+            # La bibliothèque tmdbv3api utilise un paramètre `language` dans les méthodes `info` ou `details`.
+            # L'approche consistant à modifier self.tmdb.language est moins fiable.
+            # On passe directement le paramètre.
             movie_api = Movie()
-
-            # 2. On fait l'appel SANS le paramètre 'language'
-            movie = movie_api.details(tmdb_id)
+            movie = movie_api.details(tmdb_id, language=lang)
 
             # 3. On construit le dictionnaire de retour avec les bons noms de clés
             details = {

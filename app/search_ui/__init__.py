@@ -206,7 +206,7 @@ def enrich_details():
 
         elif media_type == 'movie':
             client = TheMovieDBClient()
-            details = client.get_movie_details(media_id, lang='fr-FR')
+            details = client.get_movie_details(media_id, lang='fr')
             if not details: return jsonify({'error': 'Film non trouvé'}), 404
 
             # La sortie du client TMDB est déjà parfaite, on la transmet.

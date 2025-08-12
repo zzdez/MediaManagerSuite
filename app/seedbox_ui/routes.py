@@ -1406,6 +1406,10 @@ def _execute_mms_sonarr_import(item_name_in_staging, series_id_target, original_
     final_message = f"{successful_moves} fichier(s) pour '{series_title}' déplacé(s). Échecs: {len(failed_moves_details)}. "
     final_message += "Rescan Sonarr initié." if not error_rescan else f"Échec Rescan Sonarr: {error_rescan}"
 
+    if torrent_hash_for_status_update and not is_automated_flow:
+        logger.info(f"{log_prefix}Mise à jour du statut en 'completed_manual' pour le hash {torrent_hash_for_status_update}")
+        torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, 'completed_manual', final_message)
+
     return {"success": True, "message": final_message}
 
 
@@ -1487,6 +1491,10 @@ def _execute_mms_radarr_import(item_name_in_staging, movie_id_target, original_r
     final_message = f"{successful_moves} fichier(s) pour '{movie_title}' déplacé(s). "
     final_message += "Rescan Radarr initié." if not error_rescan else f"Échec Rescan Radarr: {error_rescan}"
     
+    if torrent_hash_for_status_update and not is_automated_flow:
+        logger.info(f"{log_prefix}Mise à jour du statut en 'completed_manual' pour le hash {torrent_hash_for_status_update}")
+        torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, 'completed_manual', final_message)
+
     return {"success": True, "message": final_message}
 
 # FIN DES NOUVELLES FONCTIONS HELPER REFACTORISÉES

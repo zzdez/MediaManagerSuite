@@ -23,10 +23,10 @@
             <td>{{ item.size_human }}</td> {# Adapte si le nom de la variable de taille est différent #}
             <td>
                 {# Point CRUCIAL : les data-attributes pour le JS #}
-                <button class="btn btn-sm btn-info map-and-repatriate-btn"
-                        data-filename="{{ item.name }}"
-                        data-app-type="{{ item.app_type }}">
-                    <i class="bi bi-diagram-3-fill"></i> Mapper & Rapatrier
+                <button class="btn btn-sm btn-info"
+                        onclick="if ('{{ item.app_type }}' === 'sonarr') { openSonarrSearchModal('{{ item.name }}', '{{ item.type }}'); } else { openRadarrSearchModal('{{ item.name }}', '{{ item.type }}'); }"
+                        title="Mapper cet item à un média existant ou nouveau dans {{ item.app_type | capitalize }}">
+                    <i class="bi bi-diagram-3-fill"></i> Mapper Item
                 </button>
                 <button class="btn btn-sm btn-danger delete-btn">
                     <i class="bi bi-trash-fill"></i>
