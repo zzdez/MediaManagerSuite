@@ -1717,51 +1717,33 @@ def search_sonarr_api():
     return jsonify(results if results else [])
 
 
-# Import the tvdb_client
 from app.utils.tvdb_client import CustomTVDBClient
 
-@seedbox_ui_bp.route('/api/tvdb/search_series')
+@seedbox_ui_bp.route('/api/tvdb/enrich', methods=['GET'])
 @login_required
-def search_tvdb_series_api():
+def enrich_tvdb_series_details():
     """
-    New API endpoint to search for series using the internal TVDB client.
-    Returns results in a format compatible with the existing Sonarr search modal.
+    Takes a TVDB ID and returns enriched series details in French.
     """
     logger = current_app.logger
-    query = request.args.get('query')
-    if not query:
-        return jsonify({"error": "Terme de recherche manquant"}), 400
+    tvdb_id = request.args.get('tvdb_id')
+    if not tvdb_id:
+        return jsonify({"error": "TVDB ID manquant"}), 400
 
     try:
         tvdb_client = CustomTVDBClient()
-        logger.info(f"TVDB API: Searching for series with query: '{query}'")
-        search_results = tvdb_client.search_and_translate_series(query, lang='fr')
+        logger.info(f"Enriching details for TVDB ID: {tvdb_id}")
+        details = tvdb_client.get_series_details_by_id(tvdb_id, lang='fra')
 
-        # The frontend expects a specific structure, similar to what the old Sonarr API returned.
-        # We need to map the fields from our tvdb_client to the expected fields.
-        # Expected by JS: remotePoster, title, year, overview, tvdbId, id (Sonarr internal ID, which will be null)
-        formatted_results = []
-        for item in search_results:
-            formatted_item = {
-                "title": item.get('name'),
-                "year": item.get('year'),
-                "overview": item.get('overview'),
-                "remotePoster": item.get('poster_url'),
-                "tvdbId": item.get('tvdb_id'),
-                "id": None,  # This indicates the series is not yet in Sonarr
-                "status": "Not Added", # Custom status for the UI
-                "images": [
-                    {"coverType": "poster", "remoteUrl": item.get('poster_url')}
-                ]
-            }
-            formatted_results.append(formatted_item)
+        if not details:
+            return jsonify({"error": "Details not found on TVDB"}), 404
 
-        logger.info(f"TVDB API: Found {len(formatted_results)} results for query '{query}'.")
-        return jsonify(formatted_results)
+        # The client already provides translated 'seriesName' and 'overview'
+        return jsonify(details)
 
     except Exception as e:
-        logger.error(f"Error in search_tvdb_series_api for query '{query}': {e}", exc_info=True)
-        return jsonify({"error": "An internal error occurred while searching TVDB."}), 500
+        logger.error(f"Error in enrich_tvdb_series_details for ID '{tvdb_id}': {e}", exc_info=True)
+        return jsonify({"error": "An internal error occurred during enrichment."}), 500
 
 @seedbox_ui_bp.route('/search-radarr-api') # GET request
 @login_required
