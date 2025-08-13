@@ -835,7 +835,7 @@ function handleAddTorrentAppTypeChange() {
 async function executeArrSearchForAddTorrentModal() {
     const query = document.getElementById('addTorrentArrSearchQuery').value;
     const resultsDiv = document.getElementById('addTorrentArrSearchResults');
-    const feedbackDiv = document.getElementById('addTorrentFeedback'); // Use the main feedback div for this modal
+    const feedbackDiv = document.getElementById('addTorrentFeedback');
     if(feedbackDiv) feedbackDiv.innerHTML = '';
 
     if (!resultsDiv) { console.error("Div 'addTorrentArrSearchResults' non trouvée."); return; }
@@ -843,7 +843,7 @@ async function executeArrSearchForAddTorrentModal() {
     if (!query.trim()) { resultsDiv.innerHTML = '<p class="text-warning">Terme de recherche manquant.</p>'; return; }
     resultsDiv.innerHTML = `<div class="d-flex align-items-center"><strong>Recherche ${currentAddTorrentAppType}...</strong><div class="spinner-border ms-auto"></div></div>`;
 
-    const searchUrl = (currentAddTorrentAppType === 'sonarr') ? window.appUrls.searchSonarrApi : window.appUrls.searchRadarrApi;
+    const searchUrl = (currentAddTorrentAppType === 'sonarr') ? window.appUrls.searchTvdbEnriched : window.appUrls.searchTmdbEnriched;
     try {
         const response = await fetch(`${searchUrl}?query=${encodeURIComponent(query)}`);
         if (!response.ok) {
@@ -851,7 +851,7 @@ async function executeArrSearchForAddTorrentModal() {
             throw new Error(eD.error || `HTTP ${response.status}`);
         }
         const results = await response.json();
-        renderArrSearchResultsForAddTorrent(results, currentAddTorrentAppType, 'addTorrentArrSearchResults');
+        renderEnrichedArrSearchResultsForAddTorrent(results, currentAddTorrentAppType, 'addTorrentArrSearchResults');
     } catch (error) {
         resultsDiv.innerHTML = ''; // Clear loading
         if(feedbackDiv) feedbackDiv.innerHTML = `<p class="alert alert-danger">Erreur: ${escapeJsString(error.message)}</p>`;
@@ -859,35 +859,60 @@ async function executeArrSearchForAddTorrentModal() {
     }
 }
 
-function renderArrSearchResultsForAddTorrent(results, appType, resultsDivId) {
+function renderEnrichedArrSearchResultsForAddTorrent(results, appType, resultsDivId) {
     const resultsDiv = document.getElementById(resultsDivId);
     if (!resultsDiv) { console.error(`Div résultats (ID: ${resultsDivId}) non trouvée.`); return; }
-    if (!results || results.length === 0) { resultsDiv.innerHTML = `<p class="text-muted">Aucun ${appType === 'sonarr' ? 'série' : 'film'} trouvé.</p>`; return; }
+    if (!results || results.length === 0) {
+        resultsDiv.innerHTML = `<p class="text-muted">Aucun ${appType === 'sonarr' ? 'série' : 'film'} trouvé.</p>`;
+        return;
+    }
     let html = '<ul class="list-group mt-3 list-group-flush">';
     results.forEach(item => {
-        const title = escapeJsString(item.title);
+        const displayTitle = (appType === 'sonarr' && item.seriesName) ? item.seriesName : item.title;
+        const escapedTitle = escapeJsString(displayTitle);
         const year = item.year || 'N/A';
-        let posterUrl = item.remotePoster || (item.images && item.images.length > 0 ? item.images.find(img => img.coverType === 'poster')?.remoteUrl : null) || 'data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%2260%22%20height%3D%2290%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2060%2090%22%20preserveAspectRatio%3D%22none%22%3E%3Cdefs%3E%3Cstyle%20type%3D%22text%2Fcss%22%3E%23holder_1582426688c%20text%20%7B%20fill%3A%23AAAAAA%3Bfont-weight%3Abold%3Bfont-family%3AArial%2C%20Helvetica%2C%20Open%20Sans%2C%20sans-serif%2C%20monospace%3Bfont-size%3A10pt%20%7D%20%3C%2Fstyle%3E%3C%2Fdefs%3E%3Cg%20id%3D%22holder_1582426688c%22%3E%3Crect%20width%3D%2260%22%20height%3D%2290%22%20fill%3D%22%23EEEEEE%22%3E%3C%2Frect%3E%3Cg%3E%3Ctext%20x%3D%2213.171875%22%20y%3D%2249.5%22%3EN/A%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E';
+        const overview = item.overview || 'Synopsis non disponible.';
+        let posterUrl = item.remotePoster || (item.images && item.images.length > 0 ? item.images.find(img => img.coverType === 'poster')?.remoteUrl : null) || '/static/img/placeholder.png';
+
         let isAlreadyAdded = false, idForSelection = null, idTypeForDisplay = "", externalIdForDisplay = "", internalIdDisplay = "";
         if (appType === 'sonarr') {
-            const sonarrId = parseInt(item.id); isAlreadyAdded = !isNaN(sonarrId) && sonarrId > 0;
-            idForSelection = isAlreadyAdded ? sonarrId : item.tvdbId; idTypeForDisplay = "TVDB ID"; externalIdForDisplay = item.tvdbId || 'N/A';
+            const sonarrId = parseInt(item.id);
+            isAlreadyAdded = !isNaN(sonarrId) && sonarrId > 0;
+            idForSelection = isAlreadyAdded ? sonarrId : item.tvdbId;
+            idTypeForDisplay = "TVDB ID";
+            externalIdForDisplay = item.tvdbId || 'N/A';
             if (isAlreadyAdded && sonarrId) internalIdDisplay = `| Sonarr ID: ${sonarrId}`;
-        } else { /* radarr */
-            const radarrId = parseInt(item.id); isAlreadyAdded = !isNaN(radarrId) && radarrId > 0;
-            idForSelection = isAlreadyAdded ? radarrId : item.tmdbId; idTypeForDisplay = "TMDB ID"; externalIdForDisplay = item.tmdbId || 'N/A';
+        } else { // radarr
+            const radarrId = parseInt(item.id);
+            isAlreadyAdded = !isNaN(radarrId) && radarrId > 0;
+            idForSelection = isAlreadyAdded ? radarrId : item.tmdbId;
+            idTypeForDisplay = "TMDB ID";
+            externalIdForDisplay = item.tmdbId || 'N/A';
             if (isAlreadyAdded && radarrId) internalIdDisplay = `| Radarr ID: ${radarrId}`;
         }
         const buttonText = isAlreadyAdded ? "Sélectionner" : "Ajouter & Sélectionner";
         const buttonIcon = isAlreadyAdded ? "fas fa-check-circle" : "fas fa-plus-circle";
         const buttonClass = isAlreadyAdded ? "btn-success" : "btn-info";
-        const buttonTitle = isAlreadyAdded ? `Sélectionner: ${item.title}` : `Ajouter: ${item.title}`;
+        const buttonTitle = isAlreadyAdded ? `Sélectionner: ${displayTitle}` : `Ajouter: ${displayTitle}`;
+
         html += `
-            <li class="list-group-item"><div class="row align-items-center">
-                <div class="col-auto" style="width:50px;"><img src="${posterUrl}" alt="Poster" class="img-fluid rounded" style="max-height: 60px;" onerror="this.src='https://via.placeholder.com/40x60?text=Err';"></div>
-                <div class="col"><strong>${item.title}</strong> (${year})<br><small class="text-muted">Statut: <span class="fw-bold ${isAlreadyAdded ? 'text-success' : 'text-primary'}">${isAlreadyAdded ? (item.status || 'Géré(e)') : 'Non Ajouté(e)'}</span> | ${idTypeForDisplay}: ${externalIdForDisplay} ${internalIdDisplay}</small></div>
-                <div class="col-auto"><button type="button" class="btn ${buttonClass} btn-sm" onclick="selectArrItemForAddTorrent(${idForSelection || 0}, '${title}', '${appType}', ${isAlreadyAdded})" title="${buttonTitle}" ${idForSelection ? '' : 'disabled title="ID manquant"'}><i class="${buttonIcon}"></i> ${buttonText}</button></div>
-            </div></li>`;
+            <li class="list-group-item">
+                <div class="row align-items-start">
+                    <div class="col-auto" style="width:100px;">
+                        <img src="${posterUrl}" alt="Poster" class="img-fluid rounded" style="max-height: 120px;" onerror="this.onerror=null; this.src='/static/img/placeholder.png';">
+                    </div>
+                    <div class="col">
+                        <strong>${displayTitle}</strong> (${year})<br>
+                        <small class="text-muted">Statut: <span class="fw-bold ${isAlreadyAdded ? 'text-success' : 'text-primary'}">${isAlreadyAdded ? (item.status || 'Géré(e)') : 'Non Ajouté(e)'}</span> | ${idTypeForDisplay}: ${externalIdForDisplay} ${internalIdDisplay}</small>
+                        <p class="mb-0 small mt-2" style="max-height: 60px; overflow-y: auto;">${overview}</p>
+                    </div>
+                    <div class="col-auto d-flex align-items-center" style="height: 120px;">
+                        <button type="button" class="btn ${buttonClass} btn-sm" onclick="selectArrItemForAddTorrent(${idForSelection || 0}, '${escapedTitle}', '${appType}', ${isAlreadyAdded})" title="${buttonTitle}" ${idForSelection ? '' : 'disabled title="ID manquant"'}>
+                            <i class="${buttonIcon}"></i> ${buttonText}
+                        </button>
+                    </div>
+                </div>
+            </li>`;
     });
     html += '</ul>';
     resultsDiv.innerHTML = html;

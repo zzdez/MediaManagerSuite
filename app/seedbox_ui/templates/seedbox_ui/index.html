@@ -344,7 +344,9 @@
             getRadarrQualityprofiles: "{{ url_for('seedbox_ui.get_radarr_qualityprofiles_api') }}",
             batchMapToSonarrSeries: "{{ url_for('seedbox_ui.batch_map_to_sonarr_series_action') }}",
             rtorrentMapSonarr: "{{ url_for('seedbox_ui.rtorrent_map_sonarr') }}",
-            rtorrentMapRadarr: "{{ url_for('seedbox_ui.rtorrent_map_radarr') }}"
+        rtorrentMapRadarr: "{{ url_for('seedbox_ui.rtorrent_map_radarr') }}",
+        searchTvdbEnriched: '{{ url_for("seedbox_ui.search_tvdb_enriched") }}',
+        searchTmdbEnriched: '{{ url_for("seedbox_ui.search_tmdb_enriched") }}'
         };
     </script>
     <script src="{{ url_for('static', filename='js/seedbox_ui_modals.js') }}"></script>

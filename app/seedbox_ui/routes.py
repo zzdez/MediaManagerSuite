@@ -26,6 +26,9 @@ import paramiko
 # --- Imports spécifiques à l'application MediaManagerSuite ---
 from app.auth import internal_api_required
 from app.utils import staging_processor
+from app.utils.arr_client import search_sonarr_by_title, search_radarr_by_title
+from app.utils.tvdb_client import CustomTVDBClient
+from app.utils.tmdb_client import TheMovieDBClient
 
 # Client rTorrent
 from app.utils.rtorrent_client import (
@@ -1767,6 +1770,74 @@ def search_radarr_api():
         return jsonify({"error": error_msg}), 500
 
     return jsonify(results if results else [])
+
+@seedbox_ui_bp.route('/search-tvdb-enriched')
+@login_required
+def search_tvdb_enriched():
+    query = request.args.get('query')
+    if not query:
+        return jsonify({"error": "Terme de recherche manquant"}), 400
+
+    try:
+        # 1. Get initial search results from Sonarr/Arr client
+        initial_results = search_sonarr_by_title(query)
+        if not initial_results:
+            return jsonify([])
+
+        # 2. Enrich with TVDB data
+        tvdb_client = CustomTVDBClient()
+        enriched_results = []
+        for series in initial_results:
+            tvdb_id = series.get('tvdbId')
+            if tvdb_id:
+                details = tvdb_client.get_series_details_by_id(tvdb_id, lang='fra')
+                if details:
+                    # Combine original data with enriched data
+                    series['overview'] = details.get('overview')
+                    series['remotePoster'] = details.get('image') # Use the poster from TVDB
+                    series['seriesName'] = details.get('seriesName') # Use translated name
+            enriched_results.append(series)
+
+        return jsonify(enriched_results)
+
+    except Exception as e:
+        logger.error(f"Error in search_tvdb_enriched for query '{query}': {e}", exc_info=True)
+        return jsonify({"error": "An internal error occurred during enriched search."}), 500
+
+
+@seedbox_ui_bp.route('/search-tmdb-enriched')
+@login_required
+def search_tmdb_enriched():
+    query = request.args.get('query')
+    if not query:
+        return jsonify({"error": "Terme de recherche manquant"}), 400
+
+    try:
+        # 1. Get initial search results from Radarr/Arr client
+        initial_results = search_radarr_by_title(query)
+        if not initial_results:
+            return jsonify([])
+
+        # 2. Enrich with TMDB data
+        tmdb_client = TheMovieDBClient()
+        enriched_results = []
+        for movie in initial_results:
+            tmdb_id = movie.get('tmdbId')
+            if tmdb_id:
+                details = tmdb_client.get_movie_details(tmdb_id, lang='fr-FR')
+                if details:
+                    # Combine original data with enriched data
+                    movie['overview'] = details.get('overview')
+                    # TheMovieDBClient already provides the full poster path
+                    movie['remotePoster'] = details.get('poster_path')
+            enriched_results.append(movie)
+
+        return jsonify(enriched_results)
+
+    except Exception as e:
+        logger.error(f"Error in search_tmdb_enriched for query '{query}': {e}", exc_info=True)
+        return jsonify({"error": "An internal error occurred during enriched search."}), 500
+
 # ==============================================================================
 # ROUTES API POUR RÉCUPÉRER LES CONFIGURATIONS DE SONARR (Root Folders, Profiles)
 # ==============================================================================
