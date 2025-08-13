@@ -3944,7 +3944,7 @@ def rtorrent_map_sonarr():
         label=current_app.config.get('RTORRENT_LABEL_SONARR', 'sonarr'),
         seedbox_download_path=download_path,
         original_torrent_name=torrent_name,
-        initial_status='mapped_by_user'
+        status='mapped_by_user'
     )
 
     if success:
@@ -3987,7 +3987,7 @@ def rtorrent_map_radarr():
         label=current_app.config.get('RTORRENT_LABEL_RADARR', 'radarr'),
         seedbox_download_path=download_path,
         original_torrent_name=torrent_name,
-        initial_status='mapped_by_user'
+        status='mapped_by_user'
     )
 
     if success:
