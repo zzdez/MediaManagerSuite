@@ -1689,37 +1689,6 @@ def scan_radarr(item_name):
 
 # --- Routes pour la recherche et le mapping (Priorité 1) ---
 
-@seedbox_ui_bp.route('/search-sonarr-api') # GET request
-@login_required
-def search_sonarr_api():
-    query = request.args.get('query')
-    # original_item_name = request.args.get('original_item_name') # Peut être utile pour le contexte
-
-    sonarr_url = current_app.config.get('SONARR_URL')
-    sonarr_api_key = current_app.config.get('SONARR_API_KEY')
-
-    if not sonarr_url or not sonarr_api_key:
-        return jsonify({"error": "Sonarr non configuré"}), 500
-    if not query:
-        return jsonify({"error": "Terme de recherche manquant"}), 400
-
-    # API Sonarr pour rechercher des séries: /api/v3/series/lookup?term={query} ou /api/v3/series?term={query}
-    # series/lookup est généralement pour rechercher sur TheTVDB par nom/ID.
-    # series?term= recherche dans les séries déjà ajoutées à Sonarr.
-    # Pour une nouvelle association, 'lookup' est plus pertinent.
-    search_api_url = f"{sonarr_url.rstrip('/')}/api/v3/series/lookup"
-    params = {'term': query}
-
-    results, error_msg = _make_arr_request('GET', search_api_url, sonarr_api_key, params=params)
-
-    if error_msg:
-        return jsonify({"error": error_msg}), 500
-
-    # results est une liste de séries trouvées. On peut les filtrer ou les formater si besoin.
-    # Exemple: logger.info(f"Résultats recherche Sonarr pour '{query}': {results}")
-    return jsonify(results if results else [])
-
-
 from app.utils.tvdb_client import CustomTVDBClient
 
 @seedbox_ui_bp.route('/api/tvdb/enrich', methods=['GET'])
@@ -1747,29 +1716,6 @@ def enrich_tvdb_series_details():
     except Exception as e:
         logger.error(f"Error in enrich_tvdb_series_details for ID '{tvdb_id}': {e}", exc_info=True)
         return jsonify({"error": "An internal error occurred during enrichment."}), 500
-
-@seedbox_ui_bp.route('/search-radarr-api') # GET request
-@login_required
-def search_radarr_api():
-    query = request.args.get('query')
-    radarr_url = current_app.config.get('RADARR_URL')
-    radarr_api_key = current_app.config.get('RADARR_API_KEY')
-
-    if not radarr_url or not radarr_api_key:
-        return jsonify({"error": "Radarr non configuré"}), 500
-    if not query:
-        return jsonify({"error": "Terme de recherche manquant"}), 400
-
-    # API Radarr pour rechercher des films: /api/v3/movie/lookup?term={query}
-    search_api_url = f"{radarr_url.rstrip('/')}/api/v3/movie/lookup"
-    params = {'term': query}
-
-    results, error_msg = _make_arr_request('GET', search_api_url, radarr_api_key, params=params)
-
-    if error_msg:
-        return jsonify({"error": error_msg}), 500
-
-    return jsonify(results if results else [])
 
 @seedbox_ui_bp.route('/search-tvdb-enriched')
 @login_required
@@ -3102,9 +3048,15 @@ def rtorrent_add_torrent_action():
         logger.info(f"RTORRENT_ADD_ACTION: Hash rTorrent '{actual_hash}' trouvé pour '{original_name_from_js}'.")
         seedbox_full_download_path = str(Path(rtorrent_download_dir) / release_name_for_map).replace('\\', '/')
         if torrent_map_manager.add_or_update_torrent_in_map(
-                torrent_hash=actual_hash, release_name=release_name_for_map, app_type=app_type,
-                target_id=actual_target_id, label=rtorrent_label, seedbox_download_path=seedbox_full_download_path,
-                original_torrent_name=original_name_from_js, initial_status="transferring_to_seedbox"):
+                torrent_hash=actual_hash,
+                release_name=release_name_for_map,
+                status="transferring_to_seedbox",
+                seedbox_download_path=seedbox_full_download_path,
+                app_type=app_type,
+                target_id=actual_target_id,
+                label=rtorrent_label,
+                original_torrent_name=original_name_from_js
+            ):
             final_msg = f"Torrent '{release_name_for_map}' (Hash: {actual_hash}) ajouté et pré-associé avec succès."
             logger.info(f"RTORRENT_ADD_ACTION: {final_msg}")
             return jsonify({"success": True, "message": final_msg, "torrent_hash": actual_hash}), 200
