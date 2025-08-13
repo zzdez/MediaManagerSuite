@@ -332,6 +332,8 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
     <script>
         window.appUrls = {
+            searchSonarrApi: "{{ url_for('seedbox_ui.search_sonarr_api') }}",
+            searchRadarrApi: "{{ url_for('seedbox_ui.search_radarr_api') }}",
             triggerSonarrImport: "{{ url_for('seedbox_ui.trigger_sonarr_import') }}",
             triggerRadarrImport: "{{ url_for('seedbox_ui.trigger_radarr_import') }}",
             forceSonarrImport: "{{ url_for('seedbox_ui.force_sonarr_import_action') }}",
@@ -342,9 +344,9 @@
             getRadarrQualityprofiles: "{{ url_for('seedbox_ui.get_radarr_qualityprofiles_api') }}",
             batchMapToSonarrSeries: "{{ url_for('seedbox_ui.batch_map_to_sonarr_series_action') }}",
             rtorrentMapSonarr: "{{ url_for('seedbox_ui.rtorrent_map_sonarr') }}",
-            rtorrentMapRadarr: "{{ url_for('seedbox_ui.rtorrent_map_radarr') }}",
-            searchTvdbEnriched: '{{ url_for("seedbox_ui.search_tvdb_enriched") }}',
-            searchTmdbEnriched: '{{ url_for("seedbox_ui.search_tmdb_enriched") }}'
+        rtorrentMapRadarr: "{{ url_for('seedbox_ui.rtorrent_map_radarr') }}",
+        searchTvdbEnriched: '{{ url_for("seedbox_ui.search_tvdb_enriched") }}',
+        searchTmdbEnriched: '{{ url_for("seedbox_ui.search_tmdb_enriched") }}'
         };
     </script>
     <script src="{{ url_for('static', filename='js/seedbox_ui_modals.js') }}"></script>
