@@ -384,6 +384,27 @@ def get_all_sonarr_series():
     """Fetches all series from Sonarr."""
     current_app.logger.info("Récupération de toutes les séries depuis l'API Sonarr.")
     return _sonarr_api_request('GET', 'series')
+    
+def find_sonarr_series_by_title(title):
+    """
+    Recherche une série dans la bibliothèque Sonarr par son titre.
+    Retourne le dictionnaire de la série si trouvée, sinon None.
+    """
+    try:
+        all_series = get_all_sonarr_series()
+        if not all_series:
+            return None
+        
+        for series in all_series:
+            if series.get('title', '').lower() == title.lower():
+                current_app.logger.info(f"Sonarr: Found matching series '{title}' in library (ID: {series.get('id')}).")
+                return series
+        
+        current_app.logger.warning(f"Sonarr: Series '{title}' not found in library.")
+        return None
+    except Exception as e:
+        current_app.logger.error(f"Error searching for Sonarr series by title '{title}': {e}", exc_info=True)
+        return None
 
 def check_sonarr_episode_exists(series_title: str, season_number: int, episode_number: int) -> bool:
     """
