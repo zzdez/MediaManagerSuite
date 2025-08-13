@@ -185,6 +185,28 @@ def search_radarr_by_title(title):
     """Searches for movies in Radarr by title using the lookup endpoint."""
     return _radarr_api_request('GET', 'movie/lookup', params={'term': title})
 
+def find_radarr_movie_by_title(title):
+    """
+
+    Recherche un film dans la bibliothèque Radarr par son titre.
+    Retourne le dictionnaire du film si trouvé, sinon None.
+    """
+    try:
+        all_movies = _radarr_api_request('GET', 'movie')
+        if not all_movies:
+            return None
+        
+        for movie in all_movies:
+            if movie.get('title', '').lower() == title.lower():
+                current_app.logger.info(f"Radarr: Found matching movie '{title}' in library (ID: {movie.get('id')}).")
+                return movie
+        
+        current_app.logger.warning(f"Radarr: Movie '{title}' not found in library.")
+        return None
+    except Exception as e:
+        current_app.logger.error(f"Error searching for Radarr movie by title '{title}': {e}", exc_info=True)
+        return None
+
 def check_radarr_movie_exists(movie_title: str, movie_year: int = None) -> bool:
     """
     Checks if a movie exists in Radarr and has an associated, non-missing file.
