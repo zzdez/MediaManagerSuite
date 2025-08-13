@@ -134,7 +134,7 @@ def _handle_automatic_import(item, queue_item, arr_type, folder_name):
 
     if import_triggered:
         current_app.logger.info(f"Successfully triggered {arr_type} import for '{release_name}'.")
-        mapping_manager.update_torrent_status_in_map(torrent_hash, f'imported_by_{arr_type}', f'Import triggered in {arr_type}.')
+        mapping_manager.update_torrent_status_in_map(torrent_hash, f'completed_by_{arr_type}', f'Import délégué à {arr_type} et réussi.')
         current_app.logger.info("Attente de 15 secondes pour laisser le temps à l'import de se terminer...")
         time.sleep(15) # Ajoute une pause de 15 secondes
         _cleanup_staging(folder_name)

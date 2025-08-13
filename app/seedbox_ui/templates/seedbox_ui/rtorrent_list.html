@@ -90,32 +90,20 @@
                         </td>
                         <td>
                             {% set status = torrent.mms_status %}
-                            {% if status == 'imported_by_mms' %}
-                                <span class="badge bg-success">Traité</span>
-                            {% elif status == 'pending_mms_import' %}
-                                <span class="badge bg-warning text-dark">En Staging</span>
-                            {% elif status == 'pending_download_on_seedbox' %}
-                                <span class="badge bg-primary">Associé</span>
-                            {% elif status == 'error_staging_path_missing' %}
-                                <span class="badge bg-danger">Erreur Staging</span>
-                            {% elif status == 'error_rapatriation' %}
-                                <span class="badge bg-danger">Erreur Rapatriement</span>
-                            {% elif status == 'error_mms_all_files_failed_move' %}
-                                <span class="badge bg-danger">Erreur Déplacement</span>
-                            {% elif status == 'error_sonarr_season_undefined_for_file' %}
-                                <span class="badge bg-danger">Saison Manquante</span>
-                            {% elif status == 'error_mms_file_move' %}
-                                <span class="badge bg-danger">Erreur Fichier</span>
-                            {% elif status == 'error_unknown_association_type' %}
-                                <span class="badge bg-danger">Type Inconnu</span>
-                            {% elif status == 'error_mms_api_processing_failed' %}
-                                <span class="badge bg-danger">Erreur Traitement API</span>
-                            {% elif status == 'processing_by_mms_api' %}
-                                <span class="badge bg-info text-dark">Traitement MMS</span>
+                            {% if status == 'completed_by_sonarr' or status == 'completed_by_radarr' %}
+                                <span class="badge bg-success">Traité (Auto)</span>
+                                <small class="d-block text-muted">Géré par {{ 'Sonarr' if 'sonarr' in status else 'Radarr' }}</small>
+                            {% elif status == 'completed_manual' %}
+                                <span class="badge bg-info">Traité (MMS)</span>
+                            {% elif status == 'processed_manual' %}
+                                <span class="badge bg-secondary">Traité (Manuel)</span>
+                            {% elif status and 'error' in status %}
+                                <span class="badge bg-danger">Erreur</span>
+                                <small class="d-block text-muted" title="{{ association.status_message if association else '' }}">{{ status }}</small>
                             {% elif status == 'unknown' %}
                                 <span class="badge bg-secondary">Inconnu</span>
                             {% else %}
-                                <span class="badge bg-info text-dark">{{ status | replace('_', ' ') | capitalize }}</span>
+                                <span class="badge bg-primary">{{ status | replace('_', ' ') | capitalize }}</span>
                             {% endif %}
                         </td>
 <!-- Nouvelle cellule pour les actions -->
