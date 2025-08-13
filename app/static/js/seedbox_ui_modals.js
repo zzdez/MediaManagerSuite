@@ -1456,3 +1456,63 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 // [end of app/static/js/seedbox_ui_modals.js]
+
+// ==============================================================================
+// --- NOUVELLE LOGIQUE POUR LES ACTIONS MANUELLES DE LA VUE RTORRENT ---
+// ==============================================================================
+
+// Logique pour le bouton "Rapatrier vers Staging"
+$(document).on('click', '.repatriate-btn', function() {
+    const button = $(this);
+    const torrentHash = button.data('hash');
+
+    if (!confirm("Voulez-vous vraiment rapatrier cet item vers le dossier de staging maintenant ?")) {
+        return;
+    }
+
+    button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+    fetch('/seedbox/staging/repatriate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ torrent_hash: torrentHash })
+    })
+    .then(response => response.json())
+    .then(data => {
+        alert(data.message);
+        location.reload();
+    })
+    .catch(error => {
+        console.error('Erreur lors du rapatriement:', error);
+        alert("Une erreur technique est survenue.");
+        button.prop('disabled', false).html('<i class="bi bi-cloud-download"></i> Rapatrier');
+    });
+});
+
+// Logique pour le bouton "Marquer comme Traité"
+$(document).on('click', '.mark-processed-btn', function() {
+    const button = $(this);
+    const torrentHash = button.data('hash');
+
+    if (!confirm("Voulez-vous vraiment marquer cet item comme 'traité' ? Il ne sera plus géré par le processeur automatique.")) {
+        return;
+    }
+
+    button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+    fetch('/seedbox/torrent/mark-processed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ torrent_hash: torrentHash })
+    })
+    .then(response => response.json())
+    .then(data => {
+        alert(data.message);
+        location.reload();
+    })
+    .catch(error => {
+        console.error('Erreur lors du marquage:', error);
+        alert("Une erreur technique est survenue.");
+        button.prop('disabled', false).html('<i class="bi bi-check-circle"></i> Traité');
+    });
+});

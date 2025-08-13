@@ -28,6 +28,22 @@
                         data-app-type="{{ item.app_type }}">
                     <i class="bi bi-diagram-3-fill"></i> Mapper & Rapatrier
                 </button>
+                {# BLOC DE CODE À AJOUTER #}
+                {% if item.status == 'pending_staging' or item.status == 'error_rapatriation' %}
+                    <button class="btn btn-sm btn-outline-primary repatriate-btn"
+                            data-hash="{{ item.torrent_hash }}"
+                            title="Télécharger cet item vers le dossier de staging local">
+                        <i class="bi bi-cloud-download"></i> Rapatrier
+                    </button>
+                {% endif %}
+
+                {% if item.status not in ['completed', 'completed_manual', 'processed_manual'] %}
+                    <button class="btn btn-sm btn-outline-success mark-processed-btn"
+                            data-hash="{{ item.torrent_hash }}"
+                            title="Marquer ce torrent comme traité manuellement (ne sera plus processé)">
+                        <i class="bi bi-check-circle"></i> Traité
+                    </button>
+                {% endif %}
                 <button class="btn btn-sm btn-danger delete-btn">
                     <i class="bi bi-trash-fill"></i>
                 </button>
