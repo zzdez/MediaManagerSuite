@@ -241,7 +241,14 @@
                                     {% if item.is_in_staging and item.target_id %}
                                         <button class="btn btn-sm btn-success retry-import-btn mb-1 w-100" data-torrent-hash="{{ item.torrent_hash }}" title="Relancer l'import MMS."><i class="bi bi-play-fill"></i> Réessayer Import</button>
                                     {% elif item.is_in_staging and not item.target_id %}
-                                         <button class="btn btn-sm btn-warning map-problematic-item-btn mb-1 w-100" data-torrent-hash="{{ item.torrent_hash }}" data-release-name="{{ item.release_name }}" data-app-type="{{ item.app_type }}" title="Mapper cet item."><i class="bi bi-link-45deg"></i> Mapper Item</button>
+                                         <button class="btn btn-sm btn-warning map-problematic-item-btn mb-1 w-100"
+                                                 data-torrent-hash="{{ item.torrent_hash }}"
+                                                 data-release-name="{{ item.release_name }}"
+                                                 data-app-type="{{ item.app_type }}"
+                                                 title="Mapper cet item."
+                                                 onclick="handleProblematicItemMapClick(this)">
+                                             <i class="bi bi-link-45deg"></i> Mapper Item
+                                         </button>
                                     {% endif %}
                                     <button class="btn btn-sm btn-outline-warning delete-association-btn mb-1 w-100" data-torrent-hash="{{ item.torrent_hash }}" title="Supprimer cette association."><i class="bi bi-eraser"></i> Oublier</button>
                                     <button class="btn btn-sm btn-danger ignore-torrent-btn w-100"
@@ -594,6 +601,17 @@
     }
 
     // --- SECTION 2 : LE CŒUR DE L'EXÉCUTION ---
+    function handleProblematicItemMapClick(button) {
+        const appType = button.dataset.appType;
+        const releaseName = button.dataset.releaseName;
+        const torrentHash = button.dataset.torrentHash;
+        if (appType === 'sonarr') {
+            openSonarrSearchModalForProblemItem(releaseName, null, torrentHash);
+        } else if (appType === 'radarr') {
+            openRadarrSearchModalForProblemItem(releaseName, null, torrentHash);
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', function() {
 
         // --- Initialisation Générale ---
@@ -714,17 +732,6 @@
                 }).catch(error => {
                     alert(`Erreur: ${error.message}`);
                 });
-            }
-        });
-
-        $(document).on('click', '.map-problematic-item-btn', function() {
-            const appType = this.dataset.appType;
-            const releaseName = this.dataset.releaseName;
-            const torrentHash = this.dataset.torrentHash;
-            if (appType === 'sonarr') {
-                openSonarrSearchModalForProblemItem(releaseName, null, torrentHash);
-            } else if (appType === 'radarr') {
-                openRadarrSearchModalForProblemItem(releaseName, null, torrentHash);
             }
         });
 
