@@ -126,23 +126,20 @@
 
     <div class="d-flex flex-wrap" style="gap: 3px;">
 
-        {# BLOC DE CODE À AJOUTER #}
-        {% if torrent.mms_status %}
-            {% if torrent.mms_status == 'pending_staging' or torrent.mms_status == 'error_rapatriation' %}
-                <button class="btn btn-sm btn-outline-primary repatriate-btn"
-                        data-hash="{{ torrent.hash }}"
-                        title="Télécharger cet item vers le dossier de staging local">
-                    <i class="bi bi-cloud-download"></i> Rapatrier
-                </button>
-            {% endif %}
+        {# Ce bouton est maintenant TOUJOURS PRÉSENT #}
+        <button class="btn btn-sm btn-outline-primary repatriate-btn"
+                data-hash="{{ torrent.hash }}"
+                title="Télécharger le contenu de ce torrent vers le dossier de staging local">
+            <i class="bi bi-cloud-download"></i> Rapatrier
+        </button>
 
-            {% if torrent.mms_status not in ['completed', 'completed_manual', 'processed_manual'] %}
-                <button class="btn btn-sm btn-outline-success mark-processed-btn"
-                        data-hash="{{ torrent.hash }}"
-                        title="Marquer ce torrent comme traité manuellement (ne sera plus processé)">
-                    <i class="bi bi-check-circle"></i> Traité
-                </button>
-            {% endif %}
+        {# Le bouton 'Traité' reste conditionnel #}
+        {% if torrent.mms_status and torrent.mms_status not in ['completed', 'completed_manual', 'processed_manual'] %}
+            <button class="btn btn-sm btn-outline-success mark-processed-btn"
+                    data-hash="{{ torrent.hash }}"
+                    title="Marquer ce torrent comme traité manuellement (ne sera plus processé)">
+                <i class="bi bi-check-circle"></i> Traité
+            </button>
         {% endif %}
 
         {# --- NOUVELLE ACTION : RÉESSAYER LE RAPATRIEMENT --- #}

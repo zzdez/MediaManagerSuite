@@ -4035,8 +4035,26 @@ def repatriate_to_staging():
         return jsonify({'status': 'error', 'message': 'HASH manquant.'}), 400
 
     item = torrent_map_manager.get_torrent_by_hash(torrent_hash)
+
+    # **NOUVELLE LOGIQUE : Si l'item est inconnu, on le crée !**
     if not item:
-        return jsonify({'status': 'error', 'message': 'Torrent non trouvé.'}), 404
+        # On doit récupérer les infos depuis rTorrent
+        all_torrents, _ = rtorrent_list_torrents_api()
+        torrent_info = next((t for t in all_torrents if t.get('hash') == torrent_hash), None)
+
+        if not torrent_info:
+            return jsonify({'status': 'error', 'message': 'Torrent non trouvé dans rTorrent.'}), 404
+
+        # On crée l'entrée dans le mapping manager
+        torrent_map_manager.add_or_update_torrent_in_map(
+            release_name=torrent_info['name'],
+            torrent_hash=torrent_hash,
+            status='pending_staging', # Il est prêt à être rapatrié
+            seedbox_download_path=torrent_info['base_path'],
+            folder_name=os.path.basename(torrent_info['base_path'])
+        )
+        # On recharge l'item pour la suite du traitement
+        item = torrent_map_manager.get_torrent_by_hash(torrent_hash)
 
     # Utilise la fonction de connexion confirmée
     sftp, transport = _connect_sftp()
