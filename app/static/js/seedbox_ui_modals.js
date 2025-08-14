@@ -113,7 +113,7 @@ function openSonarrSearchModal(itemPathForAction, itemType) {
     document.getElementById('sonarrSearchQuery').value = getCleanedSearchTerm(itemPathForAction);
         
     // --- LIGNE AJOUTÉE ---
-    executeSonarrSearch(); // Pour lancer la recherche automatiquement après avoir rempli le champ
+    // executeSonarrSearch(); // Pour lancer la recherche automatiquement après avoir rempli le champ
 
     document.getElementById('sonarrSearchResults').innerHTML = '';
     document.getElementById('sonarrSearchModalFeedbackZone').innerHTML = ''; // Clear previous feedback
@@ -186,7 +186,7 @@ function openRadarrSearchModal(itemPathForAction, itemType) {
     document.getElementById('radarrSearchQuery').value = getCleanedSearchTerm(itemPathForAction);
 
     // --- LIGNE AJOUTÉE ---
-    executeRadarrSearch(); // Pour lancer la recherche automatiquement après avoir rempli le champ
+    // executeRadarrSearch(); // Pour lancer la recherche automatiquement après avoir rempli le champ
 
     document.getElementById('radarrSearchResults').innerHTML = '';
     const radarrFeedbackZone = document.getElementById('radarrSearchModalFeedbackZone');

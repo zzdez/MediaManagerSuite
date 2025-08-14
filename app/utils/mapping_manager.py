@@ -372,11 +372,11 @@ if __name__ == '__main__':
 
     # Test 1: Add new torrent
     test_logger.info("\nTest 1: Add torrent 1")
-    assert add_or_update_torrent_in_map(hash1, release1, "sonarr", 123, "sonarr_label", path1, orig_name1, "staged") == True
+    assert add_or_update_torrent_in_map(hash1, release1, "sonarr", 123, "sonarr_label", path1, orig_name1, "in_staging") == True
     data_h1 = get_torrent_by_hash(hash1)
     assert data_h1 is not None
     assert data_h1["release_name"] == release1
-    assert data_h1["status"] == "staged"
+    assert data_h1["status"] == "in_staging"
 
     # Test 2: Add another torrent (with .torrent in release_name to test stripping)
     test_logger.info("\nTest 2: Add torrent 2 (with .torrent in release name)")
@@ -384,7 +384,7 @@ if __name__ == '__main__':
     data_h2 = get_torrent_by_hash(hash2)
     assert data_h2 is not None
     assert data_h2["release_name"] == release2 # Should be stripped
-    assert data_h2["status"] == "pending_download_on_seedbox" # Default initial status
+    assert data_h2["status"] == "pending_download" # Default initial status
 
     # Test 3: Find by release name
     test_logger.info("\nTest 3: Find torrent 1 by release name")
@@ -404,9 +404,9 @@ if __name__ == '__main__':
 
     # Test 4: Update status
     test_logger.info("\nTest 4: Update status for torrent 1")
-    assert update_torrent_status_in_map(hash1, "imported_successfully", "Imported by MMS.") == True
+    assert update_torrent_status_in_map(hash1, "completed_manual", "Imported by MMS.") == True
     data_h1_updated = get_torrent_by_hash(hash1)
-    assert data_h1_updated["status"] == "imported_successfully"
+    assert data_h1_updated["status"] == "completed_manual"
     assert data_h1_updated["status_message"] == "Imported by MMS."
 
     # Test 5: Remove torrent

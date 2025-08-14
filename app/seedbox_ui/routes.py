@@ -837,7 +837,7 @@ def _handle_staged_sonarr_item(item_name_in_staging, series_id_target,
     if torrent_hash_for_status_update and automated_import:
         # Si certains fichiers ont échoué mais d'autres non, le statut est un peu ambigu.
         # On pourrait créer un statut "imported_partial_error"
-        current_status_update = "imported_by_mms" if not failed_moves_details else "imported_partial_mms_error"
+        current_status_update = "completed_manual" if not failed_moves_details else "error_partial_import"
         torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, current_status_update, final_message)
         # Si tout est ok et pas d'échecs, et que la config est de supprimer du map:
         # if not failed_moves_details and current_app.config.get('AUTO_REMOVE_SUCCESSFUL_FROM_MAP', True):
@@ -993,7 +993,7 @@ def _handle_staged_radarr_item(item_name_in_staging, movie_id_target,
         logger.info(f"{log_prefix}Rescan Radarr initié pour movie ID {movie_id_target}.")
 
     if torrent_hash_for_status_update and automated_import:
-        torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "imported_by_mms", final_message)
+        torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "completed_manual", final_message)
         # Optionnel: remove_torrent_from_map(torrent_hash_for_status_update)
 
     return {"success": True, "message": final_message, "manual_required": False}
@@ -1577,10 +1577,9 @@ def index():
         for torrent_hash, data in all_pending_torrents.items():
             status = data.get("status", "unknown")
             # Définir les statuts qui nécessitent une attention.
-            # 'imported_by_mms' ou 'removed_after_success' (si vous l'implémentez) sont OK.
+            # 'completed_auto', 'completed_manual', 'processed_manual' sont OK.
             # Les autres pourraient nécessiter une attention.
-            # Vous pouvez affiner cette condition.
-            if not status.startswith("imported_") and not status.startswith("removed_"):
+            if not status.startswith("completed_") and status != "processed_manual":
                 item_info = data.copy() # Copier pour ne pas modifier l'original en ajoutant le hash
                 item_info['torrent_hash'] = torrent_hash # Ajouter le hash pour les actions
                 # Vérifier si l'item est physiquement dans le staging (pour l'action "Réessayer")
@@ -3150,7 +3149,7 @@ def rtorrent_add_torrent_action():
             label=rtorrent_label,
             seedbox_download_path=seedbox_full_download_path,
             original_torrent_name=original_name_from_js,
-            status="transferring_to_seedbox"
+            status="pending_download"
         ):
         final_msg = f"Torrent '{release_name_for_map}' (Hash: {actual_hash}) ajouté à rTorrent. "
         if is_new_media:
@@ -3204,13 +3203,13 @@ def rtorrent_list_view():
                 mms_status = assoc_data.get('status', 'unknown')
 
                 # Check file existence based on status and configured paths
-                if mms_status in ['pending_mms_import', 'processing_by_mms_api', 'error_staging_path_missing', 'error_mms_all_files_failed_move', 'error_sonarr_season_undefined_for_file', 'error_mms_file_move']:
+                if mms_status in ['in_staging', 'pending_staging', 'error_staging_path_missing', 'error_mms_all_files_failed_move', 'error_sonarr_season_undefined_for_file', 'error_mms_file_move']:
                     # These statuses imply the file should be in local staging
                     release_name = assoc_data.get('release_name')
                     if release_name and local_staging_path:
                         full_path = Path(local_staging_path) / release_name
                         mms_file_exists = full_path.exists()
-                elif mms_status == 'imported_by_mms':
+                elif mms_status == 'completed_manual' or mms_status == 'completed_auto':
                     # For imported items, check if they exist in their final destination (more complex, might need to query Sonarr/Radarr)
                     # For now, we'll assume if it's imported, it exists, or we'd need more specific path info from the association.
                     # Or, if the goal is to check if it's still in staging *after* import, that's a different check.
@@ -4032,7 +4031,7 @@ def rtorrent_map_sonarr():
         label=current_app.config.get('RTORRENT_LABEL_SONARR', 'sonarr'),
         seedbox_download_path=download_path,
         original_torrent_name=torrent_name,
-        status='mapped_by_user',
+        status='pending_staging',
         folder_name=folder_name
     )
 
@@ -4081,7 +4080,7 @@ def rtorrent_map_radarr():
         label=current_app.config.get('RTORRENT_LABEL_RADARR', 'radarr'),
         seedbox_download_path=download_path,
         original_torrent_name=torrent_name,
-        status='mapped_by_user',
+        status='pending_staging',
         folder_name=folder_name
     )
 
