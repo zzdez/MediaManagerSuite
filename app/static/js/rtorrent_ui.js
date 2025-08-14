@@ -35,6 +35,18 @@ $(document).ready(function() {
 
             // "Ignorer" est toujours une option possible sur n'importe quel torrent
             $('#batch-ignore-btn').show();
+
+            // Logique pour le bouton Mapper
+            const canMap = statuses.some(s => s === 'unknown');
+            const mapButton = $('#batch-map-btn');
+            mapButton.toggle(canMap);
+            if (canMap) {
+                if (selectedCount === 1) {
+                    mapButton.prop('disabled', false).attr('title', 'Associer ce torrent à un média');
+                } else {
+                    mapButton.prop('disabled', true).attr('title', 'Le mapping ne peut se faire que sur un seul item à la fois.');
+                }
+            }
         }
     }
 
@@ -112,5 +124,21 @@ $(document).ready(function() {
 
     $(document).on('click', '#batch-ignore-btn', function() {
         handleBatchAction('ignore', '*', "Ignorer définitivement les torrents sélectionnés ? Ils n'apparaîtront plus dans les suivis.");
+    });
+
+    $(document).on('click', '#batch-map-btn', function() {
+        if ($(this).is(':disabled')) {
+            return;
+        }
+        const selectedCheckbox = $('.torrent-checkbox:checked').first();
+        const torrentName = selectedCheckbox.closest('tr').find('.torrent-name').text();
+
+        // Mettre à jour la modale de choix
+        $('#torrentNameToMap').text(torrentName);
+        $('#torrentNameToMapInput').val(torrentName);
+
+        // Ouvrir la modale de choix
+        const mappingChoiceModal = new bootstrap.Modal(document.getElementById('mappingChoiceModal'));
+        mappingChoiceModal.show();
     });
 });

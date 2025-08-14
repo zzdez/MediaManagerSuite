@@ -42,6 +42,7 @@
                 <h5 class="card-title"><span id="selected-torrent-count">0</span> item(s) sélectionné(s)</h5>
                 <p class="card-text">Choisissez une action à appliquer à tous les items sélectionnés.</p>
                 <div class="btn-group" role="group" aria-label="Batch Actions">
+                    <button class="btn btn-info" id="batch-map-btn" style="display: none;"><i class="bi bi-link-45deg"></i> Mapper</button>
                     <button class="btn btn-primary" id="batch-repatriate-btn" style="display: none;"><i class="bi bi-cloud-download"></i> Rapatrier</button>
                     <button class="btn btn-success" id="batch-mark-processed-btn" style="display: none;"><i class="bi bi-check-circle"></i> Marquer Traité</button>
                     <button class="btn btn-info" id="batch-retry-repatriation-btn" style="display: none;"><i class="bi bi-arrow-clockwise"></i> Réessayer Rapatriement</button>
@@ -164,13 +165,7 @@
                                 {% endif %}
 
                                 {# --- ACTION : MAPPER (pour les torrents inconnus) --- #}
-                                {% if status == 'unknown' %}
-                                    <button class="btn btn-sm btn-outline-info open-mapping-modal-btn"
-                                            data-torrent-name="{{ torrent.name }}"
-                                            title="Associer ce torrent à un média dans Sonarr/Radarr">
-                                        <i class="bi bi-link-45deg"></i> Mapper
-                                    </button>
-                                {% endif %}
+                                {# Ce bouton est maintenant géré dans le panneau d'actions groupées #}
 
                                 {# --- ACTION : FORCER L'IMPORT (pour les torrents en staging) --- #}
                                 {% if status == 'pending_mms_import' and association %}
