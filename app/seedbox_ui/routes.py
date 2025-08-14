@@ -4018,6 +4018,7 @@ def rtorrent_map_sonarr():
 
     torrent_hash = torrent_info.get('hash')
     download_path = torrent_info.get('path')
+    folder_name = os.path.basename(download_path)
 
     success = torrent_map_manager.add_or_update_torrent_in_map(
         torrent_hash=torrent_hash,
@@ -4027,7 +4028,8 @@ def rtorrent_map_sonarr():
         label=current_app.config.get('RTORRENT_LABEL_SONARR', 'sonarr'),
         seedbox_download_path=download_path,
         original_torrent_name=torrent_name,
-        status='mapped_by_user'
+        status='mapped_by_user',
+        folder_name=folder_name
     )
 
     if success:
@@ -4061,6 +4063,7 @@ def rtorrent_map_radarr():
 
     torrent_hash = torrent_info.get('hash')
     download_path = torrent_info.get('path')
+    folder_name = os.path.basename(download_path)
 
     success = torrent_map_manager.add_or_update_torrent_in_map(
         torrent_hash=torrent_hash,
@@ -4070,7 +4073,8 @@ def rtorrent_map_radarr():
         label=current_app.config.get('RTORRENT_LABEL_RADARR', 'radarr'),
         seedbox_download_path=download_path,
         original_torrent_name=torrent_name,
-        status='mapped_by_user'
+        status='mapped_by_user',
+        folder_name=folder_name
     )
 
     if success:
