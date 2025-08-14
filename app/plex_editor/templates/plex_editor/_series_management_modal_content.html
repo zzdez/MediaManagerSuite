@@ -17,7 +17,7 @@
     {% if series.sonarr_series_id %}
     <div class="d-flex align-items-center">
         <button id="rename-series-files-btn"
-                class="btn btn-outline-secondary me-3"
+                class="btn btn-outline-secondary btn-sm me-3"
                 data-sonarr-id="{{ series.sonarr_series_id }}"
                 title="Demander à Sonarr de renommer tous les fichiers de cette série selon vos règles.">
             <i class="bi bi-pencil-square"></i> Renommer les Fichiers
@@ -99,6 +99,14 @@
                             data-season-title="{{ season.title }}"
                             title="Supprimer les fichiers de la saison et la dé-monitorer">
                         <i class="bi bi-trash"></i>
+                    </button>
+
+                    {# NOUVEAU BOUTON DE RENOMMAGE PAR SAISON #}
+                    <button class="btn btn-outline-secondary btn-sm rename-season-files-btn ms-1"
+                            data-sonarr-id="{{ series.sonarr_series_id }}"
+                            data-season-number="{{ season.seasonNumber }}"
+                            title="Renommer les fichiers de la Saison {{ season.seasonNumber }}">
+                        <i class="bi bi-pencil-square"></i>
                     </button>
                     {% endif %}
                 </div>

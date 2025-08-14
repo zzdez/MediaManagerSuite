@@ -1042,12 +1042,17 @@ def sonarr_post_command(payload):
     """Posts a command to Sonarr."""
     return _sonarr_api_request('POST', 'command', json_data=payload)
 
-def sonarr_trigger_series_rename(series_id):
-    """Déclenche une commande 'SeriesSearch' pour une série, ce qui force le renommage."""
-    # La commande 'SeriesSearch' avec search_on_add=False ne fait que renommer
+def sonarr_trigger_series_rename(series_id, season_number=None):
+    """
+    Déclenche une commande 'SeriesSearch' pour une série.
+    Si 'season_number' est fourni, le scan est limité à cette saison.
+    """
     payload = {
         'name': 'SeriesSearch',
-        'seriesId': series_id
+        'seriesId': series_id,
+        # On ajoute les paramètres pour cibler les fichiers et la saison
+        'files': [],
+        'seasonNumber': season_number if season_number is not None else -1
     }
     return sonarr_post_command(payload)
 

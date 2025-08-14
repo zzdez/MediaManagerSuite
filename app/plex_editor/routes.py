@@ -2256,14 +2256,16 @@ def update_single_episode_monitoring():
 def rename_series_files_endpoint():
     data = request.json
     sonarr_series_id = data.get('sonarr_series_id')
+    season_number = data.get('season_number') # Peut être None
 
     if not sonarr_series_id:
         return jsonify({'status': 'error', 'message': 'ID de la série Sonarr manquant.'}), 400
 
-    success = sonarr_trigger_series_rename(sonarr_series_id)
+    success = sonarr_trigger_series_rename(sonarr_series_id, season_number)
 
     if success:
-        return jsonify({'status': 'success', 'message': 'La commande de renommage a été envoyée à Sonarr.'})
+        message = f"La commande de renommage a été envoyée à Sonarr pour la {'saison ' + str(season_number) if season_number is not None else 'série entière'}."
+        return jsonify({'status': 'success', 'message': message})
     else:
         return jsonify({'status': 'error', 'message': 'Échec de l\'envoi de la commande à Sonarr.'}), 500
 
