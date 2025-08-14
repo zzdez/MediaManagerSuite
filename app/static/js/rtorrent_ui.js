@@ -87,6 +87,8 @@ $(document).ready(function() {
                 alert(data.message || 'Action terminée.');
                 if (data.status === 'success') {
                     if (typeof loadRtorrentView === 'function') {
+                        // This flag seems to be used to control the reload.
+                        isRtorrentContentLoaded = false;
                         loadRtorrentView();
                     } else {
                         location.reload();
