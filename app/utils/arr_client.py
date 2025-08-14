@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 from flask import current_app
 import re
@@ -185,27 +186,38 @@ def search_radarr_by_title(title):
     """Searches for movies in Radarr by title using the lookup endpoint."""
     return _radarr_api_request('GET', 'movie/lookup', params={'term': title})
 
-def find_radarr_movie_by_title(title):
+def find_radarr_movie_by_title(title, retries=3, delay=5):
     """
-
-    Recherche un film dans la bibliothèque Radarr par son titre.
+    Recherche un film dans la bibliothèque Radarr par son titre avec des tentatives multiples.
     Retourne le dictionnaire du film si trouvé, sinon None.
     """
-    try:
-        all_movies = _radarr_api_request('GET', 'movie')
-        if not all_movies:
-            return None
-        
-        for movie in all_movies:
-            if movie.get('title', '').lower() == title.lower():
-                current_app.logger.info(f"Radarr: Found matching movie '{title}' in library (ID: {movie.get('id')}).")
-                return movie
-        
-        current_app.logger.warning(f"Radarr: Movie '{title}' not found in library.")
-        return None
-    except Exception as e:
-        current_app.logger.error(f"Error searching for Radarr movie by title '{title}': {e}", exc_info=True)
-        return None
+    attempt = 0
+    while attempt < retries:
+        try:
+            all_movies = _radarr_api_request('GET', 'movie')
+            if not all_movies:
+                attempt += 1
+                if attempt < retries:
+                    current_app.logger.info(f"Radarr: Tentative {attempt}/{retries} - La liste des films est vide, nouvelle tentative dans {delay}s...")
+                    time.sleep(delay)
+                continue
+
+            for movie in all_movies:
+                if movie.get('title', '').lower() == title.lower():
+                    current_app.logger.info(f"Radarr: Found matching movie '{title}' in library (ID: {movie.get('id')}).")
+                    return movie
+
+            current_app.logger.warning(f"Radarr: Movie '{title}' not found in library after full scan.")
+            return None # Exit after successful scan
+
+        except Exception as e:
+            current_app.logger.error(f"Error on attempt {attempt + 1} for Radarr movie by title '{title}': {e}", exc_info=True)
+            attempt += 1
+            if attempt < retries:
+                time.sleep(delay)
+
+    current_app.logger.error(f"Radarr: Movie '{title}' not found after {retries} attempts.")
+    return None
 
 def check_radarr_movie_exists(movie_title: str, movie_year: int = None) -> bool:
     """
@@ -407,26 +419,39 @@ def get_all_sonarr_series():
     current_app.logger.info("Récupération de toutes les séries depuis l'API Sonarr.")
     return _sonarr_api_request('GET', 'series')
     
-def find_sonarr_series_by_title(title):
+def find_sonarr_series_by_title(title, retries=3, delay=5):
     """
-    Recherche une série dans la bibliothèque Sonarr par son titre.
+    Recherche une série dans la bibliothèque Sonarr par son titre avec des tentatives multiples.
     Retourne le dictionnaire de la série si trouvée, sinon None.
     """
-    try:
-        all_series = get_all_sonarr_series()
-        if not all_series:
-            return None
-        
-        for series in all_series:
-            if series.get('title', '').lower() == title.lower():
-                current_app.logger.info(f"Sonarr: Found matching series '{title}' in library (ID: {series.get('id')}).")
-                return series
-        
-        current_app.logger.warning(f"Sonarr: Series '{title}' not found in library.")
-        return None
-    except Exception as e:
-        current_app.logger.error(f"Error searching for Sonarr series by title '{title}': {e}", exc_info=True)
-        return None
+    attempt = 0
+    while attempt < retries:
+        try:
+            all_series = get_all_sonarr_series()
+            if not all_series:
+                attempt += 1
+                if attempt < retries:
+                    current_app.logger.info(f"Sonarr: Tentative {attempt}/{retries} - La liste des séries est vide, nouvelle tentative dans {delay}s...")
+                    time.sleep(delay)
+                continue
+
+            for series in all_series:
+                if series.get('title', '').lower() == title.lower():
+                    current_app.logger.info(f"Sonarr: Found matching series '{title}' in library (ID: {series.get('id')}).")
+                    return series
+
+            # If loop completes, series is not found
+            current_app.logger.warning(f"Sonarr: Series '{title}' not found in library after full scan.")
+            return None # Exit after successful scan, no need to retry if not found
+
+        except Exception as e:
+            current_app.logger.error(f"Error on attempt {attempt + 1} for Sonarr series by title '{title}': {e}", exc_info=True)
+            attempt += 1
+            if attempt < retries:
+                time.sleep(delay)
+
+    current_app.logger.error(f"Sonarr: Series '{title}' not found after {retries} attempts.")
+    return None
 
 def check_sonarr_episode_exists(series_title: str, season_number: int, episode_number: int) -> bool:
     """

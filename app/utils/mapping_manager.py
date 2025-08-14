@@ -192,16 +192,16 @@ def find_torrent_by_release_name(item_name_in_staging):
     return None, None
 
 def update_torrent_status_in_map(torrent_hash, new_status, status_message=None):
-    """Updates the status and optionally a status message of a torrent in the map."""
+    """Met à jour le statut et le message d'un torrent sans perdre les autres données."""
     _, logger = _get_map_file_path_and_logger()
     torrents = load_torrent_map()
     if torrent_hash in torrents:
-        torrents[torrent_hash]["status"] = new_status
-        torrents[torrent_hash]["updated_at"] = datetime.utcnow().isoformat()
+        # On modifie uniquement les champs nécessaires
+        torrents[torrent_hash]['status'] = new_status
+        torrents[torrent_hash]['updated_at'] = datetime.utcnow().isoformat()
         if status_message:
-            torrents[torrent_hash]["status_message"] = status_message
-        elif "status_message" in torrents[torrent_hash]: # Clear old message if new one not provided
-            del torrents[torrent_hash]["status_message"]
+            torrents[torrent_hash]['status_message'] = status_message
+
         try:
             save_torrent_map(torrents)
             logger.info(f"Updated status for torrent {torrent_hash} to '{new_status}'.")
