@@ -4,6 +4,7 @@ import stat
 import shutil
 import paramiko
 import time
+import re
 from flask import current_app
 from pathlib import Path
 
@@ -133,7 +134,7 @@ def _handle_automatic_import(item, queue_item, arr_type, folder_name):
 
     if import_triggered:
         current_app.logger.info(f"Successfully triggered {arr_type} import for '{release_name}'.")
-        mapping_manager.update_torrent_status_in_map(torrent_hash, f'imported_by_{arr_type}', f'Import triggered in {arr_type}.')
+        mapping_manager.update_torrent_status_in_map(torrent_hash, f'completed_by_{arr_type}', f'Import délégué à {arr_type} et réussi.')
         current_app.logger.info("Attente de 15 secondes pour laisser le temps à l'import de se terminer...")
         time.sleep(15) # Ajoute une pause de 15 secondes
         _cleanup_staging(folder_name)
@@ -143,42 +144,85 @@ def _handle_automatic_import(item, queue_item, arr_type, folder_name):
 
 def _handle_manual_import(item, folder_name):
     """
-    Handles the import process when the item is NOT in Sonarr/Radarr's queue.
-    This implies it was a manual download.
+    Gère un import manuel via MMS, en déplaçant les fichiers lui-même.
     """
     torrent_hash = item['torrent_hash']
     release_name = item['release_name']
-    current_app.logger.info(f"Handling manual import for '{release_name}' (folder: {folder_name}).")
+    current_app.logger.info(f"Traitement manuel de '{release_name}' (dossier: {folder_name}).")
 
-    parsed_info = parse_media_name(release_name)
+    source_path = os.path.normpath(os.path.join(current_app.config['LOCAL_STAGING_PATH'], folder_name))
+    
+    # 1. Déterminer le type et trouver le média dans *Arr pour obtenir le chemin de destination
+    parsed_info = arr_client.parse_media_name(release_name)
     media_type = parsed_info.get('type')
-    title = parsed_info.get('title')
+    title_to_search = parsed_info.get('title')
 
-    local_staging_path = current_app.config['LOCAL_STAGING_PATH']
-    item_path_in_staging = Path(local_staging_path) / folder_name
+    if not title_to_search:
+        mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', "Le parseur n'a pas pu extraire de titre.")
+        return
+
+    target_id = None
+    destination_base_path = None # Chemin racine de la série/film
 
     if media_type == 'tv':
-        series_list = arr_client.search_sonarr_by_title(title)
-        if series_list:
-            arr_client.trigger_sonarr_scan(str(item_path_in_staging))
-            mapping_manager.update_torrent_status_in_map(torrent_hash, 'imported_by_sonarr_manual', f'Manual import scan triggered for series {series_list[0]["title"]}.')
-            current_app.logger.info("Attente de 15 secondes pour laisser le temps à l'import de se terminer...")
-            time.sleep(15) # Ajoute une pause de 15 secondes
-            _cleanup_staging(folder_name)
-        else:
-            mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', f'Could not find Sonarr series for title "{title}".')
+        series_info = arr_client.find_sonarr_series_by_title(title_to_search)
+        if series_info:
+            target_id = series_info.get('id')
+            destination_base_path = series_info.get('path')
     elif media_type == 'movie':
-        movie_list = arr_client.search_radarr_by_title(title)
-        if movie_list:
-            arr_client.trigger_radarr_scan(str(item_path_in_staging))
-            mapping_manager.update_torrent_status_in_map(torrent_hash, 'imported_by_radarr_manual', f'Manual import scan triggered for movie {movie_list[0]["title"]}.')
-            current_app.logger.info("Attente de 15 secondes pour laisser le temps à l'import de se terminer...")
-            time.sleep(15) # Ajoute une pause de 15 secondes
-            _cleanup_staging(folder_name)
-        else:
-            mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', f'Could not find Radarr movie for title "{title}".')
+        movie_info = arr_client.find_radarr_movie_by_title(title_to_search)
+        if movie_info:
+            target_id = movie_info.get('id')
+            destination_base_path = movie_info.get('path')
+    
+    if not target_id or not destination_base_path:
+        error_msg = f"Média '{title_to_search}' non trouvé dans {media_type}."
+        mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', error_msg)
+        return
+
+    # 2. Logique de Déplacement Robuste (avec gestion des sous-dossiers)
+    video_extensions = ('.mkv', '.mp4', '.avi', '.mov')
+    files_moved_count = 0
+    
+    for dirpath, _, filenames in os.walk(source_path):
+        for filename in filenames:
+            if filename.lower().endswith(video_extensions):
+                source_file = os.path.join(dirpath, filename)
+                
+                # Pour les séries, on tente de créer un dossier de saison
+                final_destination_folder = os.path.normpath(destination_base_path)
+                if media_type == 'tv':
+                    # Essaye de deviner la saison depuis le nom du fichier ou du dossier parent
+                    season_match = re.search(r'[._-][sS](\d{1,2})', source_file)
+                    if season_match:
+                        season_num = int(season_match.group(1))
+                        final_destination_folder = os.path.join(destination_base_path, f'Season {season_num:02d}')
+                
+                os.makedirs(final_destination_folder, exist_ok=True)
+                destination_file = os.path.join(final_destination_folder, filename)
+                
+                try:
+                    shutil.move(source_file, destination_file)
+                    current_app.logger.info(f"Fichier déplacé par MMS : {source_file} -> {destination_file}")
+                    files_moved_count += 1
+                except Exception as e_move:
+                    current_app.logger.error(f"Erreur lors du déplacement de {source_file}: {e_move}")
+                    # On ne lève pas d'exception pour continuer à traiter les autres fichiers
+    
+    if files_moved_count == 0:
+        mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', "Aucun fichier vidéo trouvé à déplacer.")
+        return
+
+    # 3. Nettoyage du dossier de staging
+    _cleanup_staging(folder_name)
+    mapping_manager.update_torrent_status_in_map(torrent_hash, 'completed_manual', f'{files_moved_count} fichier(s) déplacé(s) manuellement.')
+    
+    # 4. Déclencher un Rescan pour que *Arr détecte les nouveaux fichiers
+    current_app.logger.info(f"Déclenchement d'un Rescan dans {media_type} pour l'ID {target_id}.")
+    if media_type == 'tv':
+        arr_client.sonarr_post_command({'name': 'RescanSeries', 'seriesId': target_id})
     else:
-        mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', f'Could not determine media type for "{release_name}".')
+        arr_client.radarr_post_command({'name': 'RescanMovie', 'movieId': target_id})
 
 def process_pending_staging_items():
     """

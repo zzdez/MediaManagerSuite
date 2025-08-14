@@ -5,6 +5,7 @@
             <th scope="col" style="width: 10%;">Type</th>
             <th scope="col">Nom du Fichier</th>
             <th scope="col" style="width: 15%;">Taille</th>
+            <th scope="col">Statut</th>
             <th scope="col" style="width: 20%;">Actions</th>
         </tr>
     </thead>
@@ -22,12 +23,43 @@
             <td><code>{{ item.name }}</code></td>
             <td>{{ item.size_human }}</td> {# Adapte si le nom de la variable de taille est différent #}
             <td>
+                {% if item.status == 'completed_by_sonarr' or item.status == 'completed_by_radarr' %}
+                    <span class="badge bg-success">Traité (Auto)</span>
+                    <small class="d-block text-muted">Géré par {{ 'Sonarr' if 'sonarr' in item.status else 'Radarr' }}</small>
+                {% elif item.status == 'completed_manual' %}
+                    <span class="badge bg-info">Traité (MMS)</span>
+                {% elif item.status == 'processed_manual' %}
+                    <span class="badge bg-secondary">Traité (Manuel)</span>
+                {% elif 'error' in item.status %}
+                    <span class="badge bg-danger">Erreur</span>
+                    <small class="d-block text-muted" title="{{ item.status_message }}">{{ item.status }}</small>
+                {% else %}
+                    <span class="badge bg-primary">{{ item.status }}</span>
+                {% endif %}
+            </td>
+            <td>
                 {# Point CRUCIAL : les data-attributes pour le JS #}
                 <button class="btn btn-sm btn-info map-and-repatriate-btn"
                         data-filename="{{ item.name }}"
                         data-app-type="{{ item.app_type }}">
                     <i class="bi bi-diagram-3-fill"></i> Mapper & Rapatrier
                 </button>
+                {# BLOC DE CODE À AJOUTER #}
+                {% if item.status == 'pending_staging' or item.status == 'error_rapatriation' %}
+                    <button class="btn btn-sm btn-outline-primary repatriate-btn"
+                            data-hash="{{ item.torrent_hash }}"
+                            title="Télécharger cet item vers le dossier de staging local">
+                        <i class="bi bi-cloud-download"></i> Rapatrier
+                    </button>
+                {% endif %}
+
+                {% if item.status not in ['completed', 'completed_manual', 'processed_manual'] %}
+                    <button class="btn btn-sm btn-outline-success mark-processed-btn"
+                            data-hash="{{ item.torrent_hash }}"
+                            title="Marquer ce torrent comme traité manuellement (ne sera plus processé)">
+                        <i class="bi bi-check-circle"></i> Traité
+                    </button>
+                {% endif %}
                 <button class="btn btn-sm btn-danger delete-btn">
                     <i class="bi bi-trash-fill"></i>
                 </button>

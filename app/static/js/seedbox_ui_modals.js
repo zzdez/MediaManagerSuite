@@ -306,68 +306,88 @@ function openRadarrSearchModalForProblemItem(releaseName, currentTargetId, torre
 
 async function executeSonarrSearch() {
     const query = document.getElementById('sonarrSearchQuery').value;
-    if (!query || query.trim() === '') {
-        // Do not run search if query is empty. This prevents errors on modal auto-show/reload.
-        return;
-    }
+    if (!query || query.trim() === '') { return; }
+
     const resultsDiv = document.getElementById('sonarrSearchResults');
     const feedbackDiv = document.getElementById('sonarrSearchModalFeedbackZone');
-    if(feedbackDiv) feedbackDiv.innerHTML = ''; // Clear previous feedback
+    if (feedbackDiv) feedbackDiv.innerHTML = '';
 
     if (!resultsDiv) { console.error("Div 'sonarrSearchResults' non trouvée."); return; }
-    if (!query.trim()) { resultsDiv.innerHTML = '<p class="text-warning">Terme de recherche manquant.</p>'; return; }
     resultsDiv.innerHTML = `<div class="d-flex align-items-center"><strong role="status">Recherche Sonarr...</strong><div class="spinner-border ms-auto"></div></div>`;
 
     try {
-        const response = await fetch(`${window.appUrls.searchSonarrApi}?query=${encodeURIComponent(query)}`);
-        if (!response.ok) {
-            let eD; try { eD = await response.json(); } catch (e) { eD = { error: "Erreur serveur." }; }
-            throw new Error(eD.error || `HTTP ${response.status}`);
+        const initialResponse = await fetch(`/seedbox/search-sonarr-api?query=${encodeURIComponent(query)}`);
+        if (!initialResponse.ok) {
+            const eD = await initialResponse.json().catch(() => ({ error: "Erreur serveur." }));
+            throw new Error(eD.error || `HTTP ${initialResponse.status}`);
         }
-        const results = await response.json();
-        if (results.length === 0) { resultsDiv.innerHTML = '<p class="text-muted">Aucune série trouvée.</p>'; return; }
-        let html = '<ul class="list-group mt-3">';
-        results.forEach(series => {
-                        let posterUrl = (series.remotePoster && series.remotePoster !== 'undefined' ? series.remotePoster : series.images?.find(img => img.coverType === 'poster')?.remoteUrl) || 'data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%2260%22%20height%3D%2290%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2060%2090%22%20preserveAspectRatio%3D%22none%22%3E%3Cdefs%3E%3Cstyle%20type%3D%22text%2Fcss%22%3E%23holder_1582426688c%20text%20%7B%20fill%3A%23AAAAAA%3Bfont-weight%3Abold%3Bfont-family%3AArial%2C%20Helvetica%2C%20Open%20Sans%2C%20sans-serif%2C%20monospace%3Bfont-size%3A10pt%20%7D%20%3C%2Fstyle%3E%3C%2Fdefs%3E%3Cg%20id%3D%22holder_1582426688c%22%3E%3Crect%20width%3D%2260%22%20height%3D%2290%22%20fill%3D%22%23EEEEEE%22%3E%3C%2Frect%3E%3Cg%3E%3Ctext%20x%3D%2213.171875%22%20y%3D%2249.5%22%3EN/A%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E';
-            const escapedSeriesTitle = escapeJsString(series.title);
-            const sonarrIdAsInt = parseInt(series.id);
-            const isAlreadyInSonarr = !isNaN(sonarrIdAsInt) && sonarrIdAsInt > 0;
-            const idForHandler = isAlreadyInSonarr ? sonarrIdAsInt : (parseInt(series.tvdbId) || 0);
-            let buttonText = isAlreadyInSonarr ? "Sélectionner" : "Ajouter & Sélectionner";
-            let buttonIcon = isAlreadyInSonarr ? "fas fa-check-circle" : "fas fa-plus-circle";
-            let buttonClass = isAlreadyInSonarr ? "btn-success" : "btn-info";
-            let buttonTitle = isAlreadyInSonarr ? `Mapper à la série existante : ${series.title}` : `Ajouter la série '${series.title}' à Sonarr et la sélectionner`;
-            let disabledReason = !idForHandler ? "ID externe/interne manquant ou invalide" : "";
+        const results = await initialResponse.json();
+        if (results.length === 0) {
+            resultsDiv.innerHTML = '<p class="text-muted">Aucune série trouvée via Sonarr.</p>';
+            return;
+        }
 
-            // Ajout des data-attributes pour le nouveau handler sur #sonarrRadarrResults
+        resultsDiv.innerHTML = `<div class="d-flex align-items-center"><strong role="status">Enrichissement des données via TVDB...</strong><div class="spinner-border ms-auto"></div></div>`;
+
+        // Use Promise.all to fetch all enrichment data in parallel
+        const enrichmentPromises = results.map(series => {
+            if (series.tvdbId) {
+                return fetch(`/seedbox/api/tvdb/enrich?tvdb_id=${series.tvdbId}`)
+                    .then(response => response.ok ? response.json() : {})
+                    .catch(e => {
+                        console.warn(`Failed to enrich data for TVDB ID ${series.tvdbId}:`, e);
+                        return {}; // Return empty object on failure
+                    });
+            }
+            return Promise.resolve({}); // Resolve immediately if no tvdbId
+        });
+
+        const enrichedResults = await Promise.all(enrichmentPromises);
+
+        let html = '<ul class="list-group mt-3">';
+        results.forEach((series, index) => {
+            const enrichedData = enrichedResults[index] || {};
+            const title = enrichedData.seriesName || series.title;
+            const overview = enrichedData.overview || series.overview;
+            const posterUrl = enrichedData.image || series.remotePoster || (series.images?.find(img => img.coverType === 'poster')?.remoteUrl) || '/static/img/placeholder.png';
+            const escapedTitle = escapeJsString(title);
+            const isAlreadyInSonarr = series.id && parseInt(series.id) > 0;
+            const idForHandler = isAlreadyInSonarr ? series.id : (parseInt(series.tvdbId) || 0);
+            const buttonText = isAlreadyInSonarr ? "Sélectionner" : "Ajouter & Sélectionner";
+            const buttonIcon = isAlreadyInSonarr ? "fas fa-check-circle" : "fas fa-plus-circle";
+            const buttonClass = isAlreadyInSonarr ? "btn-success" : "btn-info";
+            const buttonTitle = isAlreadyInSonarr ? `Mapper à la série existante : ${title}` : `Ajouter la série '${title}' à Sonarr et la sélectionner`;
+            const disabledReason = !idForHandler ? "ID externe/interne manquant ou invalide" : "";
+
             html += `
                 <li class="list-group-item" data-media-id="${idForHandler || 0}" data-instance-type="sonarr" style="cursor: pointer;">
                     <div class="row align-items-center">
-                    <div class="col-auto"><img src="${posterUrl}" alt="${escapedSeriesTitle}" class="img-fluid rounded" style="max-height: 90px;" onerror="this.onerror=null; this.src='https://via.placeholder.com/60x90?text=ImgErr';"></div>
-                    <div class="col">
-                        <strong>${series.title}</strong> (${series.year || 'N/A'})<br>
-                        <small class="text-muted">
-                            Statut: <span class="fw-bold ${isAlreadyInSonarr ? 'text-success' : 'text-primary'}">${isAlreadyInSonarr ? (series.status || 'Gérée') : 'Non Ajoutée'}</span>
-                            | TVDB ID: ${series.tvdbId || 'N/A'}
-                            ${isAlreadyInSonarr && series.id ? `| Sonarr ID: ${series.id}` : ''}
-                        </small>
-                        <p class="mb-0 small">${(series.overview || '').substring(0, 120)}${(series.overview || '').length > 120 ? '...' : ''}</p>
+                        <div class="col-auto"><img src="${posterUrl}" alt="${escapedTitle}" class="img-fluid rounded" style="max-height: 90px;" onerror="this.onerror=null; this.src='https://via.placeholder.com/60x90?text=ImgErr';"></div>
+                        <div class="col">
+                            <strong>${title}</strong> (${series.year || 'N/A'})<br>
+                            <small class="text-muted">
+                                Statut: <span class="fw-bold ${isAlreadyInSonarr ? 'text-success' : 'text-primary'}">${isAlreadyInSonarr ? (series.status || 'Gérée') : 'Non Ajoutée'}</span>
+                                | TVDB ID: ${series.tvdbId || 'N/A'}
+                                ${isAlreadyInSonarr ? `| Sonarr ID: ${series.id}` : ''}
+                            </small>
+                            <p class="mb-0 small">${(overview || '').substring(0, 120)}${(overview || '').length > 120 ? '...' : ''}</p>
+                        </div>
+                        <div class="col-auto">
+                            <button type="button" class="btn ${buttonClass} btn-sm"
+                                    onclick="handleGenericSonarrSeriesSelection(${idForHandler || 0}, '${escapedTitle}', ${isAlreadyInSonarr})"
+                                    title="${buttonTitle}" ${disabledReason ? `disabled title="${disabledReason}"` : ''}>
+                                <i class="${buttonIcon}"></i> ${buttonText}
+                            </button>
+                        </div>
                     </div>
-                    <div class="col-auto">
-                        <button type="button" class="btn ${buttonClass} btn-sm"
-                                onclick="handleGenericSonarrSeriesSelection(${idForHandler || 0}, '${escapedSeriesTitle}', ${isAlreadyInSonarr})"
-                                title="${buttonTitle}" ${disabledReason ? `disabled title="${disabledReason}"` : ''}>
-                            <i class="${buttonIcon}"></i> ${buttonText}
-                        </button>
-                    </div>
-                </div></li>`;
+                </li>`;
         });
         html += '</ul>';
         resultsDiv.innerHTML = html;
+
     } catch (error) {
-        resultsDiv.innerHTML = ''; // Clear loading spinner
-        if(feedbackDiv) feedbackDiv.innerHTML = `<p class="alert alert-danger">Erreur recherche Sonarr: ${escapeJsString(error.message)}</p>`;
-        else resultsDiv.innerHTML = `<p class="text-danger">Erreur recherche Sonarr: ${escapeJsString(error.message)}</p>`;
+        resultsDiv.innerHTML = '';
+        if (feedbackDiv) feedbackDiv.innerHTML = `<p class="alert alert-danger">Erreur recherche Sonarr: ${escapeJsString(error.message)}</p>`;
         console.error("Erreur executeSonarrSearch:", error);
     }
 }
@@ -815,7 +835,7 @@ function handleAddTorrentAppTypeChange() {
 async function executeArrSearchForAddTorrentModal() {
     const query = document.getElementById('addTorrentArrSearchQuery').value;
     const resultsDiv = document.getElementById('addTorrentArrSearchResults');
-    const feedbackDiv = document.getElementById('addTorrentFeedback'); // Use the main feedback div for this modal
+    const feedbackDiv = document.getElementById('addTorrentFeedback');
     if(feedbackDiv) feedbackDiv.innerHTML = '';
 
     if (!resultsDiv) { console.error("Div 'addTorrentArrSearchResults' non trouvée."); return; }
@@ -823,7 +843,7 @@ async function executeArrSearchForAddTorrentModal() {
     if (!query.trim()) { resultsDiv.innerHTML = '<p class="text-warning">Terme de recherche manquant.</p>'; return; }
     resultsDiv.innerHTML = `<div class="d-flex align-items-center"><strong>Recherche ${currentAddTorrentAppType}...</strong><div class="spinner-border ms-auto"></div></div>`;
 
-    const searchUrl = (currentAddTorrentAppType === 'sonarr') ? window.appUrls.searchSonarrApi : window.appUrls.searchRadarrApi;
+    const searchUrl = (currentAddTorrentAppType === 'sonarr') ? window.appUrls.searchTvdbEnriched : window.appUrls.searchTmdbEnriched;
     try {
         const response = await fetch(`${searchUrl}?query=${encodeURIComponent(query)}`);
         if (!response.ok) {
@@ -831,7 +851,7 @@ async function executeArrSearchForAddTorrentModal() {
             throw new Error(eD.error || `HTTP ${response.status}`);
         }
         const results = await response.json();
-        renderArrSearchResultsForAddTorrent(results, currentAddTorrentAppType, 'addTorrentArrSearchResults');
+        renderEnrichedArrSearchResultsForAddTorrent(results, currentAddTorrentAppType, 'addTorrentArrSearchResults');
     } catch (error) {
         resultsDiv.innerHTML = ''; // Clear loading
         if(feedbackDiv) feedbackDiv.innerHTML = `<p class="alert alert-danger">Erreur: ${escapeJsString(error.message)}</p>`;
@@ -839,35 +859,60 @@ async function executeArrSearchForAddTorrentModal() {
     }
 }
 
-function renderArrSearchResultsForAddTorrent(results, appType, resultsDivId) {
+function renderEnrichedArrSearchResultsForAddTorrent(results, appType, resultsDivId) {
     const resultsDiv = document.getElementById(resultsDivId);
     if (!resultsDiv) { console.error(`Div résultats (ID: ${resultsDivId}) non trouvée.`); return; }
-    if (!results || results.length === 0) { resultsDiv.innerHTML = `<p class="text-muted">Aucun ${appType === 'sonarr' ? 'série' : 'film'} trouvé.</p>`; return; }
+    if (!results || results.length === 0) {
+        resultsDiv.innerHTML = `<p class="text-muted">Aucun ${appType === 'sonarr' ? 'série' : 'film'} trouvé.</p>`;
+        return;
+    }
     let html = '<ul class="list-group mt-3 list-group-flush">';
     results.forEach(item => {
-        const title = escapeJsString(item.title);
+        const displayTitle = (appType === 'sonarr' && item.seriesName) ? item.seriesName : item.title;
+        const escapedTitle = escapeJsString(displayTitle);
         const year = item.year || 'N/A';
-        let posterUrl = item.remotePoster || (item.images && item.images.length > 0 ? item.images.find(img => img.coverType === 'poster')?.remoteUrl : null) || 'data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%2260%22%20height%3D%2290%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2060%2090%22%20preserveAspectRatio%3D%22none%22%3E%3Cdefs%3E%3Cstyle%20type%3D%22text%2Fcss%22%3E%23holder_1582426688c%20text%20%7B%20fill%3A%23AAAAAA%3Bfont-weight%3Abold%3Bfont-family%3AArial%2C%20Helvetica%2C%20Open%20Sans%2C%20sans-serif%2C%20monospace%3Bfont-size%3A10pt%20%7D%20%3C%2Fstyle%3E%3C%2Fdefs%3E%3Cg%20id%3D%22holder_1582426688c%22%3E%3Crect%20width%3D%2260%22%20height%3D%2290%22%20fill%3D%22%23EEEEEE%22%3E%3C%2Frect%3E%3Cg%3E%3Ctext%20x%3D%2213.171875%22%20y%3D%2249.5%22%3EN/A%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E';
+        const overview = item.overview || 'Synopsis non disponible.';
+        let posterUrl = item.remotePoster || (item.images && item.images.length > 0 ? item.images.find(img => img.coverType === 'poster')?.remoteUrl : null) || '/static/img/placeholder.png';
+
         let isAlreadyAdded = false, idForSelection = null, idTypeForDisplay = "", externalIdForDisplay = "", internalIdDisplay = "";
         if (appType === 'sonarr') {
-            const sonarrId = parseInt(item.id); isAlreadyAdded = !isNaN(sonarrId) && sonarrId > 0;
-            idForSelection = isAlreadyAdded ? sonarrId : item.tvdbId; idTypeForDisplay = "TVDB ID"; externalIdForDisplay = item.tvdbId || 'N/A';
+            const sonarrId = parseInt(item.id);
+            isAlreadyAdded = !isNaN(sonarrId) && sonarrId > 0;
+            idForSelection = isAlreadyAdded ? sonarrId : item.tvdbId;
+            idTypeForDisplay = "TVDB ID";
+            externalIdForDisplay = item.tvdbId || 'N/A';
             if (isAlreadyAdded && sonarrId) internalIdDisplay = `| Sonarr ID: ${sonarrId}`;
-        } else { /* radarr */
-            const radarrId = parseInt(item.id); isAlreadyAdded = !isNaN(radarrId) && radarrId > 0;
-            idForSelection = isAlreadyAdded ? radarrId : item.tmdbId; idTypeForDisplay = "TMDB ID"; externalIdForDisplay = item.tmdbId || 'N/A';
+        } else { // radarr
+            const radarrId = parseInt(item.id);
+            isAlreadyAdded = !isNaN(radarrId) && radarrId > 0;
+            idForSelection = isAlreadyAdded ? radarrId : item.tmdbId;
+            idTypeForDisplay = "TMDB ID";
+            externalIdForDisplay = item.tmdbId || 'N/A';
             if (isAlreadyAdded && radarrId) internalIdDisplay = `| Radarr ID: ${radarrId}`;
         }
         const buttonText = isAlreadyAdded ? "Sélectionner" : "Ajouter & Sélectionner";
         const buttonIcon = isAlreadyAdded ? "fas fa-check-circle" : "fas fa-plus-circle";
         const buttonClass = isAlreadyAdded ? "btn-success" : "btn-info";
-        const buttonTitle = isAlreadyAdded ? `Sélectionner: ${item.title}` : `Ajouter: ${item.title}`;
+        const buttonTitle = isAlreadyAdded ? `Sélectionner: ${displayTitle}` : `Ajouter: ${displayTitle}`;
+
         html += `
-            <li class="list-group-item"><div class="row align-items-center">
-                <div class="col-auto" style="width:50px;"><img src="${posterUrl}" alt="Poster" class="img-fluid rounded" style="max-height: 60px;" onerror="this.src='https://via.placeholder.com/40x60?text=Err';"></div>
-                <div class="col"><strong>${item.title}</strong> (${year})<br><small class="text-muted">Statut: <span class="fw-bold ${isAlreadyAdded ? 'text-success' : 'text-primary'}">${isAlreadyAdded ? (item.status || 'Géré(e)') : 'Non Ajouté(e)'}</span> | ${idTypeForDisplay}: ${externalIdForDisplay} ${internalIdDisplay}</small></div>
-                <div class="col-auto"><button type="button" class="btn ${buttonClass} btn-sm" onclick="selectArrItemForAddTorrent(${idForSelection || 0}, '${title}', '${appType}', ${isAlreadyAdded})" title="${buttonTitle}" ${idForSelection ? '' : 'disabled title="ID manquant"'}><i class="${buttonIcon}"></i> ${buttonText}</button></div>
-            </div></li>`;
+            <li class="list-group-item">
+                <div class="row align-items-start">
+                    <div class="col-auto" style="width:100px;">
+                        <img src="${posterUrl}" alt="Poster" class="img-fluid rounded" style="max-height: 120px;" onerror="this.onerror=null; this.src='/static/img/placeholder.png';">
+                    </div>
+                    <div class="col">
+                        <strong>${displayTitle}</strong> (${year})<br>
+                        <small class="text-muted">Statut: <span class="fw-bold ${isAlreadyAdded ? 'text-success' : 'text-primary'}">${isAlreadyAdded ? (item.status || 'Géré(e)') : 'Non Ajouté(e)'}</span> | ${idTypeForDisplay}: ${externalIdForDisplay} ${internalIdDisplay}</small>
+                        <p class="mb-0 small mt-2" style="max-height: 60px; overflow-y: auto;">${overview}</p>
+                    </div>
+                    <div class="col-auto d-flex align-items-center" style="height: 120px;">
+                        <button type="button" class="btn ${buttonClass} btn-sm" onclick="selectArrItemForAddTorrent(${idForSelection || 0}, '${escapedTitle}', '${appType}', ${isAlreadyAdded})" title="${buttonTitle}" ${idForSelection ? '' : 'disabled title="ID manquant"'}>
+                            <i class="${buttonIcon}"></i> ${buttonText}
+                        </button>
+                    </div>
+                </div>
+            </li>`;
     });
     html += '</ul>';
     resultsDiv.innerHTML = html;
@@ -1411,3 +1456,63 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 // [end of app/static/js/seedbox_ui_modals.js]
+
+// ==============================================================================
+// --- NOUVELLE LOGIQUE POUR LES ACTIONS MANUELLES DE LA VUE RTORRENT ---
+// ==============================================================================
+
+// Logique pour le bouton "Rapatrier vers Staging"
+$(document).on('click', '.repatriate-btn', function() {
+    const button = $(this);
+    const torrentHash = button.data('hash');
+
+    if (!confirm("Voulez-vous vraiment rapatrier cet item vers le dossier de staging maintenant ?")) {
+        return;
+    }
+
+    button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+    fetch('/seedbox/staging/repatriate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ torrent_hash: torrentHash })
+    })
+    .then(response => response.json())
+    .then(data => {
+        alert(data.message);
+        location.reload();
+    })
+    .catch(error => {
+        console.error('Erreur lors du rapatriement:', error);
+        alert("Une erreur technique est survenue.");
+        button.prop('disabled', false).html('<i class="bi bi-cloud-download"></i> Rapatrier');
+    });
+});
+
+// Logique pour le bouton "Marquer comme Traité"
+$(document).on('click', '.mark-processed-btn', function() {
+    const button = $(this);
+    const torrentHash = button.data('hash');
+
+    if (!confirm("Voulez-vous vraiment marquer cet item comme 'traité' ? Il ne sera plus géré par le processeur automatique.")) {
+        return;
+    }
+
+    button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+    fetch('/seedbox/torrent/mark-processed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ torrent_hash: torrentHash })
+    })
+    .then(response => response.json())
+    .then(data => {
+        alert(data.message);
+        location.reload();
+    })
+    .catch(error => {
+        console.error('Erreur lors du marquage:', error);
+        alert("Une erreur technique est survenue.");
+        button.prop('disabled', false).html('<i class="bi bi-check-circle"></i> Traité');
+    });
+});

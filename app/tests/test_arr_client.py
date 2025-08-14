@@ -25,7 +25,7 @@ class TestArrClient(unittest.TestCase):
             ("Series.Title.S02E03.1080p.WEB-DL.mkv", {"type": "tv", "title": "Series Title", "season": 2, "episode": 3, "year": None, "raw_name": "Series.Title.S02E03.1080p.WEB-DL.mkv"}),
             ("My.Show.2023.S01E01.German.DL.1080p.BluRay.AVC-TINGS", {"type": "tv", "title": "My Show", "year": 2023, "season": 1, "episode": 1, "raw_name": "My.Show.2023.S01E01.German.DL.1080p.BluRay.AVC-TINGS"}),
             ("Show.Title.1x01.Episode.Name.avi", {"type": "tv", "title": "Show Title", "season": 1, "episode": 1, "year": None, "raw_name": "Show.Title.1x01.Episode.Name.avi"}),
-            ("Dr.Who.2005.S02.E03.The.School.Reunion", {"type": "tv", "title": "Dr Who 2005", "season": 2, "episode": 3, "year": None, "raw_name": "Dr.Who.2005.S02.E03.The.School.Reunion"}),
+            ("Dr.Who.2005.S02.E03.The.School.Reunion", {"type": "tv", "title": "Dr Who", "year": 2005, "season": 2, "episode": 3, "raw_name": "Dr.Who.2005.S02.E03.The.School.Reunion"}),
             ("Movie Title (2023).mkv", {"type": "movie", "title": "Movie Title", "year": 2023, "season": None, "episode": None, "raw_name": "Movie Title (2023).mkv"}),
             ("Another.Movie.2022.1080p.BluRay.x265.mkv", {"type": "movie", "title": "Another Movie", "year": 2022, "season": None, "episode": None, "raw_name": "Another.Movie.2022.1080p.BluRay.x265.mkv"}),
             ("The.Great.Film.2021.UHD.BluRay.2160p.TrueHD.Atmos.7.1.HEVC-GROUP", {"type": "movie", "title": "The Great Film", "year": 2021, "season": None, "episode": None, "raw_name": "The.Great.Film.2021.UHD.BluRay.2160p.TrueHD.Atmos.7.1.HEVC-GROUP"}),
@@ -94,7 +94,7 @@ class TestArrClient(unittest.TestCase):
         mock_api_request.assert_any_call("GET", "episode/5")
         # Verify the PUT call
         expected_put_data = {"id": 5, "seriesId": 1, "episodeFileId": 123, "seasonNumber": 1, "episodeNumber": 1, "title": "Test Episode", "monitored": True}
-        mock_api_request.assert_any_call("PUT", "episode", json_data=expected_put_data)
+        mock_api_request.assert_any_call("PUT", "episode/5", json_data=expected_put_data)
 
     @patch('app.utils.arr_client._sonarr_api_request')
     def test_sonarr_update_episode_monitoring_failure(self, mock_api_request):

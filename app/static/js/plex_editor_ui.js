@@ -915,4 +915,46 @@ function sortTable(table, sortBy, sortType, direction) {
             button.prop('disabled', false).find('i').removeClass('fa-spin');
         });
     });
+
+    // --- GESTION DE L'AJOUT AUX *ARR DEPUIS LES SUGGESTIONS ---
+    $(document).on('click', '.add-to-arr-btn', function(e) {
+        e.preventDefault();
+        const button = $(this);
+        const mediaType = button.data('media-type');
+        const mediaId = button.data('id');
+        const searchOnAdd = button.data('search-on-add');
+
+        // Afficher un spinner
+        button.closest('.btn-group').find('button').prop('disabled', true);
+
+        // NOTE: The user prompt assumes a route at '/search/api/add_to_arr'.
+        // I will need to check for this route and potentially create it.
+        // For now, I will assume it exists as per the instructions.
+        fetch('/search/api/add_to_arr', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                media_type: mediaType,
+                id: mediaId,
+                search_on_add: searchOnAdd
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('Média ajouté avec succès !');
+                // Remplacer le bouton par un badge "Déjà surveillé"
+                button.closest('.btn-group').replaceWith('<span class="badge bg-success">Ajouté !</span>');
+            } else {
+                alert('Erreur : ' + data.message);
+                // Réactiver les boutons en cas d'erreur
+                button.closest('.btn-group').find('button').prop('disabled', false);
+            }
+        })
+        .catch(error => {
+            console.error('Erreur:', error);
+            alert('Une erreur de communication est survenue.');
+            button.closest('.btn-group').find('button').prop('disabled', false);
+        });
+    });
 }); // Fin de $(document).ready

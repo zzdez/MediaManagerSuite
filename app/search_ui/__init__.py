@@ -505,3 +505,78 @@ def manual_add_media():
     except Exception as e:
         current_app.logger.error(f"Erreur durant l'ajout manuel: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@search_ui_bp.route('/api/add_to_arr', methods=['POST'])
+@login_required
+def add_to_arr():
+    data = request.get_json()
+    media_type = data.get('media_type')
+    media_id = data.get('id')
+    search_on_add = data.get('search_on_add', False)
+
+    if not media_type or not media_id:
+        return jsonify({'success': False, 'message': 'Type de média ou ID manquant.'}), 400
+
+    try:
+        if media_type == 'tv':
+            from app.utils.tvdb_client import CustomTVDBClient
+            tvdb_client = CustomTVDBClient()
+            series_details = tvdb_client.get_series_details_by_id(media_id)
+            if not series_details:
+                return jsonify({'success': False, 'message': f"Impossible de trouver les détails pour la série TVDB ID: {media_id}"}), 404
+
+            title = series_details.get('seriesName') or series_details.get('name')
+
+            root_folder_path = current_app.config.get('DEFAULT_SONARR_ROOT_FOLDER')
+            quality_profile_id = current_app.config.get('DEFAULT_SONARR_PROFILE_ID')
+            language_profile_id = current_app.config.get('DEFAULT_SONARR_LANGUAGE_PROFILE_ID')
+
+            if not all([root_folder_path, quality_profile_id, language_profile_id]):
+                 return jsonify({'success': False, 'message': 'Configuration Sonarr par défaut manquante.'}), 500
+
+            added_series = arr_client.add_new_series_to_sonarr(
+                tvdb_id=int(media_id),
+                title=title,
+                quality_profile_id=int(quality_profile_id),
+                language_profile_id=int(language_profile_id),
+                root_folder_path=root_folder_path,
+                search_for_missing_episodes=search_on_add
+            )
+            if added_series and added_series.get('id'):
+                return jsonify({'success': True, 'message': f"Série '{title}' ajoutée avec succès."})
+            else:
+                return jsonify({'success': False, 'message': f"Échec de l'ajout de la série '{title}' à Sonarr."})
+
+        elif media_type == 'movie':
+            from app.utils.tmdb_client import TheMovieDBClient
+            tmdb_client = TheMovieDBClient()
+            movie_details = tmdb_client.get_movie_details(media_id)
+            if not movie_details:
+                return jsonify({'success': False, 'message': f"Impossible de trouver les détails pour le film TMDB ID: {media_id}"}), 404
+
+            title = movie_details.get('title')
+
+            root_folder_path = current_app.config.get('DEFAULT_RADARR_ROOT_FOLDER')
+            quality_profile_id = current_app.config.get('DEFAULT_RADARR_PROFILE_ID')
+
+            if not all([root_folder_path, quality_profile_id]):
+                 return jsonify({'success': False, 'message': 'Configuration Radarr par défaut manquante.'}), 500
+
+            added_movie = arr_client.add_new_movie_to_radarr(
+                tmdb_id=int(media_id),
+                title=title,
+                quality_profile_id=int(quality_profile_id),
+                root_folder_path=root_folder_path,
+                search_for_movie=search_on_add
+            )
+            if added_movie and added_movie.get('id'):
+                return jsonify({'success': True, 'message': f"Film '{title}' ajouté avec succès."})
+            else:
+                return jsonify({'success': False, 'message': f"Échec de l'ajout du film '{title}' à Radarr."})
+
+        else:
+            return jsonify({'success': False, 'message': f"Type de média inconnu: {media_type}"}), 400
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur dans add_to_arr: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': str(e)}), 500

@@ -1,3 +1,4 @@
+import os
 import requests
 from flask import current_app
 import re
@@ -17,13 +18,15 @@ def parse_media_name(item_name: str) -> dict:
     logger.debug(f"parse_media_name: Called with item_name='{item_name}'")
     # Regex patterns for TV shows
     tv_patterns = [
-        re.compile(r"^(?P<title>.+?)[ ._]?S(?P<season>\d{1,2})E(?P<episode>\d{1,3})", re.IGNORECASE),
-        re.compile(r"^(?P<title>.+?)(?:[._\s](?P<year>(?:19|20)\d{2}))?(?:[._\s]+(?:DOC|SUBPACK|SEASON|VOL|DISC|DISQUE|PART))?[._\s]*S(?P<season>\d{1,2})(?![E\d])", re.IGNORECASE), # Refined pattern for Season-only releases
-        re.compile(r"^(?P<title>.+?)[ ._]?Season[ ._]?(?P<season>\d{1,2})[ ._]?Episode[ ._]?(?P<episode>\d{1,3})", re.IGNORECASE),
-        re.compile(r"^(?P<title>.+?)[ ._]?(?P<season>\d{1,2})x(?P<episode>\d{1,3})", re.IGNORECASE), # e.g. Show.Title.1x01
-        re.compile(r"^(?P<title>.+?)(?:[._\s]+S(?P<season>\d{1,2}))(?:[._\s]+E(?P<episode>\d{1,3}))",re.IGNORECASE), # General SxxExx with flexible separators - MODIFIED
-        re.compile(r"^(?P<title>.+?)[ ._](?P<year>(?:19|20)\d{2})[ ._]S(?P<season>\d{1,2})E(?P<episode>\d{1,3})", re.IGNORECASE), # Title Year SxxExx
-        re.compile(r"^(?P<title>.+?)[ ._]S(?P<season>\d{1,2})[ ._]E(?P<episode>\d{1,3})[ ._](?P<year>(?:19|20)\d{2})", re.IGNORECASE), # Title SxxExx Year
+        # More specific patterns first
+        re.compile(r"^(?P<title>.+?)[._\s](?P<year>(?:19|20)\d{2})[._\s]S(?P<season>\d{1,2})[._\s]?[E.]?(?P<episode>\d{1,3})", re.IGNORECASE), # Title.Year.S01.E01
+        re.compile(r"^(?P<title>.+?)[._\s]S(?P<season>\d{1,2})[._\s]?[E.]?(?P<episode>\d{1,3})[._\s](?P<year>(?:19|20)\d{2})", re.IGNORECASE), # Title.S01.E01.Year
+        re.compile(r"^(?P<title>.+?)[._\s]Season[._\s]?(?P<season>\d{1,2})[._\s]?Episode[._\s]?(?P<episode>\d{1,3})", re.IGNORECASE), # Title.Season.01.Episode.01
+        re.compile(r"^(?P<title>.+?)[._\s]?(?P<season>\d{1,2})x(?P<episode>\d{1,3})", re.IGNORECASE), # Title.1x01
+        # Generic SxxExx
+        re.compile(r"^(?P<title>.+?)[._\s]S(?P<season>\d{1,2})[._\s]?[E.]?(?P<episode>\d{1,3})", re.IGNORECASE),
+        # Season pack
+        re.compile(r"^(?P<title>.+?)(?:[._\s](?P<year>(?:19|20)\d{2}))?(?:[._\s]+(?:DOC|SUBPACK|SEASON|VOL|DISC|DISQUE|PART))?[._\s]*S(?P<season>\d{1,2})(?![E\d])", re.IGNORECASE),
     ]
 
     # Regex patterns for movies
@@ -80,12 +83,13 @@ def parse_media_name(item_name: str) -> dict:
     # If no pattern matched strongly
     logger.info(f"Could not determine type for: {item_name}, returning as 'unknown'")
     # Attempt to clean title even if unknown type
-    cleaned_title = re.sub(r'[\._]', ' ', item_name) # Replace dots/underscores with spaces
+    base_name, _ = os.path.splitext(item_name)
+    cleaned_title = re.sub(r'[\._]', ' ', base_name) # Replace dots/underscores with spaces
     cleaned_title = re.sub(r'\s{2,}', ' ', cleaned_title).strip() # Remove multiple spaces
     # Try to remove common tags like 1080p, WEB-DL etc. for a cleaner unknown title
     common_tags_pattern = r'(1080p|720p|4K|WEB-DL|WEBRip|BluRay|x264|x265|AAC|DTS|HDRip|HDTV|XviD|DivX).*$'
     cleaned_title = re.sub(common_tags_pattern, '', cleaned_title, flags=re.IGNORECASE).strip()
-    result["title"] = cleaned_title if cleaned_title else item_name
+    result["title"] = cleaned_title if cleaned_title else base_name
 
     logger.debug(f"parse_media_name: Returning: {result}")
     return result
@@ -148,24 +152,28 @@ def get_radarr_tag_id(tag_label):
         return None
 
 def get_radarr_movie_by_guid(plex_guid):
-    """Finds a movie in Radarr using a Plex GUID (e.g., 'imdb://tt1234567')."""
-    if 'imdb' in plex_guid:
-        id_key = 'imdbId'
-        id_value = plex_guid.split('//')[-1]
-    elif 'tmdb' in plex_guid:
+    """Finds a movie in Radarr using a Plex GUID (e.g., 'imdb://tt1234567', 'tmdb:12345')."""
+    id_key = None
+    id_value = None
+    try:
+        if 'imdb' in plex_guid:
+            id_key = 'imdbId'
+            # Handles imdb://tt1234567
+            id_value = re.split(r'[:/]+', plex_guid)[-1]
+        elif 'tmdb' in plex_guid:
             id_key = 'tmdbId'
-            try:
-                id_value = int(plex_guid.split('//')[-1])
-            except (ValueError, IndexError):
-                current_app.logger.error(f"Impossible d'extraire un entier du tmdb_guid: {plex_guid}")
-                return None
-    else:
+            # Handles tmdb://12345 and tmdb:12345
+            id_value = int(re.split(r'[:/]+', plex_guid)[-1])
+        else:
+            return None
+    except (ValueError, IndexError):
+        current_app.logger.error(f"Could not parse ID from Radarr GUID: {plex_guid}")
         return None
 
     movies = _radarr_api_request('GET', 'movie')
     if movies:
         for movie in movies:
-            if movie.get(id_key) == id_value:
+            if movie.get(id_key) and str(movie.get(id_key)) == str(id_value):
                 return movie
     return None
 
@@ -176,6 +184,28 @@ def update_radarr_movie(movie_data):
 def search_radarr_by_title(title):
     """Searches for movies in Radarr by title using the lookup endpoint."""
     return _radarr_api_request('GET', 'movie/lookup', params={'term': title})
+
+def find_radarr_movie_by_title(title):
+    """
+
+    Recherche un film dans la bibliothèque Radarr par son titre.
+    Retourne le dictionnaire du film si trouvé, sinon None.
+    """
+    try:
+        all_movies = _radarr_api_request('GET', 'movie')
+        if not all_movies:
+            return None
+        
+        for movie in all_movies:
+            if movie.get('title', '').lower() == title.lower():
+                current_app.logger.info(f"Radarr: Found matching movie '{title}' in library (ID: {movie.get('id')}).")
+                return movie
+        
+        current_app.logger.warning(f"Radarr: Movie '{title}' not found in library.")
+        return None
+    except Exception as e:
+        current_app.logger.error(f"Error searching for Radarr movie by title '{title}': {e}", exc_info=True)
+        return None
 
 def check_radarr_movie_exists(movie_title: str, movie_year: int = None) -> bool:
     """
@@ -323,24 +353,28 @@ def get_sonarr_tag_id(tag_label):
     return None
 
 def get_sonarr_series_by_guid(plex_guid):
-    """Finds a series in Sonarr using a Plex GUID (e.g., 'tvdb://12345')."""
+    """Finds a series in Sonarr using a Plex GUID (e.g., 'tvdb://12345', 'tvdb:12345')."""
+    id_key = None
     id_value = None
-    if 'tvdb' in plex_guid:
-        id_key = 'tvdbId'
-        try:
-            id_value = int(plex_guid.split('//')[-1])
-        except (ValueError, IndexError):
+    try:
+        if 'tvdb' in plex_guid:
+            id_key = 'tvdbId'
+            # Handles tvdb://12345 and tvdb:12345
+            id_value = int(re.split(r'[:/]+', plex_guid)[-1])
+        elif 'imdb' in plex_guid:
+            id_key = 'imdbId'
+            # Handles imdb://tt1234567
+            id_value = re.split(r'[:/]+', plex_guid)[-1]
+        else:
             return None
-    elif 'imdb' in plex_guid:
-        id_key = 'imdbId'
-        id_value = plex_guid.split('//')[-1]
-    else:
+    except (ValueError, IndexError):
+        current_app.logger.error(f"Could not parse ID from Sonarr GUID: {plex_guid}")
         return None
 
     all_series = _sonarr_api_request('GET', 'series')
     if all_series:
         for series in all_series:
-            if series.get(id_key) == id_value:
+            if series.get(id_key) and str(series.get(id_key)) == str(id_value):
                 return series
     return None
 
@@ -372,6 +406,27 @@ def get_all_sonarr_series():
     """Fetches all series from Sonarr."""
     current_app.logger.info("Récupération de toutes les séries depuis l'API Sonarr.")
     return _sonarr_api_request('GET', 'series')
+    
+def find_sonarr_series_by_title(title):
+    """
+    Recherche une série dans la bibliothèque Sonarr par son titre.
+    Retourne le dictionnaire de la série si trouvée, sinon None.
+    """
+    try:
+        all_series = get_all_sonarr_series()
+        if not all_series:
+            return None
+        
+        for series in all_series:
+            if series.get('title', '').lower() == title.lower():
+                current_app.logger.info(f"Sonarr: Found matching series '{title}' in library (ID: {series.get('id')}).")
+                return series
+        
+        current_app.logger.warning(f"Sonarr: Series '{title}' not found in library.")
+        return None
+    except Exception as e:
+        current_app.logger.error(f"Error searching for Sonarr series by title '{title}': {e}", exc_info=True)
+        return None
 
 def check_sonarr_episode_exists(series_title: str, season_number: int, episode_number: int) -> bool:
     """

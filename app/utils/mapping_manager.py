@@ -100,8 +100,8 @@ def add_or_update_torrent_in_map(torrent_hash, release_name, status, seedbox_dow
 
     # The scanner does not know the app_type, target_id, or label initially.
     # These can be added later by another process.
-    if not all([torrent_hash, release_name, status, seedbox_download_path]):
-        logger.error("Missing one or more required arguments for add_or_update_torrent_in_map.")
+    if not all([torrent_hash, release_name, status]) or seedbox_download_path is None:
+        logger.error("Missing one or more required arguments for add_or_update_torrent_in_map (hash, release_name, status, and seedbox_download_path are required).")
         return False
 
     # Set default values if not provided, for consistency in the map file

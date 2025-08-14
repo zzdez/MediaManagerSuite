@@ -36,11 +36,35 @@
 </div>
 
 {% if torrents_with_assoc is defined and torrents_with_assoc %}
+    <div id="batch-actions-container" class="mb-3" style="display: none;">
+        <div class="card bg-dark border-secondary">
+            <div class="card-body">
+                <h5 class="card-title"><span id="selected-torrent-count">0</span> item(s) sélectionné(s)</h5>
+                <p class="card-text">Choisissez une action à appliquer à tous les items sélectionnés.</p>
+                <div class="btn-group" role="group" aria-label="Batch Actions">
+                    <button class="btn btn-info" id="batch-map-btn" style="display: none;"><i class="bi bi-link-45deg"></i> Mapper</button>
+                    <button class="btn btn-primary" id="batch-repatriate-btn" style="display: none;"><i class="bi bi-cloud-download"></i> Rapatrier</button>
+                    <button class="btn btn-success" id="batch-mark-processed-btn" style="display: none;"><i class="bi bi-check-circle"></i> Marquer Traité</button>
+                    <button class="btn btn-info" id="batch-retry-repatriation-btn" style="display: none;"><i class="bi bi-arrow-clockwise"></i> Réessayer Rapatriement</button>
+                    <button class="btn btn-warning" id="batch-forget-btn" style="display: none;"><i class="bi bi-eraser"></i> Oublier Association</button>
+                    <button class="btn btn-secondary" id="batch-ignore-btn" style="display: none;"><i class="bi bi-slash-circle"></i> Ignorer Déf.</button>
+                    <button class="btn btn-danger" id="batch-delete-btn">
+                        <i class="bi bi-trash-fill"></i> Supprimer la sélection
+                    </button>
+                </div>
+                <div class="form-check form-switch d-inline-block ms-3 align-middle">
+                    <input class="form-check-input" type="checkbox" id="delete-data-checkbox">
+                    <label class="form-check-label" for="delete-data-checkbox">Supprimer les données (pour l'action Supprimer)</label>
+                </div>
+            </div>
+        </div>
+    </div>
     <div class="table-responsive">
         <table class="table table-striped table-hover table-sm caption-top table-dark"> {# Added table-dark to match index.html general theme #}
             <caption>Liste des torrents actifs et pré-associations. Les vitesses sont en Ko/s.</caption>
             <thead class="table-dark">
                 <tr>
+                    <th style="width: 3%;"><input class="form-check-input" type="checkbox" id="select-all-torrents"></th>
                     <th>Nom</th>
                     <th>Taille (Go)</th>
                     <th>Progrès (%)</th>
@@ -50,14 +74,14 @@
                     <th>Label rTorrent</th>
                     <th>Pré-association MMS</th>
                     <th>Statut MMS</th>
-                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
                 {% for torrent_item in torrents_with_assoc %}
                     {% set torrent = torrent_item.details %}
                     {% set association = torrent_item.association %}
-                    <tr>
+                    <tr data-mms-status="{{ torrent.mms_status or 'unknown' }}" data-association-exists="{{ 'true' if association else 'false' }}">
+                        <td><input class="form-check-input torrent-checkbox" type="checkbox" data-torrent-hash="{{ torrent.hash }}"></td>
                         <td><span class="torrent-name" title="{{ torrent.name }}">{{ torrent.name }}</span></td>
                         <td>{{ (torrent.size_bytes / (1024*1024*1024)) | round(2) if torrent.size_bytes else '0.00' }}</td>
                         <td>{{ torrent.progress_percent | round(1) if torrent.progress_percent is not none else 'N/A' }}%</td>
@@ -90,95 +114,22 @@
                         </td>
                         <td>
                             {% set status = torrent.mms_status %}
-                            {% if status == 'imported_by_mms' %}
-                                <span class="badge bg-success">Traité</span>
-                            {% elif status == 'pending_mms_import' %}
-                                <span class="badge bg-warning text-dark">En Staging</span>
-                            {% elif status == 'pending_download_on_seedbox' %}
-                                <span class="badge bg-primary">Associé</span>
-                            {% elif status == 'error_staging_path_missing' %}
-                                <span class="badge bg-danger">Erreur Staging</span>
-                            {% elif status == 'error_rapatriation' %}
-                                <span class="badge bg-danger">Erreur Rapatriement</span>
-                            {% elif status == 'error_mms_all_files_failed_move' %}
-                                <span class="badge bg-danger">Erreur Déplacement</span>
-                            {% elif status == 'error_sonarr_season_undefined_for_file' %}
-                                <span class="badge bg-danger">Saison Manquante</span>
-                            {% elif status == 'error_mms_file_move' %}
-                                <span class="badge bg-danger">Erreur Fichier</span>
-                            {% elif status == 'error_unknown_association_type' %}
-                                <span class="badge bg-danger">Type Inconnu</span>
-                            {% elif status == 'error_mms_api_processing_failed' %}
-                                <span class="badge bg-danger">Erreur Traitement API</span>
-                            {% elif status == 'processing_by_mms_api' %}
-                                <span class="badge bg-info text-dark">Traitement MMS</span>
+                            {% if status == 'completed_by_sonarr' or status == 'completed_by_radarr' %}
+                                <span class="badge bg-success">Traité (Auto)</span>
+                                <small class="d-block text-muted">Géré par {{ 'Sonarr' if 'sonarr' in status else 'Radarr' }}</small>
+                            {% elif status == 'completed_manual' %}
+                                <span class="badge bg-info">Traité (MMS)</span>
+                            {% elif status == 'processed_manual' %}
+                                <span class="badge bg-secondary">Traité (Manuel)</span>
+                            {% elif status and 'error' in status %}
+                                <span class="badge bg-danger">Erreur</span>
+                                <small class="d-block text-muted" title="{{ association.status_message if association else '' }}">{{ status }}</small>
                             {% elif status == 'unknown' %}
                                 <span class="badge bg-secondary">Inconnu</span>
                             {% else %}
-                                <span class="badge bg-info text-dark">{{ status | replace('_', ' ') | capitalize }}</span>
+                                <span class="badge bg-primary">{{ status | replace('_', ' ') | capitalize }}</span>
                             {% endif %}
                         </td>
-<!-- Nouvelle cellule pour les actions -->
-<td>
-    {% set torrent = torrent_item.details %}
-    {% set association = torrent_item.association %}
-    {% set status = torrent.mms_status %}
-
-    <div class="d-flex flex-wrap" style="gap: 3px;">
-
-        {# --- NOUVELLE ACTION : RÉESSAYER LE RAPATRIEMENT --- #}
-        {% if status and status.strip().lower() == 'error_rapatriation' %}
-            <button class="btn btn-sm btn-outline-primary retry-repatriation-btn"
-                    data-hash="{{ torrent.hash }}"
-                    title="Relancer le processus de rapatriement pour cet item.">
-                <i class="bi bi-arrow-clockwise"></i> Réessayer
-            </button>
-        {% endif %}
-
-        {# --- ACTION : MAPPER (pour les torrents inconnus) --- #}
-        {% if status == 'unknown' %}
-            <button class="btn btn-sm btn-outline-info open-mapping-modal-btn"
-                    data-torrent-name="{{ torrent.name }}"
-                    title="Associer ce torrent à un média dans Sonarr/Radarr">
-                <i class="bi bi-link-45deg"></i> Mapper
-            </button>
-        {% endif %}
-
-        {# --- ACTION : FORCER L'IMPORT (pour les torrents en staging) --- #}
-        {% if status == 'pending_mms_import' and association %}
-            <button class="btn btn-sm btn-outline-success force-import-btn"
-                    data-torrent-hash="{{ torrent.hash }}"
-                    title="Forcer le traitement de cet item depuis le staging">
-                <i class="bi bi-play-circle-fill"></i> Forcer Import
-            </button>
-        {% endif %}
-
-        {# --- ACTION : OUBLIER L'ASSOCIATION (pour tous les torrents connus de MMS) --- #}
-        {% if status != 'unknown' and association %}
-            <button class="btn btn-sm btn-outline-warning forget-association-btn"
-                    data-torrent-hash="{{ torrent.hash }}"
-                    title="Supprimer l'association MMS. Le torrent restera dans rTorrent.">
-                <i class="bi bi-eraser"></i> Oublier
-            </button>
-            <button class="btn btn-sm btn-danger ignore-torrent-btn"
-                    data-hash="{{ torrent.hash }}"
-                    title="Ajouter ce torrent à la liste noire et le supprimer de la vue. Cette action est irréversible.">
-                <i class="bi bi-trash-fill"></i> Ignorer Déf.
-            </button>
-        {% endif %}
-
-        {# --- ACTION : SUPPRIMER DE RTORRENT (toujours disponible, mais seulement si pas d'association) --- #}
-        {% if not association %}
-        <button class="btn btn-sm btn-outline-danger delete-rtorrent-btn"
-                data-torrent-hash="{{ torrent.hash }}"
-                data-torrent-name="{{ torrent.name }}"
-                title="Supprimer le torrent de rTorrent (avec option de supprimer les données)">
-            <i class="bi bi-trash-fill"></i> Supprimer
-        </button>
-        {% endif %}
-
-    </div>
-</td>
                     </tr>
                 {% endfor %}
             </tbody>

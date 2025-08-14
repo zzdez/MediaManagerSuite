@@ -26,6 +26,9 @@ import paramiko
 # --- Imports spécifiques à l'application MediaManagerSuite ---
 from app.auth import internal_api_required
 from app.utils import staging_processor
+from app.utils.arr_client import search_sonarr_by_title, search_radarr_by_title
+from app.utils.tvdb_client import CustomTVDBClient
+from app.utils.tmdb_client import TheMovieDBClient
 
 # Client rTorrent
 from app.utils.rtorrent_client import (
@@ -1286,7 +1289,7 @@ def _execute_mms_sonarr_import(item_name_in_staging, series_id_target, original_
     logger = current_app.logger
     log_prefix = f"EXEC_MMS_SONARR (Item:'{item_name_in_staging}', SeriesID:{series_id_target}): "
     logger.info(f"{log_prefix}Début de l'import MMS. Force Multi-Part: {force_multi_part}")
-    
+
     # --- Configuration ---
     sonarr_url = current_app.config.get('SONARR_URL')
     sonarr_api_key = current_app.config.get('SONARR_API_KEY')
@@ -1323,7 +1326,7 @@ def _execute_mms_sonarr_import(item_name_in_staging, series_id_target, original_
         return {"success": False, "message": f"Aucun fichier vidéo trouvé dans '{item_name_in_staging}'."}
 
     logger.info(f"{log_prefix}{len(video_files_to_process)} fichier(s) vidéo à traiter pour '{series_title}'.")
-    
+
     successful_moves = 0
     failed_moves_details = []
 
@@ -1398,13 +1401,22 @@ def _execute_mms_sonarr_import(item_name_in_staging, series_id_target, original_
             logger.info(f"{log_prefix}L'item était un fichier unique, déjà déplacé. Pas de nettoyage de dossier.")
     else:
         logger.warning(f"{log_prefix}Le dossier de cleanup '{path_to_cleanup_abs}' n'existe plus.")
-        
+
     # --- Rescan Sonarr ---
     rescan_payload = {"name": "RescanSeries", "seriesId": int(series_id_target)}
     _, error_rescan = _make_arr_request('POST', f"{sonarr_url.rstrip('/')}/api/v3/command", sonarr_api_key, json_data=rescan_payload)
 
     final_message = f"{successful_moves} fichier(s) pour '{series_title}' déplacé(s). Échecs: {len(failed_moves_details)}. "
     final_message += "Rescan Sonarr initié." if not error_rescan else f"Échec Rescan Sonarr: {error_rescan}"
+
+    # Bug Fix: Update status for manual imports
+    if successful_moves > 0 and not is_automated_flow and torrent_hash_for_status_update:
+        logger.info(f"{log_prefix}Manual import successful. Updating torrent map status for hash {torrent_hash_for_status_update}.")
+        torrent_map_manager.update_torrent_status_in_map(
+            torrent_hash_for_status_update,
+            'completed_manual',
+            'Import manuel réussi via UI.'
+        )
 
     return {"success": True, "message": final_message}
 
@@ -1483,10 +1495,10 @@ def _execute_mms_radarr_import(item_name_in_staging, movie_id_target, original_r
     # --- Rescan Radarr ---
     rescan_payload = {"name": "RescanMovie", "movieId": int(movie_id_target)}
     _, error_rescan = _make_arr_request('POST', f"{radarr_url.rstrip('/')}/api/v3/command", radarr_api_key, json_data=rescan_payload)
-    
+
     final_message = f"{successful_moves} fichier(s) pour '{movie_title}' déplacé(s). "
     final_message += "Rescan Radarr initié." if not error_rescan else f"Échec Rescan Radarr: {error_rescan}"
-    
+
     return {"success": True, "message": final_message}
 
 # FIN DES NOUVELLES FONCTIONS HELPER REFACTORISÉES
@@ -1708,6 +1720,34 @@ def search_sonarr_api():
     return jsonify(results if results else [])
 
 
+from app.utils.tvdb_client import CustomTVDBClient
+
+@seedbox_ui_bp.route('/api/tvdb/enrich', methods=['GET'])
+@login_required
+def enrich_tvdb_series_details():
+    """
+    Takes a TVDB ID and returns enriched series details in French.
+    """
+    logger = current_app.logger
+    tvdb_id = request.args.get('tvdb_id')
+    if not tvdb_id:
+        return jsonify({"error": "TVDB ID manquant"}), 400
+
+    try:
+        tvdb_client = CustomTVDBClient()
+        logger.info(f"Enriching details for TVDB ID: {tvdb_id}")
+        details = tvdb_client.get_series_details_by_id(tvdb_id, lang='fra')
+
+        if not details:
+            return jsonify({"error": "Details not found on TVDB"}), 404
+
+        # The client already provides translated 'seriesName' and 'overview'
+        return jsonify(details)
+
+    except Exception as e:
+        logger.error(f"Error in enrich_tvdb_series_details for ID '{tvdb_id}': {e}", exc_info=True)
+        return jsonify({"error": "An internal error occurred during enrichment."}), 500
+
 @seedbox_ui_bp.route('/search-radarr-api') # GET request
 @login_required
 def search_radarr_api():
@@ -1730,6 +1770,84 @@ def search_radarr_api():
         return jsonify({"error": error_msg}), 500
 
     return jsonify(results if results else [])
+
+@seedbox_ui_bp.route('/search-tvdb-enriched')
+@login_required
+def search_tvdb_enriched():
+    query = request.args.get('query')
+    if not query:
+        return jsonify({"error": "Terme de recherche manquant"}), 400
+
+    try:
+        initial_results = search_sonarr_by_title(query)
+        if not initial_results:
+            return jsonify([])
+
+        # Limit enrichment to the first 5 results for performance
+        results_to_enrich = initial_results[:5]
+        enriched_results = []
+
+        tvdb_client = CustomTVDBClient()
+        for series in results_to_enrich:
+            tvdb_id = series.get('tvdbId')
+            if tvdb_id:
+                try:
+                    details = tvdb_client.get_series_details_by_id(tvdb_id, lang='fra')
+                    if details:
+                        series['overview'] = details.get('overview')
+                        series['remotePoster'] = details.get('image')
+                        series['seriesName'] = details.get('seriesName')
+                except Exception as e_enrich:
+                    logger.warning(f"Could not enrich TVDB ID {tvdb_id} for '{series.get('title')}': {e_enrich}")
+            enriched_results.append(series)
+
+        # Add the rest of the non-enriched results
+        enriched_results.extend(initial_results[5:])
+
+        return jsonify(enriched_results)
+
+    except Exception as e:
+        logger.error(f"Error in search_tvdb_enriched for query '{query}': {e}", exc_info=True)
+        return jsonify({"error": "An internal error occurred during enriched search."}), 500
+
+
+@seedbox_ui_bp.route('/search-tmdb-enriched')
+@login_required
+def search_tmdb_enriched():
+    query = request.args.get('query')
+    if not query:
+        return jsonify({"error": "Terme de recherche manquant"}), 400
+
+    try:
+        initial_results = search_radarr_by_title(query)
+        if not initial_results:
+            return jsonify([])
+
+        # Limit enrichment to the first 5 results for performance
+        results_to_enrich = initial_results[:5]
+        enriched_results = []
+
+        tmdb_client = TheMovieDBClient()
+        for movie in results_to_enrich:
+            tmdb_id = movie.get('tmdbId')
+            if tmdb_id:
+                try:
+                    details = tmdb_client.get_movie_details(tmdb_id, lang='fr-FR')
+                    if details:
+                        movie['overview'] = details.get('overview')
+                        movie['remotePoster'] = details.get('poster_path')
+                except Exception as e_enrich:
+                    logger.warning(f"Could not enrich TMDB ID {tmdb_id} for '{movie.get('title')}': {e_enrich}")
+            enriched_results.append(movie)
+
+        # Add the rest of the non-enriched results
+        enriched_results.extend(initial_results[5:])
+
+        return jsonify(enriched_results)
+
+    except Exception as e:
+        logger.error(f"Error in search_tmdb_enriched for query '{query}': {e}", exc_info=True)
+        return jsonify({"error": "An internal error occurred during enriched search."}), 500
 # ==============================================================================
 # ROUTES API POUR RÉCUPÉRER LES CONFIGURATIONS DE SONARR (Root Folders, Profiles)
 # ==============================================================================
@@ -3032,7 +3150,7 @@ def rtorrent_add_torrent_action():
             label=rtorrent_label,
             seedbox_download_path=seedbox_full_download_path,
             original_torrent_name=original_name_from_js,
-            initial_status="transferring_to_seedbox"
+            status="transferring_to_seedbox"
         ):
         final_msg = f"Torrent '{release_name_for_map}' (Hash: {actual_hash}) ajouté à rTorrent. "
         if is_new_media:
@@ -3077,14 +3195,14 @@ def rtorrent_list_view():
     if isinstance(torrents_data, list):
         for torrent in torrents_data: # Each 'torrent' is a dict from the new list_torrents()
             torrent_hash = torrent.get('hash')
-            
+
             mms_status = 'unknown'
             mms_file_exists = False
-            
+
             if torrent_hash and torrent_hash in all_mms_associations:
                 assoc_data = all_mms_associations[torrent_hash]
                 mms_status = assoc_data.get('status', 'unknown')
-                
+
                 # Check file existence based on status and configured paths
                 if mms_status in ['pending_mms_import', 'processing_by_mms_api', 'error_staging_path_missing', 'error_mms_all_files_failed_move', 'error_sonarr_season_undefined_for_file', 'error_mms_file_move']:
                     # These statuses imply the file should be in local staging
@@ -3100,10 +3218,10 @@ def rtorrent_list_view():
                     # A more robust check would involve knowing the final path from the association data.
                     # For now, we'll just assume it exists if imported.
                     mms_file_exists = True # Placeholder, actual check would be more complex
-                
+
             torrent['mms_status'] = mms_status
             torrent['mms_file_exists'] = mms_file_exists
-            
+
             torrents_with_assoc.append({
                 "details": torrent,
                 "association": all_mms_associations.get(torrent_hash) # Pass the full association data if needed
@@ -3149,6 +3267,89 @@ def delete_rtorrent_torrent():
     except Exception as e:
         logger.error(f"Erreur lors de la suppression du torrent {torrent_hash}: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@seedbox_ui_bp.route('/rtorrent/batch-action', methods=['POST'])
+@login_required
+def rtorrent_batch_action():
+    data = request.get_json()
+    hashes = data.get('hashes', [])
+    action = data.get('action')
+    options = data.get('options', {})
+
+    if not hashes or not action:
+        return jsonify({'status': 'error', 'message': 'Hashes ou action manquants.'}), 400
+
+    success_count = 0
+    fail_count = 0
+
+    # --- Action de Suppression ---
+    if action == 'delete':
+        delete_data = options.get('delete_data', False)
+        for h in hashes:
+            try:
+                success, _ = rtorrent_delete_torrent_api(h, delete_data)
+                if success: success_count += 1
+                else: fail_count += 1
+            except Exception as e:
+                logger.error(f"Erreur lors de la suppression du torrent {h}: {e}", exc_info=True)
+                fail_count += 1
+    # --- Action "Marquer comme traité" ---
+    elif action == 'mark_processed':
+        for h in hashes:
+            if torrent_map_manager.update_torrent_status_in_map(h, 'processed_manual', 'Marqué comme traité manuellement via action groupée.'):
+                success_count += 1
+            else:
+                fail_count += 1
+    # --- Action "Oublier l'association" ---
+    elif action == 'forget':
+        for h in hashes:
+            if torrent_map_manager.remove_torrent_from_map(h):
+                success_count += 1
+            else:
+                fail_count += 1
+    # --- Action "Ignorer définitivement" ---
+    elif action == 'ignore':
+        for h in hashes:
+            if torrent_map_manager.add_hash_to_ignored_list(h):
+                torrent_map_manager.remove_torrent_from_map(h) # On le retire aussi de la liste des suivis
+                success_count += 1
+            else:
+                fail_count += 1
+    # --- Action "Rapatrier" ---
+    elif action == 'repatriate':
+        # Cette action est plus complexe et nécessite une connexion SFTP
+        sftp, transport = staging_processor._connect_sftp()
+        if not sftp:
+            return jsonify({'status': 'error', 'message': 'Connexion SFTP échouée.'}), 500
+        try:
+            for h in hashes:
+                item = torrent_map_manager.get_torrent_by_hash(h)
+                if item:
+                    folder_name = item.get('folder_name', item['release_name'])
+                    if staging_processor._rapatriate_item(item, sftp, folder_name):
+                        torrent_map_manager.update_torrent_status_in_map(h, 'in_staging', 'Rapatrié manuellement via action groupée.')
+                        success_count += 1
+                    else:
+                        fail_count += 1
+                else:
+                    fail_count += 1
+        finally:
+            if transport:
+                transport.close()
+    # --- Action "Réessayer le rapatriement" ---
+    elif action == 'retry_repatriation':
+        for h in hashes:
+            if torrent_map_manager.update_torrent_status_in_map(h, 'pending_staging'):
+                success_count += 1
+            else:
+                fail_count += 1
+    else:
+        return jsonify({'status': 'error', 'message': 'Action non supportée.'}), 400
+
+    return jsonify({
+        'status': 'success',
+        'message': f'Action "{action}" exécutée. Succès: {success_count}, Échecs: {fail_count}.'
+    })
 
 @seedbox_ui_bp.route('/add-torrent-and-map', methods=['POST'])
 @login_required
@@ -3739,7 +3940,7 @@ def retry_problematic_import_action(torrent_hash):
         return jsonify({'status': 'error', 'message': f"Association non trouvée pour le hash {torrent_hash}."}), 404
 
     item_name_in_staging = association_data.get('release_name')
-    
+
     # --- CORRECTION 1 : Utiliser la bonne variable pour le chemin de staging ---
     staging_dir = current_app.config.get('LOCAL_STAGING_PATH') # Utilise la variable de config correcte
 
@@ -3817,6 +4018,11 @@ def rtorrent_map_sonarr():
 
     torrent_hash = torrent_info.get('hash')
     download_path = torrent_info.get('path')
+    if download_path:
+        folder_name = os.path.basename(download_path)
+    else:
+        folder_name = torrent_name
+        download_path = "" # Ensure download_path is not None
 
     success = torrent_map_manager.add_or_update_torrent_in_map(
         torrent_hash=torrent_hash,
@@ -3826,7 +4032,8 @@ def rtorrent_map_sonarr():
         label=current_app.config.get('RTORRENT_LABEL_SONARR', 'sonarr'),
         seedbox_download_path=download_path,
         original_torrent_name=torrent_name,
-        initial_status='mapped_by_user'
+        status='mapped_by_user',
+        folder_name=folder_name
     )
 
     if success:
@@ -3860,6 +4067,11 @@ def rtorrent_map_radarr():
 
     torrent_hash = torrent_info.get('hash')
     download_path = torrent_info.get('path')
+    if download_path:
+        folder_name = os.path.basename(download_path)
+    else:
+        folder_name = torrent_name
+        download_path = "" # Ensure download_path is not None
 
     success = torrent_map_manager.add_or_update_torrent_in_map(
         torrent_hash=torrent_hash,
@@ -3869,13 +4081,106 @@ def rtorrent_map_radarr():
         label=current_app.config.get('RTORRENT_LABEL_RADARR', 'radarr'),
         seedbox_download_path=download_path,
         original_torrent_name=torrent_name,
-        initial_status='mapped_by_user'
+        status='mapped_by_user',
+        folder_name=folder_name
     )
 
     if success:
         return jsonify({'success': True, 'message': f"Torrent '{torrent_name}' mappé avec succès au film ID {movie_id}."})
     else:
         return jsonify({'success': False, 'error': 'Erreur lors de la sauvegarde du mapping.'}), 500
+
+# ==============================================================================
+# --- NOUVELLES ROUTES POUR LES ACTIONS MANUELLES DE LA VUE RTORRENT ---
+# ==============================================================================
+
+# Assurez-vous que ces imports sont bien en haut de votre fichier routes.py
+from app.utils.staging_processor import _connect_sftp, _rapatriate_item
+
+@seedbox_ui_bp.route('/torrent/mark-processed', methods=['POST'])
+@login_required
+def mark_torrent_processed():
+    """
+    Marque un torrent comme traité manuellement.
+    """
+    torrent_hash = request.json.get('torrent_hash')
+    if not torrent_hash:
+        return jsonify({'status': 'error', 'message': 'HASH manquant.'}), 400
+
+    # Utilise la fonction confirmée
+    success = torrent_map_manager.update_torrent_status_in_map(
+        torrent_hash,
+        'processed_manual',
+        'Marqué comme traité manuellement par l_utilisateur.'
+    )
+
+    if success:
+        return jsonify({'status': 'success', 'message': 'Torrent marqué comme traité.'})
+    else:
+        return jsonify({'status': 'error', 'message': 'Torrent non trouvé dans la map.'}), 404
+
+@seedbox_ui_bp.route('/staging/repatriate', methods=['POST'])
+@login_required
+def repatriate_to_staging():
+    """
+    Déclenche uniquement le rapatriement d'un torrent vers le staging.
+    """
+    torrent_hash = request.json.get('torrent_hash')
+    if not torrent_hash:
+        return jsonify({'status': 'error', 'message': 'HASH manquant.'}), 400
+
+    item = torrent_map_manager.get_torrent_by_hash(torrent_hash)
+
+    # **NOUVELLE LOGIQUE : Si l'item est inconnu, on le crée !**
+    if not item:
+        # On doit récupérer les infos depuis rTorrent
+        all_torrents, _ = rtorrent_list_torrents_api()
+        torrent_info = next((t for t in all_torrents if t.get('hash') == torrent_hash), None)
+
+        if not torrent_info:
+            return jsonify({'status': 'error', 'message': 'Torrent non trouvé dans rTorrent.'}), 404
+
+        # On crée l'entrée dans le mapping manager
+        torrent_map_manager.add_or_update_torrent_in_map(
+            release_name=torrent_info['name'],
+            torrent_hash=torrent_hash,
+            status='pending_staging', # Il est prêt à être rapatrié
+            seedbox_download_path=torrent_info['base_path'],
+            folder_name=os.path.basename(torrent_info['base_path'])
+        )
+        # On recharge l'item pour la suite du traitement
+        item = torrent_map_manager.get_torrent_by_hash(torrent_hash)
+
+    # Utilise la fonction de connexion confirmée
+    sftp, transport = _connect_sftp()
+    if not sftp:
+        return jsonify({'status': 'error', 'message': 'Connexion SFTP échouée.'}), 500
+
+    try:
+        folder_name = item.get('folder_name', item['release_name'])
+
+        # Utilise la fonction de rapatriement confirmée
+        success = _rapatriate_item(item, sftp, folder_name) # Note: le paramètre est bien `sftp` ici
+
+        if success:
+            # Met à jour le statut
+            torrent_map_manager.update_torrent_status_in_map(
+                torrent_hash,
+                'in_staging',
+                'Rapatrié manuellement vers le staging.'
+            )
+            return jsonify({'status': 'success', 'message': 'Rapatriement vers le staging réussi.'})
+        else:
+            torrent_map_manager.update_torrent_status_in_map(
+                torrent_hash,
+                'error_repatriation',
+                'Échec du rapatriement manuel.'
+            )
+            return jsonify({'status': 'error', 'message': 'Échec du rapatriement.'}), 500
+
+    finally:
+        if transport:
+            transport.close()
 
 
 @seedbox_ui_bp.route('/problematic-association/delete/<string:torrent_hash>', methods=['POST'])
@@ -4097,7 +4402,7 @@ def queue_manager_view():
 @login_required
 def delete_sonarr_queue_items():
     logger.info("Demande de suppression d'items de la file d'attente Sonarr via API.")
-    
+
     # --- CHANGEMENT 1 : Récupérer les données depuis un corps JSON ---
     # Le JavaScript enverra maintenant un JSON, c'est plus propre que les formulaires.
     data = request.get_json()
@@ -4106,7 +4411,7 @@ def delete_sonarr_queue_items():
 
     selected_ids = data.get('ids', [])
     remove_from_client = data.get('removeFromClient', False)
-    
+
     logger.info(f"Suppression items Sonarr. IDs: {selected_ids}, removeFromClient: {remove_from_client}")
 
     sonarr_url = current_app.config.get('SONARR_URL')
@@ -4194,7 +4499,7 @@ def delete_radarr_queue_items():
         else:
             logger.info(f"Item Radarr ID {item_id} supprimé de la file d'attente avec succès.")
             success_count += 1
-            
+
     # --- CHANGEMENT 3 : Construire une réponse JSON finale ---
     if error_count > 0:
         message = f"{success_count} item(s) supprimé(s). Échec pour {error_count} item(s). Erreurs: {'; '.join(errors)}"
@@ -4202,7 +4507,7 @@ def delete_radarr_queue_items():
     else:
         message = f"{success_count} item(s) supprimé(s) de la file d'attente Radarr avec succès."
         return jsonify({'status': 'success', 'message': message})
-        
+
 # ==============================================================================
 # --- ROUTE POUR SFTP -> AJOUT ARR -> RAPATRIEMENT -> IMPORT MMS ---
 # ==============================================================================
@@ -4415,13 +4720,13 @@ def ignore_torrent_permanently():
 
     try:
         # Add to the ignored list first
-        success_ignore = mapping_manager.add_hash_to_ignored_list(torrent_hash)
+        success_ignore = torrent_map_manager.add_hash_to_ignored_list(torrent_hash)
         if not success_ignore:
             # Logged inside the function, but we can return a specific error
             return jsonify({'status': 'error', 'message': "Échec de l'ajout du torrent à la liste des ignorés."}), 500
 
         # Then remove from the pending map
-        mapping_manager.remove_torrent_from_map(torrent_hash)
+        torrent_map_manager.remove_torrent_from_map(torrent_hash)
 
         return jsonify({'status': 'success', 'message': f"Le torrent {torrent_hash} a été ignoré définitivement et supprimé de la liste de suivi."})
 
