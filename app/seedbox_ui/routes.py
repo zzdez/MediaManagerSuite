@@ -4018,7 +4018,11 @@ def rtorrent_map_sonarr():
 
     torrent_hash = torrent_info.get('hash')
     download_path = torrent_info.get('path')
-    folder_name = os.path.basename(download_path)
+    if download_path:
+        folder_name = os.path.basename(download_path)
+    else:
+        folder_name = torrent_name
+        download_path = "" # Ensure download_path is not None
 
     success = torrent_map_manager.add_or_update_torrent_in_map(
         torrent_hash=torrent_hash,
@@ -4063,7 +4067,11 @@ def rtorrent_map_radarr():
 
     torrent_hash = torrent_info.get('hash')
     download_path = torrent_info.get('path')
-    folder_name = os.path.basename(download_path)
+    if download_path:
+        folder_name = os.path.basename(download_path)
+    else:
+        folder_name = torrent_name
+        download_path = "" # Ensure download_path is not None
 
     success = torrent_map_manager.add_or_update_torrent_in_map(
         torrent_hash=torrent_hash,
