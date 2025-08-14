@@ -145,4 +145,94 @@ $(document).ready(function() {
         const mappingChoiceModal = new bootstrap.Modal(document.getElementById('mappingChoiceModal'));
         mappingChoiceModal.show();
     });
+
+    // =================================================================
+    // ### PARTIE 2 : TRI DYNAMIQUE DES TABLEAUX ###
+    // =================================================================
+
+    function parseSize(sizeStr) {
+        if (!sizeStr || typeof sizeStr !== 'string' || sizeStr.toLowerCase() === 'n/a') return 0;
+
+        // Gère les formats comme "1,234.56 Go" ou "1.23 Mo"
+        const cleanedStr = sizeStr.replace(/,/g, '.').replace(/\s+/g, '');
+        const sizeMatch = cleanedStr.match(/([\d.]+)([a-zA-Z]+)/);
+
+        if (!sizeMatch) {
+            // Tente de parser une chaîne qui ne contient que des chiffres (supposée être en octets)
+            const numericValue = parseFloat(cleanedStr);
+            return isNaN(numericValue) ? 0 : numericValue;
+        }
+
+        const value = parseFloat(sizeMatch[1]);
+        const unit = sizeMatch[2].toUpperCase();
+
+        switch (unit) {
+            case 'TB': case 'TO': return value * 1e12;
+            case 'GB': case 'GO': return value * 1e9;
+            case 'MB': case 'MO': return value * 1e6;
+            case 'KB': case 'KO': return value * 1e3;
+            default: return value; // Octets ou unité inconnue
+        }
+    }
+
+    function sortTable(table, sortBy, sortType, direction) {
+        const tbody = table.find('tbody');
+        const rows = tbody.find('tr').toArray();
+        const cellIndex = table.find(`th.sortable-header[data-sort-by='${sortBy}']`).index();
+
+        if (cellIndex === -1) {
+            console.error(`Sort key "${sortBy}" not found in table headers.`);
+            return;
+        }
+
+        rows.sort(function(a, b) {
+            const cellA = $(a).children('td').eq(cellIndex);
+            const cellB = $(b).children('td').eq(cellIndex);
+
+            let valA = cellA.text().trim();
+            let valB = cellB.text().trim();
+
+            if (sortType === 'size') {
+                valA = parseSize(valA);
+                valB = parseSize(valB);
+            } else if (sortType === 'number') {
+                valA = parseFloat(valA.replace('%', '').replace(',', '.')) || 0;
+                valB = parseFloat(valB.replace('%', '').replace(',', '.')) || 0;
+            } else { // 'text' or default
+                valA = valA.toLowerCase();
+                valB = valB.toLowerCase();
+            }
+
+            if (valA < valB) return -1 * direction;
+            if (valA > valB) return 1 * direction;
+            return 0;
+        });
+
+        tbody.empty().append(rows);
+    }
+
+    // Écouteur pour les en-têtes de colonne
+    // Utilise un sélecteur plus large pour fonctionner sur les deux pages
+    $(document).on('click', '.sortable-header', function() {
+        const header = $(this);
+        const table = header.closest('table'); // Trouve la table parente
+        const sortBy = header.data('sort-by');
+        const sortType = header.data('sort-type') || 'text';
+
+        // Détermine la nouvelle direction du tri
+        let currentDir = header.data('sort-direction') || 'desc';
+        let newDir = currentDir === 'asc' ? 'desc' : 'asc';
+
+        // Stocke la nouvelle direction
+        header.data('sort-direction', newDir);
+
+        // Réinitialise les icônes sur tous les en-têtes de la table actuelle
+        table.find('.sortable-header').removeClass('sort-asc sort-desc');
+
+        // Applique la classe à l'en-tête cliqué
+        header.addClass(newDir === 'asc' ? 'sort-asc' : 'sort-desc');
+
+        // Appelle la fonction de tri
+        sortTable(table, sortBy, sortType, newDir === 'asc' ? 1 : -1);
+    });
 });

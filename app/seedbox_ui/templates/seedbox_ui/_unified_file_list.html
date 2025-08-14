@@ -1,11 +1,11 @@
-<table class="table table-dark table-striped table-hover mt-3 align-middle">
+<table id="dashboard-table" class="table table-dark table-striped table-hover mt-3 align-middle">
     <thead>
         <tr>
             <th scope="col" style="width: 5%;"><input type="checkbox" class="form-check-input" id="select-all-checkbox"></th>
             <th scope="col" style="width: 10%;">Type</th>
-            <th scope="col">Nom du Fichier</th>
-            <th scope="col" style="width: 15%;">Taille</th>
-            <th scope="col">Statut</th>
+            <th scope="col" class="sortable-header" data-sort-by="name">Nom du Fichier</th>
+            <th scope="col" style="width: 15%;" class="sortable-header" data-sort-by="size" data-sort-type="size">Taille</th>
+            <th scope="col" class="sortable-header" data-sort-by="status">Statut</th>
             <th scope="col" style="width: 20%;">Actions</th>
         </tr>
     </thead>
