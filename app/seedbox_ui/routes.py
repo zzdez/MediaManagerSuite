@@ -3203,13 +3203,13 @@ def rtorrent_list_view():
                 mms_status = assoc_data.get('status', 'unknown')
 
                 # Check file existence based on status and configured paths
-                if mms_status in ['pending_mms_import', 'processing_by_mms_api', 'error_staging_path_missing', 'error_mms_all_files_failed_move', 'error_sonarr_season_undefined_for_file', 'error_mms_file_move']:
+                if mms_status in ['in_staging', 'pending_staging', 'error_staging_path_missing', 'error_mms_all_files_failed_move', 'error_sonarr_season_undefined_for_file', 'error_mms_file_move']:
                     # These statuses imply the file should be in local staging
                     release_name = assoc_data.get('release_name')
                     if release_name and local_staging_path:
                         full_path = Path(local_staging_path) / release_name
                         mms_file_exists = full_path.exists()
-                elif mms_status == 'imported_by_mms':
+                elif mms_status == 'completed_manual' or mms_status == 'completed_auto':
                     # For imported items, check if they exist in their final destination (more complex, might need to query Sonarr/Radarr)
                     # For now, we'll assume if it's imported, it exists, or we'd need more specific path info from the association.
                     # Or, if the goal is to check if it's still in staging *after* import, that's a different check.

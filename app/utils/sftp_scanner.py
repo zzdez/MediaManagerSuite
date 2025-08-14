@@ -25,7 +25,7 @@ def scan_and_map_torrents():
 
             if torrent_hash in known_hashes:
                 # CAS A: Le torrent est déjà connu (probablement un ajout manuel)
-                if torrent_map[torrent_hash].get('status') == 'pending_download_on_seedbox':
+                if torrent_map[torrent_hash].get('status') == 'pending_download':
                     # On met à jour pour ajouter le folder_name et changer le statut
                     mapping_manager.add_or_update_torrent_in_map(
                         torrent_hash=torrent_hash,

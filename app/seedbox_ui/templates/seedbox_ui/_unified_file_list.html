@@ -27,9 +27,9 @@
                 {% set status = item.status or item.mms_info.status %} {# Gère les deux templates #}
                 {% set status_msg = item.status_message or item.mms_info.status_message %}
 
-                {% if status == 'completed_auto' %}
+                {% if status == 'completed_auto' or status in ['imported_by_sonarr', 'imported_by_radarr', 'imported_by_sonarr_manual'] %}
                     <span class="badge bg-success">Traité (Auto)</span>
-                {% elif status == 'completed_manual' %}
+                {% elif status == 'completed_manual' or status == 'imported_by_mms' %}
                     <span class="badge bg-info">Traité (MMS)</span>
                 {% elif status == 'processed_manual' %}
                     <span class="badge bg-secondary">Traité (Ignoré)</span>

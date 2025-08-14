@@ -117,9 +117,9 @@
                             {% set status = torrent.mms_status %}
                             {% set status_msg = association.status_message if association else '' %}
 
-                            {% if status == 'completed_auto' %}
+                            {% if status == 'completed_auto' or status in ['imported_by_sonarr', 'imported_by_radarr', 'imported_by_sonarr_manual'] %}
                                 <span class="badge bg-success">Traité (Auto)</span>
-                            {% elif status == 'completed_manual' %}
+                            {% elif status == 'completed_manual' or status == 'imported_by_mms' %}
                                 <span class="badge bg-info">Traité (MMS)</span>
                             {% elif status == 'processed_manual' %}
                                 <span class="badge bg-secondary">Traité (Ignoré)</span>
