@@ -1044,17 +1044,45 @@ def sonarr_post_command(payload):
 
 def sonarr_trigger_series_rename(series_id, season_number=None):
     """
-    Déclenche une commande 'SeriesSearch' pour une série.
-    Si 'season_number' est fourni, le scan est limité à cette saison.
+    Déclenche une commande de renommage dans Sonarr.
+    Si 'season_number' est fourni, utilise 'RenameFiles' pour cette saison.
+    Sinon, utilise 'RenameSeries' pour la série entière.
     """
-    payload = {
-        'name': 'SeriesSearch',
-        'seriesId': series_id,
-        # On ajoute les paramètres pour cibler les fichiers et la saison
-        'files': [],
-        'seasonNumber': season_number if season_number is not None else -1
-    }
-    return sonarr_post_command(payload)
+    # Si on cible une saison spécifique, on doit trouver les IDs des fichiers
+    if season_number is not None:
+        current_app.logger.info(f"Ciblage du renommage pour la saison {season_number} de la série {series_id}.")
+
+        all_episode_files = get_sonarr_episode_files(series_id)
+        if all_episode_files is None:
+            current_app.logger.error("Impossible de récupérer la liste des fichiers d'épisodes pour le renommage.")
+            return False
+
+        file_ids_to_rename = [
+            ep_file['id'] for ep_file in all_episode_files
+            if ep_file.get('seasonNumber') == season_number
+        ]
+
+        if not file_ids_to_rename:
+            current_app.logger.warning(f"Aucun fichier trouvé pour la saison {season_number} à renommer.")
+            return True
+
+        payload = {
+            'name': 'RenameFiles',
+            'seriesId': series_id, # seriesId est requis par RenameFiles
+            'files': file_ids_to_rename
+        }
+        current_app.logger.info(f"Envoi de la commande 'RenameFiles' pour {len(file_ids_to_rename)} fichier(s).")
+        return sonarr_post_command(payload)
+    else:
+        # Si aucune saison n'est spécifiée, on renomme toute la série
+        current_app.logger.info(f"Envoi de la commande 'RenameSeries' pour la série {series_id}.")
+        payload = {
+            'name': 'RenameSeries',
+            'seriesIds': [series_id]
+        }
+        # Note: L'API peut aussi utiliser 'RenameFiles' avec tous les fichiers de la série,
+        # mais 'RenameSeries' est plus direct.
+        return sonarr_post_command(payload)
 
 def radarr_post_command(payload):
     """Posts a command to Radarr."""
