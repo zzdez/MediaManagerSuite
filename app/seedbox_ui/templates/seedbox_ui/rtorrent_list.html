@@ -74,7 +74,6 @@
                     <th>Label rTorrent</th>
                     <th>Pré-association MMS</th>
                     <th>Statut MMS</th>
-                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -130,69 +129,6 @@
                             {% else %}
                                 <span class="badge bg-primary">{{ status | replace('_', ' ') | capitalize }}</span>
                             {% endif %}
-                        </td>
-                        <!-- Nouvelle cellule pour les actions -->
-                        <td>
-                            {% set torrent = torrent_item.details %}
-                            {% set association = torrent_item.association %}
-                            {% set status = torrent.mms_status %}
-
-                            <div class="d-flex flex-wrap" style="gap: 3px;">
-
-                                {# Ce bouton est maintenant TOUJOURS PRÉSENT #}
-                                <button class="btn btn-sm btn-outline-primary repatriate-btn"
-                                        data-hash="{{ torrent.hash }}"
-                                        title="Télécharger le contenu de ce torrent vers le dossier de staging local">
-                                    <i class="bi bi-cloud-download"></i> Rapatrier
-                                </button>
-
-                                {# Le bouton 'Traité' reste conditionnel #}
-                                {% if torrent.mms_status and torrent.mms_status not in ['completed', 'completed_manual', 'processed_manual'] %}
-                                    <button class="btn btn-sm btn-outline-success mark-processed-btn"
-                                            data-hash="{{ torrent.hash }}"
-                                            title="Marquer ce torrent comme traité manuellement (ne sera plus processé)">
-                                        <i class="bi bi-check-circle"></i> Traité
-                                    </button>
-                                {% endif %}
-
-                                {# --- NOUVELLE ACTION : RÉESSAYER LE RAPATRIEMENT --- #}
-                                {% if status and status.strip().lower() == 'error_rapatriation' %}
-                                    <button class="btn btn-sm btn-outline-primary retry-repatriation-btn"
-                                            data-hash="{{ torrent.hash }}"
-                                            title="Relancer le processus de rapatriement pour cet item.">
-                                        <i class="bi bi-arrow-clockwise"></i> Réessayer
-                                    </button>
-                                {% endif %}
-
-                                {# --- ACTION : MAPPER (pour les torrents inconnus) --- #}
-                                {# Ce bouton est maintenant géré dans le panneau d'actions groupées #}
-
-                                {# --- ACTION : FORCER L'IMPORT (pour les torrents en staging) --- #}
-                                {% if status == 'pending_mms_import' and association %}
-                                    <button class="btn btn-sm btn-outline-success force-import-btn"
-                                            data-torrent-hash="{{ torrent.hash }}"
-                                            title="Forcer le traitement de cet item depuis le staging">
-                                        <i class="bi bi-play-circle-fill"></i> Forcer Import
-                                    </button>
-                                {% endif %}
-
-                                {# --- ACTION : OUBLIER L'ASSOCIATION (pour tous les torrents connus de MMS) --- #}
-                                {% if status != 'unknown' and association %}
-                                    <button class="btn btn-sm btn-outline-warning forget-association-btn"
-                                            data-torrent-hash="{{ torrent.hash }}"
-                                            title="Supprimer l'association MMS. Le torrent restera dans rTorrent.">
-                                        <i class="bi bi-eraser"></i> Oublier
-                                    </button>
-                                    <button class="btn btn-sm btn-danger ignore-torrent-btn"
-                                            data-hash="{{ torrent.hash }}"
-                                            title="Ajouter ce torrent à la liste noire et le supprimer de la vue. Cette action est irréversible.">
-                                        <i class="bi bi-trash-fill"></i> Ignorer Déf.
-                                    </button>
-                                {% endif %}
-
-                                {# Le bouton de suppression individuelle est retiré pour laisser place à l'action groupée #}
-
-                            </div>
                         </td>
                     </tr>
                 {% endfor %}
