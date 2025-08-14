@@ -3268,6 +3268,39 @@ def delete_rtorrent_torrent():
         logger.error(f"Erreur lors de la suppression du torrent {torrent_hash}: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+@seedbox_ui_bp.route('/rtorrent/batch-action', methods=['POST'])
+@login_required
+def rtorrent_batch_action():
+    data = request.get_json()
+    torrent_hashes = data.get('hashes', [])
+    action = data.get('action')
+    options = data.get('options', {})
+
+    if not torrent_hashes or not action:
+        return jsonify({'status': 'error', 'message': 'Hashes ou action manquants.'}), 400
+
+    if action == 'delete':
+        delete_data = options.get('delete_data', False)
+        success_count = 0
+        fail_count = 0
+        for torrent_hash in torrent_hashes:
+            try:
+                success, _ = rtorrent_delete_torrent_api(torrent_hash, delete_data)
+                if success:
+                    success_count += 1
+                else:
+                    fail_count += 1
+            except Exception as e:
+                logger.error(f"Erreur lors de la suppression du torrent {torrent_hash}: {e}", exc_info=True)
+                fail_count += 1
+
+        return jsonify({
+            'status': 'success',
+            'message': f'{success_count} torrent(s) supprimé(s), {fail_count} échec(s).'
+        })
+
+    return jsonify({'status': 'error', 'message': 'Action non supportée.'}), 400
+
 @seedbox_ui_bp.route('/add-torrent-and-map', methods=['POST'])
 @login_required
 def add_torrent_and_map():
