@@ -23,18 +23,27 @@
             <td><code>{{ item.name }}</code></td>
             <td>{{ item.size_human }}</td> {# Adapte si le nom de la variable de taille est différent #}
             <td>
-                {% if item.status == 'completed_by_sonarr' or item.status == 'completed_by_radarr' %}
+                {# --- NOUVEAU BLOC DE LOGIQUE DE STATUT --- #}
+                {% set status = item.status or item.mms_info.status %} {# Gère les deux templates #}
+                {% set status_msg = item.status_message or item.mms_info.status_message %}
+
+                {% if status == 'completed_auto' %}
                     <span class="badge bg-success">Traité (Auto)</span>
-                    <small class="d-block text-muted">Géré par {{ 'Sonarr' if 'sonarr' in item.status else 'Radarr' }}</small>
-                {% elif item.status == 'completed_manual' %}
+                {% elif status == 'completed_manual' %}
                     <span class="badge bg-info">Traité (MMS)</span>
-                {% elif item.status == 'processed_manual' %}
-                    <span class="badge bg-secondary">Traité (Manuel)</span>
-                {% elif 'error' in item.status %}
+                {% elif status == 'processed_manual' %}
+                    <span class="badge bg-secondary">Traité (Ignoré)</span>
+                {% elif status == 'in_staging' %}
+                    <span class="badge bg-primary">En Staging</span>
+                {% elif status == 'pending_staging' %}
+                    <span class="badge" style="background-color: #6f42c1;">Prêt à Rapatrier</span> {# Mauve #}
+                {% elif status == 'pending_download' %}
+                    <span class="badge bg-warning text-dark">En Attente</span>
+                {% elif 'error' in status %}
                     <span class="badge bg-danger">Erreur</span>
-                    <small class="d-block text-muted" title="{{ item.status_message }}">{{ item.status }}</small>
+                    <small class="d-block text-muted" title="{{ status_msg }}">{{ status }}</small>
                 {% else %}
-                    <span class="badge bg-primary">{{ item.status }}</span>
+                    <span class="badge bg-dark">{{ status or 'Inconnu' }}</span>
                 {% endif %}
             </td>
             <td>
@@ -53,7 +62,7 @@
                     </button>
                 {% endif %}
 
-                {% if item.status not in ['completed', 'completed_manual', 'processed_manual'] %}
+                {% if item.status not in ['completed_auto', 'completed_manual', 'processed_manual'] %}
                     <button class="btn btn-sm btn-outline-success mark-processed-btn"
                             data-hash="{{ item.torrent_hash }}"
                             title="Marquer ce torrent comme traité manuellement (ne sera plus processé)">
