@@ -41,12 +41,19 @@
             <div class="card-body">
                 <h5 class="card-title"><span id="selected-torrent-count">0</span> item(s) sélectionné(s)</h5>
                 <p class="card-text">Choisissez une action à appliquer à tous les items sélectionnés.</p>
-                <button class="btn btn-danger" id="batch-delete-btn">
-                    <i class="bi bi-trash-fill"></i> Supprimer la sélection
-                </button>
-                <div class="form-check form-switch d-inline-block ms-3">
+                <div class="btn-group" role="group" aria-label="Batch Actions">
+                    <button class="btn btn-primary" id="batch-repatriate-btn" style="display: none;"><i class="bi bi-cloud-download"></i> Rapatrier</button>
+                    <button class="btn btn-success" id="batch-mark-processed-btn" style="display: none;"><i class="bi bi-check-circle"></i> Marquer Traité</button>
+                    <button class="btn btn-info" id="batch-retry-repatriation-btn" style="display: none;"><i class="bi bi-arrow-clockwise"></i> Réessayer Rapatriement</button>
+                    <button class="btn btn-warning" id="batch-forget-btn" style="display: none;"><i class="bi bi-eraser"></i> Oublier Association</button>
+                    <button class="btn btn-secondary" id="batch-ignore-btn" style="display: none;"><i class="bi bi-slash-circle"></i> Ignorer Déf.</button>
+                    <button class="btn btn-danger" id="batch-delete-btn">
+                        <i class="bi bi-trash-fill"></i> Supprimer la sélection
+                    </button>
+                </div>
+                <div class="form-check form-switch d-inline-block ms-3 align-middle">
                     <input class="form-check-input" type="checkbox" id="delete-data-checkbox">
-                    <label class="form-check-label" for="delete-data-checkbox">Supprimer les données</label>
+                    <label class="form-check-label" for="delete-data-checkbox">Supprimer les données (pour l'action Supprimer)</label>
                 </div>
             </div>
         </div>
@@ -73,7 +80,7 @@
                 {% for torrent_item in torrents_with_assoc %}
                     {% set torrent = torrent_item.details %}
                     {% set association = torrent_item.association %}
-                    <tr>
+                    <tr data-mms-status="{{ torrent.mms_status or 'unknown' }}" data-association-exists="{{ 'true' if association else 'false' }}">
                         <td><input class="form-check-input torrent-checkbox" type="checkbox" data-torrent-hash="{{ torrent.hash }}"></td>
                         <td><span class="torrent-name" title="{{ torrent.name }}">{{ torrent.name }}</span></td>
                         <td>{{ (torrent.size_bytes / (1024*1024*1024)) | round(2) if torrent.size_bytes else '0.00' }}</td>

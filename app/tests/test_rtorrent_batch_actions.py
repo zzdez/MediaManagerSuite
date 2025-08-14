@@ -29,12 +29,36 @@ class TestRtorrentBatchActions(unittest.TestCase):
         self.patcher_rtorrent_api = patch('app.seedbox_ui.routes.rtorrent_delete_torrent_api')
         self.mock_rtorrent_delete_api = self.patcher_rtorrent_api.start()
 
+        self.patcher_map_manager_update = patch('app.seedbox_ui.routes.torrent_map_manager.update_torrent_status_in_map')
+        self.mock_map_manager_update = self.patcher_map_manager_update.start()
+
+        self.patcher_map_manager_remove = patch('app.seedbox_ui.routes.torrent_map_manager.remove_torrent_from_map')
+        self.mock_map_manager_remove = self.patcher_map_manager_remove.start()
+
+        self.patcher_map_manager_add_ignored = patch('app.seedbox_ui.routes.torrent_map_manager.add_hash_to_ignored_list')
+        self.mock_map_manager_add_ignored = self.patcher_map_manager_add_ignored.start()
+
+        self.patcher_staging_processor_connect = patch('app.seedbox_ui.routes.staging_processor._connect_sftp')
+        self.mock_staging_processor_connect = self.patcher_staging_processor_connect.start()
+
+        self.patcher_staging_processor_repatriate = patch('app.seedbox_ui.routes.staging_processor._rapatriate_item')
+        self.mock_staging_processor_repatriate = self.patcher_staging_processor_repatriate.start()
+
+        self.patcher_map_manager_get = patch('app.seedbox_ui.routes.torrent_map_manager.get_torrent_by_hash')
+        self.mock_map_manager_get = self.patcher_map_manager_get.start()
+
         self.patcher_logger = patch('app.seedbox_ui.routes.logger')
         self.mock_logger = self.patcher_logger.start()
 
     def tearDown(self):
         """Clean up patches and app context."""
         self.patcher_rtorrent_api.stop()
+        self.patcher_map_manager_update.stop()
+        self.patcher_map_manager_remove.stop()
+        self.patcher_map_manager_add_ignored.stop()
+        self.patcher_staging_processor_connect.stop()
+        self.patcher_staging_processor_repatriate.stop()
+        self.patcher_map_manager_get.stop()
         self.patcher_logger.stop()
         self.app_context.pop()
 
@@ -52,7 +76,7 @@ class TestRtorrentBatchActions(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         response_data = response.get_json()
         self.assertEqual(response_data['status'], 'success')
-        self.assertIn('3 torrent(s) supprimé(s)', response_data['message'])
+        self.assertIn('Succès: 3, Échecs: 0', response_data['message'])
         self.assertEqual(self.mock_rtorrent_delete_api.call_count, 3)
         called_hashes = [call[0][0] for call in self.mock_rtorrent_delete_api.call_args_list]
         self.assertCountEqual(called_hashes, test_hashes)
@@ -87,7 +111,7 @@ class TestRtorrentBatchActions(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         response_data = response.get_json()
         self.assertEqual(response_data['status'], 'success')
-        self.assertIn('1 torrent(s) supprimé(s), 1 échec(s)', response_data['message'])
+        self.assertIn('Succès: 1, Échecs: 1', response_data['message'])
         self.assertEqual(self.mock_rtorrent_delete_api.call_count, 2)
 
     def test_batch_action_unsupported_action(self):
@@ -118,6 +142,49 @@ class TestRtorrentBatchActions(unittest.TestCase):
         payload2 = {"hashes": ["HASH1"]}
         response2 = self.client.post('/seedbox/rtorrent/batch-action', data=json.dumps(payload2), content_type='application/json')
         self.assertEqual(response2.status_code, 400)
+
+    def test_batch_mark_processed(self):
+        """Test the 'mark_processed' batch action."""
+        self.mock_map_manager_update.return_value = True
+        payload = {"action": "mark_processed", "hashes": ["HASH1", "HASH2"]}
+        with self.client.session_transaction() as sess:
+            sess['logged_in'] = True
+        response = self.client.post('/seedbox/rtorrent/batch-action', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.mock_map_manager_update.call_count, 2)
+        self.mock_map_manager_update.assert_called_with('HASH2', 'processed_manual', 'Marqué comme traité manuellement via action groupée.')
+
+    def test_batch_forget_association(self):
+        """Test the 'forget' batch action."""
+        self.mock_map_manager_remove.return_value = True
+        payload = {"action": "forget", "hashes": ["HASH1"]}
+        with self.client.session_transaction() as sess:
+            sess['logged_in'] = True
+        response = self.client.post('/seedbox/rtorrent/batch-action', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        self.mock_map_manager_remove.assert_called_once_with('HASH1')
+
+    def test_batch_ignore(self):
+        """Test the 'ignore' batch action."""
+        self.mock_map_manager_add_ignored.return_value = True
+        self.mock_map_manager_remove.return_value = True
+        payload = {"action": "ignore", "hashes": ["HASH_IGNORE"]}
+        with self.client.session_transaction() as sess:
+            sess['logged_in'] = True
+        response = self.client.post('/seedbox/rtorrent/batch-action', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        self.mock_map_manager_add_ignored.assert_called_once_with('HASH_IGNORE')
+        self.mock_map_manager_remove.assert_called_once_with('HASH_IGNORE')
+
+    def test_batch_retry_repatriation(self):
+        """Test the 'retry_repatriation' batch action."""
+        self.mock_map_manager_update.return_value = True
+        payload = {"action": "retry_repatriation", "hashes": ["HASH_RETRY"]}
+        with self.client.session_transaction() as sess:
+            sess['logged_in'] = True
+        response = self.client.post('/seedbox/rtorrent/batch-action', data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        self.mock_map_manager_update.assert_called_once_with('HASH_RETRY', 'pending_staging')
 
 if __name__ == '__main__':
     unittest.main()

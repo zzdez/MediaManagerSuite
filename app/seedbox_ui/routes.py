@@ -3272,34 +3272,84 @@ def delete_rtorrent_torrent():
 @login_required
 def rtorrent_batch_action():
     data = request.get_json()
-    torrent_hashes = data.get('hashes', [])
+    hashes = data.get('hashes', [])
     action = data.get('action')
     options = data.get('options', {})
 
-    if not torrent_hashes or not action:
+    if not hashes or not action:
         return jsonify({'status': 'error', 'message': 'Hashes ou action manquants.'}), 400
 
+    success_count = 0
+    fail_count = 0
+
+    # --- Action de Suppression ---
     if action == 'delete':
         delete_data = options.get('delete_data', False)
-        success_count = 0
-        fail_count = 0
-        for torrent_hash in torrent_hashes:
+        for h in hashes:
             try:
-                success, _ = rtorrent_delete_torrent_api(torrent_hash, delete_data)
-                if success:
-                    success_count += 1
+                success, _ = rtorrent_delete_torrent_api(h, delete_data)
+                if success: success_count += 1
+                else: fail_count += 1
+            except Exception as e:
+                logger.error(f"Erreur lors de la suppression du torrent {h}: {e}", exc_info=True)
+                fail_count += 1
+    # --- Action "Marquer comme traité" ---
+    elif action == 'mark_processed':
+        for h in hashes:
+            if torrent_map_manager.update_torrent_status_in_map(h, 'processed_manual', 'Marqué comme traité manuellement via action groupée.'):
+                success_count += 1
+            else:
+                fail_count += 1
+    # --- Action "Oublier l'association" ---
+    elif action == 'forget':
+        for h in hashes:
+            if torrent_map_manager.remove_torrent_from_map(h):
+                success_count += 1
+            else:
+                fail_count += 1
+    # --- Action "Ignorer définitivement" ---
+    elif action == 'ignore':
+        for h in hashes:
+            if torrent_map_manager.add_hash_to_ignored_list(h):
+                torrent_map_manager.remove_torrent_from_map(h) # On le retire aussi de la liste des suivis
+                success_count += 1
+            else:
+                fail_count += 1
+    # --- Action "Rapatrier" ---
+    elif action == 'repatriate':
+        # Cette action est plus complexe et nécessite une connexion SFTP
+        sftp, transport = staging_processor._connect_sftp()
+        if not sftp:
+            return jsonify({'status': 'error', 'message': 'Connexion SFTP échouée.'}), 500
+        try:
+            for h in hashes:
+                item = torrent_map_manager.get_torrent_by_hash(h)
+                if item:
+                    folder_name = item.get('folder_name', item['release_name'])
+                    if staging_processor._rapatriate_item(item, sftp, folder_name):
+                        torrent_map_manager.update_torrent_status_in_map(h, 'in_staging', 'Rapatrié manuellement via action groupée.')
+                        success_count += 1
+                    else:
+                        fail_count += 1
                 else:
                     fail_count += 1
-            except Exception as e:
-                logger.error(f"Erreur lors de la suppression du torrent {torrent_hash}: {e}", exc_info=True)
+        finally:
+            if transport:
+                transport.close()
+    # --- Action "Réessayer le rapatriement" ---
+    elif action == 'retry_repatriation':
+        for h in hashes:
+            if torrent_map_manager.update_torrent_status_in_map(h, 'pending_staging'):
+                success_count += 1
+            else:
                 fail_count += 1
+    else:
+        return jsonify({'status': 'error', 'message': 'Action non supportée.'}), 400
 
-        return jsonify({
-            'status': 'success',
-            'message': f'{success_count} torrent(s) supprimé(s), {fail_count} échec(s).'
-        })
-
-    return jsonify({'status': 'error', 'message': 'Action non supportée.'}), 400
+    return jsonify({
+        'status': 'success',
+        'message': f'Action "{action}" exécutée. Succès: {success_count}, Échecs: {fail_count}.'
+    })
 
 @seedbox_ui_bp.route('/add-torrent-and-map', methods=['POST'])
 @login_required
