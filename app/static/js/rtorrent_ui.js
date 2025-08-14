@@ -189,10 +189,15 @@ $(document).ready(function() {
             const cellA = $(a).children('td').eq(cellIndex);
             const cellB = $(b).children('td').eq(cellIndex);
 
-            let valA = cellA.text().trim();
-            let valB = cellB.text().trim();
+            // Prioritize data-sort-value attribute, fallback to cell text
+            let valA = cellA.data('sort-value') !== undefined ? String(cellA.data('sort-value')) : cellA.text().trim();
+            let valB = cellB.data('sort-value') !== undefined ? String(cellB.data('sort-value')) : cellB.text().trim();
 
-            if (sortType === 'size') {
+            if (sortType === 'date') {
+                // Convert ISO date strings to timestamps for comparison
+                valA = new Date(valA).getTime() || 0;
+                valB = new Date(valB).getTime() || 0;
+            } else if (sortType === 'size') {
                 valA = parseSize(valA);
                 valB = parseSize(valB);
             } else if (sortType === 'number') {
