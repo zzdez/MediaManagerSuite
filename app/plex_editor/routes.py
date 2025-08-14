@@ -22,7 +22,8 @@ from app.utils.arr_client import (
     get_radarr_tag_id, get_radarr_movie_by_guid, update_radarr_movie,
     get_sonarr_tag_id, get_sonarr_series_by_guid, get_sonarr_series_by_id,
     update_sonarr_series, get_sonarr_episode_files, get_sonarr_episodes_by_series_id,
-    get_all_sonarr_series # <--- AJOUT ICI
+    get_all_sonarr_series, # <--- AJOUT ICI
+    sonarr_trigger_series_rename
 )
 from app.utils.trailer_finder import find_plex_trailer
 from app.utils.tmdb_client import TheMovieDBClient
@@ -2249,6 +2250,22 @@ def update_single_episode_monitoring():
         return jsonify({'status': 'success', 'message': 'Statut de l_épisode mis à jour.'})
 
     return jsonify({'status': 'error', 'message': 'Échec de la mise à jour dans Sonarr.'}), 500
+
+@plex_editor_bp.route('/api/series/rename_files', methods=['POST'])
+@login_required
+def rename_series_files_endpoint():
+    data = request.json
+    sonarr_series_id = data.get('sonarr_series_id')
+
+    if not sonarr_series_id:
+        return jsonify({'status': 'error', 'message': 'ID de la série Sonarr manquant.'}), 400
+
+    success = sonarr_trigger_series_rename(sonarr_series_id)
+
+    if success:
+        return jsonify({'status': 'success', 'message': 'La commande de renommage a été envoyée à Sonarr.'})
+    else:
+        return jsonify({'status': 'error', 'message': 'Échec de l\'envoi de la commande à Sonarr.'}), 500
 
 # --- Gestionnaires d'erreur ---
 #@app.errorhandler(404)

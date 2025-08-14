@@ -509,6 +509,35 @@ $(document).ready(function() {
             });
         });
 
+        // --- GESTION DU BOUTON DE RENOMMAGE DES FICHIERS ---
+        $(seriesModalElement).on('click', '#rename-series-files-btn', function() {
+            const button = $(this);
+            const sonarrSeriesId = button.data('sonarr-id');
+
+            if (!confirm("Êtes-vous sûr de vouloir demander à Sonarr de renommer tous les fichiers de cette série ?")) {
+                return;
+            }
+
+            button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Renommage...');
+
+            fetch('/plex/api/series/rename_files', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sonarr_series_id: sonarrSeriesId })
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+            })
+            .catch(error => {
+                console.error('Erreur:', error);
+                alert("Une erreur technique est survenue.");
+            })
+            .finally(() => {
+                button.prop('disabled', false).html('<i class="bi bi-pencil-square"></i> Renommer les Fichiers');
+            });
+        });
+
         // --- GESTION DU TOGGLE PAR ÉPISODE (EFFET IMMÉDIAT) ---
         $(seriesModalElement).on('change', '.episode-monitor-toggle', function() {
             const episodeToggle = $(this);

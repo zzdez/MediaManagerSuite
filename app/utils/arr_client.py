@@ -1042,6 +1042,15 @@ def sonarr_post_command(payload):
     """Posts a command to Sonarr."""
     return _sonarr_api_request('POST', 'command', json_data=payload)
 
+def sonarr_trigger_series_rename(series_id):
+    """Déclenche une commande 'SeriesSearch' pour une série, ce qui force le renommage."""
+    # La commande 'SeriesSearch' avec search_on_add=False ne fait que renommer
+    payload = {
+        'name': 'SeriesSearch',
+        'seriesId': series_id
+    }
+    return sonarr_post_command(payload)
+
 def radarr_post_command(payload):
     """Posts a command to Radarr."""
     return _radarr_api_request('POST', 'command', json_data=payload)
