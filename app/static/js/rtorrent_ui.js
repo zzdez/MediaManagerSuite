@@ -85,9 +85,7 @@ $(document).ready(function() {
             .then(response => response.json())
             .then(data => {
                 alert(data.message || 'Action terminée.');
-                if (typeof loadRtorrentView === 'function') {
-                    loadRtorrentView();
-                } else {
+                if (data.status === 'success') {
                     location.reload();
                 }
             })
