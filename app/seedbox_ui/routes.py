@@ -3221,9 +3221,13 @@ def rtorrent_list_view():
             torrent['mms_status'] = mms_status
             torrent['mms_file_exists'] = mms_file_exists
 
+            association_data = all_mms_associations.get(torrent_hash)
+            if association_data:
+                torrent['target_id'] = association_data.get('target_id')
+
             torrents_with_assoc.append({
                 "details": torrent,
-                "association": all_mms_associations.get(torrent_hash) # Pass the full association data if needed
+                "association": association_data
             })
     else:
         current_app.logger.error(f"rtorrent_list_torrents_api (httprpc) did not return a list. Got: {type(torrents_data)}")
