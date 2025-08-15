@@ -3142,14 +3142,14 @@ def rtorrent_add_torrent_action():
     seedbox_full_download_path = str(Path(rtorrent_download_dir) / release_name_for_map).replace('\\', '/')
 
     if torrent_map_manager.add_or_update_torrent_in_map(
-            torrent_hash=actual_hash,
-            release_name=release_name_for_map,
+            release_name_for_map,
+            actual_hash,
+            "pending_download",
+            seedbox_full_download_path,
             app_type=app_type,
-            target_id=actual_target_id, # ID interne Sonarr/Radarr
+            target_id=actual_target_id,
             label=rtorrent_label,
-            seedbox_download_path=seedbox_full_download_path,
-            original_torrent_name=original_name_from_js,
-            status="pending_download"
+            original_torrent_name=original_name_from_js
         ):
         final_msg = f"Torrent '{release_name_for_map}' (Hash: {actual_hash}) ajouté à rTorrent. "
         if is_new_media:
@@ -4024,14 +4024,14 @@ def rtorrent_map_sonarr():
         download_path = "" # Ensure download_path is not None
 
     success = torrent_map_manager.add_or_update_torrent_in_map(
-        torrent_hash=torrent_hash,
-        release_name=torrent_name,
+        torrent_name,
+        torrent_hash,
+        'pending_staging',
+        download_path,
         app_type='sonarr',
         target_id=series_id,
         label=current_app.config.get('RTORRENT_LABEL_SONARR', 'sonarr'),
-        seedbox_download_path=download_path,
         original_torrent_name=torrent_name,
-        status='pending_staging',
         folder_name=folder_name
     )
 
@@ -4073,14 +4073,14 @@ def rtorrent_map_radarr():
         download_path = "" # Ensure download_path is not None
 
     success = torrent_map_manager.add_or_update_torrent_in_map(
-        torrent_hash=torrent_hash,
-        release_name=torrent_name,
+        torrent_name,
+        torrent_hash,
+        'pending_staging',
+        download_path,
         app_type='radarr',
         target_id=movie_id,
         label=current_app.config.get('RTORRENT_LABEL_RADARR', 'radarr'),
-        seedbox_download_path=download_path,
         original_torrent_name=torrent_name,
-        status='pending_staging',
         folder_name=folder_name
     )
 
@@ -4141,10 +4141,10 @@ def repatriate_to_staging():
 
         # On crée l'entrée dans le mapping manager
         torrent_map_manager.add_or_update_torrent_in_map(
-            release_name=torrent_info['name'],
-            torrent_hash=torrent_hash,
-            status='pending_staging', # Il est prêt à être rapatrié
-            seedbox_download_path=torrent_info['base_path'],
+            torrent_info['name'],
+            torrent_hash,
+            'pending_staging',
+            torrent_info['base_path'],
             folder_name=os.path.basename(torrent_info['base_path'])
         )
         # On recharge l'item pour la suite du traitement

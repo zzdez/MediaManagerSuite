@@ -374,14 +374,14 @@ def download_and_map():
             
             seedbox_full_path = str(Path(rtorrent_download_dir) / release_name_for_map).replace('\\', '/')
             add_or_update_torrent_in_map(
-                torrent_hash=actual_hash,
-                release_name=release_name_for_map,
+                release_name_for_map,
+                actual_hash,
+                'pending_download',
+                seedbox_full_path,
                 app_type=internal_instance_type,
                 target_id=str(media_id),
                 label=rtorrent_label,
-                seedbox_download_path=seedbox_full_path,
-                original_torrent_name=release_name_original,
-                status='pending_download'
+                original_torrent_name=release_name_original
             )
             return jsonify({'status': 'success', 'message': 'Torrent ajouté et mappé avec succès.'})
         else:

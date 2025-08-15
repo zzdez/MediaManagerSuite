@@ -90,71 +90,33 @@ def save_torrent_map(data):
         logger.error(f"An unexpected error occurred while saving torrent map to {map_file}: {e}")
         raise
 
-def add_or_update_torrent_in_map(torrent_hash, release_name, status, seedbox_download_path, folder_name=None, app_type=None, target_id=None, label=None, original_torrent_name="N/A"):
+def add_or_update_torrent_in_map(release_name, torrent_hash, status, seedbox_download_path, folder_name=None, app_type='unknown', target_id='unknown', label='unknown', original_torrent_name='N/A'):
     """
-    Adds or updates a torrent's pre-association in the map.
-    This is the main function for adding/updating torrents.
-    The scanner will call this with app_type=None, target_id=None, label=None.
+    Fonction unique et centralisée pour ajouter ou mettre à jour un torrent.
     """
-    _, logger = _get_map_file_path_and_logger()
-
-    # The scanner does not know the app_type, target_id, or label initially.
-    # These can be added later by another process.
-    if not all([torrent_hash, release_name, status]) or seedbox_download_path is None:
-        logger.error("Missing one or more required arguments for add_or_update_torrent_in_map (hash, release_name, status, and seedbox_download_path are required).")
-        return False
-
-    # Set default values if not provided, for consistency in the map file
-    app_type = app_type or "unknown"
-    label = label or "unknown"
-
-    # S'assurer que release_name n'a pas .torrent à la fin
-    if release_name.lower().endswith(".torrent"):
-        release_name = release_name[:-len(".torrent")]
-        logger.debug(f"Removed .torrent extension from release_name, now: {release_name}")
-
     torrents = load_torrent_map()
-    now_iso = datetime.utcnow().isoformat()
 
-    # On sauvegarde le folder_name. Si pour une raison quelconque il n'est pas fourni, on se rabat sur le release_name comme solution de secours.
-    folder_name_to_save = folder_name if folder_name else release_name
+    # Si le torrent existe, on met à jour. Sinon, on crée.
+    torrent_data = torrents.get(torrent_hash, {})
 
-    if torrent_hash in torrents: # Update existing
-        # For now, a simple update. More sophisticated logic could be added here
-        # to decide what to do if a torrent is re-mapped (e.g., only update certain fields).
-        torrents[torrent_hash].update({
-            "release_name": release_name,
-            "app_type": app_type,
-            "target_id": target_id,
-            "label": label,
-            "seedbox_download_path": seedbox_download_path,
-            "original_torrent_name": original_torrent_name,
-            "status": status, # Always update status on a new call
-            "updated_at": now_iso,
-            "folder_name": folder_name_to_save
-        })
-        logger.info(f"Updated torrent {torrent_hash} ({release_name}) in map.")
-    else: # Add new
-        torrents[torrent_hash] = {
-            "release_name": release_name,
-            "app_type": app_type,
-            "target_id": target_id,
-            "label": label,
-            "seedbox_download_path": seedbox_download_path,
-            "original_torrent_name": original_torrent_name,
-            "status": status,
-            "added_at": now_iso,
-            "updated_at": now_iso,
-            "folder_name": folder_name_to_save
-        }
-        logger.info(f"Added new torrent {torrent_hash} ({release_name}) to map.")
+    torrent_data.update({
+        "release_name": release_name,
+        "torrent_hash": torrent_hash,
+        "status": status,
+        "seedbox_download_path": seedbox_download_path,
+        "folder_name": folder_name if folder_name else os.path.basename(seedbox_download_path),
+        "app_type": app_type,
+        "target_id": target_id,
+        "label": label,
+        "original_torrent_name": original_torrent_name,
+        "updated_at": datetime.utcnow().isoformat()
+    })
 
-    try:
-        save_torrent_map(torrents)
-        return True
-    except Exception as e:
-        logger.error(f"Failed to save torrent map after adding/updating {torrent_hash}: {e}")
-        return False
+    if "added_at" not in torrent_data:
+        torrent_data["added_at"] = datetime.utcnow().isoformat()
+
+    torrents[torrent_hash] = torrent_data
+    save_torrent_map(torrents)
 
 def get_torrent_by_hash(torrent_hash):
     """Retrieves a torrent entry by its torrent_hash."""

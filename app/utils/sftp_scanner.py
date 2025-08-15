@@ -28,20 +28,20 @@ def scan_and_map_torrents():
                 if torrent_map[torrent_hash].get('status') == 'pending_download':
                     # On met à jour pour ajouter le folder_name et changer le statut
                     mapping_manager.add_or_update_torrent_in_map(
-                        torrent_hash=torrent_hash,
-                        release_name=release_name,
-                        status='pending_staging',
-                        seedbox_download_path=download_path,
+                        release_name,
+                        torrent_hash,
+                        'pending_staging',
+                        download_path,
                         folder_name=folder_name
                     )
                     current_app.logger.info(f"rTorrent Scanner: Torrent '{release_name}' is now complete. Marked as 'pending_staging' with folder_name '{folder_name}'.")
             else:
                 # CAS B: Le torrent est nouveau (probablement un ajout automatique par *Arr)
                 mapping_manager.add_or_update_torrent_in_map(
-                    release_name=release_name,
-                    torrent_hash=torrent_hash,
-                    status='pending_staging',
-                    seedbox_download_path=download_path,
+                    release_name,
+                    torrent_hash,
+                    'pending_staging',
+                    download_path,
                     folder_name=folder_name
                 )
                 new_torrents_added += 1
