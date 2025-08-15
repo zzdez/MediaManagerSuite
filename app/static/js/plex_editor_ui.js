@@ -509,6 +509,56 @@ $(document).ready(function() {
             });
         });
 
+        // --- GESTION DU BOUTON DE RENOMMAGE (GLOBAL ET PAR SAISON) ---
+
+        // Écouteur pour le bouton GLOBAL (série entière)
+        $(seriesModalElement).on('click', '#rename-series-files-btn', function() {
+            const button = $(this);
+            const sonarrSeriesId = button.data('sonarr-id');
+            handleFileRename(button, sonarrSeriesId, null); // season_number est null
+        });
+
+        // NOUVEL ÉCOUTEUR pour les boutons de SAISON
+        $(seriesModalElement).on('click', '.rename-season-files-btn', function() {
+            const button = $(this);
+            const sonarrSeriesId = button.data('sonarr-id');
+            const seasonNumber = button.data('season-number');
+            handleFileRename(button, sonarrSeriesId, seasonNumber);
+        });
+
+        // NOUVELLE FONCTION HELPER pour éviter la duplication de code
+        function handleFileRename(button, sonarrSeriesId, seasonNumber) {
+            const isSeason = seasonNumber !== null;
+            const message = isSeason ? `la saison ${seasonNumber}` : "toute la série";
+
+            if (!confirm(`Êtes-vous sûr de vouloir demander à Sonarr de renommer tous les fichiers pour ${message} ?`)) {
+                return;
+            }
+
+            const originalHtml = button.html();
+            button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+            fetch('/plex/api/series/rename_files', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    sonarr_series_id: sonarrSeriesId,
+                    season_number: seasonNumber // Envoie null pour la série entière
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+            })
+            .catch(error => {
+                console.error('Erreur:', error);
+                alert("Une erreur technique est survenue.");
+            })
+            .finally(() => {
+                button.prop('disabled', false).html(originalHtml);
+            });
+        }
+
         // --- GESTION DU TOGGLE PAR ÉPISODE (EFFET IMMÉDIAT) ---
         $(seriesModalElement).on('change', '.episode-monitor-toggle', function() {
             const episodeToggle = $(this);
