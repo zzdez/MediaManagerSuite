@@ -199,9 +199,24 @@
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body p-0">
-                <video id="trailer-video-player" width="100%" controls autoplay>
-                    Votre navigateur ne supporte pas le lecteur vidéo.
-                </video>
+                <!-- Le contenu (iframe) sera injecté ici -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modale de Sélection de Bande-Annonce -->
+<div class="modal fade" id="trailer-selection-modal" tabindex="-1" aria-labelledby="trailerSelectionModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content bg-dark text-white">
+            <div class="modal-header">
+                <h5 class="modal-title" id="trailerSelectionModalLabel">Choisissez une bande-annonce</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="trailer-results-container">
+                    <!-- Les résultats de la recherche seront injectés ici -->
+                </div>
             </div>
         </div>
     </div>

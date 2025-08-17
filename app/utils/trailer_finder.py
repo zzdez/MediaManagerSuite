@@ -26,44 +26,37 @@ def find_plex_trailer(plex_item, plex_server):
 
     return None
 
-def find_youtube_trailer(title, year, api_key, media_type='movie'):
+def find_youtube_trailer(search_query, api_key):
     """
-    Recherche une bande-annonce sur YouTube en utilisant une clé API fournie.
+    Effectue une seule recherche sur YouTube et retourne une liste de résultats.
     """
-    if not api_key: # La vérification se fait sur le paramètre
+    if not api_key:
         print("AVERTISSEMENT: Aucune clé API YouTube n'a été fournie.")
-        return None
+        return [] # Retourne une liste vide
 
     try:
         youtube = build('youtube', 'v3', developerKey=api_key, cache_discovery=False)
 
-        # Liste des requêtes par ordre de priorité
-        search_queries = [
-            f'"{title}" {year} bande annonce officielle vf',
-            f'"{title}" {year} trailer officiel vostfr',
-            f'"{title}" official trailer {year}'
-        ]
+        print(f"DEBUG: Recherche YouTube avec la requête : {search_query}")
+        request = youtube.search().list(
+            q=search_query,
+            part='snippet',
+            type='video',
+            maxResults=5
+        )
+        response = request.execute()
 
-        for query in search_queries:
-            print(f"DEBUG: Recherche YouTube avec la requête : {query}")
-            request = youtube.search().list(
-                q=query,
-                part='snippet',
-                type='video',
-                maxResults=3 # On prend 3 résultats pour trouver le plus pertinent
-            )
-            response = request.execute()
-
-            if response.get('items'):
-                # Idéalement, on ajouterait ici une logique pour choisir la meilleure vidéo
-                # (chaîne officielle, plus de vues, etc.). Pour l'instant, on prend la première.
-                video_id = response['items'][0]['id']['videoId']
-                print(f"DEBUG: Vidéo trouvée : {video_id}")
-                return f"https://www.youtube.com/watch?v={video_id}"
+        results = []
+        if response.get('items'):
+            for item in response['items']:
+                results.append({
+                    'videoId': item['id']['videoId'],
+                    'title': item['snippet']['title'],
+                    'thumbnail': item['snippet']['thumbnails']['high']['url'], # Utiliser une meilleure qualité
+                    'channel': item['snippet']['channelTitle']
+                })
+        return results
 
     except Exception as e:
         print(f"ERREUR lors de la recherche sur YouTube : {e}")
-        return None
-
-    print("DEBUG: Aucune vidéo trouvée sur YouTube.")
-    return None
+        return [] # Toujours retourner une liste vide en cas d'erreur

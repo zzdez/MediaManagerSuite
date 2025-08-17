@@ -90,6 +90,7 @@ class Config:
     TMDB_API_KEY = os.getenv('TMDB_API_KEY')
     YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
     GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+    GEMINI_MODEL_NAME = os.getenv('GEMINI_MODEL_NAME', 'gemini-1.5-pro-latest')
 
     # --- ADVANCED & TASKS ---
     SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES = int(os.getenv('SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES', '15').split('#')[0].strip())
