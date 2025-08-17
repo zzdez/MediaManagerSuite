@@ -4015,34 +4015,27 @@ def rtorrent_map_sonarr():
         return jsonify({'success': False, 'error': f"Erreur rTorrent: {error_msg_rtorrent}"}), 500
 
     torrent_info = next((t for t in torrents_data if t.get('name') == torrent_name), None)
-
     if not torrent_info:
         return jsonify({'success': False, 'error': f"Torrent '{torrent_name}' non trouvé dans rTorrent."}), 404
 
     torrent_hash = torrent_info.get('hash')
-    download_path = torrent_info.get('path')
-    if download_path:
-        folder_name = os.path.basename(download_path)
-    else:
-        folder_name = torrent_name
-        download_path = "" # Ensure download_path is not None
+    download_path = torrent_info.get('base_path')
+    folder_name = os.path.basename(download_path) if download_path else torrent_name
 
-    success = torrent_map_manager.add_or_update_torrent_in_map(
-        torrent_name,
-        torrent_hash,
-        'pending_staging',
-        download_path,
+    # Utilisation de la signature de fonction correcte avec arguments nommés
+    torrent_map_manager.add_or_update_torrent_in_map(
+        release_name=torrent_name,
+        torrent_hash=torrent_hash,
+        status='pending_staging', # L'item est prêt à être traité
+        seedbox_download_path=download_path,
+        folder_name=folder_name,
         app_type='sonarr',
         target_id=series_id,
         label=current_app.config.get('RTORRENT_LABEL_SONARR', 'sonarr'),
-        original_torrent_name=torrent_name,
-        folder_name=folder_name
+        original_torrent_name=torrent_name
     )
 
-    if success:
-        return jsonify({'success': True, 'message': f"Torrent '{torrent_name}' mappé avec succès à la série ID {series_id}."})
-    else:
-        return jsonify({'success': False, 'error': 'Erreur lors de la sauvegarde du mapping.'}), 500
+    return jsonify({'success': True, 'message': f"Torrent '{torrent_name}' mappé avec succès à la série ID {series_id}."})
 
 @seedbox_ui_bp.route('/rtorrent/map/radarr', methods=['POST'], endpoint='rtorrent_map_radarr')
 @login_required
@@ -4064,34 +4057,27 @@ def rtorrent_map_radarr():
         return jsonify({'success': False, 'error': f"Erreur rTorrent: {error_msg_rtorrent}"}), 500
 
     torrent_info = next((t for t in torrents_data if t.get('name') == torrent_name), None)
-
     if not torrent_info:
         return jsonify({'success': False, 'error': f"Torrent '{torrent_name}' non trouvé dans rTorrent."}), 404
 
     torrent_hash = torrent_info.get('hash')
-    download_path = torrent_info.get('path')
-    if download_path:
-        folder_name = os.path.basename(download_path)
-    else:
-        folder_name = torrent_name
-        download_path = "" # Ensure download_path is not None
+    download_path = torrent_info.get('base_path')
+    folder_name = os.path.basename(download_path) if download_path else torrent_name
 
-    success = torrent_map_manager.add_or_update_torrent_in_map(
-        torrent_name,
-        torrent_hash,
-        'pending_staging',
-        download_path,
+    # Utilisation de la signature de fonction correcte avec arguments nommés
+    torrent_map_manager.add_or_update_torrent_in_map(
+        release_name=torrent_name,
+        torrent_hash=torrent_hash,
+        status='pending_staging', # L'item est prêt à être traité
+        seedbox_download_path=download_path,
+        folder_name=folder_name,
         app_type='radarr',
         target_id=movie_id,
         label=current_app.config.get('RTORRENT_LABEL_RADARR', 'radarr'),
-        original_torrent_name=torrent_name,
-        folder_name=folder_name
+        original_torrent_name=torrent_name
     )
 
-    if success:
-        return jsonify({'success': True, 'message': f"Torrent '{torrent_name}' mappé avec succès au film ID {movie_id}."})
-    else:
-        return jsonify({'success': False, 'error': 'Erreur lors de la sauvegarde du mapping.'}), 500
+    return jsonify({'success': True, 'message': f"Torrent '{torrent_name}' mappé avec succès au film ID {movie_id}."})
 
 # ==============================================================================
 # --- NOUVELLES ROUTES POUR LES ACTIONS MANUELLES DE LA VUE RTORRENT ---
