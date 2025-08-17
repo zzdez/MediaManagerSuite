@@ -918,7 +918,7 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
                     `;
                     resultsContainer.append(resultHtml);
                 });
-                const selectionModal = new bootstrap.Modal($('#trailer-selection-modal'));
+                const selectionModal = new bootstrap.Modal(document.getElementById('trailer-selection-modal'));
                 selectionModal.show();
             } else {
                 alert('Aucune bande-annonce pertinente n\'a été trouvée.');
@@ -940,12 +940,12 @@ $(document).on('click', '.trailer-result-item', function() {
     const videoTitle = $(this).data('video-title');
 
     // On ferme la modale de sélection
-    bootstrap.Modal.getInstance($('#trailer-selection-modal')).hide();
+    bootstrap.Modal.getInstance(document.getElementById('trailer-selection-modal')).hide();
 
     // On prépare et on ouvre la modale du lecteur avec un IFRAME
     const playerModalTitle = $('#trailerModalLabel');
     const playerModalBody = $('#trailer-modal .modal-body');
-    const playerModalInstance = new bootstrap.Modal($('#trailer-modal'));
+    const playerModalInstance = new bootstrap.Modal(document.getElementById('trailer-modal'));
 
     playerModalTitle.text('Bande-Annonce: ' + videoTitle);
     playerModalBody.html(`<div class="ratio ratio-16x9"><iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>`);
