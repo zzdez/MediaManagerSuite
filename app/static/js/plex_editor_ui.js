@@ -898,13 +898,18 @@ function sortTable(table, sortBy, sortType, direction) {
             })
                 .then(response => response.json())
                 .then(data => {
-                    if (data.success && data.results) {
+                    if (data.success && data.results && data.results.length > 0) {
+                        const firstResult = data.results[0];
+                        const videoId = firstResult.videoId;
+                        const embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1`;
+
                         modalTitle.text('Bande-Annonce (YouTube): ' + title);
-                        videoPlayer.attr('src', data.results); // 'results' contient l'URL directe
+                        videoPlayer.attr('src', embedUrl);
+
                         const trailerModal = new bootstrap.Modal(document.getElementById('trailer-modal'));
                         trailerModal.show();
                     } else {
-                        alert(data.message || 'Aucune bande-annonce trouvée via l\'agent.');
+                        alert('Aucune bande-annonce trouvée via l\'agent.');
                     }
                 })
                 .catch(error => {

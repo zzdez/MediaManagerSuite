@@ -1,25 +1,25 @@
-from flask import Blueprint, request, jsonify, current_app
+from flask import request, jsonify, current_app
+from . import agent_bp
 from app.agent.services import generate_youtube_queries
 from app.utils.trailer_finder import find_youtube_trailer
-
-agent_bp = Blueprint('agent', __name__, url_prefix='/api/agent')
 
 @agent_bp.route('/suggest_trailers', methods=['POST'])
 def suggest_trailers():
     data = request.json
     title, year, media_type = data.get('title'), data.get('year'), data.get('media_type')
 
-    # Étape 1: L'IA génère les requêtes
+    # Étape 1: L'IA génère les requêtes (inchangé)
     search_queries = generate_youtube_queries(title, year, media_type)
 
-    # Étape 2: On cherche sur YouTube avec ces requêtes
-    youtube_api_key = current_app.config.get('YOUTUBE_API_KEY')
+    # Étape 2: NOUVELLE LOGIQUE - Boucle sur les requêtes
+    final_results = []
+    api_key = current_app.config.get('YOUTUBE_API_KEY')
 
-    # On utilise la première requête suggérée par l'IA, comme demandé.
-    # La fonction attend une liste, donc on l'encapsule.
-    if search_queries:
-        results = find_youtube_trailer([search_queries[0]], youtube_api_key)
-    else:
-        results = None
+    for query in search_queries:
+        results_for_query = find_youtube_trailer(query, api_key)
+        if results_for_query:
+            final_results = results_for_query
+            print(f"DEBUG: Résultats trouvés avec la requête '{query}'. Arrêt de la recherche.")
+            break # On a trouvé des résultats, on arrête la boucle
 
-    return jsonify({'success': True, 'results': results})
+    return jsonify({'success': bool(final_results), 'results': final_results})
