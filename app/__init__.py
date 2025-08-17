@@ -77,6 +77,10 @@ def create_app(config_class=Config):
     app.register_blueprint(search_ui_bp, url_prefix='/search')
     logger.info("Blueprint 'search_ui' enregistré avec succès.")
 
+    from app.agent import agent_bp
+    app.register_blueprint(agent_bp)
+    logger.info("Blueprint 'agent' enregistré avec succès.")
+
     from app.trailer_routes import trailer_bp
     app.register_blueprint(trailer_bp)
     logger.info("Blueprint 'trailer' enregistré avec succès.")

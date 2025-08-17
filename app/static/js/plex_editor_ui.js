@@ -891,20 +891,20 @@ function sortTable(table, sortBy, sortType, direction) {
             console.log("Recherche du trailer sur YouTube...");
             button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
 
-            fetch('/api/trailer/find', {
+            fetch('/api/agent/suggest_trailers', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ title: title, year: year, media_type: mediaType })
             })
                 .then(response => response.json())
                 .then(data => {
-                    if (data.success) {
+                    if (data.success && data.results) {
                         modalTitle.text('Bande-Annonce (YouTube): ' + title);
-                        videoPlayer.attr('src', data.url);
+                        videoPlayer.attr('src', data.results); // 'results' contient l'URL directe
                         const trailerModal = new bootstrap.Modal(document.getElementById('trailer-modal'));
                         trailerModal.show();
                     } else {
-                        alert(data.message || 'Aucune bande-annonce trouvée.');
+                        alert(data.message || 'Aucune bande-annonce trouvée via l\'agent.');
                     }
                 })
                 .catch(error => {

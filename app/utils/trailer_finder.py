@@ -26,23 +26,20 @@ def find_plex_trailer(plex_item, plex_server):
 
     return None
 
-def find_youtube_trailer(title, year, api_key, media_type='movie'):
+def find_youtube_trailer(search_queries, api_key):
     """
-    Recherche une bande-annonce sur YouTube en utilisant une clé API fournie.
+    Recherche une bande-annonce sur YouTube en utilisant une liste de requêtes et une clé API.
     """
-    if not api_key: # La vérification se fait sur le paramètre
+    if not api_key:
         print("AVERTISSEMENT: Aucune clé API YouTube n'a été fournie.")
+        return None
+
+    if not isinstance(search_queries, list) or not search_queries:
+        print("ERREUR: Aucune requête de recherche fournie.")
         return None
 
     try:
         youtube = build('youtube', 'v3', developerKey=api_key, cache_discovery=False)
-
-        # Liste des requêtes par ordre de priorité
-        search_queries = [
-            f'"{title}" {year} bande annonce officielle vf',
-            f'"{title}" {year} trailer officiel vostfr',
-            f'"{title}" official trailer {year}'
-        ]
 
         for query in search_queries:
             print(f"DEBUG: Recherche YouTube avec la requête : {query}")
@@ -50,7 +47,7 @@ def find_youtube_trailer(title, year, api_key, media_type='movie'):
                 q=query,
                 part='snippet',
                 type='video',
-                maxResults=3 # On prend 3 résultats pour trouver le plus pertinent
+                maxResults=3
             )
             response = request.execute()
 
@@ -65,5 +62,5 @@ def find_youtube_trailer(title, year, api_key, media_type='movie'):
         print(f"ERREUR lors de la recherche sur YouTube : {e}")
         return None
 
-    print("DEBUG: Aucune vidéo trouvée sur YouTube.")
+    print("DEBUG: Aucune vidéo trouvée sur YouTube pour les requêtes fournies.")
     return None
