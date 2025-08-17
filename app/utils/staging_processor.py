@@ -99,19 +99,42 @@ def _rapatriate_item(item, sftp_client, folder_name):
         return False
 
 def _cleanup_staging(item_name):
-    """Deletes the item from the local staging directory."""
+    """
+    Deletes the item from the local staging directory in a robust way.
+    Includes a short delay to release file locks and ignores errors during deletion.
+    """
     local_staging_path = current_app.config['LOCAL_STAGING_PATH']
     item_path = os.path.join(local_staging_path, item_name)
-    current_app.logger.info(f"Cleaning up staging for: {item_path}")
+    current_app.logger.info(f"Lancement du nettoyage robuste pour : {item_path}")
+
+    if not os.path.exists(item_path):
+        current_app.logger.info(f"Le chemin '{item_path}' n'existe déjà plus. Nettoyage non requis.")
+        return True
+
+    # NOUVEAU: Ajout d'une courte pause pour laisser le temps au système de libérer les verrous
+    time.sleep(1)
+
     try:
         if os.path.isdir(item_path):
-            shutil.rmtree(item_path)
+            # MODIFIÉ: Utilisation de ignore_errors=True pour forcer la suppression
+            shutil.rmtree(item_path, ignore_errors=True)
         elif os.path.isfile(item_path):
-            os.remove(item_path)
-        current_app.logger.info(f"Successfully cleaned up {item_path}.")
-        return True
+            # On encapsule l'os.remove dans un try/except pour le même effet que ignore_errors
+            try:
+                os.remove(item_path)
+            except OSError as e:
+                current_app.logger.warning(f"Impossible de supprimer le fichier '{item_path}' durant le nettoyage: {e}")
+        
+        # Vérification finale
+        if not os.path.exists(item_path):
+            current_app.logger.info(f"Nettoyage de '{item_path}' réussi.")
+            return True
+        else:
+            current_app.logger.error(f"Échec du nettoyage. Le chemin '{item_path}' existe toujours.")
+            return False
+
     except Exception as e:
-        current_app.logger.error(f"Error cleaning up staging for {item_path}: {e}", exc_info=True)
+        current_app.logger.error(f"Erreur inattendue lors du nettoyage de {item_path}: {e}", exc_info=True)
         return False
 
 def _handle_automatic_import(item, queue_item, arr_type, folder_name):
@@ -144,7 +167,8 @@ def _handle_automatic_import(item, queue_item, arr_type, folder_name):
 
 def _handle_manual_import(item, folder_name):
     """
-    Gère un import manuel via MMS, en déplaçant les fichiers lui-même.
+    Gère un import manuel via MMS. Utilise une séquence "Copier puis Supprimer"
+    pour fiabiliser le déplacement des fichiers entre différents volumes.
     """
     torrent_hash = item['torrent_hash']
     release_name = item['release_name']
@@ -153,6 +177,7 @@ def _handle_manual_import(item, folder_name):
     source_path = os.path.normpath(os.path.join(current_app.config['LOCAL_STAGING_PATH'], folder_name))
     
     # 1. Déterminer le type et trouver le média dans *Arr pour obtenir le chemin de destination
+    # CETTE LOGIQUE EST CONSERVÉE À L'IDENTIQUE
     parsed_info = arr_client.parse_media_name(release_name)
     media_type = parsed_info.get('type')
     title_to_search = parsed_info.get('title')
@@ -162,7 +187,7 @@ def _handle_manual_import(item, folder_name):
         return
 
     target_id = None
-    destination_base_path = None # Chemin racine de la série/film
+    destination_base_path = None
 
     if media_type == 'tv':
         series_info = arr_client.find_sonarr_series_by_title(title_to_search)
@@ -180,19 +205,19 @@ def _handle_manual_import(item, folder_name):
         mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', error_msg)
         return
 
-    # 2. Logique de Déplacement Robuste (avec gestion des sous-dossiers)
-    video_extensions = ('.mkv', '.mp4', '.avi', '.mov')
-    files_moved_count = 0
-    
+    # 2. NOUVELLE LOGIQUE DE DÉPLACEMENT ROBUSTE (Copier puis Supprimer)
+    video_extensions = ('.mkv', '.mp4', '.avi', '.mov', '.wmv')
+    copied_source_files = [] # Stocke les chemins des sources copiées avec succès
+
+    current_app.logger.info("Phase 1: Copie des fichiers vidéo.")
     for dirpath, _, filenames in os.walk(source_path):
         for filename in filenames:
             if filename.lower().endswith(video_extensions):
                 source_file = os.path.join(dirpath, filename)
                 
-                # Pour les séries, on tente de créer un dossier de saison
+                # LOGIQUE DE DESTINATION CONSERVÉE À L'IDENTIQUE
                 final_destination_folder = os.path.normpath(destination_base_path)
                 if media_type == 'tv':
-                    # Essaye de deviner la saison depuis le nom du fichier ou du dossier parent
                     season_match = re.search(r'[._-][sS](\d{1,2})', source_file)
                     if season_match:
                         season_num = int(season_match.group(1))
@@ -202,22 +227,35 @@ def _handle_manual_import(item, folder_name):
                 destination_file = os.path.join(final_destination_folder, filename)
                 
                 try:
-                    shutil.move(source_file, destination_file)
-                    current_app.logger.info(f"Fichier déplacé par MMS : {source_file} -> {destination_file}")
-                    files_moved_count += 1
-                except Exception as e_move:
-                    current_app.logger.error(f"Erreur lors du déplacement de {source_file}: {e_move}")
-                    # On ne lève pas d'exception pour continuer à traiter les autres fichiers
+                    # MODIFIÉ: Utilisation de shutil.copy2 pour copier le fichier
+                    current_app.logger.info(f"Copie de '{source_file}' vers '{destination_file}'...")
+                    shutil.copy2(source_file, destination_file)
+                    copied_source_files.append(source_file) # Ajout à la liste pour suppression ultérieure
+                    current_app.logger.info(f"Copie de '{filename}' réussie.")
+                except (shutil.Error, IOError) as e_copy:
+                    current_app.logger.error(f"Erreur critique lors de la copie de {source_file}: {e_copy}. L'import manuel est interrompu.")
+                    mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', f"Erreur de copie de fichier: {e_copy}")
+                    return # On arrête tout si une copie échoue
     
-    if files_moved_count == 0:
+    if not copied_source_files:
         mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', "Aucun fichier vidéo trouvé à déplacer.")
         return
 
-    # 3. Nettoyage du dossier de staging
+    # 3. NOUVEAU: Suppression des fichiers source après la copie
+    current_app.logger.info(f"Phase 2: Suppression des {len(copied_source_files)} fichier(s) source originaux.")
+    for file_to_delete in copied_source_files:
+        try:
+            os.remove(file_to_delete)
+            current_app.logger.info(f"Fichier source '{file_to_delete}' supprimé.")
+        except OSError as e_remove:
+            current_app.logger.warning(f"Échec de la suppression du fichier source '{file_to_delete}': {e_remove}. Le nettoyage global s'en chargera.")
+            # On ne bloque pas le processus pour une suppression échouée
+
+    # 4. Nettoyage final du dossier de staging
     _cleanup_staging(folder_name)
-    mapping_manager.update_torrent_status_in_map(torrent_hash, 'completed_manual', f'{files_moved_count} fichier(s) déplacé(s) manuellement.')
+    mapping_manager.update_torrent_status_in_map(torrent_hash, 'completed_manual', f'{len(copied_source_files)} fichier(s) déplacé(s) manuellement.')
     
-    # 4. Déclencher un Rescan pour que *Arr détecte les nouveaux fichiers
+    # 5. Déclencher un Rescan (CONSERVÉ À L'IDENTIQUE)
     current_app.logger.info(f"Déclenchement d'un Rescan dans {media_type} pour l'ID {target_id}.")
     if media_type == 'tv':
         arr_client.sonarr_post_command({'name': 'RescanSeries', 'seriesId': target_id})

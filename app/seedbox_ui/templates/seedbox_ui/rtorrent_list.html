@@ -106,7 +106,7 @@
                             {% if association %}
                                 <span class="badge {% if association.app_type == 'sonarr' %}badge-sonarr{% elif association.app_type == 'radarr' %}badge-radarr{% endif %}">
                                     {{ association.app_type | capitalize }}: {{ association.original_name | truncate(30) }}
-                                    <small>(ID: {{ association.target_id }})</small>
+                                    <small>(ID: {{ torrent.target_id }})</small>
                                 </span>
                             {% else %}
                                 <span class="text-muted">Aucune</span>

@@ -368,26 +368,32 @@ def download_and_map():
                 destination_path=rtorrent_download_dir
             )
         
-        # 3. Gérer le résultat
-        if actual_hash:
-            logger.info(f"Torrent '{release_name_for_map}' ajouté. Hash: {actual_hash}. Sauvegarde.")
-            
-            seedbox_full_path = str(Path(rtorrent_download_dir) / release_name_for_map).replace('\\', '/')
-            add_or_update_torrent_in_map(
-                torrent_hash=actual_hash,
-                release_name=release_name_for_map,
-                app_type=internal_instance_type,
-                target_id=str(media_id),
-                label=rtorrent_label,
-                seedbox_download_path=seedbox_full_path,
-                original_torrent_name=release_name_original,
-                status='pending_download'
-            )
-            return jsonify({'status': 'success', 'message': 'Torrent ajouté et mappé avec succès.'})
-        else:
-            msg = f"Torrent ajouté à rTorrent, mais son hash n'a pas pu être récupéré. Le mapping automatique a échoué."
-            logger.warning(msg)
-            return jsonify({"status": "warning", "message": msg}), 202
+    # 3. Gérer le résultat
+            if actual_hash:
+                logger.info(f"Torrent '{release_name_for_map}' ajouté. Hash: {actual_hash}. Sauvegarde de l'association.")
+                
+                # Le chemin sur la seedbox est le dossier de destination + le nom que rTorrent utilisera
+                seedbox_full_path = str(Path(rtorrent_download_dir) / release_name_for_map).replace('\\', '/')
+                # Dans ce flux, le nom du dossier sur la seedbox est le même que le nom de la release
+                folder_name = release_name_for_map
+
+                # APPEL CORRIGÉ AVEC TOUS LES ARGUMENTS NOMMÉS
+                add_or_update_torrent_in_map(
+                    release_name=release_name_for_map,
+                    torrent_hash=actual_hash,
+                    status='pending_download',
+                    seedbox_download_path=seedbox_full_path,
+                    folder_name=folder_name,
+                    app_type=internal_instance_type,
+                    target_id=str(media_id),
+                    label=rtorrent_label,
+                    original_torrent_name=release_name_original
+                )
+                return jsonify({'status': 'success', 'message': 'Torrent ajouté et mappé avec succès.'})
+            else:
+                msg = f"Torrent ajouté à rTorrent, mais son hash n'a pas pu être récupéré. Le mapping automatique a échoué."
+                logger.warning(msg)
+                return jsonify({"status": "warning", "message": msg}), 202
         # ---- FIN DU BLOC CORRIGÉ ----
 
     except Exception as e:
