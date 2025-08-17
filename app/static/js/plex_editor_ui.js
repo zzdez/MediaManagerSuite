@@ -867,68 +867,98 @@ function sortTable(table, sortBy, sortType, direction) {
         sortTable(table, 'rating', 'number', newDir === 'asc' ? 1 : -1);
     });
 
-    // Gestion de l'ouverture de la modale de la bande-annonce
-    $(document).on('click', '.find-and-play-trailer-btn', function() {
-        const button = $(this);
-        const title = button.data('title');
-        const plexTrailerUrl = button.data('plex-trailer-url');
-        const year = button.data('year');
-        const mediaType = button.data('media-type');
+// --- DÉBUT DU BLOC COMPLET POUR LA GESTION DES BANDES-ANNONCES ---
 
-        const modalTitle = $('#trailerModalLabel');
-        const videoPlayer = $('#trailer-video-player');
+// Étape 1: Le clic sur le bouton pour chercher/jouer la bande-annonce
+$(document).on('click', '.find-and-play-trailer-btn', function() {
+    const button = $(this);
+    const title = button.data('title');
+    const plexTrailerUrl = button.data('plex-trailer-url');
+    const year = button.data('year');
+    const mediaType = button.data('media-type');
 
-        // Logique Hybride
-        if (plexTrailerUrl) {
-            // CAS 1: L'URL Plex existe, on l'utilise directement
-            console.log("Lecture du trailer depuis Plex.");
-            modalTitle.text('Bande-Annonce (Plex): ' + title);
-            videoPlayer.attr('src', plexTrailerUrl);
-            const trailerModal = new bootstrap.Modal(document.getElementById('trailer-modal'));
-            trailerModal.show();
-        } else {
-            // CAS 2: Pas d'URL Plex, on interroge le serveur pour YouTube
-            console.log("Recherche du trailer sur YouTube...");
-            button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+    // Cibles pour les modales
+    const playerModalTitle = $('#trailerModalLabel');
+    const playerModalBody = $('#trailer-modal .modal-body');
+    const playerModalInstance = new bootstrap.Modal(document.getElementById('trailer-modal'));
 
-            fetch('/api/agent/suggest_trailers', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title: title, year: year, media_type: mediaType })
-            })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success && data.results && data.results.length > 0) {
-                        const firstResult = data.results[0];
-                        const videoId = firstResult.videoId;
-                        const embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1`;
+    // Logique Hybride
+    if (plexTrailerUrl) {
+        // CAS 1: L'URL Plex existe, on joue directement dans l'iframe
+        console.log("Lecture du trailer depuis Plex.");
+        playerModalTitle.text('Bande-Annonce (Plex): ' + title);
+        playerModalBody.html(`<div class="ratio ratio-16x9"><iframe src="${plexTrailerUrl}" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>`);
+        playerModalInstance.show();
+    } else {
+        // CAS 2: Pas d'URL Plex, on interroge l'agent
+        console.log("Recherche du trailer via l'agent...");
+        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
 
-                        modalTitle.text('Bande-Annonce (YouTube): ' + title);
-                        videoPlayer.attr('src', embedUrl);
-
-                        const trailerModal = new bootstrap.Modal(document.getElementById('trailer-modal'));
-                        trailerModal.show();
-                    } else {
-                        alert('Aucune bande-annonce trouvée via l\'agent.');
-                    }
-                })
-                .catch(error => {
-                    console.error('Erreur lors de la recherche de la bande-annonce:', error);
-                    alert('Une erreur technique est survenue.');
-                })
-                .finally(() => {
-                    // Rétablir l'état initial du bouton
-                    button.prop('disabled', false).html('<i class="bi bi-film"></i>');
+        fetch('/api/agent/suggest_trailers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: title, year: year, media_type: mediaType })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.results && data.results.length > 0) {
+                // On peuple et on ouvre la modale de SÉLECTION
+                const resultsContainer = $('#trailer-results-container');
+                resultsContainer.empty();
+                data.results.forEach(result => {
+                    const resultHtml = `
+                        <div class="trailer-result-item d-flex align-items-center mb-2 p-2 rounded" style="cursor: pointer; background-color: #343a40;"
+                             data-video-id="${result.videoId}" data-video-title="${result.title}">
+                            <img src="${result.thumbnail}" width="120" class="me-3 rounded">
+                            <div>
+                                <p class="mb-0 text-white font-weight-bold">${result.title}</p>
+                                <small class="text-muted">${result.channel}</small>
+                            </div>
+                        </div>
+                    `;
+                    resultsContainer.append(resultHtml);
                 });
-        }
-    });
+                const selectionModal = new bootstrap.Modal($('#trailer-selection-modal'));
+                selectionModal.show();
+            } else {
+                alert('Aucune bande-annonce pertinente n\'a été trouvée.');
+            }
+        })
+        .catch(error => {
+            console.error('Erreur lors de la recherche de la bande-annonce:', error);
+            alert('Une erreur technique est survenue.');
+        })
+        .finally(() => {
+            button.prop('disabled', false).html('<i class="bi bi-film"></i>');
+        });
+    }
+});
 
-    // Gestion de la fermeture de la modale pour arrêter la vidéo
-    $('#trailer-modal').on('hidden.bs.modal', function () {
-        const videoPlayer = $('#trailer-video-player');
-        videoPlayer.get(0).pause(); // Met la vidéo en pause
-        videoPlayer.attr('src', ''); // Vide la source pour stopper le chargement
-    });
+// Étape 2: Le clic sur un résultat dans la modale de sélection
+$(document).on('click', '.trailer-result-item', function() {
+    const videoId = $(this).data('video-id');
+    const videoTitle = $(this).data('video-title');
+
+    // On ferme la modale de sélection
+    bootstrap.Modal.getInstance($('#trailer-selection-modal')).hide();
+
+    // On prépare et on ouvre la modale du lecteur avec un IFRAME
+    const playerModalTitle = $('#trailerModalLabel');
+    const playerModalBody = $('#trailer-modal .modal-body');
+    const playerModalInstance = new bootstrap.Modal($('#trailer-modal'));
+
+    playerModalTitle.text('Bande-Annonce: ' + videoTitle);
+    playerModalBody.html(`<div class="ratio ratio-16x9"><iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>`);
+    playerModalInstance.show();
+});
+
+// Étape 3: Nettoyage à la fermeture du lecteur vidéo
+$('#trailer-modal').on('hidden.bs.modal', function () {
+    // Vider le contenu du corps de la modale pour stopper la vidéo
+    $('#trailer-modal .modal-body').empty();
+});
+
+// --- FIN DU BLOC COMPLET POUR LA GESTION DES BANDES-ANNONCES ---
 
     // NOUVEL ÉCOUTEUR D'ÉVÉNEMENT
     $(document).on('click', '#scan-libraries-btn', function() {
