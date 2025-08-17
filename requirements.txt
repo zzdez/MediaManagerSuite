@@ -28,3 +28,4 @@ APScheduler>=3.0.0,<4.0.0
 tvdb_v4_official
 tmdbv3api
 google-api-python-client
+google-generativeai
