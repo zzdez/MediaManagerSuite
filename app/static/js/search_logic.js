@@ -473,11 +473,12 @@ $(document).ready(function() {
 
     $('body').on('click', '.enrich-details-btn', function() {
         const button = $(this);
-        const container = button.closest('.list-group-item');
+        const itemContainer = button.closest('.list-group-item');
+        const originalItemHtml = itemContainer.html(); // <-- SAUVEGARDE DE L'ORIGINAL
         const mediaId = button.data('media-id');
         const mediaType = button.data('media-type');
 
-        container.html('<div class="d-flex justify-content-center align-items-center p-3"><div class="spinner-border spinner-border-sm"></div></div>');
+        itemContainer.html('<div class="d-flex justify-content-center align-items-center p-3"><div class="spinner-border spinner-border-sm"></div></div>');
 
         fetch('/search/api/enrich/details', {
             method: 'POST',
@@ -487,34 +488,53 @@ $(document).ready(function() {
         .then(response => response.json())
         .then(details => {
             if (details.error) {
-                container.html(`<div class="text-danger">${details.error}</div>`);
+                itemContainer.html(`<div class="text-danger">${details.error}</div>`);
                 return;
             }
-            const enrichedHtml = `
-                <div class="card bg-dark text-white">
+            const cardHtml = `
+                <div class="card enriched-card mb-2">
                     <div class="row g-0">
-                        <div class="col-md-3">
-                            <img src="${details.poster}" class="img-fluid rounded-start" alt="Poster">
+                        <div class="col-md-2 text-center align-self-center">
+                            <img src="${details.poster || 'https://via.placeholder.com/100x150'}" class="img-fluid rounded" style="max-width: 80px;" alt="Poster">
                         </div>
-                        <div class="col-md-9">
-                            <div class="card-body">
-                                <h5 class="card-title">${details.title} (${details.year})</h5>
-                                <p class="card-text small"><strong>Statut:</strong> ${details.status}</p>
-                                <p class="card-text small" style="max-height: 150px; overflow-y: auto;">${details.overview || 'Synopsis non disponible.'}</p>
-                                <button class="btn btn-sm btn-primary confirm-mapping-btn me-2" data-media-id="${details.id}">Choisir ce média</button>
-                                <button class="btn btn-sm btn-secondary back-to-lookup-btn">Retour à la liste</button>
+                        <div class="col-md-10">
+                            <div class="card-body py-2">
+                                <h6 class="card-title mb-1">${details.title} (${details.year})</h6>
+                                <p class="card-text small" style="max-height: 100px; overflow-y: auto;">${details.overview || 'Synopsis non disponible.'}</p>
+
+                                <!-- **NOUVELLE LOGIQUE DE BOUTONS** -->
+                                <button class="btn btn-sm btn-success select-candidate-btn"
+                                        data-title="${details.title}"
+                                        data-year="${details.year}">
+                                    ✓ Sélectionner & Chercher les Torrents
+                                </button>
+                                <button class="btn btn-sm btn-outline-secondary back-to-list-btn">
+                                    <i class="fas fa-arrow-left"></i> Retour
+                                </button>
+
                             </div>
                         </div>
                     </div>
                 </div>`;
-            container.removeClass('list-group-item d-flex justify-content-between align-items-center').html(enrichedHtml);
+            itemContainer.html(cardHtml); // Remplace le contenu, pas l'élément
+            itemContainer.data('original-html', originalItemHtml); // Stocke l'original
         })
         .catch(err => {
-            container.html('<div class="text-danger">Erreur de communication.</div>');
+            itemContainer.html('<div class="text-danger">Erreur de communication.</div>');
             console.error("Erreur d'enrichissement:", err);
         });
     });
     // ### NOUVEAU BLOC : GESTIONNAIRE POUR "CHOISIR CE MEDIA" ###
+
+    // NOUVEL ÉCOUTEUR POUR LE BOUTON RETOUR
+    $('body').on('click', '.back-to-list-btn', function() {
+        const itemContainer = $(this).closest('.list-group-item');
+        const originalHtml = itemContainer.data('original-html');
+        if (originalHtml) {
+            itemContainer.html(originalHtml);
+        }
+    });
+
     $('body').on('click', '#sonarrRadarrSearchModal .confirm-mapping-btn', function() {
         const button = $(this);
         const selectedMediaId = button.data('media-id');
@@ -649,4 +669,37 @@ $('body').on('click', '.search-torrents-for-media-btn', function() {
 });
 
 // --- FIN DU NOUVEAU BLOC ---
+
+$('body').on('click', '.select-candidate-btn', function() {
+    const button = $(this);
+
+    // Si le bouton est dans la modale, il fait l'action de mapping
+    if (button.closest('#sonarrRadarrSearchModal').length > 0) {
+        const mediaId = button.data('media-id');
+        modalBody.find('.enriched-card').removeClass('border-primary border-3');
+        button.closest('.enriched-card').addClass('border-primary border-3');
+        $('#confirm-add-and-map-btn').data('selectedMediaId', mediaId).prop('disabled', false);
+    }
+    // SINON, s'il est dans notre nouvelle liste, il lance une recherche de torrents
+    else {
+        const title = button.data('title');
+        const year = button.data('year');
+
+        // 1. Remplir le formulaire de l'autre onglet
+        $('#search-form input[name="query"]').val(title);
+        $('#search-form input[name="year"]').val(year);
+
+        // 2. Changer d'onglet pour montrer à l'utilisateur ce qui se passe
+        const torrentTab = new bootstrap.Tab(document.getElementById('torrent-search-tab'));
+        torrentTab.show();
+
+        // 3. Déclencher la recherche de torrents en simulant un clic
+        $('#execute-prowlarr-search-btn').click();
+
+        // Optionnel : Faire défiler la page jusqu'aux résultats
+        $('html, body').animate({
+            scrollTop: $("#search-results-container").offset().top - 20
+        }, 500);
+    }
+});
 });
