@@ -60,29 +60,36 @@ class TheMovieDBClient:
             logger.error("La clé API TMDb n'est pas disponible.")
             return []
 
-        original_lang = self.tmdb.language
+        original_lang = self.tmdb.language # Sauvegarde la langue originale
         try:
             logger.info(f"Recherche TMDb pour le titre : '{title}' en langue '{lang}'")
-            # La langue pour la recherche est passée en paramètre de la méthode de recherche
-            search = Search()
-            results = search.movies(term=title, language=lang)
 
-            # Formatter les résultats pour être cohérent avec ce que la route attend
+            # 1. Changer la langue de l'instance globale avant l'appel
+            self.tmdb.language = lang
+
+            search = Search()
+
+            # 2. Appeler la recherche SANS le paramètre 'language'
+            results = search.movies(term=title)
+
+            # 3. Formatter les résultats (votre code existant est parfait)
             formatted_results = []
             for res in results:
-                # On s'assure que les objets retournés ont bien les attributs nécessaires
                 formatted_results.append({
                     'id': getattr(res, 'id', None),
                     'title': getattr(res, 'title', 'Titre non disponible'),
-                    'original_title': getattr(res, 'original_title', 'Titre original non disponible'),
-                    'overview': getattr(res, 'overview', ''),
                     'poster_path': getattr(res, 'poster_path', None),
                     'release_date': getattr(res, 'release_date', None),
+                    # Ajouter 'year' pour la cohérence
+                    'year': getattr(res, 'release_date', 'N/A').split('-')[0] if getattr(res, 'release_date', None) else 'N/A',
+                    # Transformer poster_path en URL complète
+                    'poster_url': f"https://image.tmdb.org/t/p/w92{getattr(res, 'poster_path', '')}" if getattr(res, 'poster_path', None) else ''
                 })
             return formatted_results
+
         except Exception as e:
             logger.error(f"Erreur lors de la recherche TMDb pour '{title}': {e}", exc_info=True)
             return []
         finally:
-            # Pas besoin de gérer la langue de l'instance ici car elle est passée en paramètre de la recherche
-            pass
+            # 4. Restaurer la langue originale, quoi qu'il arrive
+            self.tmdb.language = original_lang
