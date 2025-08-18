@@ -29,23 +29,54 @@
 
         <ul class="nav nav-tabs mt-4" id="searchTabs" role="tablist">
             <li class="nav-item" role="presentation">
-                <button class="nav-link {% if not request.args.get('mode') or request.args.get('mode') == 'complete' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#complete" type="button">
-                    <i class="fas fa-puzzle-piece"></i> Compléter un Média
+                <button class="nav-link active" id="media-search-tab" data-bs-toggle="tab" data-bs-target="#media-search-pane" type="button">
+                    <i class="fas fa-film"></i> Recherche par Média
                 </button>
             </li>
             <li class="nav-item" role="presentation">
-                <button class="nav-link {% if request.args.get('mode') == 'free_search' %}active{% endif %}" data-bs-toggle="tab" data-bs-target="#free-search" type="button">
+                <button class="nav-link" id="torrent-search-tab" data-bs-toggle="tab" data-bs-target="#free-search" type="button">
                     <i class="fas fa-search"></i> Recherche Libre
                 </button>
             </li>
         </ul>
 
         <div class="tab-content border border-top-0 p-3 rounded-bottom">
-            <div class="tab-pane fade {% if not request.args.get('mode') or request.args.get('mode') == 'complete' %}show active{% endif %}" id="complete" role="tabpanel">
-                <p><strong>Prochainement :</strong> Recherchez un média de votre bibliothèque pour trouver les épisodes ou versions manquantes.</p>
+            <!-- ================================================================== -->
+            <!-- ### NOUVEAU : Panneau de Recherche par Média ### -->
+            <!-- ================================================================== -->
+            <div class="tab-pane fade show active" id="media-search-pane" role="tabpanel">
+                <p><strong>Étape 1 :</strong> Recherchez un film ou une série.</p>
+                <form id="media-search-form">
+                    <div class="row g-2 align-items-center">
+                        <div class="col-auto">
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="media_type" id="media_type_movie" value="movie" checked>
+                                <label class="form-check-label" for="media_type_movie">Film</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="media_type" id="media_type_tv" value="tv">
+                                <label class="form-check-label" for="media_type_tv">Série</label>
+                            </div>
+                        </div>
+                        <div class="col">
+                            <input type="text" id="media-search-input" class="form-control" placeholder="Entrez un titre...">
+                        </div>
+                        <div class="col-auto">
+                            <button type="button" id="execute-media-search-btn" class="btn btn-primary w-100">
+                                <i class="fas fa-search"></i> Rechercher le Média
+                            </button>
+                        </div>
+                    </div>
+                </form>
+
+                <!-- Conteneur pour les résultats de la recherche de médias -->
+                <div id="media-results-container" class="mt-4"></div>
+
+                <!-- Conteneur pour les résultats de torrents (phase 2) -->
+                <div id="torrent-results-for-media-container" class="mt-4"></div>
             </div>
 
-            <div class="tab-pane fade {% if request.args.get('mode') == 'free_search' %}show active{% endif %}" id="free-search" role="tabpanel">
+            <div class="tab-pane fade" id="free-search" role="tabpanel">
                 <p>Recherchez n'importe quel terme sur vos indexers.</p>
                 <form id="search-form">
                     <div class="row g-2">
