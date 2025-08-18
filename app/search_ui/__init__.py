@@ -178,6 +178,41 @@ def api_search_lookup():
             'results': final_results,
             'cleaned_query': clean_title or search_term
         })
+
+@search_ui_bp.route('/api/media/find', methods=['POST'])
+@login_required
+def api_find_media():
+    """Recherche des médias sur TMDb/TVDB en utilisant les clients fiables."""
+    from app.utils.tmdb_client import TheMovieDBClient
+    from app.utils.tvdb_client import CustomTVDBClient
+
+    data = request.json
+    term = data.get('term')
+    media_type = data.get('media_type')
+
+    if not term or not media_type:
+        return jsonify({"error": "Terme et type de média requis."}), 400
+
+    results = []
+    if media_type == 'movie':
+        client = TheMovieDBClient()
+        # On appelle la fonction search_movie qui retourne des données déjà bien formatées
+        search_results = client.search_movie(term)
+        # On adapte juste la clé 'id' pour être cohérent partout
+        for res in search_results:
+            res['tmdbId'] = res.get('id')
+        results = search_results
+
+    elif media_type == 'tv':
+        client = CustomTVDBClient()
+        # On appelle la fonction qui retourne des données déjà bien formatées
+        search_results = client.search_and_translate_series(term)
+        # On adapte les clés pour être cohérentes
+        for res in search_results:
+            res['title'] = res.get('name')
+        results = search_results
+
+    return jsonify(results)
     
 # Dans app/search_ui/__init__.py, remplacez SEULEMENT cette fonction :
 

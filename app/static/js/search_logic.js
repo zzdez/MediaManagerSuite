@@ -570,20 +570,51 @@ $('body').on('click', '#execute-media-search-btn', function() {
     const resultsContainer = $('#media-results-container');
     resultsContainer.html('<div class="text-center p-4"><div class="spinner-border"></div></div>');
 
-    // On appelle la même route que la modale, mais on demande du HTML
-    const url = `/search/api/search/lookup?render_html=true`;
-
-    fetch(url, {
+    fetch('/search/api/media/find', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ term: term, media_type: mediaType })
     })
-    .then(response => response.text()) // On attend du texte (HTML)
-    .then(html => {
-        resultsContainer.html(html);
-        // La logique d'enrichissement existante (.enrich-details-btn) fonctionnera automatiquement !
+    .then(response => response.json())
+    .then(data => {
+        let resultsHtml = '<div class="list-group">';
+        if (data && data.length > 0) {
+            data.forEach(media => {
+                const posterUrl = media.poster_url || 'https://via.placeholder.com/50x75';
+                const mediaId = media.tvdb_id || media.tmdbId || media.id; // Clé unifiée
+                const title = media.title || media.name; // Gère les deux cas
+                const year = media.year || (media.release_date ? media.release_date.split('-')[0] : 'N/A');
+
+                resultsHtml += `
+                    <div class="list-group-item">
+                        <div class="row align-items-center">
+                            <div class="col-auto">
+                                <img src="${posterUrl}" style="width: 50px; height: 75px; object-fit: cover; border-radius: 4px;" alt="Poster"/>
+                            </div>
+                            <div class="col">
+                                <strong>${title}</strong> (${year})
+                            </div>
+                            <div class="col-auto">
+                                <button class="btn btn-sm btn-outline-primary enrich-details-btn" data-media-id="${mediaId}" data-media-type="${mediaType}">
+                                    <i class="fas fa-info-circle"></i> Voir les détails
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+        } else {
+            resultsHtml += '<div class="list-group-item">Aucun média trouvé.</div>';
+        }
+        resultsHtml += '</div>';
+        resultsContainer.html(resultsHtml);
+    })
+    .catch(error => {
+        console.error('Erreur lors de la recherche de média:', error);
+        resultsContainer.html('<div class="alert alert-danger">Erreur de communication avec le serveur.</div>');
     });
 });
+
 
 // Étape 2: Le clic sur le bouton "Chercher les Torrents"
 $('body').on('click', '.search-torrents-for-media-btn', function() {
