@@ -571,7 +571,7 @@ $('body').on('click', '#execute-media-search-btn', function() {
     resultsContainer.html('<div class="text-center p-4"><div class="spinner-border"></div></div>');
     $('#torrent-results-for-media-container').empty(); // Vider les anciens résultats de torrents
 
-    fetch('/api/media/find', {
+    fetch('/search/api/media/find', { // Ajout du préfixe '/search'
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ term: term, media_type: mediaType })
