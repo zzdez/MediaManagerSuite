@@ -65,7 +65,7 @@ class TheMovieDBClient:
             logger.info(f"Recherche TMDb pour le titre : '{title}' en langue '{lang}'")
             # La langue pour la recherche est passée en paramètre de la méthode de recherche
             search = Search()
-            results = search.movies(query=title, language=lang)
+            results = search.movies(term=title, language=lang)
 
             # Formatter les résultats pour être cohérent avec ce que la route attend
             formatted_results = []
