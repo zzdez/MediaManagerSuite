@@ -558,4 +558,86 @@ $(document).ready(function() {
             button.prop('disabled', false).text('Choisir ce média');
         });
     });
+
+// --- DÉBUT DU NOUVEAU BLOC POUR LA RECHERCHE PAR MÉDIA ---
+
+// Étape 1: Le clic sur le bouton "Rechercher le Média"
+$('body').on('click', '#execute-media-search-btn', function() {
+    const term = $('#media-search-input').val();
+    const mediaType = $('input[name="media_type"]:checked').val();
+    if (!term) { alert('Veuillez entrer un titre.'); return; }
+
+    const resultsContainer = $('#media-results-container');
+    resultsContainer.html('<div class="text-center p-4"><div class="spinner-border"></div></div>');
+    $('#torrent-results-for-media-container').empty(); // Vider les anciens résultats de torrents
+
+    fetch('/api/media/find', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ term: term, media_type: mediaType })
+    })
+    .then(response => response.json())
+    .then(data => {
+        let resultsHtml = '<h5>Résultats de la recherche de média :</h5><div class="list-group">';
+        if (!data || data.length === 0) {
+            resultsHtml += '<div class="list-group-item">Aucun média trouvé.</div>';
+        } else {
+            data.forEach(media => {
+                const posterUrl = media.poster_url || media.poster || 'https://via.placeholder.com/50x75';
+                resultsHtml += `
+                    <div class="list-group-item">
+                        <div class="row align-items-center">
+                            <div class="col-auto">
+                                <img src="${posterUrl}" style="width: 50px;"/>
+                            </div>
+                            <div class="col">
+                                <strong>${media.title}</strong> (${media.year})
+                            </div>
+                            <div class="col-auto">
+                                <button class="btn btn-sm btn-primary search-torrents-for-media-btn" data-title="${media.title}" data-year="${media.year}">
+                                    <i class="fas fa-search"></i> Chercher les Torrents
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+        resultsHtml += '</div>';
+        resultsContainer.html(resultsHtml);
+    });
+});
+
+// Étape 2: Le clic sur le bouton "Chercher les Torrents"
+$('body').on('click', '.search-torrents-for-media-btn', function() {
+    const title = $(this).data('title');
+    const year = $(this).data('year');
+    const torrentResultsContainer = $('#torrent-results-for-media-container');
+
+    // On simule un clic sur le bouton de l'autre onglet après avoir rempli les champs
+    $('#search-form input[name="query"]').val(title);
+    $('#search-form input[name="year"]').val(year);
+
+    // On fait défiler jusqu'aux résultats et on lance la recherche
+    $('html, body').animate({ scrollTop: torrentResultsContainer.offset().top - 20 }, 500);
+
+    // **RÉUTILISATION INTELLIGENTE**
+    // On déclenche manuellement le clic sur le bouton de recherche de l'onglet existant
+    // Mais on doit d'abord cloner et rediriger les résultats
+    const originalContainer = $('#search-results-container');
+    originalContainer.html(''); // Vider le conteneur original pour éviter les doublons
+    $('#execute-prowlarr-search-btn').click(); // Déclenche la recherche existante
+
+    // Rediriger les résultats
+    const observer = new MutationObserver(function(mutations, me) {
+        if (originalContainer.html().length > 0) {
+            torrentResultsContainer.html(originalContainer.html());
+            originalContainer.html(''); // Nettoyer après
+            me.disconnect(); // Arrêter d'observer
+        }
+    });
+    observer.observe(originalContainer[0], { childList: true, subtree: true });
+});
+
+// --- FIN DU NOUVEAU BLOC ---
 });
