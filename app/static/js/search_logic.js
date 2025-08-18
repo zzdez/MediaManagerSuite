@@ -471,9 +471,9 @@ $(document).ready(function() {
         });
     });
 
-    $('body').on('click', '#sonarrRadarrSearchModal .enrich-details-btn', function() {
+    $('body').on('click', '.enrich-details-btn', function() {
         const button = $(this);
-        const container = button.closest('[data-result-item]');
+        const container = button.closest('.list-group-item');
         const mediaId = button.data('media-id');
         const mediaType = button.data('media-type');
 
@@ -577,12 +577,13 @@ $('body').on('click', '#execute-media-search-btn', function() {
     })
     .then(response => response.json())
     .then(data => {
-        let resultsHtml = '<div class="list-group">';
+        let resultsHtml = '<h5>Résultats de la recherche de média :</h5><div class="list-group">';
         if (data && data.length > 0) {
+            const mediaType = $('input[name="media_type"]:checked').val();
             data.forEach(media => {
                 const posterUrl = media.poster_url || 'https://via.placeholder.com/50x75';
-                const mediaId = media.tvdb_id || media.tmdbId || media.id; // Clé unifiée
-                const title = media.title || media.name; // Gère les deux cas
+                const mediaId = mediaType === 'movie' ? media.tmdbId : media.tvdb_id;
+                const title = media.title || media.name;
                 const year = media.year || (media.release_date ? media.release_date.split('-')[0] : 'N/A');
 
                 resultsHtml += `
