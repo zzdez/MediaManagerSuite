@@ -164,10 +164,20 @@ def api_search_lookup():
             if final_results:
                 final_results[0]['is_best_match'] = True
 
-    return jsonify({
-        'results': final_results,
-        'cleaned_query': clean_title or search_term
-    })
+    # Déterminer le format de la réponse
+    render_as_html = request.args.get('render_html', 'false').lower() == 'true'
+
+    if render_as_html:
+        return render_template(
+            'search_ui/_media_result_list.html',
+            candidates=final_results,
+            media_type=media_type
+        )
+    else:
+        return jsonify({
+            'results': final_results,
+            'cleaned_query': clean_title or search_term
+        })
     
 # Dans app/search_ui/__init__.py, remplacez SEULEMENT cette fonction :
 
@@ -215,31 +225,6 @@ def enrich_details():
     except Exception as e:
         current_app.logger.error(f"Erreur dans enrich_details: {e}", exc_info=True)
         return jsonify({'error': f"Erreur serveur : {e}"}), 500
-
-
-@search_ui_bp.route('/api/media/find', methods=['POST'])
-@login_required
-def api_find_media():
-    """Recherche des médias sur TMDb/TVDB."""
-    from app.utils.tmdb_client import TheMovieDBClient
-    from app.utils.tvdb_client import CustomTVDBClient
-
-    data = request.json
-    term = data.get('term')
-    media_type = data.get('media_type')
-
-    if not term or not media_type:
-        return jsonify({"error": "Terme et type de média requis."}), 400
-
-    results = []
-    if media_type == 'movie':
-        client = TheMovieDBClient()
-        results = client.search_movie(term) # Assumant que cette méthode existe et retourne une liste
-    elif media_type == 'tv':
-        client = CustomTVDBClient()
-        results = client.search_and_translate_series(term) # Assumant que cette méthode existe
-
-    return jsonify(results)
 
 # NOTE: Les autres routes de l'ancien fichier 'routes.py' comme '/download-and-map', etc.
 # doivent aussi être migrées ici en utilisant le même pattern d'imports locaux si elles

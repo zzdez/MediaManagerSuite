@@ -569,42 +569,19 @@ $('body').on('click', '#execute-media-search-btn', function() {
 
     const resultsContainer = $('#media-results-container');
     resultsContainer.html('<div class="text-center p-4"><div class="spinner-border"></div></div>');
-    $('#torrent-results-for-media-container').empty(); // Vider les anciens résultats de torrents
 
-    fetch('/search/api/media/find', { // Ajout du préfixe '/search'
+    // On appelle la même route que la modale, mais on demande du HTML
+    const url = `/search/api/search/lookup?render_html=true`;
+
+    fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ term: term, media_type: mediaType })
     })
-    .then(response => response.json())
-    .then(data => {
-        let resultsHtml = '<h5>Résultats de la recherche de média :</h5><div class="list-group">';
-        if (!data || data.length === 0) {
-            resultsHtml += '<div class="list-group-item">Aucun média trouvé.</div>';
-        } else {
-            data.forEach(media => {
-                const posterUrl = media.poster_url || media.poster || 'https://via.placeholder.com/50x75';
-                resultsHtml += `
-                    <div class="list-group-item">
-                        <div class="row align-items-center">
-                            <div class="col-auto">
-                                <img src="${posterUrl}" style="width: 50px;"/>
-                            </div>
-                            <div class="col">
-                                <strong>${media.title}</strong> (${media.year})
-                            </div>
-                            <div class="col-auto">
-                                <button class="btn btn-sm btn-primary search-torrents-for-media-btn" data-title="${media.title}" data-year="${media.year}">
-                                    <i class="fas fa-search"></i> Chercher les Torrents
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            });
-        }
-        resultsHtml += '</div>';
-        resultsContainer.html(resultsHtml);
+    .then(response => response.text()) // On attend du texte (HTML)
+    .then(html => {
+        resultsContainer.html(html);
+        // La logique d'enrichissement existante (.enrich-details-btn) fonctionnera automatiquement !
     });
 });
 
