@@ -75,14 +75,17 @@ class TheMovieDBClient:
             # 3. Formatter les résultats (votre code existant est parfait)
             formatted_results = []
             for res in results:
+                # On force la conversion en str() pour les champs potentiellement problématiques
+                # et on fournit des valeurs par défaut sûres.
+                release_date = str(getattr(res, 'release_date', ''))
+
                 formatted_results.append({
                     'id': getattr(res, 'id', None),
-                    'title': getattr(res, 'title', 'Titre non disponible'),
-                    'poster_path': getattr(res, 'poster_path', None),
-                    'release_date': getattr(res, 'release_date', None),
-                    # Ajouter 'year' pour la cohérence
-                    'year': getattr(res, 'release_date', 'N/A').split('-')[0] if getattr(res, 'release_date', None) else 'N/A',
-                    # Transformer poster_path en URL complète
+                    'title': str(getattr(res, 'title', 'Titre non disponible')),
+                    'overview': str(getattr(res, 'overview', '')),
+                    'poster_path': str(getattr(res, 'poster_path', '')),
+                    'release_date': release_date,
+                    'year': release_date.split('-')[0] if release_date else 'N/A',
                     'poster_url': f"https://image.tmdb.org/t/p/w92{getattr(res, 'poster_path', '')}" if getattr(res, 'poster_path', None) else ''
                 })
             return formatted_results
