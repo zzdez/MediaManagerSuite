@@ -341,7 +341,7 @@ $(document).ready(function() {
         });
     }
 
-    $('body').on('click', '.download-and-map-btn', function(event) {
+    $('body').off('click', '.download-and-map-btn').on('click', '.download-and-map-btn', function(event) {
         event.preventDefault();
         const button = $(this);
         const releaseDetails = {
