@@ -124,37 +124,29 @@ $(document).ready(function() {
         const freeSearchTab = new bootstrap.Tab($('#torrent-search-tab')[0]);
         freeSearchTab.show();
 
-        setTimeout(() => {
-            $('#execute-prowlarr-search-btn').click();
-            $('#execute-prowlarr-search-btn')[0].scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, 150);
-    });
-
-    // =================================================================
-    // ### BLOC 2 : RECHERCHE LIBRE (PROWLARR) ET STATUT ###
-    // =================================================================
-
-    $('body').on('click', '#execute-prowlarr-search-btn', function() {
-        window.currentMediaContext = null;
-        console.log("Contexte de pré-mapping réinitialisé par la recherche libre.");
         const form = $('#search-form');
-        const query = form.find('[name="query"]').val();
-        if (!query) {
-            alert("Veuillez entrer un terme à rechercher.");
-            return;
-        }
-        const resultsContainer = $('#search-results-container');
-        resultsContainer.html('<div class="text-center p-5"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Recherche en cours...</p></div>');
         const payload = {
-            query: query,
-            search_type: $('input[name="search_type"]:checked').val(),
+            query: mediaData.title, // Utilise le titre exact du média
+            search_type: form.find('[name="search_type"]:checked').val(),
             year: form.find('[name="year"]').val(),
             lang: form.find('[name="lang"]').val(),
             quality: $('#filterQuality').val(),
             codec: $('#filterCodec').val(),
             source: $('#filterSource').val()
         };
-        console.log("Payload de recherche principale envoyé :", payload);
+
+        executeProwlarrSearch(payload); // Appel direct de la fonction partagée
+    });
+
+    // =================================================================
+    // ### BLOC 2 : RECHERCHE LIBRE (PROWLARR) ET STATUT ###
+    // =================================================================
+
+    function executeProwlarrSearch(payload) {
+        const resultsContainer = $('#search-results-container');
+        resultsContainer.html('<div class="text-center p-5"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Recherche en cours...</p></div>');
+
+        console.log("Payload de recherche Prowlarr envoyé :", payload);
         fetch('/search/api/prowlarr/search', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -204,6 +196,30 @@ $(document).ready(function() {
             console.error("Erreur lors de la recherche Prowlarr:", error);
             resultsContainer.html(`<div class="alert alert-danger">Une erreur est survenue: ${error.message}</div>`);
         });
+    }
+
+    // Gestionnaire pour la RECHERCHE LIBRE (initiée par l'utilisateur)
+    $('body').on('click', '#execute-prowlarr-search-btn', function() {
+        console.log("Recherche libre manuelle initiée. Réinitialisation du contexte.");
+        window.currentMediaContext = null; // Contexte effacé car c'est une nouvelle recherche manuelle
+
+        const form = $('#search-form');
+        const payload = {
+            query: form.find('[name="query"]').val(),
+            search_type: form.find('[name="search_type"]:checked').val(),
+            year: form.find('[name="year"]').val(),
+            lang: form.find('[name="lang"]').val(),
+            quality: $('#filterQuality').val(),
+            codec: $('#filterCodec').val(),
+            source: $('#filterSource').val()
+        };
+
+        if (!payload.query) {
+            alert("Veuillez entrer un terme à rechercher.");
+            return;
+        }
+
+        executeProwlarrSearch(payload); // Appel de la fonction partagée
     });
 
     $('body').on('click', '.check-status-btn', function() {
