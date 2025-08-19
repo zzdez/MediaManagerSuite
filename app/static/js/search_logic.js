@@ -59,12 +59,12 @@ $(document).ready(function() {
     }
 
     function performMediaSearch() {
+        window.currentMediaContext = null;
+        console.log("Contexte de pré-mapping réinitialisé par la recherche de média.");
+
         const query = $('#media-search-input').val().trim();
         const mediaType = $('input[name="media_type"]:checked').val();
         const resultsContainer = $('#media-results-container');
-
-        window.currentMediaContext = null;
-        console.log("Contexte de pré-mapping réinitialisé.");
 
         if (!query) {
             resultsContainer.html('<div class="alert alert-warning">Veuillez entrer un titre à rechercher.</div>');
@@ -135,6 +135,8 @@ $(document).ready(function() {
     // =================================================================
 
     $('body').on('click', '#execute-prowlarr-search-btn', function() {
+        window.currentMediaContext = null;
+        console.log("Contexte de pré-mapping réinitialisé par la recherche libre.");
         const form = $('#search-form');
         const query = form.find('[name="query"]').val();
         if (!query) {
@@ -357,7 +359,6 @@ $(document).ready(function() {
         if (window.currentMediaContext) {
             console.log("FLUX PRÉ-MAPPING : Contexte trouvé.", window.currentMediaContext);
             populateAndShowAddItemView(window.currentMediaContext);
-            window.currentMediaContext = null;
         } else {
             console.log("FLUX CLASSIQUE : Aucun contexte, lancement du lookup.");
             const mediaType = $('input[name="search_type"]:checked').val() === 'sonarr' ? 'tv' : 'movie';
