@@ -10,6 +10,8 @@ from app.utils.arr_client import parse_media_name
 from guessit import guessit
 from app.utils.prowlarr_client import search_prowlarr
 from app.utils.config_manager import load_search_categories
+from app.utils.tmdb_client import TheMovieDBClient
+from app.utils.tvdb_client import CustomTVDBClient
 
 # 1. Définition du Blueprint (seul code global avec les imports "sûrs")
 search_ui_bp = Blueprint(
@@ -28,6 +30,52 @@ def search_page():
     return render_template('search_ui/search.html')
 
 # --- API Routes ---
+
+@search_ui_bp.route('/api/media/search', methods=['POST'])
+@login_required
+def media_search():
+    """Recherche des médias (films ou séries) via les API externes (TMDb/TVDB)."""
+    data = request.get_json()
+    query = data.get('query')
+    media_type = data.get('media_type', 'movie') # 'movie' par défaut
+
+    if not query:
+        return jsonify({"error": "La requête de recherche est vide."}), 400
+
+    try:
+        results = []
+        if media_type == 'movie':
+            client = TheMovieDBClient()
+            search_results = client.search_movie(query, lang='fr-FR')
+            # Formater pour être cohérent et simple pour le frontend
+            for item in search_results:
+                results.append({
+                    'id': item.get('id'),
+                    'title': item.get('title'),
+                    'year': item.get('release_date', 'N/A')[:4],
+                    'overview': item.get('overview'),
+                    'poster': item.get('poster_path')
+                })
+        elif media_type == 'tv':
+            client = CustomTVDBClient()
+            search_results = client.search_series_by_name(query, lang='fra')
+            # Formater pour être cohérent
+            for item in search_results:
+                results.append({
+                    'id': item.get('id'),
+                    'title': item.get('seriesName'),
+                    'year': item.get('year'),
+                    'overview': item.get('overview'),
+                    'poster': item.get('image') # Le client TVDB retourne déjà une URL complète
+                })
+        else:
+            return jsonify({"error": "Type de média non supporté."}), 400
+
+        return jsonify(results)
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur dans /api/media/search: {e}", exc_info=True)
+        return jsonify({"error": f"Erreur serveur lors de la recherche de média : {e}"}), 500
 
 @search_ui_bp.route('/api/prowlarr/search', methods=['POST'])
 @login_required
