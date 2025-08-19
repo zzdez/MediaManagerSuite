@@ -9,6 +9,8 @@ $(document).ready(function() {
     const modalEl = $('#sonarrRadarrSearchModal');
     const modalBody = modalEl.find('.modal-body');
     const TMDB_POSTER_BASE_URL = 'https://image.tmdb.org/t/p/w185';
+    const searchPageContainer = $('#search-page-container');
+    const mediaSearchUrl = searchPageContainer.data('media-search-url');
 
     // =================================================================
     // ### BLOC 1 : RECHERCHE DE MÉDIAS (FILMS/SÉRIES) - NOUVELLE IMPLEMENTATION ###
@@ -71,7 +73,12 @@ $(document).ready(function() {
 
         resultsContainer.html('<div class="text-center p-5"><div class="spinner-border text-primary" role="status"></div></div>');
 
-        fetch('/api/media/search', {
+        if (!mediaSearchUrl) {
+            resultsContainer.html('<div class="alert alert-danger">Erreur de configuration: URL de recherche de média non trouvée.</div>');
+            return;
+        }
+
+        fetch(mediaSearchUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ query: query, media_type: mediaType })
