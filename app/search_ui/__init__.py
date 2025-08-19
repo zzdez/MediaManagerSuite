@@ -58,15 +58,15 @@ def media_search():
                 })
         elif media_type == 'tv':
             client = CustomTVDBClient()
-            search_results = client.search_series_by_name(query, lang='fra')
-            # Formater pour être cohérent
+            search_results = client.search_and_translate_series(query, lang='fra')
+            # Formater les résultats de notre fonction optimisée
             for item in search_results:
                 results.append({
-                    'id': item.get('id'),
-                    'title': item.get('seriesName'),
+                    'id': item.get('tvdb_id'),
+                    'title': item.get('name'),
                     'year': item.get('year'),
                     'overview': item.get('overview'),
-                    'poster': item.get('image') # Le client TVDB retourne déjà une URL complète
+                    'poster': item.get('poster_url')
                 })
         else:
             return jsonify({"error": "Type de média non supporté."}), 400
