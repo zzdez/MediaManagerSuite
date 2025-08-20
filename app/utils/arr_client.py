@@ -1114,6 +1114,16 @@ def radarr_post_command(payload):
     return _radarr_api_request('POST', 'command', json_data=payload)
 
 def find_in_arr_queue_by_hash(arr_type, torrent_hash):
+    # --- DÉBUT DU BLOC DE SIMULATION (TEMPORAIRE) ---
+    if torrent_hash.upper().startswith('SIMULATION'):
+        logger.warning(f"SIMULATION: Le hash {torrent_hash} est détecté. Retour d'un faux item de la file d'attente {arr_type}.")
+        return {
+            "title": "Fake Queue Item",
+            "downloadId": torrent_hash.upper(),
+            "status": "Downloading"
+        }
+    # --- FIN DU BLOC DE SIMULATION ---
+
     """
     Finds an item in the Sonarr or Radarr queue by its torrent hash.
     The 'downloadId' in the *Arr queue should correspond to the torrent hash.
