@@ -185,32 +185,26 @@ def _handle_manual_import(item, folder_name):
 
     source_path = os.path.normpath(os.path.join(current_app.config['LOCAL_STAGING_PATH'], folder_name))
     
-    # 1. Déterminer le type et trouver le média dans *Arr pour obtenir le chemin de destination
-    # CETTE LOGIQUE EST CONSERVÉE À L'IDENTIQUE
-    parsed_info = arr_client.parse_media_name(release_name)
-    media_type = parsed_info.get('type')
-    title_to_search = parsed_info.get('title')
+    target_id_from_map = item.get('target_id')
+    media_type = 'tv' if item.get('app_type') == 'sonarr' else 'movie'
+    media_info = None
 
-    if not title_to_search:
-        mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', "Le parseur n'a pas pu extraire de titre.")
+    if not target_id_from_map:
+        mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', "Aucun ID cible (TVDB/TMDb) trouvé dans le mapping.")
         return
 
-    target_id = None
-    destination_base_path = None
-
     if media_type == 'tv':
-        series_info = arr_client.find_sonarr_series_by_title(title_to_search)
-        if series_info:
-            target_id = series_info.get('id')
-            destination_base_path = series_info.get('path')
+        plex_guid = f"tvdb://{target_id_from_map}"
+        media_info = arr_client.get_sonarr_series_by_guid(plex_guid)
     elif media_type == 'movie':
-        movie_info = arr_client.find_radarr_movie_by_title(title_to_search)
-        if movie_info:
-            target_id = movie_info.get('id')
-            destination_base_path = movie_info.get('path')
+        plex_guid = f"tmdb:{target_id_from_map}"
+        media_info = arr_client.get_radarr_movie_by_guid(plex_guid)
+
+    target_id = media_info.get('id') if media_info else None
+    destination_base_path = media_info.get('path') if media_info else None
     
     if not target_id or not destination_base_path:
-        error_msg = f"Média '{title_to_search}' non trouvé dans {media_type}."
+        error_msg = f"Média avec ID '{target_id_from_map}' non trouvé dans {media_type} via la recherche par GUID."
         mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', error_msg)
         return
 
