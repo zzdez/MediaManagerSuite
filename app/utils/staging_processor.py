@@ -176,15 +176,15 @@ def _handle_automatic_import(item, queue_item, arr_type, folder_name):
 
 def _handle_manual_import(item, folder_name):
     """
-    Gère un import manuel via MMS. Utilise une séquence "Copier puis Supprimer"
-    pour fiabiliser le déplacement des fichiers entre différents volumes.
+    Gère un import manuel via MMS. Gère les cas où l'item est un fichier unique ou un dossier.
     """
     torrent_hash = item['torrent_hash']
     release_name = item['release_name']
-    current_app.logger.info(f"Traitement manuel de '{release_name}' (dossier: {folder_name}).")
+    current_app.logger.info(f"Traitement manuel de '{release_name}' (dossier/fichier: {folder_name}).")
 
     source_path = os.path.normpath(os.path.join(current_app.config['LOCAL_STAGING_PATH'], folder_name))
-    
+
+    # 1. Trouver le média dans *Arr en utilisant l'ID unique
     target_id_from_map = item.get('target_id')
     media_type = 'tv' if item.get('app_type') == 'sonarr' else 'movie'
     media_info = None
@@ -202,63 +202,60 @@ def _handle_manual_import(item, folder_name):
 
     target_id = media_info.get('id') if media_info else None
     destination_base_path = media_info.get('path') if media_info else None
-    
+
     if not target_id or not destination_base_path:
-        error_msg = f"Média avec ID '{target_id_from_map}' non trouvé dans {media_type} via la recherche par GUID."
+        error_msg = f"Média avec ID '{target_id_from_map}' non trouvé dans {media_type}."
         mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', error_msg)
         return
 
-    # 2. NOUVELLE LOGIQUE DE DÉPLACEMENT ROBUSTE (Copier puis Supprimer)
+    # 2. Logique de déplacement robuste (Copier puis Supprimer)
     video_extensions = ('.mkv', '.mp4', '.avi', '.mov', '.wmv')
-    copied_source_files = [] # Stocke les chemins des sources copiées avec succès
+    files_to_copy = []
 
-    current_app.logger.info("Phase 1: Copie des fichiers vidéo.")
-    for dirpath, _, filenames in os.walk(source_path):
-        for filename in filenames:
-            if filename.lower().endswith(video_extensions):
-                source_file = os.path.join(dirpath, filename)
-                
-                # LOGIQUE DE DESTINATION CONSERVÉE À L'IDENTIQUE
-                final_destination_folder = os.path.normpath(destination_base_path)
-                if media_type == 'tv':
-                    season_match = re.search(r'[._-][sS](\d{1,2})', source_file)
-                    if season_match:
-                        season_num = int(season_match.group(1))
-                        final_destination_folder = os.path.join(destination_base_path, f'Season {season_num:02d}')
-                
-                os.makedirs(final_destination_folder, exist_ok=True)
-                destination_file = os.path.join(final_destination_folder, filename)
-                
-                try:
-                    # MODIFIÉ: Utilisation de shutil.copy2 pour copier le fichier
-                    current_app.logger.info(f"Copie de '{source_file}' vers '{destination_file}'...")
-                    shutil.copy2(source_file, destination_file)
-                    copied_source_files.append(source_file) # Ajout à la liste pour suppression ultérieure
-                    current_app.logger.info(f"Copie de '{filename}' réussie.")
-                except (shutil.Error, IOError) as e_copy:
-                    current_app.logger.error(f"Erreur critique lors de la copie de {source_file}: {e_copy}. L'import manuel est interrompu.")
-                    mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', f"Erreur de copie de fichier: {e_copy}")
-                    return # On arrête tout si une copie échoue
-    
-    if not copied_source_files:
+    # --- DÉBUT DE LA LOGIQUE CORRIGÉE ---
+    if os.path.isdir(source_path):
+        current_app.logger.info(f"'{source_path}' est un dossier. Recherche de fichiers vidéo à l'intérieur.")
+        for dirpath, _, filenames in os.walk(source_path):
+            for filename in filenames:
+                if filename.lower().endswith(video_extensions):
+                    files_to_copy.append(os.path.join(dirpath, filename))
+    elif os.path.isfile(source_path):
+        current_app.logger.info(f"'{source_path}' est un fichier. Vérification de l'extension.")
+        if source_path.lower().endswith(video_extensions):
+            files_to_copy.append(source_path)
+    # --- FIN DE LA LOGIQUE CORRIGÉE ---
+
+    if not files_to_copy:
         mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', "Aucun fichier vidéo trouvé à déplacer.")
         return
 
-    # 3. NOUVEAU: Suppression des fichiers source après la copie
-    current_app.logger.info(f"Phase 2: Suppression des {len(copied_source_files)} fichier(s) source originaux.")
-    for file_to_delete in copied_source_files:
-        try:
-            os.remove(file_to_delete)
-            current_app.logger.info(f"Fichier source '{file_to_delete}' supprimé.")
-        except OSError as e_remove:
-            current_app.logger.warning(f"Échec de la suppression du fichier source '{file_to_delete}': {e_remove}. Le nettoyage global s'en chargera.")
-            # On ne bloque pas le processus pour une suppression échouée
+    current_app.logger.info(f"Phase 1: Copie de {len(files_to_copy)} fichier(s) vidéo.")
+    for source_file in files_to_copy:
+        filename = os.path.basename(source_file)
+        final_destination_folder = os.path.normpath(destination_base_path)
+        if media_type == 'tv':
+            season_match = re.search(r'[._-][sS](\d{1,2})', source_file)
+            if season_match:
+                season_num = int(season_match.group(1))
+                final_destination_folder = os.path.join(destination_base_path, f'Season {season_num:02d}')
 
-    # 4. Nettoyage final du dossier de staging
+        os.makedirs(final_destination_folder, exist_ok=True)
+        destination_file = os.path.join(final_destination_folder, filename)
+
+        try:
+            current_app.logger.info(f"Copie de '{source_file}' vers '{destination_file}'...")
+            shutil.copy2(source_file, destination_file)
+            current_app.logger.info(f"Copie de '{filename}' réussie.")
+        except (shutil.Error, IOError) as e_copy:
+            current_app.logger.error(f"Erreur critique lors de la copie de {source_file}: {e_copy}. L'import manuel est interrompu.")
+            mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', f"Erreur de copie de fichier: {e_copy}")
+            return
+
+    # 3. Nettoyage final du dossier/fichier de staging
     _cleanup_staging(folder_name)
-    mapping_manager.update_torrent_status_in_map(torrent_hash, 'completed_manual', f'{len(copied_source_files)} fichier(s) déplacé(s) manuellement.')
+    mapping_manager.update_torrent_status_in_map(torrent_hash, 'completed_manual', f'{len(files_to_copy)} fichier(s) déplacé(s) manuellement.')
     
-    # 5. Déclencher un Rescan (CONSERVÉ À L'IDENTIQUE)
+    # 4. Déclencher un Rescan
     current_app.logger.info(f"Déclenchement d'un Rescan dans {media_type} pour l'ID {target_id}.")
     if media_type == 'tv':
         arr_client.sonarr_post_command({'name': 'RescanSeries', 'seriesId': target_id})
