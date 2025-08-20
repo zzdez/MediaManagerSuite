@@ -54,7 +54,7 @@ def run_staging_simulation():
             folder_name=release_name,
             app_type=app_type,
             target_id=str(target_id),
-            label=app_type,
+            label='simulation',
             original_torrent_name=release_name
         )
         current_app.logger.info(f"SIMULATEUR: Entrée de mapping créée pour le hash {torrent_hash.upper()}")

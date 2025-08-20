@@ -297,9 +297,24 @@ def process_pending_staging_items():
         item_data['torrent_hash'] = torrent_hash
         folder_name = item_data.get('folder_name', item_data['release_name'])
 
-        if _rapatriate_item(item_data, sftp_client, folder_name):
-            mapping_manager.update_torrent_status_in_map(torrent_hash, 'in_staging', 'Item successfully downloaded to staging.')
+        # --- DÉBUT DE LA NOUVELLE LOGIQUE ---
+        rapatriation_successful = False
+        is_simulation = item_data.get('label') == 'simulation'
 
+        if is_simulation:
+            current_app.logger.info(f"'{folder_name}' est une simulation. L'étape de rapatriement SFTP est sautée.")
+            rapatriation_successful = True # On considère le rapatriement comme réussi
+        else:
+            # Ce n'est pas une simulation, on exécute le vrai rapatriement
+            rapatriation_successful = _rapatriate_item(item_data, sftp_client, folder_name)
+
+        if rapatriation_successful:
+            # Si c'est une simulation, le statut est déjà 'pending_staging', pas besoin de le changer.
+            # Si c'est un vrai item, on le met à jour.
+            if not is_simulation:
+                mapping_manager.update_torrent_status_in_map(torrent_hash, 'in_staging', 'Item successfully downloaded to staging.')
+
+            # La logique d'import qui suit est maintenant exécutée pour les vrais items ET les simulations
             queue_item_sonarr = arr_client.find_in_arr_queue_by_hash('sonarr', torrent_hash)
             if queue_item_sonarr:
                 _handle_automatic_import(item_data, queue_item_sonarr, 'sonarr', folder_name)
@@ -312,7 +327,9 @@ def process_pending_staging_items():
 
             _handle_manual_import(item_data, folder_name)
         else:
+            # Cette partie ne s'exécute que si le rapatriement réel a échoué
             mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_rapatriation', 'Failed to download item from seedbox.')
+        # --- FIN DE LA NOUVELLE LOGIQUE ---
 
     if transport:
         transport.close()
