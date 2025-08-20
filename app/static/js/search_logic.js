@@ -359,6 +359,42 @@ $(document).ready(function() {
         });
     }
 
+function executeFinalMapping(payload) {
+    console.log("Exécution du mapping final avec le payload :", payload);
+
+    const modalInstance = bootstrap.Modal.getInstance(modalEl[0]);
+    if (modalInstance) {
+        modalBody.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div><p class="mt-2">Envoi au téléchargement...</p></div>');
+    }
+
+    fetch('/search/download-and-map', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            if(modalInstance) modalInstance.hide();
+            alert("Succès ! La release a été envoyée au téléchargement et sera mappée.");
+        } else {
+            if(modalInstance) {
+                modalBody.html(`<div class="alert alert-danger">${data.message || 'Une erreur inconnue est survenue.'}</div>`);
+            } else {
+                alert("Erreur : " + (data.message || 'Une erreur inconnue est survenue.'));
+            }
+        }
+    })
+    .catch(error => {
+        console.error("Erreur lors du mapping final:", error);
+        if(modalInstance) {
+            modalBody.html(`<div class="alert alert-danger">Une erreur de communication est survenue.</div>`);
+        } else {
+            alert("Une erreur de communication est survenue.");
+        }
+    });
+}
+
     $('body').off('click', '.download-and-map-btn').on('click', '.download-and-map-btn', function(event) {
         event.preventDefault();
         const button = $(this);
@@ -373,8 +409,48 @@ $(document).ready(function() {
         new bootstrap.Modal(modalEl[0]).show();
 
         if (window.currentMediaContext) {
-            console.log("FLUX PRÉ-MAPPING : Contexte trouvé.", window.currentMediaContext);
-            populateAndShowAddItemView(window.currentMediaContext);
+            // --- DÉBUT DE LA LOGIQUE D'AIGUILLAGE ---
+            const context = window.currentMediaContext;
+            console.log("FLUX PRÉ-MAPPING : Contexte trouvé. Vérification de l'existence...", context);
+
+            // On utilise la route de vérification de l'existence du média
+            fetch('/search/api/media/check_existence', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ media_id: context.id, media_type: context.media_type })
+            })
+            .then(res => res.json())
+            .then(existenceData => {
+                const releaseDetails = modalEl.data('release-details');
+
+                if (existenceData.exists) {
+                    // OUI : Le média existe, on mappe directement
+                    console.log("FLUX PRÉ-MAPPING (EXISTANT) : Média trouvé dans *Arr. Mapping direct.");
+                    const finalPayload = {
+                        releaseName: releaseDetails.title,
+                        downloadLink: releaseDetails.downloadLink,
+                        guid: releaseDetails.guid,
+                        indexerId: releaseDetails.indexerId,
+                        instanceType: context.media_type,
+                        mediaId: context.id // On envoie l'ID externe (TVDB/TMDb)
+                    };
+                    executeFinalMapping(finalPayload);
+
+                    const modalInstance = bootstrap.Modal.getInstance(modalEl[0]);
+                    if(modalInstance) modalInstance.hide();
+
+                } else {
+                    // NON : Le média est nouveau, on affiche la vue d'ajout
+                    console.log("FLUX PRÉ-MAPPING (NOUVEAU) : Média non trouvé. Affichage de la vue d'ajout.");
+                    populateAndShowAddItemView(context);
+                }
+            })
+            .catch(error => {
+                console.error("Erreur lors de la vérification de l'existence du média:", error);
+                alert("Une erreur est survenue lors de la communication avec le serveur.");
+            });
+            // --- FIN DE LA LOGIQUE D'AIGUILLAGE ---
+
         } else {
             console.log("FLUX CLASSIQUE : Aucun contexte, lancement du lookup.");
             const mediaType = $('input[name="search_type"]:checked').val() === 'sonarr' ? 'tv' : 'movie';
