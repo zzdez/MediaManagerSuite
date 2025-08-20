@@ -59,6 +59,15 @@ def _apply_path_mapping(original_path):
 def _rapatriate_item(item, sftp_client, folder_name):
     release_name = item.get('release_name')
     original_remote_path = item.get('seedbox_download_path')
+
+    # --- DÉBUT DE LA CORRECTION ---
+    if not original_remote_path:
+        current_app.logger.error(f"Échec du rapatriement pour '{release_name}': Le chemin 'seedbox_download_path' est manquant dans le mapping.")
+        # Mettre à jour le statut pour refléter cette erreur spécifique
+        mapping_manager.update_torrent_status_in_map(item.get('torrent_hash'), 'error_missing_path', 'Chemin distant manquant dans le mapping.')
+        return False # Arrête le traitement pour cet item
+    # --- FIN DE LA CORRECTION ---
+
     remote_path = _apply_path_mapping(original_remote_path)
 
     # Le chemin local utilise maintenant le vrai nom de dossier
