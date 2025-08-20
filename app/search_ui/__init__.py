@@ -274,6 +274,39 @@ def enrich_details():
         current_app.logger.error(f"Erreur dans enrich_details: {e}", exc_info=True)
         return jsonify({'error': f"Erreur serveur : {e}"}), 500
 
+@search_ui_bp.route('/api/media/check_existence', methods=['POST'])
+@login_required
+def check_media_existence():
+    data = request.get_json()
+    media_id = data.get('media_id')
+    media_type = data.get('media_type')
+
+    if not media_id or not media_type:
+        return jsonify({'error': 'ID ou type de média manquant'}), 400
+
+    try:
+        media_info = None
+        if media_type == 'tv':
+            plex_guid = f"tvdb://{media_id}"
+            media_info = arr_client.get_sonarr_series_by_guid(plex_guid)
+        elif media_type == 'movie':
+            plex_guid = f"tmdb:{media_id}"
+            media_info = arr_client.get_radarr_movie_by_guid(plex_guid)
+
+        if media_info and media_info.get('id'):
+            return jsonify({
+                'exists': True,
+                'internal_id': media_info.get('id'), # ID interne de Sonarr/Radarr
+                'title': media_info.get('title'),
+                'path': media_info.get('path')
+            })
+        else:
+            return jsonify({'exists': False})
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur dans /api/media/check_existence: {e}", exc_info=True)
+        return jsonify({'error': f"Erreur serveur : {e}"}), 500
+
 # NOTE: Les autres routes de l'ancien fichier 'routes.py' comme '/download-and-map', etc.
 # doivent aussi être migrées ici en utilisant le même pattern d'imports locaux si elles
 # sont toujours utilisées. Pour l'instant, je me concentre sur le strict nécessaire pour
