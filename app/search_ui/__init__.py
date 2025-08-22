@@ -408,13 +408,30 @@ def download_and_map():
     if not all([release_name_original, download_link, instance_type, media_id]):
         return jsonify({'status': 'error', 'message': 'Données manquantes.'}), 400
 
-    internal_instance_type = 'sonarr' if instance_type == 'tv' else 'radarr'
+    # --- DÉBUT DE LA NOUVELLE LOGIQUE ROBUSTE ---
+    final_app_type = None
+
+    # On vérifie d'abord si c'est une série connue
+    series_info = arr_client.get_sonarr_series_by_guid(f"tvdb://{media_id}")
+    if series_info:
+        final_app_type = 'sonarr'
+    else:
+        # Sinon, on vérifie si c'est un film connu
+        movie_info = arr_client.get_radarr_movie_by_guid(f"tmdb:{media_id}")
+        if movie_info:
+            final_app_type = 'radarr'
+
+    if not final_app_type:
+        # Si le média n'est trouvé nulle part, on se fie au type envoyé, mais on logue un avertissement
+        logger.warning(f"Le média avec l'ID externe {media_id} n'a été trouvé ni dans Sonarr ni dans Radarr. Utilisation du type '{instance_type}' fourni par le client.")
+        final_app_type = 'sonarr' if instance_type == 'tv' else 'radarr'
+    # --- FIN DE LA NOUVELLE LOGIQUE ROBUSTE ---
 
     try:
         logger.info(f"Début du traitement pour '{release_name_original}'")
 
         # 1. Déterminer le label et le chemin de destination (votre code est correct)
-        if internal_instance_type == 'sonarr':
+        if final_app_type == 'sonarr':
             rtorrent_label = current_app.config.get('RTORRENT_LABEL_SONARR')
             rtorrent_download_dir = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_SONARR_PATH')
         else:
@@ -422,7 +439,7 @@ def download_and_map():
             rtorrent_download_dir = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_RADARR_PATH')
 
         if not rtorrent_label or not rtorrent_download_dir:
-            return jsonify({'status': 'error', 'message': f"Config rTorrent manquante pour {internal_instance_type}."}), 500
+            return jsonify({'status': 'error', 'message': f"Config rTorrent manquante pour {final_app_type}."}), 500
 
         # ---- DÉBUT DU BLOC CORRIGÉ ----
         # 2. Utiliser la méthode ROBUSTE pour ajouter le torrent et obtenir le hash en une seule étape
@@ -475,7 +492,7 @@ def download_and_map():
                     status='pending_download',
                     seedbox_download_path=seedbox_full_path,
                     folder_name=folder_name,
-                    app_type=internal_instance_type,
+                    app_type=final_app_type,
                     target_id=str(media_id),
                     label=rtorrent_label,
                     original_torrent_name=release_name_original
