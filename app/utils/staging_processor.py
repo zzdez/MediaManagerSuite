@@ -178,6 +178,7 @@ def _handle_manual_import(item, folder_name):
     """
     Gère un import manuel via MMS. Gère les cas où l'item est un fichier unique ou un dossier.
     """
+    current_app.logger.info(f"MAP_READ_DEBUG: Début du traitement manuel. Données lues du mapping : {item}")
     torrent_hash = item['torrent_hash']
     release_name = item['release_name']
     current_app.logger.info(f"Traitement manuel de '{release_name}' (dossier/fichier: {folder_name}).")
