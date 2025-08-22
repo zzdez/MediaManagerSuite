@@ -195,9 +195,12 @@ def _handle_manual_import(item, folder_name):
         return
 
     if media_type == 'tv':
-        plex_guid = f"tvdb://{target_id_from_map}"
-        media_info = arr_client.get_sonarr_series_by_guid(plex_guid)
+        # On utilise la fonction qui cherche par l'ID interne de Sonarr
+        media_info = arr_client.get_sonarr_series_by_id(target_id_from_map)
     elif media_type == 'movie':
+        # De même pour Radarr, il faudrait une fonction get_radarr_movie_by_id(id)
+        # En attendant, on garde la recherche par GUID pour les films, en supposant que target_id est le TMDb ID
+        # NOTE: Ce cas devra être uniformisé plus tard si nécessaire.
         plex_guid = f"tmdb:{target_id_from_map}"
         media_info = arr_client.get_radarr_movie_by_guid(plex_guid)
 
