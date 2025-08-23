@@ -1427,33 +1427,40 @@ function handleIgnoreTorrent(button) {
 
 console.log("seedbox_ui_modals.js loaded successfully and completely.");
 
-// Ajoute ce bloc de code pour gérer la fermeture propre des modales
 document.addEventListener('DOMContentLoaded', function() {
-    // Cible les deux modales de mapping
-    const sonarrModal = document.getElementById('sonarrSearchModal');
-    const radarrModal = document.getElementById('radarrSearchModal');
+    // Cible TOUTES les modales pertinentes
+    const modalsToWatch = [
+        document.getElementById('sonarrSearchModal'),
+        document.getElementById('radarrSearchModal'),
+        document.getElementById('addTorrentModal') // Ajout de la modale
+    ];
 
     const handleModalClose = function() {
-        // Cherche s'il reste un overlay de modale dans le body
-        const backdrops = document.querySelectorAll('.modal-backdrop');
-        if (backdrops.length > 0) {
-            console.warn('Overlay de modale fantôme détecté. Tentative de suppression manuelle.');
-            backdrops.forEach(backdrop => backdrop.remove());
-        }
+        // --- NOUVELLE LOGIQUE DE NETTOYAGE ROBUSTE ---
+        // On attend un très court instant pour laisser le temps à Bootstrap de finir son animation
+        setTimeout(function() {
+            const backdrops = document.querySelectorAll('.modal-backdrop');
+            if (backdrops.length > 0) {
+                console.log(`Nettoyage forcé de ${backdrops.length} backdrop(s) de modale.`);
+                backdrops.forEach(backdrop => backdrop.remove());
+            }
 
-        // Bootstrap ajoute aussi une classe au body qui peut bloquer le scroll
-        if (document.body.classList.contains('modal-open')) {
-            console.warn('Classe "modal-open" résiduelle détectée. Suppression.');
-            document.body.classList.remove('modal-open');
-        }
+            if (document.body.classList.contains('modal-open')) {
+                console.log('Nettoyage forcé de la classe "modal-open" du body.');
+                document.body.classList.remove('modal-open');
+                // Rétablir le style de débordement par défaut au cas où
+                document.body.style.overflow = '';
+                document.body.style.paddingRight = '';
+            }
+        }, 100); // Un délai de 100ms est généralement suffisant
     };
 
-    if (sonarrModal) {
-        sonarrModal.addEventListener('hidden.bs.modal', handleModalClose);
-    }
-    if (radarrModal) {
-        radarrModal.addEventListener('hidden.bs.modal', handleModalClose);
-    }
+    modalsToWatch.forEach(modal => {
+        if (modal) {
+            // On écoute l'événement 'hidden.bs.modal' qui se déclenche APRES la fermeture
+            modal.addEventListener('hidden.bs.modal', handleModalClose);
+        }
+    });
 });
 // [end of app/static/js/seedbox_ui_modals.js]
 
