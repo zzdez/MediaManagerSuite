@@ -21,7 +21,7 @@ def _connect_sftp():
     try:
         transport = paramiko.Transport((sftp_host, sftp_port))
         transport.set_keepalive(30)
-        transport.connect(username=sftp_user, password=sftp_password, timeout=30)
+        transport.connect(username=sftp_user, password=sftp_password)
         sftp = paramiko.SFTPClient.from_transport(transport)
         current_app.logger.info(f"Staging Processor: Successfully connected to SFTP server: {sftp_host}")
         return sftp, transport
