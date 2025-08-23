@@ -20,7 +20,8 @@ def _connect_sftp():
 
     try:
         transport = paramiko.Transport((sftp_host, sftp_port))
-        transport.connect(username=sftp_user, password=sftp_password)
+        transport.set_keepalive(30)
+        transport.connect(username=sftp_user, password=sftp_password, timeout=30)
         sftp = paramiko.SFTPClient.from_transport(transport)
         current_app.logger.info(f"Staging Processor: Successfully connected to SFTP server: {sftp_host}")
         return sftp, transport
@@ -60,39 +61,33 @@ def _rapatriate_item(item, sftp_client, folder_name):
     release_name = item.get('release_name')
     original_remote_path = item.get('seedbox_download_path')
 
-    # --- DÉBUT DE LA CORRECTION ---
     if not original_remote_path:
         current_app.logger.error(f"Échec du rapatriement pour '{release_name}': Le chemin 'seedbox_download_path' est manquant dans le mapping.")
-        # Mettre à jour le statut pour refléter cette erreur spécifique
         mapping_manager.update_torrent_status_in_map(item.get('torrent_hash'), 'error_missing_path', 'Chemin distant manquant dans le mapping.')
-        return False # Arrête le traitement pour cet item
-    # --- FIN DE LA CORRECTION ---
+        return False
 
     remote_path = _apply_path_mapping(original_remote_path)
-
-    # Le chemin local utilise maintenant le vrai nom de dossier
     raw_local_path = os.path.join(current_app.config['LOCAL_STAGING_PATH'], folder_name)
     local_path = os.path.normpath(raw_local_path)
 
     current_app.logger.info(f"Rapatriement de '{release_name}' (dossier: {folder_name}) depuis '{remote_path}' vers '{local_path}'")
 
     try:
-        # On vérifie si le chemin distant est un dossier ou un fichier
+        # Définir un timeout pour les opérations SFTP (ex: 10 minutes pour les gros fichiers)
+        sftp_client.get_channel().settimeout(600)
+
         current_app.logger.debug(f"SFTP_DEBUG: Tentative de sftp.stat sur '{remote_path}'")
         file_attr = sftp_client.stat(remote_path)
         current_app.logger.debug(f"SFTP_DEBUG: sftp.stat réussi.")
         is_directory = stat.S_ISDIR(file_attr.st_mode)
 
         if is_directory:
-            # C'est un dossier, on télécharge récursivement
             current_app.logger.info(f"'{remote_path}' est un dossier. Téléchargement récursif.")
             os.makedirs(local_path, exist_ok=True)
             _get_r_recursive(sftp_client, remote_path, local_path)
             current_app.logger.info(f"Téléchargement du dossier '{remote_path}' réussi.")
         else:
-            # C'est un fichier, on télécharge directement
             current_app.logger.info(f"'{remote_path}' est un fichier. Téléchargement direct.")
-            # On s'assure que le dossier parent du fichier local existe
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
             current_app.logger.debug(f"SFTP_DEBUG: Tentative de sftp.get sur '{remote_path}'")
             sftp_client.get(remote_path, local_path)
@@ -105,10 +100,7 @@ def _rapatriate_item(item, sftp_client, folder_name):
         current_app.logger.error(f"Le chemin distant '{remote_path}' n'existe pas.", exc_info=True)
         return False
     except Exception as e:
-        current_app.logger.error(f"Échec du rapatriement pour '{remote_path}': {e}", exc_info=True)
-        # Nettoyage si un dossier a été créé pour un téléchargement de dossier qui a échoué
-        if 'is_directory' in locals() and is_directory and os.path.isdir(local_path) and not os.listdir(local_path):
-             shutil.rmtree(local_path)
+        current_app.logger.error(f"Échec du rapatriement pour '{remote_path}': {type(e).__name__} - {e}", exc_info=True)
         return False
 
 def _cleanup_staging(item_name):
