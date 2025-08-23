@@ -78,7 +78,9 @@ def _rapatriate_item(item, sftp_client, folder_name):
 
     try:
         # On vérifie si le chemin distant est un dossier ou un fichier
+        current_app.logger.debug(f"SFTP_DEBUG: Tentative de sftp.stat sur '{remote_path}'")
         file_attr = sftp_client.stat(remote_path)
+        current_app.logger.debug(f"SFTP_DEBUG: sftp.stat réussi.")
         is_directory = stat.S_ISDIR(file_attr.st_mode)
 
         if is_directory:
@@ -92,7 +94,9 @@ def _rapatriate_item(item, sftp_client, folder_name):
             current_app.logger.info(f"'{remote_path}' est un fichier. Téléchargement direct.")
             # On s'assure que le dossier parent du fichier local existe
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            current_app.logger.debug(f"SFTP_DEBUG: Tentative de sftp.get sur '{remote_path}'")
             sftp_client.get(remote_path, local_path)
+            current_app.logger.debug(f"SFTP_DEBUG: sftp.get réussi.")
             current_app.logger.info(f"Téléchargement du fichier '{remote_path}' réussi.")
 
         return True
