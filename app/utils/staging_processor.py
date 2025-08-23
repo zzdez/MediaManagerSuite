@@ -25,8 +25,11 @@ def _connect_sftp():
         sftp = paramiko.SFTPClient.from_transport(transport)
         current_app.logger.info(f"Staging Processor: Successfully connected to SFTP server: {sftp_host}")
         return sftp, transport
+    except paramiko.ssh_exception.AuthenticationException:
+        current_app.logger.error(f"Staging Processor: SFTP authentication failed for {sftp_user}@{sftp_host}.")
+        return None, None
     except Exception as e:
-        current_app.logger.error(f"Staging Processor: SFTP connection failed for {sftp_user}@{sftp_host}:{sftp_port} - {e}")
+        current_app.logger.error(f"Staging Processor: SFTP connection failed for {sftp_user}@{sftp_host}:{sftp_port} - {type(e).__name__}: {e}")
         return None, None
 
 def _get_r_recursive(sftp_client, remotedir, localdir):
