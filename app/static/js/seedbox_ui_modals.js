@@ -7,6 +7,25 @@ let currentlySelectedSonarrSeriesIdInModal = null;
 let currentAddTorrentAppType = null;
 
 // --- Helper Functions ---
+function forceCloseModal(modalElement) {
+    if (!modalElement) return;
+
+    const modalInstance = bootstrap.Modal.getInstance(modalElement);
+    if (modalInstance) {
+        modalInstance.hide();
+    }
+
+    // Nettoyage manuel et immédiat pour corriger le bug de la page grisée
+    const backdrops = document.querySelectorAll('.modal-backdrop');
+    if (backdrops.length > 0) {
+        backdrops.forEach(backdrop => backdrop.remove());
+    }
+    document.body.classList.remove('modal-open');
+    document.body.style.overflow = '';
+    document.body.style.paddingRight = '';
+    console.log("Fermeture et nettoyage forcés pour la modale.");
+}
+
 function escapeJsString(str) {
     if (str === null || typeof str === 'undefined') { return ''; }
     return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t').replace(/</g, '\\u003C').replace(/>/g, '\\u003E').replace(/&/g, '\\u0026');
@@ -1100,8 +1119,7 @@ async function handleSubmitAddTorrent() {
         if (response.ok && result.success) {
             feedbackDiv.innerHTML = `<p class="alert alert-success">${escapeJsString(result.message)} (Hash: ${escapeJsString(result.torrent_hash || 'N/A')})</p>`;
             setTimeout(() => {
-                const modalInstance = bootstrap.Modal.getInstance(addTorrentModalElement);
-                if (modalInstance) modalInstance.hide();
+                forceCloseModal(addTorrentModalElement); // Utilisation de notre nouvelle fonction robuste
                 flashMessageGlobally(result.message || "Action terminée.", 'success');
             }, 3000);
         } else { throw new Error(result.error || `Erreur HTTP ${response.status}`); }
