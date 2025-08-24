@@ -74,6 +74,33 @@ from app.utils import mapping_manager as torrent_map_manager
 # Configuration du logger pour ce module
 logger = logging.getLogger(__name__)
 
+def _translate_rtorrent_path_to_sftp_path(rtorrent_path, app_type):
+    """
+    Traduit un chemin rTorrent en chemin SFTP en se basant sur la configuration.
+    """
+    logger = current_app.logger
+    logger.debug(f"Traduction du chemin rTorrent '{rtorrent_path}' pour le type '{app_type}'")
+
+    rtorrent_base = None
+    sftp_base = None
+
+    if app_type == 'sonarr':
+        rtorrent_base = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_SONARR_PATH')
+        sftp_base = current_app.config.get('SEEDBOX_SCANNER_TARGET_SONARR_PATH')
+    elif app_type == 'radarr':
+        rtorrent_base = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_RADARR_PATH')
+        sftp_base = current_app.config.get('SEEDBOX_SCANNER_TARGET_RADARR_PATH')
+
+    if rtorrent_base and sftp_base and rtorrent_path.startswith(rtorrent_base):
+        translated_path = rtorrent_path.replace(rtorrent_base, sftp_base, 1)
+        # S'assurer que le chemin est au format POSIX (avec des /)
+        translated_path = Path(translated_path).as_posix()
+        logger.info(f"Chemin rTorrent '{rtorrent_path}' traduit en chemin SFTP '{translated_path}'")
+        return translated_path
+
+    logger.warning(f"Impossible de traduire le chemin rTorrent '{rtorrent_path}'. Il ne correspond pas à la base configurée. Retour du chemin original.")
+    return rtorrent_path # Fallback : retourner le chemin original
+
 # Minimal bencode parser function (copied from previous attempt)
 
 
@@ -4019,27 +4046,18 @@ def rtorrent_map_sonarr():
         return jsonify({'success': False, 'error': f"Torrent '{torrent_name}' non trouvé dans rTorrent."}), 404
 
     torrent_hash = torrent_info.get('hash')
-    # --- DÉBUT DU BLOC DE FALLBACK ---
-    download_path = torrent_info.get('base_path')
-    if not download_path:
-        logger.warning(f"Le 'base_path' est manquant pour le torrent '{torrent_name}' depuis rTorrent. Construction d'un chemin de secours.")
-        default_dir = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_SONARR_PATH')
-        if default_dir:
-            # Le chemin complet est le dossier par défaut + le nom du torrent
-            download_path = str(Path(default_dir) / torrent_name).replace('\\', '/')
-            logger.info(f"Chemin de secours construit : {download_path}")
-        else:
-            logger.error(f"Impossible de construire un chemin de secours pour '{torrent_name}' car SEEDBOX_RTORRENT_INCOMING_SONARR_PATH n'est pas configuré.")
-            # On laisse download_path à None, l'erreur sera loguée plus tard
-    # --- FIN DU BLOC DE FALLBACK ---
-    folder_name = os.path.basename(download_path) if download_path else torrent_name
+    # Nouveau bloc pour rtorrent_map_sonarr
+    download_path_rtorrent = torrent_info.get('base_path')
+    folder_name = torrent_info.get('name') # Le nom du dossier/fichier est le nom du torrent
 
-    # Utilisation de la signature de fonction correcte avec arguments nommés
+    # On traduit le chemin rTorrent en chemin SFTP pour le staging_processor
+    sftp_download_path = _translate_rtorrent_path_to_sftp_path(download_path_rtorrent, 'sonarr')
+
     torrent_map_manager.add_or_update_torrent_in_map(
         release_name=torrent_name,
         torrent_hash=torrent_hash,
-        status='pending_staging', # L'item est prêt à être traité
-        seedbox_download_path=download_path,
+        status='pending_staging',
+        seedbox_download_path=sftp_download_path, # Utilise le chemin traduit
         folder_name=folder_name,
         app_type='sonarr',
         target_id=series_id,
@@ -4073,27 +4091,18 @@ def rtorrent_map_radarr():
         return jsonify({'success': False, 'error': f"Torrent '{torrent_name}' non trouvé dans rTorrent."}), 404
 
     torrent_hash = torrent_info.get('hash')
-    # --- DÉBUT DU BLOC DE FALLBACK ---
-    download_path = torrent_info.get('base_path')
-    if not download_path:
-        logger.warning(f"Le 'base_path' est manquant pour le torrent '{torrent_name}' depuis rTorrent. Construction d'un chemin de secours.")
-        default_dir = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_RADARR_PATH')
-        if default_dir:
-            # Le chemin complet est le dossier par défaut + le nom du torrent
-            download_path = str(Path(default_dir) / torrent_name).replace('\\', '/')
-            logger.info(f"Chemin de secours construit : {download_path}")
-        else:
-            logger.error(f"Impossible de construire un chemin de secours pour '{torrent_name}' car SEEDBOX_RTORRENT_INCOMING_RADARR_PATH n'est pas configuré.")
-            # On laisse download_path à None, l'erreur sera loguée plus tard
-    # --- FIN DU BLOC DE FALLBACK ---
-    folder_name = os.path.basename(download_path) if download_path else torrent_name
+    # Nouveau bloc pour rtorrent_map_radarr
+    download_path_rtorrent = torrent_info.get('base_path')
+    folder_name = torrent_info.get('name')
 
-    # Utilisation de la signature de fonction correcte avec arguments nommés
+    # On traduit le chemin rTorrent en chemin SFTP
+    sftp_download_path = _translate_rtorrent_path_to_sftp_path(download_path_rtorrent, 'radarr')
+
     torrent_map_manager.add_or_update_torrent_in_map(
         release_name=torrent_name,
         torrent_hash=torrent_hash,
-        status='pending_staging', # L'item est prêt à être traité
-        seedbox_download_path=download_path,
+        status='pending_staging',
+        seedbox_download_path=sftp_download_path, # Utilise le chemin traduit
         folder_name=folder_name,
         app_type='radarr',
         target_id=movie_id,
