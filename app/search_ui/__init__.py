@@ -10,6 +10,8 @@ from app.utils.arr_client import parse_media_name
 from guessit import guessit
 from app.utils.prowlarr_client import search_prowlarr
 from app.utils.config_manager import load_search_categories
+from app.utils.tmdb_client import TheMovieDBClient
+from app.utils.tvdb_client import CustomTVDBClient
 
 # 1. Définition du Blueprint (seul code global avec les imports "sûrs")
 search_ui_bp = Blueprint(
@@ -28,6 +30,52 @@ def search_page():
     return render_template('search_ui/search.html')
 
 # --- API Routes ---
+
+@search_ui_bp.route('/api/media/search', methods=['POST'])
+@login_required
+def media_search():
+    """Recherche des médias (films ou séries) via les API externes (TMDb/TVDB)."""
+    data = request.get_json()
+    query = data.get('query')
+    media_type = data.get('media_type', 'movie') # 'movie' par défaut
+
+    if not query:
+        return jsonify({"error": "La requête de recherche est vide."}), 400
+
+    try:
+        results = []
+        if media_type == 'movie':
+            client = TheMovieDBClient()
+            search_results = client.search_movie(query, lang='fr-FR')
+            # Formater pour être cohérent et simple pour le frontend
+            for item in search_results:
+                results.append({
+                    'id': item.get('id'),
+                    'title': item.get('title'),
+                    'year': item.get('release_date', 'N/A')[:4],
+                    'overview': item.get('overview'),
+                    'poster': item.get('poster_path')
+                })
+        elif media_type == 'tv':
+            client = CustomTVDBClient()
+            search_results = client.search_and_translate_series(query, lang='fra')
+            # Formater les résultats de notre fonction optimisée
+            for item in search_results:
+                results.append({
+                    'id': item.get('tvdb_id'),
+                    'title': item.get('name'),
+                    'year': item.get('year'),
+                    'overview': item.get('overview'),
+                    'poster': item.get('poster_url')
+                })
+        else:
+            return jsonify({"error": "Type de média non supporté."}), 400
+
+        return jsonify(results)
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur dans /api/media/search: {e}", exc_info=True)
+        return jsonify({"error": f"Erreur serveur lors de la recherche de média : {e}"}), 500
 
 @search_ui_bp.route('/api/prowlarr/search', methods=['POST'])
 @login_required
@@ -164,10 +212,20 @@ def api_search_lookup():
             if final_results:
                 final_results[0]['is_best_match'] = True
 
-    return jsonify({
-        'results': final_results,
-        'cleaned_query': clean_title or search_term
-    })
+    # Déterminer le format de la réponse
+    render_as_html = request.args.get('render_html', 'false').lower() == 'true'
+
+    if render_as_html:
+        return render_template(
+            'search_ui/_media_result_list.html',
+            candidates=final_results,
+            media_type=media_type
+        )
+    else:
+        return jsonify({
+            'results': final_results,
+            'cleaned_query': clean_title or search_term
+        })
     
 # Dans app/search_ui/__init__.py, remplacez SEULEMENT cette fonction :
 
@@ -214,6 +272,39 @@ def enrich_details():
 
     except Exception as e:
         current_app.logger.error(f"Erreur dans enrich_details: {e}", exc_info=True)
+        return jsonify({'error': f"Erreur serveur : {e}"}), 500
+
+@search_ui_bp.route('/api/media/check_existence', methods=['POST'])
+@login_required
+def check_media_existence():
+    data = request.get_json()
+    media_id = data.get('media_id')
+    media_type = data.get('media_type')
+
+    if not media_id or not media_type:
+        return jsonify({'error': 'ID ou type de média manquant'}), 400
+
+    try:
+        media_info = None
+        if media_type == 'tv':
+            plex_guid = f"tvdb://{media_id}"
+            media_info = arr_client.get_sonarr_series_by_guid(plex_guid)
+        elif media_type == 'movie':
+            plex_guid = f"tmdb:{media_id}"
+            media_info = arr_client.get_radarr_movie_by_guid(plex_guid)
+
+        if media_info and media_info.get('id'):
+            return jsonify({
+                'exists': True,
+                'internal_id': media_info.get('id'), # ID interne de Sonarr/Radarr
+                'title': media_info.get('title'),
+                'path': media_info.get('path')
+            })
+        else:
+            return jsonify({'exists': False})
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur dans /api/media/check_existence: {e}", exc_info=True)
         return jsonify({'error': f"Erreur serveur : {e}"}), 500
 
 # NOTE: Les autres routes de l'ancien fichier 'routes.py' comme '/download-and-map', etc.
@@ -317,13 +408,34 @@ def download_and_map():
     if not all([release_name_original, download_link, instance_type, media_id]):
         return jsonify({'status': 'error', 'message': 'Données manquantes.'}), 400
 
-    internal_instance_type = 'sonarr' if instance_type == 'tv' else 'radarr'
+    # --- DÉBUT DE LA LOGIQUE FINALE ---
+    final_app_type = None
+    final_target_id = str(media_id) # Par défaut, on utilise l'ID externe
+
+    # On vérifie d'abord si c'est une série connue
+    series_info = arr_client.get_sonarr_series_by_guid(f"tvdb://{media_id}")
+    if series_info and series_info.get('id'):
+        final_app_type = 'sonarr'
+        final_target_id = str(series_info.get('id')) # On utilise l'ID interne de Sonarr
+        logger.info(f"Média trouvé dans Sonarr. Utilisation de l'ID interne de Sonarr : {final_target_id}")
+    else:
+        # Sinon, on vérifie si c'est un film connu
+        movie_info = arr_client.get_radarr_movie_by_guid(f"tmdb:{media_id}")
+        if movie_info and movie_info.get('id'):
+            final_app_type = 'radarr'
+            final_target_id = str(movie_info.get('id')) # On utilise l'ID interne de Radarr
+            logger.info(f"Média trouvé dans Radarr. Utilisation de l'ID interne de Radarr : {final_target_id}")
+
+    if not final_app_type:
+        logger.warning(f"Le média avec l'ID externe {media_id} n'a été trouvé ni dans Sonarr ni dans Radarr. Utilisation du type '{instance_type}' fourni par le client.")
+        final_app_type = 'sonarr' if instance_type == 'tv' else 'radarr'
+    # --- FIN DE LA LOGIQUE FINALE ---
 
     try:
         logger.info(f"Début du traitement pour '{release_name_original}'")
 
         # 1. Déterminer le label et le chemin de destination (votre code est correct)
-        if internal_instance_type == 'sonarr':
+        if final_app_type == 'sonarr':
             rtorrent_label = current_app.config.get('RTORRENT_LABEL_SONARR')
             rtorrent_download_dir = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_SONARR_PATH')
         else:
@@ -331,7 +443,7 @@ def download_and_map():
             rtorrent_download_dir = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_RADARR_PATH')
 
         if not rtorrent_label or not rtorrent_download_dir:
-            return jsonify({'status': 'error', 'message': f"Config rTorrent manquante pour {internal_instance_type}."}), 500
+            return jsonify({'status': 'error', 'message': f"Config rTorrent manquante pour {final_app_type}."}), 500
 
         # ---- DÉBUT DU BLOC CORRIGÉ ----
         # 2. Utiliser la méthode ROBUSTE pour ajouter le torrent et obtenir le hash en une seule étape
@@ -384,8 +496,8 @@ def download_and_map():
                     status='pending_download',
                     seedbox_download_path=seedbox_full_path,
                     folder_name=folder_name,
-                    app_type=internal_instance_type,
-                    target_id=str(media_id),
+                    app_type=final_app_type,
+                    target_id=final_target_id,
                     label=rtorrent_label,
                     original_torrent_name=release_name_original
                 )

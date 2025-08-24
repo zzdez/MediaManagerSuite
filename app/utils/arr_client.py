@@ -178,6 +178,10 @@ def get_radarr_movie_by_guid(plex_guid):
                 return movie
     return None
 
+def get_radarr_movie_by_id(movie_id):
+    """Fetches a single movie from Radarr by its internal ID."""
+    return _radarr_api_request('GET', f'movie/{movie_id}')
+
 def update_radarr_movie(movie_data):
     """Updates a movie in Radarr using its full data object."""
     return _radarr_api_request('PUT', f"movie/{movie_data['id']}", json_data=movie_data)

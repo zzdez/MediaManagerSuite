@@ -90,30 +90,42 @@ def save_torrent_map(data):
         logger.error(f"An unexpected error occurred while saving torrent map to {map_file}: {e}")
         raise
 
-def add_or_update_torrent_in_map(release_name, torrent_hash, status, seedbox_download_path, folder_name=None, app_type='unknown', target_id='unknown', label='unknown', original_torrent_name='N/A'):
+def add_or_update_torrent_in_map(release_name, torrent_hash, status, seedbox_download_path, folder_name=None, app_type=None, target_id=None, label=None, original_torrent_name=None):
     """
     Fonction unique et centralisée pour ajouter ou mettre à jour un torrent.
+    N'écrase les champs optionnels que s'ils sont fournis.
     """
     torrents = load_torrent_map()
-
-    # Si le torrent existe, on met à jour. Sinon, on crée.
     torrent_data = torrents.get(torrent_hash, {})
 
+    # Champs obligatoires ou toujours mis à jour
     torrent_data.update({
         "release_name": release_name,
         "torrent_hash": torrent_hash,
         "status": status,
         "seedbox_download_path": seedbox_download_path,
         "folder_name": folder_name if folder_name else os.path.basename(seedbox_download_path),
-        "app_type": app_type,
-        "target_id": target_id,
-        "label": label,
-        "original_torrent_name": original_torrent_name,
         "updated_at": datetime.utcnow().isoformat()
     })
 
+    # Champs optionnels : on ne les met à jour que s'ils sont explicitement fournis
+    if app_type is not None:
+        torrent_data["app_type"] = app_type
+    if target_id is not None:
+        torrent_data["target_id"] = target_id
+    if label is not None:
+        torrent_data["label"] = label
+    if original_torrent_name is not None:
+        torrent_data["original_torrent_name"] = original_torrent_name
+
+    # Initialiser les champs s'ils n'existent pas
     if "added_at" not in torrent_data:
         torrent_data["added_at"] = datetime.utcnow().isoformat()
+    # S'assurer que les champs optionnels ont une valeur par défaut si l'entrée est nouvelle
+    torrent_data.setdefault("app_type", "unknown")
+    torrent_data.setdefault("target_id", "unknown")
+    torrent_data.setdefault("label", "unknown")
+    torrent_data.setdefault("original_torrent_name", "N/A")
 
     torrents[torrent_hash] = torrent_data
     save_torrent_map(torrents)

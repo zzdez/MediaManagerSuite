@@ -20,12 +20,16 @@ def _connect_sftp():
 
     try:
         transport = paramiko.Transport((sftp_host, sftp_port))
+        transport.set_keepalive(30)
         transport.connect(username=sftp_user, password=sftp_password)
         sftp = paramiko.SFTPClient.from_transport(transport)
         current_app.logger.info(f"Staging Processor: Successfully connected to SFTP server: {sftp_host}")
         return sftp, transport
+    except paramiko.ssh_exception.AuthenticationException:
+        current_app.logger.error(f"Staging Processor: SFTP authentication failed for {sftp_user}@{sftp_host}.")
+        return None, None
     except Exception as e:
-        current_app.logger.error(f"Staging Processor: SFTP connection failed for {sftp_user}@{sftp_host}:{sftp_port} - {e}")
+        current_app.logger.error(f"Staging Processor: SFTP connection failed for {sftp_user}@{sftp_host}:{sftp_port} - {type(e).__name__}: {e}")
         return None, None
 
 def _get_r_recursive(sftp_client, remotedir, localdir):
@@ -59,31 +63,38 @@ def _apply_path_mapping(original_path):
 def _rapatriate_item(item, sftp_client, folder_name):
     release_name = item.get('release_name')
     original_remote_path = item.get('seedbox_download_path')
-    remote_path = _apply_path_mapping(original_remote_path)
 
-    # Le chemin local utilise maintenant le vrai nom de dossier
+    if not original_remote_path:
+        current_app.logger.error(f"Échec du rapatriement pour '{release_name}': Le chemin 'seedbox_download_path' est manquant dans le mapping.")
+        mapping_manager.update_torrent_status_in_map(item.get('torrent_hash'), 'error_missing_path', 'Chemin distant manquant dans le mapping.')
+        return False
+
+    remote_path = _apply_path_mapping(original_remote_path)
     raw_local_path = os.path.join(current_app.config['LOCAL_STAGING_PATH'], folder_name)
     local_path = os.path.normpath(raw_local_path)
 
     current_app.logger.info(f"Rapatriement de '{release_name}' (dossier: {folder_name}) depuis '{remote_path}' vers '{local_path}'")
 
     try:
-        # On vérifie si le chemin distant est un dossier ou un fichier
+        # Définir un timeout pour les opérations SFTP (ex: 10 minutes pour les gros fichiers)
+        sftp_client.get_channel().settimeout(600)
+
+        current_app.logger.debug(f"SFTP_DEBUG: Tentative de sftp.stat sur '{remote_path}'")
         file_attr = sftp_client.stat(remote_path)
+        current_app.logger.debug(f"SFTP_DEBUG: sftp.stat réussi.")
         is_directory = stat.S_ISDIR(file_attr.st_mode)
 
         if is_directory:
-            # C'est un dossier, on télécharge récursivement
             current_app.logger.info(f"'{remote_path}' est un dossier. Téléchargement récursif.")
             os.makedirs(local_path, exist_ok=True)
             _get_r_recursive(sftp_client, remote_path, local_path)
             current_app.logger.info(f"Téléchargement du dossier '{remote_path}' réussi.")
         else:
-            # C'est un fichier, on télécharge directement
             current_app.logger.info(f"'{remote_path}' est un fichier. Téléchargement direct.")
-            # On s'assure que le dossier parent du fichier local existe
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            current_app.logger.debug(f"SFTP_DEBUG: Tentative de sftp.get sur '{remote_path}'")
             sftp_client.get(remote_path, local_path)
+            current_app.logger.debug(f"SFTP_DEBUG: sftp.get réussi.")
             current_app.logger.info(f"Téléchargement du fichier '{remote_path}' réussi.")
 
         return True
@@ -92,10 +103,7 @@ def _rapatriate_item(item, sftp_client, folder_name):
         current_app.logger.error(f"Le chemin distant '{remote_path}' n'existe pas.", exc_info=True)
         return False
     except Exception as e:
-        current_app.logger.error(f"Échec du rapatriement pour '{remote_path}': {e}", exc_info=True)
-        # Nettoyage si un dossier a été créé pour un téléchargement de dossier qui a échoué
-        if 'is_directory' in locals() and is_directory and os.path.isdir(local_path) and not os.listdir(local_path):
-             shutil.rmtree(local_path)
+        current_app.logger.error(f"Échec du rapatriement pour '{remote_path}': {type(e).__name__} - {e}", exc_info=True)
         return False
 
 def _cleanup_staging(item_name):
@@ -167,95 +175,87 @@ def _handle_automatic_import(item, queue_item, arr_type, folder_name):
 
 def _handle_manual_import(item, folder_name):
     """
-    Gère un import manuel via MMS. Utilise une séquence "Copier puis Supprimer"
-    pour fiabiliser le déplacement des fichiers entre différents volumes.
+    Gère un import manuel via MMS. Gère les cas où l'item est un fichier unique ou un dossier.
     """
+    current_app.logger.info(f"MAP_READ_DEBUG: Début du traitement manuel. Données lues du mapping : {item}")
     torrent_hash = item['torrent_hash']
     release_name = item['release_name']
-    current_app.logger.info(f"Traitement manuel de '{release_name}' (dossier: {folder_name}).")
+    current_app.logger.info(f"Traitement manuel de '{release_name}' (dossier/fichier: {folder_name}).")
 
     source_path = os.path.normpath(os.path.join(current_app.config['LOCAL_STAGING_PATH'], folder_name))
-    
-    # 1. Déterminer le type et trouver le média dans *Arr pour obtenir le chemin de destination
-    # CETTE LOGIQUE EST CONSERVÉE À L'IDENTIQUE
-    parsed_info = arr_client.parse_media_name(release_name)
-    media_type = parsed_info.get('type')
-    title_to_search = parsed_info.get('title')
 
-    if not title_to_search:
-        mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', "Le parseur n'a pas pu extraire de titre.")
+    # 1. Trouver le média dans *Arr en utilisant l'ID unique
+    target_id_from_map = item.get('target_id')
+    media_type = 'tv' if item.get('app_type') == 'sonarr' else 'movie'
+    media_info = None
+
+    if not target_id_from_map:
+        mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', "Aucun ID cible (TVDB/TMDb) trouvé dans le mapping.")
         return
 
-    target_id = None
-    destination_base_path = None
-
     if media_type == 'tv':
-        series_info = arr_client.find_sonarr_series_by_title(title_to_search)
-        if series_info:
-            target_id = series_info.get('id')
-            destination_base_path = series_info.get('path')
+        # On utilise la fonction qui cherche par l'ID interne de Sonarr
+        media_info = arr_client.get_sonarr_series_by_id(target_id_from_map)
     elif media_type == 'movie':
-        movie_info = arr_client.find_radarr_movie_by_title(title_to_search)
-        if movie_info:
-            target_id = movie_info.get('id')
-            destination_base_path = movie_info.get('path')
-    
+        # On utilise la fonction qui cherche par l'ID interne de Radarr
+        media_info = arr_client.get_radarr_movie_by_id(target_id_from_map)
+
+    target_id = media_info.get('id') if media_info else None
+    destination_base_path = media_info.get('path') if media_info else None
+
     if not target_id or not destination_base_path:
-        error_msg = f"Média '{title_to_search}' non trouvé dans {media_type}."
+        error_msg = f"Média avec ID '{target_id_from_map}' non trouvé dans {media_type}."
         mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', error_msg)
         return
 
-    # 2. NOUVELLE LOGIQUE DE DÉPLACEMENT ROBUSTE (Copier puis Supprimer)
+    # 2. Logique de déplacement robuste (Copier puis Supprimer)
     video_extensions = ('.mkv', '.mp4', '.avi', '.mov', '.wmv')
-    copied_source_files = [] # Stocke les chemins des sources copiées avec succès
+    files_to_copy = []
 
-    current_app.logger.info("Phase 1: Copie des fichiers vidéo.")
-    for dirpath, _, filenames in os.walk(source_path):
-        for filename in filenames:
-            if filename.lower().endswith(video_extensions):
-                source_file = os.path.join(dirpath, filename)
-                
-                # LOGIQUE DE DESTINATION CONSERVÉE À L'IDENTIQUE
-                final_destination_folder = os.path.normpath(destination_base_path)
-                if media_type == 'tv':
-                    season_match = re.search(r'[._-][sS](\d{1,2})', source_file)
-                    if season_match:
-                        season_num = int(season_match.group(1))
-                        final_destination_folder = os.path.join(destination_base_path, f'Season {season_num:02d}')
-                
-                os.makedirs(final_destination_folder, exist_ok=True)
-                destination_file = os.path.join(final_destination_folder, filename)
-                
-                try:
-                    # MODIFIÉ: Utilisation de shutil.copy2 pour copier le fichier
-                    current_app.logger.info(f"Copie de '{source_file}' vers '{destination_file}'...")
-                    shutil.copy2(source_file, destination_file)
-                    copied_source_files.append(source_file) # Ajout à la liste pour suppression ultérieure
-                    current_app.logger.info(f"Copie de '{filename}' réussie.")
-                except (shutil.Error, IOError) as e_copy:
-                    current_app.logger.error(f"Erreur critique lors de la copie de {source_file}: {e_copy}. L'import manuel est interrompu.")
-                    mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', f"Erreur de copie de fichier: {e_copy}")
-                    return # On arrête tout si une copie échoue
-    
-    if not copied_source_files:
+    # --- DÉBUT DE LA LOGIQUE CORRIGÉE ---
+    if os.path.isdir(source_path):
+        current_app.logger.info(f"'{source_path}' est un dossier. Recherche de fichiers vidéo à l'intérieur.")
+        for dirpath, _, filenames in os.walk(source_path):
+            for filename in filenames:
+                if filename.lower().endswith(video_extensions):
+                    files_to_copy.append(os.path.join(dirpath, filename))
+    elif os.path.isfile(source_path):
+        current_app.logger.info(f"'{source_path}' est un fichier. Vérification de l'extension.")
+        if source_path.lower().endswith(video_extensions):
+            files_to_copy.append(source_path)
+    # --- FIN DE LA LOGIQUE CORRIGÉE ---
+
+    if not files_to_copy:
         mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', "Aucun fichier vidéo trouvé à déplacer.")
         return
 
-    # 3. NOUVEAU: Suppression des fichiers source après la copie
-    current_app.logger.info(f"Phase 2: Suppression des {len(copied_source_files)} fichier(s) source originaux.")
-    for file_to_delete in copied_source_files:
-        try:
-            os.remove(file_to_delete)
-            current_app.logger.info(f"Fichier source '{file_to_delete}' supprimé.")
-        except OSError as e_remove:
-            current_app.logger.warning(f"Échec de la suppression du fichier source '{file_to_delete}': {e_remove}. Le nettoyage global s'en chargera.")
-            # On ne bloque pas le processus pour une suppression échouée
+    current_app.logger.info(f"Phase 1: Copie de {len(files_to_copy)} fichier(s) vidéo.")
+    for source_file in files_to_copy:
+        filename = os.path.basename(source_file)
+        final_destination_folder = os.path.normpath(destination_base_path)
+        if media_type == 'tv':
+            season_match = re.search(r'[._-][sS](\d{1,2})', source_file)
+            if season_match:
+                season_num = int(season_match.group(1))
+                final_destination_folder = os.path.join(destination_base_path, f'Season {season_num:02d}')
 
-    # 4. Nettoyage final du dossier de staging
+        os.makedirs(final_destination_folder, exist_ok=True)
+        destination_file = os.path.join(final_destination_folder, filename)
+
+        try:
+            current_app.logger.info(f"Copie de '{source_file}' vers '{destination_file}'...")
+            shutil.copy2(source_file, destination_file)
+            current_app.logger.info(f"Copie de '{filename}' réussie.")
+        except (shutil.Error, IOError) as e_copy:
+            current_app.logger.error(f"Erreur critique lors de la copie de {source_file}: {e_copy}. L'import manuel est interrompu.")
+            mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', f"Erreur de copie de fichier: {e_copy}")
+            return
+
+    # 3. Nettoyage final du dossier/fichier de staging
     _cleanup_staging(folder_name)
-    mapping_manager.update_torrent_status_in_map(torrent_hash, 'completed_manual', f'{len(copied_source_files)} fichier(s) déplacé(s) manuellement.')
+    mapping_manager.update_torrent_status_in_map(torrent_hash, 'completed_manual', f'{len(files_to_copy)} fichier(s) déplacé(s) manuellement.')
     
-    # 5. Déclencher un Rescan (CONSERVÉ À L'IDENTIQUE)
+    # 4. Déclencher un Rescan
     current_app.logger.info(f"Déclenchement d'un Rescan dans {media_type} pour l'ID {target_id}.")
     if media_type == 'tv':
         arr_client.sonarr_post_command({'name': 'RescanSeries', 'seriesId': target_id})
@@ -263,9 +263,7 @@ def _handle_manual_import(item, folder_name):
         arr_client.radarr_post_command({'name': 'RescanMovie', 'movieId': target_id})
 
 def process_pending_staging_items():
-    """
-    Main function for the staging processor.
-    """
+    """ Main function for the staging processor with robust connection handling. """
     current_app.logger.info("Staging Processor: Starting cycle.")
 
     all_torrents = mapping_manager.get_all_torrents_in_map()
@@ -275,36 +273,52 @@ def process_pending_staging_items():
         current_app.logger.info("Staging Processor: No items pending staging.")
         return
 
-    sftp_client, transport = _connect_sftp()
-    if not sftp_client:
-        current_app.logger.error("Staging Processor: Could not connect to SFTP. Aborting cycle.")
-        for torrent_hash in pending_items.keys():
-            mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_sftp_connection', 'Could not connect to SFTP server.')
-        return
+    sftp_client, transport = None, None  # Initialize to None
+    try:
+        sftp_client, transport = _connect_sftp()
+        if not sftp_client:
+            current_app.logger.error("Staging Processor: Could not connect to SFTP. Aborting cycle.")
+            for torrent_hash in pending_items.keys():
+                mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_sftp_connection', 'Could not connect to SFTP server.')
+            return
 
-    current_app.logger.info(f"Staging Processor: Found {len(pending_items)} items to process.")
+        current_app.logger.info(f"Staging Processor: Found {len(pending_items)} items to process.")
 
-    for torrent_hash, item_data in pending_items.items():
-        item_data['torrent_hash'] = torrent_hash
-        folder_name = item_data.get('folder_name', item_data['release_name'])
+        for torrent_hash, item_data in pending_items.items():
+            item_data['torrent_hash'] = torrent_hash
+            folder_name = item_data.get('folder_name', item_data['release_name'])
 
-        if _rapatriate_item(item_data, sftp_client, folder_name):
-            mapping_manager.update_torrent_status_in_map(torrent_hash, 'in_staging', 'Item successfully downloaded to staging.')
+            is_simulation = item_data.get('label') == 'simulation'
+            rapatriation_successful = False
 
-            queue_item_sonarr = arr_client.find_in_arr_queue_by_hash('sonarr', torrent_hash)
-            if queue_item_sonarr:
-                _handle_automatic_import(item_data, queue_item_sonarr, 'sonarr', folder_name)
-                continue
+            if is_simulation:
+                current_app.logger.info(f"'{folder_name}' est une simulation. L'étape de rapatriement SFTP est sautée.")
+                rapatriation_successful = True
+            else:
+                rapatriation_successful = _rapatriate_item(item_data, sftp_client, folder_name)
 
-            queue_item_radarr = arr_client.find_in_arr_queue_by_hash('radarr', torrent_hash)
-            if queue_item_radarr:
-                _handle_automatic_import(item_data, queue_item_radarr, 'radarr', folder_name)
-                continue
+            if rapatriation_successful:
+                if not is_simulation:
+                    mapping_manager.update_torrent_status_in_map(torrent_hash, 'in_staging', 'Item successfully downloaded to staging.')
 
-            _handle_manual_import(item_data, folder_name)
-        else:
-            mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_rapatriation', 'Failed to download item from seedbox.')
+                queue_item_sonarr = arr_client.find_in_arr_queue_by_hash('sonarr', torrent_hash)
+                if queue_item_sonarr:
+                    _handle_automatic_import(item_data, queue_item_sonarr, 'sonarr', folder_name)
+                    continue
 
-    if transport:
-        transport.close()
-    current_app.logger.info("Staging Processor: Cycle finished.")
+                queue_item_radarr = arr_client.find_in_arr_queue_by_hash('radarr', torrent_hash)
+                if queue_item_radarr:
+                    _handle_automatic_import(item_data, queue_item_radarr, 'radarr', folder_name)
+                    continue
+
+                _handle_manual_import(item_data, folder_name)
+            else:
+                if not is_simulation:
+                    mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_rapatriation', 'Failed to download item from seedbox.')
+
+    finally:
+        # This block will execute NO MATTER WHAT
+        if transport:
+            current_app.logger.info("Staging Processor: Closing SFTP transport.")
+            transport.close()
+        current_app.logger.info("Staging Processor: Cycle finished.")
