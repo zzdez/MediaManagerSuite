@@ -98,7 +98,10 @@ def _translate_rtorrent_path_to_sftp_path(rtorrent_path, app_type):
         sftp_base = current_app.config.get('SEEDBOX_SCANNER_TARGET_RADARR_PATH')
 
     if rtorrent_base and sftp_base and rtorrent_path.startswith(rtorrent_base):
-        translated_path = rtorrent_path.replace(rtorrent_base, sftp_base, 1)
+        # S'assurer que les chemins de base se terminent par un slash pour un remplacement propre
+        rtorrent_base_norm = rtorrent_base.rstrip('/') + '/'
+        sftp_base_norm = sftp_base.rstrip('/') + '/'
+        translated_path = rtorrent_path.replace(rtorrent_base_norm, sftp_base_norm, 1)
         # S'assurer que le chemin est au format POSIX (avec des /)
         translated_path = Path(translated_path).as_posix()
         logger.info(f"Chemin rTorrent '{rtorrent_path}' traduit en chemin SFTP '{translated_path}'")
@@ -4055,7 +4058,7 @@ def rtorrent_map_sonarr():
         return jsonify({'success': False, 'error': 'Chemin de téléchargement Sonarr par défaut non configuré.'}), 500
 
     # Le chemin rTorrent est le dossier par défaut + le nom du torrent.
-    rtorrent_download_path = str(Path(default_dir) / torrent_name).replace('\\', '/')
+    rtorrent_download_path = str(Path(default_dir.rstrip('/')) / torrent_name).replace('\\', '/')
     logger.info(f"Chemin rTorrent construit manuellement : {rtorrent_download_path}")
 
     # On traduit ce chemin construit en chemin SFTP.
@@ -4101,7 +4104,7 @@ def rtorrent_map_radarr():
     if not default_dir:
         return jsonify({'success': False, 'error': 'Chemin de téléchargement Radarr par défaut non configuré.'}), 500
 
-    rtorrent_download_path = str(Path(default_dir) / torrent_name).replace('\\', '/')
+    rtorrent_download_path = str(Path(default_dir.rstrip('/')) / torrent_name).replace('\\', '/')
     logger.info(f"Chemin rTorrent construit manuellement : {rtorrent_download_path}")
 
     sftp_download_path = _translate_rtorrent_path_to_sftp_path(rtorrent_download_path, 'radarr')
