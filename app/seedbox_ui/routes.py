@@ -81,6 +81,12 @@ def _translate_rtorrent_path_to_sftp_path(rtorrent_path, app_type):
     logger = current_app.logger
     logger.debug(f"Traduction du chemin rTorrent '{rtorrent_path}' pour le type '{app_type}'")
 
+    # --- DÉBUT DE LA CORRECTION ---
+    if not rtorrent_path:
+        logger.warning("Le chemin rTorrent en entrée est None ou vide. Impossible de traduire.")
+        return None
+    # --- FIN DE LA CORRECTION ---
+
     rtorrent_base = None
     sftp_base = None
 
