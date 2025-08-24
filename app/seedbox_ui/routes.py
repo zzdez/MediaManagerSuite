@@ -2703,34 +2703,28 @@ def trigger_sonarr_import():
     data = request.get_json()
     item_name = data.get('item_name')
     series_id = data.get('series_id')
-    problem_torrent_hash = data.get('problem_torrent_hash') # Peut être fourni
+    problem_torrent_hash = data.get('problem_torrent_hash')
 
     logger.info(f"ASSOCIATE_STAGING_ITEM: Tentative d'association pour item '{item_name}', série ID {series_id}, Hash: {problem_torrent_hash}")
 
     if not item_name or not series_id:
         return jsonify({"success": False, "error": "Données manquantes (item_name, series_id)."}), 400
 
-    # On cherche le torrent correspondant à ce nom de release.
-    # Si un hash est fourni (cas d'un item problématique), on l'utilise.
-    # Sinon, on cherche par le nom de la release.
     torrent_hash_to_update = problem_torrent_hash
     if not torrent_hash_to_update:
-        torrent_hash_to_update, _ = mapping_manager.find_torrent_by_release_name(item_name)
+        torrent_hash_to_update, _ = torrent_map_manager.find_torrent_by_release_name(item_name)
 
     if not torrent_hash_to_update:
         return jsonify({'success': False, 'error': f"Aucun torrent correspondant à '{item_name}' trouvé dans le map."}), 404
 
-    # On met à jour l'entrée existante avec les bonnes informations
-    # Note: add_or_update_torrent_in_map met à jour les champs fournis sans toucher aux autres
-    mapping_manager.add_or_update_torrent_in_map(
+    torrent_map_manager.add_or_update_torrent_in_map(
         torrent_hash=torrent_hash_to_update,
         app_type='sonarr',
         target_id=series_id,
         label=current_app.config.get('RTORRENT_LABEL_SONARR', 'sonarr')
     )
 
-    # On change le statut pour que le processeur le reprenne au prochain cycle
-    mapping_manager.update_torrent_status_in_map(torrent_hash_to_update, 'pending_staging', 'Ré-associé manuellement depuis le staging.')
+    torrent_map_manager.update_torrent_status_in_map(torrent_hash_to_update, 'pending_staging', 'Ré-associé manuellement depuis le staging.')
 
     return jsonify({'success': True, 'message': f"'{item_name}' a été associé à la série ID {series_id}. Le traitement va être retenté."})
 
@@ -2787,59 +2781,32 @@ import stat
 @login_required
 def trigger_radarr_import():
     data = request.get_json()
-    item_name_from_frontend = data.get('item_name')
-    movie_id_from_frontend = data.get('movie_id')
+    item_name = data.get('item_name')
+    movie_id = data.get('movie_id')
     problem_torrent_hash = data.get('problem_torrent_hash')
 
-    logger = current_app.logger
-    log_prefix_trigger = f"TRIGGER_RADARR_IMPORT (ProblemHash: {problem_torrent_hash}): "
-    logger.info(f"{log_prefix_trigger}Début pour item '{item_name_from_frontend}', Movie ID {movie_id_from_frontend}")
+    logger.info(f"ASSOCIATE_STAGING_ITEM: Tentative d'association pour item '{item_name}', film ID {movie_id}, Hash: {problem_torrent_hash}")
 
-    radarr_url = current_app.config.get('RADARR_URL')
-    radarr_api_key = current_app.config.get('RADARR_API_KEY')
-    local_staging_path = current_app.config.get('LOCAL_STAGING_PATH')
+    if not item_name or not movie_id:
+        return jsonify({"success": False, "error": "Données manquantes (item_name, movie_id)."}), 400
 
-    if not all([item_name_from_frontend, movie_id_from_frontend is not None, radarr_url, radarr_api_key, local_staging_path]):
-        logger.error(f"{log_prefix_trigger}Données POST manquantes ou config Radarr/staging incomplète.")
-        return jsonify({"success": False, "error": "Données manquantes ou Radarr/staging non configuré."}), 400
+    torrent_hash_to_update = problem_torrent_hash
+    if not torrent_hash_to_update:
+        torrent_hash_to_update, _ = torrent_map_manager.find_torrent_by_release_name(item_name)
 
-    try:
-        movie_id_int = int(movie_id_from_frontend)
-    except ValueError:
-        logger.error(f"{log_prefix_trigger}Movie ID invalide: '{movie_id_from_frontend}'. Doit être un entier.")
-        return jsonify({"success": False, "error": "Format de Movie ID invalide."}), 400
+    if not torrent_hash_to_update:
+        return jsonify({'success': False, 'error': f"Aucun torrent correspondant à '{item_name}' trouvé dans le map."}), 404
 
-    path_of_item_in_staging_abs = (Path(local_staging_path) / item_name_from_frontend).resolve()
-    if not path_of_item_in_staging_abs.exists():
-        logger.error(f"{log_prefix_trigger}Item UI '{item_name_from_frontend}' (résolu en {path_of_item_in_staging_abs}) non trouvé.")
-        return jsonify({"success": False, "error": f"Item '{item_name_from_frontend}' non trouvé dans le staging."}), 404
-
-    # --- Validation optionnelle de MovieID (peut être conservée ou simplifiée) ---
-    # La logique de validation existante peut rester si jugée utile avant l'appel à _execute_mms_radarr_import.
-    # Pour la refactorisation, on se concentre sur l'appel à la nouvelle fonction helper.
-    # Si la validation échoue, on retourne une erreur avant d'appeler _execute_mms_radarr_import.
-    # (Logique de validation optionnelle omise ici pour la concision du diff, mais peut être gardée)
-    # ... (votre logique de validation existante ici, si elle retourne une erreur, faites-le avant l'appel ci-dessous)
-
-    # Appeler le helper _execute_mms_radarr_import
-    result_dict = _execute_mms_radarr_import(
-        item_name_in_staging=item_name_from_frontend,
-        movie_id_target=movie_id_int, # movie_id_target est déjà un entier
-        original_release_folder_name_in_staging=item_name_from_frontend,
-        torrent_hash_for_status_update=problem_torrent_hash,
-        is_automated_flow=False # Action manuelle
+    torrent_map_manager.add_or_update_torrent_in_map(
+        torrent_hash=torrent_hash_to_update,
+        app_type='radarr',
+        target_id=movie_id,
+        label=current_app.config.get('RTORRENT_LABEL_RADARR', 'radarr')
     )
 
-    if result_dict.get("success"):
-        if problem_torrent_hash: # Si c'était un re-mapping
-            logger.info(f"{log_prefix_trigger}Re-mapping réussi pour l'item avec hash {problem_torrent_hash}. Suppression de l'ancienne association.")
-            if torrent_map_manager.remove_torrent_from_map(problem_torrent_hash):
-                logger.info(f"{log_prefix_trigger}Ancienne association pour hash {problem_torrent_hash} supprimée.")
-            else:
-                logger.warning(f"{log_prefix_trigger}Échec de la suppression de l'ancienne association pour hash {problem_torrent_hash} (peut-être déjà supprimée).")
-        return jsonify(result_dict), 200
-    else:
-        return jsonify(result_dict), 500
+    torrent_map_manager.update_torrent_status_in_map(torrent_hash_to_update, 'pending_staging', 'Ré-associé manuellement depuis le staging.')
+
+    return jsonify({'success': True, 'message': f"'{item_name}' a été associé au film ID {movie_id}. Le traitement va être retenté."})
 
 # FIN de trigger_radarr_import (MODIFIÉE)
 
