@@ -4019,7 +4019,19 @@ def rtorrent_map_sonarr():
         return jsonify({'success': False, 'error': f"Torrent '{torrent_name}' non trouvé dans rTorrent."}), 404
 
     torrent_hash = torrent_info.get('hash')
+    # --- DÉBUT DU BLOC DE FALLBACK ---
     download_path = torrent_info.get('base_path')
+    if not download_path:
+        logger.warning(f"Le 'base_path' est manquant pour le torrent '{torrent_name}' depuis rTorrent. Construction d'un chemin de secours.")
+        default_dir = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_SONARR_PATH')
+        if default_dir:
+            # Le chemin complet est le dossier par défaut + le nom du torrent
+            download_path = str(Path(default_dir) / torrent_name).replace('\\', '/')
+            logger.info(f"Chemin de secours construit : {download_path}")
+        else:
+            logger.error(f"Impossible de construire un chemin de secours pour '{torrent_name}' car SEEDBOX_RTORRENT_INCOMING_SONARR_PATH n'est pas configuré.")
+            # On laisse download_path à None, l'erreur sera loguée plus tard
+    # --- FIN DU BLOC DE FALLBACK ---
     folder_name = os.path.basename(download_path) if download_path else torrent_name
 
     # Utilisation de la signature de fonction correcte avec arguments nommés
@@ -4061,7 +4073,19 @@ def rtorrent_map_radarr():
         return jsonify({'success': False, 'error': f"Torrent '{torrent_name}' non trouvé dans rTorrent."}), 404
 
     torrent_hash = torrent_info.get('hash')
+    # --- DÉBUT DU BLOC DE FALLBACK ---
     download_path = torrent_info.get('base_path')
+    if not download_path:
+        logger.warning(f"Le 'base_path' est manquant pour le torrent '{torrent_name}' depuis rTorrent. Construction d'un chemin de secours.")
+        default_dir = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_RADARR_PATH')
+        if default_dir:
+            # Le chemin complet est le dossier par défaut + le nom du torrent
+            download_path = str(Path(default_dir) / torrent_name).replace('\\', '/')
+            logger.info(f"Chemin de secours construit : {download_path}")
+        else:
+            logger.error(f"Impossible de construire un chemin de secours pour '{torrent_name}' car SEEDBOX_RTORRENT_INCOMING_RADARR_PATH n'est pas configuré.")
+            # On laisse download_path à None, l'erreur sera loguée plus tard
+    # --- FIN DU BLOC DE FALLBACK ---
     folder_name = os.path.basename(download_path) if download_path else torrent_name
 
     # Utilisation de la signature de fonction correcte avec arguments nommés
