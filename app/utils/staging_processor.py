@@ -267,7 +267,7 @@ def process_pending_staging_items():
     current_app.logger.info("Staging Processor: Starting cycle.")
 
     all_torrents = mapping_manager.get_all_torrents_in_map()
-    pending_items = {h: d for h, d in all_torrents.items() if d.get('status') == 'pending_staging'}
+    pending_items = {h: d for h, d in all_torrents.items() if d.get('status') in ['pending_staging', 'in_staging']}
 
     if not pending_items:
         current_app.logger.info("Staging Processor: No items pending staging.")
