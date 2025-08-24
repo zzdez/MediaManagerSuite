@@ -2701,129 +2701,38 @@ def sftp_delete_items_action():
 @login_required
 def trigger_sonarr_import():
     data = request.get_json()
-    item_name_from_frontend = data.get('item_name') # Nom de l'item UI (dossier ou fichier dans le staging, peut être un chemin relatif)
-    series_id_from_frontend = data.get('series_id')
+    item_name = data.get('item_name')
+    series_id = data.get('series_id')
+    problem_torrent_hash = data.get('problem_torrent_hash') # Peut être fourni
 
-    logger.info(f"TRIGGER_SONARR_IMPORT: Début pour item '{item_name_from_frontend}', série ID {series_id_from_frontend}")
+    logger.info(f"ASSOCIATE_STAGING_ITEM: Tentative d'association pour item '{item_name}', série ID {series_id}, Hash: {problem_torrent_hash}")
 
-    # Récupérer les configs
-    sonarr_url = current_app.config.get('SONARR_URL')
-    sonarr_api_key = current_app.config.get('SONARR_API_KEY')
-    local_staging_path = current_app.config.get('LOCAL_STAGING_PATH')
+    if not item_name or not series_id:
+        return jsonify({"success": False, "error": "Données manquantes (item_name, series_id)."}), 400
 
-    if not all([item_name_from_frontend, series_id_from_frontend, sonarr_url, sonarr_api_key, local_staging_path]):
-        logger.error("trigger_sonarr_import: Données POST manquantes ou config Sonarr/staging incomplète.")
-        return jsonify({"success": False, "error": "Données manquantes ou Sonarr/staging non configuré."}), 400
+    # On cherche le torrent correspondant à ce nom de release.
+    # Si un hash est fourni (cas d'un item problématique), on l'utilise.
+    # Sinon, on cherche par le nom de la release.
+    torrent_hash_to_update = problem_torrent_hash
+    if not torrent_hash_to_update:
+        torrent_hash_to_update, _ = mapping_manager.find_torrent_by_release_name(item_name)
 
-    # path_of_item_in_staging_abs est le chemin complet de ce sur quoi l'utilisateur a cliqué dans l'UI du staging local.
-    # item_name_from_frontend est le chemin relatif par rapport à local_staging_path.
-    path_of_item_in_staging_abs = (Path(local_staging_path) / item_name_from_frontend).resolve()
+    if not torrent_hash_to_update:
+        return jsonify({'success': False, 'error': f"Aucun torrent correspondant à '{item_name}' trouvé dans le map."}), 404
 
-    if not path_of_item_in_staging_abs.exists():
-        logger.error(f"trigger_sonarr_import: Item UI '{item_name_from_frontend}' (résolu en {path_of_item_in_staging_abs}) non trouvé.")
-        return jsonify({"success": False, "error": f"Item '{item_name_from_frontend}' non trouvé dans le staging."}), 404
-
-    # --- Déterminer le chemin à scanner pour le GET manualimport initial (pour la validation S/E) ---
-    # Ce scan est fait sur le dossier contenant le fichier vidéo principal, ou le dossier lui-même.
-    path_to_scan_for_validation_get = ""
-    if path_of_item_in_staging_abs.is_file():
-        path_to_scan_for_validation_get = str(path_of_item_in_staging_abs.parent).replace('/', '\\')
-        main_video_filename_for_validation = path_of_item_in_staging_abs.name
-    elif path_of_item_in_staging_abs.is_dir():
-        path_to_scan_for_validation_get = str(path_of_item_in_staging_abs).replace('/', '\\')
-        # Essayer de trouver un nom de fichier vidéo à l'intérieur pour la validation S/E
-        main_video_filename_for_validation = None
-        for f_name in os.listdir(path_of_item_in_staging_abs):
-            if any(f_name.lower().endswith(ext) for ext in ['.mkv', '.mp4', '.avi']):
-                main_video_filename_for_validation = f_name
-                break
-        if not main_video_filename_for_validation:
-            logger.warning(f"trigger_sonarr_import: Aucun fichier vidéo trouvé dans le dossier '{item_name_from_frontend}' pour la validation S/E. L'import sera tenté en se fiant à Sonarr.")
-            # Si aucun fichier vidéo, la validation S/E sera skipped, et on appelle directement _handle_staged_sonarr_item
-            result_dict = _handle_staged_sonarr_item(item_name_from_frontend, series_id_from_frontend, str(path_of_item_in_staging_abs))
-            return jsonify(result_dict), result_dict.get("status_code_override", 200 if result_dict.get("success") else 500)
-    else:
-        return jsonify({"success": False, "error": "Item de staging non valide."}), 400
-
-
-    # --- Appel GET manualimport pour la validation S/E ---
-    manual_import_get_url = f"{sonarr_url.rstrip('/')}/api/v3/manualimport"
-    get_params = {'folder': path_to_scan_for_validation_get, 'filterExistingFiles': 'false'}
-    logger.debug(f"TRIGGER_SONARR_IMPORT (Validation S/E): GET Sonarr ManualImport: URL={manual_import_get_url}, Params={get_params}")
-    manual_import_candidates, error_msg_get = _make_arr_request('GET', manual_import_get_url, sonarr_api_key, params=get_params)
-
-    if error_msg_get or not isinstance(manual_import_candidates, list): # Peut être une liste vide, c'est ok
-        logger.error(f"TRIGGER_SONARR_IMPORT (Validation S/E): Erreur Sonarr GET manualimport: {error_msg_get or 'Réponse non-liste'}")
-        # On tente quand même l'import, _handle_staged_sonarr_item refera un GET et gèrera l'erreur si elle persiste.
-        result_dict = _handle_staged_sonarr_item(item_name_from_frontend, series_id_from_frontend, str(path_of_item_in_staging_abs))
-        return jsonify(result_dict), result_dict.get("status_code_override", 200 if result_dict.get("success") else 500)
-
-    # Trouver le candidat qui correspond à notre main_video_filename_for_validation
-    sonarr_season_num_for_validation = None
-    sonarr_episode_num_for_validation = None
-
-    for candidate in manual_import_candidates:
-        candidate_file_path_from_api = candidate.get('path') # Path relatif au 'folder' scanné
-        if not candidate_file_path_from_api: continue
-
-        # Le nom de fichier retourné par Sonarr peut être différent (ex: normalisé)
-        # On compare avec le nom de fichier qu'on a identifié comme principal
-        if Path(candidate_file_path_from_api).name.lower() == main_video_filename_for_validation.lower():
-            candidate_episodes_info = candidate.get('episodes', [])
-            if candidate_episodes_info:
-                sonarr_season_num_for_validation = candidate_episodes_info[0].get('seasonNumber')
-                sonarr_episode_num_for_validation = candidate_episodes_info[0].get('episodeNumber')
-                break
-
-    # --- Logique de validation S/E ---
-    if sonarr_season_num_for_validation is not None and main_video_filename_for_validation:
-        filename_season_num, filename_episode_num = None, None
-        s_e_match = re.search(r'[._\s\[\(-]S(\d{1,3})[E._\s-]?(\d{1,3})', main_video_filename_for_validation, re.IGNORECASE)
-        if s_e_match:
-            try:
-                filename_season_num = int(s_e_match.group(1))
-                filename_episode_num = int(s_e_match.group(2))
-                logger.info(f"TRIGGER_SONARR_IMPORT (Validation S/E): Pour '{main_video_filename_for_validation}': Fichier S{filename_season_num}E{filename_episode_num}. Sonarr S{sonarr_season_num_for_validation}E{sonarr_episode_num_for_validation}.")
-                if filename_season_num != sonarr_season_num_for_validation:
-                    logger.warning(f"TRIGGER_SONARR_IMPORT: DISCORDANCE SAISON DÉTECTÉE.")
-                    return jsonify({
-                        "success": False, "action_required": "resolve_season_episode_mismatch",
-                        "message": f"Discordance Saison/Épisode détectée pour '{main_video_filename_for_validation}'.",
-                        "details": {
-                            "filename_season": filename_season_num, "filename_episode": filename_episode_num,
-                            "sonarr_season": sonarr_season_num_for_validation, "sonarr_episode": sonarr_episode_num_for_validation,
-                            "staging_item_name": item_name_from_frontend,
-                            "series_id": series_id_from_frontend,
-                            "source_video_file_path_in_staging": str(path_of_item_in_staging_abs / main_video_filename_for_validation if path_of_item_in_staging_abs.is_dir() else path_of_item_in_staging_abs)
-                        }
-                    }), 200
-            except ValueError: logger.warning(f"TRIGGER_SONARR_IMPORT (Validation S/E): Erreur conversion S/E pour '{main_video_filename_for_validation}'.")
-        else: logger.warning(f"TRIGGER_SONARR_IMPORT (Validation S/E): Impossible d'extraire SxxExx de '{main_video_filename_for_validation}'.")
-    else:
-        logger.info(f"TRIGGER_SONARR_IMPORT: Pas de validation S/E effectuée (Sonarr n'a pas identifié l'épisode pour '{main_video_filename_for_validation}' ou pas de fichier vidéo principal trouvé).")
-
-    # Si pas de discordance bloquante, appeler le handler _execute_mms_sonarr_import.
-    user_forced_season_str = data.get('user_forced_season')
-    user_forced_season = int(user_forced_season_str) if user_forced_season_str else None
-    force_multi_part = data.get('force_multi_part', False)
-    problem_torrent_hash = data.get('problem_torrent_hash')
-
-    logger.info(f"TRIGGER_SONARR_IMPORT: Appel du handler avec: user_forced_season={user_forced_season}, force_multi_part={force_multi_part}")
-
-    result_dict = _execute_mms_sonarr_import(
-        item_name_in_staging=item_name_from_frontend,
-        series_id_target=series_id_from_frontend,
-        original_release_folder_name_in_staging=item_name_from_frontend,
-        user_forced_season=user_forced_season,
-        torrent_hash_for_status_update=problem_torrent_hash,
-        is_automated_flow=False, # Action manuelle depuis l'UI
-        force_multi_part=force_multi_part
+    # On met à jour l'entrée existante avec les bonnes informations
+    # Note: add_or_update_torrent_in_map met à jour les champs fournis sans toucher aux autres
+    mapping_manager.add_or_update_torrent_in_map(
+        torrent_hash=torrent_hash_to_update,
+        app_type='sonarr',
+        target_id=series_id,
+        label=current_app.config.get('RTORRENT_LABEL_SONARR', 'sonarr')
     )
 
-    if result_dict.get("success"): # Pas besoin de vérifier action_required ici, _execute_mms gère le retour final
-        return jsonify(result_dict), 200
-    else:
-        return jsonify(result_dict), 500 # Ou un code d'erreur plus spécifique si _execute_mms le fournit
+    # On change le statut pour que le processeur le reprenne au prochain cycle
+    mapping_manager.update_torrent_status_in_map(torrent_hash_to_update, 'pending_staging', 'Ré-associé manuellement depuis le staging.')
+
+    return jsonify({'success': True, 'message': f"'{item_name}' a été associé à la série ID {series_id}. Le traitement va être retenté."})
 
 # FIN de trigger_sonarr_import (MODIFIÉE)
 # ------------------------------------------------------------------------------
