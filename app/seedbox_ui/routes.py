@@ -2717,14 +2717,25 @@ def trigger_sonarr_import():
     if not torrent_hash_to_update:
         return jsonify({'success': False, 'error': f"Aucun torrent correspondant à '{item_name}' trouvé dans le map."}), 404
 
-    torrent_map_manager.add_or_update_torrent_in_map(
-        torrent_hash=torrent_hash_to_update,
-        app_type='sonarr',
-        target_id=series_id,
-        label=current_app.config.get('RTORRENT_LABEL_SONARR', 'sonarr')
-    )
+    # --- DÉBUT DE LA CORRECTION ---
+    # On récupère l'entrée existante pour ne pas perdre d'informations
+    existing_entry = torrent_map_manager.get_torrent_by_hash(torrent_hash_to_update)
+    if not existing_entry:
+        return jsonify({'success': False, 'error': f"Incohérence : Hash '{torrent_hash_to_update}' non trouvé après découverte."}), 404
 
-    torrent_map_manager.update_torrent_status_in_map(torrent_hash_to_update, 'pending_staging', 'Ré-associé manuellement depuis le staging.')
+    # On appelle la fonction avec TOUS les arguments requis, en mettant à jour ceux qui changent.
+    torrent_map_manager.add_or_update_torrent_in_map(
+        release_name=existing_entry.get('release_name', item_name),
+        torrent_hash=torrent_hash_to_update,
+        status='pending_staging', # On remet le statut à pending_staging
+        seedbox_download_path=existing_entry.get('seedbox_download_path'), # On conserve l'ancien chemin
+        folder_name=existing_entry.get('folder_name', item_name),
+        app_type='sonarr', # On met à jour le type
+        target_id=series_id, # On met à jour l'ID
+        label=current_app.config.get('RTORRENT_LABEL_SONARR', 'sonarr'), # On met à jour le label
+        original_torrent_name=existing_entry.get('original_torrent_name')
+    )
+    # --- FIN DE LA CORRECTION ---
 
     return jsonify({'success': True, 'message': f"'{item_name}' a été associé à la série ID {series_id}. Le traitement va être retenté."})
 
@@ -2797,14 +2808,21 @@ def trigger_radarr_import():
     if not torrent_hash_to_update:
         return jsonify({'success': False, 'error': f"Aucun torrent correspondant à '{item_name}' trouvé dans le map."}), 404
 
+    existing_entry = torrent_map_manager.get_torrent_by_hash(torrent_hash_to_update)
+    if not existing_entry:
+        return jsonify({'success': False, 'error': f"Incohérence : Hash '{torrent_hash_to_update}' non trouvé après découverte."}), 404
+
     torrent_map_manager.add_or_update_torrent_in_map(
+        release_name=existing_entry.get('release_name', item_name),
         torrent_hash=torrent_hash_to_update,
+        status='pending_staging',
+        seedbox_download_path=existing_entry.get('seedbox_download_path'),
+        folder_name=existing_entry.get('folder_name', item_name),
         app_type='radarr',
         target_id=movie_id,
-        label=current_app.config.get('RTORRENT_LABEL_RADARR', 'radarr')
+        label=current_app.config.get('RTORRENT_LABEL_RADARR', 'radarr'),
+        original_torrent_name=existing_entry.get('original_torrent_name')
     )
-
-    torrent_map_manager.update_torrent_status_in_map(torrent_hash_to_update, 'pending_staging', 'Ré-associé manuellement depuis le staging.')
 
     return jsonify({'success': True, 'message': f"'{item_name}' a été associé au film ID {movie_id}. Le traitement va être retenté."})
 
