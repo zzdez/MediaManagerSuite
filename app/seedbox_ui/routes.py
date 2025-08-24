@@ -4036,42 +4036,45 @@ def rtorrent_map_sonarr():
     series_id = data.get('series_id')
 
     if not torrent_name or not series_id:
-        return jsonify({'success': False, 'error': 'Données manquantes (torrent_name, series_id)'}), 400
+        return jsonify({'success': False, 'error': 'Données manquantes'}), 400
 
-    try:
-        series_id = int(series_id)
-    except ValueError:
-        return jsonify({'success': False, 'error': 'series_id doit être un entier'}), 400
-
-    torrents_data, error_msg_rtorrent = rtorrent_list_torrents_api()
-    if error_msg_rtorrent:
-        return jsonify({'success': False, 'error': f"Erreur rTorrent: {error_msg_rtorrent}"}), 500
+    torrents_data, error_msg = rtorrent_list_torrents_api()
+    if error_msg:
+        return jsonify({'success': False, 'error': f"Erreur rTorrent: {error_msg}"}), 500
 
     torrent_info = next((t for t in torrents_data if t.get('name') == torrent_name), None)
     if not torrent_info:
-        return jsonify({'success': False, 'error': f"Torrent '{torrent_name}' non trouvé dans rTorrent."}), 404
+        return jsonify({'success': False, 'error': f"Torrent '{torrent_name}' non trouvé."}), 404
 
     torrent_hash = torrent_info.get('hash')
-    # Nouveau bloc pour rtorrent_map_sonarr
-    download_path_rtorrent = torrent_info.get('base_path')
-    folder_name = torrent_info.get('name') # Le nom du dossier/fichier est le nom du torrent
 
-    # On traduit le chemin rTorrent en chemin SFTP pour le staging_processor
-    sftp_download_path = _translate_rtorrent_path_to_sftp_path(download_path_rtorrent, 'sonarr')
+    # --- DÉBUT DE LA LOGIQUE DÉFINITIVE ---
+    # On ne se fie plus à torrent_info.get('base_path'). On construit le chemin.
+    default_dir = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_SONARR_PATH')
+    if not default_dir:
+        return jsonify({'success': False, 'error': 'Chemin de téléchargement Sonarr par défaut non configuré.'}), 500
+
+    # Le chemin rTorrent est le dossier par défaut + le nom du torrent.
+    rtorrent_download_path = str(Path(default_dir) / torrent_name).replace('\\', '/')
+    logger.info(f"Chemin rTorrent construit manuellement : {rtorrent_download_path}")
+
+    # On traduit ce chemin construit en chemin SFTP.
+    sftp_download_path = _translate_rtorrent_path_to_sftp_path(rtorrent_download_path, 'sonarr')
+    # --- FIN DE LA LOGIQUE DÉFINITIVE ---
 
     torrent_map_manager.add_or_update_torrent_in_map(
         release_name=torrent_name,
         torrent_hash=torrent_hash,
         status='pending_staging',
-        seedbox_download_path=sftp_download_path, # Utilise le chemin traduit
-        folder_name=folder_name,
+        seedbox_download_path=sftp_download_path, # Utilise le chemin construit et traduit
+        folder_name=torrent_name,
         app_type='sonarr',
         target_id=series_id,
         label=current_app.config.get('RTORRENT_LABEL_SONARR', 'sonarr'),
         original_torrent_name=torrent_name
     )
 
-    return jsonify({'success': True, 'message': f"Torrent '{torrent_name}' mappé avec succès à la série ID {series_id}."})
+    return jsonify({'success': True, 'message': f"Torrent '{torrent_name}' mappé avec succès."})
 
 @seedbox_ui_bp.route('/rtorrent/map/radarr', methods=['POST'], endpoint='rtorrent_map_radarr')
 @login_required
@@ -4081,42 +4084,42 @@ def rtorrent_map_radarr():
     movie_id = data.get('movie_id')
 
     if not torrent_name or not movie_id:
-        return jsonify({'success': False, 'error': 'Données manquantes (torrent_name, movie_id)'}), 400
+        return jsonify({'success': False, 'error': 'Données manquantes'}), 400
 
-    try:
-        movie_id = int(movie_id)
-    except ValueError:
-        return jsonify({'success': False, 'error': 'movie_id doit être un entier'}), 400
-
-    torrents_data, error_msg_rtorrent = rtorrent_list_torrents_api()
-    if error_msg_rtorrent:
-        return jsonify({'success': False, 'error': f"Erreur rTorrent: {error_msg_rtorrent}"}), 500
+    torrents_data, error_msg = rtorrent_list_torrents_api()
+    if error_msg:
+        return jsonify({'success': False, 'error': f"Erreur rTorrent: {error_msg}"}), 500
 
     torrent_info = next((t for t in torrents_data if t.get('name') == torrent_name), None)
     if not torrent_info:
-        return jsonify({'success': False, 'error': f"Torrent '{torrent_name}' non trouvé dans rTorrent."}), 404
+        return jsonify({'success': False, 'error': f"Torrent '{torrent_name}' non trouvé."}), 404
 
     torrent_hash = torrent_info.get('hash')
-    # Nouveau bloc pour rtorrent_map_radarr
-    download_path_rtorrent = torrent_info.get('base_path')
-    folder_name = torrent_info.get('name')
 
-    # On traduit le chemin rTorrent en chemin SFTP
-    sftp_download_path = _translate_rtorrent_path_to_sftp_path(download_path_rtorrent, 'radarr')
+    # --- DÉBUT DE LA LOGIQUE DÉFINITIVE ---
+    default_dir = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_RADARR_PATH')
+    if not default_dir:
+        return jsonify({'success': False, 'error': 'Chemin de téléchargement Radarr par défaut non configuré.'}), 500
+
+    rtorrent_download_path = str(Path(default_dir) / torrent_name).replace('\\', '/')
+    logger.info(f"Chemin rTorrent construit manuellement : {rtorrent_download_path}")
+
+    sftp_download_path = _translate_rtorrent_path_to_sftp_path(rtorrent_download_path, 'radarr')
+    # --- FIN DE LA LOGIQUE DÉFINITIVE ---
 
     torrent_map_manager.add_or_update_torrent_in_map(
         release_name=torrent_name,
         torrent_hash=torrent_hash,
         status='pending_staging',
-        seedbox_download_path=sftp_download_path, # Utilise le chemin traduit
-        folder_name=folder_name,
+        seedbox_download_path=sftp_download_path,
+        folder_name=torrent_name,
         app_type='radarr',
         target_id=movie_id,
         label=current_app.config.get('RTORRENT_LABEL_RADARR', 'radarr'),
         original_torrent_name=torrent_name
     )
 
-    return jsonify({'success': True, 'message': f"Torrent '{torrent_name}' mappé avec succès au film ID {movie_id}."})
+    return jsonify({'success': True, 'message': f"Torrent '{torrent_name}' mappé avec succès."})
 
 # ==============================================================================
 # --- NOUVELLES ROUTES POUR LES ACTIONS MANUELLES DE LA VUE RTORRENT ---
