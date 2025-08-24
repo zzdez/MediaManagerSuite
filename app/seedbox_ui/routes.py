@@ -1028,8 +1028,10 @@ def _handle_staged_radarr_item(item_name_in_staging, movie_id_target,
         final_message += " Rescan Radarr initié."
         logger.info(f"{log_prefix}Rescan Radarr initié pour movie ID {movie_id_target}.")
 
-    if torrent_hash_for_status_update and automated_import:
-        torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, "completed_manual", final_message)
+    if torrent_hash_for_status_update:
+        final_status = 'completed_auto' if automated_import else 'processed_manual'
+        status_message = final_message if automated_import else 'Traité manuellement depuis le staging.'
+        torrent_map_manager.update_torrent_status_in_map(torrent_hash_for_status_update, final_status, status_message)
         # Optionnel: remove_torrent_from_map(torrent_hash_for_status_update)
 
     return {"success": True, "message": final_message, "manual_required": False}
@@ -1447,11 +1449,11 @@ def _execute_mms_sonarr_import(item_name_in_staging, series_id_target, original_
 
     # Bug Fix: Update status for manual imports
     if successful_moves > 0 and not is_automated_flow and torrent_hash_for_status_update:
-        logger.info(f"{log_prefix}Manual import successful. Updating torrent map status for hash {torrent_hash_for_status_update}.")
+        logger.info(f"{log_prefix}Manual import successful. Updating status to 'processed_manual'.")
         torrent_map_manager.update_torrent_status_in_map(
             torrent_hash_for_status_update,
-            'completed_manual',
-            'Import manuel réussi via UI.'
+            'processed_manual',
+            'Traité manuellement depuis le staging.'
         )
 
     return {"success": True, "message": final_message}

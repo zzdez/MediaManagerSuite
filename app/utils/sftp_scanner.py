@@ -6,48 +6,60 @@ def scan_and_map_torrents():
     current_app.logger.info("rTorrent Scanner: Starting scan for completed torrents.")
     try:
         completed_torrents = rtorrent_client.get_completed_torrents()
+        if not completed_torrents:
+            current_app.logger.info("rTorrent Scanner: No completed torrents found in rTorrent.")
+            return
 
-        # On charge la map complète pour pouvoir la modifier
         torrent_map = mapping_manager.load_torrent_map()
-        known_hashes = set(torrent_map.keys())
         ignored_hashes = mapping_manager.load_ignored_hashes()
 
-        new_torrents_added = 0
+        final_statuses = {'completed_auto', 'completed_manual', 'processed_manual'}
+        new_torrents_count = 0
+        updated_torrents_count = 0
+
         for torrent in completed_torrents:
             torrent_hash = torrent.get('hash')
+            release_name = torrent.get('name')
+
+            if not torrent_hash or not release_name:
+                continue
 
             if torrent_hash in ignored_hashes:
                 continue
 
-            release_name = torrent.get('name')
-            download_path = torrent.get('base_path')
-            folder_name = os.path.basename(download_path) if download_path else release_name
+            existing_entry = torrent_map.get(torrent_hash)
 
-            if torrent_hash in known_hashes:
-                # CAS A: Le torrent est déjà connu (probablement un ajout manuel)
-                if torrent_map[torrent_hash].get('status') == 'pending_download':
-                    # On met à jour pour ajouter le folder_name et changer le statut
+            if existing_entry:
+                # CAS A: Le torrent est déjà connu
+                current_status = existing_entry.get('status')
+                if current_status in final_statuses:
+                    # Il a déjà un statut final, on ne touche à rien.
+                    continue
+
+                if current_status == 'pending_download':
+                    # Le téléchargement vient de se terminer, on le met à jour.
+                    download_path = torrent.get('base_path')
+                    folder_name = os.path.basename(download_path) if download_path else release_name
                     mapping_manager.add_or_update_torrent_in_map(
-                        release_name,
-                        torrent_hash,
-                        'pending_staging',
-                        download_path,
-                        folder_name=folder_name
+                        release_name, torrent_hash, 'pending_staging',
+                        seedbox_download_path=download_path, folder_name=folder_name
                     )
-                    current_app.logger.info(f"rTorrent Scanner: Torrent '{release_name}' is now complete. Marked as 'pending_staging' with folder_name '{folder_name}'.")
+                    current_app.logger.info(f"rTorrent Scanner: Torrent '{release_name}' is now complete. Marked as 'pending_staging'.")
+                    updated_torrents_count += 1
             else:
-                # CAS B: Le torrent est nouveau (probablement un ajout automatique par *Arr)
+                # CAS B: Le torrent est nouveau pour nous (ajout automatique par *Arr)
+                download_path = torrent.get('base_path')
+                folder_name = os.path.basename(download_path) if download_path else release_name
                 mapping_manager.add_or_update_torrent_in_map(
-                    release_name,
-                    torrent_hash,
-                    'pending_staging',
-                    download_path,
-                    folder_name=folder_name
+                    release_name, torrent_hash, 'pending_staging',
+                    seedbox_download_path=download_path, folder_name=folder_name
                 )
-                new_torrents_added += 1
+                new_torrents_count += 1
 
-        if new_torrents_added > 0:
-            current_app.logger.info(f"rTorrent Scanner: Added {new_torrents_added} new torrents to the map.")
+        if new_torrents_count > 0:
+            current_app.logger.info(f"rTorrent Scanner: Added {new_torrents_count} new completed torrents to the map.")
+        if updated_torrents_count > 0:
+            current_app.logger.info(f"rTorrent Scanner: Updated {updated_torrents_count} existing torrents to 'pending_staging'.")
 
     except Exception as e:
         current_app.logger.error(f"rTorrent Scanner Error: {e}", exc_info=True)
