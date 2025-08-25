@@ -264,61 +264,65 @@ def _handle_manual_import(item, folder_name):
 
 def process_pending_staging_items():
     """ Main function for the staging processor with robust connection handling. """
-    current_app.logger.info("Staging Processor: Starting cycle.")
+    logger = current_app.logger
+    logger.info("Staging Processor: Starting cycle.")
 
     all_torrents = mapping_manager.get_all_torrents_in_map()
-    pending_items = {h: d for h, d in all_torrents.items() if d.get('status') == 'pending_staging'}
+    items_to_process = {h: d for h, d in all_torrents.items() if d.get('status') in ['pending_staging', 'in_staging']}
 
-    if not pending_items:
-        current_app.logger.info("Staging Processor: No items pending staging.")
+    if not items_to_process:
+        logger.info("Staging Processor: No items pending staging or in staging.")
         return
 
-    sftp_client, transport = None, None  # Initialize to None
+    sftp_client, transport = None, None
     try:
-        sftp_client, transport = _connect_sftp()
-        if not sftp_client:
-            current_app.logger.error("Staging Processor: Could not connect to SFTP. Aborting cycle.")
-            for torrent_hash in pending_items.keys():
-                mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_sftp_connection', 'Could not connect to SFTP server.')
-            return
+        # On ne se connecte au SFTP que si c'est nécessaire
+        needs_sftp = any(item.get('status') == 'pending_staging' for item in items_to_process.values())
+        if needs_sftp:
+            sftp_client, transport = _connect_sftp()
+            if not sftp_client:
+                logger.error("Staging Processor: Could not connect to SFTP. Aborting cycle for pending items.")
+                for h, d in items_to_process.items():
+                    if d.get('status') == 'pending_staging':
+                        mapping_manager.update_torrent_status_in_map(h, 'error_sftp_connection', 'Could not connect to SFTP server.')
+                return
 
-        current_app.logger.info(f"Staging Processor: Found {len(pending_items)} items to process.")
+        logger.info(f"Staging Processor: Found {len(items_to_process)} items to process.")
 
-        for torrent_hash, item_data in pending_items.items():
+        for torrent_hash, item_data in items_to_process.items():
             item_data['torrent_hash'] = torrent_hash
             folder_name = item_data.get('folder_name', item_data['release_name'])
+            current_status = item_data.get('status')
 
-            is_simulation = item_data.get('label') == 'simulation'
-            rapatriation_successful = False
-
-            if is_simulation:
-                current_app.logger.info(f"'{folder_name}' est une simulation. L'étape de rapatriement SFTP est sautée.")
-                rapatriation_successful = True
-            else:
-                rapatriation_successful = _rapatriate_item(item_data, sftp_client, folder_name)
-
-            if rapatriation_successful:
-                if not is_simulation:
+            # --- DÉBUT DE LA LOGIQUE D'AIGUILLAGE ---
+            if current_status == 'pending_staging':
+                logger.info(f"Item '{folder_name}' is pending_staging. Starting rapatriation.")
+                if _rapatriate_item(item_data, sftp_client, folder_name):
                     mapping_manager.update_torrent_status_in_map(torrent_hash, 'in_staging', 'Item successfully downloaded to staging.')
-
-                queue_item_sonarr = arr_client.find_in_arr_queue_by_hash('sonarr', torrent_hash)
-                if queue_item_sonarr:
-                    _handle_automatic_import(item_data, queue_item_sonarr, 'sonarr', folder_name)
+                    # Le statut est maintenant 'in_staging', le traitement se fera à la suite
+                else:
+                    # _rapatriate_item gère déjà le statut d'erreur, on passe au suivant
                     continue
+            # --- FIN DE LA LOGIQUE D'AIGUILLAGE ---
 
-                queue_item_radarr = arr_client.find_in_arr_queue_by_hash('radarr', torrent_hash)
-                if queue_item_radarr:
-                    _handle_automatic_import(item_data, queue_item_radarr, 'radarr', folder_name)
-                    continue
+            # À ce stade, l'item est soit arrivé avec le statut 'in_staging',
+            # soit il vient d'être rapatrié et son statut a été mis à jour.
+            # On peut donc procéder au traitement manuel/automatique.
 
-                _handle_manual_import(item_data, folder_name)
-            else:
-                if not is_simulation:
-                    mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_rapatriation', 'Failed to download item from seedbox.')
+            queue_item_sonarr = arr_client.find_in_arr_queue_by_hash('sonarr', torrent_hash)
+            if queue_item_sonarr:
+                _handle_automatic_import(item_data, queue_item_sonarr, 'sonarr', folder_name)
+                continue
+
+            queue_item_radarr = arr_client.find_in_arr_queue_by_hash('radarr', torrent_hash)
+            if queue_item_radarr:
+                _handle_automatic_import(item_data, queue_item_radarr, 'radarr', folder_name)
+                continue
+
+            _handle_manual_import(item_data, folder_name)
 
     finally:
-        # This block will execute NO MATTER WHAT
         if transport:
-            current_app.logger.info("Staging Processor: Closing SFTP transport.")
+            logger.info("Staging Processor: Closing SFTP transport.")
             transport.close()
-        current_app.logger.info("Staging Processor: Cycle finished.")
+        logger.info("Staging Processor: Cycle finished.")
