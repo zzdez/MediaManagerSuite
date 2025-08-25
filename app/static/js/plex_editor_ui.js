@@ -353,13 +353,14 @@ $(document).ready(function() {
 
     // --- B. Écouteurs d'événements pour les boutons de CONFIRMATION des modales ---
 
-// Met les options d'archivage de film par défaut
+// Met les options d'archivage de film par défaut LORS DE L'OUVERTURE de la modale
 $('#archiveMovieModal').on('show.bs.modal', function () {
     $('#archiveMovieDeleteFiles').prop('checked', true);
     $('#archiveMovieUnmonitor').prop('checked', true);
     $('#archiveMovieAddTag').prop('checked', true);
 });
 
+// Gère la soumission LORS DU CLIC sur le bouton de confirmation
 $('#confirmArchiveMovieBtn').on('click', function() {
     const btn = $(this);
     const ratingKey = btn.data('ratingKey');
@@ -417,7 +418,7 @@ $('#confirmArchiveMovieBtn').on('click', function() {
             } else { alert('Erreur: ' + data.message); }
         })
         .catch(error => { console.error(error); alert('Erreur de communication.'); })
-        .finally(() => btn.prop('disabled', false).html('Confirmer l\'archivage'));
+    .finally(() => btn.prop('disabled', false).html('Confirmer l'archivage'));
     });
 
     $('#confirmRejectShowBtn').on('click', function() {
