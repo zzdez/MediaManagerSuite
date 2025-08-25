@@ -60,9 +60,22 @@ def scan_and_map_torrents():
                     logger.warning(f"Scanner: Impossible de trouver une série correspondante pour '{release_name}'. L'item sera ignoré pour ce cycle.")
 
             elif torrent_label in [label_radarr, label_radarr_auto]:
-                # TODO: Implémenter la logique équivalente pour Radarr en créant une fonction
-                # find_radarr_movie_by_release_name dans arr_client.py
-                logger.warning(f"Scanner: La logique d'identification automatique pour Radarr n'est pas encore implémentée. '{release_name}' sera ignoré.")
+                movie_info = arr_client.find_radarr_movie_by_release_name(release_name)
+                if movie_info and movie_info.get('id'):
+                    logger.info(f"Scanner: La release a été identifiée comme appartenant au film '{movie_info.get('title')}' (ID: {movie_info.get('id')}).")
+                    mapping_manager.add_or_update_torrent_in_map(
+                        release_name=release_name,
+                        torrent_hash=torrent_hash,
+                        status='pending_staging',
+                        seedbox_download_path=torrent.get('base_path'),
+                        folder_name=os.path.basename(torrent.get('base_path') or release_name),
+                        app_type='radarr',
+                        target_id=movie_info.get('id'),
+                        label=torrent_label,
+                        original_torrent_name=release_name
+                    )
+                else:
+                    logger.warning(f"Scanner: Impossible de trouver un film correspondant pour '{release_name}'. L'item sera ignoré pour ce cycle.")
 
             else:
                 logger.warning(f"Scanner: Le torrent '{release_name}' a un label inconnu ('{torrent_label}') et n'est pas dans le map. Il sera ignoré.")

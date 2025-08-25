@@ -459,7 +459,8 @@ def find_sonarr_series_by_title(title, retries=3, delay=5):
 
 def find_sonarr_series_by_release_name(release_name):
     """
-    Trouve une série dans Sonarr en se basant sur le nom d'une release.
+    Trouve une série dans Sonarr en se basant sur le nom d'une release,
+    en utilisant l'endpoint 'lookup' pour plus de fiabilité.
     """
     logger.info(f"Recherche de la série Sonarr pour la release : '{release_name}'")
     parsed_info = parse_media_name(release_name)
@@ -469,8 +470,48 @@ def find_sonarr_series_by_release_name(release_name):
         logger.warning(f"Impossible d'extraire un titre de '{release_name}'.")
         return None
 
-    # On utilise la fonction existante qui cherche par titre
-    return find_sonarr_series_by_title(title_to_search)
+    # On utilise l'endpoint 'lookup' qui est plus direct et ne dépend pas du cache interne
+    candidates = search_sonarr_by_title(title_to_search)
+    if not candidates:
+        logger.warning(f"Aucun candidat trouvé via lookup pour le titre '{title_to_search}'.")
+        return None
+
+    # Le lookup retourne une liste. On prend le premier résultat, qui est généralement le meilleur.
+    # On vérifie s'il est déjà dans Sonarr (il aura un 'id' valide).
+    best_match = candidates[0]
+    if best_match and best_match.get('id') and best_match.get('id') > 0:
+        logger.info(f"Série trouvée via lookup et déjà dans Sonarr : '{best_match.get('title')}' (ID: {best_match.get('id')})")
+        return best_match
+    else:
+        logger.warning(f"Série trouvée via lookup pour '{title_to_search}', mais elle ne semble pas être dans la bibliothèque Sonarr. Ignoré.")
+        return None
+
+
+def find_radarr_movie_by_release_name(release_name):
+    """
+    Trouve un film dans Radarr en se basant sur le nom d'une release,
+    en utilisant l'endpoint 'lookup'.
+    """
+    logger.info(f"Recherche du film Radarr pour la release : '{release_name}'")
+    parsed_info = parse_media_name(release_name)
+    title_to_search = parsed_info.get('title')
+
+    if not title_to_search:
+        logger.warning(f"Impossible d'extraire un titre de '{release_name}'.")
+        return None
+
+    candidates = search_radarr_by_title(title_to_search)
+    if not candidates:
+        logger.warning(f"Aucun candidat trouvé via lookup pour le titre '{title_to_search}'.")
+        return None
+
+    best_match = candidates[0]
+    if best_match and best_match.get('id') and best_match.get('id') > 0:
+        logger.info(f"Film trouvé via lookup et déjà dans Radarr : '{best_match.get('title')}' (ID: {best_match.get('id')})")
+        return best_match
+    else:
+        logger.warning(f"Film trouvé via lookup pour '{title_to_search}', mais il ne semble pas être dans la bibliothèque Radarr. Ignoré.")
+        return None
 
 def check_sonarr_episode_exists(series_title: str, season_number: int, episode_number: int) -> bool:
     """
