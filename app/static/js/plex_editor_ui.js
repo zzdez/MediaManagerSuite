@@ -389,7 +389,7 @@ $('#confirmArchiveMovieBtn').on('click', function() {
         } else { alert('Erreur: ' + data.message); }
     })
     .catch(error => { console.error(error); alert('Erreur de communication.'); })
-    .finally(() => btn.prop('disabled', false).html('Confirmer l'archivage'));
+    .finally(() => btn.prop('disabled', false).html('Confirmer l\'archivage'));
 });
 
     $('#confirmArchiveShowBtn').on('click', function() {
