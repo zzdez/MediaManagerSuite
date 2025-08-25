@@ -360,6 +360,13 @@ $('#archiveMovieModal').on('show.bs.modal', function () {
     $('#archiveMovieAddTag').prop('checked', true);
 });
 
+// Met les options d'archivage de série par défaut LORS DE L'OUVERTURE de la modale
+$('#archiveShowModal').on('show.bs.modal', function () {
+    $('#archiveShowDeleteFiles').prop('checked', true);
+    $('#archiveShowUnmonitor').prop('checked', true);
+    $('#archiveShowAddTag').prop('checked', true);
+});
+
 // Gère la soumission LORS DU CLIC sur le bouton de confirmation
 $('#confirmArchiveMovieBtn').on('click', function() {
     const btn = $(this);
