@@ -457,6 +457,21 @@ def find_sonarr_series_by_title(title, retries=3, delay=5):
     current_app.logger.error(f"Sonarr: Series '{title}' not found after {retries} attempts.")
     return None
 
+def find_sonarr_series_by_release_name(release_name):
+    """
+    Trouve une série dans Sonarr en se basant sur le nom d'une release.
+    """
+    logger.info(f"Recherche de la série Sonarr pour la release : '{release_name}'")
+    parsed_info = parse_media_name(release_name)
+    title_to_search = parsed_info.get('title')
+
+    if not title_to_search:
+        logger.warning(f"Impossible d'extraire un titre de '{release_name}'.")
+        return None
+
+    # On utilise la fonction existante qui cherche par titre
+    return find_sonarr_series_by_title(title_to_search)
+
 def check_sonarr_episode_exists(series_title: str, season_number: int, episode_number: int) -> bool:
     """
     Checks if a specific TV show episode OR ANY EPISODE in a season exists in Sonarr and has a file.
