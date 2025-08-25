@@ -1325,25 +1325,29 @@ def archive_movie_route():
     data = request.get_json()
     rating_key = data.get('ratingKey')
     options = data.get('options', {})
+    # On récupère le userId envoyé par le frontend, comme pour les séries.
+    user_id = data.get('userId')
 
-    if not rating_key:
-        return jsonify({'status': 'error', 'message': 'Missing ratingKey.'}), 400
+    if not rating_key or not user_id:
+        return jsonify({'status': 'error', 'message': 'Missing ratingKey or userId.'}), 400
 
     # ÉTAPE 1: Obtenir les deux connexions nécessaires
     admin_plex_server = get_plex_admin_server()
-    user_plex_server = get_user_specific_plex_server()
+    if not admin_plex_server:
+        return jsonify({'status': 'error', 'message': 'Could not get admin Plex connection.'}), 500
+
+    # On utilise la fonction helper qui gère l'admin et l'emprunt d'identité
+    user_plex_server = get_user_specific_plex_server_from_id(user_id)
 
     if not admin_plex_server or not user_plex_server:
         return jsonify({'status': 'error', 'message': 'Could not establish Plex connections.'}), 500
 
     try:
         # ÉTAPE 2: Récupérer l'objet film dans les deux contextes
-        # Contexte admin pour les actions (suppression, scan) et les métadonnées fiables
         movie_admin_context = admin_plex_server.fetchItem(int(rating_key))
         if not movie_admin_context or movie_admin_context.type != 'movie':
             return jsonify({'status': 'error', 'message': 'Movie not found or not a movie item.'}), 404
 
-        # Contexte utilisateur pour la seule vérification du statut de visionnage
         movie_user_context = user_plex_server.fetchItem(int(rating_key))
         if not movie_user_context.isWatched:
             return jsonify({'status': 'error', 'message': 'Movie is not marked as watched for the current user.'}), 400
@@ -1351,19 +1355,14 @@ def archive_movie_route():
         # --- Radarr Actions ---
         if options.get('unmonitor') or options.get('addTag'):
             radarr_movie = None
-
-            # ### DÉBOGAGE DES GUIDs PLEX ###
             guids_to_check = [g.id for g in movie_admin_context.guids]
-            current_app.logger.info(f"Recherche du film '{movie_admin_context.title}' dans Radarr avec les GUIDs suivants : {guids_to_check}")
+            current_app.logger.info(f"Recherche du film '{movie_admin_context.title}' dans Radarr avec les GUIDs : {guids_to_check}")
 
             for guid_str in guids_to_check:
-                current_app.logger.info(f"  -> Tentative avec le GUID : {guid_str}")
                 radarr_movie = get_radarr_movie_by_guid(guid_str)
                 if radarr_movie:
-                    current_app.logger.info(f"  -> SUCCÈS ! Film trouvé dans Radarr avec le GUID {guid_str}. (Titre Radarr: {radarr_movie.get('title')})")
+                    current_app.logger.info(f"Film trouvé dans Radarr avec le GUID {guid_str}.")
                     break
-                else:
-                    current_app.logger.info(f"  -> Échec avec le GUID {guid_str}.")
 
             if not radarr_movie:
                 return jsonify({'status': 'error', 'message': 'Movie not found in Radarr.'}), 404
@@ -1379,22 +1378,16 @@ def archive_movie_route():
                 return jsonify({'status': 'error', 'message': 'Failed to update movie in Radarr.'}), 500
 
         # --- File Deletion Action ---
-        # On utilise l'objet admin pour être sûr d'avoir le bon chemin de fichier
         if options.get('deleteFiles'):
             media_filepath = get_media_filepath(movie_admin_context)
             if media_filepath and os.path.exists(media_filepath):
                 try:
                     is_simulating = _is_dry_run_mode()
                     dry_run_prefix = "[SIMULATION] " if is_simulating else ""
-                    current_app.logger.info(f"{dry_run_prefix}ARCHIVE: Tentative de suppression du fichier média : {media_filepath}")
+                    current_app.logger.info(f"{dry_run_prefix}ARCHIVE: Suppression du fichier média : {media_filepath}")
                     if not is_simulating:
                         os.remove(media_filepath)
-                        flash(f"Fichier '{os.path.basename(media_filepath)}' supprimé.", "success")
-                        current_app.logger.info(f"ARCHIVE: Fichier '{media_filepath}' supprimé avec succès.")
-                    else:
-                        flash(f"[SIMULATION] Fichier '{os.path.basename(media_filepath)}' serait supprimé.", "info")
 
-                    # Logique de nettoyage du dossier parent
                     library_sections = admin_plex_server.library.sections()
                     temp_roots = {os.path.normpath(loc) for lib in library_sections for loc in lib.locations}
                     temp_guards = {os.path.normpath(os.path.splitdrive(r)[0] + os.sep) if os.path.splitdrive(r)[0] else os.path.normpath(os.sep + r.split(os.sep)[1]) for r in temp_roots if r}
@@ -1404,33 +1397,22 @@ def archive_movie_route():
                         base_paths_guards=list(temp_guards)
                     )
                 except Exception as e_cleanup:
-                    current_app.logger.error(f"ARCHIVE: Erreur durant le processus de nettoyage pour '{movie_admin_context.title}': {e_cleanup}", exc_info=True)
-                    flash(f"Erreur inattendue durant le nettoyage pour '{movie_admin_context.title}'.", "danger")
-            elif media_filepath:
-                 current_app.logger.warning(f"ARCHIVE: Chemin '{media_filepath}' non trouvé sur le disque, nettoyage ignoré.")
-            else:
-                current_app.logger.warning(f"ARCHIVE: Chemin du fichier pour '{movie_admin_context.title}' non trouvé dans Plex, nettoyage ignoré.")
+                    current_app.logger.error(f"ARCHIVE: Erreur durant le nettoyage pour '{movie_admin_context.title}': {e_cleanup}", exc_info=True)
 
-        # --- Déclencher un scan de la bibliothèque dans Plex ---
-        # Cette partie est maintenant DANS le bloc `try` principal
+        # --- Déclencher un scan Plex ---
         try:
-            # On utilise l'objet movie_admin_context qui est lié à la connexion admin
             library_name = movie_admin_context.librarySectionTitle
             movie_library = admin_plex_server.library.section(library_name)
-            current_app.logger.info(f"Déclenchement d'un scan de la bibliothèque '{movie_library.title}' dans Plex.")
+            current_app.logger.info(f"Déclenchement d'un scan de la bibliothèque '{movie_library.title}'.")
             if not _is_dry_run_mode():
                 movie_library.update()
-                flash(f"Scan de la bibliothèque '{movie_library.title}' déclenché.", "info")
-            else:
-                 flash(f"[SIMULATION] Un scan de la bibliothèque '{movie_library.title}' serait déclenché.", "info")
         except Exception as e_scan:
-            current_app.logger.error(f"Échec du déclenchement du scan Plex: {e_scan}", exc_info=True)
-            flash("Échec du déclenchement du scan de la bibliothèque dans Plex.", "warning")
+            current_app.logger.error(f"Échec du scan Plex: {e_scan}", exc_info=True)
 
         return jsonify({'status': 'success', 'message': f"'{movie_admin_context.title}' successfully archived."})
 
     except NotFound:
-        return jsonify({'status': 'error', 'message': f"Movie with ratingKey {rating_key} not found in Plex."}), 404
+        return jsonify({'status': 'error', 'message': f"Movie with ratingKey {rating_key} not found."}), 404
     except Exception as e:
         current_app.logger.error(f"Error archiving movie: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500
@@ -1807,8 +1789,7 @@ def get_series_details_for_management(rating_key):
         return '<div class="alert alert-danger">Erreur: ID utilisateur manquant.</div>', 400
 
     try:
-        # (La logique de connexion sans session est correcte et reste la même)
-        # ...
+        # --- BLOC DE CONNEXION PLEX (INCHANGÉ) ---
         admin_plex_server_for_token = get_plex_admin_server()
         if not admin_plex_server_for_token: return ('<div class="alert alert-danger">Erreur: Connexion admin.</div>', 500)
         main_account = admin_plex_server_for_token.myPlexAccount()
@@ -1826,7 +1807,7 @@ def get_series_details_for_management(rating_key):
         series = user_plex_server.fetchItem(rating_key)
         if not series or series.type != 'show': return f'<div class="alert alert-warning">Série non trouvée.</div>', 404
 
-        # (Logique Sonarr inchangée et correcte)
+        # --- BLOC DE RÉCUPÉRATION SONARR (INCHANGÉ) ---
         sonarr_series_full_details = None; sonarr_series_id_val = None; is_monitored_global_status = False
         tvdb_id = next((g.id.replace('tvdb://', '') for g in series.guids if g.id.startswith('tvdb://')), None)
         if tvdb_id:
@@ -1841,47 +1822,84 @@ def get_series_details_for_management(rating_key):
         seasons_list = []
         total_series_size = 0; viewed_seasons_count = 0
 
-        for season in series.seasons():
-            if season.isWatched: viewed_seasons_count += 1
-            sonarr_season_info = next((s for s in sonarr_series_full_details.get('seasons', []) if s.get('seasonNumber') == season.seasonNumber), None) if sonarr_series_full_details else None
+        # ### MODIFICATION BLOC 1/2 : CHANGEMENT DE LA SOURCE DE VÉRITÉ ###
+        # Ancienne boucle : for season in series.seasons():
+        # Nouvelle boucle : On boucle sur les saisons de SONARR pour inclure les saisons potentiellement vides dans Plex
+        for sonarr_season_info in sonarr_series_full_details.get('seasons', []):
+            season_number = sonarr_season_info.get('seasonNumber')
+            
+            # On cherche la saison Plex correspondante
+            plex_season = next((s for s in series.seasons() if s.seasonNumber == season_number), None)
+
+            # Création d'un dictionnaire de mapping des épisodes Plex pour un accès rapide
+            plex_episodes_map = {ep.index: ep for ep in plex_season.episodes()} if plex_season else {}
+
+            if plex_season and plex_season.isWatched: 
+                viewed_seasons_count += 1
+
+            # On filtre les épisodes Sonarr pour la saison actuelle
+            episodes_for_this_season_from_sonarr = [ep for ep in all_sonarr_episodes if ep.get('seasonNumber') == season_number]
+            
+            # On trie par numéro d'épisode pour un affichage logique
+            episodes_for_this_season_from_sonarr.sort(key=lambda x: x.get('episodeNumber', 0))
 
             episodes_list_for_season = []
             total_season_size = 0
-            for episode in season.episodes():
-                # --- CORRECTION 1 : On restaure la taille depuis PLEX ---
-                size_bytes = getattr(episode.media[0].parts[0], 'size', 0) if episode.media and episode.media[0].parts else 0
-                total_season_size += size_bytes
+            
+            # Nouvelle boucle principale : on itère sur les épisodes de SONARR
+            for sonarr_episode_data in episodes_for_this_season_from_sonarr:
+                episode_number = sonarr_episode_data.get('episodeNumber')
+                plex_episode = plex_episodes_map.get(episode_number)
 
-                sonarr_episode_data = next((e for e in all_sonarr_episodes if e.get('seasonNumber') == episode.seasonNumber and e.get('episodeNumber') == episode.index), None)
-                sonarr_file_id = sonarr_episode_data.get('episodeFileId', 0) if sonarr_episode_data else 0
+                # On détermine si l'épisode est présent dans Plex en se basant sur notre map
+                is_present_in_plex = plex_episode is not None
+
+                # On calcule la taille uniquement si l'épisode existe dans Plex
+                size_bytes = 0
+                if is_present_in_plex:
+                    size_bytes = getattr(plex_episode.media[0].parts[0], 'size', 0) if plex_episode.media and plex_episode.media[0].parts else 0
+                    total_season_size += size_bytes
 
                 episodes_list_for_season.append({
-                    'title': episode.title,
-                    'episodeNumber': episode.index,
-                    'ratingKey': episode.ratingKey,
-                    'isWatched': episode.isWatched,
+                    # Données communes (venant de Sonarr, avec fallback de Plex si besoin)
+                    'title': sonarr_episode_data.get('title', 'Titre inconnu'),
+                    'episodeNumber': episode_number,
+                    'isMonitored_sonarr': sonarr_episode_data.get('monitored', False),
+                    'sonarr_episodeId': sonarr_episode_data.get('id'),
+                    'sonarr_episodeFileId': sonarr_episode_data.get('episodeFileId', 0),
+                    'hasFileInSonarr': sonarr_episode_data.get('hasFile', False),
+                    
+                    # Données spécifiques à Plex (existent seulement si l'épisode est présent)
+                    'isPresentInPlex': is_present_in_plex,
+                    'ratingKey': plex_episode.ratingKey if is_present_in_plex else None,
+                    'isWatched': plex_episode.isWatched if is_present_in_plex else False,
                     'size_on_disk': size_bytes,
-                    'sonarr_episodeId': sonarr_episode_data.get('id') if sonarr_episode_data else None,
-                    'sonarr_episodeFileId': sonarr_file_id,
-                    'isMonitored_sonarr': sonarr_episode_data.get('monitored', False) if sonarr_episode_data else False
                 })
-
+            
             total_series_size += total_season_size
 
             seasons_list.append({
-                'title': season.title, 'ratingKey': season.ratingKey,
-                'seasonNumber': season.seasonNumber, 'total_episodes': season.leafCount,
-                'viewed_episodes': season.viewedLeafCount,
-                'is_monitored_season': sonarr_season_info.get('monitored', False) if sonarr_season_info else False,
-                'total_size_on_disk': total_season_size, 'episodes': episodes_list_for_season
+                'title': f"Saison {season_number}" if season_number > 0 else "Specials",
+                'ratingKey': plex_season.ratingKey if plex_season else f"sonarr-season-{season_number}",
+                'seasonNumber': season_number,
+                # On utilise les stats de Sonarr pour le total, et Plex pour le visionné
+                'total_episodes': sonarr_season_info.get('statistics', {}).get('episodeCount', 0),
+                'viewed_episodes': plex_season.viewedLeafCount if plex_season else 0,
+                'is_monitored_season': sonarr_season_info.get('monitored', False),
+                'total_size_on_disk': total_season_size, 
+                'episodes': episodes_list_for_season
             })
+        # ### FIN DE LA MODIFICATION BLOC 1/2 ###
 
         series_data = {
             'title': series.title, 'ratingKey': series.ratingKey,
             'plex_status': getattr(series, 'status', 'unknown'),
-            'total_seasons_plex': series.childCount, 'viewed_seasons_plex': viewed_seasons_count,
-            'is_monitored_global': is_monitored_global_status, 'sonarr_series_id': sonarr_series_id_val,
-            'total_size_on_disk': total_series_size, 'seasons': seasons_list
+            'total_seasons_plex': series.childCount, 
+            'viewed_seasons_plex': viewed_seasons_count,
+            'is_monitored_global': is_monitored_global_status, 
+            'sonarr_series_id': sonarr_series_id_val,
+            'total_size_on_disk': total_series_size, 
+            'seasons': seasons_list
         }
 
         return render_template('plex_editor/_series_management_modal_content.html', series=series_data)

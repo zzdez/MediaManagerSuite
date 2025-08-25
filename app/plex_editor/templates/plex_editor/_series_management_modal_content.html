@@ -113,28 +113,40 @@
             </div>
 
             <!-- Conteneur "Collapse" pour la liste des épisodes (modifié) -->
+            {# ### MODIFICATION BLOC 2/2 : GESTION DES ÉPISODES MANQUANTS ### #}
             {% if season.episodes and season.episodes|length > 0 %}
             <div class="collapse pt-1" id="episodes-for-season-{{ season.ratingKey }}">
                 <ul class="list-group list-group-flush">
                     {% for episode in season.episodes %}
-                    <li class="list-group-item {% if episode.isWatched %}list-group-item-light text-muted{% else %}list-group-item-secondary{% endif %} d-flex justify-content-between align-items-center py-1 px-2">
+                    {# On change la classe de la ligne en fonction de la présence et du statut "vu" #}
+                    <li class="list-group-item 
+                        {% if not episode.isPresentInPlex %}list-group-item-danger text-muted
+                        {% elif episode.isWatched %}list-group-item-light text-muted
+                        {% else %}list-group-item-secondary{% endif %} 
+                        d-flex justify-content-between align-items-center py-1 px-2">
 
-                        <!-- NOUVEAU : Case à cocher pour la suppression -->
                         <div class="form-check">
+                            {# La case à cocher est désactivée si l'épisode est manquant #}
                             <input class="form-check-input episode-delete-checkbox" type="checkbox"
                                    value="{{ episode.sonarr_episodeFileId }}"
                                    id="delete-ep-{{ episode.sonarr_episodeFileId }}"
-                                   {% if not episode.sonarr_episodeFileId %}disabled{% endif %}>
+                                   {% if not episode.isPresentInPlex or not episode.sonarr_episodeFileId %}disabled{% endif %}>
                             <label class="form-check-label" for="delete-ep-{{ episode.sonarr_episodeFileId }}">
-                                {# On ajoute le numéro de l'épisode (formaté sur 2 chiffres) #}
                                 <small>E{{ '%02d'|format(episode.episodeNumber) }} - {{ episode.title }}</small>
+                                {# On ajoute un badge pour les épisodes manquants #}
+                                {% if not episode.isPresentInPlex %}
+                                    <span class="badge bg-danger ms-2">MANQUANT</span>
+                                {% endif %}
                             </label>
                         </div>
 
                         <div class="d-flex align-items-center">
+                            {# On affiche la taille seulement si l'épisode est présent #}
+                            {% if episode.isPresentInPlex %}
                             <span class="badge bg-dark me-2">{{ (episode.size_on_disk / (1024*1024)) | round(1) }} MB</span>
+                            {% endif %}
 
-                            <!-- NOUVEAU : Switch de monitoring pour l'épisode -->
+                            {# Le switch de monitoring est toujours actif car il dépend de Sonarr #}
                             <div class="form-check form-switch me-2" title="Surveiller cet épisode dans Sonarr">
                                 <input class="form-check-input episode-monitor-toggle" type="checkbox" role="switch"
                                        data-sonarr-episode-id="{{ episode.sonarr_episodeId }}"
@@ -142,8 +154,8 @@
                                        {% if not episode.sonarr_episodeId %}disabled{% endif %}>
                             </div>
 
-                            {# --- Icône cliquable pour basculer le statut Vu/Non Vu --- #}
-                            <a href="#" class="toggle-episode-watched-btn" 
+                            {# Le bouton Vu/Non Vu est désactivé si l'épisode est manquant #}
+                            <a href="#" class="toggle-episode-watched-btn {% if not episode.isPresentInPlex %}disabled pe-none{% endif %}" 
                                data-rating-key="{{ episode.ratingKey }}" 
                                title="Basculer Vu/Non Vu">
                             {% if episode.isWatched %}
