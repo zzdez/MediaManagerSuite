@@ -1325,25 +1325,29 @@ def archive_movie_route():
     data = request.get_json()
     rating_key = data.get('ratingKey')
     options = data.get('options', {})
+    # On récupère le userId envoyé par le frontend, comme pour les séries.
+    user_id = data.get('userId')
 
-    if not rating_key:
-        return jsonify({'status': 'error', 'message': 'Missing ratingKey.'}), 400
+    if not rating_key or not user_id:
+        return jsonify({'status': 'error', 'message': 'Missing ratingKey or userId.'}), 400
 
     # ÉTAPE 1: Obtenir les deux connexions nécessaires
     admin_plex_server = get_plex_admin_server()
-    user_plex_server = get_user_specific_plex_server()
+    if not admin_plex_server:
+        return jsonify({'status': 'error', 'message': 'Could not get admin Plex connection.'}), 500
+
+    # On utilise la fonction helper qui gère l'admin et l'emprunt d'identité
+    user_plex_server = get_user_specific_plex_server_from_id(user_id)
 
     if not admin_plex_server or not user_plex_server:
         return jsonify({'status': 'error', 'message': 'Could not establish Plex connections.'}), 500
 
     try:
         # ÉTAPE 2: Récupérer l'objet film dans les deux contextes
-        # Contexte admin pour les actions (suppression, scan) et les métadonnées fiables
         movie_admin_context = admin_plex_server.fetchItem(int(rating_key))
         if not movie_admin_context or movie_admin_context.type != 'movie':
             return jsonify({'status': 'error', 'message': 'Movie not found or not a movie item.'}), 404
 
-        # Contexte utilisateur pour la seule vérification du statut de visionnage
         movie_user_context = user_plex_server.fetchItem(int(rating_key))
         if not movie_user_context.isWatched:
             return jsonify({'status': 'error', 'message': 'Movie is not marked as watched for the current user.'}), 400
@@ -1351,19 +1355,14 @@ def archive_movie_route():
         # --- Radarr Actions ---
         if options.get('unmonitor') or options.get('addTag'):
             radarr_movie = None
-
-            # ### DÉBOGAGE DES GUIDs PLEX ###
             guids_to_check = [g.id for g in movie_admin_context.guids]
-            current_app.logger.info(f"Recherche du film '{movie_admin_context.title}' dans Radarr avec les GUIDs suivants : {guids_to_check}")
+            current_app.logger.info(f"Recherche du film '{movie_admin_context.title}' dans Radarr avec les GUIDs : {guids_to_check}")
 
             for guid_str in guids_to_check:
-                current_app.logger.info(f"  -> Tentative avec le GUID : {guid_str}")
                 radarr_movie = get_radarr_movie_by_guid(guid_str)
                 if radarr_movie:
-                    current_app.logger.info(f"  -> SUCCÈS ! Film trouvé dans Radarr avec le GUID {guid_str}. (Titre Radarr: {radarr_movie.get('title')})")
+                    current_app.logger.info(f"Film trouvé dans Radarr avec le GUID {guid_str}.")
                     break
-                else:
-                    current_app.logger.info(f"  -> Échec avec le GUID {guid_str}.")
 
             if not radarr_movie:
                 return jsonify({'status': 'error', 'message': 'Movie not found in Radarr.'}), 404
@@ -1379,22 +1378,16 @@ def archive_movie_route():
                 return jsonify({'status': 'error', 'message': 'Failed to update movie in Radarr.'}), 500
 
         # --- File Deletion Action ---
-        # On utilise l'objet admin pour être sûr d'avoir le bon chemin de fichier
         if options.get('deleteFiles'):
             media_filepath = get_media_filepath(movie_admin_context)
             if media_filepath and os.path.exists(media_filepath):
                 try:
                     is_simulating = _is_dry_run_mode()
                     dry_run_prefix = "[SIMULATION] " if is_simulating else ""
-                    current_app.logger.info(f"{dry_run_prefix}ARCHIVE: Tentative de suppression du fichier média : {media_filepath}")
+                    current_app.logger.info(f"{dry_run_prefix}ARCHIVE: Suppression du fichier média : {media_filepath}")
                     if not is_simulating:
                         os.remove(media_filepath)
-                        flash(f"Fichier '{os.path.basename(media_filepath)}' supprimé.", "success")
-                        current_app.logger.info(f"ARCHIVE: Fichier '{media_filepath}' supprimé avec succès.")
-                    else:
-                        flash(f"[SIMULATION] Fichier '{os.path.basename(media_filepath)}' serait supprimé.", "info")
 
-                    # Logique de nettoyage du dossier parent
                     library_sections = admin_plex_server.library.sections()
                     temp_roots = {os.path.normpath(loc) for lib in library_sections for loc in lib.locations}
                     temp_guards = {os.path.normpath(os.path.splitdrive(r)[0] + os.sep) if os.path.splitdrive(r)[0] else os.path.normpath(os.sep + r.split(os.sep)[1]) for r in temp_roots if r}
@@ -1404,33 +1397,22 @@ def archive_movie_route():
                         base_paths_guards=list(temp_guards)
                     )
                 except Exception as e_cleanup:
-                    current_app.logger.error(f"ARCHIVE: Erreur durant le processus de nettoyage pour '{movie_admin_context.title}': {e_cleanup}", exc_info=True)
-                    flash(f"Erreur inattendue durant le nettoyage pour '{movie_admin_context.title}'.", "danger")
-            elif media_filepath:
-                 current_app.logger.warning(f"ARCHIVE: Chemin '{media_filepath}' non trouvé sur le disque, nettoyage ignoré.")
-            else:
-                current_app.logger.warning(f"ARCHIVE: Chemin du fichier pour '{movie_admin_context.title}' non trouvé dans Plex, nettoyage ignoré.")
+                    current_app.logger.error(f"ARCHIVE: Erreur durant le nettoyage pour '{movie_admin_context.title}': {e_cleanup}", exc_info=True)
 
-        # --- Déclencher un scan de la bibliothèque dans Plex ---
-        # Cette partie est maintenant DANS le bloc `try` principal
+        # --- Déclencher un scan Plex ---
         try:
-            # On utilise l'objet movie_admin_context qui est lié à la connexion admin
             library_name = movie_admin_context.librarySectionTitle
             movie_library = admin_plex_server.library.section(library_name)
-            current_app.logger.info(f"Déclenchement d'un scan de la bibliothèque '{movie_library.title}' dans Plex.")
+            current_app.logger.info(f"Déclenchement d'un scan de la bibliothèque '{movie_library.title}'.")
             if not _is_dry_run_mode():
                 movie_library.update()
-                flash(f"Scan de la bibliothèque '{movie_library.title}' déclenché.", "info")
-            else:
-                 flash(f"[SIMULATION] Un scan de la bibliothèque '{movie_library.title}' serait déclenché.", "info")
         except Exception as e_scan:
-            current_app.logger.error(f"Échec du déclenchement du scan Plex: {e_scan}", exc_info=True)
-            flash("Échec du déclenchement du scan de la bibliothèque dans Plex.", "warning")
+            current_app.logger.error(f"Échec du scan Plex: {e_scan}", exc_info=True)
 
         return jsonify({'status': 'success', 'message': f"'{movie_admin_context.title}' successfully archived."})
 
     except NotFound:
-        return jsonify({'status': 'error', 'message': f"Movie with ratingKey {rating_key} not found in Plex."}), 404
+        return jsonify({'status': 'error', 'message': f"Movie with ratingKey {rating_key} not found."}), 404
     except Exception as e:
         current_app.logger.error(f"Error archiving movie: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500

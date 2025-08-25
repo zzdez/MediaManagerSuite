@@ -353,30 +353,43 @@ $(document).ready(function() {
 
     // --- B. Écouteurs d'événements pour les boutons de CONFIRMATION des modales ---
 
-    $('#confirmArchiveMovieBtn').on('click', function() {
-        const btn = $(this);
-        const ratingKey = btn.data('ratingKey');
-        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Archivage...');
-        const options = {
-            deleteFiles: $('#archiveMovieDeleteFiles').is(':checked'),
-            unmonitor: $('#archiveMovieUnmonitor').is(':checked'),
-            addTag: $('#archiveMovieAddTag').is(':checked')
-        };
-        fetch('/plex/archive_movie', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ratingKey: ratingKey, options: options })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === 'success') {
-                $(`.archive-movie-btn[data-rating-key='${ratingKey}']`).closest('tr').remove();
-                bootstrap.Modal.getInstance(document.getElementById('archiveMovieModal')).hide();
-            } else { alert('Erreur: ' + data.message); }
-        })
-        .catch(error => { console.error(error); alert('Erreur de communication.'); })
-        .finally(() => btn.prop('disabled', false).html('Confirmer l\'archivage'));
-    });
+// Met les options d'archivage de film par défaut
+$('#archiveMovieModal').on('show.bs.modal', function () {
+    $('#archiveMovieDeleteFiles').prop('checked', true);
+    $('#archiveMovieUnmonitor').prop('checked', true);
+    $('#archiveMovieAddTag').prop('checked', true);
+});
+
+$('#confirmArchiveMovieBtn').on('click', function() {
+    const btn = $(this);
+    const ratingKey = btn.data('ratingKey');
+    const userId = $('#user-select').val();
+    if (!userId) {
+        alert("Erreur : Aucun utilisateur n'est sélectionné.");
+        return;
+    }
+
+    btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Archivage...');
+    const options = {
+        deleteFiles: $('#archiveMovieDeleteFiles').is(':checked'),
+        unmonitor: $('#archiveMovieUnmonitor').is(':checked'),
+        addTag: $('#archiveMovieAddTag').is(':checked')
+    };
+    fetch('/plex/archive_movie', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ratingKey: ratingKey, options: options, userId: userId })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            $(`.archive-movie-btn[data-rating-key='${ratingKey}']`).closest('tr').remove();
+            bootstrap.Modal.getInstance(document.getElementById('archiveMovieModal')).hide();
+        } else { alert('Erreur: ' + data.message); }
+    })
+    .catch(error => { console.error(error); alert('Erreur de communication.'); })
+    .finally(() => btn.prop('disabled', false).html('Confirmer l'archivage'));
+});
 
     $('#confirmArchiveShowBtn').on('click', function() {
         const btn = $(this);
