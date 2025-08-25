@@ -36,14 +36,19 @@ def scan_and_map_torrents():
             logger.info(f"Scanner: Nouveau torrent terminé détecté: '{release_name}'.")
             torrent_label = torrent.get('label')
 
-            if torrent_label == label_sonarr:
+            # On définit les labels automatiques que l'on s'attend à voir de la part de Sonarr/Radarr
+            label_sonarr_auto = 'tv-sonarr'
+            # Supposition pour Radarr, à ajuster si votre label automatique est différent
+            label_radarr_auto = 'radarr' 
+
+            if torrent_label in [label_sonarr, label_sonarr_auto]:
                 series_info = arr_client.find_sonarr_series_by_release_name(release_name)
                 if series_info and series_info.get('id'):
                     logger.info(f"Scanner: La release a été identifiée comme appartenant à la série '{series_info.get('title')}' (ID: {series_info.get('id')}).")
                     mapping_manager.add_or_update_torrent_in_map(
                         release_name=release_name,
                         torrent_hash=torrent_hash,
-                        status='completed_auto', # On assume que Sonarr a déjà fait le travail
+                        status='pending_staging', # <-- C'EST LA SEULE LIGNE MODIFIÉE
                         seedbox_download_path=torrent.get('base_path'),
                         folder_name=os.path.basename(torrent.get('base_path') or release_name),
                         app_type='sonarr',
@@ -54,8 +59,9 @@ def scan_and_map_torrents():
                 else:
                     logger.warning(f"Scanner: Impossible de trouver une série correspondante pour '{release_name}'. L'item sera ignoré pour ce cycle.")
 
-            elif torrent_label == label_radarr:
-                # TODO: Implémenter la logique équivalente pour Radarr
+            elif torrent_label in [label_radarr, label_radarr_auto]:
+                # TODO: Implémenter la logique équivalente pour Radarr en créant une fonction
+                # find_radarr_movie_by_release_name dans arr_client.py
                 logger.warning(f"Scanner: La logique d'identification automatique pour Radarr n'est pas encore implémentée. '{release_name}' sera ignoré.")
 
             else:
