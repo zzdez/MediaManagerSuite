@@ -6,6 +6,9 @@ import json
 import time
 import xmlrpc.client
 import logging
+import paramiko
+from pathlib import Path
+import stat
 # import base64 # For xmlrpc.client.Binary later
 
 def _send_xmlrpc_request(method_name, params):
@@ -583,9 +586,24 @@ def get_completed_torrents():
     current_app.logger.info(f"rTorrent Client: Found {len(completed_torrents)} completed torrents.")
     return completed_torrents
 
+def _sftp_delete_recursive(sftp_client, remote_path):
+    """ Supprime récursivement un fichier ou un dossier via SFTP. """
+    try:
+        item_stat = sftp_client.stat(remote_path)
+        if stat.S_ISDIR(item_stat.st_mode):
+            for item_name in sftp_client.listdir(remote_path):
+                child_path = str(Path(remote_path) / item_name)
+                _sftp_delete_recursive(sftp_client, child_path)
+            sftp_client.rmdir(remote_path)
+        else:
+            sftp_client.remove(remote_path)
+    except FileNotFoundError:
+        # Si le fichier n'existe pas, on considère que c'est un succès
+        pass
+
 def delete_torrent(torrent_hash, delete_data=False):
     """
-    Deletes a torrent from rTorrent, with a robust option to delete the data.
+    Deletes a torrent from rTorrent, using SFTP to delete data if requested.
     """
     if not torrent_hash:
         return False, "Torrent hash cannot be empty."
@@ -595,37 +613,45 @@ def delete_torrent(torrent_hash, delete_data=False):
 
     if not delete_data:
         # Simple erase, keeps data on disk
-        logger.info(f"Performing simple erase for hash {torrent_hash}.")
         result, error = _send_xmlrpc_request(method_name="d.erase", params=[torrent_hash])
         if error:
-            logger.error(f"Error during simple erase for {torrent_hash}: {error}")
             return False, f"XML-RPC Error: {error}"
         return True, "Torrent removed from rTorrent client."
 
     else:
-        # Full deletion using system.multicall, as recommended for hosted seedboxes.
-        logger.info(f"Performing full deletion (with data) for hash {torrent_hash} via system.multicall.")
+        # Full deletion: SFTP delete data first, then erase.
+        logger.info(f"Performing full deletion for hash {torrent_hash} via SFTP.")
 
-        # This structure mimics the XML-RPC multicall structure.
-        # Each command is a dictionary with 'methodName' and 'params'.
-        multicall_params = [
-            {
-                'methodName': 'd.delete_tied',
-                'params': [torrent_hash]
-            },
-            {
-                'methodName': 'd.erase',
-                'params': [torrent_hash]
-            }
-        ]
+        # 1. Get the data path from rTorrent
+        data_path, error_path = _send_xmlrpc_request("d.base_path", [torrent_hash])
+        if error_path or not data_path:
+            return False, f"Could not retrieve data path from rTorrent: {error_path}"
 
-        # The _send_xmlrpc_request function expects a list of params,
-        # and for system.multicall, the parameter is a list of these command structs.
-        result, error = _send_xmlrpc_request(method_name="system.multicall", params=[multicall_params])
+        # 2. Connect to SFTP and delete the data
+        sftp_host = current_app.config.get('SEEDBOX_SFTP_HOST')
+        sftp_port = int(current_app.config.get('SEEDBOX_SFTP_PORT', 22))
+        sftp_user = current_app.config.get('SEEDBOX_SFTP_USER')
+        sftp_password = current_app.config.get('SEEDBOX_SFTP_PASSWORD')
 
-        if error:
-            logger.error(f"Error during system.multicall deletion for {torrent_hash}: {error}")
-            return False, f"Failed to delete torrent and data. Error: {error}"
+        transport = None
+        try:
+            transport = paramiko.Transport((sftp_host, sftp_port))
+            transport.connect(username=sftp_user, password=sftp_password)
+            sftp = paramiko.SFTPClient.from_transport(transport)
+            logger.info(f"SFTP connected. Deleting data at: {data_path}")
+            _sftp_delete_recursive(sftp, data_path)
+            logger.info(f"SFTP deletion successful for path: {data_path}")
+        except Exception as e:
+            logger.error(f"SFTP deletion failed for path '{data_path}': {e}", exc_info=True)
+            return False, f"Failed to delete data via SFTP: {e}"
+        finally:
+            if transport:
+                transport.close()
 
-        logger.info(f"system.multicall for deletion of {torrent_hash} sent successfully.")
-        return True, "Deletion command sent to rTorrent. If permissions allow, data will be removed."
+        # 3. Only if SFTP deletion was successful, erase the torrent from the client.
+        result, error_erase = _send_xmlrpc_request("d.erase", [torrent_hash])
+        if error_erase:
+            return False, f"Data was deleted via SFTP, but failed to remove torrent from the list: {error_erase}"
+
+        logger.info(f"Torrent {torrent_hash} and its data were successfully deleted.")
+        return True, "Torrent and its data were successfully deleted."
