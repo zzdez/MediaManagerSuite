@@ -585,39 +585,47 @@ def get_completed_torrents():
 
 def delete_torrent(torrent_hash, delete_data=False):
     """
-    Deletes a torrent from rTorrent.
-
-    :param torrent_hash: The hash of the torrent to delete.
-    :param delete_data: If True, also delete the data from the disk.
-    :return: Tuple (bool_success, message_str).
+    Deletes a torrent from rTorrent, with a robust option to delete the data.
     """
     if not torrent_hash:
         return False, "Torrent hash cannot be empty."
 
-    current_app.logger.info(f"Attempting to delete torrent {torrent_hash} from rTorrent. Delete data: {delete_data}")
+    logger = current_app.logger
+    logger.info(f"Attempting to delete torrent {torrent_hash}. Delete data: {delete_data}")
 
-    # The command to delete a torrent is d.erase
-    # It takes the torrent hash as an argument.
-    method_name = "d.erase"
-    params = [torrent_hash]
+    if not delete_data:
+        # Simple erase, keeps data on disk
+        logger.info(f"Performing simple erase for hash {torrent_hash}.")
+        result, error = _send_xmlrpc_request(method_name="d.erase", params=[torrent_hash])
+        if error:
+            logger.error(f"Error during simple erase for {torrent_hash}: {error}")
+            return False, f"XML-RPC Error: {error}"
+        return True, "Torrent removed from rTorrent client."
 
-    result, error = _send_xmlrpc_request(method_name=method_name, params=params)
-
-    if error:
-        current_app.logger.error(f"Error deleting torrent {torrent_hash} via XML-RPC: {error}")
-        return False, f"XML-RPC Error: {error}"
-
-    # A successful d.erase call typically returns 0.
-    if result == 0:
-        current_app.logger.info(f"Torrent {torrent_hash} successfully erased from rTorrent.")
-        if delete_data:
-            current_app.logger.info(f"Deletion of data for torrent {torrent_hash} requested. This needs to be handled by rTorrent's configuration (e.g., using a script triggered by d.erase).")
-            # rTorrent's d.erase command itself does not delete data.
-            # This is typically handled by a configuration in .rtorrent.rc like:
-            # system.method.set_key = event.download.erased, "delete_erased", "execute=rm,-rf,$d.base_path="
-            # We assume this is configured on the rTorrent side.
-            # For now, we just log that it was requested.
-        return True, "Torrent deleted successfully from rTorrent."
     else:
-        current_app.logger.warning(f"Delete torrent {torrent_hash} via XML-RPC returned an unexpected result: {result}. Expected 0.")
-        return False, f"Delete torrent via XML-RPC returned an unexpected result: {result}."
+        # Full deletion using system.multicall, as recommended for hosted seedboxes.
+        logger.info(f"Performing full deletion (with data) for hash {torrent_hash} via system.multicall.")
+
+        # This structure mimics the XML-RPC multicall structure.
+        # Each command is a dictionary with 'methodName' and 'params'.
+        multicall_params = [
+            {
+                'methodName': 'd.delete_tied',
+                'params': [torrent_hash]
+            },
+            {
+                'methodName': 'd.erase',
+                'params': [torrent_hash]
+            }
+        ]
+
+        # The _send_xmlrpc_request function expects a list of params,
+        # and for system.multicall, the parameter is a list of these command structs.
+        result, error = _send_xmlrpc_request(method_name="system.multicall", params=[multicall_params])
+
+        if error:
+            logger.error(f"Error during system.multicall deletion for {torrent_hash}: {error}")
+            return False, f"Failed to delete torrent and data. Error: {error}"
+
+        logger.info(f"system.multicall for deletion of {torrent_hash} sent successfully.")
+        return True, "Deletion command sent to rTorrent. If permissions allow, data will be removed."
