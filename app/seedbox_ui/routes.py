@@ -26,6 +26,7 @@ import paramiko
 # --- Imports spécifiques à l'application MediaManagerSuite ---
 from app.auth import internal_api_required
 from app.utils import staging_processor
+from app.utils.staging_processor import _connect_sftp
 from app.utils.arr_client import search_sonarr_by_title, search_radarr_by_title
 from app.utils.tvdb_client import CustomTVDBClient
 from app.utils.tmdb_client import TheMovieDBClient
@@ -3200,6 +3201,25 @@ def delete_rtorrent_torrent():
         logger.error(f"Erreur lors de la suppression du torrent {torrent_hash}: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+def _sftp_delete_recursive(sftp_client, remote_path, logger):
+    """ Supprime récursivement un fichier ou un dossier via SFTP. """
+    try:
+        item_stat = sftp_client.stat(remote_path)
+        if stat.S_ISDIR(item_stat.st_mode):
+            for item_name in sftp_client.listdir(remote_path):
+                child_path = str(Path(remote_path) / item_name)
+                _sftp_delete_recursive(sftp_client, child_path, logger)
+            sftp_client.rmdir(remote_path)
+        else:
+            sftp_client.remove(remote_path)
+        logger.info(f"SFTP Deletion successful for: {remote_path}")
+    except FileNotFoundError:
+        logger.warning(f"SFTP Deletion: Item not found (already deleted?): {remote_path}")
+    except Exception as e:
+        logger.error(f"SFTP Deletion failed for {remote_path}: {e}")
+        raise # Propage l'erreur pour que l'appelant sache qu'il y a eu un problème
+
+
 @seedbox_ui_bp.route('/rtorrent/batch-action', methods=['POST'])
 @login_required
 def rtorrent_batch_action():
@@ -3214,17 +3234,50 @@ def rtorrent_batch_action():
     success_count = 0
     fail_count = 0
 
-    # --- Action de Suppression ---
+    # --- DÉBUT DU NOUVEAU BLOC DE SUPPRESSION ---
     if action == 'delete':
         delete_data = options.get('delete_data', False)
-        for h in hashes:
-            try:
-                success, _ = rtorrent_delete_torrent_api(h, delete_data)
+        if not delete_data:
+            # Suppression simple sans les données
+            for h in hashes:
+                success, _ = rtorrent_delete_torrent_api(h, delete_data=False)
                 if success: success_count += 1
                 else: fail_count += 1
-            except Exception as e:
-                logger.error(f"Erreur lors de la suppression du torrent {h}: {e}", exc_info=True)
-                fail_count += 1
+        else:
+            # Suppression complète avec les données via SFTP
+            sftp, transport = _connect_sftp()
+            if not sftp:
+                return jsonify({'status': 'error', 'message': 'Connexion SFTP échouée.'}), 500
+            try:
+                all_torrents, _ = rtorrent_list_torrents_api()
+                torrents_dict = {t['hash']: t for t in all_torrents}
+
+                for h in hashes:
+                    torrent_info = torrents_dict.get(h)
+                    if not torrent_info:
+                        fail_count += 1
+                        continue
+
+                    rtorrent_path = torrent_info.get('download_dir')
+                    app_type = 'sonarr' if torrent_info.get('label') in [current_app.config.get('RTORRENT_LABEL_SONARR'), 'tv-sonarr'] else 'radarr'
+                    sftp_path = _translate_rtorrent_path_to_sftp_path(rtorrent_path, app_type)
+
+                    if not sftp_path:
+                        fail_count += 1
+                        continue
+
+                    try:
+                        _sftp_delete_recursive(sftp, sftp_path, logger)
+                        # Si la suppression SFTP réussit, on supprime de rTorrent
+                        success_erase, _ = rtorrent_delete_torrent_api(h, delete_data=False)
+                        if success_erase: success_count += 1
+                        else: fail_count += 1
+                    except Exception:
+                        fail_count += 1
+            finally:
+                if transport:
+                    transport.close()
+    # --- FIN DU NOUVEAU BLOC DE SUPPRESSION ---
     # --- Action "Marquer comme traité" ---
     elif action == 'mark_processed':
         for h in hashes:
