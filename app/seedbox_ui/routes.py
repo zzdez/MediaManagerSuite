@@ -26,7 +26,6 @@ import paramiko
 # --- Imports spécifiques à l'application MediaManagerSuite ---
 from app.auth import internal_api_required
 from app.utils import staging_processor
-from app.utils.staging_processor import _connect_sftp
 from app.utils.arr_client import search_sonarr_by_title, search_radarr_by_title
 from app.utils.tvdb_client import CustomTVDBClient
 from app.utils.tmdb_client import TheMovieDBClient
@@ -77,39 +76,31 @@ logger = logging.getLogger(__name__)
 
 def _translate_rtorrent_path_to_sftp_path(rtorrent_path, app_type):
     """
-    Traduit un chemin rTorrent en chemin SFTP en se basant sur la configuration.
+    Traduit un chemin rTorrent pour un item TERMINÉ en chemin SFTP.
     """
     logger = current_app.logger
+    if not rtorrent_path:
+        logger.warning("Le chemin rTorrent en entrée est None. Impossible de traduire.")
+        return None
+
     logger.debug(f"Traduction du chemin rTorrent '{rtorrent_path}' pour le type '{app_type}'")
 
-    # --- DÉBUT DE LA CORRECTION ---
-    if not rtorrent_path:
-        logger.warning("Le chemin rTorrent en entrée est None ou vide. Impossible de traduire.")
-        return None
-    # --- FIN DE LA CORRECTION ---
+    # On utilise le mapping global pour la partie racine du chemin
+    path_mapping_str = current_app.config.get('SEEDBOX_SFTP_REMOTE_PATH_MAPPING')
+    if path_mapping_str:
+        parts = path_mapping_str.split(',')
+        if len(parts) == 2:
+            to_remove = parts[0].strip()
+            to_add = parts[1].strip()
+            if rtorrent_path.startswith(to_remove):
+                translated_path = rtorrent_path.replace(to_remove, to_add, 1)
+                translated_path = Path(translated_path).as_posix()
+                logger.info(f"Chemin rTorrent '{rtorrent_path}' traduit en chemin SFTP '{translated_path}'")
+                return translated_path
 
-    rtorrent_base = None
-    sftp_base = None
-
-    if app_type == 'sonarr':
-        rtorrent_base = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_SONARR_PATH')
-        sftp_base = current_app.config.get('SEEDBOX_SCANNER_TARGET_SONARR_PATH')
-    elif app_type == 'radarr':
-        rtorrent_base = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_RADARR_PATH')
-        sftp_base = current_app.config.get('SEEDBOX_SCANNER_TARGET_RADARR_PATH')
-
-    if rtorrent_base and sftp_base and rtorrent_path.startswith(rtorrent_base):
-        # S'assurer que les chemins de base se terminent par un slash pour un remplacement propre
-        rtorrent_base_norm = rtorrent_base.rstrip('/') + '/'
-        sftp_base_norm = sftp_base.rstrip('/') + '/'
-        translated_path = rtorrent_path.replace(rtorrent_base_norm, sftp_base_norm, 1)
-        # S'assurer que le chemin est au format POSIX (avec des /)
-        translated_path = Path(translated_path).as_posix()
-        logger.info(f"Chemin rTorrent '{rtorrent_path}' traduit en chemin SFTP '{translated_path}'")
-        return translated_path
-
-    logger.warning(f"Impossible de traduire le chemin rTorrent '{rtorrent_path}'. Il ne correspond pas à la base configurée. Retour du chemin original.")
-    return None # Fallback : retourner None pour indiquer un échec
+    # Fallback si le mapping n'est pas défini ou ne correspond pas
+    logger.warning(f"Impossible de traduire le chemin rTorrent '{rtorrent_path}' via le mapping global. Vérifiez SEEDBOX_SFTP_REMOTE_PATH_MAPPING.")
+    return None
 
 # Minimal bencode parser function (copied from previous attempt)
 
@@ -3201,25 +3192,6 @@ def delete_rtorrent_torrent():
         logger.error(f"Erreur lors de la suppression du torrent {torrent_hash}: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-def _sftp_delete_recursive(sftp_client, remote_path, logger):
-    """ Supprime récursivement un fichier ou un dossier via SFTP. """
-    try:
-        item_stat = sftp_client.stat(remote_path)
-        if stat.S_ISDIR(item_stat.st_mode):
-            for item_name in sftp_client.listdir(remote_path):
-                child_path = str(Path(remote_path) / item_name)
-                _sftp_delete_recursive(sftp_client, child_path, logger)
-            sftp_client.rmdir(remote_path)
-        else:
-            sftp_client.remove(remote_path)
-        logger.info(f"SFTP Deletion successful for: {remote_path}")
-    except FileNotFoundError:
-        logger.warning(f"SFTP Deletion: Item not found (already deleted?): {remote_path}")
-    except Exception as e:
-        logger.error(f"SFTP Deletion failed for {remote_path}: {e}")
-        raise # Propage l'erreur pour que l'appelant sache qu'il y a eu un problème
-
-
 @seedbox_ui_bp.route('/rtorrent/batch-action', methods=['POST'])
 @login_required
 def rtorrent_batch_action():
@@ -3234,54 +3206,17 @@ def rtorrent_batch_action():
     success_count = 0
     fail_count = 0
 
-    # --- DÉBUT DU NOUVEAU BLOC DE SUPPRESSION ---
+    # --- Action de Suppression ---
     if action == 'delete':
         delete_data = options.get('delete_data', False)
-        if not delete_data:
-            for h in hashes:
-                success, _ = rtorrent_delete_torrent_api(h, delete_data=False)
+        for h in hashes:
+            try:
+                success, _ = rtorrent_delete_torrent_api(h, delete_data)
                 if success: success_count += 1
                 else: fail_count += 1
-        else:
-            # Suppression complète avec les données via SFTP
-            sftp, transport = _connect_sftp()
-            if not sftp:
-                return jsonify({'status': 'error', 'message': 'Connexion SFTP échouée.'}), 500
-            try:
-                all_torrents, _ = rtorrent_list_torrents_api()
-                torrents_dict = {t['hash']: t for t in all_torrents}
-
-                for h in hashes:
-                    torrent_info = torrents_dict.get(h)
-                    if not torrent_info:
-                        fail_count += 1
-                        continue
-
-                    rtorrent_path = torrent_info.get('download_dir')
-                    app_type = 'sonarr' if torrent_info.get('label') in [current_app.config.get('RTORRENT_LABEL_SONARR'), 'tv-sonarr'] else 'radarr'
-                    sftp_path = _translate_rtorrent_path_to_sftp_path(rtorrent_path, app_type)
-
-                    if not sftp_path:
-                        logger.error(f"Échec de la traduction du chemin pour le torrent {h}. Suppression annulée.")
-                        fail_count += 1
-                        continue
-
-                    try:
-                        logger.info(f"Tentative de suppression SFTP du chemin : {sftp_path}")
-                        _sftp_delete_recursive(sftp, sftp_path, logger)
-                        # Si la suppression SFTP réussit, on supprime de rTorrent
-                        success_erase, _ = rtorrent_delete_torrent_api(h, delete_data=False)
-                        if success_erase:
-                            success_count += 1
-                        else:
-                            fail_count += 1
-                    except Exception as e:
-                        logger.error(f"Une erreur est survenue lors de la suppression SFTP pour {h}: {e}")
-                        fail_count += 1
-            finally:
-                if transport:
-                    transport.close()
-    # --- FIN DU NOUVEAU BLOC DE SUPPRESSION ---
+            except Exception as e:
+                logger.error(f"Erreur lors de la suppression du torrent {h}: {e}", exc_info=True)
+                fail_count += 1
     # --- Action "Marquer comme traité" ---
     elif action == 'mark_processed':
         for h in hashes:
