@@ -1,6 +1,9 @@
 # app/utils/rtorrent_client.py
 import requests
 from requests.auth import HTTPDigestAuth
+import paramiko
+from pathlib import Path
+import stat
 from flask import current_app
 import json
 import time
@@ -583,41 +586,78 @@ def get_completed_torrents():
     current_app.logger.info(f"rTorrent Client: Found {len(completed_torrents)} completed torrents.")
     return completed_torrents
 
+def _sftp_delete_recursive(sftp_client, remote_path, logger):
+    """ Supprime récursivement un fichier ou un dossier via SFTP. """
+    try:
+        item_stat = sftp_client.stat(remote_path)
+        if stat.S_ISDIR(item_stat.st_mode):
+            for item_name in sftp_client.listdir(remote_path):
+                child_path = str(Path(remote_path) / item_name)
+                _sftp_delete_recursive(sftp_client, child_path, logger)
+            sftp_client.rmdir(remote_path)
+        else:
+            sftp_client.remove(remote_path)
+        logger.info(f"SFTP Deletion successful for: {remote_path}")
+    except FileNotFoundError:
+        logger.warning(f"SFTP Deletion: Item not found (already deleted?): {remote_path}")
+    except Exception as e:
+        logger.error(f"SFTP Deletion failed for {remote_path}: {e}")
+        raise
+
 def delete_torrent(torrent_hash, delete_data=False):
     """
-    Deletes a torrent from rTorrent.
-
-    :param torrent_hash: The hash of the torrent to delete.
-    :param delete_data: If True, also delete the data from the disk.
-    :return: Tuple (bool_success, message_str).
+    Deletes a torrent from rTorrent, using SFTP to delete data if requested.
     """
     if not torrent_hash:
         return False, "Torrent hash cannot be empty."
 
-    current_app.logger.info(f"Attempting to delete torrent {torrent_hash} from rTorrent. Delete data: {delete_data}")
+    logger = current_app.logger
+    logger.info(f"Attempting to delete torrent {torrent_hash}. Delete data: {delete_data}")
 
-    # The command to delete a torrent is d.erase
-    # It takes the torrent hash as an argument.
-    method_name = "d.erase"
-    params = [torrent_hash]
+    if not delete_data:
+        result, error = _send_xmlrpc_request(method_name="d.erase", params=[torrent_hash])
+        if error:
+            return False, f"XML-RPC Error: {error}"
+        return True, "Torrent removed from rTorrent client."
 
-    result, error = _send_xmlrpc_request(method_name=method_name, params=params)
-
-    if error:
-        current_app.logger.error(f"Error deleting torrent {torrent_hash} via XML-RPC: {error}")
-        return False, f"XML-RPC Error: {error}"
-
-    # A successful d.erase call typically returns 0.
-    if result == 0:
-        current_app.logger.info(f"Torrent {torrent_hash} successfully erased from rTorrent.")
-        if delete_data:
-            current_app.logger.info(f"Deletion of data for torrent {torrent_hash} requested. This needs to be handled by rTorrent's configuration (e.g., using a script triggered by d.erase).")
-            # rTorrent's d.erase command itself does not delete data.
-            # This is typically handled by a configuration in .rtorrent.rc like:
-            # system.method.set_key = event.download.erased, "delete_erased", "execute=rm,-rf,$d.base_path="
-            # We assume this is configured on the rTorrent side.
-            # For now, we just log that it was requested.
-        return True, "Torrent deleted successfully from rTorrent."
     else:
-        current_app.logger.warning(f"Delete torrent {torrent_hash} via XML-RPC returned an unexpected result: {result}. Expected 0.")
-        return False, f"Delete torrent via XML-RPC returned an unexpected result: {result}."
+        logger.info(f"Performing full deletion for hash {torrent_hash} via SFTP.")
+
+        data_path, error_path = _send_xmlrpc_request("d.base_path", [torrent_hash])
+        if error_path or not data_path:
+            return False, f"Could not retrieve data path from rTorrent: {error_path}"
+
+        sftp_host = current_app.config.get('SEEDBOX_SFTP_HOST')
+        sftp_port = int(current_app.config.get('SEEDBOX_SFTP_PORT', 22))
+        sftp_user = current_app.config.get('SEEDBOX_SFTP_USER')
+        sftp_password = current_app.config.get('SEEDBOX_SFTP_PASSWORD')
+
+        transport = None
+        try:
+            transport = paramiko.Transport((sftp_host, sftp_port))
+            transport.connect(username=sftp_user, password=sftp_password)
+            sftp = paramiko.SFTPClient.from_transport(transport)
+
+            # On doit traduire le chemin rTorrent en chemin SFTP
+            from app.seedbox_ui.routes import _translate_rtorrent_path_to_sftp_path
+            app_type = 'sonarr' # On doit deviner le type, pour l'instant on suppose sonarr
+            # TODO: Améliorer la détection du type
+            sftp_path = _translate_rtorrent_path_to_sftp_path(data_path, app_type)
+            if not sftp_path:
+                raise Exception(f"Path translation failed for {data_path}")
+
+            logger.info(f"SFTP connected. Deleting data at translated path: {sftp_path}")
+            _sftp_delete_recursive(sftp, sftp_path, logger)
+
+        except Exception as e:
+            logger.error(f"SFTP deletion failed for path '{data_path}': {e}", exc_info=True)
+            return False, f"Failed to delete data via SFTP: {e}"
+        finally:
+            if transport:
+                transport.close()
+
+        result, error_erase = _send_xmlrpc_request("d.erase", [torrent_hash])
+        if error_erase:
+            return False, f"Data was deleted, but failed to remove torrent from list: {error_erase}"
+
+        return True, "Torrent and its data were successfully deleted."
