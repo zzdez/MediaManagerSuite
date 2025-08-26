@@ -71,27 +71,21 @@ def _send_xmlrpc_request(method_name, params):
         # For d.multicall2, this is typically ( [[torrent1_fields], [torrent2_fields]], )
         current_app.logger.debug(f"XML-RPC call to {method_name} successful. Parsed params from loads: {parsed_data!r}")
 
-        if method_name == "d.multicall2":
-            # parsed_data should be a tuple containing one element: the list of lists. e.g. ( [[fields1], [fields2]], )
-            # We want to return the list of lists: [[fields1], [fields2]]
-            if isinstance(parsed_data, tuple) and len(parsed_data) == 1 and isinstance(parsed_data[0], list):
+        if method_name in ["d.multicall2", "system.multicall"]:
+            if isinstance(parsed_data, tuple) and len(parsed_data) > 0 and isinstance(parsed_data[0], list):
                 return parsed_data[0], None
-            # Additional check: if parsed_data is already a list (e.g. if loads() behaves differently or for an empty multicall response from some servers like ([],) )
-            # or if parsed_data is an empty list itself (from a response like ([],) which parsed_data[0] would yield [])
             elif isinstance(parsed_data, list):
                  return parsed_data, None
             else:
-                current_app.logger.error(f"Unexpected structure for d.multicall2 response: {parsed_data!r}")
-                return [], f"Unexpected structure for d.multicall2 response." # Return empty list and error
-        else: # For other methods like load.start, load.raw_start
-              # parsed_data should be a tuple containing one element, e.g. (0,) or ("string_result",)
+                current_app.logger.error(f"Unexpected structure for {method_name} response: {parsed_data!r}")
+                return [], f"Unexpected structure for {method_name} response."
+        else:
             if isinstance(parsed_data, tuple):
                 if len(parsed_data) > 0:
-                    return parsed_data[0], None # Extract the actual value, e.g., 0 from (0,)
-                else: # Empty tuple from loads e.g. ()
+                    return parsed_data[0], None
+                else:
                     return None, None
-            else: # Should not be reached if xmlrpc.client.loads consistently returns a tuple for params
-                current_app.logger.warning(f"XML-RPC response params for {method_name} was not a tuple: {parsed_data!r}. Returning as is.")
+            else:
                 return parsed_data, None
 
     except xmlrpc.client.Fault as f:
@@ -585,39 +579,35 @@ def get_completed_torrents():
 
 def delete_torrent(torrent_hash, delete_data=False):
     """
-    Deletes a torrent from rTorrent.
-
-    :param torrent_hash: The hash of the torrent to delete.
-    :param delete_data: If True, also delete the data from the disk.
-    :return: Tuple (bool_success, message_str).
+    Deletes a torrent from rTorrent, with a robust option to delete the data via multicall.
     """
     if not torrent_hash:
         return False, "Torrent hash cannot be empty."
 
-    current_app.logger.info(f"Attempting to delete torrent {torrent_hash} from rTorrent. Delete data: {delete_data}")
+    logger = current_app.logger
 
-    # The command to delete a torrent is d.erase
-    # It takes the torrent hash as an argument.
-    method_name = "d.erase"
-    params = [torrent_hash]
-
-    result, error = _send_xmlrpc_request(method_name=method_name, params=params)
-
-    if error:
-        current_app.logger.error(f"Error deleting torrent {torrent_hash} via XML-RPC: {error}")
-        return False, f"XML-RPC Error: {error}"
-
-    # A successful d.erase call typically returns 0.
-    if result == 0:
-        current_app.logger.info(f"Torrent {torrent_hash} successfully erased from rTorrent.")
-        if delete_data:
-            current_app.logger.info(f"Deletion of data for torrent {torrent_hash} requested. This needs to be handled by rTorrent's configuration (e.g., using a script triggered by d.erase).")
-            # rTorrent's d.erase command itself does not delete data.
-            # This is typically handled by a configuration in .rtorrent.rc like:
-            # system.method.set_key = event.download.erased, "delete_erased", "execute=rm,-rf,$d.base_path="
-            # We assume this is configured on the rTorrent side.
-            # For now, we just log that it was requested.
-        return True, "Torrent deleted successfully from rTorrent."
+    if not delete_data:
+        logger.info(f"Performing simple erase for hash {torrent_hash} (keeping data).")
+        result, error = _send_xmlrpc_request(method_name="d.erase", params=[torrent_hash])
+        if error:
+            return False, f"XML-RPC Error: {error}"
+        return True, "Torrent removed from rTorrent client."
     else:
-        current_app.logger.warning(f"Delete torrent {torrent_hash} via XML-RPC returned an unexpected result: {result}. Expected 0.")
-        return False, f"Delete torrent via XML-RPC returned an unexpected result: {result}."
+        logger.info(f"Performing full deletion (with data) for hash {torrent_hash} via system.multicall.")
+
+        # Séquence de commandes pour une suppression complète et sûre
+        commands = [
+            {'methodName': 'd.stop', 'params': [torrent_hash]},
+            {'methodName': 'd.delete_tied', 'params': [torrent_hash]},
+            {'methodName': 'd.erase', 'params': [torrent_hash]}
+        ]
+
+        # Le payload pour system.multicall est une liste contenant la liste des commandes
+        result, error = _send_xmlrpc_request('system.multicall', [commands])
+
+        if error:
+            logger.error(f"Error during multicall deletion for {torrent_hash}: {error}")
+            return False, f"Multicall Error: {error}"
+
+        logger.info(f"Full deletion multicall sent for torrent {torrent_hash}. Results: {result}")
+        return True, "Deletion commands sent to rTorrent."
