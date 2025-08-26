@@ -109,7 +109,7 @@ def _translate_rtorrent_path_to_sftp_path(rtorrent_path, app_type):
         return translated_path
 
     logger.warning(f"Impossible de traduire le chemin rTorrent '{rtorrent_path}'. Il ne correspond pas à la base configurée. Retour du chemin original.")
-    return rtorrent_path # Fallback : retourner le chemin original
+    return None # Fallback : retourner None pour indiquer un échec
 
 # Minimal bencode parser function (copied from previous attempt)
 
@@ -3238,7 +3238,6 @@ def rtorrent_batch_action():
     if action == 'delete':
         delete_data = options.get('delete_data', False)
         if not delete_data:
-            # Suppression simple sans les données
             for h in hashes:
                 success, _ = rtorrent_delete_torrent_api(h, delete_data=False)
                 if success: success_count += 1
@@ -3263,16 +3262,21 @@ def rtorrent_batch_action():
                     sftp_path = _translate_rtorrent_path_to_sftp_path(rtorrent_path, app_type)
 
                     if not sftp_path:
+                        logger.error(f"Échec de la traduction du chemin pour le torrent {h}. Suppression annulée.")
                         fail_count += 1
                         continue
 
                     try:
+                        logger.info(f"Tentative de suppression SFTP du chemin : {sftp_path}")
                         _sftp_delete_recursive(sftp, sftp_path, logger)
                         # Si la suppression SFTP réussit, on supprime de rTorrent
                         success_erase, _ = rtorrent_delete_torrent_api(h, delete_data=False)
-                        if success_erase: success_count += 1
-                        else: fail_count += 1
-                    except Exception:
+                        if success_erase:
+                            success_count += 1
+                        else:
+                            fail_count += 1
+                    except Exception as e:
+                        logger.error(f"Une erreur est survenue lors de la suppression SFTP pour {h}: {e}")
                         fail_count += 1
             finally:
                 if transport:
