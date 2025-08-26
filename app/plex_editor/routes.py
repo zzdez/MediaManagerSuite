@@ -23,7 +23,8 @@ from app.utils.arr_client import (
     get_sonarr_tag_id, get_sonarr_series_by_guid, get_sonarr_series_by_id,
     update_sonarr_series, get_sonarr_episode_files, get_sonarr_episodes_by_series_id,
     get_all_sonarr_series, # <--- AJOUT ICI
-    sonarr_trigger_series_rename
+    sonarr_trigger_series_rename,
+    search_sonarr_series_by_title_and_year
 )
 from app.utils.trailer_finder import find_plex_trailer
 from app.utils.tmdb_client import TheMovieDBClient
