@@ -76,39 +76,31 @@ logger = logging.getLogger(__name__)
 
 def _translate_rtorrent_path_to_sftp_path(rtorrent_path, app_type):
     """
-    Traduit un chemin rTorrent en chemin SFTP en se basant sur la configuration.
+    Traduit un chemin rTorrent pour un item TERMINÉ en chemin SFTP.
     """
     logger = current_app.logger
+    if not rtorrent_path:
+        logger.warning("Le chemin rTorrent en entrée est None. Impossible de traduire.")
+        return None
+
     logger.debug(f"Traduction du chemin rTorrent '{rtorrent_path}' pour le type '{app_type}'")
 
-    # --- DÉBUT DE LA CORRECTION ---
-    if not rtorrent_path:
-        logger.warning("Le chemin rTorrent en entrée est None ou vide. Impossible de traduire.")
-        return None
-    # --- FIN DE LA CORRECTION ---
+    # On utilise le mapping global pour la partie racine du chemin
+    path_mapping_str = current_app.config.get('SEEDBOX_SFTP_REMOTE_PATH_MAPPING')
+    if path_mapping_str:
+        parts = path_mapping_str.split(',')
+        if len(parts) == 2:
+            to_remove = parts[0].strip()
+            to_add = parts[1].strip()
+            if rtorrent_path.startswith(to_remove):
+                translated_path = rtorrent_path.replace(to_remove, to_add, 1)
+                translated_path = Path(translated_path).as_posix()
+                logger.info(f"Chemin rTorrent '{rtorrent_path}' traduit en chemin SFTP '{translated_path}'")
+                return translated_path
 
-    rtorrent_base = None
-    sftp_base = None
-
-    if app_type == 'sonarr':
-        rtorrent_base = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_SONARR_PATH')
-        sftp_base = current_app.config.get('SEEDBOX_SCANNER_TARGET_SONARR_PATH')
-    elif app_type == 'radarr':
-        rtorrent_base = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_RADARR_PATH')
-        sftp_base = current_app.config.get('SEEDBOX_SCANNER_TARGET_RADARR_PATH')
-
-    if rtorrent_base and sftp_base and rtorrent_path.startswith(rtorrent_base):
-        # S'assurer que les chemins de base se terminent par un slash pour un remplacement propre
-        rtorrent_base_norm = rtorrent_base.rstrip('/') + '/'
-        sftp_base_norm = sftp_base.rstrip('/') + '/'
-        translated_path = rtorrent_path.replace(rtorrent_base_norm, sftp_base_norm, 1)
-        # S'assurer que le chemin est au format POSIX (avec des /)
-        translated_path = Path(translated_path).as_posix()
-        logger.info(f"Chemin rTorrent '{rtorrent_path}' traduit en chemin SFTP '{translated_path}'")
-        return translated_path
-
-    logger.warning(f"Impossible de traduire le chemin rTorrent '{rtorrent_path}'. Il ne correspond pas à la base configurée. Retour du chemin original.")
-    return rtorrent_path # Fallback : retourner le chemin original
+    # Fallback si le mapping n'est pas défini ou ne correspond pas
+    logger.warning(f"Impossible de traduire le chemin rTorrent '{rtorrent_path}' via le mapping global. Vérifiez SEEDBOX_SFTP_REMOTE_PATH_MAPPING.")
+    return None
 
 # Minimal bencode parser function (copied from previous attempt)
 

@@ -252,16 +252,33 @@ def _handle_manual_import(item, folder_name):
             return
 
     # 3. Nettoyage final du dossier/fichier de staging
-    _cleanup_staging(folder_name)
-    mapping_manager.update_torrent_status_in_map(torrent_hash, 'completed_manual', f'{len(files_to_copy)} fichier(s) déplacé(s) manuellement.')
-    
-    # 4. Déclencher un Rescan
-    current_app.logger.info(f"Déclenchement d'un Rescan dans {media_type} pour l'ID {target_id}.")
-    if media_type == 'tv':
-        arr_client.sonarr_post_command({'name': 'RescanSeries', 'seriesId': target_id})
-    else:
-        arr_client.radarr_post_command({'name': 'RescanMovie', 'movieId': target_id})
+        _cleanup_staging(folder_name)
 
+        # --- DÉBUT DE LA LOGIQUE DE STATUT FINAL ---
+        final_status = 'completed_manual'
+        final_message = f"{len(files_to_copy)} fichier(s) déplacé(s) manuellement."
+
+        # On vérifie le label pour déterminer si l'origine était automatique
+        torrent_label = item.get('label', '')
+        label_sonarr_auto = 'tv-sonarr'
+        label_radarr_auto = 'radarr' # Supposition pour Radarr
+
+        if item.get('app_type') == 'sonarr' and torrent_label == label_sonarr_auto:
+            final_status = 'completed_auto'
+            final_message = f"{len(files_to_copy)} fichier(s) importé(s) automatiquement via MMS."
+        elif item.get('app_type') == 'radarr' and torrent_label == label_radarr_auto:
+            final_status = 'completed_auto'
+            final_message = f"{len(files_to_copy)} fichier(s) importé(s) automatiquement via MMS."
+
+        mapping_manager.update_torrent_status_in_map(torrent_hash, final_status, final_message)
+        # --- FIN DE LA LOGIQUE DE STATUT FINAL ---
+
+        # 4. Déclencher un Rescan
+        current_app.logger.info(f"Déclenchement d'un Rescan dans {media_type} pour l'ID {target_id}.")
+        if media_type == 'tv':
+            arr_client.sonarr_post_command({'name': 'RescanSeries', 'seriesId': target_id})
+        else:
+            arr_client.radarr_post_command({'name': 'RescanMovie', 'movieId': target_id})
 def process_pending_staging_items():
     """ Main function for the staging processor with robust connection handling. """
     logger = current_app.logger
