@@ -585,58 +585,33 @@ def get_completed_torrents():
 
 def delete_torrent(torrent_hash, delete_data=False):
     """
-    Deletes a torrent from rTorrent, with an option to delete the data.
+    Deletes a torrent from rTorrent, with an option to delete the data using the correct command.
     """
     if not torrent_hash:
         return False, "Torrent hash cannot be empty."
 
     logger = current_app.logger
-    logger.info(f"Attempting to delete torrent {torrent_hash}. Delete data: {delete_data}")
 
     if not delete_data:
-        # Simple erase, keeps data on disk
-        logger.info(f"Performing simple erase for hash {torrent_hash}.")
-        result, error = _send_xmlrpc_request(method_name="d.erase", params=[torrent_hash])
-        if error:
-            logger.error(f"Error during simple erase for {torrent_hash}: {error}")
-            return False, f"XML-RPC Error: {error}"
-        return True, "Torrent removed from rTorrent client."
-
+        # Comportement pour supprimer uniquement de la liste (ne change pas)
+        logger.info(f"Performing simple erase for hash {torrent_hash} (keeping data).")
+        method_name = "d.erase"
     else:
-        # Full deletion including data. Requires a multi-call.
-        logger.info(f"Performing full deletion (with data) for hash {torrent_hash}.")
+        # Comportement pour supprimer de la liste ET les données physiques
+        logger.info(f"Performing full deletion (with data) for hash {torrent_hash} using d.delete_files.")
+        method_name = "d.delete_files" # La commande atomique correcte
 
-        # The sequence for full deletion is:
-        # 1. Check if the torrent is active. If so, stop it.
-        # 2. Set the 'delete_tied' flag, which tells rTorrent to delete files associated with this torrent.
-        # 3. Erase the torrent from the client.
-        # We can send these as a single multi-call request.
+    params = [torrent_hash]
+    result, error = _send_xmlrpc_request(method_name=method_name, params=params)
 
-        # Note: The syntax for multicall commands is a list of dictionaries.
-        # However, the _send_xmlrpc_request is designed for a single method.
-        # We need a way to send multiple commands. Let's adapt by sending them sequentially for now.
-        # A better solution would be a dedicated multicall function.
+    if error:
+        logger.error(f"Error during torrent deletion ({method_name}) for {torrent_hash}: {error}")
+        return False, f"XML-RPC Error: {error}"
 
-        # Step 1: Stop the torrent to ensure files can be deleted.
-        _, error_stop = _send_xmlrpc_request(method_name="d.stop", params=[torrent_hash])
-        if error_stop:
-            logger.warning(f"Could not stop torrent {torrent_hash} before deletion, continuing anyway. Error: {error_stop}")
-
-        # Step 2: Set the flag to delete tied files. This is a custom variable we set.
-        # The actual deletion is handled by rTorrent's config based on this flag.
-        # A common .rtorrent.rc setup for this is:
-        # method.set_key = event.download.erased,delete_erased,"execute={rm,-rf,$d.base_path=}"
-        # An alternative is to call d.delete_tied directly if the rTorrent version supports it.
-        # Let's try the more direct d.delete_tied command first.
-        _, error_delete_tied = _send_xmlrpc_request(method_name="d.delete_tied", params=[torrent_hash])
-        if error_delete_tied:
-            logger.warning(f"Command d.delete_tied failed for {torrent_hash}. The data might not be deleted. Error: {error_delete_tied}")
-
-        # Step 3: Erase the torrent from the client.
-        _, error_erase = _send_xmlrpc_request(method_name="d.erase", params=[torrent_hash])
-        if error_erase:
-            logger.error(f"Error during final erase for {torrent_hash}: {error_erase}")
-            return False, f"Failed to erase torrent after attempting to delete data. Error: {error_erase}"
-
-        logger.info(f"Full deletion commands sent for torrent {torrent_hash}.")
-        return True, "Deletion commands sent to rTorrent. Data will be removed if rTorrent is configured correctly."
+    # Les commandes d.erase et d.delete_files retournent 0 en cas de succès.
+    if result == 0:
+        logger.info(f"Command '{method_name}' for torrent {torrent_hash} successfully executed.")
+        return True, "Action sur le torrent terminée avec succès."
+    else:
+        logger.warning(f"Command '{method_name}' for {torrent_hash} returned an unexpected result: {result}. Expected 0.")
+        return False, f"La commande rTorrent '{method_name}' a retourné un résultat inattendu: {result}."
