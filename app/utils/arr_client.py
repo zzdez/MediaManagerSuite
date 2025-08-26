@@ -416,6 +416,44 @@ def search_sonarr_by_title(title):
     # L'endpoint de lookup de Sonarr est différent de celui de Radarr
     return _sonarr_api_request('GET', 'series/lookup', params={'term': title})
 
+def search_sonarr_series_by_title_and_year(title, year=None):
+    """
+    Searches for series in Sonarr's library by title, with an optional year for better matching.
+    This function searches within series already present in Sonarr.
+    """
+    logger.info(f"Sonarr: Searching library for title='{title}', year={year}")
+    all_series = get_all_sonarr_series()
+    if not all_series:
+        logger.error("Sonarr: Could not get series list for title search.")
+        return None
+
+    # Normalize search title for robust matching
+    normalized_search_title = re.sub(r'[^\w\s]', '', title).lower()
+
+    possible_matches = []
+    for series in all_series:
+        normalized_api_title = re.sub(r'[^\w\s]', '', series.get('title', '')).lower()
+        if normalized_api_title == normalized_search_title:
+            possible_matches.append(series)
+
+    if not possible_matches:
+        logger.warning(f"Sonarr: No library match found for title '{title}'.")
+        return None
+
+    if len(possible_matches) == 1:
+        logger.info(f"Sonarr: Found unique match for '{title}': ID {possible_matches[0].get('id')}")
+        return possible_matches[0]
+
+    # If multiple matches, use year to disambiguate
+    if year:
+        for series in possible_matches:
+            if series.get('year') == year:
+                logger.info(f"Sonarr: Found exact match for '{title}' ({year}): ID {series.get('id')}")
+                return series
+
+    logger.warning(f"Sonarr: Found {len(possible_matches)} matches for '{title}' but could not disambiguate with year {year}. Returning first match.")
+    return possible_matches[0]
+
 # ... (après les autres fonctions sonarr)
 
 def get_all_sonarr_series():
