@@ -579,35 +579,52 @@ def get_completed_torrents():
 
 def delete_torrent(torrent_hash, delete_data=False):
     """
-    Deletes a torrent from rTorrent, with a robust option to delete the data via multicall.
+    Deletes a torrent from rTorrent, with a safe option to delete the data first.
     """
     if not torrent_hash:
         return False, "Torrent hash cannot be empty."
 
     logger = current_app.logger
+    logger.info(f"Attempting to delete torrent {torrent_hash}. Delete data: {delete_data}")
 
     if not delete_data:
-        logger.info(f"Performing simple erase for hash {torrent_hash} (keeping data).")
+        # Simple erase, keeps data on disk
+        logger.info(f"Performing simple erase for hash {torrent_hash}.")
         result, error = _send_xmlrpc_request(method_name="d.erase", params=[torrent_hash])
         if error:
+            logger.error(f"Error during simple erase for {torrent_hash}: {error}")
             return False, f"XML-RPC Error: {error}"
         return True, "Torrent removed from rTorrent client."
+
     else:
-        logger.info(f"Performing full deletion (with data) for hash {torrent_hash} via system.multicall.")
+        # Full deletion: delete data first, then erase.
+        logger.info(f"Performing full deletion (with data) for hash {torrent_hash}.")
 
-        # Séquence de commandes pour une suppression complète et sûre
-        commands = [
-            {'methodName': 'd.stop', 'params': [torrent_hash]},
-            {'methodName': 'd.delete_tied', 'params': [torrent_hash]},
-            {'methodName': 'd.erase', 'params': [torrent_hash]}
-        ]
+        # Step 1: Get the base path of the torrent's data.
+        data_path, error_path = _send_xmlrpc_request("d.base_path", [torrent_hash])
+        if error_path or not data_path:
+            logger.error(f"Could not retrieve data path for torrent {torrent_hash}. Cannot delete data. Error: {error_path}")
+            return False, "Could not retrieve data path from rTorrent."
 
-        # Le payload pour system.multicall est une liste contenant la liste des commandes
-        result, error = _send_xmlrpc_request('system.multicall', [commands])
+        logger.info(f"Data path for torrent {torrent_hash} is '{data_path}'. Preparing shell command.")
 
-        if error:
-            logger.error(f"Error during multicall deletion for {torrent_hash}: {error}")
-            return False, f"Multicall Error: {error}"
+        # Step 2: Execute 'rm -rf' on the data path. This is the most reliable way.
+        # We use execute.capture to run the shell command via rTorrent.
+        # The arguments are passed separately to avoid shell injection issues.
+        command_params = ["rm", "-rf", data_path]
+        _, error_exec = _send_xmlrpc_request("execute.capture", command_params)
 
-        logger.info(f"Full deletion multicall sent for torrent {torrent_hash}. Results: {result}")
-        return True, "Deletion commands sent to rTorrent."
+        if error_exec:
+            logger.error(f"Failed to execute 'rm -rf' on '{data_path}' for torrent {torrent_hash}. Error: {error_exec}")
+            return False, f"Failed to delete data on seedbox. The torrent has NOT been removed from the list. Error: {error_exec}"
+
+        logger.info(f"Successfully deleted data at '{data_path}'. Now erasing torrent from client.")
+
+        # Step 3: Only if data deletion was successful, erase the torrent from the client.
+        _, error_erase = _send_xmlrpc_request("d.erase", [torrent_hash])
+        if error_erase:
+            logger.error(f"Data for {torrent_hash} was deleted, but failed to erase torrent from client. Error: {error_erase}")
+            return False, "Data was deleted, but failed to remove torrent from the list. Please check rTorrent."
+
+        logger.info(f"Torrent {torrent_hash} and its data were successfully deleted.")
+        return True, "Torrent and its data were successfully deleted."
