@@ -73,8 +73,8 @@ def get_prowlarr_categories():
 
 def search_prowlarr(query, categories=None, lang=None):
     """
-    [VERSION FILTRAGE CLIENT] Recherche des releases sur Prowlarr.
-    Le filtrage par catégorie sera géré côté MMS pour plus de fiabilité.
+    Performs a search on Prowlarr, optionally filtering by categories.
+    Advanced filtering (quality, etc.) is handled by the calling function.
     """
     effective_query = query
     if lang:
@@ -88,6 +88,8 @@ def search_prowlarr(query, categories=None, lang=None):
         'type': 'search'
     }
 
-    # On n'envoie PAS le paramètre 'category' à Prowlarr. Il est ignoré.
+    if categories:
+        params['categories'] = categories
 
+    current_app.logger.info(f"Executing Prowlarr search with params: {params}")
     return _make_prowlarr_request('search', params)
