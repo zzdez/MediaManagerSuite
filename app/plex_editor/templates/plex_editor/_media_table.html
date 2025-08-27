@@ -13,7 +13,7 @@
         </thead>
         <tbody>
             {% for item in items %}
-            <tr data-rating="{{ item.userRating or 0 }}">
+            <tr data-rating="{{ item.userRating or 0 }}" data-incomplete="{{ 'true' if item.type == 'show' and item.is_incomplete else 'false' }}">
                 <td><input type="checkbox" class="form-check-input item-checkbox" data-rating-key="{{ item.ratingKey }}"></td>
                 <td>
                     <div class="d-flex align-items-center">
