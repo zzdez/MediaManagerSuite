@@ -124,17 +124,8 @@ $(document).ready(function() {
         const freeSearchTab = new bootstrap.Tab($('#torrent-search-tab')[0]);
         freeSearchTab.show();
 
-        const form = $('#search-form');
-        const payload = {
-            query: mediaData.title, // Utilise le titre exact du média
-            search_type: form.find('[name="search_type"]:checked').val(),
-            year: form.find('[name="year"]').val(),
-            lang: form.find('[name="lang"]').val(),
-            quality: $('#filterQuality').val(),
-            codec: $('#filterCodec').val(),
-            source: $('#filterSource').val(),
-            group: $('#filterGroup').val() // <-- AJOUT DE CETTE LIGNE
-        };
+        const payload = buildProwlarrPayload();
+        payload.query = mediaData.title; // On surcharge juste le titre avec celui du média cliqué
 
         executeProwlarrSearch(payload); // Appel direct de la fonction partagée
     });
@@ -142,6 +133,20 @@ $(document).ready(function() {
     // =================================================================
     // ### BLOC 2 : RECHERCHE LIBRE (PROWLARR) ET STATUT ###
     // =================================================================
+
+    function buildProwlarrPayload() {
+        const form = $('#search-form');
+        return {
+            query: form.find('[name="query"]').val(),
+            search_type: form.find('[name="search_type"]:checked').val(),
+            year: form.find('[name="year"]').val(),
+            lang: form.find('[name="lang"]').val(),
+            quality: $('#filterQuality').val(),
+            codec: $('#filterCodec').val(),
+            source: $('#filterSource').val(),
+            group: $('#filterGroup').val().trim()
+        };
+    }
 
     function executeProwlarrSearch(payload) {
         const resultsContainer = $('#search-results-container');
@@ -204,16 +209,7 @@ $(document).ready(function() {
         console.log("Recherche libre manuelle initiée. Réinitialisation du contexte.");
         window.currentMediaContext = null; // Contexte effacé car c'est une nouvelle recherche manuelle
 
-        const form = $('#search-form');
-        const payload = {
-            query: form.find('[name="query"]').val(),
-            search_type: form.find('[name="search_type"]:checked').val(),
-            year: form.find('[name="year"]').val(),
-            lang: form.find('[name="lang"]').val(),
-            quality: $('#filterQuality').val(),
-            codec: $('#filterCodec').val(),
-            source: $('#filterSource').val()
-        };
+        const payload = buildProwlarrPayload();
 
         if (!payload.query) {
             alert("Veuillez entrer un terme à rechercher.");
