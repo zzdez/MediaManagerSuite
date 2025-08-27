@@ -87,17 +87,28 @@
                 <td>{{ item.addedAt.strftime('%Y-%m-%d') if item.addedAt else 'N/A' }}</td>
                 <td class="media-status-cell" data-rating-key="{{ item.ratingKey }}">
                     {% if item.type == 'show' %}
-                        {% if item.viewed_episodes == 0 and item.total_episodes > 0 %} {# Ajout de item.total_episodes > 0 pour éviter "Non commencé" pour des séries sans épisodes listés #}
+                        {% if item.viewed_episodes == 0 and item.total_episodes > 0 %}
                             <span class="badge bg-warning text-dark">Non commencé</span>
                         {% elif item.viewed_episodes == item.total_episodes and item.total_episodes > 0 %}
                             <span class="badge bg-success">Terminé</span>
-                        {% elif item.total_episodes > 0 %} {# S'il y a des épisodes, mais pas 0% ou 100% vus #}
+                        {% elif item.total_episodes > 0 %}
                             <span class="badge bg-info">En cours</span>
-                        {% else %} {# Cas où total_episodes pourrait être 0 ou non défini #}
+                        {% else %}
                             <span class="badge bg-secondary">Inconnu</span>
                         {% endif %}
+
                         {% if item.total_episodes > 0 %}
-                        <small class="d-block text-muted">{{ item.viewed_episodes }} / {{ item.total_episodes }} ép.</small>
+                        <small class="d-block text-muted">
+                            {{ item.viewed_episodes }} / {{ item.total_episodes }} ép.
+
+                            {# ### DÉBUT DE L'AJOUT ### #}
+                            {% if item.is_incomplete %}
+                                <span class="badge bg-danger ms-1" title="Des épisodes diffusés sont manquants selon Sonarr.">
+                                    <i class="bi bi-exclamation-triangle-fill"></i>
+                                </span>
+                            {% endif %}
+                            {# ### FIN DE L'AJOUT ### #}
+                        </small>
                         {% endif %}
                     {% elif item.isWatched %}
                         <span class="badge bg-success">Vu</span>

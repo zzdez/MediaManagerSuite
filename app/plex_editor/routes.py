@@ -528,6 +528,21 @@ def get_media_items():
                     item.viewed_episodes = item.viewedLeafCount
                     item.total_episodes = item.leafCount
 
+                    # Logique pour le badge "manquant"
+                    item.is_incomplete = False # Initialisation
+                    try:
+                        sonarr_series = get_sonarr_series_by_guid(next((g.id for g in item.guids if 'tvdb' in g.id), None))
+                        if sonarr_series:
+                            full_sonarr_series = get_sonarr_series_by_id(sonarr_series['id'])
+                            if full_sonarr_series and 'statistics' in full_sonarr_series:
+                                stats = full_sonarr_series['statistics']
+                                file_count = stats.get('episodeFileCount', 0)
+                                total_aired_count = stats.get('episodeCount', 0) - stats.get('futureEpisodeCount', 0)
+                                if file_count < total_aired_count:
+                                    item.is_incomplete = True
+                    except Exception as e_sonarr:
+                        current_app.logger.warning(f"Impossible de vérifier l'état de complétude pour '{item.title}': {e_sonarr}")
+
                 if getattr(item, 'total_size', 0) > 0:
                     size_name = ("B", "KB", "MB", "GB", "TB"); i = 0
                     temp_size = float(item.total_size)
