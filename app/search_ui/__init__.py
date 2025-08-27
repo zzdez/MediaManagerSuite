@@ -85,71 +85,36 @@ def prowlarr_search():
     if not query:
         return jsonify({"error": "La requête est vide."}), 400
 
+    # Récupération des filtres depuis la requête
     search_type = data.get('search_type', 'sonarr')
-    search_config = load_search_categories()
-    categories_to_filter = set(search_config.get(f"{search_type}_categories", []))
-
-    logging.info(f"Recherche Prowlarr large pour '{query}'...")
-    raw_results = search_prowlarr(query=query, lang=data.get('lang'))
-
-    if raw_results is None:
-        return jsonify({"error": "Erreur de communication avec Prowlarr."}), 500
-    
-    logging.info(f"Prowlarr a retourné {len(raw_results)} résultats bruts. Application du filtre local...")
-
-    if not categories_to_filter:
-        logging.warning(f"Aucune catégorie configurée pour '{search_type}'. Aucun filtre par catégorie appliqué.")
-        filtered_by_category = raw_results
-    else:
-        filtered_by_category = []
-        for result in raw_results:
-            result_categories = {cat.get('id') for cat in result.get('categories', [])}
-            if not categories_to_filter.isdisjoint(result_categories):
-                filtered_by_category.append(result)
-    
-    logging.info(f"{len(filtered_by_category)} résultats après filtrage par catégorie.")
-    
-    # === BLOC DE FILTRAGE AVANCÉ AMÉLIORÉ ===
+    lang = data.get('lang')
     quality = data.get('quality')
     codec = data.get('codec')
     source = data.get('source')
+    group = data.get('group') # Nouveau filtre "Release Group"
+
+    # Utilisation de la configuration des catégories déjà gérée par MMS
+    search_config = load_search_categories()
+    category_ids = search_config.get(f"{search_type}_categories", [])
+
+    if not category_ids:
+        logging.warning(f"Aucune catégorie configurée pour '{search_type}'. La recherche pourrait être moins précise.")
+
+    # Appel de la nouvelle fonction de recherche intelligente
+    results = search_prowlarr(
+        query=query,
+        categories=category_ids,
+        lang=lang,
+        quality=quality,
+        codec=codec,
+        source=source,
+        group=group
+    )
+
+    if results is None:
+        return jsonify({"error": "Erreur de communication avec Prowlarr."}), 500
     
-    if not any([quality, codec, source]):
-        current_app.logger.info("Aucun filtre avancé spécifié. Retour des résultats filtrés par catégorie.")
-        return jsonify(filtered_by_category)
-
-    from guessit import guessit
-    final_results = []
-    for result in filtered_by_category:
-        title = result.get('title', '')
-        parsed = guessit(title)
-        
-        # Filtre Qualité (plus flexible)
-        if quality:
-            quality_val = quality.replace('p', '')
-            screen_size = str(parsed.get('screen_size', ''))
-            if quality_val not in screen_size:
-                continue
-
-        # Filtre Codec (avec alias)
-        if codec:
-            video_codec = parsed.get('video_codec', '').lower()
-            codec_aliases = {
-                'x265': ['x265', 'hevc'],
-                'x264': ['x264', 'avc'],
-                'av1': ['av1']
-            }
-            if not any(alias in video_codec for alias in codec_aliases.get(codec, [codec])):
-                continue
-
-        # Filtre Source
-        if source and source.lower() not in parsed.get('source', '').lower():
-            continue
-        
-        final_results.append(result)
-    
-    logging.info(f"{len(final_results)} résultats après filtrage avancé.")
-    return jsonify(final_results)
+    return jsonify(results)
 
 
 @search_ui_bp.route('/api/search/lookup', methods=['POST'])
