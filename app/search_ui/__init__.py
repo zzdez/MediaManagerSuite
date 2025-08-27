@@ -9,7 +9,7 @@ from Levenshtein import distance as levenshtein_distance
 from app.utils.arr_client import parse_media_name
 from guessit import guessit
 from app.utils.prowlarr_client import search_prowlarr
-from app.utils.config_manager import load_search_categories, load_search_filter_aliases
+from app.utils.config_manager import load_search_categories
 from app.utils.tmdb_client import TheMovieDBClient
 from app.utils.tvdb_client import CustomTVDBClient
 
@@ -80,8 +80,8 @@ def media_search():
 @search_ui_bp.route('/api/prowlarr/search', methods=['POST'])
 @login_required
 def prowlarr_search():
-    from guessit import guessit
-    from app.utils.config_manager import load_search_filter_aliases # Import de notre nouvelle fonction
+    # Pas besoin de guessit ici finalement, on fait une recherche de texte simple
+    from app.utils.config_manager import load_search_filter_aliases
 
     data = request.get_json()
     query = data.get('query')
@@ -100,43 +100,39 @@ def prowlarr_search():
     search_config = load_search_categories()
     category_ids = search_config.get(f"{search_type}_categories", [])
 
-    # 2. On envoie une requête simple à Prowlarr (uniquement avec le 'group' si présent)
+    # 2. On envoie la requête de base à Prowlarr (uniquement avec le 'group')
     query_for_prowlarr = f"{query} {group}".strip() if group else query
     raw_results = search_prowlarr(query=query_for_prowlarr, categories=category_ids)
 
     if raw_results is None:
         return jsonify({"error": "Erreur de communication avec Prowlarr."}), 500
 
-    # 3. Filtrage local avancé et robuste avec les alias
+    # 3. Filtrage local robuste par recherche d'alias dans le titre
     filter_aliases = load_search_filter_aliases()
-    active_filters = {
+    active_aliases = {
         'lang': filter_aliases.get('lang', {}).get(lang),
-        'screen_size': filter_aliases.get('quality', {}).get(quality),
-        'video_codec': filter_aliases.get('codec', {}).get(codec),
+        'quality': filter_aliases.get('quality', {}).get(quality),
+        'codec': filter_aliases.get('codec', {}).get(codec),
         'source': filter_aliases.get('source', {}).get(source),
     }
+    active_aliases = {k: v for k, v in active_aliases.items() if v}
 
-    # On ne garde que les filtres qui ont été réellement sélectionnés par l'utilisateur
-    active_filters = {k: v for k, v in active_filters.items() if v}
-
-    if not active_filters:
+    if not active_aliases:
         return jsonify(raw_results)
 
     final_results = []
     for result in raw_results:
-        title = result.get('title', '')
-        parsed = guessit(title)
+        title_lower = result.get('title', '').lower()
         match = True
-        for key, aliases in active_filters.items():
-            parsed_value = str(parsed.get(key, '')).lower()
-            # La release doit contenir au moins UN des alias pour ce filtre
-            if not any(alias in parsed_value for alias in aliases):
+        for filter_type, aliases in active_aliases.items():
+            # Pour chaque type de filtre, il faut qu'au moins un de ses alias soit dans le titre
+            if not any(alias in title_lower for alias in aliases):
                 match = False
-                break
+                break # Pas la peine de vérifier les autres filtres pour cette release
         if match:
             final_results.append(result)
     
-    logging.info(f"{len(final_results)} résultats après filtrage avancé par alias.")
+    logging.info(f"{len(final_results)} résultats après filtrage final par alias.")
     return jsonify(final_results)
 
 

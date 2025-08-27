@@ -34,28 +34,3 @@ def save_search_categories(settings):
     except IOError as e:
         current_app.logger.error(f"Erreur en écrivant dans {filepath}: {e}")
         return False
-
-# Dans app/utils/config_manager.py
-
-def load_search_filter_aliases():
-    """Charge et parse les alias des filtres de recherche depuis la configuration."""
-    from flask import current_app
-    import re
-
-    aliases = {}
-    # Regex pour trouver les variables d'environnement de nos filtres
-    pattern = re.compile(r"^SEARCH_FILTER_(\w+)_(\w+)$")
-
-    for key, value in current_app.config.items():
-        match = pattern.match(key)
-        if match:
-            filter_type = match.group(1).lower()  # ex: 'lang'
-            filter_value = match.group(2).lower() # ex: 'fr'
-
-            if filter_type not in aliases:
-                aliases[filter_type] = {}
-
-            # Sépare les alias par virgule et nettoie les espaces
-            aliases[filter_type][filter_value] = [v.strip().lower() for v in value.split(',') if v.strip()]
-
-    return aliases
