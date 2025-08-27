@@ -134,19 +134,19 @@ $(document).ready(function() {
     // ### BLOC 2 : RECHERCHE LIBRE (PROWLARR) ET STATUT ###
     // =================================================================
 
-    function buildProwlarrPayload() {
-        const form = $('#search-form');
-        return {
-            query: form.find('[name="query"]').val(),
-            search_type: form.find('[name="search_type"]:checked').val(),
-            year: form.find('[name="year"]').val(),
-            lang: form.find('[name="lang"]').val(),
-            quality: $('#filterQuality').val(),
-            codec: $('#filterCodec').val(),
-            source: $('#filterSource').val(),
-            group: $('#filterGroup').val().trim()
-        };
-    }
+function buildProwlarrPayload() {
+    const form = $('#search-form');
+    return {
+        query: (form.find('[name="query"]').val() || '').trim(),
+        search_type: (form.find('[name="search_type"]:checked').val() || 'sonarr'),
+        year: (form.find('[name="year"]').val() || '').trim(),
+        lang: ($('#search-form [name="lang"]').val() || ''),
+        quality: ($('#filterQuality').val() || ''),
+        codec: ($('#filterCodec').val() || ''),
+        source: ($('#filterSource').val() || ''),
+        group: ($('#filterGroup').val() || '').trim() // La garde || '' empêche le crash
+    };
+}
 
     function executeProwlarrSearch(payload) {
         const resultsContainer = $('#search-results-container');
