@@ -132,7 +132,8 @@ $(document).ready(function() {
             lang: form.find('[name="lang"]').val(),
             quality: $('#filterQuality').val(),
             codec: $('#filterCodec').val(),
-            source: $('#filterSource').val()
+            source: $('#filterSource').val(),
+            group: $('#filterGroup').val() // <-- AJOUT DE CETTE LIGNE
         };
 
         executeProwlarrSearch(payload); // Appel direct de la fonction partagée
