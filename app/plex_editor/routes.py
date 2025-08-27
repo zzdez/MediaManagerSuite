@@ -30,6 +30,7 @@ from app.utils.arr_client import (
 from app.utils.trailer_finder import find_plex_trailer
 from app.utils.tmdb_client import TheMovieDBClient
 from app.utils.tvdb_client import CustomTVDBClient
+from app.utils.cache_manager import SimpleCache
 
 # --- Routes du Blueprint ---
 
@@ -354,6 +355,10 @@ def get_media_items():
         if not target_plex_server:
             return jsonify({'error': f"Impossible de se connecter en tant que {user_id}."}), 500
 
+        # ### DÉBUT MODIFICATION : Initialisation du cache ###
+        series_status_cache = SimpleCache('series_completeness_status', default_lifetime_hours=6)
+        # ### FIN MODIFICATION ###
+
         # --- 3. NOUVELLE LOGIQUE : Recherche unifiée sur Plex d'abord ---
         all_plex_items = {}  # Utilise un dictionnaire pour dédupliquer par ratingKey
 
@@ -528,20 +533,39 @@ def get_media_items():
                     item.viewed_episodes = item.viewedLeafCount
                     item.total_episodes = item.leafCount
 
-                    # Logique pour le badge "manquant"
+                    # ### DÉBUT MODIFICATION : Logique de cache pour le badge "manquant" ###
                     item.is_incomplete = False # Initialisation
-                    try:
-                        sonarr_series = get_sonarr_series_by_guid(next((g.id for g in item.guids if 'tvdb' in g.id), None))
-                        if sonarr_series:
-                            full_sonarr_series = get_sonarr_series_by_id(sonarr_series['id'])
-                            if full_sonarr_series and 'statistics' in full_sonarr_series:
-                                stats = full_sonarr_series['statistics']
-                                file_count = stats.get('episodeFileCount', 0)
-                                total_aired_count = stats.get('episodeCount', 0) - stats.get('futureEpisodeCount', 0)
-                                if file_count < total_aired_count:
-                                    item.is_incomplete = True
-                    except Exception as e_sonarr:
-                        current_app.logger.warning(f"Impossible de vérifier l'état de complétude pour '{item.title}': {e_sonarr}")
+
+                    # On utilise le ratingKey de Plex comme clé de cache unique et stable
+                    cache_key = item.ratingKey
+                    cached_status = series_status_cache.get(cache_key)
+
+                    if cached_status is not None:
+                        # Cas 1: La valeur est dans le cache et est valide
+                        item.is_incomplete = cached_status
+                        current_app.logger.debug(f"Cache HIT for '{item.title}' (ratingKey: {cache_key}). Status: {item.is_incomplete}")
+                    else:
+                        # Cas 2: Pas dans le cache ou expiré, on fait le vrai calcul
+                        current_app.logger.debug(f"Cache MISS for '{item.title}' (ratingKey: {cache_key}). Fetching from Sonarr.")
+                        try:
+                            is_incomplete_status = False # Valeur par défaut
+                            sonarr_series = get_sonarr_series_by_guid(next((g.id for g in item.guids if 'tvdb' in g.id), None))
+                            if sonarr_series:
+                                full_sonarr_series = get_sonarr_series_by_id(sonarr_series['id'])
+                                if full_sonarr_series and 'statistics' in full_sonarr_series:
+                                    stats = full_sonarr_series['statistics']
+                                    file_count = stats.get('episodeFileCount', 0)
+                                    total_aired_count = stats.get('episodeCount', 0) - stats.get('futureEpisodeCount', 0)
+                                    if file_count < total_aired_count:
+                                        is_incomplete_status = True
+
+                            item.is_incomplete = is_incomplete_status
+                            # On met à jour le cache pour la prochaine fois
+                            series_status_cache.set(cache_key, is_incomplete_status)
+
+                        except Exception as e_sonarr:
+                            current_app.logger.warning(f"Impossible de vérifier l'état de complétude pour '{item.title}': {e_sonarr}")
+                    # ### FIN MODIFICATION ###
 
                 if getattr(item, 'total_size', 0) > 0:
                     size_name = ("B", "KB", "MB", "GB", "TB"); i = 0
