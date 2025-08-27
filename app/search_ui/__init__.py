@@ -9,7 +9,7 @@ from Levenshtein import distance as levenshtein_distance
 from app.utils.arr_client import parse_media_name
 from guessit import guessit
 from app.utils.prowlarr_client import search_prowlarr
-from app.utils.config_manager import load_search_categories
+from app.utils.config_manager import load_search_categories, load_search_filter_aliases
 from app.utils.tmdb_client import TheMovieDBClient
 from app.utils.tvdb_client import CustomTVDBClient
 
@@ -80,8 +80,7 @@ def media_search():
 @search_ui_bp.route('/api/prowlarr/search', methods=['POST'])
 @login_required
 def prowlarr_search():
-    # Pas besoin de guessit ici finalement, on fait une recherche de texte simple
-    from app.utils.config_manager import load_search_filter_aliases
+    # L'import est maintenant au niveau du module, plus besoin de l'importer ici
 
     data = request.get_json()
     query = data.get('query')
@@ -125,10 +124,9 @@ def prowlarr_search():
         title_lower = result.get('title', '').lower()
         match = True
         for filter_type, aliases in active_aliases.items():
-            # Pour chaque type de filtre, il faut qu'au moins un de ses alias soit dans le titre
-            if not any(alias in title_lower for alias in aliases):
+            if not any(alias.lower() in title_lower for alias in aliases):
                 match = False
-                break # Pas la peine de vérifier les autres filtres pour cette release
+                break
         if match:
             final_results.append(result)
     
