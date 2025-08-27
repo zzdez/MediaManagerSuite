@@ -498,50 +498,30 @@ def find_sonarr_series_by_title(title, retries=3, delay=5):
 def find_sonarr_series_by_release_name(release_name):
     """
     Trouve une série dans Sonarr en se basant sur le nom d'une release,
-    en utilisant l'endpoint 'lookup' et en validant avec l'année si possible.
+    en utilisant l'endpoint 'lookup' pour plus de fiabilité.
     """
     logger.info(f"Recherche de la série Sonarr pour la release : '{release_name}'")
     parsed_info = parse_media_name(release_name)
     title_to_search = parsed_info.get('title')
-    year_to_search = parsed_info.get('year')
 
     if not title_to_search:
         logger.warning(f"Impossible d'extraire un titre de '{release_name}'.")
         return None
 
+    # On utilise l'endpoint 'lookup' qui est plus direct et ne dépend pas du cache interne
     candidates = search_sonarr_by_title(title_to_search)
     if not candidates:
         logger.warning(f"Aucun candidat trouvé via lookup pour le titre '{title_to_search}'.")
         return None
 
-    # On cherche la meilleure correspondance dans les candidats
-    best_match = None
-    for candidate in candidates:
-        # On ne considère que les séries qui sont déjà dans la bibliothèque
-        if candidate.get('id') and candidate.get('id') > 0:
-            candidate_title = candidate.get('title', '').lower()
-            candidate_year = candidate.get('year')
-
-            # Comparaison simple du titre (sans l'année)
-            # Ex: "Countdown (2025)" devient "countdown"
-            title_in_sonarr = re.sub(r'\s*\(\d{4}\)$', '', candidate_title).strip()
-
-            if title_in_sonarr == title_to_search.lower():
-                # Si on a une année, on l'utilise pour confirmer
-                if year_to_search:
-                    if candidate_year == year_to_search:
-                        best_match = candidate
-                        break # On a trouvé la correspondance parfaite
-                else:
-                    # Si on n'a pas d'année, la première correspondance de titre suffit
-                    best_match = candidate
-                    break
-
-    if best_match:
-        logger.info(f"Série trouvée : '{best_match.get('title')}' (ID: {best_match.get('id')})")
+    # Le lookup retourne une liste. On prend le premier résultat, qui est généralement le meilleur.
+    # On vérifie s'il est déjà dans Sonarr (il aura un 'id' valide).
+    best_match = candidates[0]
+    if best_match and best_match.get('id') and best_match.get('id') > 0:
+        logger.info(f"Série trouvée via lookup et déjà dans Sonarr : '{best_match.get('title')}' (ID: {best_match.get('id')})")
         return best_match
     else:
-        logger.warning(f"Aucune série correspondante à '{title_to_search}' (Année: {year_to_search}) n'a été trouvée dans la bibliothèque Sonarr.")
+        logger.warning(f"Série trouvée via lookup pour '{title_to_search}', mais elle ne semble pas être dans la bibliothèque Sonarr. Ignoré.")
         return None
 
 

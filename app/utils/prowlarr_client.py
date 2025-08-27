@@ -32,16 +32,19 @@ def search_prowlarr(query, categories=None, lang=None, quality=None, codec=None,
     """
     # 1. Construire la chaîne de recherche textuelle intelligente
     query_parts = [query]
+
+    # ### DÉBUT DE LA CORRECTION ###
+    # On ajoute les filtres SEULEMENT s'ils ont une valeur non-vide.
     if lang:
         lang_map = {'fr': 'FRENCH', 'en': 'ENGLISH'}
         lang_term = lang_map.get(lang)
         if lang_term: query_parts.append(lang_term)
 
-    # Ajout des filtres textuels
     if quality: query_parts.append(quality)
     if codec: query_parts.append(codec)
     if source: query_parts.append(source)
     if group: query_parts.append(group)
+    # ### FIN DE LA CORRECTION ###
 
     effective_query = " ".join(query_parts)
 
@@ -53,7 +56,6 @@ def search_prowlarr(query, categories=None, lang=None, quality=None, codec=None,
 
     # 3. Ajouter le filtrage par catégories, qui est le plus efficace
     if categories:
-        # L'API Prowlarr attend 'categories' avec des valeurs multiples
         params['categories'] = categories
 
     current_app.logger.info(f"Executing Prowlarr search with effective query: '{effective_query}' and params: {params}")
