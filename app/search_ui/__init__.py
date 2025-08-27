@@ -9,7 +9,7 @@ from Levenshtein import distance as levenshtein_distance
 from app.utils.arr_client import parse_media_name
 from guessit import guessit
 from app.utils.prowlarr_client import search_prowlarr
-from app.utils.config_manager import load_search_categories
+from app.utils.config_manager import load_search_categories, load_search_filter_aliases
 from app.utils.tmdb_client import TheMovieDBClient
 from app.utils.tvdb_client import CustomTVDBClient
 
@@ -80,69 +80,63 @@ def media_search():
 @search_ui_bp.route('/api/prowlarr/search', methods=['POST'])
 @login_required
 def prowlarr_search():
-    # On a besoin de l'importer ici pour le filtrage local
     from guessit import guessit
+    from app.utils.config_manager import load_search_filter_aliases # Import de notre nouvelle fonction
 
     data = request.get_json()
     query = data.get('query')
     if not query:
         return jsonify({"error": "La requête est vide."}), 400
 
-    # Récupération de TOUS les filtres depuis la requête
+    # Récupération de tous les filtres
     search_type = data.get('search_type', 'sonarr')
     lang = data.get('lang')
     quality = data.get('quality')
     codec = data.get('codec')
     source = data.get('source')
-    # Le filtre 'group' est textuel et peut être géré par Prowlarr
     group = data.get('group')
 
-    # 1. Pré-filtrage par Catégories (efficace)
+    # 1. Pré-filtrage par Catégories Prowlarr
     search_config = load_search_categories()
     category_ids = search_config.get(f"{search_type}_categories", [])
 
-    # 2. On envoie une requête simple à Prowlarr
-    # Le 'group' est le seul filtre textuel avancé que l'on peut laisser Prowlarr gérer
+    # 2. On envoie une requête simple à Prowlarr (uniquement avec le 'group' si présent)
     query_for_prowlarr = f"{query} {group}".strip() if group else query
-
-    raw_results = search_prowlarr(
-        query=query_for_prowlarr,
-        categories=category_ids,
-        lang=lang
-    )
+    raw_results = search_prowlarr(query=query_for_prowlarr, categories=category_ids)
 
     if raw_results is None:
         return jsonify({"error": "Erreur de communication avec Prowlarr."}), 500
 
-    # 3. On applique le filtrage avancé en local (la partie qui manquait)
-    if not any([quality, codec, source]):
-        current_app.logger.info("Aucun filtre avancé, retour des résultats pré-filtrés par catégorie.")
+    # 3. Filtrage local avancé et robuste avec les alias
+    filter_aliases = load_search_filter_aliases()
+    active_filters = {
+        'lang': filter_aliases.get('lang', {}).get(lang),
+        'screen_size': filter_aliases.get('quality', {}).get(quality),
+        'video_codec': filter_aliases.get('codec', {}).get(codec),
+        'source': filter_aliases.get('source', {}).get(source),
+    }
+
+    # On ne garde que les filtres qui ont été réellement sélectionnés par l'utilisateur
+    active_filters = {k: v for k, v in active_filters.items() if v}
+
+    if not active_filters:
         return jsonify(raw_results)
 
     final_results = []
     for result in raw_results:
         title = result.get('title', '')
         parsed = guessit(title)
-
-        # Filtre Qualité
-        if quality:
-            # 'screen_size' dans guessit correspond à la qualité (ex: '1080p')
-            if quality.lower() not in str(parsed.get('screen_size', '')).lower():
-                continue
-
-        # Filtre Codec
-        if codec:
-            if codec.lower() not in str(parsed.get('video_codec', '')).lower():
-                continue
-
-        # Filtre Source
-        if source:
-            if source.lower() not in str(parsed.get('source', '')).lower():
-                continue
-
-        final_results.append(result)
+        match = True
+        for key, aliases in active_filters.items():
+            parsed_value = str(parsed.get(key, '')).lower()
+            # La release doit contenir au moins UN des alias pour ce filtre
+            if not any(alias in parsed_value for alias in aliases):
+                match = False
+                break
+        if match:
+            final_results.append(result)
     
-    logging.info(f"{len(final_results)} résultats après filtrage avancé local.")
+    logging.info(f"{len(final_results)} résultats après filtrage avancé par alias.")
     return jsonify(final_results)
 
 
