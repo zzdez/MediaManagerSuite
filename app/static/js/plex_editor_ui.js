@@ -230,6 +230,25 @@ $(document).ready(function() {
         });
     });
 
+    // --- FILTRE POUR AFFICHER UNIQUEMENT LES SÉRIES INCOMPLÈTES ---
+    $(document).on('change', '#show-incomplete-only-filter', function() {
+        const showOnlyIncomplete = $(this).is(':checked');
+        const tableRows = $('#plex-results-table tbody tr');
+
+        if (!showOnlyIncomplete) {
+            // Si la case est décochée, on affiche tout
+            tableRows.show();
+            return;
+        }
+
+        // Sinon, on boucle et on affiche/cache en fonction de l'attribut data
+        tableRows.each(function() {
+            const row = $(this);
+            const isIncomplete = row.data('incomplete') === true;
+            row.toggle(isIncomplete);
+        });
+    });
+
     // =================================================================
     // ### PARTIE 2 : GESTION DES ACTIONS (Archivage, Rejet, etc.) ###
     // =================================================================
