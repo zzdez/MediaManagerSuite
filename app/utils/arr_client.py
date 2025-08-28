@@ -548,11 +548,12 @@ def find_sonarr_series_by_release_name(release_name):
 def find_radarr_movie_by_release_name(release_name):
     """
     Trouve un film dans Radarr en se basant sur le nom d'une release,
-    en utilisant l'endpoint 'lookup'.
+    en utilisant l'endpoint 'lookup' et en validant avec l'année si possible.
     """
     logger.info(f"Recherche du film Radarr pour la release : '{release_name}'")
     parsed_info = parse_media_name(release_name)
     title_to_search = parsed_info.get('title')
+    year_to_search = parsed_info.get('year')
 
     if not title_to_search:
         logger.warning(f"Impossible d'extraire un titre de '{release_name}'.")
@@ -563,12 +564,31 @@ def find_radarr_movie_by_release_name(release_name):
         logger.warning(f"Aucun candidat trouvé via lookup pour le titre '{title_to_search}'.")
         return None
 
-    best_match = candidates[0]
-    if best_match and best_match.get('id') and best_match.get('id') > 0:
-        logger.info(f"Film trouvé via lookup et déjà dans Radarr : '{best_match.get('title')}' (ID: {best_match.get('id')})")
+    # On cherche la meilleure correspondance dans les candidats
+    best_match = None
+    for candidate in candidates:
+        # On ne considère que les films qui sont déjà dans la bibliothèque
+        if candidate.get('id') and candidate.get('id') > 0:
+            candidate_title = candidate.get('title', '').lower()
+            candidate_year = candidate.get('year')
+
+            # Comparaison simple du titre
+            if candidate_title == title_to_search.lower():
+                # Si on a une année, on l'utilise pour confirmer
+                if year_to_search:
+                    if candidate_year == year_to_search:
+                        best_match = candidate
+                        break # On a trouvé la correspondance parfaite
+                else:
+                    # Si on n'a pas d'année, la première correspondance de titre suffit
+                    best_match = candidate
+                    break
+
+    if best_match:
+        logger.info(f"Film trouvé : '{best_match.get('title')}' (ID: {best_match.get('id')})")
         return best_match
     else:
-        logger.warning(f"Film trouvé via lookup pour '{title_to_search}', mais il ne semble pas être dans la bibliothèque Radarr. Ignoré.")
+        logger.warning(f"Aucun film correspondant à '{title_to_search}' (Année: {year_to_search}) n'a été trouvé dans la bibliothèque Radarr.")
         return None
 
 def check_sonarr_episode_exists(series_title: str, season_number: int, episode_number: int) -> bool:
