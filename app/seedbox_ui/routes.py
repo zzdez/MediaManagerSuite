@@ -3954,7 +3954,7 @@ def rtorrent_map_sonarr():
         release_name=torrent_name,
         torrent_hash=torrent_hash,
         status='pending_staging',
-        seedbox_download_path=sftp_download_path, # Utilise le chemin construit et traduit
+        seedbox_download_path=None, # <--- CORRECTION DÉFINITIVE
         folder_name=torrent_name,
         app_type='sonarr',
         target_id=series_id,
@@ -3999,7 +3999,7 @@ def rtorrent_map_radarr():
         release_name=torrent_name,
         torrent_hash=torrent_hash,
         status='pending_staging',
-        seedbox_download_path=sftp_download_path,
+        seedbox_download_path=None, # <--- CORRECTION DÉFINITIVE
         folder_name=torrent_name,
         app_type='radarr',
         target_id=movie_id,

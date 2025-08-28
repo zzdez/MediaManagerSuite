@@ -18,6 +18,19 @@ def scan_and_map_torrents():
         final_statuses = {'completed_auto', 'completed_manual', 'processed_manual'}
 
         for torrent in completed_torrents:
+            # --- DÉBUT DU BLOC DE DÉBOGAGE ---
+            logger.info("="*50)
+            logger.info(f"DEBUG SCANNER: Informations brutes de rTorrent pour le torrent : {torrent.get('name')}")
+            logger.info(f"  - Hash: {torrent.get('hash')}")
+            logger.info(f"  - Nom: {torrent.get('name')}")
+            logger.info(f"  - Label: {torrent.get('label')}")
+            logger.info(f"  - Chemin de base (base_path): {torrent.get('base_path')}")
+            logger.info(f"  - Chemin du fichier (path): {torrent.get('path')}")
+            logger.info(f"  - Est complet: {torrent.get('is_complete')}")
+            logger.info(f"  - Personnalisé 1 (custom1): {torrent.get('custom1')}") # Ajout pour voir le label de ruTorrent
+            logger.info("="*50)
+            # --- FIN DU BLOC DE DÉBOGAGE ---
+
             torrent_hash = torrent.get('hash')
             release_name = torrent.get('name')
 
@@ -25,12 +38,32 @@ def scan_and_map_torrents():
                 continue
 
             if torrent_hash in torrent_map:
-                # Le torrent est connu, on gère la fin de son téléchargement
                 entry = torrent_map[torrent_hash]
-                if entry.get('status') == 'pending_download':
-                    logger.info(f"Scanner: Torrent connu '{release_name}' est complet. Passage à 'pending_staging'.")
-                    mapping_manager.update_torrent_status_in_map(torrent_hash, 'pending_staging')
-                continue # On ne traite pas plus les items déjà connus
+                current_status = entry.get('status')
+
+                # Si le torrent est connu et en attente de téléchargement, il est maintenant prêt.
+                if current_status == 'pending_download':
+                    # C'est ici que l'on met à jour l'entrée avec le chemin final.
+                    final_path = torrent.get('base_path')
+                    if final_path:
+                        logger.info(f"Scanner: Torrent pré-mappé '{release_name}' est complet. Mise à jour avec le chemin final et passage à 'pending_staging'.")
+                        # On met à jour le chemin ET le statut en une seule fois.
+                        mapping_manager.add_or_update_torrent_in_map(
+                            release_name=entry.get('release_name', release_name),
+                            torrent_hash=torrent_hash,
+                            status='pending_staging', # <-- Passage au statut suivant
+                            seedbox_download_path=final_path, # <-- Enregistrement du chemin CORRECT
+                            folder_name=entry.get('folder_name', os.path.basename(final_path or release_name)),
+                            app_type=entry.get('app_type'),
+                            target_id=entry.get('target_id'),
+                            label=entry.get('label'),
+                            original_torrent_name=entry.get('original_torrent_name')
+                        )
+                    else:
+                        logger.error(f"Scanner: Torrent '{release_name}' est complet mais rTorrent n'a pas fourni de 'base_path'. L'association ne peut pas être mise à jour.")
+
+                # Si le statut est autre (ex: 'pending_staging', 'error_*'), on ne fait rien pour éviter les boucles.
+                continue # On passe au torrent suivant.
 
             # Si on arrive ici, le torrent est NOUVEAU pour nous.
             logger.info(f"Scanner: Nouveau torrent terminé détecté: '{release_name}'.")
