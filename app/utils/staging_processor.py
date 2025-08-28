@@ -247,10 +247,11 @@ def _handle_manual_import(item, folder_name):
             mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', f"Erreur de copie de fichier: {e_copy}")
             return
 
-    # 3. Nettoyage final, DÉPLACÉ EN DEHORS ET APRÈS LA BOUCLE
+    # --- DÉBUT DE LA CORRECTION DÉFINITIVE ---
+    # 3. Nettoyage, Mise à jour du statut et Rescan sont faits UNE SEULE FOIS APRÈS la boucle.
+
     _cleanup_staging(folder_name)
 
-    # 4. Mise à jour du statut et Rescan (une seule fois après tout)
     final_status = 'completed_manual'
     final_message = f"{len(files_to_copy)} fichier(s) déplacé(s) manuellement."
 
@@ -272,6 +273,7 @@ def _handle_manual_import(item, folder_name):
         arr_client.sonarr_post_command({'name': 'RescanSeries', 'seriesId': target_id})
     else:
         arr_client.radarr_post_command({'name': 'RescanMovie', 'movieId': target_id})
+    # --- FIN DE LA CORRECTION DÉFINITIVE ---
 def process_pending_staging_items():
     """ Main function for the staging processor with robust connection handling. """
     logger = current_app.logger

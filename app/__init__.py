@@ -141,7 +141,7 @@ def create_app(config_class=Config):
         scheduler = BackgroundScheduler(daemon=True)
 
         # Get interval from config for the rTorrent scanner
-        rtorrent_scan_interval = app.config.get('SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES', 15)
+        rtorrent_scan_interval = app.config.get('SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES', 1)
 
         # Define the function for the rTorrent scanner job
         def scheduled_rtorrent_scan_job():
