@@ -3953,8 +3953,8 @@ def rtorrent_map_sonarr():
     torrent_map_manager.add_or_update_torrent_in_map(
         release_name=torrent_name,
         torrent_hash=torrent_hash,
-        status='pending_staging',
-        seedbox_download_path=None, # <--- CORRECTION DÉFINITIVE
+        status='pending_download', # <-- CORRECTION CRUCIALE
+        seedbox_download_path=None,
         folder_name=torrent_name,
         app_type='sonarr',
         target_id=series_id,
@@ -3998,8 +3998,8 @@ def rtorrent_map_radarr():
     torrent_map_manager.add_or_update_torrent_in_map(
         release_name=torrent_name,
         torrent_hash=torrent_hash,
-        status='pending_staging',
-        seedbox_download_path=None, # <--- CORRECTION DÉFINITIVE
+        status='pending_download', # <-- CORRECTION CRUCIALE
+        seedbox_download_path=None,
         folder_name=torrent_name,
         app_type='radarr',
         target_id=movie_id,

@@ -174,9 +174,6 @@ def _handle_automatic_import(item, queue_item, arr_type, folder_name):
         mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_auto_import', f'Failed to trigger import in {arr_type}.')
 
 def _handle_manual_import(item, folder_name):
-    """
-    Gère un import manuel via MMS. Gère les cas où l'item est un fichier unique ou un dossier.
-    """
     current_app.logger.info(f"Début du traitement manuel pour '{item['release_name']}'.")
     torrent_hash = item['torrent_hash']
     source_path = os.path.normpath(os.path.join(current_app.config['LOCAL_STAGING_PATH'], folder_name))
@@ -236,11 +233,9 @@ def _handle_manual_import(item, folder_name):
             mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', f"Erreur de copie: {e_copy}")
             return
 
-    # --- CORRECTION : Nettoyage et mise à jour du statut APRES la boucle ---
     _cleanup_staging(folder_name)
 
     final_message = f"{len(files_to_copy)} fichier(s) déplacé(s) manuellement."
-    # (La logique pour déterminer 'completed_auto' peut être ajoutée ici si nécessaire)
     mapping_manager.update_torrent_status_in_map(torrent_hash, 'completed_manual', final_message)
 
     current_app.logger.info(f"Déclenchement d'un Rescan dans {media_type} pour l'ID {target_id}.")
