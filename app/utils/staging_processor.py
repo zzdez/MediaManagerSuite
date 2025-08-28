@@ -313,6 +313,12 @@ def process_pending_staging_items():
 
             # --- DÉBUT DE LA LOGIQUE D'AIGUILLAGE ---
             if current_status == 'pending_staging':
+                # --- DÉBUT DE LA SÉCURITÉ ANTI-RACE CONDITION ---
+                if not item_data.get('seedbox_download_path'):
+                    logger.info(f"Item '{folder_name}' is pending_staging but path is not yet available. Waiting for scanner. Skipping for this cycle.")
+                    continue # On passe au suivant, on ne le traite pas maintenant.
+                # --- FIN DE LA SÉCURITÉ ---
+
                 logger.info(f"Item '{folder_name}' is pending_staging. Starting rapatriation.")
                 if _rapatriate_item(item_data, sftp_client, folder_name):
                     mapping_manager.update_torrent_status_in_map(torrent_hash, 'in_staging', 'Item successfully downloaded to staging.')
