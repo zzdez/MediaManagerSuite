@@ -109,105 +109,59 @@ function flashMessageGlobally(message, category) {
 }
 
 // --- Sonarr/Radarr Search Modals (Generic for Staging, Problem Items, etc.) ---
-function openSonarrSearchModal(itemPathForAction, itemType, torrentHash = null) {
-    const itemNameForDisplay = itemPathForAction.split(/[\\/]/).pop();
-    const sonarrModalElement = document.getElementById('sonarrSearchModal');
-    if (!sonarrModalElement) { console.error("Modal Sonarr (ID: sonarrSearchModal) non trouvé!"); return; }
+function openSonarrSearchModal(itemName, torrentHash) {
+    const modalElement = $('#sonarrSearchModal');
+    if (!modalElement.length) { console.error("Modal Sonarr non trouvée !"); return; }
 
-    sonarrModalElement.setAttribute('data-current-action', 'mapIndividualStaging');
-    sonarrModalElement.removeAttribute('data-is-new-series');
-    sonarrModalElement.removeAttribute('data-selected-media-id');
-    sonarrModalElement.removeAttribute('data-selected-media-title');
-    sonarrModalElement.setAttribute('data-problem-torrent-hash', torrentHash || '');
-    $('#sonarrSearchModal').data('torrent-hash', torrentHash);
+    if (!torrentHash) {
+        alert("Erreur critique : Le hash du torrent n'a pas été transmis à la modale.");
+        return;
+    }
+    modalElement.data('torrent-hash', torrentHash);
 
-    document.getElementById('sonarrItemToMap').textContent = itemNameForDisplay;
-    document.getElementById('sonarrOriginalItemName').value = itemPathForAction;
-    document.getElementById('sonarrOriginalItemType').value = itemType;
-    const itemTypeText = {
-        'directory': 'Dossier (Staging)',
-        'file': 'Fichier (Staging)',
-        'torrent': 'Torrent'
-    }[itemType] || 'Item';
-    document.getElementById('sonarrItemType').textContent = itemTypeText;
-    document.getElementById('sonarrSearchQuery').value = getCleanedSearchTerm(itemPathForAction);
-        
-    // --- LIGNE AJOUTÉE ---
-    // executeSonarrSearch(); // Pour lancer la recherche automatiquement après avoir rempli le champ
+    // Reset and prepare modal content
+    document.getElementById('sonarrItemToMap').textContent = itemName;
+    document.getElementById('sonarrOriginalItemName').value = itemName; // Store for later use
+    document.getElementById('sonarrOriginalItemType').value = 'torrent'; // Set type for context
+    document.getElementById('sonarrItemType').textContent = 'Torrent';
+    document.getElementById('sonarrSearchQuery').value = getCleanedSearchTerm(itemName);
 
     document.getElementById('sonarrSearchResults').innerHTML = '';
-    document.getElementById('sonarrSearchModalFeedbackZone').innerHTML = ''; // Clear previous feedback
+    document.getElementById('sonarrSearchModalFeedbackZone').innerHTML = '';
     document.getElementById('sonarrSelectedSeriesId').value = '';
     document.getElementById('sonarrSelectedSeriesTitle').innerText = 'Aucune série sélectionnée';
     document.getElementById('sonarrManualSeasonDiv').style.display = 'none';
     document.getElementById('sonarrManualSeasonInput').value = '';
-    document.getElementById('sonarrForceMultiPartDiv').style.display = 'none';
-    document.getElementById('sonarrForceMultiPartCheckbox').checked = false;
-    currentlySelectedSonarrSeriesIdInModal = null;
 
     const modalMapButton = document.getElementById('sonarrModalMapButton');
     if (modalMapButton) {
         modalMapButton.innerHTML = '<i class="fas fa-link"></i> Mapper à cette Série';
         modalMapButton.disabled = true;
-        modalMapButton.className = 'btn btn-primary';
-
-        modalMapButton.onclick = function() {
-            const seriesTitle = document.getElementById('sonarrSelectedSeriesTitle').innerText.replace('Série sélectionnée : ', '');
-            const userForcedSeason = document.getElementById('sonarrManualSeasonInput').value;
-            const isNewMedia = sonarrModalElement.getAttribute('data-is-new-media') === 'true';
-            const mediaIdForPayload = sonarrModalElement.getAttribute('data-selected-media-id');
-            const mediaTitleForAdd = sonarrModalElement.getAttribute('data-selected-media-title');
-            const currentAction = sonarrModalElement.getAttribute('data-current-action');
-            const currentItemType = document.getElementById('sonarrOriginalItemType').value;
-            const currentItemName = document.getElementById('sonarrOriginalItemName').value;
-            const forceMultiPart = document.getElementById('sonarrForceMultiPartCheckbox').checked;
-
-            if (!mediaIdForPayload) {
-                alert("Veuillez sélectionner une série.");
-                return;
-            }
-
-            if (currentItemType === 'torrent') {
-                triggerSonarrTorrentMap(currentItemName, mediaIdForPayload);
-            } else if (currentAction === 'mapIndividualStaging' && isNewMedia) {
-                const mediaYear = sonarrModalElement.getAttribute('data-selected-media-year');
-                const searchResultData = { id: mediaIdForPayload, title: mediaTitleForAdd, year: parseInt(mediaYear) || 0 };
-                promptAndAddArrItemForLocalStaging(searchResultData, 'sonarr', sonarrModalElement);
-            } else {
-                triggerSonarrManualImportWithSeason(mediaIdForPayload, seriesTitle, userForcedSeason, isNewMedia, mediaTitleForAdd, forceMultiPart);
-            }
-        };
     }
-    var modal = new bootstrap.Modal(sonarrModalElement);
-    modal.show();
+
+    // Automatically trigger search
+    executeSonarrSearch();
+
+    $('#sonarrSearchModal').modal('show');
 }
 
-function openRadarrSearchModal(itemPathForAction, itemType, torrentHash = null) {
-    const itemNameForDisplay = itemPathForAction.split(/[\\/]/).pop();
-    const radarrModalElement = document.getElementById('radarrSearchModal');
-    if (!radarrModalElement) { console.error("Modal Radarr (ID: radarrSearchModal) non trouvé!"); return; }
+function openRadarrSearchModal(itemName, torrentHash) {
+    const modalElement = $('#radarrSearchModal');
+    if (!modalElement.length) { console.error("Modal Radarr non trouvée !"); return; }
 
-    radarrModalElement.setAttribute('data-current-action', 'mapIndividualStaging');
-    radarrModalElement.removeAttribute('data-is-new-media');
-    radarrModalElement.removeAttribute('data-selected-media-id');
-    radarrModalElement.removeAttribute('data-selected-media-title');
-    radarrModalElement.removeAttribute('data-selected-media-year');
-    radarrModalElement.setAttribute('data-problem-torrent-hash', torrentHash || '');
-    $('#radarrSearchModal').data('torrent-hash', torrentHash);
+    // LA CORRECTION LA PLUS IMPORTANTE EST ICI :
+    if (!torrentHash) {
+        alert("Erreur critique : Le hash du torrent n'a pas été transmis à la modale.");
+        return;
+    }
+    modalElement.data('torrent-hash', torrentHash); // Stocke le hash
 
-    document.getElementById('radarrItemToMap').textContent = itemNameForDisplay;
-    document.getElementById('radarrOriginalItemName').value = itemPathForAction;
-    document.getElementById('radarrOriginalItemType').value = itemType;
-    const itemTypeText = {
-        'directory': 'Dossier (Staging)',
-        'file': 'Fichier (Staging)',
-        'torrent': 'Torrent'
-    }[itemType] || 'Item';
-    document.getElementById('radarrItemType').textContent = itemTypeText;
-    document.getElementById('radarrSearchQuery').value = getCleanedSearchTerm(itemPathForAction);
-
-    // --- LIGNE AJOUTÉE ---
-    // executeRadarrSearch(); // Pour lancer la recherche automatiquement après avoir rempli le champ
+    // Reset and prepare modal content
+    document.getElementById('radarrItemToMap').textContent = itemName;
+    document.getElementById('radarrOriginalItemName').value = itemName; // Store for later use
+    document.getElementById('radarrOriginalItemType').value = 'torrent'; // Set type for context
+    document.getElementById('radarrItemType').textContent = 'Torrent';
+    document.getElementById('radarrSearchQuery').value = getCleanedSearchTerm(itemName);
 
     document.getElementById('radarrSearchResults').innerHTML = '';
     const radarrFeedbackZone = document.getElementById('radarrSearchModalFeedbackZone');
@@ -219,39 +173,12 @@ function openRadarrSearchModal(itemPathForAction, itemType, torrentHash = null) 
     if (modalMapButton) {
         modalMapButton.innerHTML = '<i class="fas fa-link"></i> Mapper à ce Film';
         modalMapButton.disabled = true;
-        modalMapButton.className = 'btn btn-primary';
-        modalMapButton.onclick = function() {
-            const radarrModalElement = document.getElementById('radarrSearchModal');
-            const mediaIdForPayload = radarrModalElement.getAttribute('data-selected-media-id');
-            const mediaTitleForDisplay = radarrModalElement.getAttribute('data-selected-media-title');
-            const currentItemType = document.getElementById('radarrOriginalItemType').value;
-
-            if (!mediaIdForPayload) {
-                alert("Veuillez sélectionner un film.");
-                return;
-            }
-
-            // --- DÉBUT DE LA CORRECTION ---
-            // On vérifie si on est dans un contexte de mapping de torrent
-            if (currentItemType === 'torrent') {
-                // On appelle directement notre nouvelle fonction robuste
-                mapToRadarrItem(mediaIdForPayload, mediaTitleForDisplay);
-            } else {
-                // On garde la logique existante pour les autres cas (import depuis staging, etc.)
-                const isNewMedia = radarrModalElement.getAttribute('data-is-new-media') === 'true';
-                if (isNewMedia) {
-                    const mediaYear = radarrModalElement.getAttribute('data-selected-media-year');
-                    const searchResultData = { id: mediaIdForPayload, title: mediaTitleForDisplay, year: parseInt(mediaYear) || 0 };
-                    promptAndAddArrItemForLocalStaging(searchResultData, 'radarr', radarrModalElement);
-                } else {
-                    triggerRadarrManualImport(mediaIdForPayload, mediaTitleForDisplay);
-                }
-            }
-            // --- FIN DE LA CORRECTION ---
-        };
     }
-    var modal = new bootstrap.Modal(radarrModalElement);
-    modal.show();
+
+    // Automatically trigger search
+    executeRadarrSearch();
+
+    $('#radarrSearchModal').modal('show');
 }
 
 function openSonarrSearchModalForProblemItem(releaseName, currentTargetId, torrentHash) {
@@ -724,7 +651,7 @@ function mapToRadarrItem(movieId, movieTitle) {
 }
 
 function mapToSonarrItem(seriesId, seriesTitle) {
-    const torrentHash = $('#sonarrSearchModal').data('torrent-hash');
+    const torrentHash = $('#sonarrSearchModal').data('torrent-hash'); // Lire depuis la modale Sonarr
 
     if (!torrentHash) {
         alert("Erreur critique: Hash du torrent non trouvé pour le mapping.");

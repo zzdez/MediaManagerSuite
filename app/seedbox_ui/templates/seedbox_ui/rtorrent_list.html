@@ -74,6 +74,7 @@
                     <th class="sortable-header" data-sort-by="label">Label rTorrent</th>
                     <th class="sortable-header" data-sort-by="association">Pré-association MMS</th>
                     <th class="sortable-header" data-sort-by="status-mms">Statut MMS</th>
+                    <th style="width: 15%;">Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -137,6 +138,20 @@
                             {% else %}
                                 <span class="badge bg-dark">{{ status or 'Inconnu' }}</span>
                             {% endif %}
+                        </td>
+                        <td>
+                            <div class="btn-group" role="group">
+                                <button class="btn btn-sm btn-primary"
+                                        onclick="openSonarrSearchModal('{{ torrent.name|escapejs }}', '{{ torrent.hash }}')"
+                                        title="Mapper manuellement à une série Sonarr">
+                                    <i class="bi bi-tv"></i> Sonarr
+                                </button>
+                                <button class="btn btn-sm btn-info"
+                                        onclick="openRadarrSearchModal('{{ torrent.name|escapejs }}', '{{ torrent.hash }}')"
+                                        title="Mapper manuellement à un film Radarr">
+                                    <i class="bi bi-film"></i> Radarr
+                                </button>
+                            </div>
                         </td>
                     </tr>
                 {% endfor %}
