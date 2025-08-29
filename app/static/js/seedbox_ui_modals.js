@@ -455,7 +455,7 @@ async function executeRadarrSearch() {
                     <div class="row align-items-center">
                     <div class="col-auto"><img src="${posterUrl}" alt="Poster" class="img-fluid rounded" style="max-height: 90px;" onerror="this.onerror=null; this.src='https://via.placeholder.com/60x90?text=ImgErr';"></div>
                     <div class="col"><strong>${movie.title}</strong> (${movie.year || 'N/A'})<br><small class="text-muted">Statut: ${movie.status || 'N/A'} | TMDB ID: ${movie.tmdbId || 'N/A'} ${isAlreadyInRadarr ? `| Radarr ID: ${movie.id}` : ''}</small><p class="mb-0 small">${(movie.overview || '').substring(0, 120)}${(movie.overview || '').length > 120 ? '...' : ''}</p></div>
-                    <div class="col-auto"><button class="btn ${buttonClass} btn-sm" onclick="handleGenericRadarrMovieSelection(${idForHandler || 0}, '${escapedMovieTitle}', ${isAlreadyInRadarr}, ${movie.year || 0})" title="${buttonTitle}" ${idForHandler ? '' : 'disabled title="ID manquant"'}><i class="${buttonIcon}"></i> ${buttonText}</button></div>
+                    <div class="col-auto"><button class="btn ${buttonClass} btn-sm" onclick="mapToRadarrItem('${idForHandler || 0}', '${escapedMovieTitle}')" title="${buttonTitle}" ${idForHandler ? '' : 'disabled title="ID manquant"'}><i class="${buttonIcon}"></i> Mapper ce média</button></div>
                 </div></li>`;
         });
         html += '</ul>';
@@ -677,6 +677,48 @@ async function triggerRadarrManualImport(radarrMovieId, movieTitleForDisplay) {
         else console.error("Error (no feedback div):", error.message);
         flashMessageGlobally(`Erreur import Radarr: ${escapeJsString(error.message)}`, 'danger');
     } finally { if(modalMapButton) modalMapButton.disabled = false; }
+}
+
+// Ajoute cette nouvelle fonction dans le fichier.
+// Elle sera appelée par le bouton "Mapper ce média" dans la liste des résultats.
+function mapToRadarrItem(movieId, movieTitle) {
+    // 1. Récupérer le hash du torrent stocké dans les data-attributes de la modale
+    const torrentHash = document.getElementById('radarrSearchModal').getAttribute('data-problem-torrent-hash');
+
+    if (!torrentHash || !movieId) {
+        console.error("Erreur de mapping : torrentHash ou movieId manquant.", { torrentHash, movieId });
+        alert("Erreur critique : Impossible de récupérer les informations nécessaires pour le mapping. Vérifiez la console.");
+        return;
+    }
+
+    console.log(`Tentative de mapping du torrent ${torrentHash} avec le film ID ${movieId} (${movieTitle})`);
+
+    // 2. Envoyer la requête AJAX au backend
+    $.ajax({
+        url: '/seedbox/rtorrent/map/radarr', // L'endpoint que nous avons corrigé
+        type: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({
+            torrent_hash: torrentHash,
+            movie_id: movieId
+        }),
+        success: function(response) {
+            console.log("Réponse du serveur (mapping succès) :", response);
+            // Fermer la modale et afficher un message de succès
+            $('#radarrSearchModal').modal('hide');
+            // Optionnel : Afficher une notification de succès (si vous avez un système pour ça)
+            alert(`Succès ! Le torrent a été associé à "${movieTitle}". La page va se recharger.`);
+            // Recharger la page pour voir le nouveau statut
+            location.reload();
+        },
+        error: function(xhr, status, error) {
+            console.error("Erreur lors de la requête de mapping :", { status, error, response: xhr.responseText });
+            // Afficher un message d'erreur clair à l'utilisateur
+            const response = xhr.responseJSON;
+            const errorMessage = response ? response.error : "Une erreur inconnue est survenue.";
+            alert(`Échec du mapping : ${errorMessage}`);
+        }
+    });
 }
 
 async function triggerSonarrTorrentMap(torrentName, seriesId) {

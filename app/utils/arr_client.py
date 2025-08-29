@@ -4,6 +4,7 @@ import requests
 from flask import current_app
 import re
 import logging
+from Levenshtein import distance as levenshtein_distance
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -523,42 +524,43 @@ def find_sonarr_series_by_release_name(release_name):
 
 
 def find_radarr_movie_by_release_name(release_name):
-    """
-    Trouve un film dans Radarr en se basant sur le nom d'une release,
-    en utilisant l'endpoint 'lookup' et en validant avec l'année si possible.
-    """
     logger.info(f"Recherche du film Radarr pour la release : '{release_name}'")
     parsed_info = parse_media_name(release_name)
     title_to_search = parsed_info.get('title')
     year_to_search = parsed_info.get('year')
 
     if not title_to_search:
-        logger.warning(f"Impossible d'extraire un titre de '{release_name}'.")
         return None
 
     candidates = search_radarr_by_title(title_to_search)
     if not candidates:
-        logger.warning(f"Aucun candidat trouvé via lookup pour le titre '{title_to_search}'.")
         return None
 
+    # On cherche la meilleure correspondance dans les candidats
     best_match = None
-    for candidate in candidates:
-        # On ne considère que les films qui sont déjà dans la bibliothèque
-        if candidate.get('id') and candidate.get('id') > 0:
-            if candidate.get('title', '').lower() == title_to_search.lower():
-                if year_to_search:
-                    if candidate.get('year') == year_to_search:
-                        best_match = candidate
-                        break # Correspondance parfaite avec année
-                else:
-                    best_match = candidate
-                    break # Première correspondance de titre si pas d'année
+    lowest_score = float('inf')
 
-    if best_match:
-        logger.info(f"Film trouvé : '{best_match.get('title')}' (ID: {best_match.get('id')})")
+    for candidate in candidates:
+        if candidate.get('id') and candidate.get('id') > 0:
+            candidate_title = candidate.get('title', '')
+
+            # Calculer un score de similarité (plus le score est bas, mieux c'est)
+            score = levenshtein_distance(title_to_search.lower(), candidate_title.lower())
+
+            # Pénaliser lourdement les années qui ne correspondent pas
+            if year_to_search and candidate.get('year') != year_to_search:
+                score += 10
+
+            if score < lowest_score:
+                lowest_score = score
+                best_match = candidate
+
+    # On accepte une correspondance si le score est raisonnablement bas (ex: moins de 5 erreurs de frappe)
+    if best_match and lowest_score < 5:
+        logger.info(f"Film trouvé (score: {lowest_score}): '{best_match.get('title')}' (ID: {best_match.get('id')})")
         return best_match
     else:
-        logger.warning(f"Aucun film correspondant à '{title_to_search}' (Année: {year_to_search}) n'a été trouvé dans la bibliothèque Radarr.")
+        logger.warning(f"Aucun film suffisamment correspondant à '{title_to_search}' (Année: {year_to_search}) n'a été trouvé dans la bibliothèque Radarr.")
         return None
 
 def check_sonarr_episode_exists(series_title: str, season_number: int, episode_number: int) -> bool:
