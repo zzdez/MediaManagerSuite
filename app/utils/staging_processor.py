@@ -213,6 +213,7 @@ def _handle_manual_import(item, folder_name):
         mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', "Aucun fichier vidéo trouvé à déplacer.")
         return
 
+    successful_copies = 0
     for source_file in files_to_copy:
         filename = os.path.basename(source_file)
         final_destination_folder = os.path.normpath(destination_base_path)
@@ -228,27 +229,34 @@ def _handle_manual_import(item, folder_name):
         try:
             current_app.logger.info(f"Copie de '{source_file}' vers '{destination_file}'...")
             shutil.copy2(source_file, destination_file)
+            successful_copies += 1
         except Exception as e_copy:
             current_app.logger.error(f"Erreur critique lors de la copie de {source_file}: {e_copy}.")
-            mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', f"Erreur de copie: {e_copy}")
-            return
+            # Ne pas retourner ici, pour permettre aux autres fichiers d'être traités.
+            # On pourrait logger l'échec et continuer.
 
-    _cleanup_staging(folder_name)
+    # Si au moins un fichier a été copié, on continue.
+    if successful_copies > 0:
+        _cleanup_staging(folder_name)
 
-    final_message = f"{len(files_to_copy)} fichier(s) déplacé(s) manuellement."
-    final_status = 'completed_manual' # Default status
-    if item.get('label', ''): # Check if label exists to avoid errors
-        if 'sonarr' in item['label'] or 'radarr' in item['label']:
-             final_status = 'completed_auto'
-             final_message = f"{len(files_to_copy)} fichier(s) importé(s) automatiquement via MMS."
+        final_message = f"{successful_copies}/{len(files_to_copy)} fichier(s) déplacé(s) manuellement."
+        final_status = 'completed_manual' # Default status
+        if item.get('label', ''): # Check if label exists to avoid errors
+            if 'sonarr' in item['label'] or 'radarr' in item['label']:
+                 final_status = 'completed_auto'
+                 final_message = f"{successful_copies}/{len(files_to_copy)} fichier(s) importé(s) automatiquement via MMS."
 
-    mapping_manager.update_torrent_status_in_map(torrent_hash, final_status, final_message)
+        mapping_manager.update_torrent_status_in_map(torrent_hash, final_status, final_message)
 
-    current_app.logger.info(f"Déclenchement d'un Rescan dans {media_type} pour l'ID {target_id}.")
-    if media_type == 'tv':
-        arr_client.sonarr_post_command({'name': 'RescanSeries', 'seriesId': target_id})
+        current_app.logger.info(f"Déclenchement d'un Rescan dans {media_type} pour l'ID {target_id}.")
+        if media_type == 'tv':
+            arr_client.sonarr_post_command({'name': 'RescanSeries', 'seriesId': target_id})
+        else:
+            arr_client.radarr_post_command({'name': 'RescanMovie', 'movieId': target_id})
     else:
-        arr_client.radarr_post_command({'name': 'RescanMovie', 'movieId': target_id})
+        # Aucun fichier n'a pu être copié.
+        mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', "Échec de la copie de tous les fichiers vidéo.")
+
 def process_pending_staging_items():
     """ Main function for the staging processor with robust connection handling. """
     logger = current_app.logger

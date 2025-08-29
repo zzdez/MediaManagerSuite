@@ -861,13 +861,15 @@
         if (mappingChoiceModalEl) {
             document.getElementById('mapToSonarrBtn').addEventListener('click', function() {
                 const torrentName = document.getElementById('torrentNameToMapInput').value;
-                openSonarrSearchModal(torrentName, 'torrent');
+                const torrentHash = document.getElementById('torrentHashToMapInput').value;
+                openSonarrSearchModal(torrentName, 'torrent', torrentHash);
                 bootstrap.Modal.getInstance(mappingChoiceModalEl).hide();
             });
 
             document.getElementById('mapToRadarrBtn').addEventListener('click', function() {
                 const torrentName = document.getElementById('torrentNameToMapInput').value;
-                openRadarrSearchModal(torrentName, 'torrent');
+                const torrentHash = document.getElementById('torrentHashToMapInput').value;
+                openRadarrSearchModal(torrentName, 'torrent', torrentHash);
                 bootstrap.Modal.getInstance(mappingChoiceModalEl).hide();
             });
         }

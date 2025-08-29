@@ -25,11 +25,25 @@ def scan_and_map_torrents():
                 continue
 
             if torrent_hash in torrent_map:
-                # Le torrent est connu, on gère la fin de son téléchargement
                 entry = torrent_map[torrent_hash]
+                # Si le torrent est connu et en attente de téléchargement, on vérifie s'il faut l'enrichir
                 if entry.get('status') == 'pending_download':
-                    logger.info(f"Scanner: Torrent connu '{release_name}' est complet. Passage à 'pending_staging'.")
-                    mapping_manager.update_torrent_status_in_map(torrent_hash, 'pending_staging')
+                    # Cas 1: C'est une "promesse" sans chemin. On l'enrichit.
+                    if not entry.get('seedbox_download_path'):
+                        logger.info(f"Scanner: Promesse pour '{release_name}' complétée. Enrichissement avec le chemin '{torrent.get('base_path')}' et passage à 'pending_staging'.")
+                        # Mettre à jour avec le chemin et le nouveau statut
+                        mapping_manager.add_or_update_torrent_in_map(
+                            release_name=release_name,
+                            torrent_hash=torrent_hash,
+                            status='pending_staging',
+                            seedbox_download_path=torrent.get('base_path'),
+                            folder_name=os.path.basename(torrent.get('base_path') or release_name),
+                            # Les autres infos (app_type, target_id) sont déjà dans la map et seront conservées
+                        )
+                    # Cas 2: C'est un téléchargement normal qui vient de se terminer
+                    else:
+                        logger.info(f"Scanner: Torrent connu '{release_name}' est complet. Passage à 'pending_staging'.")
+                        mapping_manager.update_torrent_status_in_map(torrent_hash, 'pending_staging')
                 continue # On ne traite pas plus les items déjà connus
 
             # Si on arrive ici, le torrent est NOUVEAU pour nous.

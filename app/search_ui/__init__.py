@@ -485,7 +485,7 @@ def download_and_map():
                 logger.info(f"Torrent '{release_name_for_map}' ajouté. Hash: {actual_hash}. Sauvegarde de l'association.")
                 
                 # Le chemin sur la seedbox est le dossier de destination + le nom que rTorrent utilisera
-                seedbox_full_path = str(Path(rtorrent_download_dir) / release_name_for_map).replace('\\', '/')
+                # seedbox_full_path = str(Path(rtorrent_download_dir) / release_name_for_map).replace('\\', '/')
                 # Dans ce flux, le nom du dossier sur la seedbox est le même que le nom de la release
                 folder_name = release_name_for_map
 
@@ -494,7 +494,7 @@ def download_and_map():
                     release_name=release_name_for_map,
                     torrent_hash=actual_hash,
                     status='pending_download',
-                    seedbox_download_path=seedbox_full_path,
+                    seedbox_download_path=None,
                     folder_name=folder_name,
                     app_type=final_app_type,
                     target_id=final_target_id,

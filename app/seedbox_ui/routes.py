@@ -3060,13 +3060,13 @@ def rtorrent_add_torrent_action():
     logger.info(f"RTORRENT_ADD_ACTION: Hash rTorrent '{actual_hash}' trouvé pour '{original_name_from_js}'.")
 
     # Le chemin sur la seedbox sera le rtorrent_download_dir + le nom de la release que rTorrent utilise (release_name_for_map)
-    seedbox_full_download_path = str(Path(rtorrent_download_dir) / release_name_for_map).replace('\\', '/')
+    # seedbox_full_download_path = str(Path(rtorrent_download_dir) / release_name_for_map).replace('\\', '/')
 
     if torrent_map_manager.add_or_update_torrent_in_map(
             release_name_for_map,
             actual_hash,
             "pending_download",
-            seedbox_full_download_path,
+            None,
             app_type=app_type,
             target_id=actual_target_id,
             label=rtorrent_label,
@@ -3939,8 +3939,8 @@ def rtorrent_map_sonarr():
     torrent_map_manager.add_or_update_torrent_in_map(
         release_name=torrent_info.get('name'),
         torrent_hash=torrent_hash,
-        status='pending_staging',
-        seedbox_download_path=final_path,
+        status='pending_download',
+        seedbox_download_path=None,
         folder_name=os.path.basename(final_path),
         app_type='sonarr',
         target_id=series_id,
@@ -3973,8 +3973,8 @@ def rtorrent_map_radarr():
     torrent_map_manager.add_or_update_torrent_in_map(
         release_name=torrent_info.get('name'),
         torrent_hash=torrent_hash,
-        status='pending_staging',
-        seedbox_download_path=final_path,
+        status='pending_download',
+        seedbox_download_path=None,
         folder_name=os.path.basename(final_path),
         app_type='radarr',
         target_id=movie_id,
