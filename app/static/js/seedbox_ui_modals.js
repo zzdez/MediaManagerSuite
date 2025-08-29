@@ -137,6 +137,9 @@ function openSonarrSearchModal(itemName, torrentHash) {
     if (modalMapButton) {
         modalMapButton.innerHTML = '<i class="fas fa-link"></i> Mapper à cette Série';
         modalMapButton.disabled = true;
+        // The onclick handler is removed to prevent conflict with direct mapping buttons.
+        // The footer button is now obsolete for this modal's flow.
+        modalMapButton.onclick = null;
     }
 
     // Automatically trigger search
@@ -173,6 +176,9 @@ function openRadarrSearchModal(itemName, torrentHash) {
     if (modalMapButton) {
         modalMapButton.innerHTML = '<i class="fas fa-link"></i> Mapper à ce Film';
         modalMapButton.disabled = true;
+        // The onclick handler is removed to prevent conflict with direct mapping buttons.
+        // The footer button is now obsolete for this modal's flow.
+        modalMapButton.onclick = null;
     }
 
     // Automatically trigger search
