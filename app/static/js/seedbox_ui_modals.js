@@ -222,27 +222,32 @@ function openRadarrSearchModal(itemPathForAction, itemType, torrentHash = null) 
         modalMapButton.className = 'btn btn-primary';
         modalMapButton.onclick = function() {
             const radarrModalElement = document.getElementById('radarrSearchModal');
-            const isNewMedia = radarrModalElement.getAttribute('data-is-new-media') === 'true';
             const mediaIdForPayload = radarrModalElement.getAttribute('data-selected-media-id');
-            const mediaTitleForAdd = radarrModalElement.getAttribute('data-selected-media-title');
-            let currentAction = radarrModalElement.getAttribute('data-current-action');
+            const mediaTitleForDisplay = radarrModalElement.getAttribute('data-selected-media-title');
             const currentItemType = document.getElementById('radarrOriginalItemType').value;
-            const currentItemName = document.getElementById('radarrOriginalItemName').value;
 
             if (!mediaIdForPayload) {
                 alert("Veuillez sélectionner un film.");
                 return;
             }
 
+            // --- DÉBUT DE LA CORRECTION ---
+            // On vérifie si on est dans un contexte de mapping de torrent
             if (currentItemType === 'torrent') {
-                triggerRadarrTorrentMap(currentItemName, mediaIdForPayload);
-            } else if (currentAction === 'mapIndividualStaging' && isNewMedia) {
-                const mediaYear = radarrModalElement.getAttribute('data-selected-media-year');
-                const searchResultData = { id: mediaIdForPayload, title: mediaTitleForAdd, year: parseInt(mediaYear) || 0 };
-                promptAndAddArrItemForLocalStaging(searchResultData, 'radarr', radarrModalElement);
+                // On appelle directement notre nouvelle fonction robuste
+                mapToRadarrItem(mediaIdForPayload, mediaTitleForDisplay);
             } else {
-                triggerRadarrManualImport(mediaIdForPayload, mediaTitleForAdd);
+                // On garde la logique existante pour les autres cas (import depuis staging, etc.)
+                const isNewMedia = radarrModalElement.getAttribute('data-is-new-media') === 'true';
+                if (isNewMedia) {
+                    const mediaYear = radarrModalElement.getAttribute('data-selected-media-year');
+                    const searchResultData = { id: mediaIdForPayload, title: mediaTitleForDisplay, year: parseInt(mediaYear) || 0 };
+                    promptAndAddArrItemForLocalStaging(searchResultData, 'radarr', radarrModalElement);
+                } else {
+                    triggerRadarrManualImport(mediaIdForPayload, mediaTitleForDisplay);
+                }
             }
+            // --- FIN DE LA CORRECTION ---
         };
     }
     var modal = new bootstrap.Modal(radarrModalElement);
