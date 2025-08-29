@@ -3913,6 +3913,7 @@ def retry_problematic_import_action(torrent_hash):
         message = f"Échec de la relance pour '{item_name_in_staging}': {result_from_handler.get('message', 'Erreur inconnue')}"
         return jsonify({'status': 'error', 'message': message}), 500
 
+# Remplace la fonction rtorrent_map_sonarr existante par celle-ci :
 @seedbox_ui_bp.route('/rtorrent/map/sonarr', methods=['POST'], endpoint='rtorrent_map_sonarr')
 @login_required
 def rtorrent_map_sonarr():
@@ -3946,7 +3947,7 @@ def rtorrent_map_sonarr():
     )
     return jsonify({'success': True, 'message': f"Torrent '{torrent_info.get('name')}' mappé avec succès."})
 
-# Remplace la fonction rtorrent_map_radarr existante par celle-ci (logique identique) :
+# Remplace la fonction rtorrent_map_radarr existante par celle-ci :
 @seedbox_ui_bp.route('/rtorrent/map/radarr', methods=['POST'], endpoint='rtorrent_map_radarr')
 @login_required
 def rtorrent_map_radarr():
