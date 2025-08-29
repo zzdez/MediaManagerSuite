@@ -5,6 +5,7 @@ from logging.handlers import RotatingFileHandler
 import os
 from datetime import datetime
 import secrets
+import json
 from app.auth import login_required
 
 from flask import Flask, render_template, session, flash, request, redirect, url_for, current_app
@@ -25,10 +26,17 @@ scheduler = None
 # Global lock for SFTP scan is now obsolete as the new scanner is simpler
 # sftp_scan_lock = threading.Lock()
 
+def escapejs_filter(value):
+    """Échappe une chaîne de caractères pour une utilisation sûre en JavaScript."""
+    return json.dumps(value)
+
 def create_app(config_class=Config):
     app = Flask(__name__)
     # app.sftp_scan_lock = sftp_scan_lock # Obsolete
     app.config.from_object(config_class)
+
+    # LA LIGNE DE CORRECTION EST ICI :
+    app.jinja_env.filters['escapejs'] = escapejs_filter
 
     # Configuration du logging de l'application
     if not app.debug and not app.testing:
