@@ -109,7 +109,7 @@ function flashMessageGlobally(message, category) {
 }
 
 // --- Sonarr/Radarr Search Modals (Generic for Staging, Problem Items, etc.) ---
-function openSonarrSearchModal(itemPathForAction, itemType) {
+function openSonarrSearchModal(itemPathForAction, itemType, torrentHash = null) {
     const itemNameForDisplay = itemPathForAction.split(/[\\/]/).pop();
     const sonarrModalElement = document.getElementById('sonarrSearchModal');
     if (!sonarrModalElement) { console.error("Modal Sonarr (ID: sonarrSearchModal) non trouvé!"); return; }
@@ -118,7 +118,7 @@ function openSonarrSearchModal(itemPathForAction, itemType) {
     sonarrModalElement.removeAttribute('data-is-new-series');
     sonarrModalElement.removeAttribute('data-selected-media-id');
     sonarrModalElement.removeAttribute('data-selected-media-title');
-    sonarrModalElement.removeAttribute('data-problem-torrent-hash');
+    sonarrModalElement.setAttribute('data-problem-torrent-hash', torrentHash || '');
 
     document.getElementById('sonarrItemToMap').textContent = itemNameForDisplay;
     document.getElementById('sonarrOriginalItemName').value = itemPathForAction;
@@ -181,7 +181,7 @@ function openSonarrSearchModal(itemPathForAction, itemType) {
     modal.show();
 }
 
-function openRadarrSearchModal(itemPathForAction, itemType) {
+function openRadarrSearchModal(itemPathForAction, itemType, torrentHash = null) {
     const itemNameForDisplay = itemPathForAction.split(/[\\/]/).pop();
     const radarrModalElement = document.getElementById('radarrSearchModal');
     if (!radarrModalElement) { console.error("Modal Radarr (ID: radarrSearchModal) non trouvé!"); return; }
@@ -191,7 +191,7 @@ function openRadarrSearchModal(itemPathForAction, itemType) {
     radarrModalElement.removeAttribute('data-selected-media-id');
     radarrModalElement.removeAttribute('data-selected-media-title');
     radarrModalElement.removeAttribute('data-selected-media-year');
-    radarrModalElement.removeAttribute('data-problem-torrent-hash');
+    radarrModalElement.setAttribute('data-problem-torrent-hash', torrentHash || '');
 
     document.getElementById('radarrItemToMap').textContent = itemNameForDisplay;
     document.getElementById('radarrOriginalItemName').value = itemPathForAction;
@@ -680,15 +680,23 @@ async function triggerRadarrManualImport(radarrMovieId, movieTitleForDisplay) {
 }
 
 async function triggerSonarrTorrentMap(torrentName, seriesId) {
+    const sonarrModalElement = document.getElementById('sonarrSearchModal');
+    const torrentHash = sonarrModalElement.getAttribute('data-problem-torrent-hash');
     const feedbackDiv = document.getElementById('sonarrSearchModalFeedbackZone');
+
     if (!seriesId) {
         alert("Aucun ID de série valide.");
         return;
     }
-    if (feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-info">Mapping du torrent '${escapeJsString(torrentName)}' vers la série ID ${seriesId}...</div>`;
+    if (!torrentHash) {
+        alert("Erreur critique: Hash du torrent non trouvé pour le mapping.");
+        return;
+    }
+
+    if (feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-info">Mapping du torrent '${escapeJsString(torrentName)}' (Hash: ${torrentHash}) vers la série ID ${seriesId}...</div>`;
 
     const payload = {
-        torrent_name: torrentName,
+        torrent_hash: torrentHash,
         series_id: parseInt(seriesId)
     };
 
@@ -711,7 +719,6 @@ async function triggerSonarrTorrentMap(torrentName, seriesId) {
         setTimeout(() => {
             const modalInstance = bootstrap.Modal.getInstance(document.getElementById('sonarrSearchModal'));
             if (modalInstance) modalInstance.hide();
-            // Reload rtorrent view
             sessionStorage.setItem('activeTab', '#rtorrent-view-tab');
             window.location.reload();
         }, 2500);
@@ -725,15 +732,23 @@ async function triggerSonarrTorrentMap(torrentName, seriesId) {
 }
 
 async function triggerRadarrTorrentMap(torrentName, movieId) {
+    const radarrModalElement = document.getElementById('radarrSearchModal');
+    const torrentHash = radarrModalElement.getAttribute('data-problem-torrent-hash');
     const feedbackDiv = document.getElementById('radarrSearchModalFeedbackZone');
+
     if (!movieId) {
         alert("Aucun ID de film valide.");
         return;
     }
-    if (feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-info">Mapping du torrent '${escapeJsString(torrentName)}' vers le film ID ${movieId}...</div>`;
+    if (!torrentHash) {
+        alert("Erreur critique: Hash du torrent non trouvé pour le mapping.");
+        return;
+    }
+
+    if (feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-info">Mapping du torrent '${escapeJsString(torrentName)}' (Hash: ${torrentHash}) vers le film ID ${movieId}...</div>`;
 
     const payload = {
-        torrent_name: torrentName,
+        torrent_hash: torrentHash,
         movie_id: parseInt(movieId)
     };
 
@@ -756,7 +771,6 @@ async function triggerRadarrTorrentMap(torrentName, movieId) {
         setTimeout(() => {
             const modalInstance = bootstrap.Modal.getInstance(document.getElementById('radarrSearchModal'));
             if (modalInstance) modalInstance.hide();
-            // Reload rtorrent view
             sessionStorage.setItem('activeTab', '#rtorrent-view-tab');
             window.location.reload();
         }, 2500);
