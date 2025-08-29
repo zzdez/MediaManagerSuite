@@ -109,10 +109,14 @@ function flashMessageGlobally(message, category) {
 }
 
 // --- Sonarr/Radarr Search Modals (Generic for Staging, Problem Items, etc.) ---
-function openSonarrSearchModal(itemPathForAction, itemType) {
+function openSonarrSearchModal(itemPathForAction, itemType, torrentHash = null) {
     const itemNameForDisplay = itemPathForAction.split(/[\\/]/).pop();
     const sonarrModalElement = document.getElementById('sonarrSearchModal');
     if (!sonarrModalElement) { console.error("Modal Sonarr (ID: sonarrSearchModal) non trouvé!"); return; }
+
+    if (torrentHash) {
+        sonarrModalElement.setAttribute('data-problem-torrent-hash', torrentHash);
+    }
 
     sonarrModalElement.setAttribute('data-current-action', 'mapIndividualStaging');
     sonarrModalElement.removeAttribute('data-is-new-series');
@@ -181,10 +185,14 @@ function openSonarrSearchModal(itemPathForAction, itemType) {
     modal.show();
 }
 
-function openRadarrSearchModal(itemPathForAction, itemType) {
+function openRadarrSearchModal(itemPathForAction, itemType, torrentHash = null) {
     const itemNameForDisplay = itemPathForAction.split(/[\\/]/).pop();
     const radarrModalElement = document.getElementById('radarrSearchModal');
     if (!radarrModalElement) { console.error("Modal Radarr (ID: radarrSearchModal) non trouvé!"); return; }
+
+    if (torrentHash) {
+        radarrModalElement.setAttribute('data-problem-torrent-hash', torrentHash);
+    }
 
     radarrModalElement.setAttribute('data-current-action', 'mapIndividualStaging');
     radarrModalElement.removeAttribute('data-is-new-media');
@@ -681,6 +689,8 @@ async function triggerRadarrManualImport(radarrMovieId, movieTitleForDisplay) {
 
 async function triggerSonarrTorrentMap(torrentName, seriesId) {
     const feedbackDiv = document.getElementById('sonarrSearchModalFeedbackZone');
+    const sonarrModalElement = document.getElementById('sonarrSearchModal');
+    const torrentHash = sonarrModalElement.getAttribute('data-problem-torrent-hash');
     if (!seriesId) {
         alert("Aucun ID de série valide.");
         return;
@@ -688,7 +698,7 @@ async function triggerSonarrTorrentMap(torrentName, seriesId) {
     if (feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-info">Mapping du torrent '${escapeJsString(torrentName)}' vers la série ID ${seriesId}...</div>`;
 
     const payload = {
-        torrent_name: torrentName,
+        torrent_hash: torrentHash,
         series_id: parseInt(seriesId)
     };
 
@@ -726,6 +736,8 @@ async function triggerSonarrTorrentMap(torrentName, seriesId) {
 
 async function triggerRadarrTorrentMap(torrentName, movieId) {
     const feedbackDiv = document.getElementById('radarrSearchModalFeedbackZone');
+    const radarrModalElement = document.getElementById('radarrSearchModal');
+    const torrentHash = radarrModalElement.getAttribute('data-problem-torrent-hash');
     if (!movieId) {
         alert("Aucun ID de film valide.");
         return;
@@ -733,7 +745,7 @@ async function triggerRadarrTorrentMap(torrentName, movieId) {
     if (feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-info">Mapping du torrent '${escapeJsString(torrentName)}' vers le film ID ${movieId}...</div>`;
 
     const payload = {
-        torrent_name: torrentName,
+        torrent_hash: torrentHash,
         movie_id: parseInt(movieId)
     };
 

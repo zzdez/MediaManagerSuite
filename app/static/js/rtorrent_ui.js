@@ -136,10 +136,12 @@ $(document).ready(function() {
         }
         const selectedCheckbox = $('.torrent-checkbox:checked').first();
         const torrentName = selectedCheckbox.closest('tr').find('.torrent-name').text();
+        const torrentHash = selectedCheckbox.data('torrent-hash');
 
         // Mettre à jour la modale de choix
         $('#torrentNameToMap').text(torrentName);
         $('#torrentNameToMapInput').val(torrentName);
+        $('#torrentHashToMapInput').val(torrentHash);
 
         // Ouvrir la modale de choix
         const mappingChoiceModal = new bootstrap.Modal(document.getElementById('mappingChoiceModal'));
