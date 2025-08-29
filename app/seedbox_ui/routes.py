@@ -3933,7 +3933,7 @@ def rtorrent_map_sonarr():
     if not final_path:
          return jsonify({'success': False, 'error': f"rTorrent n'a pas retourné de chemin pour {torrent_hash}."}), 500
 
-    torrent_map_manager.add_or_update_torrent_in_map(
+    mapping_manager.add_or_update_torrent_in_map(
         release_name=torrent_info.get('name'),
         torrent_hash=torrent_hash,
         status='pending_staging',
@@ -3946,7 +3946,7 @@ def rtorrent_map_sonarr():
     )
     return jsonify({'success': True, 'message': f"Torrent '{torrent_info.get('name')}' mappé avec succès."})
 
-# Remplace la fonction rtorrent_map_radarr existante par celle-ci (logique identique) :
+# Remplace la fonction rtorrent_map_radarr existante par celle-ci :
 @seedbox_ui_bp.route('/rtorrent/map/radarr', methods=['POST'], endpoint='rtorrent_map_radarr')
 @login_required
 def rtorrent_map_radarr():
@@ -3967,7 +3967,7 @@ def rtorrent_map_radarr():
     if not final_path:
          return jsonify({'success': False, 'error': f"rTorrent n'a pas retourné de chemin pour {torrent_hash}."}), 500
 
-    torrent_map_manager.add_or_update_torrent_in_map(
+    mapping_manager.add_or_update_torrent_in_map(
         release_name=torrent_info.get('name'),
         torrent_hash=torrent_hash,
         status='pending_staging',

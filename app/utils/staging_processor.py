@@ -236,8 +236,8 @@ def _handle_manual_import(item, folder_name):
     _cleanup_staging(folder_name)
 
     final_message = f"{len(files_to_copy)} fichier(s) déplacé(s) manuellement."
-    final_status = 'completed_manual' # Default status
-    if item.get('label', ''): # Check if label exists to avoid errors
+    final_status = 'completed_manual'
+    if item.get('label', ''):
         if 'sonarr' in item['label'] or 'radarr' in item['label']:
              final_status = 'completed_auto'
              final_message = f"{len(files_to_copy)} fichier(s) importé(s) automatiquement via MMS."
