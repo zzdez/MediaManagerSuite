@@ -136,13 +136,22 @@ $(document).ready(function() {
         }
         const selectedCheckbox = $('.torrent-checkbox:checked').first();
         const torrentName = selectedCheckbox.closest('tr').find('.torrent-name').text();
+        const torrentHash = selectedCheckbox.data('torrent-hash'); // RÉCUPÉRATION DU HASH
+
+        if (!torrentHash) {
+            alert("Erreur critique: Impossible de récupérer le hash du torrent sélectionné.");
+            return;
+        }
 
         // Mettre à jour la modale de choix
         $('#torrentNameToMap').text(torrentName);
-        $('#torrentNameToMapInput').val(torrentName);
+
+        // STOCKAGE DU HASH sur la modale pour qu'il soit accessible
+        const mappingChoiceModalElement = document.getElementById('mappingChoiceModal');
+        $(mappingChoiceModalElement).data('currentTorrentHash', torrentHash);
 
         // Ouvrir la modale de choix
-        const mappingChoiceModal = new bootstrap.Modal(document.getElementById('mappingChoiceModal'));
+        const mappingChoiceModal = new bootstrap.Modal(mappingChoiceModalElement);
         mappingChoiceModal.show();
     });
 
