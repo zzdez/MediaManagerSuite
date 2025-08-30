@@ -25,8 +25,33 @@ def scan_and_map_torrents():
                 continue
 
             if torrent_hash in torrent_map:
-                # Le torrent est connu, on gère la fin de son téléchargement
                 entry = torrent_map[torrent_hash]
+
+                # Si le chemin n'était pas connu (promesse), on le met à jour maintenant.
+                if not entry.get('seedbox_download_path'):
+                    new_path = torrent.get('base_path')
+                    if new_path:
+                        logger.info(f"Scanner: Mise à jour du chemin pour '{release_name}' avec '{new_path}'.")
+                        # Mettre à jour l'entrée avec le chemin trouvé.
+                        # On ne change pas le statut ici, la logique suivante s'en chargera.
+                        mapping_manager.add_or_update_torrent_in_map(
+                            release_name=entry.get('release_name', release_name),
+                            torrent_hash=torrent_hash,
+                            status=entry.get('status'),
+                            seedbox_download_path=new_path,
+                            folder_name=os.path.basename(new_path),
+                            app_type=entry.get('app_type'),
+                            target_id=entry.get('target_id'),
+                            label=entry.get('label'),
+                            original_torrent_name=entry.get('original_torrent_name')
+                        )
+                        # On met à jour l'objet local pour la suite de la logique dans cette boucle.
+                        entry['seedbox_download_path'] = new_path
+                    else:
+                        logger.warning(f"Scanner: Le torrent '{release_name}' est terminé mais son chemin est toujours inconnu dans rTorrent. Ignoré pour ce cycle.")
+                        continue
+
+                # Le torrent est connu et son chemin est maintenant renseigné, on gère la fin de son téléchargement.
                 if entry.get('status') == 'pending_download':
                     logger.info(f"Scanner: Torrent connu '{release_name}' est complet. Passage à 'pending_staging'.")
                     mapping_manager.update_torrent_status_in_map(torrent_hash, 'pending_staging')

@@ -3929,22 +3929,20 @@ def rtorrent_map_sonarr():
     if not torrent_info:
         return jsonify({'success': False, 'error': f"Torrent avec hash {torrent_hash} non trouvé dans rTorrent."}), 404
 
-    final_path = torrent_info.get('base_path')
-    if not final_path:
-         return jsonify({'success': False, 'error': f"rTorrent n'a pas retourné de chemin pour {torrent_hash}."}), 500
-
+    # Logique de promesse: on ne récupère pas le chemin ici.
+    # On enregistre l'association en attente de son chemin.
     torrent_map_manager.add_or_update_torrent_in_map(
         release_name=torrent_info.get('name'),
         torrent_hash=torrent_hash,
-        status='pending_staging',
-        seedbox_download_path=final_path,
-        folder_name=os.path.basename(final_path),
+        status='pending_download',
+        seedbox_download_path=None,  # C'est la promesse
+        folder_name=torrent_info.get('name'), # Le nom du dossier/fichier est généralement le nom de la release
         app_type='sonarr',
         target_id=series_id,
         label=torrent_info.get('label') or 'sonarr',
         original_torrent_name=torrent_info.get('name')
     )
-    return jsonify({'success': True, 'message': f"Torrent '{torrent_info.get('name')}' mappé avec succès."})
+    return jsonify({'success': True, 'message': f"Promesse de mapping pour '{torrent_info.get('name')}' enregistrée. Le chemin sera récupéré au moment du rapatriement."})
 
 # Remplace la fonction rtorrent_map_radarr existante par celle-ci (logique identique) :
 @seedbox_ui_bp.route('/rtorrent/map/radarr', methods=['POST'], endpoint='rtorrent_map_radarr')
@@ -3963,22 +3961,19 @@ def rtorrent_map_radarr():
     if not torrent_info:
         return jsonify({'success': False, 'error': f"Torrent avec hash {torrent_hash} non trouvé dans rTorrent."}), 404
 
-    final_path = torrent_info.get('base_path')
-    if not final_path:
-         return jsonify({'success': False, 'error': f"rTorrent n'a pas retourné de chemin pour {torrent_hash}."}), 500
-
+    # Logique de promesse: on ne récupère pas le chemin ici.
     torrent_map_manager.add_or_update_torrent_in_map(
         release_name=torrent_info.get('name'),
         torrent_hash=torrent_hash,
-        status='pending_staging',
-        seedbox_download_path=final_path,
-        folder_name=os.path.basename(final_path),
+        status='pending_download',
+        seedbox_download_path=None,  # C'est la promesse
+        folder_name=torrent_info.get('name'),
         app_type='radarr',
         target_id=movie_id,
         label=torrent_info.get('label') or 'radarr',
         original_torrent_name=torrent_info.get('name')
     )
-    return jsonify({'success': True, 'message': f"Torrent '{torrent_info.get('name')}' mappé avec succès."})
+    return jsonify({'success': True, 'message': f"Promesse de mapping pour '{torrent_info.get('name')}' enregistrée. Le chemin sera récupéré au moment du rapatriement."})
 
 # ==============================================================================
 # --- NOUVELLES ROUTES POUR LES ACTIONS MANUELLES DE LA VUE RTORRENT ---
