@@ -5,6 +5,7 @@ import requests
 from flask import current_app
 import re
 import logging
+from thefuzz import fuzz
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -525,48 +526,65 @@ def find_sonarr_series_by_release_name(release_name):
 
 def find_radarr_movie_by_release_name(release_name):
     """
-    Trouve un film dans Radarr en se basant sur le nom d'une release,
-    en utilisant l'endpoint 'lookup' et en validant avec l'année si possible.
+    Trouve un film en se basant sur le nom d'une release en utilisant l'endpoint 'lookup' de Radarr
+    et un score de similarité (fuzzy matching).
+    Cette méthode peut identifier des films qui ne sont PAS ENCORE dans la bibliothèque.
     """
-    logger.info(f"Recherche du film Radarr pour la release : '{release_name}'")
+    logger.info(f"Recherche (lookup) du film Radarr pour la release : '{release_name}'")
     parsed_info = parse_media_name(release_name)
     title_to_search = parsed_info.get('title')
     year_to_search = parsed_info.get('year')
 
     if not title_to_search:
-        logger.warning(f"Impossible d'extraire un titre de '{release_name}'.")
+        logger.warning(f"Impossible d'extraire un titre de '{release_name}'. Abandon.")
         return None
 
+    # ÉTAPE 1: Utiliser le 'lookup' pour obtenir une liste de candidats potentiels.
+    # C'est la bonne méthode car elle trouve aussi les films non présents en bibliothèque.
     candidates = search_radarr_by_title(title_to_search)
     if not candidates:
-        logger.warning(f"Aucun candidat trouvé via lookup pour le titre '{title_to_search}'.")
+        logger.warning(f"Aucun candidat trouvé via Radarr lookup pour le titre '{title_to_search}'.")
         return None
 
-    # On cherche la meilleure correspondance dans les candidats
+    # Seuil de confiance pour éviter les faux positifs.
+    MATCH_THRESHOLD = 85
     best_match = None
+    highest_score = 0
+
+    logger.debug(f"Début de la recherche par similarité pour '{title_to_search}' (Année: {year_to_search}) parmi {len(candidates)} candidats du lookup.")
+
+    # ÉTAPE 2: Appliquer notre logique de similarité sur les candidats du lookup.
     for candidate in candidates:
-        # On ne considère que les films qui sont déjà dans la bibliothèque
-        if candidate.get('id') and candidate.get('id') > 0:
-            candidate_title = candidate.get('title', '').lower()
-            candidate_year = candidate.get('year')
+        candidate_title = candidate.get('title', '')
+        candidate_year = candidate.get('year')
 
-            # Comparaison simple du titre
-            if candidate_title == title_to_search.lower():
-                # Si on a une année, on l'utilise pour confirmer
-                if year_to_search:
-                    if candidate_year == year_to_search:
-                        best_match = candidate
-                        break # On a trouvé la correspondance parfaite
-                else:
-                    # Si on n'a pas d'année, la première correspondance de titre suffit
-                    best_match = candidate
-                    break
+        # Calcul du score de base sur le titre
+        title_score = fuzz.token_set_ratio(title_to_search.lower(), candidate_title.lower())
+        current_score = title_score
 
-    if best_match:
-        logger.info(f"Film trouvé : '{best_match.get('title')}' (ID: {best_match.get('id')})")
+        # Bonus très important si l'année correspond.
+        if year_to_search and candidate_year and str(year_to_search) == str(candidate_year):
+            current_score = max(current_score, 95)
+            logger.debug(f"Bonus d'année appliqué pour '{candidate_title}' ({candidate_year}). Score: {current_score}")
+
+        # Mise à jour du meilleur candidat
+        if current_score > highest_score:
+            highest_score = current_score
+            best_match = candidate
+            logger.debug(f"Nouveau meilleur candidat : '{candidate_title}' ({candidate_year}) avec un score de {highest_score}")
+
+    # ÉTAPE 3: Renvoyer le meilleur candidat s'il dépasse notre seuil de confiance.
+    if best_match and highest_score >= MATCH_THRESHOLD:
+        # La fonction qui appelle ce code pourra vérifier si best_match.get('id') > 0
+        # pour savoir si le film doit être ajouté ou s'il existe déjà.
+        is_in_library_text = "OUI" if best_match.get('id') and best_match.get('id') > 0 else "NON"
+        logger.info(f"Correspondance trouvée via lookup pour '{release_name}' avec un score de {highest_score}. "
+                    f"Film identifié : '{best_match.get('title')}' (TMDb ID: {best_match.get('tmdbId')}). Déjà en librairie : {is_in_library_text}")
         return best_match
     else:
-        logger.warning(f"Aucun film correspondant à '{title_to_search}' (Année: {year_to_search}) n'a été trouvé dans la bibliothèque Radarr.")
+        logger.warning(f"Aucune correspondance fiable trouvée pour '{release_name}'. "
+                       f"Meilleur candidat via lookup : '{best_match.get('title') if best_match else 'Aucun'}' "
+                       f"avec un score de {highest_score} (Seuil: {MATCH_THRESHOLD}).")
         return None
 
 def check_sonarr_episode_exists(series_title: str, season_number: int, episode_number: int) -> bool:
