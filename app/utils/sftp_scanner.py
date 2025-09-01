@@ -25,12 +25,34 @@ def scan_and_map_torrents():
                 continue
 
             if torrent_hash in torrent_map:
-                # Le torrent est connu, on gère la fin de son téléchargement
                 entry = torrent_map[torrent_hash]
+
+                # --- BLOC DE CODE À AJOUTER ICI ---
+                # Si le chemin n'était pas connu (promesse), on le met à jour maintenant.
+                if not entry.get('seedbox_download_path'):
+                    # On récupère le chemin final et réel depuis rTorrent
+                    final_path = torrent.get('base_path')
+                    if final_path:
+                        logger.info(f"Scanner: Promesse tenue. Mise à jour du chemin pour '{release_name}' avec '{final_path}'.")
+                        # On met à jour l'entrée avec le chemin trouvé.
+                        mapping_manager.add_or_update_torrent_in_map(
+                            torrent_hash=torrent_hash,
+                            seedbox_download_path=final_path,
+                            folder_name=os.path.basename(final_path)
+                        )
+                        # On met à jour notre variable locale pour que la suite de la logique fonctionne
+                        entry['seedbox_download_path'] = final_path
+                    else:
+                        # Si rTorrent ne donne pas encore de chemin, on attend le prochain cycle.
+                        logger.warning(f"Scanner: Le torrent '{release_name}' est terminé mais son chemin final n'est pas encore disponible. On réessaiera.")
+                        continue # On passe au torrent suivant
+                # --- FIN DU BLOC DE CODE À AJOUTER ---
+
+                # Le reste de la fonction continue comme avant...
                 if entry.get('status') == 'pending_download':
                     logger.info(f"Scanner: Torrent connu '{release_name}' est complet. Passage à 'pending_staging'.")
                     mapping_manager.update_torrent_status_in_map(torrent_hash, 'pending_staging')
-                continue # On ne traite pas plus les items déjà connus
+                continue
 
             # Si on arrive ici, le torrent est NOUVEAU pour nous.
             logger.info(f"Scanner: Nouveau torrent terminé détecté: '{release_name}'.")
