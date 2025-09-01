@@ -37,6 +37,14 @@ def scan_and_map_torrents():
                         # On met à jour l'entrée avec le chemin trouvé.
                         mapping_manager.add_or_update_torrent_in_map(
                             torrent_hash=torrent_hash,
+                            # On réutilise les informations déjà présentes dans l'entrée
+                            release_name=entry.get('release_name'),
+                            status=entry.get('status'),
+                            app_type=entry.get('app_type'),
+                            target_id=entry.get('target_id'),
+                            label=entry.get('label'),
+                            original_torrent_name=entry.get('original_torrent_name'),
+                            # Et on ajoute les nouvelles informations
                             seedbox_download_path=final_path,
                             folder_name=os.path.basename(final_path)
                         )
