@@ -3949,6 +3949,7 @@ def rtorrent_map_sonarr():
             tvdb_id=tvdb_id,
             title=title,
             quality_profile_id=quality_profile_id,
+            language_profile_id=1,  # Default to 1, assuming it's the first/default language profile
             root_folder_path=root_folder_path
         )
         if not newly_added_series or not newly_added_series.get('id'):
