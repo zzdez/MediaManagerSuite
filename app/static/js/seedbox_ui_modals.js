@@ -393,7 +393,7 @@ async function executeSonarrSearch() {
                         </div>
                         <div class="col-auto">
                             <button type="button" class="btn ${buttonClass} btn-sm"
-                                    onclick="handleGenericSonarrSeriesSelection(${idForHandler || 0}, '${escapedTitle}', ${isAlreadyInSonarr})"
+                                    onclick="handleRemapSonarrSeriesSelection(${idForHandler || 0}, '${escapedTitle}', ${isAlreadyInSonarr})"
                                     title="${buttonTitle}" ${disabledReason ? `disabled title="${disabledReason}"` : ''}>
                                 <i class="${buttonIcon}"></i> ${buttonText}
                             </button>
@@ -455,7 +455,7 @@ async function executeRadarrSearch() {
                     <div class="row align-items-center">
                     <div class="col-auto"><img src="${posterUrl}" alt="Poster" class="img-fluid rounded" style="max-height: 90px;" onerror="this.onerror=null; this.src='https://via.placeholder.com/60x90?text=ImgErr';"></div>
                     <div class="col"><strong>${movie.title}</strong> (${movie.year || 'N/A'})<br><small class="text-muted">Statut: ${movie.status || 'N/A'} | TMDB ID: ${movie.tmdbId || 'N/A'} ${isAlreadyInRadarr ? `| Radarr ID: ${movie.id}` : ''}</small><p class="mb-0 small">${(movie.overview || '').substring(0, 120)}${(movie.overview || '').length > 120 ? '...' : ''}</p></div>
-                    <div class="col-auto"><button class="btn ${buttonClass} btn-sm" onclick="handleGenericRadarrMovieSelection(${idForHandler || 0}, '${escapedMovieTitle}', ${isAlreadyInRadarr}, ${movie.year || 0})" title="${buttonTitle}" ${idForHandler ? '' : 'disabled title="ID manquant"'}><i class="${buttonIcon}"></i> ${buttonText}</button></div>
+                    <div class="col-auto"><button class="btn ${buttonClass} btn-sm" onclick="handleRemapRadarrMovieSelection(${idForHandler || 0}, '${escapedMovieTitle}', ${isAlreadyInRadarr}, ${movie.year || 0})" title="${buttonTitle}" ${idForHandler ? '' : 'disabled title="ID manquant"'}><i class="${buttonIcon}"></i> ${buttonText}</button></div>
                 </div></li>`;
         });
         html += '</ul>';
@@ -472,93 +472,153 @@ function handleGenericSonarrSeriesSelection(mediaId, seriesTitle, isAlreadyInArr
     const sonarrModalElement = document.getElementById('sonarrSearchModal');
     if (!sonarrModalElement) return;
 
-    document.getElementById('sonarrSelectedSeriesId').value = mediaId;
+    // mediaId ici est l'ID Sonarr si isAlreadyInArr est true, sinon c'est tvdbId pour un nouveau média.
+    document.getElementById('sonarrSelectedSeriesId').value = mediaId; // Stocke l'ID pertinent (Sonarr ID ou TVDB ID)
     document.getElementById('sonarrSelectedSeriesTitle').innerText = `Série sélectionnée : ${seriesTitle}`;
-    currentlySelectedSonarrSeriesIdInModal = mediaId;
+    currentlySelectedSonarrSeriesIdInModal = mediaId; // Peut-être renommer ou clarifier son usage
 
-    sonarrModalElement.setAttribute('data-selected-media-id', mediaId);
+    sonarrModalElement.setAttribute('data-selected-media-id', mediaId); // ID Sonarr ou TVDB ID
     sonarrModalElement.setAttribute('data-selected-media-title', seriesTitle);
-    sonarrModalElement.setAttribute('data-is-new-media', !isAlreadyInArr);
-    sonarrModalElement.setAttribute('data-selected-media-year', seriesYear || 0);
+    sonarrModalElement.setAttribute('data-is-new-media', !isAlreadyInArr); // true si nouveau, false si existant
+    sonarrModalElement.setAttribute('data-selected-media-year', seriesYear || 0); // Stocker l'année
 
     const modalMapButton = document.getElementById('sonarrModalMapButton');
-    const optionsContainer = document.getElementById('sftpSonarrNewSeriesOptionsContainer');
-    const feedbackDiv = document.getElementById('sonarrSearchModalFeedbackZone');
-    const manualSeasonDiv = document.getElementById('sonarrManualSeasonDiv');
+    const currentAction = sonarrModalElement.getAttribute('data-current-action');
 
     if (modalMapButton) {
         modalMapButton.disabled = !mediaId;
-        modalMapButton.innerHTML = '<i class="fas fa-link"></i> Mapper à cette Série';
-        modalMapButton.className = 'btn btn-primary';
-    }
-
-    if (feedbackDiv) {
-        feedbackDiv.innerHTML = `<p class="alert alert-info mt-2">Série sélectionnée : <strong>${seriesTitle}</strong> (ID: ${mediaId}).<br>
-        ${isAlreadyInArr ? 'Cette série est déjà gérée par Sonarr.' : 'Cette série n\'est pas encore dans Sonarr. Veuillez configurer les options d\'ajout.'}</p>`;
-    }
-
-    if (manualSeasonDiv) {
-        manualSeasonDiv.style.display = 'none';
-    }
-
-    if (!isAlreadyInArr) {
-        if (optionsContainer) {
-            optionsContainer.style.display = 'block';
-            populateSelectFromServer(window.appUrls.getSonarrRootfolders, 'sonarrNewSeriesRootFolder', 'path', 'path', 'Dossier Racine');
-            populateSelectFromServer(window.appUrls.getSonarrQualityprofiles, 'sonarrNewSeriesQualityProfile', 'id', 'name', 'Profil Qualité');
-        }
-        if (modalMapButton) {
+        if (!isAlreadyInArr && currentAction === 'sftpRetrieveAndMapIndividual') {
+            modalMapButton.innerHTML = '<i class="fas fa-plus-download"></i> Rapatrier, Ajouter & Mapper';
+            modalMapButton.className = 'btn btn-info'; // Ou une autre couleur pour distinguer
+        } else if (currentAction === 'sftpRetrieveAndMapIndividual') { // Média existant pour SFTP
+            modalMapButton.innerHTML = '<i class="fas fa-link"></i> Rapatrier & Mapper';
+            modalMapButton.className = 'btn btn-primary';
+        } else if (!isAlreadyInArr && currentAction === 'mapIndividualStaging') { // Nouveau média pour staging local
             modalMapButton.innerHTML = '<i class="fas fa-plus-circle"></i> Ajouter & Mapper';
             modalMapButton.className = 'btn btn-info';
-        }
-    } else {
-        if (optionsContainer) {
-            optionsContainer.style.display = 'none';
+        } else { // Cas par défaut (ex: staging local, média existant)
+            modalMapButton.innerHTML = '<i class="fas fa-link"></i> Mapper à cette Série';
+            modalMapButton.className = 'btn btn-primary';
         }
     }
+
+    const feedbackDiv = document.getElementById('sonarrSearchModalFeedbackZone');
+    if (feedbackDiv) {
+        feedbackDiv.innerHTML = `<p class="alert alert-info mt-2">Série sélectionnée : <strong>${seriesTitle}</strong> (ID: ${mediaId}).<br>
+        ${isAlreadyInArr ? 'Cette série est déjà gérée par Sonarr.' : 'Cette série n\'est pas encore dans Sonarr.'}<br>
+        Cliquez sur le bouton d'action.</p>`;
+    }
+
+    const manualSeasonDiv = document.getElementById('sonarrManualSeasonDiv');
+    const forceMultiPartDiv = document.getElementById('sonarrForceMultiPartDiv');
+    const itemType = document.getElementById('sonarrOriginalItemType').value;
+
+    if (manualSeasonDiv) {
+        // Afficher la sélection de saison si c'est un média existant et l'action le permet
+        if (isAlreadyInArr && (currentAction === 'mapIndividualStaging' || currentAction === 'mapProblemItem' || currentAction === 'sftpRetrieveAndMapIndividual')) {
+            manualSeasonDiv.style.display = 'block';
+        } else {
+            manualSeasonDiv.style.display = 'none';
+        }
+    }
+
+    if (forceMultiPartDiv) {
+        // Afficher la case multi-partie seulement pour les dossiers du staging mappés à une série existante
+        if (isAlreadyInArr && currentAction === 'mapIndividualStaging' && itemType === 'directory') {
+            forceMultiPartDiv.style.display = 'block';
+        } else {
+            forceMultiPartDiv.style.display = 'none';
+        }
+    }
+
+    // Les options d'ajout (Root Folder, Quality Profile) pour un *nouveau* média SFTP
+    // seront gérées par promptAndExecuteSftpNewMediaAddAndMap
+    // Ici, on s'assure juste que le bouton et le feedback sont corrects.
 }
 
 function handleGenericRadarrMovieSelection(mediaId, movieTitle, isAlreadyInArr, movieYear) {
+    console.log("handleGenericRadarrMovieSelection - isAlreadyInArr:", isAlreadyInArr, "Setting data-is-new-media to:", !isAlreadyInArr); // AJOUT CONSOLE.LOG
     const radarrModalElement = document.getElementById('radarrSearchModal');
     if (!radarrModalElement) return;
 
-    document.getElementById('radarrSelectedMovieId').value = mediaId;
+    // mediaId ici est l'ID Radarr si isAlreadyInArr est true, sinon c'est tmdbId pour un nouveau média.
+    document.getElementById('radarrSelectedMovieId').value = mediaId; // Stocke l'ID pertinent
     document.getElementById('radarrSelectedMovieTitle').innerText = `Film sélectionné : ${movieTitle}`;
 
-    radarrModalElement.setAttribute('data-selected-media-id', mediaId);
+    radarrModalElement.setAttribute('data-selected-media-id', mediaId); // Radarr ID ou TMDB ID
     radarrModalElement.setAttribute('data-selected-media-title', movieTitle);
-    radarrModalElement.setAttribute('data-is-new-media', !isAlreadyInArr);
-    radarrModalElement.setAttribute('data-selected-media-year', movieYear || 0);
+    radarrModalElement.setAttribute('data-is-new-media', !isAlreadyInArr); // true si nouveau, false si existant
+    radarrModalElement.setAttribute('data-selected-media-year', movieYear || 0); // Stocker l'année
+    console.log("Attribute data-is-new-media set to:", radarrModalElement.getAttribute('data-is-new-media')); // AJOUT CONSOLE.LOG
 
     const modalMapButton = document.getElementById('radarrModalMapButton');
-    const optionsContainer = document.getElementById('sftpRadarrNewMovieOptionsContainer');
-    const feedbackDiv = document.getElementById('radarrSearchModalFeedbackZone');
+    const currentAction = radarrModalElement.getAttribute('data-current-action');
 
     if (modalMapButton) {
         modalMapButton.disabled = !mediaId;
-        modalMapButton.innerHTML = '<i class="fas fa-link"></i> Mapper à ce Film';
-        modalMapButton.className = 'btn btn-primary';
-    }
-
-    if (feedbackDiv) {
-        feedbackDiv.innerHTML = `<p class="alert alert-info mt-2">Film sélectionné : <strong>${movieTitle}</strong> (ID: ${mediaId}).<br>
-        ${isAlreadyInArr ? 'Ce film est déjà géré par Radarr.' : 'Ce film n\'est pas encore dans Radarr. Veuillez configurer les options d\'ajout.'}</p>`;
-    }
-
-    if (!isAlreadyInArr) {
-        if (optionsContainer) {
-            optionsContainer.style.display = 'block';
-            populateSelectFromServer(window.appUrls.getRadarrRootfolders, 'radarrNewMovieRootFolder', 'path', 'path', 'Dossier Racine');
-            populateSelectFromServer(window.appUrls.getRadarrQualityprofiles, 'radarrNewMovieQualityProfile', 'id', 'name', 'Profil Qualité');
-        }
-        if (modalMapButton) {
+        if (!isAlreadyInArr && currentAction === 'sftpRetrieveAndMapIndividual') {
+            modalMapButton.innerHTML = '<i class="fas fa-plus-download"></i> Rapatrier, Ajouter & Mapper';
+            modalMapButton.className = 'btn btn-info';
+        } else if (currentAction === 'sftpRetrieveAndMapIndividual') { // Média existant pour SFTP
+            modalMapButton.innerHTML = '<i class="fas fa-link"></i> Rapatrier & Mapper';
+            modalMapButton.className = 'btn btn-primary';
+        } else if (!isAlreadyInArr && currentAction === 'mapIndividualStaging') { // Nouveau média pour staging local
             modalMapButton.innerHTML = '<i class="fas fa-plus-circle"></i> Ajouter & Mapper';
             modalMapButton.className = 'btn btn-info';
+        } else { // Cas par défaut
+            modalMapButton.innerHTML = '<i class="fas fa-link"></i> Mapper à ce Film';
+            modalMapButton.className = 'btn btn-primary';
         }
+    }
+
+    const feedbackDiv = document.getElementById('radarrSearchModalFeedbackZone');
+    if (feedbackDiv) {
+        feedbackDiv.innerHTML = `<p class="alert alert-info mt-2">Film sélectionné : <strong>${movieTitle}</strong> (ID: ${mediaId}).<br>
+        ${isAlreadyInArr ? 'Ce film est déjà géré par Radarr.' : 'Ce film n\'est pas encore dans Radarr.'}<br>
+        Cliquez sur le bouton d'action.</p>`;
+    }
+
+    // Les options d'ajout (Root Folder, Quality Profile) pour un *nouveau* média SFTP
+    // seront gérées par promptAndExecuteSftpNewMediaAddAndMap
+}
+
+// --- DEDICATED HANDLERS FOR REMAPPING MODAL ---
+
+function handleRemapSonarrSeriesSelection(mediaId, seriesTitle, isAlreadyInArr) {
+    const sonarrModalElement = document.getElementById('sonarrSearchModal');
+    sonarrModalElement.setAttribute('data-selected-media-id', mediaId);
+    sonarrModalElement.setAttribute('data-selected-media-title', seriesTitle);
+    sonarrModalElement.setAttribute('data-is-new-media', !isAlreadyInArr);
+
+    document.getElementById('sonarrSelectedSeriesTitle').innerText = `Série sélectionnée : ${seriesTitle}`;
+    document.getElementById('sonarrModalMapButton').disabled = false;
+
+    const optionsContainer = document.getElementById('remapSonarrNewSeriesOptionsContainer');
+    if (!isAlreadyInArr) {
+        optionsContainer.style.display = 'block';
+        populateSelectFromServer(window.appUrls.getSonarrRootfolders, 'remapSonarrRootFolderSelect', 'path', 'path', 'Dossier Racine');
+        populateSelectFromServer(window.appUrls.getSonarrQualityprofiles, 'remapSonarrQualityProfileSelect', 'id', 'name', 'Profil Qualité');
     } else {
-        if (optionsContainer) {
-            optionsContainer.style.display = 'none';
-        }
+        optionsContainer.style.display = 'none';
+    }
+}
+
+function handleRemapRadarrMovieSelection(mediaId, movieTitle, isAlreadyInArr) {
+    const radarrModalElement = document.getElementById('radarrSearchModal');
+    radarrModalElement.setAttribute('data-selected-media-id', mediaId);
+    radarrModalElement.setAttribute('data-selected-media-title', movieTitle);
+    radarrModalElement.setAttribute('data-is-new-media', !isAlreadyInArr);
+
+    document.getElementById('radarrSelectedMovieTitle').innerText = `Film sélectionné : ${movieTitle}`;
+    document.getElementById('radarrModalMapButton').disabled = false;
+
+    const optionsContainer = document.getElementById('remapRadarrNewMovieOptionsContainer');
+    if (!isAlreadyInArr) {
+        optionsContainer.style.display = 'block';
+        populateSelectFromServer(window.appUrls.getRadarrRootfolders, 'remapRadarrRootFolderSelect', 'path', 'path', 'Dossier Racine');
+        populateSelectFromServer(window.appUrls.getRadarrQualityprofiles, 'remapRadarrQualityProfileSelect', 'id', 'name', 'Profil Qualité');
+    } else {
+        optionsContainer.style.display = 'none';
     }
 }
 
@@ -659,16 +719,16 @@ async function triggerRadarrManualImport(radarrMovieId, movieTitleForDisplay) {
     } finally { if(modalMapButton) modalMapButton.disabled = false; }
 }
 
-async function triggerSonarrTorrentMap(torrentName, mediaId) {
+async function triggerSonarrTorrentMap(torrentName, seriesId) {
     const sonarrModalElement = document.getElementById('sonarrSearchModal');
     const feedbackDiv = document.getElementById('sonarrSearchModalFeedbackZone');
     const isNewMedia = sonarrModalElement.getAttribute('data-is-new-media') === 'true';
 
-    if (!mediaId) {
+    if (!seriesId) {
         alert("Aucun ID de série valide.");
         return;
     }
-    if (feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-info">Préparation du mapping pour '${escapeJsString(torrentName)}'...</div>`;
+    if (feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-info">Mapping du torrent '${escapeJsString(torrentName)}' vers la série ID ${seriesId}...</div>`;
 
     const payload = {
         torrent_name: torrentName,
@@ -676,18 +736,17 @@ async function triggerSonarrTorrentMap(torrentName, mediaId) {
     };
 
     if (isNewMedia) {
-        payload.tvdb_id = parseInt(mediaId);
+        payload.tvdb_id = parseInt(seriesId);
         payload.title = sonarrModalElement.getAttribute('data-selected-media-title');
-        payload.root_folder_path = document.getElementById('sonarrNewSeriesRootFolder').value;
-        payload.quality_profile_id = parseInt(document.getElementById('sonarrNewSeriesQualityProfile').value);
-
+        payload.root_folder_path = document.getElementById('remapSonarrRootFolderSelect').value;
+        payload.quality_profile_id = parseInt(document.getElementById('remapSonarrQualityProfileSelect').value);
         if (!payload.root_folder_path || !payload.quality_profile_id) {
             alert("Pour une nouvelle série, le dossier racine et le profil de qualité sont requis.");
             if (feedbackDiv) feedbackDiv.innerHTML = `<p class="alert alert-danger">Options d'ajout manquantes.</p>`;
             return;
         }
     } else {
-        payload.series_id = parseInt(mediaId);
+        payload.series_id = parseInt(seriesId);
     }
 
     const modalMapButton = document.getElementById('sonarrModalMapButton');
@@ -707,8 +766,9 @@ async function triggerSonarrTorrentMap(torrentName, mediaId) {
         if (feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-success">${escapeJsString(result.message)}</div>`;
         flashMessageGlobally(result.message, 'success');
         setTimeout(() => {
-            const modalInstance = bootstrap.Modal.getInstance(sonarrModalElement);
+            const modalInstance = bootstrap.Modal.getInstance(document.getElementById('sonarrSearchModal'));
             if (modalInstance) modalInstance.hide();
+            // Reload rtorrent view
             sessionStorage.setItem('activeTab', '#rtorrent-view-tab');
             window.location.reload();
         }, 2500);
@@ -721,16 +781,16 @@ async function triggerSonarrTorrentMap(torrentName, mediaId) {
     }
 }
 
-async function triggerRadarrTorrentMap(torrentName, mediaId) {
+async function triggerRadarrTorrentMap(torrentName, movieId) {
     const radarrModalElement = document.getElementById('radarrSearchModal');
     const feedbackDiv = document.getElementById('radarrSearchModalFeedbackZone');
     const isNewMedia = radarrModalElement.getAttribute('data-is-new-media') === 'true';
 
-    if (!mediaId) {
+    if (!movieId) {
         alert("Aucun ID de film valide.");
         return;
     }
-    if (feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-info">Préparation du mapping pour '${escapeJsString(torrentName)}'...</div>`;
+    if (feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-info">Mapping du torrent '${escapeJsString(torrentName)}' vers le film ID ${movieId}...</div>`;
 
     const payload = {
         torrent_name: torrentName,
@@ -738,18 +798,17 @@ async function triggerRadarrTorrentMap(torrentName, mediaId) {
     };
 
     if (isNewMedia) {
-        payload.tmdb_id = parseInt(mediaId);
+        payload.tmdb_id = parseInt(movieId);
         payload.title = radarrModalElement.getAttribute('data-selected-media-title');
-        payload.root_folder_path = document.getElementById('radarrNewMovieRootFolder').value;
-        payload.quality_profile_id = parseInt(document.getElementById('radarrNewMovieQualityProfile').value);
-
+        payload.root_folder_path = document.getElementById('remapRadarrRootFolderSelect').value;
+        payload.quality_profile_id = parseInt(document.getElementById('remapRadarrQualityProfileSelect').value);
         if (!payload.root_folder_path || !payload.quality_profile_id) {
             alert("Pour un nouveau film, le dossier racine et le profil de qualité sont requis.");
             if (feedbackDiv) feedbackDiv.innerHTML = `<p class="alert alert-danger">Options d'ajout manquantes.</p>`;
             return;
         }
     } else {
-        payload.movie_id = parseInt(mediaId);
+        payload.movie_id = parseInt(movieId);
     }
 
     const modalMapButton = document.getElementById('radarrModalMapButton');
@@ -769,8 +828,9 @@ async function triggerRadarrTorrentMap(torrentName, mediaId) {
         if (feedbackDiv) feedbackDiv.innerHTML = `<div class="alert alert-success">${escapeJsString(result.message)}</div>`;
         flashMessageGlobally(result.message, 'success');
         setTimeout(() => {
-            const modalInstance = bootstrap.Modal.getInstance(radarrModalElement);
+            const modalInstance = bootstrap.Modal.getInstance(document.getElementById('radarrSearchModal'));
             if (modalInstance) modalInstance.hide();
+            // Reload rtorrent view
             sessionStorage.setItem('activeTab', '#rtorrent-view-tab');
             window.location.reload();
         }, 2500);

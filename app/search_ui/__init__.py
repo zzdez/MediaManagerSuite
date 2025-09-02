@@ -476,9 +476,7 @@ def download_and_map():
                     release_name=release_name_for_map,
                     torrent_hash=actual_hash,
                     status='pending_download',
-                    # --- LA CORRECTION EST ICI ---
-                    seedbox_download_path=None, # On ne prédit plus le chemin. On crée une promesse.
-                    # ---------------------------
+                    seedbox_download_path=seedbox_full_path,
                     folder_name=folder_name,
                     app_type=final_app_type,
                     target_id=final_target_id,

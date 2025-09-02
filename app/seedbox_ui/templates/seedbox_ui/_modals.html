@@ -203,6 +203,18 @@
                     </label>
                 </div>
 
+                <!-- Section pour les options d'ajout d'une nouvelle série (POUR REMAPPING) -->
+                <div id="remapSonarrNewSeriesOptionsContainer" class="mt-3 p-3 border rounded" style="display:none;">
+                    <h6>Options pour l'ajout de la nouvelle série :</h6>
+                    <div class="mb-2">
+                        <label for="remapSonarrRootFolderSelect" class="form-label form-label-sm">Dossier Racine Sonarr:</label>
+                        <select id="remapSonarrRootFolderSelect" class="form-select form-select-sm"></select>
+                    </div>
+                    <div class="mb-2">
+                        <label for="remapSonarrQualityProfileSelect" class="form-label form-label-sm">Profil de Qualité Sonarr:</label>
+                        <select id="remapSonarrQualityProfileSelect" class="form-select form-select-sm"></select>
+                    </div>
+                </div>
                 <!-- Section pour les options d'ajout d'une nouvelle série (pour SFTP) -->
                 <div id="sftpSonarrNewSeriesOptionsContainer" class="mt-3 p-3 border rounded" style="display:none;">
                     <h6>Options pour l'ajout de la nouvelle série :</h6>
@@ -266,6 +278,18 @@
                 <input type="hidden" id="radarrSelectedMovieId"> {# Stocke l'ID Radarr (interne ou TMDB) #}
                 <p id="radarrSelectedMovieTitle" class="fw-bold mt-2">Aucun film sélectionné</p>
 
+                <!-- Section pour les options d'ajout d'un nouveau film (POUR REMAPPING) -->
+                <div id="remapRadarrNewMovieOptionsContainer" class="mt-3 p-3 border rounded" style="display:none;">
+                    <h6>Options pour l'ajout du nouveau film :</h6>
+                    <div class="mb-2">
+                        <label for="remapRadarrRootFolderSelect" class="form-label form-label-sm">Dossier Racine Radarr:</label>
+                        <select id="remapRadarrRootFolderSelect" class="form-select form-select-sm"></select>
+                    </div>
+                    <div class="mb-2">
+                        <label for="remapRadarrQualityProfileSelect" class="form-label form-label-sm">Profil de Qualité Radarr:</label>
+                        <select id="remapRadarrQualityProfileSelect" class="form-select form-select-sm"></select>
+                    </div>
+                </div>
                 <!-- Section pour les options d'ajout d'un nouveau film (pour SFTP) -->
                 <div id="sftpRadarrNewMovieOptionsContainer" class="mt-3 p-3 border rounded" style="display:none;">
                     <h6>Options pour l'ajout du nouveau film :</h6>

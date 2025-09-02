@@ -130,8 +130,6 @@ def add_or_update_torrent_in_map(release_name, torrent_hash, status, seedbox_dow
     torrents[torrent_hash] = torrent_data
     save_torrent_map(torrents)
 
-    return True
-
 def get_torrent_by_hash(torrent_hash):
     """Retrieves a torrent entry by its torrent_hash."""
     _, logger = _get_map_file_path_and_logger()

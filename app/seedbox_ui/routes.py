@@ -3063,13 +3063,10 @@ def rtorrent_add_torrent_action():
     seedbox_full_download_path = str(Path(rtorrent_download_dir) / release_name_for_map).replace('\\', '/')
 
     if torrent_map_manager.add_or_update_torrent_in_map(
-            release_name=release_name_for_map,
-            torrent_hash=actual_hash,
-            status='pending_download',
-            # --- LA MODIFICATION EST ICI ---
-            seedbox_download_path=None, # On ne prédit plus le chemin.
-            # -------------------------------
-            folder_name=release_name_for_map, # Le nom du dossier est le nom de la release
+            release_name_for_map,
+            actual_hash,
+            "pending_download",
+            seedbox_full_download_path,
             app_type=app_type,
             target_id=actual_target_id,
             label=rtorrent_label,
