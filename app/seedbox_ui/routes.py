@@ -3920,6 +3920,7 @@ def retry_problematic_import_action(torrent_hash):
 @login_required
 def rtorrent_map_sonarr():
     data = request.get_json()
+    current_app.logger.info(f"SONARR_REMAP_DEBUG: Payload brut reçu du frontend: {data}")
     torrent_name = data.get('torrent_name')
     is_new_media = data.get('is_new_media', False)
 
@@ -3978,6 +3979,7 @@ def rtorrent_map_sonarr():
 @login_required
 def rtorrent_map_radarr():
     data = request.get_json()
+    current_app.logger.info(f"RADARR_REMAP_DEBUG: Payload brut reçu du frontend: {data}")
     torrent_name = data.get('torrent_name')
     is_new_media = data.get('is_new_media', False)
 
