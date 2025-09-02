@@ -3936,6 +3936,16 @@ def rtorrent_map_sonarr():
         return jsonify({'success': False, 'error': f"Torrent '{torrent_name}' non trouvé dans rTorrent."}), 404
 
     torrent_hash = torrent_info.get('hash')
+
+    # --- DÉBUT DE LA CORRECTION DU CHEMIN ---
+    # On extrait le chemin directement des informations de rTorrent.
+    # La clé est 'base_path' d'après la structure de rtorrent_client.
+    seedbox_path = torrent_info.get('base_path')
+    if not seedbox_path:
+        # Sécurité au cas où le chemin serait manquant pour une raison inconnue
+        return jsonify({'success': False, 'error': f"Impossible de trouver le chemin de base pour le torrent '{torrent_name}'."}), 500
+    # --- FIN DE LA CORRECTION DU CHEMIN ---
+
     final_series_id = None
 
     if is_new_media:
@@ -3943,15 +3953,13 @@ def rtorrent_map_sonarr():
         title = data.get('title')
         root_folder_path = data.get('root_folder_path')
         quality_profile_id = data.get('quality_profile_id')
+
         if not all([tvdb_id, title, root_folder_path, quality_profile_id]):
             return jsonify({'success': False, 'error': 'Données manquantes pour ajouter une nouvelle série.'}), 400
 
         newly_added_series = add_new_series_to_sonarr(
-            tvdb_id=tvdb_id,
-            title=title,
-            quality_profile_id=quality_profile_id,
-            language_profile_id=1,  # Default to 1, assuming it's the first/default language profile
-            root_folder_path=root_folder_path
+            tvdb_id=tvdb_id, title=title, quality_profile_id=quality_profile_id,
+            language_profile_id=1, root_folder_path=root_folder_path
         )
         if not newly_added_series or not newly_added_series.get('id'):
             return jsonify({'success': False, 'error': "Échec de l'ajout de la série à Sonarr."}), 500
@@ -3965,7 +3973,7 @@ def rtorrent_map_sonarr():
         release_name=torrent_name,
         torrent_hash=torrent_hash,
         status='pending_staging',
-        seedbox_download_path=None, # Création de la promesse
+        seedbox_download_path=seedbox_path, # On utilise le chemin direct
         folder_name=torrent_name,
         app_type='sonarr',
         target_id=final_series_id,
@@ -3995,6 +4003,13 @@ def rtorrent_map_radarr():
         return jsonify({'success': False, 'error': f"Torrent '{torrent_name}' non trouvé dans rTorrent."}), 404
 
     torrent_hash = torrent_info.get('hash')
+
+    # --- DÉBUT DE LA CORRECTION DU CHEMIN ---
+    seedbox_path = torrent_info.get('base_path')
+    if not seedbox_path:
+        return jsonify({'success': False, 'error': f"Impossible de trouver le chemin de base pour le torrent '{torrent_name}'."}), 500
+    # --- FIN DE LA CORRECTION DU CHEMIN ---
+
     final_movie_id = None
 
     if is_new_media:
@@ -4002,13 +4017,12 @@ def rtorrent_map_radarr():
         title = data.get('title')
         root_folder_path = data.get('root_folder_path')
         quality_profile_id = data.get('quality_profile_id')
+
         if not all([tmdb_id, title, root_folder_path, quality_profile_id]):
             return jsonify({'success': False, 'error': 'Données manquantes pour ajouter un nouveau film.'}), 400
 
         newly_added_movie = add_new_movie_to_radarr(
-            tmdb_id=tmdb_id,
-            title=title,
-            quality_profile_id=quality_profile_id,
+            tmdb_id=tmdb_id, title=title, quality_profile_id=quality_profile_id,
             root_folder_path=root_folder_path
         )
         if not newly_added_movie or not newly_added_movie.get('id'):
@@ -4023,7 +4037,7 @@ def rtorrent_map_radarr():
         release_name=torrent_name,
         torrent_hash=torrent_hash,
         status='pending_staging',
-        seedbox_download_path=None, # Création de la promesse
+        seedbox_download_path=seedbox_path, # On utilise le chemin direct
         folder_name=torrent_name,
         app_type='radarr',
         target_id=final_movie_id,
