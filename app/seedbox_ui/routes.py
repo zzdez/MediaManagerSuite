@@ -3924,10 +3924,10 @@ def retry_problematic_import_action(torrent_hash):
 def rtorrent_map_sonarr():
     data = request.get_json()
     torrent_name = data.get('torrent_name')
-    series_id = data.get('series_id')
+    is_new_media = data.get('is_new_media', False)
 
-    if not torrent_name or not series_id:
-        return jsonify({'success': False, 'error': 'Données manquantes'}), 400
+    if not torrent_name:
+        return jsonify({'success': False, 'error': 'Nom du torrent manquant.'}), 400
 
     torrents_data, error_msg = rtorrent_list_torrents_api()
     if error_msg:
@@ -3935,47 +3935,56 @@ def rtorrent_map_sonarr():
 
     torrent_info = next((t for t in torrents_data if t.get('name') == torrent_name), None)
     if not torrent_info:
-        return jsonify({'success': False, 'error': f"Torrent '{torrent_name}' non trouvé."}), 404
+        return jsonify({'success': False, 'error': f"Torrent '{torrent_name}' non trouvé dans rTorrent."}), 404
 
     torrent_hash = torrent_info.get('hash')
+    final_series_id = None
 
-    # --- DÉBUT DE LA LOGIQUE DÉFINITIVE ---
-    # On ne se fie plus à torrent_info.get('base_path'). On construit le chemin.
-    default_dir = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_SONARR_PATH')
-    if not default_dir:
-        return jsonify({'success': False, 'error': 'Chemin de téléchargement Sonarr par défaut non configuré.'}), 500
+    if is_new_media:
+        tvdb_id = data.get('tvdb_id')
+        title = data.get('title')
+        root_folder_path = data.get('root_folder_path')
+        quality_profile_id = data.get('quality_profile_id')
+        if not all([tvdb_id, title, root_folder_path, quality_profile_id]):
+            return jsonify({'success': False, 'error': 'Données manquantes pour ajouter une nouvelle série.'}), 400
 
-    # Le chemin rTorrent est le dossier par défaut + le nom du torrent.
-    rtorrent_download_path = str(Path(default_dir.rstrip('/')) / torrent_name).replace('\\', '/')
-    logger.info(f"Chemin rTorrent construit manuellement : {rtorrent_download_path}")
-
-    # On traduit ce chemin construit en chemin SFTP.
-    sftp_download_path = _translate_rtorrent_path_to_sftp_path(rtorrent_download_path, 'sonarr')
-    # --- FIN DE LA LOGIQUE DÉFINITIVE ---
+        newly_added_series = add_new_series_to_sonarr(
+            tvdb_id=tvdb_id,
+            title=title,
+            quality_profile_id=quality_profile_id,
+            root_folder_path=root_folder_path
+        )
+        if not newly_added_series or not newly_added_series.get('id'):
+            return jsonify({'success': False, 'error': "Échec de l'ajout de la série à Sonarr."}), 500
+        final_series_id = newly_added_series.get('id')
+    else:
+        final_series_id = data.get('series_id')
+        if not final_series_id:
+            return jsonify({'success': False, 'error': 'ID de la série manquant pour un média existant.'}), 400
 
     torrent_map_manager.add_or_update_torrent_in_map(
         release_name=torrent_name,
         torrent_hash=torrent_hash,
         status='pending_staging',
-        seedbox_download_path=sftp_download_path, # Utilise le chemin construit et traduit
+        seedbox_download_path=None, # Création de la promesse
         folder_name=torrent_name,
         app_type='sonarr',
-        target_id=series_id,
+        target_id=final_series_id,
         label=current_app.config.get('RTORRENT_LABEL_SONARR', 'sonarr'),
         original_torrent_name=torrent_name
     )
 
-    return jsonify({'success': True, 'message': f"Torrent '{torrent_name}' mappé avec succès."})
+    return jsonify({'success': True, 'message': f"Torrent '{torrent_name}' mappé avec succès à la série ID {final_series_id}."})
 
 @seedbox_ui_bp.route('/rtorrent/map/radarr', methods=['POST'], endpoint='rtorrent_map_radarr')
 @login_required
 def rtorrent_map_radarr():
     data = request.get_json()
     torrent_name = data.get('torrent_name')
-    movie_id = data.get('movie_id')
+    is_new_media = data.get('is_new_media', False)
 
-    if not torrent_name or not movie_id:
-        return jsonify({'success': False, 'error': 'Données manquantes'}), 400
+    if not torrent_name:
+        return jsonify({'success': False, 'error': 'Nom du torrent manquant.'}), 400
 
     torrents_data, error_msg = rtorrent_list_torrents_api()
     if error_msg:
@@ -3983,34 +3992,46 @@ def rtorrent_map_radarr():
 
     torrent_info = next((t for t in torrents_data if t.get('name') == torrent_name), None)
     if not torrent_info:
-        return jsonify({'success': False, 'error': f"Torrent '{torrent_name}' non trouvé."}), 404
+        return jsonify({'success': False, 'error': f"Torrent '{torrent_name}' non trouvé dans rTorrent."}), 404
 
     torrent_hash = torrent_info.get('hash')
+    final_movie_id = None
 
-    # --- DÉBUT DE LA LOGIQUE DÉFINITIVE ---
-    default_dir = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_RADARR_PATH')
-    if not default_dir:
-        return jsonify({'success': False, 'error': 'Chemin de téléchargement Radarr par défaut non configuré.'}), 500
+    if is_new_media:
+        tmdb_id = data.get('tmdb_id')
+        title = data.get('title')
+        root_folder_path = data.get('root_folder_path')
+        quality_profile_id = data.get('quality_profile_id')
+        if not all([tmdb_id, title, root_folder_path, quality_profile_id]):
+            return jsonify({'success': False, 'error': 'Données manquantes pour ajouter un nouveau film.'}), 400
 
-    rtorrent_download_path = str(Path(default_dir.rstrip('/')) / torrent_name).replace('\\', '/')
-    logger.info(f"Chemin rTorrent construit manuellement : {rtorrent_download_path}")
-
-    sftp_download_path = _translate_rtorrent_path_to_sftp_path(rtorrent_download_path, 'radarr')
-    # --- FIN DE LA LOGIQUE DÉFINITIVE ---
+        newly_added_movie = add_new_movie_to_radarr(
+            tmdb_id=tmdb_id,
+            title=title,
+            quality_profile_id=quality_profile_id,
+            root_folder_path=root_folder_path
+        )
+        if not newly_added_movie or not newly_added_movie.get('id'):
+            return jsonify({'success': False, 'error': "Échec de l'ajout du film à Radarr."}), 500
+        final_movie_id = newly_added_movie.get('id')
+    else:
+        final_movie_id = data.get('movie_id')
+        if not final_movie_id:
+            return jsonify({'success': False, 'error': 'ID du film manquant pour un média existant.'}), 400
 
     torrent_map_manager.add_or_update_torrent_in_map(
         release_name=torrent_name,
         torrent_hash=torrent_hash,
         status='pending_staging',
-        seedbox_download_path=sftp_download_path,
+        seedbox_download_path=None, # Création de la promesse
         folder_name=torrent_name,
         app_type='radarr',
-        target_id=movie_id,
+        target_id=final_movie_id,
         label=current_app.config.get('RTORRENT_LABEL_RADARR', 'radarr'),
         original_torrent_name=torrent_name
     )
 
-    return jsonify({'success': True, 'message': f"Torrent '{torrent_name}' mappé avec succès."})
+    return jsonify({'success': True, 'message': f"Torrent '{torrent_name}' mappé avec succès au film ID {final_movie_id}."})
 
 # ==============================================================================
 # --- NOUVELLES ROUTES POUR LES ACTIONS MANUELLES DE LA VUE RTORRENT ---
