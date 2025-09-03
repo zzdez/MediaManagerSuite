@@ -173,6 +173,7 @@ def _handle_automatic_import(item, queue_item, arr_type, folder_name):
         current_app.logger.error(f"Failed to trigger {arr_type} import for '{release_name}'.")
         mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_auto_import', f'Failed to trigger import in {arr_type}.')
 
+# --- VERSION CORRIGÉE DE _handle_manual_import ---
 def _handle_manual_import(item, folder_name):
     """
     Gère un import manuel via MMS. Gère les cas où l'item est un fichier unique ou un dossier.
@@ -184,7 +185,6 @@ def _handle_manual_import(item, folder_name):
 
     source_path = os.path.normpath(os.path.join(current_app.config['LOCAL_STAGING_PATH'], folder_name))
 
-    # 1. Trouver le média dans *Arr en utilisant l'ID unique
     target_id_from_map = item.get('target_id')
     media_type = 'tv' if item.get('app_type') == 'sonarr' else 'movie'
     media_info = None
@@ -194,10 +194,8 @@ def _handle_manual_import(item, folder_name):
         return
 
     if media_type == 'tv':
-        # On utilise la fonction qui cherche par l'ID interne de Sonarr
         media_info = arr_client.get_sonarr_series_by_id(target_id_from_map)
     elif media_type == 'movie':
-        # On utilise la fonction qui cherche par l'ID interne de Radarr
         media_info = arr_client.get_radarr_movie_by_id(target_id_from_map)
 
     target_id = media_info.get('id') if media_info else None
@@ -208,11 +206,9 @@ def _handle_manual_import(item, folder_name):
         mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', error_msg)
         return
 
-    # 2. Logique de déplacement robuste (Copier puis Supprimer)
     video_extensions = ('.mkv', '.mp4', '.avi', '.mov', '.wmv')
     files_to_copy = []
 
-    # --- DÉBUT DE LA LOGIQUE CORRIGÉE ---
     if os.path.isdir(source_path):
         current_app.logger.info(f"'{source_path}' est un dossier. Recherche de fichiers vidéo à l'intérieur.")
         for dirpath, _, filenames in os.walk(source_path):
@@ -223,7 +219,6 @@ def _handle_manual_import(item, folder_name):
         current_app.logger.info(f"'{source_path}' est un fichier. Vérification de l'extension.")
         if source_path.lower().endswith(video_extensions):
             files_to_copy.append(source_path)
-    # --- FIN DE LA LOGIQUE CORRIGÉE ---
 
     if not files_to_copy:
         mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', "Aucun fichier vidéo trouvé à déplacer.")
@@ -251,34 +246,36 @@ def _handle_manual_import(item, folder_name):
             mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', f"Erreur de copie de fichier: {e_copy}")
             return
 
+    # --- DÉBUT DE LA LOGIQUE CORRIGÉE ---
+    # Le nettoyage et la mise à jour du statut se font maintenant ICI, après la fin de la boucle.
+
     # 3. Nettoyage final du dossier/fichier de staging
-        _cleanup_staging(folder_name)
+    _cleanup_staging(folder_name)
 
-        # --- DÉBUT DE LA LOGIQUE DE STATUT FINAL ---
-        final_status = 'completed_manual'
-        final_message = f"{len(files_to_copy)} fichier(s) déplacé(s) manuellement."
+    # 4. Logique de statut final
+    final_status = 'completed_manual'
+    final_message = f"{len(files_to_copy)} fichier(s) déplacé(s) manuellement."
 
-        # On vérifie le label pour déterminer si l'origine était automatique
-        torrent_label = item.get('label', '')
-        label_sonarr_auto = 'tv-sonarr'
-        label_radarr_auto = 'radarr' # Supposition pour Radarr
+    torrent_label = item.get('label', '')
+    label_sonarr_auto = 'tv-sonarr'
+    label_radarr_auto = 'radarr'
 
-        if item.get('app_type') == 'sonarr' and torrent_label == label_sonarr_auto:
-            final_status = 'completed_auto'
-            final_message = f"{len(files_to_copy)} fichier(s) importé(s) automatiquement via MMS."
-        elif item.get('app_type') == 'radarr' and torrent_label == label_radarr_auto:
-            final_status = 'completed_auto'
-            final_message = f"{len(files_to_copy)} fichier(s) importé(s) automatiquement via MMS."
+    if item.get('app_type') == 'sonarr' and torrent_label == label_sonarr_auto:
+        final_status = 'completed_auto'
+        final_message = f"{len(files_to_copy)} fichier(s) importé(s) automatiquement via MMS."
+    elif item.get('app_type') == 'radarr' and torrent_label == label_radarr_auto:
+        final_status = 'completed_auto'
+        final_message = f"{len(files_to_copy)} fichier(s) importé(s) automatiquement via MMS."
 
-        mapping_manager.update_torrent_status_in_map(torrent_hash, final_status, final_message)
-        # --- FIN DE LA LOGIQUE DE STATUT FINAL ---
+    mapping_manager.update_torrent_status_in_map(torrent_hash, final_status, final_message)
 
-        # 4. Déclencher un Rescan
-        current_app.logger.info(f"Déclenchement d'un Rescan dans {media_type} pour l'ID {target_id}.")
-        if media_type == 'tv':
-            arr_client.sonarr_post_command({'name': 'RescanSeries', 'seriesId': target_id})
-        else:
-            arr_client.radarr_post_command({'name': 'RescanMovie', 'movieId': target_id})
+    # 5. Déclencher un Rescan
+    current_app.logger.info(f"Déclenchement d'un Rescan dans {media_type} pour l'ID {target_id}.")
+    if media_type == 'tv':
+        arr_client.sonarr_post_command({'name': 'RescanSeries', 'seriesId': target_id})
+    else:
+        arr_client.radarr_post_command({'name': 'RescanMovie', 'movieId': target_id})
+    # --- FIN DE LA LOGIQUE CORRIGÉE ---
 def process_pending_staging_items():
     """ Main function for the staging processor with robust connection handling. """
     logger = current_app.logger
