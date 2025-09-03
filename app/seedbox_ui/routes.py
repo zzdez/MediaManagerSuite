@@ -3059,14 +3059,13 @@ def rtorrent_add_torrent_action():
 
     logger.info(f"RTORRENT_ADD_ACTION: Hash rTorrent '{actual_hash}' trouvé pour '{original_name_from_js}'.")
 
-    # Le chemin sur la seedbox sera le rtorrent_download_dir + le nom de la release que rTorrent utilise (release_name_for_map)
-    seedbox_full_download_path = str(Path(rtorrent_download_dir) / release_name_for_map).replace('\\', '/')
+    # Le chemin sur la seedbox sera déterminé par le scanner une fois le téléchargement terminé.
 
     if torrent_map_manager.add_or_update_torrent_in_map(
             release_name_for_map,
             actual_hash,
             "pending_download",
-            seedbox_full_download_path,
+            None, # C'est la correction cruciale: création d'une promesse
             app_type=app_type,
             target_id=actual_target_id,
             label=rtorrent_label,
