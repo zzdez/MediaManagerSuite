@@ -3961,7 +3961,7 @@ def rtorrent_map_sonarr():
         if not base_dir:
             return jsonify({'success': False, 'error': 'Chemin de base Sonarr non configuré (SEEDBOX_SCANNER_TARGET_SONARR_PATH).'}), 500
 
-        seedbox_path = os.path.join(base_dir, torrent_name)
+        seedbox_path = (Path(base_dir) / torrent_name).as_posix()
 
         torrent_map_manager.add_or_update_torrent_in_map(
             release_name=torrent_name,
@@ -4038,7 +4038,7 @@ def rtorrent_map_radarr():
         if not base_dir:
             return jsonify({'success': False, 'error': 'Chemin de base Radarr non configuré (SEEDBOX_SCANNER_TARGET_RADARR_PATH).'}), 500
 
-        seedbox_path = os.path.join(base_dir, torrent_name)
+        seedbox_path = (Path(base_dir) / torrent_name).as_posix()
 
         torrent_map_manager.add_or_update_torrent_in_map(
             release_name=torrent_name,
