@@ -3916,6 +3916,7 @@ def retry_problematic_import_action(torrent_hash):
         message = f"Échec de la relance pour '{item_name_in_staging}': {result_from_handler.get('message', 'Erreur inconnue')}"
         return jsonify({'status': 'error', 'message': message}), 500
 
+# --- VERSION DÉFINITIVE POUR SONARR ---
 @seedbox_ui_bp.route('/rtorrent/map/sonarr', methods=['POST'], endpoint='rtorrent_map_sonarr')
 @login_required
 def rtorrent_map_sonarr():
@@ -3935,16 +3936,15 @@ def rtorrent_map_sonarr():
     if not torrent_info:
         return jsonify({'success': False, 'error': f"Torrent '{torrent_name}' non trouvé dans rTorrent."}), 404
 
+    current_app.logger.info(f"REMAP_TORRENT_INFO_DEBUG: Contenu de torrent_info: {torrent_info}")
     torrent_hash = torrent_info.get('hash')
 
-    # --- DÉBUT DE LA CORRECTION DU CHEMIN ---
-    # On extrait le chemin directement des informations de rTorrent.
-    # La clé est 'base_path' d'après la structure de rtorrent_client.
-    seedbox_path = torrent_info.get('base_path')
+    # --- DÉBUT DE LA CORRECTION FINALE ---
+    # On utilise la clé correcte 'download_dir' trouvée dans rtorrent_client.py
+    seedbox_path = torrent_info.get('download_dir')
     if not seedbox_path:
-        # Sécurité au cas où le chemin serait manquant pour une raison inconnue
-        return jsonify({'success': False, 'error': f"Impossible de trouver le chemin de base pour le torrent '{torrent_name}'."}), 500
-    # --- FIN DE LA CORRECTION DU CHEMIN ---
+        return jsonify({'success': False, 'error': f"Impossible de trouver le chemin ('download_dir') pour le torrent '{torrent_name}'."}), 500
+    # --- FIN DE LA CORRECTION FINALE ---
 
     final_series_id = None
 
@@ -3973,7 +3973,7 @@ def rtorrent_map_sonarr():
         release_name=torrent_name,
         torrent_hash=torrent_hash,
         status='pending_staging',
-        seedbox_download_path=seedbox_path, # On utilise le chemin direct
+        seedbox_download_path=seedbox_path, # On utilise le chemin direct et correct
         folder_name=torrent_name,
         app_type='sonarr',
         target_id=final_series_id,
@@ -3983,6 +3983,7 @@ def rtorrent_map_sonarr():
 
     return jsonify({'success': True, 'message': f"Torrent '{torrent_name}' mappé avec succès à la série ID {final_series_id}."})
 
+# --- VERSION DÉFINITIVE POUR RADARR ---
 @seedbox_ui_bp.route('/rtorrent/map/radarr', methods=['POST'], endpoint='rtorrent_map_radarr')
 @login_required
 def rtorrent_map_radarr():
@@ -4002,13 +4003,15 @@ def rtorrent_map_radarr():
     if not torrent_info:
         return jsonify({'success': False, 'error': f"Torrent '{torrent_name}' non trouvé dans rTorrent."}), 404
 
+    current_app.logger.info(f"REMAP_TORRENT_INFO_DEBUG: Contenu de torrent_info: {torrent_info}")
     torrent_hash = torrent_info.get('hash')
 
-    # --- DÉBUT DE LA CORRECTION DU CHEMIN ---
-    seedbox_path = torrent_info.get('base_path')
+    # --- DÉBUT DE LA CORRECTION FINALE ---
+    # On utilise la clé correcte 'download_dir' trouvée dans rtorrent_client.py
+    seedbox_path = torrent_info.get('download_dir')
     if not seedbox_path:
-        return jsonify({'success': False, 'error': f"Impossible de trouver le chemin de base pour le torrent '{torrent_name}'."}), 500
-    # --- FIN DE LA CORRECTION DU CHEMIN ---
+        return jsonify({'success': False, 'error': f"Impossible de trouver le chemin ('download_dir') pour le torrent '{torrent_name}'."}), 500
+    # --- FIN DE LA CORRECTION FINALE ---
 
     final_movie_id = None
 
@@ -4037,7 +4040,7 @@ def rtorrent_map_radarr():
         release_name=torrent_name,
         torrent_hash=torrent_hash,
         status='pending_staging',
-        seedbox_download_path=seedbox_path, # On utilise le chemin direct
+        seedbox_download_path=seedbox_path, # On utilise le chemin direct et correct
         folder_name=torrent_name,
         app_type='radarr',
         target_id=final_movie_id,
