@@ -69,7 +69,7 @@ def _rapatriate_item(item, sftp_client, folder_name):
         mapping_manager.update_torrent_status_in_map(item.get('torrent_hash'), 'error_missing_path', 'Chemin distant manquant dans le mapping.')
         return False
 
-    remote_path = original_remote_path
+    remote_path = _apply_path_mapping(original_remote_path)
     raw_local_path = os.path.join(current_app.config['LOCAL_STAGING_PATH'], folder_name)
     local_path = os.path.normpath(raw_local_path)
 
