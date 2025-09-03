@@ -3936,7 +3936,7 @@ def rtorrent_map_sonarr():
 
     torrent_hash = torrent_info.get('hash')
     final_series_id = None
-    seedbox_dl_path = None
+    seedbox_dl_path = torrent_info.get('base_path')
 
     if is_new_media:
         tvdb_id = data.get('tvdb_id')
@@ -3956,7 +3956,6 @@ def rtorrent_map_sonarr():
         if not newly_added_series or not newly_added_series.get('id'):
             return jsonify({'success': False, 'error': "Échec de l'ajout de la série à Sonarr."}), 500
         final_series_id = newly_added_series.get('id')
-        seedbox_dl_path = torrent_info.get('base_path')
     else:
         final_series_id = data.get('series_id')
         if not final_series_id:
@@ -3996,7 +3995,7 @@ def rtorrent_map_radarr():
 
     torrent_hash = torrent_info.get('hash')
     final_movie_id = None
-    seedbox_dl_path = None
+    seedbox_dl_path = torrent_info.get('base_path')
 
     if is_new_media:
         tmdb_id = data.get('tmdb_id')
@@ -4015,7 +4014,6 @@ def rtorrent_map_radarr():
         if not newly_added_movie or not newly_added_movie.get('id'):
             return jsonify({'success': False, 'error': "Échec de l'ajout du film à Radarr."}), 500
         final_movie_id = newly_added_movie.get('id')
-        seedbox_dl_path = torrent_info.get('base_path')
     else:
         final_movie_id = data.get('movie_id')
         if not final_movie_id:
