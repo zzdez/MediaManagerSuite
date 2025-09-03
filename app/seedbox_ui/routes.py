@@ -3934,13 +3934,6 @@ def rtorrent_map_sonarr():
     if not torrent_info:
         return jsonify({'success': False, 'error': f"Torrent '{torrent_name}' non trouvé dans rTorrent."}), 404
 
-    # Pour ce workflow, le chemin est toujours connu.
-    seedbox_path = torrent_info.get('download_dir')
-    if not seedbox_path:
-        # Correction : Il ne s'agit pas d'une promesse, le chemin est obligatoire pour ce workflow.
-        # On ne devrait pas continuer si le chemin n'est pas trouvé.
-        return jsonify({'success': False, 'error': "Impossible de récupérer le chemin de téléchargement final depuis rTorrent."}), 500
-
     torrent_hash = torrent_info.get('hash')
     final_series_id = None
 
@@ -3956,29 +3949,47 @@ def rtorrent_map_sonarr():
             tvdb_id=tvdb_id,
             title=title,
             quality_profile_id=quality_profile_id,
-            language_profile_id=1,
+            language_profile_id=1,  # Default to 1, assuming it's the first/default language profile
             root_folder_path=root_folder_path
         )
         if not newly_added_series or not newly_added_series.get('id'):
             return jsonify({'success': False, 'error': "Échec de l'ajout de la série à Sonarr."}), 500
         final_series_id = newly_added_series.get('id')
+
+        # Torrent is 100% downloaded, get its path and create a complete map entry
+        rtorrent_path = torrent_info.get('download_dir')
+        seedbox_path = _translate_rtorrent_path_to_sftp_path(rtorrent_path, 'sonarr')
+        if not seedbox_path:
+            return jsonify({'success': False, 'error': f"Impossible de traduire le chemin rTorrent '{rtorrent_path}' en chemin SFTP."}), 500
+
+        torrent_map_manager.add_or_update_torrent_in_map(
+            release_name=torrent_name,
+            torrent_hash=torrent_hash,
+            status='pending_staging',
+            seedbox_download_path=seedbox_path, # Path is known
+            folder_name=torrent_name,
+            app_type='sonarr',
+            target_id=final_series_id,
+            label=current_app.config.get('RTORRENT_LABEL_SONARR', 'sonarr'),
+            original_torrent_name=torrent_name
+        )
     else:
         final_series_id = data.get('series_id')
         if not final_series_id:
             return jsonify({'success': False, 'error': 'ID de la série manquant pour un média existant.'}), 400
 
-    # Appel unique et inconditionnel à la fin
-    torrent_map_manager.add_or_update_torrent_in_map(
-        release_name=torrent_name,
-        torrent_hash=torrent_hash,
-        status='pending_staging',
-        seedbox_download_path=seedbox_path, # Toujours utiliser le chemin connu
-        folder_name=torrent_name,
-        app_type='sonarr',
-        target_id=final_series_id,
-        label=current_app.config.get('RTORRENT_LABEL_SONARR', 'sonarr'),
-        original_torrent_name=torrent_name
-    )
+        # For existing media, we create a "promise" with path = None
+        torrent_map_manager.add_or_update_torrent_in_map(
+            release_name=torrent_name,
+            torrent_hash=torrent_hash,
+            status='pending_staging',
+            seedbox_download_path=None, # Création de la promesse
+            folder_name=torrent_name,
+            app_type='sonarr',
+            target_id=final_series_id,
+            label=current_app.config.get('RTORRENT_LABEL_SONARR', 'sonarr'),
+            original_torrent_name=torrent_name
+        )
 
     return jsonify({'success': True, 'message': f"Torrent '{torrent_name}' mappé avec succès à la série ID {final_series_id}."})
 
@@ -4000,12 +4011,6 @@ def rtorrent_map_radarr():
     if not torrent_info:
         return jsonify({'success': False, 'error': f"Torrent '{torrent_name}' non trouvé dans rTorrent."}), 404
 
-    # Pour ce workflow, le chemin est toujours connu.
-    seedbox_path = torrent_info.get('download_dir')
-    if not seedbox_path:
-        # Correction : Il ne s'agit pas d'une promesse, le chemin est obligatoire pour ce workflow.
-        return jsonify({'success': False, 'error': "Impossible de récupérer le chemin de téléchargement final depuis rTorrent."}), 500
-
     torrent_hash = torrent_info.get('hash')
     final_movie_id = None
 
@@ -4026,23 +4031,41 @@ def rtorrent_map_radarr():
         if not newly_added_movie or not newly_added_movie.get('id'):
             return jsonify({'success': False, 'error': "Échec de l'ajout du film à Radarr."}), 500
         final_movie_id = newly_added_movie.get('id')
+
+        # Torrent is 100% downloaded, get its path and create a complete map entry
+        rtorrent_path = torrent_info.get('download_dir')
+        seedbox_path = _translate_rtorrent_path_to_sftp_path(rtorrent_path, 'radarr')
+        if not seedbox_path:
+            return jsonify({'success': False, 'error': f"Impossible de traduire le chemin rTorrent '{rtorrent_path}' en chemin SFTP."}), 500
+
+        torrent_map_manager.add_or_update_torrent_in_map(
+            release_name=torrent_name,
+            torrent_hash=torrent_hash,
+            status='pending_staging',
+            seedbox_download_path=seedbox_path, # Path is known
+            folder_name=torrent_name,
+            app_type='radarr',
+            target_id=final_movie_id,
+            label=current_app.config.get('RTORRENT_LABEL_RADARR', 'radarr'),
+            original_torrent_name=torrent_name
+        )
     else:
         final_movie_id = data.get('movie_id')
         if not final_movie_id:
             return jsonify({'success': False, 'error': 'ID du film manquant pour un média existant.'}), 400
 
-    # Appel unique et inconditionnel à la fin
-    torrent_map_manager.add_or_update_torrent_in_map(
-        release_name=torrent_name,
-        torrent_hash=torrent_hash,
-        status='pending_staging',
-        seedbox_download_path=seedbox_path, # Toujours utiliser le chemin connu
-        folder_name=torrent_name,
-        app_type='radarr',
-        target_id=final_movie_id,
-        label=current_app.config.get('RTORRENT_LABEL_RADARR', 'radarr'),
-        original_torrent_name=torrent_name
-    )
+        # For existing media, we create a "promise" with path = None
+        torrent_map_manager.add_or_update_torrent_in_map(
+            release_name=torrent_name,
+            torrent_hash=torrent_hash,
+            status='pending_staging',
+            seedbox_download_path=None, # Création de la promesse
+            folder_name=torrent_name,
+            app_type='radarr',
+            target_id=final_movie_id,
+            label=current_app.config.get('RTORRENT_LABEL_RADARR', 'radarr'),
+            original_torrent_name=torrent_name
+        )
 
     return jsonify({'success': True, 'message': f"Torrent '{torrent_name}' mappé avec succès au film ID {final_movie_id}."})
 
