@@ -3956,17 +3956,18 @@ def rtorrent_map_sonarr():
             return jsonify({'success': False, 'error': "Échec de l'ajout de la série à Sonarr."}), 500
         final_series_id = newly_added_series.get('id')
 
-        # Torrent is 100% downloaded, get its path and create a complete map entry
-        rtorrent_path = torrent_info.get('download_dir')
-        seedbox_path = _translate_rtorrent_path_to_sftp_path(rtorrent_path, 'sonarr')
-        if not seedbox_path:
-            return jsonify({'success': False, 'error': f"Impossible de traduire le chemin rTorrent '{rtorrent_path}' en chemin SFTP."}), 500
+        # Construct the final path as per user's explicit instructions
+        base_dir = current_app.config.get('SEEDBOX_SCANNER_TARGET_SONARR_PATH')
+        if not base_dir:
+            return jsonify({'success': False, 'error': 'Chemin de base Sonarr non configuré (SEEDBOX_SCANNER_TARGET_SONARR_PATH).'}), 500
+
+        seedbox_path = os.path.join(base_dir, torrent_name)
 
         torrent_map_manager.add_or_update_torrent_in_map(
             release_name=torrent_name,
             torrent_hash=torrent_hash,
             status='pending_staging',
-            seedbox_download_path=seedbox_path, # Path is known
+            seedbox_download_path=seedbox_path, # Path is known and constructed
             folder_name=torrent_name,
             app_type='sonarr',
             target_id=final_series_id,
@@ -4032,17 +4033,18 @@ def rtorrent_map_radarr():
             return jsonify({'success': False, 'error': "Échec de l'ajout du film à Radarr."}), 500
         final_movie_id = newly_added_movie.get('id')
 
-        # Torrent is 100% downloaded, get its path and create a complete map entry
-        rtorrent_path = torrent_info.get('download_dir')
-        seedbox_path = _translate_rtorrent_path_to_sftp_path(rtorrent_path, 'radarr')
-        if not seedbox_path:
-            return jsonify({'success': False, 'error': f"Impossible de traduire le chemin rTorrent '{rtorrent_path}' en chemin SFTP."}), 500
+        # Construct the final path as per user's explicit instructions
+        base_dir = current_app.config.get('SEEDBOX_SCANNER_TARGET_RADARR_PATH')
+        if not base_dir:
+            return jsonify({'success': False, 'error': 'Chemin de base Radarr non configuré (SEEDBOX_SCANNER_TARGET_RADARR_PATH).'}), 500
+
+        seedbox_path = os.path.join(base_dir, torrent_name)
 
         torrent_map_manager.add_or_update_torrent_in_map(
             release_name=torrent_name,
             torrent_hash=torrent_hash,
             status='pending_staging',
-            seedbox_download_path=seedbox_path, # Path is known
+            seedbox_download_path=seedbox_path, # Path is known and constructed
             folder_name=torrent_name,
             app_type='radarr',
             target_id=final_movie_id,
