@@ -3066,6 +3066,7 @@ def rtorrent_add_torrent_action():
             actual_hash,
             "pending_download",
             None, # C'est la correction cruciale: création d'une promesse
+            folder_name=release_name_for_map,
             app_type=app_type,
             target_id=actual_target_id,
             label=rtorrent_label,
