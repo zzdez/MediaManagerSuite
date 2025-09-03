@@ -236,9 +236,9 @@ def list_torrents():
 
     simplified_torrents = []
     field_keys = [
-        'hash', 'name', 'download_dir', 'label', 'size_bytes', 'downloaded_bytes',
+        'hash', 'name', 'base_path', 'label', 'size_bytes', 'downloaded_bytes',
         'uploaded_bytes', 'down_rate_bytes_sec', 'up_rate_bytes_sec', 'ratio',
-        'is_open', 'is_active', 'is_complete_rt', 'left_bytes', 'rtorrent_message' # is_complete_rt from d.get_complete
+        'is_open', 'is_active', 'is_complete_rt', 'left_bytes', 'rtorrent_message'
     ]
 
     for torrent_data_list in raw_torrents_data:
@@ -295,7 +295,7 @@ def list_torrents():
                 'up_rate_bytes_sec': int(data.get('up_rate_bytes_sec', 0)),
                 'down_rate_bytes_sec': int(data.get('down_rate_bytes_sec', 0)),
                 'label': str(data.get('label', '')),
-                'download_dir': str(data.get('download_dir', '')),
+                'base_path': str(data.get('base_path', '')),
                 'status_text': status_text,
                 'is_active': bool(is_active_val and is_open_val), # Active means it's running (not paused, not stopped)
                 'is_complete': bool(is_complete_val),
@@ -559,7 +559,7 @@ def _decode_bencode_name(bencoded_data):
 def get_completed_torrents():
     """
     Fetches all torrents from rTorrent and filters for completed ones.
-    The dictionary key 'download_dir' is renamed to 'base_path' for consistency.
+    The torrent dictionary will contain 'base_path' for the download path.
     :return: A list of dictionaries, where each dictionary represents a completed torrent.
              Returns an empty list if there's an error or no completed torrents.
     """
@@ -577,11 +577,6 @@ def get_completed_torrents():
     completed_torrents = [
         torrent for torrent in all_torrents if torrent.get('is_complete')
     ]
-
-    # Rename 'download_dir' to 'base_path' for consumers of this function
-    for torrent in completed_torrents:
-        if 'download_dir' in torrent:
-            torrent['base_path'] = torrent.pop('download_dir')
 
     current_app.logger.info(f"rTorrent Client: Found {len(completed_torrents)} completed torrents.")
     return completed_torrents
