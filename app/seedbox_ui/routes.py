@@ -102,6 +102,41 @@ def _translate_rtorrent_path_to_sftp_path(rtorrent_path, app_type):
     logger.warning(f"Impossible de traduire le chemin rTorrent '{rtorrent_path}' via le mapping global. Vérifiez SEEDBOX_SFTP_REMOTE_PATH_MAPPING.")
     return None
 
+
+def _get_full_path_from_logical_path(logical_path):
+    """
+    Translates a logical path (used by Sonarr/Radarr config) into a full, absolute path
+    by reversing the logic of SEEDBOX_SFTP_REMOTE_PATH_MAPPING.
+    e.g., with mapping '/sdi/0103/,/', it turns '/downloads' into '/sdi/0103/downloads'.
+    """
+    logger = current_app.logger
+    if not logical_path:
+        logger.warning("Input logical_path is None. Cannot translate.")
+        return None
+
+    path_mapping_str = current_app.config.get('SEEDBOX_SFTP_REMOTE_PATH_MAPPING')
+    if path_mapping_str:
+        parts = path_mapping_str.split(',')
+        if len(parts) == 2:
+            # This is the reverse of _translate_rtorrent_path_to_sftp_path
+            # Here, we want to ADD the prefix.
+            prefix_to_add = parts[0].strip()
+            prefix_to_find_and_remove = parts[1].strip()
+
+            if logical_path.startswith(prefix_to_find_and_remove):
+                # Strip the logical prefix (e.g., '/') from the logical path
+                lstripped_path = logical_path[len(prefix_to_find_and_remove):]
+
+                # Join the full prefix with the rest of the path
+                full_path = (Path(prefix_to_add) / lstripped_path).as_posix()
+
+                logger.info(f"Logical path '{logical_path}' translated to full path '{full_path}'")
+                return full_path
+
+    logger.warning(f"Could not translate logical path '{logical_path}' to a full path. Check SEEDBOX_SFTP_REMOTE_PATH_MAPPING. Returning original path.")
+    return logical_path
+
+
 # Minimal bencode parser function (copied from previous attempt)
 
 
@@ -3956,12 +3991,13 @@ def rtorrent_map_sonarr():
             return jsonify({'success': False, 'error': "Échec de l'ajout de la série à Sonarr."}), 500
         final_series_id = newly_added_series.get('id')
 
-        # Construct the final path as per user's explicit instructions
-        base_dir = current_app.config.get('SEEDBOX_SCANNER_TARGET_SONARR_PATH')
-        if not base_dir:
+        # Construct the final path using the new helper function
+        logical_base_dir = current_app.config.get('SEEDBOX_SCANNER_TARGET_SONARR_PATH')
+        if not logical_base_dir:
             return jsonify({'success': False, 'error': 'Chemin de base Sonarr non configuré (SEEDBOX_SCANNER_TARGET_SONARR_PATH).'}), 500
 
-        seedbox_path = (Path(base_dir) / torrent_name).as_posix()
+        full_base_dir = _get_full_path_from_logical_path(logical_base_dir)
+        seedbox_path = (Path(full_base_dir) / torrent_name).as_posix()
 
         torrent_map_manager.add_or_update_torrent_in_map(
             release_name=torrent_name,
@@ -4033,12 +4069,13 @@ def rtorrent_map_radarr():
             return jsonify({'success': False, 'error': "Échec de l'ajout du film à Radarr."}), 500
         final_movie_id = newly_added_movie.get('id')
 
-        # Construct the final path as per user's explicit instructions
-        base_dir = current_app.config.get('SEEDBOX_SCANNER_TARGET_RADARR_PATH')
-        if not base_dir:
+        # Construct the final path using the new helper function
+        logical_base_dir = current_app.config.get('SEEDBOX_SCANNER_TARGET_RADARR_PATH')
+        if not logical_base_dir:
             return jsonify({'success': False, 'error': 'Chemin de base Radarr non configuré (SEEDBOX_SCANNER_TARGET_RADARR_PATH).'}), 500
 
-        seedbox_path = (Path(base_dir) / torrent_name).as_posix()
+        full_base_dir = _get_full_path_from_logical_path(logical_base_dir)
+        seedbox_path = (Path(full_base_dir) / torrent_name).as_posix()
 
         torrent_map_manager.add_or_update_torrent_in_map(
             release_name=torrent_name,
