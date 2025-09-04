@@ -353,6 +353,11 @@ $(document).ready(function() {
             } else {
                 qualityProfileSelect.html('<option>Aucun profil trouvé</option>');
             }
+
+            // Activer le bouton si les valeurs par défaut sont valides
+            if ($('#root-folder-select').val() && $('#quality-profile-select').val()) {
+                finalButton.prop('disabled', false);
+            }
         }).catch(error => {
             console.error("Erreur lors de la récupération des données pour l'ajout:", error);
             optionsContainer.find('#add-item-error-container').text("Une erreur critique est survenue. Veuillez vérifier les logs.");
@@ -560,7 +565,7 @@ function executeFinalMapping(payload) {
         }
     });
 
-    $('body').on('click', '#confirm-add-and-map-btn', function() {
+    $('body').off('click', '#confirm-add-and-map-btn').on('click', '#confirm-add-and-map-btn', function() {
         const button = $(this);
         const optionsContainer = modalBody.find('#add-item-options-container');
         const errorContainer = optionsContainer.find('#add-item-error-container');
