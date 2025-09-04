@@ -296,7 +296,7 @@ $(document).ready(function() {
         optionsContainer.data({ 'external-id': externalId, 'media-type': mediaType, 'title': title });
         lookupContainer.hide();
         optionsContainer.removeClass('d-none');
-        finalButton.removeClass('d-none');
+        finalButton.removeClass('d-none').prop('disabled', true); // On désactive le bouton par défaut
         detailsContainer.html('<div class="d-flex justify-content-center align-items-center p-3"><div class="spinner-border spinner-border-sm"></div><span class="ms-2">Chargement des détails...</span></div>');
         optionsContainer.find('select').empty().prop('disabled', true).html('<option>Chargement...</option>');
         optionsContainer.find('#add-item-error-container').empty();
@@ -545,6 +545,19 @@ function executeFinalMapping(payload) {
         })
         .then(response => response.json())
         .then(data => { displayResults(data.results, mediaType); });
+    });
+
+    // NOUVEL ÉVÉNEMENT : Activer le bouton final uniquement si les sélections sont valides
+    $('body').on('change', '#root-folder-select, #quality-profile-select', function() {
+        const rootFolder = $('#root-folder-select').val();
+        const qualityProfile = $('#quality-profile-select').val();
+        const finalButton = $('#confirm-add-and-map-btn');
+
+        if (rootFolder && qualityProfile) {
+            finalButton.prop('disabled', false);
+        } else {
+            finalButton.prop('disabled', true);
+        }
     });
 
     $('body').on('click', '#confirm-add-and-map-btn', function() {
