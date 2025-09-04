@@ -565,7 +565,7 @@ function executeFinalMapping(payload) {
         }
     });
 
-    $('body').on('click', '#confirm-add-and-map-btn', function() {
+    $('body').off('click', '#confirm-add-and-map-btn').on('click', '#confirm-add-and-map-btn', function() {
         const button = $(this);
         const optionsContainer = modalBody.find('#add-item-options-container');
         const errorContainer = optionsContainer.find('#add-item-error-container');
