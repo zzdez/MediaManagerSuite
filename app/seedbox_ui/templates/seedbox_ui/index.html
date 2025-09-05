@@ -729,19 +729,23 @@
                             .then(data => {
                                 if (data.success && data.files) {
                                     let html = '<ul class="list-group list-group-flush">';
-                                    data.files.sort((a, b) => a.path.localeCompare(b.path)).forEach(file => {
-                                        const sizeMB = (file.size_bytes / (1024*1024)).toFixed(2);
-                                        html += `<li class="list-group-item d-flex justify-content-between align-items-center bg-transparent border-secondary text-white py-1 px-2">${file.path}<span class="badge bg-primary rounded-pill">${sizeMB} MB</span></li>`;
-                                    });
+                                    if (data.files.length > 0) {
+                                        data.files.sort((a, b) => a.path.localeCompare(b.path)).forEach(file => {
+                                            const sizeMB = (file.size_bytes / (1024*1024)).toFixed(2);
+                                            html += `<li class="list-group-item d-flex justify-content-between align-items-center bg-transparent border-secondary text-white py-1 px-2">${file.path}<span class="badge bg-primary rounded-pill">${sizeMB} MB</span></li>`;
+                                        });
+                                    } else {
+                                        html += `<li class="list-group-item bg-transparent border-secondary text-white py-1 px-2">Aucun fichier dans ce torrent.</li>`;
+                                    }
                                     html += '</ul>';
                                     container.innerHTML = html;
                                 } else {
-                                    container.innerHTML = `<p class="text-danger">${data.error || 'Aucun fichier trouvé.'}</p>`;
+                                    container.innerHTML = `<p class="text-danger p-2">${data.error || 'Erreur lors de la récupération des fichiers.'}</p>`;
                                 }
                                 container.dataset.loaded = 'true';
                             })
                             .catch(error => {
-                                container.innerHTML = `<p class="text-danger">Erreur de chargement: ${error}</p>`;
+                                container.innerHTML = `<p class="text-danger p-2">Erreur de chargement: ${error}</p>`;
                             });
                     }
                 } else if (button) {
