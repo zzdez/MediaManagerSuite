@@ -3092,7 +3092,7 @@ def rtorrent_add_torrent_action():
 def rtorrent_list_view():
     current_app.logger.info("Accessing rTorrent list view page (using httprpc client).")
 
-    torrents_data, error_msg_rtorrent = rtorrent_list_torrents_api() # This now calls the httprpc version
+    torrents_data, error_msg_rtorrent = rtorrent_list_torrents_api()
 
     if error_msg_rtorrent:
         current_app.logger.error(f"Error fetching torrents from rTorrent (httprpc): {error_msg_rtorrent}")
@@ -3102,45 +3102,44 @@ def rtorrent_list_view():
                                page_title="Liste des Torrents rTorrent (Erreur)",
                                error_message=error_msg_rtorrent)
 
-    if torrents_data is None: # Should be caught by error_msg_rtorrent
+    if torrents_data is None:
         current_app.logger.warning("rtorrent_list_torrents_api (httprpc) returned None for data without an error message.")
         flash("Aucune donnée reçue de rTorrent.", "warning")
         torrents_data = []
 
-    # Load the full MMS map once
     all_mms_associations = torrent_map_manager.get_all_torrents_in_map()
     if not isinstance(all_mms_associations, dict):
         current_app.logger.error("torrent_map_manager.get_all_torrents_in_map() did not return a dict.")
-        all_mms_associations = {} # Ensure it's a dict for safe lookup
+        all_mms_associations = {}
 
     torrents_with_assoc = []
     local_staging_path = current_app.config.get('LOCAL_STAGING_PATH')
 
     if isinstance(torrents_data, list):
-        for torrent in torrents_data: # Each 'torrent' is a dict from the new list_torrents()
+        for torrent in torrents_data:
             torrent_hash = torrent.get('hash')
-
             mms_status = 'unknown'
             mms_file_exists = False
+
+            # Format creation date
+            creation_timestamp = torrent.get('creation_date', 0)
+            if creation_timestamp > 0:
+                torrent['creation_date_str'] = datetime.fromtimestamp(creation_timestamp).strftime('%Y-%m-%d %H:%M:%S')
+            else:
+                torrent['creation_date_str'] = 'N/A'
 
             association_data = all_mms_associations.get(torrent_hash)
             if association_data:
                 torrent['target_id'] = association_data.get('target_id')
-                torrent['added_at'] = association_data.get('added_at')
                 mms_status = association_data.get('status', 'unknown')
 
-                # Check file existence based on status and configured paths
                 if mms_status in ['in_staging', 'pending_staging', 'error_staging_path_missing', 'error_mms_all_files_failed_move', 'error_sonarr_season_undefined_for_file', 'error_mms_file_move']:
-                    # These statuses imply the file should be in local staging
                     release_name = association_data.get('release_name')
                     if release_name and local_staging_path:
                         full_path = Path(local_staging_path) / release_name
                         mms_file_exists = full_path.exists()
                 elif mms_status == 'completed_manual' or mms_status == 'completed_auto':
-                    mms_file_exists = True # Placeholder, actual check would be more complex
-            else:
-                torrent['added_at'] = None
-
+                    mms_file_exists = True
 
             torrent['mms_status'] = mms_status
             torrent['mms_file_exists'] = mms_file_exists
@@ -3152,15 +3151,12 @@ def rtorrent_list_view():
     else:
         current_app.logger.error(f"rtorrent_list_torrents_api (httprpc) did not return a list. Got: {type(torrents_data)}")
         flash("Format de données inattendu reçu de rTorrent.", "danger")
-        # Render with empty list
         return render_template('seedbox_ui/rtorrent_list.html', torrents_with_assoc=[], page_title="Liste des Torrents rTorrent (Erreur Format)", error_message="Format de données rTorrent invalide.")
 
-    # Sort by added_at date, most recent first. Handle None values by treating them as the oldest.
-    torrents_with_assoc.sort(key=lambda x: x['details'].get('added_at') or '1970-01-01T00:00:00', reverse=True)
+    torrents_with_assoc.sort(key=lambda x: x['details'].get('creation_date', 0), reverse=True)
 
     current_app.logger.info(f"Affichage de {len(torrents_with_assoc)} torrent(s) avec leurs informations d'association (httprpc).")
 
-    # Pass configured labels to the template
     config_label_sonarr = current_app.config.get('RTORRENT_LABEL_SONARR', 'sonarr')
     config_label_radarr = current_app.config.get('RTORRENT_LABEL_RADARR', 'radarr')
 

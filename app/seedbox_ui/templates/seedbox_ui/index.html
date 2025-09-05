@@ -267,9 +267,10 @@
             getRadarrQualityprofiles: "{{ url_for('seedbox_ui.get_radarr_qualityprofiles_api') }}",
             batchMapToSonarrSeries: "{{ url_for('seedbox_ui.batch_map_to_sonarr_series_action') }}",
             rtorrentMapSonarr: "{{ url_for('seedbox_ui.rtorrent_map_sonarr') }}",
-        rtorrentMapRadarr: "{{ url_for('seedbox_ui.rtorrent_map_radarr') }}",
-        searchTvdbEnriched: '{{ url_for("seedbox_ui.search_tvdb_enriched") }}',
-        searchTmdbEnriched: '{{ url_for("seedbox_ui.search_tmdb_enriched") }}'
+            rtorrentMapRadarr: "{{ url_for('seedbox_ui.rtorrent_map_radarr') }}",
+            searchTvdbEnriched: '{{ url_for("seedbox_ui.search_tvdb_enriched") }}',
+            searchTmdbEnriched: '{{ url_for("seedbox_ui.search_tmdb_enriched") }}',
+            getTorrentFiles: "{{ url_for('seedbox_ui.get_rtorrent_torrent_files', torrent_hash='__HASH__') }}"
         };
     </script>
     <script src="{{ url_for('static', filename='js/seedbox_ui_modals.js') }}"></script>
@@ -722,7 +723,7 @@
                         const container = fileRow.querySelector('.file-list-container');
                         if (container.dataset.loaded === 'true') return;
 
-                        const apiUrl = `/api/rtorrent/torrent/${hash}/files`;
+                        const apiUrl = window.appUrls.getTorrentFiles.replace('__HASH__', hash);
                         fetch(apiUrl)
                             .then(response => response.ok ? response.json() : Promise.reject('Network response was not ok.'))
                             .then(data => {
