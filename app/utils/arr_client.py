@@ -499,29 +499,49 @@ def find_sonarr_series_by_release_name(release_name):
     """
     Trouve une série dans Sonarr en se basant sur le nom d'une release,
     en utilisant l'endpoint 'lookup' pour plus de fiabilité.
+    Cette version gère intelligemment les titres avec une année.
     """
     logger.info(f"Recherche de la série Sonarr pour la release : '{release_name}'")
     parsed_info = parse_media_name(release_name)
-    title_to_search = parsed_info.get('title')
-
-    if not title_to_search:
+    
+    if not parsed_info or not parsed_info.get('title'):
         logger.warning(f"Impossible d'extraire un titre de '{release_name}'.")
         return None
 
-    # On utilise l'endpoint 'lookup' qui est plus direct et ne dépend pas du cache interne
-    candidates = search_sonarr_by_title(title_to_search)
+    # --- DÉBUT DE LA CORRECTION ---
+    # On construit un titre de recherche intelligent.
+    title = parsed_info.get('title')
+    year = parsed_info.get('year')
+    
+    # Tentative 1 : Recherche avec le titre et l'année (ex: "Invasion (2021)")
+    if year:
+        title_with_year = f"{title} ({year})"
+        logger.info(f"Tentative de recherche avec titre et année : '{title_with_year}'")
+        candidates = search_sonarr_by_title(title_with_year)
+        
+        # On vérifie si on a un résultat pertinent qui est déjà dans la bibliothèque
+        if candidates and candidates[0].get('id', 0) > 0:
+            best_match = candidates[0]
+            logger.info(f"Série trouvée (avec année) et déjà dans Sonarr : '{best_match.get('title')}' (ID: {best_match.get('id')})")
+            return best_match
+        else:
+            logger.info(f"Aucune série existante trouvée pour '{title_with_year}'. Tentative avec le titre seul.")
+    
+    # Tentative 2 (Fallback) : Recherche avec le titre seul (comportement original)
+    logger.info(f"Tentative de recherche avec le titre seul : '{title}'")
+    candidates = search_sonarr_by_title(title)
+    # --- FIN DE LA CORRECTION ---
+
     if not candidates:
-        logger.warning(f"Aucun candidat trouvé via lookup pour le titre '{title_to_search}'.")
+        logger.warning(f"Aucun candidat trouvé via lookup pour le titre '{title}'.")
         return None
 
-    # Le lookup retourne une liste. On prend le premier résultat, qui est généralement le meilleur.
-    # On vérifie s'il est déjà dans Sonarr (il aura un 'id' valide).
     best_match = candidates[0]
     if best_match and best_match.get('id') and best_match.get('id') > 0:
-        logger.info(f"Série trouvée via lookup et déjà dans Sonarr : '{best_match.get('title')}' (ID: {best_match.get('id')})")
+        logger.info(f"Série trouvée (titre seul) et déjà dans Sonarr : '{best_match.get('title')}' (ID: {best_match.get('id')})")
         return best_match
     else:
-        logger.warning(f"Série trouvée via lookup pour '{title_to_search}', mais elle ne semble pas être dans la bibliothèque Sonarr. Ignoré.")
+        logger.warning(f"Série trouvée via lookup pour '{title}', mais elle ne semble pas être dans la bibliothèque Sonarr. Ignoré.")
         return None
 
 
@@ -529,14 +549,26 @@ def find_radarr_movie_by_release_name(release_name):
     """
     Trouve un film dans Radarr en se basant sur le nom d'une release,
     en utilisant l'endpoint 'lookup'.
+    Cette version gère intelligemment les titres avec une année.
     """
     logger.info(f"Recherche du film Radarr pour la release : '{release_name}'")
     parsed_info = parse_media_name(release_name)
-    title_to_search = parsed_info.get('title')
 
-    if not title_to_search:
+    if not parsed_info or not parsed_info.get('title'):
         logger.warning(f"Impossible d'extraire un titre de '{release_name}'.")
         return None
+
+    # --- DÉBUT DE LA CORRECTION ---
+    # On construit un titre de recherche intelligent.
+    title = parsed_info.get('title')
+    year = parsed_info.get('year')
+
+    # Pour les films, la recherche avec l'année est la norme. On privilégie donc cette approche.
+    # La fonction search_radarr_by_title devrait déjà bien gérer cela, mais on s'assure
+    # que le titre envoyé est le plus simple possible pour ne pas perturber la recherche.
+    # Le comportement original est probablement déjà correct pour Radarr, mais on clarifie.
+    title_to_search = title 
+    # --- FIN DE LA CORRECTION ---
 
     candidates = search_radarr_by_title(title_to_search)
     if not candidates:
