@@ -184,21 +184,25 @@ $(document).ready(function() {
             return;
         }
 
-        // 1. Group rows into pairs of [main, detail]
-        const rowPairs = [];
-        tbody.find('tr:not(.file-list-row)').each(function() {
-            const mainRow = $(this);
-            const detailRow = mainRow.next('tr.file-list-row');
-            rowPairs.push({
-                main: mainRow,
-                detail: detailRow.length ? detailRow : null
-            });
+        // 1. Separate main rows from detail rows
+        const mainRows = tbody.find('tr:not(.file-list-row)').toArray();
+        const detailRows = tbody.find('tr.file-list-row').toArray();
+
+        // 2. Create a map of detail rows for easy lookup
+        const detailRowMap = {};
+        detailRows.forEach(row => {
+            const id = $(row).attr('id');
+            if (id) {
+                // Assuming ID is like "files-HASH"
+                const hash = id.substring(6);
+                detailRowMap[hash] = row;
+            }
         });
 
-        // 2. Sort the pairs based on the main row's content
-        rowPairs.sort(function(a, b) {
-            const cellA = a.main.children('td').eq(cellIndex);
-            const cellB = b.main.children('td').eq(cellIndex);
+        // 3. Sort only the main rows
+        mainRows.sort(function(a, b) {
+            const cellA = $(a).children('td').eq(cellIndex);
+            const cellB = $(b).children('td').eq(cellIndex);
 
             let valA = cellA.data('sort-value') !== undefined ? String(cellA.data('sort-value')) : cellA.text().trim();
             let valB = cellB.data('sort-value') !== undefined ? String(cellB.data('sort-value')) : cellB.text().trim();
@@ -222,12 +226,13 @@ $(document).ready(function() {
             return 0;
         });
 
-        // 3. Re-append the sorted pairs to the tbody
+        // 4. Rebuild the table, appending detail rows after their corresponding main row
         tbody.empty();
-        rowPairs.forEach(function(pair) {
-            tbody.append(pair.main);
-            if (pair.detail) {
-                tbody.append(pair.detail);
+        mainRows.forEach(function(mainRow) {
+            tbody.append(mainRow);
+            const hash = $(mainRow).find('.torrent-checkbox').data('torrent-hash');
+            if (hash && detailRowMap[hash]) {
+                tbody.append(detailRowMap[hash]);
             }
         });
     }

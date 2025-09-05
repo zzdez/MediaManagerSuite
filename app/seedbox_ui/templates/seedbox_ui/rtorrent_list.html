@@ -67,7 +67,7 @@
                     <th style="width: 3%;"><input class="form-check-input" type="checkbox" id="select-all-torrents"></th>
                     <th style="width: 3%;"></th>
                     <th class="sortable-header" data-sort-by="name">Nom</th>
-                    <th class="sortable-header" data-sort-by="added_at" data-sort-type="date" title="Date d'ajout à MediaManagerSuite">Date d'Ajout</th>
+                    <th class="sortable-header" data-sort-by="creation_date" data-sort-type="date">Date d'Ajout</th>
                     <th class="sortable-header" data-sort-by="size" data-sort-type="size">Taille (Go)</th>
                     <th class="sortable-header" data-sort-by="progress" data-sort-type="number">Progrès (%)</th>
                     <th class="sortable-header" data-sort-by="ratio" data-sort-type="number">Ratio</th>
@@ -90,7 +90,7 @@
                             </a>
                         </td>
                         <td><span class="torrent-name" title="{{ torrent.name }}">{{ torrent.name }}</span></td>
-                        <td data-sort-value="{{ torrent.added_at if torrent.added_at else '1970-01-01T00:00:00' }}">{{ torrent.added_at.split('.')[0].replace('T', ' ') if torrent.added_at else 'N/A' }}</td>
+                        <td data-sort-value="{{ torrent.creation_date }}">{{ torrent.creation_date_str }}</td>
                         <td>{{ (torrent.size_bytes / (1024*1024*1024)) | round(2) if torrent.size_bytes else '0.00' }}</td>
                         <td>{{ torrent.progress_percent | round(1) if torrent.progress_percent is not none else 'N/A' }}%</td>
                         <td>{{ torrent.ratio | round(2) if torrent.ratio is not none else 'N/A' }}</td>
