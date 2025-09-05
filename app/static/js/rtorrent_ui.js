@@ -208,8 +208,8 @@ $(document).ready(function() {
             let valB = cellB.data('sort-value') !== undefined ? String(cellB.data('sort-value')) : cellB.text().trim();
 
             if (sortType === 'date') {
-                valA = new Date(valA).getTime() || 0;
-                valB = new Date(valB).getTime() || 0;
+                valA = parseInt(valA, 10) || 0;
+                valB = parseInt(valB, 10) || 0;
             } else if (sortType === 'size') {
                 valA = parseSize(valA);
                 valB = parseSize(valB);
