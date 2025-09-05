@@ -310,6 +310,61 @@ def list_torrents():
     current_app.logger.info(f"Successfully parsed {len(simplified_torrents)} torrent(s) via XML-RPC d.multicall2.")
     return simplified_torrents, None
 
+
+def get_torrent_files(torrent_hash):
+    """
+    Retrieves the list of files for a given torrent hash using f.multicall.
+    """
+    logger = current_app.logger
+    if not torrent_hash:
+        return None, "Torrent hash cannot be empty."
+
+    logger.info(f"Fetching file list for torrent hash: {torrent_hash}")
+
+    # Define the fields to retrieve for each file
+    fields = [
+        "f.path=",
+        "f.size_bytes=",
+        "f.priority="
+    ]
+
+    # Construct the parameters for the XML-RPC call
+    # The second parameter "" means "all files for the given hash"
+    params_for_xmlrpc = [torrent_hash, ""] + fields
+
+    # Call the generic XML-RPC request function
+    raw_file_data, error = _send_xmlrpc_request(method_name="f.multicall", params=params_for_xmlrpc)
+
+    if error:
+        logger.error(f"XML-RPC error calling f.multicall for hash {torrent_hash}: {error}")
+        return None, error
+
+    if not isinstance(raw_file_data, list):
+        logger.error(f"XML-RPC f.multicall for hash {torrent_hash}: Expected a list of lists, got {type(raw_file_data)}. Data: {str(raw_file_data)[:500]}")
+        return None, "Unexpected data structure from rTorrent for file list."
+
+    # Process the raw data into a more friendly format
+    file_list = []
+    field_keys = ['path', 'size_bytes', 'priority']
+    for file_data_list in raw_file_data:
+        if not isinstance(file_data_list, list) or len(file_data_list) != len(field_keys):
+            logger.warning(f"Skipping file entry for hash {torrent_hash} due to mismatched data length. Data: {file_data_list}")
+            continue
+
+        try:
+            file_info = dict(zip(field_keys, file_data_list))
+            # Convert types
+            file_info['size_bytes'] = int(file_info.get('size_bytes', 0))
+            file_info['priority'] = int(file_info.get('priority', 0)) # 0 = Off, 1 = Normal, 2 = High
+            file_list.append(file_info)
+        except (ValueError, TypeError) as e:
+            logger.error(f"Error processing file data entry for hash {torrent_hash}: {file_data_list}. Error: {e}")
+            continue
+
+    logger.info(f"Successfully parsed {len(file_list)} files for torrent hash {torrent_hash}.")
+    return file_list, None
+
+
 # add_magnet is refactored to use XML-RPC
 def add_magnet(magnet_link, label=None, download_dir=None):
     if not magnet_link:
