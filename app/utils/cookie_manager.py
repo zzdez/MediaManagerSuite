@@ -1,42 +1,63 @@
 import os
 import json
 import time
+import glob
+import logging
 from flask import current_app
+
+logger = logging.getLogger(__name__)
 
 def get_ygg_cookie_status():
     """
-    Lit le fichier ygg_cookies.json, vérifie la validité des cookies essentiels,
-    et retourne un dictionnaire d'état.
-
-    Returns:
-        dict: Un dictionnaire contenant la chaîne de cookie, sa validité,
-              et le temps en secondes avant l'expiration.
+    Scans the configured download path for the latest YGG cookie file,
+    validates its contents and expiration date, and returns a detailed status.
     """
     default_status = {
         "cookie_string": "",
         "is_valid": False,
         "expires_in_seconds": 0,
-        "status_message": "Fichier de cookie non trouvé ou non configuré."
+        "status_message": "Non configuré ou invalide."
     }
 
-    instance_path = current_app.instance_path
-    cookie_file_path = os.path.join(instance_path, 'ygg_cookies.json')
-
-    if not os.path.exists(cookie_file_path):
-        return default_status
-
+    # 1a. Trouver le fichier le plus récent
     try:
-        with open(cookie_file_path, 'r') as f:
+        download_path = current_app.config.get('COOKIE_DOWNLOAD_PATH')
+        if not download_path:
+            download_path = os.path.join(os.path.expanduser('~'), 'Downloads')
+            logger.info(f"COOKIE_DOWNLOAD_PATH non défini, utilisation du répertoire par défaut : {download_path}")
+
+        if not os.path.isdir(download_path):
+            msg = f"Le répertoire de cookies '{download_path}' est invalide ou n'existe pas."
+            logger.error(msg)
+            return {**default_status, "status_message": msg}
+
+        file_pattern = os.path.join(download_path, 'www.yggtorrent.top_cookies.json*')
+        cookie_files = glob.glob(file_pattern)
+
+        if not cookie_files:
+            msg = f"Aucun fichier de cookie trouvé dans '{download_path}' correspondant au pattern."
+            logger.warning(msg)
+            return {**default_status, "status_message": "Aucun fichier de cookie trouvé."}
+
+        latest_file = max(cookie_files, key=os.path.getmtime)
+        logger.info(f"Fichier de cookie le plus récent trouvé : {latest_file}")
+
+    except Exception as e:
+        msg = f"Erreur lors de la recherche du fichier de cookie : {e}"
+        logger.error(msg, exc_info=True)
+        return {**default_status, "status_message": msg}
+
+    # 1b. Lire et parser le fichier
+    try:
+        with open(latest_file, 'r', encoding='utf-8') as f:
             cookies_data = json.load(f)
     except (json.JSONDecodeError, IOError) as e:
-        current_app.logger.error(f"Impossible de lire ou parser ygg_cookies.json: {e}")
-        return {**default_status, "status_message": f"Erreur de lecture du fichier cookie : {e}"}
+        msg = f"Impossible de lire ou parser le fichier cookie '{os.path.basename(latest_file)}': {e}"
+        logger.error(msg)
+        return {**default_status, "status_message": msg}
 
-    essential_cookies_info = {
-        'cf_clearance': None,
-        'ygg_': None
-    }
-
+    # 1c. Vérifier la validité
+    essential_cookies_info = {'cf_clearance': None, 'ygg_': None}
     all_cookies_map = {cookie['name']: cookie for cookie in cookies_data}
 
     for name in essential_cookies_info:
@@ -52,27 +73,29 @@ def get_ygg_cookie_status():
 
     for name, cookie in essential_cookies_info.items():
         expiry = cookie.get('expirationDate')
+        logger.debug(f"Vérification du cookie '{name}': Timestamp d'expiration = {expiry}, Heure actuelle = {now}")
         if not expiry or expiry < now:
-            return {**default_status, "status_message": f"Le cookie '{name}' est expiré."}
+            msg = f"Le cookie '{name}' est expiré."
+            logger.warning(msg)
+            return {**default_status, "status_message": msg}
         soonest_expiry = min(soonest_expiry, expiry)
 
-    # Construire la chaîne de cookie finale à partir de tous les cookies du fichier
-    cookie_parts = []
-    # Prioriser les cookies essentiels dans l'ordre
-    for name in ['cf_clearance', 'ygg_']:
-         if name in all_cookies_map:
-            cookie_parts.append(f"{name}={all_cookies_map[name]['value']}")
-
-    # Ajouter les autres cookies
-    for name, cookie in all_cookies_map.items():
-        if name not in ['cf_clearance', 'ygg_']:
-            cookie_parts.append(f"{name}={cookie['value']}")
-
+    # 1d. Construire la chaîne de cookie et retourner l'état
+    cookie_parts = [f"{name}={cookie['value']}" for name, cookie in all_cookies_map.items()]
     cookie_string = "; ".join(cookie_parts)
     expires_in_seconds = int(soonest_expiry - now)
 
     minutes_left = expires_in_seconds // 60
-    status_message = f"Valide (expire dans ~{minutes_left} min)" if minutes_left > 0 else "Valide (expire dans moins d'une minute)"
+    status_message = f"Valide (~{minutes_left} min)" if minutes_left > 0 else "Valide (< 1 min)"
+
+    # Étape 3 (Optionnel, mais implémenté ici) : Nettoyage Automatique
+    try:
+        for file_path in cookie_files:
+            if file_path != latest_file:
+                os.remove(file_path)
+                logger.info(f"Nettoyage : suppression de l'ancien fichier de cookie '{os.path.basename(file_path)}'")
+    except Exception as e:
+        logger.error(f"Erreur lors du nettoyage des anciens fichiers de cookie : {e}", exc_info=True)
 
     return {
         "cookie_string": cookie_string,
