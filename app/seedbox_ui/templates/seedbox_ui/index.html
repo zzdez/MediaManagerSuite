@@ -535,8 +535,33 @@
         var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
         tooltipTriggerList.map(function (tooltipTriggerEl) { return new bootstrap.Tooltip(tooltipTriggerEl); });
 
-        // --- Chargement initial de la vue rTorrent ---
-        loadRtorrentView();
+        // --- Logique pour la persistance de l'onglet actif ---
+        const allTabs = document.querySelectorAll('button[data-bs-toggle="tab"]');
+        allTabs.forEach(tab => {
+            tab.addEventListener('shown.bs.tab', function (event) {
+                sessionStorage.setItem('activeTabId', event.target.id);
+            });
+        });
+
+        const activeTabId = sessionStorage.getItem('activeTabId');
+        if (activeTabId) {
+            const tabEl = document.getElementById(activeTabId);
+            if (tabEl) {
+                new bootstrap.Tab(tabEl).show();
+            }
+        } else {
+            // Default to rTorrent tab if nothing is stored
+            const rtorrentTabEl = document.getElementById('rtorrent-view-tab');
+            if (rtorrentTabEl) {
+                new bootstrap.Tab(rtorrentTabEl).show();
+            }
+        }
+
+        // --- Chargement initial de la vue rTorrent si elle est active ---
+        // This needs to run after the tab persistence logic.
+        if (!activeTabId || activeTabId === 'rtorrent-view-tab') {
+            loadRtorrentView();
+        }
         
         const addTorrentModalEl = document.getElementById('addTorrentModal');
         if (addTorrentModalEl && typeof initializeAddTorrentModal === 'function') {
@@ -674,83 +699,126 @@
         if (rtorrentContainer) {
             rtorrentContainer.addEventListener('click', function(event) {
                 const button = event.target.closest('button');
-                if (!button) return;
+                const toggleLink = event.target.closest('.toggle-files');
 
-                const torrentHash = button.dataset.torrentHash;
+                if (toggleLink) {
+                    event.preventDefault();
+                    const hash = toggleLink.dataset.hash;
+                    const icon = toggleLink.querySelector('i');
+                    const fileRow = document.getElementById(`files-${hash}`);
 
-                // --- Action : Forcer l'Import ---
-                if (button.classList.contains('force-import-btn')) {
-                    event.preventDefault();
-                    if (!torrentHash) return;
-                    if (confirm("Forcer le traitement de cet item depuis le staging ?")) {
-                        const url = `{{ url_for('seedbox_ui.retry_problematic_import_action', torrent_hash='__HASH__') }}`.replace('__HASH__', torrentHash);
-                        fetch(url, { method: 'POST' })
-                            .then(response => response.json().then(data => ({ ok: response.ok, data })))
-                            .then(({ ok, data }) => {
-                                alert(data.message);
-                                if (ok) {
-                                    sessionStorage.setItem('activeTab', '#rtorrent-view-tab');
-                                    window.location.reload();
+                    if (!fileRow) return;
+
+                    const isVisible = fileRow.style.display !== 'none';
+                    if (isVisible) {
+                        fileRow.style.display = 'none';
+                        icon.classList.remove('fa-minus-square');
+                        icon.classList.add('fa-plus-square');
+                    } else {
+                        fileRow.style.display = '';
+                        icon.classList.remove('fa-plus-square');
+                        icon.classList.add('fa-minus-square');
+
+                        const container = fileRow.querySelector('.file-list-container');
+                        if (container.dataset.loaded === 'true') return;
+
+                        const apiUrl = `/api/rtorrent/torrent/${hash}/files`;
+                        fetch(apiUrl)
+                            .then(response => response.ok ? response.json() : Promise.reject('Network response was not ok.'))
+                            .then(data => {
+                                if (data.success && data.files) {
+                                    let html = '<ul class="list-group list-group-flush">';
+                                    data.files.sort((a, b) => a.path.localeCompare(b.path)).forEach(file => {
+                                        const sizeMB = (file.size_bytes / (1024*1024)).toFixed(2);
+                                        html += `<li class="list-group-item d-flex justify-content-between align-items-center bg-transparent border-secondary text-white py-1 px-2">${file.path}<span class="badge bg-primary rounded-pill">${sizeMB} MB</span></li>`;
+                                    });
+                                    html += '</ul>';
+                                    container.innerHTML = html;
+                                } else {
+                                    container.innerHTML = `<p class="text-danger">${data.error || 'Aucun fichier trouvé.'}</p>`;
                                 }
+                                container.dataset.loaded = 'true';
                             })
-                            .catch(error => alert('Erreur de communication.'));
+                            .catch(error => {
+                                container.innerHTML = `<p class="text-danger">Erreur de chargement: ${error}</p>`;
+                            });
                     }
-                }
-                // --- Action : Réessayer le Rapatriement ---
-                else if (button.classList.contains('retry-repatriation-btn')) {
-                    event.preventDefault();
-                    handleRetryRepatriation(button);
-                }
-                // --- Action : Ignorer Définitivement ---
-                else if (button.classList.contains('ignore-torrent-btn')) {
-                    event.preventDefault();
-                    handleIgnoreTorrent(button);
-                }
-                // --- Action : Oublier l'Association ---
-                else if (button.classList.contains('forget-association-btn')) {
-                    event.preventDefault();
-                    if (!torrentHash) return;
-                    if (confirm("Supprimer l'association MMS ?")) {
-                        const url = `{{ url_for('seedbox_ui.delete_problematic_association_action', torrent_hash='__HASH__') }}`.replace('__HASH__', torrentHash);
-                        fetch(url, { method: 'POST' })
-                            .then(response => response.json().then(data => ({ ok: response.ok, data })))
-                            .then(({ ok, data }) => {
-                                alert(data.message);
-                                if (ok) {
-                                    sessionStorage.setItem('activeTab', '#rtorrent-view-tab');
-                                    window.location.reload();
-                                }
-                            })
-                            .catch(error => alert('Erreur de communication.'));
-                    }
-                }
-                // --- Action : Supprimer de rTorrent ---
-                else if (button.classList.contains('delete-rtorrent-btn')) {
-                    event.preventDefault();
-                    const torrentName = button.dataset.torrentName;
+                } else if (button) {
                     const torrentHash = button.dataset.torrentHash;
+                    // --- Action : Forcer l'Import ---
+                    if (button.classList.contains('force-import-btn')) {
+                        event.preventDefault();
+                        if (!torrentHash) return;
+                        if (confirm("Forcer le traitement de cet item depuis le staging ?")) {
+                            const url = `{{ url_for('seedbox_ui.retry_problematic_import_action', torrent_hash='__HASH__') }}`.replace('__HASH__', torrentHash);
+                            fetch(url, { method: 'POST' })
+                                .then(response => response.json().then(data => ({ ok: response.ok, data })))
+                                .then(({ ok, data }) => {
+                                    alert(data.message);
+                                    if (ok) {
+                                        sessionStorage.setItem('activeTab', '#rtorrent-view-tab');
+                                        window.location.reload();
+                                    }
+                                })
+                                .catch(error => alert('Erreur de communication.'));
+                        }
+                    }
+                    // --- Action : Réessayer le Rapatriement ---
+                    else if (button.classList.contains('retry-repatriation-btn')) {
+                        event.preventDefault();
+                        handleRetryRepatriation(button);
+                    }
+                    // --- Action : Ignorer Définitivement ---
+                    else if (button.classList.contains('ignore-torrent-btn')) {
+                        event.preventDefault();
+                        handleIgnoreTorrent(button);
+                    }
+                    // --- Action : Oublier l'Association ---
+                    else if (button.classList.contains('forget-association-btn')) {
+                        event.preventDefault();
+                        if (!torrentHash) return;
+                        if (confirm("Supprimer l'association MMS ?")) {
+                            const url = `{{ url_for('seedbox_ui.delete_problematic_association_action', torrent_hash='__HASH__') }}`.replace('__HASH__', torrentHash);
+                            fetch(url, { method: 'POST' })
+                                .then(response => response.json().then(data => ({ ok: response.ok, data })))
+                                .then(({ ok, data }) => {
+                                    alert(data.message);
+                                    if (ok) {
+                                        sessionStorage.setItem('activeTab', '#rtorrent-view-tab');
+                                        window.location.reload();
+                                    }
+                                })
+                                .catch(error => alert('Erreur de communication.'));
+                        }
+                    }
+                    // --- Action : Supprimer de rTorrent ---
+                    else if (button.classList.contains('delete-rtorrent-btn')) {
+                        event.preventDefault();
+                        const torrentName = button.dataset.torrentName;
+                        const torrentHash = button.dataset.torrentHash;
 
-                    // Prépare la modale
-                    document.getElementById('torrentNameToDelete').textContent = torrentName;
-                    document.getElementById('torrentHashToDelete').value = torrentHash;
-                    document.getElementById('deleteTorrentDataCheckbox').checked = false;
+                        // Prépare la modale
+                        document.getElementById('torrentNameToDelete').textContent = torrentName;
+                        document.getElementById('torrentHashToDelete').value = torrentHash;
+                        document.getElementById('deleteTorrentDataCheckbox').checked = false;
 
-                    // Ouvre la modale
-                    const deleteModal = new bootstrap.Modal(document.getElementById('deleteRtorrentModal'));
-                    deleteModal.show();
-                }
-                // --- Action : Mapper ---
-                else if (button.classList.contains('open-mapping-modal-btn')) {
-                    event.preventDefault();
-                    const torrentName = button.dataset.torrentName;
+                        // Ouvre la modale
+                        const deleteModal = new bootstrap.Modal(document.getElementById('deleteRtorrentModal'));
+                        deleteModal.show();
+                    }
+                    // --- Action : Mapper ---
+                    else if (button.classList.contains('open-mapping-modal-btn')) {
+                        event.preventDefault();
+                        const torrentName = button.dataset.torrentName;
 
-                    // Mettre à jour la modale de choix
-                    document.getElementById('torrentNameToMap').textContent = torrentName;
-                    document.getElementById('torrentNameToMapInput').value = torrentName;
+                        // Mettre à jour la modale de choix
+                        document.getElementById('torrentNameToMap').textContent = torrentName;
+                        document.getElementById('torrentNameToMapInput').value = torrentName;
 
-                    // Ouvrir la modale de choix
-                    const mappingChoiceModal = new bootstrap.Modal(document.getElementById('mappingChoiceModal'));
-                    mappingChoiceModal.show();
+                        // Ouvrir la modale de choix
+                        const mappingChoiceModal = new bootstrap.Modal(document.getElementById('mappingChoiceModal'));
+                        mappingChoiceModal.show();
+                    }
                 }
             });
         }
