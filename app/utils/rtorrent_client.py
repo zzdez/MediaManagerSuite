@@ -198,7 +198,7 @@ def list_torrents():
         "d.hash=", "d.name=", "d.base_path=", "d.custom1=", "d.size_bytes=",
         "d.bytes_done=", "d.up.total=", "d.down.rate=", "d.up.rate=",
         "d.ratio=", "d.is_open=", "d.is_active=", "d.complete=",
-        "d.left_bytes=", "d.message=", "d.get_creation_date="
+        "d.left_bytes=", "d.message=", "d.creation_date="
     ]
     params_for_xmlrpc = ["", ""] + fields
 
