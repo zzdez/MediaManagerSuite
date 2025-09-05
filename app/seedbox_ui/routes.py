@@ -3093,12 +3093,12 @@ def rtorrent_list_view():
             mms_status = 'unknown'
             mms_file_exists = False
 
-            # Format creation date from rTorrent
-            creation_timestamp = torrent.get('creation_date', 0)
-            if creation_timestamp > 0:
-                torrent['creation_date_str'] = datetime.fromtimestamp(creation_timestamp).strftime('%Y-%m-%d %H:%M:%S')
+            # Format load date from rTorrent
+            load_timestamp = torrent.get('load_date', 0)
+            if load_timestamp > 0:
+                torrent['load_date_str'] = datetime.fromtimestamp(load_timestamp).strftime('%Y-%m-%d %H:%M:%S')
             else:
-                torrent['creation_date_str'] = 'N/A'
+                torrent['load_date_str'] = 'N/A'
 
             association_data = all_mms_associations.get(torrent_hash)
             if association_data:
@@ -3125,7 +3125,7 @@ def rtorrent_list_view():
         flash("Format de données inattendu reçu de rTorrent.", "danger")
         return render_template('seedbox_ui/rtorrent_list.html', torrents_with_assoc=[], page_title="Liste des Torrents rTorrent (Erreur Format)", error_message="Format de données rTorrent invalide.")
 
-    torrents_with_assoc.sort(key=lambda x: x['details'].get('creation_date', 0), reverse=True)
+    torrents_with_assoc.sort(key=lambda x: x['details'].get('load_date', 0), reverse=True)
 
     current_app.logger.info(f"Affichage de {len(torrents_with_assoc)} torrent(s) avec leurs informations d'association (httprpc).")
 
