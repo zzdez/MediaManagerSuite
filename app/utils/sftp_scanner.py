@@ -1,11 +1,21 @@
 import os
 from flask import current_app
+from pathlib import Path
 from . import rtorrent_client, mapping_manager, arr_client
 
 def scan_and_map_torrents():
     logger = current_app.logger
-    logger.info("rTorrent Scanner (Intelligent): Starting scan.")
+
+    # --- Locking Mechanism ---
+    lock_file = Path(current_app.instance_path) / 'sftp_scanner.lock'
+    if lock_file.exists():
+        logger.warning("SFTP scanner lock file exists. Another scan may be in progress. Exiting.")
+        return
+
     try:
+        # Create lock file
+        lock_file.touch()
+        logger.info("rTorrent Scanner (Intelligent): Starting scan.")
         completed_torrents = rtorrent_client.get_completed_torrents()
         if not completed_torrents:
             return
@@ -112,3 +122,8 @@ def scan_and_map_torrents():
 
     except Exception as e:
         logger.error(f"rTorrent Scanner Error: {e}", exc_info=True)
+    finally:
+        # --- Release Lock ---
+        if lock_file.exists():
+            lock_file.unlink()
+            logger.info("SFTP scanner lock file released.")

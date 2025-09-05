@@ -23,9 +23,10 @@ from app.seedbox_ui import seedbox_ui_bp
 import requests # Pour les appels API externes (Sonarr, Radarr, rTorrent)
 from requests.exceptions import RequestException # Pour gérer les erreurs de connexion
 import paramiko
+from threading import Thread
 # --- Imports spécifiques à l'application MediaManagerSuite ---
 from app.auth import internal_api_required
-from app.utils import staging_processor
+from app.utils import staging_processor, sftp_scanner
 from app.utils.arr_client import search_sonarr_by_title, search_radarr_by_title
 from app.utils.tvdb_client import CustomTVDBClient
 from app.utils.tmdb_client import TheMovieDBClient
@@ -1614,6 +1615,34 @@ def index():
                            can_scan_sonarr=sonarr_configured,
                            can_scan_radarr=radarr_configured,
                            staging_dir_display=local_staging_path)
+
+@seedbox_ui_bp.route('/trigger-sftp-scan', methods=['POST'])
+@login_required
+def trigger_sftp_scanner_route():
+    """
+    Manually triggers the SFTP scanner in a background thread.
+    """
+    logger = current_app.logger
+    lock_file = Path(current_app.instance_path) / 'sftp_scanner.lock'
+
+    if lock_file.exists():
+        flash("Un scan est déjà en cours. Veuillez patienter.", 'warning')
+        logger.warning("Manual SFTP scan trigger failed: Scan already in progress (lock file exists).")
+        return redirect(url_for('seedbox_ui.index'))
+
+    def run_scan_in_thread(app):
+        with app.app_context():
+            logger.info("Background SFTP scan thread started.")
+            sftp_scanner.scan_and_map_torrents()
+            logger.info("Background SFTP scan thread finished.")
+
+    app = current_app._get_current_object()
+    thread = Thread(target=run_scan_in_thread, args=[app])
+    thread.start()
+
+    flash("Le scan des torrents terminés a été démarré en arrière-plan.", 'info')
+    logger.info("Manual SFTP scan triggered successfully in a background thread.")
+    return redirect(url_for('seedbox_ui.index'))
 
 @seedbox_ui_bp.route('/delete/<path:item_name>', methods=['POST'])
 @login_required
