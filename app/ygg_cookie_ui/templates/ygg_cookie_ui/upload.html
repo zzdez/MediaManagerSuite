@@ -1,0 +1,35 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-8 offset-md-2">
+            <div class="card">
+                <div class="card-header">
+                    <h4>Mettre à jour le Cookie YGG (V2)</h4>
+                </div>
+                <div class="card-body">
+                    <p>
+                        Uploadez ici le fichier <code>_cookies.json</code> exporté depuis votre navigateur via une extension comme "Cookie-Editor".
+                        Ce fichier permet à l'application de s'authentifier auprès de l'indexeur protégé par Cloudflare.
+                    </p>
+                    <p>
+                        La mise à jour est maintenant dynamique et ne nécessite plus de redémarrage de l'application. Le statut du cookie sera affiché dans la barre de navigation.
+                    </p>
+                    <hr>
+                    <form method="post" enctype="multipart/form-data" action="{{ url_for('ygg_cookie_ui.upload_ygg_cookie') }}">
+                        <div class="mb-3">
+                            <label for="cookie_file" class="form-label">Fichier de cookie (.json)</label>
+                            <input class="form-control" type="file" id="cookie_file" name="cookie_file" accept=".json" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Mettre à jour le cookie</button>
+                    </form>
+                </div>
+                <div class="card-footer text-muted">
+                    <p>Statut actuel du cookie : <span id="ygg-cookie-status-badge">Chargement...</span></p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

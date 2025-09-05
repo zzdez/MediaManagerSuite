@@ -517,16 +517,21 @@ def download_torrent_proxy():
 
     try:
         if str(ygg_indexer_id) == str(indexer_id):
-            ygg_cookie = current_app.config.get('YGG_COOKIE')
+            from app.utils.cookie_manager import get_ygg_cookie_status
+            cookie_status = get_ygg_cookie_status()
+
+            if not cookie_status["is_valid"]:
+                raise ValueError(f"Cookie YGG invalide ou expiré. Message : {cookie_status.get('status_message', 'Veuillez le mettre à jour.')}")
+
             ygg_user_agent = current_app.config.get('YGG_USER_AGENT')
             ygg_base_url = current_app.config.get('YGG_BASE_URL')
 
-            if not all([ygg_cookie, ygg_user_agent, ygg_base_url]):
-                raise ValueError("Configuration YGG manquante.")
+            if not all([ygg_user_agent, ygg_base_url]):
+                raise ValueError("Configuration YGG (USER_AGENT, BASE_URL) manquante.")
 
             release_id_ygg = guid.split('?id=')[1].split('&')[0]
             final_ygg_download_url = f"{ygg_base_url.rstrip('/')}/engine/download_torrent?id={release_id_ygg}"
-            headers = {'User-Agent': ygg_user_agent, 'Cookie': ygg_cookie}
+            headers = {'User-Agent': ygg_user_agent, 'Cookie': cookie_status["cookie_string"]}
             response = requests.get(final_ygg_download_url, headers=headers, timeout=45, allow_redirects=True)
         else:
             standard_user_agent = current_app.config.get('YGG_USER_AGENT', 'Mozilla/5.0')
