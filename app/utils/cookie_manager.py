@@ -31,11 +31,16 @@ def get_ygg_cookie_status():
             logger.error(msg)
             return {**default_status, "status_message": msg}
 
-        file_pattern = os.path.join(download_path, 'www.yggtorrent.top_cookies.json*')
-        cookie_files = glob.glob(file_pattern)
+        # Scan flexible pour trouver tous les fichiers de cookie potentiels
+        all_files = os.listdir(download_path)
+        cookie_files = [
+            os.path.join(download_path, f)
+            for f in all_files
+            if f.startswith('www.yggtorrent.top_cookies') and f.endswith('.json')
+        ]
 
         if not cookie_files:
-            msg = f"Aucun fichier de cookie trouvé dans '{download_path}' correspondant au pattern."
+            msg = f"Aucun fichier de cookie trouvé dans '{download_path}'."
             logger.warning(msg)
             return {**default_status, "status_message": "Aucun fichier de cookie trouvé."}
 
