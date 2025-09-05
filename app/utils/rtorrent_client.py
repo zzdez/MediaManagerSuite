@@ -198,7 +198,7 @@ def list_torrents():
         "d.hash=", "d.name=", "d.base_path=", "d.custom1=", "d.size_bytes=",
         "d.bytes_done=", "d.up.total=", "d.down.rate=", "d.up.rate=",
         "d.ratio=", "d.is_open=", "d.is_active=", "d.complete=",
-        "d.left_bytes=", "d.message=", "d.creation_date="
+        "d.left_bytes=", "d.message="
     ]
     params_for_xmlrpc = ["", ""] + fields
 
@@ -216,8 +216,7 @@ def list_torrents():
     field_keys = [
         'hash', 'name', 'base_path', 'label', 'size_bytes', 'downloaded_bytes',
         'uploaded_bytes', 'down_rate_bytes_sec', 'up_rate_bytes_sec', 'ratio',
-        'is_open', 'is_active', 'is_complete_rt', 'left_bytes', 'rtorrent_message',
-        'creation_date'
+        'is_open', 'is_active', 'is_complete_rt', 'left_bytes', 'rtorrent_message'
     ]
 
     for torrent_data_list in raw_torrents_data:
@@ -273,8 +272,7 @@ def list_torrents():
                 'is_active': bool(is_active_val and is_open_val),
                 'is_complete': bool(is_complete_val),
                 'is_paused': bool(is_open_val and not is_active_val),
-                'rtorrent_message': rt_message,
-                'creation_date': int(data.get('creation_date', 0))
+                'rtorrent_message': rt_message
             }
             simplified_torrents.append(torrent_info)
         except Exception as e:

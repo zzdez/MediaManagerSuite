@@ -1604,34 +1604,7 @@ def index():
     # --- Fin Items du Staging Local ---
 
 
-    # --- NOUVEAU: Items en Attente/Erreur depuis pending_torrents_map.json ---
-    all_pending_torrents = torrent_map_manager.get_all_torrents_in_map()
-    items_requiring_attention = []
-    if isinstance(all_pending_torrents, dict): # S'assurer que c'est un dictionnaire
-        for torrent_hash, data in all_pending_torrents.items():
-            status = data.get("status", "unknown")
-            # Définir les statuts qui nécessitent une attention.
-            # 'completed_auto', 'completed_manual', 'processed_manual' sont OK.
-            # Les autres pourraient nécessiter une attention.
-            if not status.startswith("completed_") and status != "processed_manual":
-                item_info = data.copy() # Copier pour ne pas modifier l'original en ajoutant le hash
-                item_info['torrent_hash'] = torrent_hash # Ajouter le hash pour les actions
-                # Vérifier si l'item est physiquement dans le staging (pour l'action "Réessayer")
-                if local_staging_path and item_info.get('release_name'):
-                    item_info['is_in_staging'] = (Path(local_staging_path) / item_info['release_name']).exists()
-                else:
-                    item_info['is_in_staging'] = False
-                items_requiring_attention.append(item_info)
-
-    # Trier les items par date de mise à jour (plus récent en premier) ou par statut
-    if items_requiring_attention:
-        try:
-            items_requiring_attention.sort(key=lambda x: x.get('updated_at', x.get('added_at', '')), reverse=True)
-        except Exception as e_sort:
-             logger.warning(f"Index: Erreur lors du tri des items_requiring_attention: {e_sort}")
-
-    logger.debug(f"Index: Items nécessitant attention: {len(items_requiring_attention)}")
-    # --- Fin Items en Attente/Erreur ---
+    # --- Fin Items du Staging Local ---
 
     sonarr_configured = bool(current_app.config.get('SONARR_URL') and current_app.config.get('SONARR_API_KEY'))
     radarr_configured = bool(current_app.config.get('RADARR_URL') and current_app.config.get('RADARR_API_KEY'))
@@ -1640,8 +1613,7 @@ def index():
                            items_tree=items_tree_data,
                            can_scan_sonarr=sonarr_configured,
                            can_scan_radarr=radarr_configured,
-                           staging_dir_display=local_staging_path,
-                           items_requiring_attention=items_requiring_attention) # Passer la nouvelle liste au template
+                           staging_dir_display=local_staging_path)
 
 @seedbox_ui_bp.route('/delete/<path:item_name>', methods=['POST'])
 @login_required
@@ -3121,16 +3093,10 @@ def rtorrent_list_view():
             mms_status = 'unknown'
             mms_file_exists = False
 
-            # Format creation date
-            creation_timestamp = torrent.get('creation_date', 0)
-            if creation_timestamp > 0:
-                torrent['creation_date_str'] = datetime.fromtimestamp(creation_timestamp).strftime('%Y-%m-%d %H:%M:%S')
-            else:
-                torrent['creation_date_str'] = 'N/A'
-
             association_data = all_mms_associations.get(torrent_hash)
             if association_data:
                 torrent['target_id'] = association_data.get('target_id')
+                torrent['added_at'] = association_data.get('added_at')
                 mms_status = association_data.get('status', 'unknown')
 
                 if mms_status in ['in_staging', 'pending_staging', 'error_staging_path_missing', 'error_mms_all_files_failed_move', 'error_sonarr_season_undefined_for_file', 'error_mms_file_move']:
@@ -3140,6 +3106,8 @@ def rtorrent_list_view():
                         mms_file_exists = full_path.exists()
                 elif mms_status == 'completed_manual' or mms_status == 'completed_auto':
                     mms_file_exists = True
+            else:
+                torrent['added_at'] = None
 
             torrent['mms_status'] = mms_status
             torrent['mms_file_exists'] = mms_file_exists
@@ -3153,7 +3121,7 @@ def rtorrent_list_view():
         flash("Format de données inattendu reçu de rTorrent.", "danger")
         return render_template('seedbox_ui/rtorrent_list.html', torrents_with_assoc=[], page_title="Liste des Torrents rTorrent (Erreur Format)", error_message="Format de données rTorrent invalide.")
 
-    torrents_with_assoc.sort(key=lambda x: x['details'].get('creation_date', 0), reverse=True)
+    torrents_with_assoc.sort(key=lambda x: x['details'].get('added_at') or '1970-01-01T00:00:00', reverse=True)
 
     current_app.logger.info(f"Affichage de {len(torrents_with_assoc)} torrent(s) avec leurs informations d'association (httprpc).")
 

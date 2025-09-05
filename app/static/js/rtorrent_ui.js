@@ -177,7 +177,6 @@ $(document).ready(function() {
 
     function sortTable(table, sortBy, sortType, direction) {
         const tbody = table.find('tbody');
-        const rows = tbody.find('tr').toArray();
         const cellIndex = table.find(`th.sortable-header[data-sort-by='${sortBy}']`).index();
 
         if (cellIndex === -1) {
@@ -185,16 +184,26 @@ $(document).ready(function() {
             return;
         }
 
-        rows.sort(function(a, b) {
-            const cellA = $(a).children('td').eq(cellIndex);
-            const cellB = $(b).children('td').eq(cellIndex);
+        // 1. Group rows into pairs of [main, detail]
+        const rowPairs = [];
+        tbody.find('tr:not(.file-list-row)').each(function() {
+            const mainRow = $(this);
+            const detailRow = mainRow.next('tr.file-list-row');
+            rowPairs.push({
+                main: mainRow,
+                detail: detailRow.length ? detailRow : null
+            });
+        });
 
-            // Prioritize data-sort-value attribute, fallback to cell text
+        // 2. Sort the pairs based on the main row's content
+        rowPairs.sort(function(a, b) {
+            const cellA = a.main.children('td').eq(cellIndex);
+            const cellB = b.main.children('td').eq(cellIndex);
+
             let valA = cellA.data('sort-value') !== undefined ? String(cellA.data('sort-value')) : cellA.text().trim();
             let valB = cellB.data('sort-value') !== undefined ? String(cellB.data('sort-value')) : cellB.text().trim();
 
             if (sortType === 'date') {
-                // Convert ISO date strings to timestamps for comparison
                 valA = new Date(valA).getTime() || 0;
                 valB = new Date(valB).getTime() || 0;
             } else if (sortType === 'size') {
@@ -203,7 +212,7 @@ $(document).ready(function() {
             } else if (sortType === 'number') {
                 valA = parseFloat(valA.replace('%', '').replace(',', '.')) || 0;
                 valB = parseFloat(valB.replace('%', '').replace(',', '.')) || 0;
-            } else { // 'text' or default
+            } else {
                 valA = valA.toLowerCase();
                 valB = valB.toLowerCase();
             }
@@ -213,7 +222,14 @@ $(document).ready(function() {
             return 0;
         });
 
-        tbody.empty().append(rows);
+        // 3. Re-append the sorted pairs to the tbody
+        tbody.empty();
+        rowPairs.forEach(function(pair) {
+            tbody.append(pair.main);
+            if (pair.detail) {
+                tbody.append(pair.detail);
+            }
+        });
     }
 
     // Écouteur pour les en-têtes de colonne
@@ -239,5 +255,60 @@ $(document).ready(function() {
 
         // Appelle la fonction de tri
         sortTable(table, sortBy, sortType, newDir === 'asc' ? 1 : -1);
+    });
+
+    // =================================================================
+    // ### PARTIE 3 : GESTION DE L'ARBORESCENCE DES FICHIERS ###
+    // =================================================================
+    $(document).on('click', '.toggle-files', function(event) {
+        event.preventDefault();
+
+        const link = $(this);
+        const hash = link.data('hash');
+        const icon = link.find('i');
+        const fileRow = $(`#files-${hash}`);
+
+        if (!fileRow.length) return;
+
+        const isVisible = fileRow.is(':visible');
+
+        if (isVisible) {
+            fileRow.hide();
+            icon.removeClass('fa-minus-square').addClass('fa-plus-square');
+        } else {
+            fileRow.show();
+            icon.removeClass('fa-plus-square').addClass('fa-minus-square');
+
+            const container = fileRow.find('.file-list-container');
+            if (container.data('loaded') === true) {
+                return;
+            }
+
+            // Note: window.appUrls is defined in the main index.html template
+            const apiUrl = window.appUrls.getTorrentFiles.replace('__HASH__', hash);
+            fetch(apiUrl)
+                .then(response => response.ok ? response.json() : Promise.reject('Network response was not ok.'))
+                .then(data => {
+                    if (data.success && data.files) {
+                        let html = '<ul class="list-group list-group-flush">';
+                        if (data.files.length > 0) {
+                            data.files.sort((a, b) => a.path.localeCompare(b.path)).forEach(file => {
+                                const sizeMB = (file.size_bytes / (1024*1024)).toFixed(2);
+                                html += `<li class="list-group-item d-flex justify-content-between align-items-center bg-transparent border-secondary text-white py-1 px-2">${file.path}<span class="badge bg-primary rounded-pill">${sizeMB} MB</span></li>`;
+                            });
+                        } else {
+                            html += `<li class="list-group-item bg-transparent border-secondary text-white py-1 px-2">Aucun fichier dans ce torrent.</li>`;
+                        }
+                        html += '</ul>';
+                        container.html(html);
+                    } else {
+                        container.html(`<p class="text-danger p-2">${data.error || 'Erreur lors de la récupération des fichiers.'}</p>`);
+                    }
+                    container.data('loaded', true);
+                })
+                .catch(error => {
+                    container.html(`<p class="text-danger p-2">Erreur de chargement: ${error}</p>`);
+                });
+        }
     });
 });
