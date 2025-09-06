@@ -142,9 +142,72 @@ $(document).ready(function() {
     // ### BLOC 2 : RECHERCHE LIBRE (PROWLARR) ET STATUT ###
     // =================================================================
 
+    let prowlarrResultsCache = []; // Cache pour les résultats actuels
+
+    function populateDynamicFilters(results) {
+        const filters = {
+            quality: new Set(),
+            lang: new Set(),
+            source: new Set(),
+            codec: new Set()
+        };
+
+        results.forEach(result => {
+            const guess = result.guessit;
+            if (guess.screen_size) filters.quality.add(guess.screen_size);
+            if (guess.language) {
+                // Guessit peut retourner un objet ou une liste d'objets
+                if (Array.isArray(guess.language)) {
+                    guess.language.forEach(l => filters.lang.add(l.name));
+                } else if (guess.language.name) {
+                    filters.lang.add(guess.language.name);
+                }
+            }
+            if (guess.source) filters.source.add(guess.source);
+            if (guess.video_codec) filters.codec.add(guess.video_codec);
+        });
+
+        // Peupler les selects
+        $('#filterQuality').html('<option value="" selected>Toutes</option>').append([...filters.quality].sort().map(q => `<option value="${q}">${q}</option>`).join(''));
+        $('#filterLanguage').html('<option value="" selected>Toutes</option>').append([...filters.lang].sort().map(l => `<option value="${l}">${l}</option>`).join(''));
+        $('#filterSource').html('<option value="" selected>Toutes</option>').append([...filters.source].sort().map(s => `<option value="${s}">${s}</option>`).join(''));
+        $('#filterCodec').html('<option value="" selected>Toutes</option>').append([...filters.codec].sort().map(c => `<option value="${c}">${c}</option>`).join(''));
+    }
+
+    function applyClientSideFilters() {
+        const activeFilters = {
+            quality: $('#filterQuality').val(),
+            lang: $('#filterLanguage').val(),
+            source: $('#filterSource').val(),
+            codec: $('#filterCodec').val()
+        };
+
+        let visibleCount = 0;
+        $('.release-item').each(function() {
+            const item = $(this);
+            const quality = item.data('quality');
+            const lang = item.data('lang');
+            const source = item.data('source');
+            const codec = item.data('codec');
+
+            const show =
+                (!activeFilters.quality || quality === activeFilters.quality) &&
+                (!activeFilters.lang || (lang && lang.includes(activeFilters.lang))) &&
+                (!activeFilters.source || source === activeFilters.source) &&
+                (!activeFilters.codec || codec === activeFilters.codec);
+
+            item.toggle(show);
+            if (show) visibleCount++;
+        });
+
+        $('#results-count').text(visibleCount);
+    }
+
+
     function executeProwlarrSearch(payload) {
         const resultsContainer = $('#search-results-container');
         resultsContainer.html('<div class="text-center p-5"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Recherche en cours...</p></div>');
+        $('#advancedFilters').collapse('hide'); // Cacher les filtres pendant la recherche
 
         console.log("Payload de recherche Prowlarr envoyé :", payload);
         fetch('/search/api/prowlarr/search', {
@@ -157,20 +220,36 @@ $(document).ready(function() {
             return response.json();
         })
         .then(data => {
+            prowlarrResultsCache = data; // Mettre en cache les résultats
             if (data.error) {
                 resultsContainer.html(`<div class="alert alert-danger">${data.error}</div>`);
                 return;
             }
             if (!data || data.length === 0) {
-                resultsContainer.html('<div class="alert alert-info mt-3">Aucun résultat trouvé pour cette recherche avec les filtres actuels.</div>');
+                resultsContainer.html('<div class="alert alert-info mt-3">Aucun résultat trouvé.</div>');
                 return;
             }
-            let resultsHtml = `<hr><h4 class="mb-3">Résultats pour "${payload.query}" (${data.length})</h4><ul class="list-group">`;
+
+            populateDynamicFilters(data);
+
+            let resultsHtml = `<hr><h4 class="mb-3">Résultats pour "${payload.query}" (<span id="results-count">${data.length}</span> / ${data.length})</h4><ul class="list-group">`;
             data.forEach(result => {
                 const sizeInGB = (result.size / 1024**3).toFixed(2);
                 const seedersClass = result.seeders > 0 ? 'text-success' : 'text-danger';
+
+                // Préparer les données pour les filtres
+                const guess = result.guessit;
+                const quality = guess.screen_size || '';
+                let lang = '';
+                if (guess.language) {
+                    lang = Array.isArray(guess.language) ? guess.language.map(l => l.name).join(',') : (guess.language.name || '');
+                }
+                const source = guess.source || '';
+                const codec = guess.video_codec || '';
+
                 resultsHtml += `
-                    <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap">
+                    <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap release-item"
+                        data-quality="${quality}" data-lang="${lang}" data-source="${source}" data-codec="${codec}">
                         <div class="me-auto" style="flex-basis: 60%; min-width: 300px;">
                             <strong>${result.title}</strong><br>
                             <small class="text-muted">
@@ -191,12 +270,18 @@ $(document).ready(function() {
             });
             resultsHtml += '</ul>';
             resultsContainer.html(resultsHtml);
+            $('#advancedFilters').collapse('show'); // Afficher les filtres après avoir peuplé les résultats
         })
         .catch(error => {
             console.error("Erreur lors de la recherche Prowlarr:", error);
             resultsContainer.html(`<div class="alert alert-danger">Une erreur est survenue: ${error.message}</div>`);
         });
     }
+
+    // Attacher le gestionnaire d'événements pour les filtres dynamiques
+    $('#advancedFilters').on('change', '.dynamic-filter', function() {
+        applyClientSideFilters();
+    });
 
     // Gestionnaire pour la RECHERCHE LIBRE (initiée par l'utilisateur)
     $('body').on('click', '#execute-prowlarr-search-btn', function() {
@@ -205,13 +290,8 @@ $(document).ready(function() {
 
         const form = $('#search-form');
         const payload = {
-            query: form.find('[name="query"]').val(),
-            search_type: form.find('[name="search_type"]:checked').val(),
-            year: form.find('[name="year"]').val(),
-            lang: form.find('[name="lang"]').val(),
-            quality: $('#filterQuality').val(),
-            codec: $('#filterCodec').val(),
-            source: $('#filterSource').val()
+            query: form.find('[name="query"]').val()
+            // search_type n'est plus envoyé, le backend le traitera comme une recherche libre
         };
 
         if (!payload.query) {

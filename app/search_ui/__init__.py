@@ -80,58 +80,44 @@ def media_search():
 @search_ui_bp.route('/api/prowlarr/search', methods=['POST'])
 @login_required
 def prowlarr_search():
-    # L'import est maintenant au niveau du module, plus besoin de l'importer ici
-
     data = request.get_json()
     query = data.get('query')
+    search_type = data.get('search_type') # 'sonarr', 'radarr', ou None pour libre
+
     if not query:
         return jsonify({"error": "La requête est vide."}), 400
 
-    # Récupération de tous les filtres
-    search_type = data.get('search_type', 'sonarr')
-    lang = data.get('lang')
-    quality = data.get('quality')
-    codec = data.get('codec')
-    source = data.get('source')
-    group = data.get('group')
+    # 1. Déterminer les catégories à utiliser en fonction du type de recherche
+    category_ids = []
+    if search_type in ['sonarr', 'radarr']:
+        search_config = load_search_categories()
+        category_ids = search_config.get(f"{search_type}_categories", [])
 
-    # 1. Pré-filtrage par Catégories Prowlarr
-    search_config = load_search_categories()
-    category_ids = search_config.get(f"{search_type}_categories", [])
-
-    # 2. On envoie la requête de base à Prowlarr (uniquement avec le 'group')
-    query_for_prowlarr = f"{query} {group}".strip() if group else query
-    raw_results = search_prowlarr(query=query_for_prowlarr, categories=category_ids)
+    # 2. Lancer la recherche Prowlarr
+    raw_results = search_prowlarr(query=query, categories=category_ids)
 
     if raw_results is None:
         return jsonify({"error": "Erreur de communication avec Prowlarr."}), 500
 
-    # 3. Filtrage local robuste par recherche d'alias dans le titre
-    filter_aliases = load_search_filter_aliases()
-    active_aliases = {
-        'lang': filter_aliases.get('lang', {}).get(lang),
-        'quality': filter_aliases.get('quality', {}).get(quality),
-        'codec': filter_aliases.get('codec', {}).get(codec),
-        'source': filter_aliases.get('source', {}).get(source),
-    }
-    active_aliases = {k: v for k, v in active_aliases.items() if v}
-
-    if not active_aliases:
-        return jsonify(raw_results)
-
-    final_results = []
+    # 3. Enrichir les résultats avec Guessit et appliquer le premier filtre backend
+    enriched_results = []
     for result in raw_results:
-        title_lower = result.get('title', '').lower()
-        match = True
-        for filter_type, aliases in active_aliases.items():
-            if not any(alias.lower() in title_lower for alias in aliases):
-                match = False
-                break
-        if match:
-            final_results.append(result)
+        guess = guessit.guessit(result.get('title', ''))
+        result['guessit'] = guess
+
+        # Appliquer le filtre backend basé sur la présence de 'season' ou 'year'
+        if search_type == 'sonarr':
+            if 'season' in guess:
+                enriched_results.append(result)
+        elif search_type == 'radarr':
+            if 'year' in guess:
+                enriched_results.append(result)
+        else: # Recherche libre, on garde tout
+            enriched_results.append(result)
+
+    current_app.logger.info(f"Prowlarr search for '{query}' with type '{search_type}' returned {len(raw_results)} raw results, {len(enriched_results)} after backend filtering.")
     
-    logging.info(f"{len(final_results)} résultats après filtrage final par alias.")
-    return jsonify(final_results)
+    return jsonify(enriched_results)
 
 
 @search_ui_bp.route('/api/search/lookup', methods=['POST'])
