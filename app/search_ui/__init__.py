@@ -77,6 +77,24 @@ def media_search():
         current_app.logger.error(f"Erreur dans /api/media/search: {e}", exc_info=True)
         return jsonify({"error": f"Erreur serveur lors de la recherche de média : {e}"}), 500
 
+def _sanitize_guessit_output(guess_dict):
+    """
+    Nettoie le dictionnaire retourné par guessit pour le rendre sérialisable en JSON.
+    Convertit les objets Language en chaînes de caractères.
+    """
+    sanitized = {}
+    for key, value in guess_dict.items():
+        if hasattr(value, '__dict__'): # Vérifie si c'est un objet complexe comme Language
+            if isinstance(value, list):
+                # Gère le cas d'une liste d'objets (ex: multiples langues)
+                sanitized[key] = [v.name if hasattr(v, 'name') else str(v) for v in value]
+            else:
+                # Gère le cas d'un seul objet
+                sanitized[key] = value.name if hasattr(value, 'name') else str(value)
+        else:
+            sanitized[key] = value
+    return sanitized
+
 @search_ui_bp.route('/api/prowlarr/search', methods=['POST'])
 @login_required
 def prowlarr_search():
@@ -103,7 +121,7 @@ def prowlarr_search():
     enriched_results = []
     for result in raw_results:
         guess = guessit(result.get('title', ''))
-        result['guessit'] = guess
+        result['guessit'] = _sanitize_guessit_output(guess)
 
         # Appliquer le filtre backend basé sur la présence de 'season' ou 'year'
         if search_type == 'sonarr':
