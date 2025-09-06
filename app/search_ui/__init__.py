@@ -102,7 +102,7 @@ def prowlarr_search():
     # 3. Enrichir les résultats avec Guessit et appliquer le premier filtre backend
     enriched_results = []
     for result in raw_results:
-        guess = guessit.guessit(result.get('title', ''))
+        guess = guessit(result.get('title', ''))
         result['guessit'] = guess
 
         # Appliquer le filtre backend basé sur la présence de 'season' ou 'year'
