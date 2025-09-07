@@ -113,55 +113,55 @@
                     <input type="hidden" id="search-form-media-type" value="{{ request.args.get('media_type', 'tv') }}">
                 </form>
                 
-                <!-- Bouton pour déplier les filtres avancés -->
-                <div class="d-grid gap-2 d-md-flex justify-content-md-end mb-3">
-                    <button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#advancedFilters" aria-expanded="false" aria-controls="advancedFilters">
-                        <i class="fas fa-sliders-h"></i> Filtres avancés
-                    </button>
-                </div>
+                <div id="search-results-container" class="mt-3"></div>
+            </div>
+        </div>
 
-                <!-- Section des filtres avancés repliable -->
-                <div class="collapse" id="advancedFilters">
-                    <div class="card card-body mb-3">
-                        <div class="row g-3">
-                            <!-- Filtre par Qualité -->
-                            <div class="col-md-4">
-                                <label for="filterQuality" class="form-label">Qualité</label>
-                                <select id="filterQuality" class="form-select">
-                                    <option value="" selected>Toutes</option>
-                                    <option value="2160p">2160p (4K)</option>
-                                    <option value="1080p">1080p</option>
-                                    <option value="720p">720p</option>
-                                    <option value="480p">SD (480p)</option>
-                                </select>
-                            </div>
+        <!-- Bouton pour déplier les filtres avancés -->
+        <div class="d-grid gap-2 d-md-flex justify-content-md-end mb-3 mt-3">
+            <button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#advancedFilters" aria-expanded="false" aria-controls="advancedFilters">
+                <i class="fas fa-sliders-h"></i> Filtres avancés
+            </button>
+        </div>
 
-                            <!-- Filtre par Codec -->
-                            <div class="col-md-4">
-                                <label for="filterCodec" class="form-label">Codec Vidéo</label>
-                                <select id="filterCodec" class="form-select">
-                                    <option value="" selected>Tous</option>
-                                    <option value="x265">x265 / HEVC</option>
-                                    <option value="x264">x264 / AVC</option>
-                                    <option value="av1">AV1</option>
-                                </select>
-                            </div>
+        <!-- Section des filtres avancés repliable -->
+        <div class="collapse" id="advancedFilters">
+            <div class="card card-body mb-3">
+                <div class="row g-3">
+                    <!-- Filtre par Qualité -->
+                    <div class="col-md-4">
+                        <label for="filterQuality" class="form-label">Qualité</label>
+                        <select id="filterQuality" class="form-select">
+                            <option value="" selected>Toutes</option>
+                            <option value="2160p">2160p (4K)</option>
+                            <option value="1080p">1080p</option>
+                            <option value="720p">720p</option>
+                            <option value="480p">SD (480p)</option>
+                        </select>
+                    </div>
 
-                            <!-- Filtre par Source -->
-                            <div class="col-md-4">
-                                <label for="filterSource" class="form-label">Source</label>
-                                <select id="filterSource" class="form-select">
-                                    <option value="" selected>Toutes</option>
-                                    <option value="bluray">Blu-ray</option>
-                                    <option value="web-dl">WEB-DL</option>
-                                    <option value="remux">Remux</option>
-                                </select>
-                            </div>
-                        </div>
+                    <!-- Filtre par Codec -->
+                    <div class="col-md-4">
+                        <label for="filterCodec" class="form-label">Codec Vidéo</label>
+                        <select id="filterCodec" class="form-select">
+                            <option value="" selected>Tous</option>
+                            <option value="x265">x265 / HEVC</option>
+                            <option value="x264">x264 / AVC</option>
+                            <option value="av1">AV1</option>
+                        </select>
+                    </div>
+
+                    <!-- Filtre par Source -->
+                    <div class="col-md-4">
+                        <label for="filterSource" class="form-label">Source</label>
+                        <select id="filterSource" class="form-select">
+                            <option value="" selected>Toutes</option>
+                            <option value="bluray">Blu-ray</option>
+                            <option value="web-dl">WEB-DL</option>
+                            <option value="remux">Remux</option>
+                        </select>
                     </div>
                 </div>
-
-                <div id="search-results-container" class="mt-3"></div>
             </div>
         </div>
     </div>

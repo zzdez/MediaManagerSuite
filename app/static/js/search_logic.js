@@ -261,6 +261,7 @@ $(document).ready(function() {
             resultsHtml += '</ul>';
             resultsContainer.html(resultsHtml);
             $('#advancedFilters').collapse('show'); // Afficher les filtres après avoir peuplé les résultats
+            applyClientSideFilters(); // Appliquer les filtres immédiatement
         })
         .catch(error => {
             console.error("Erreur lors de la recherche Prowlarr:", error);
