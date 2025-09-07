@@ -109,30 +109,22 @@ $(document).ready(function() {
     $('#media-results-container').on('click', '.search-torrents-btn', function() {
         const resultIndex = $(this).data('result-index');
         const mediaData = mediaSearchResults[resultIndex];
-        const mediaType = $(this).closest('[data-media-type]').data('media-type');
+        const mediaType = $(this).closest('[data-media-type]').data('media-type'); // 'movie' ou 'tv'
 
         window.currentMediaContext = { ...mediaData, media_type: mediaType };
-        console.log("Contexte média défini pour le pré-mapping :", window.currentMediaContext);
 
+        // Pré-remplir le champ de recherche de l'autre onglet
         $('#search-form input[name="query"]').val(mediaData.title);
-        if (mediaType === 'movie') {
-            $('#search_type_radarr').prop('checked', true);
-        } else {
-            $('#search_type_sonarr').prop('checked', true);
-        }
 
+        // Basculer vers l'onglet de recherche libre
         const freeSearchTab = new bootstrap.Tab($('#torrent-search-tab')[0]);
         freeSearchTab.show();
 
-        const form = $('#search-form');
+        // LA CORRECTION CRUCIALE EST ICI
         const payload = {
-            query: mediaData.title, // Utilise le titre exact du média
-            search_type: form.find('[name="search_type"]:checked').val(),
-            year: form.find('[name="year"]').val(),
-            lang: form.find('[name="lang"]').val(),
-            quality: $('#filterQuality').val(),
-            codec: $('#filterCodec').val(),
-            source: $('#filterSource').val()
+            query: mediaData.title,
+            // Convertir le mediaType ('movie'/'tv') en search_type ('radarr'/'sonarr')
+            search_type: mediaType === 'movie' ? 'radarr' : 'sonarr'
         };
 
         executeProwlarrSearch(payload); // Appel direct de la fonction partagée
@@ -145,7 +137,6 @@ $(document).ready(function() {
     let prowlarrResultsCache = []; // Cache pour les résultats actuels
 
     function populateDynamicFilters(results) {
-        console.log("Génération des filtres à partir de", results.length, "résultats.");
         const filters = {
             quality: new Set(),
             lang: new Set(),
@@ -157,11 +148,10 @@ $(document).ready(function() {
             const guess = result.guessit;
             if (guess.screen_size) filters.quality.add(guess.screen_size);
             if (guess.language) {
-                // Guessit peut retourner un objet ou une liste d'objets
                 if (Array.isArray(guess.language)) {
-                    guess.language.forEach(l => filters.lang.add(l.name));
-                } else if (guess.language.name) {
-                    filters.lang.add(guess.language.name);
+                    guess.language.forEach(l => filters.lang.add(l));
+                } else {
+                    filters.lang.add(guess.language);
                 }
             }
             if (guess.source) filters.source.add(guess.source);
@@ -182,7 +172,6 @@ $(document).ready(function() {
             source: $('#filterSource').val(),
             codec: $('#filterCodec').val()
         };
-        console.log("Filtres actifs :", activeFilters);
 
         let visibleCount = 0;
         $('.release-item').each(function() {
@@ -191,10 +180,6 @@ $(document).ready(function() {
             const lang = item.data('lang');
             const source = item.data('source');
             const codec = item.data('codec');
-
-            // Création d'un objet pour un logging plus clair
-            const resultTags = { quality, lang, source, codec };
-            console.log("Vérification de la ligne. Tags:", resultTags, "Filtres:", activeFilters);
 
             const show =
                 (!activeFilters.quality || quality === activeFilters.quality) &&
@@ -215,7 +200,6 @@ $(document).ready(function() {
         resultsContainer.html('<div class="text-center p-5"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Recherche en cours...</p></div>');
         $('#advancedFilters').collapse('hide'); // Cacher les filtres pendant la recherche
 
-        console.log("Payload de recherche Prowlarr envoyé :", payload);
         fetch('/search/api/prowlarr/search', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -226,7 +210,6 @@ $(document).ready(function() {
             return response.json();
         })
         .then(data => {
-            console.log("Données reçues du backend:", data); // Affiche TOUTE la liste des résultats
             prowlarrResultsCache = data; // Mettre en cache les résultats
             if (data.error) {
                 resultsContainer.html(`<div class="alert alert-danger">${data.error}</div>`);
@@ -249,7 +232,7 @@ $(document).ready(function() {
                 const quality = guess.screen_size || '';
                 let lang = '';
                 if (guess.language) {
-                    lang = Array.isArray(guess.language) ? guess.language.map(l => l.name).join(',') : (guess.language.name || '');
+                    lang = Array.isArray(guess.language) ? guess.language.join(',') : (guess.language || '');
                 }
                 const source = guess.source || '';
                 const codec = guess.video_codec || '';
@@ -292,13 +275,17 @@ $(document).ready(function() {
 
     // Gestionnaire pour la RECHERCHE LIBRE (initiée par l'utilisateur)
     $('body').on('click', '#execute-prowlarr-search-btn', function() {
-        console.log("Recherche libre manuelle initiée. Réinitialisation du contexte.");
         window.currentMediaContext = null; // Contexte effacé car c'est une nouvelle recherche manuelle
 
         const form = $('#search-form');
         const payload = {
-            query: form.find('[name="query"]').val()
-            // search_type n'est plus envoyé, le backend le traitera comme une recherche libre
+            query: form.find('[name="query"]').val(),
+            search_type: form.find('[name="search_type"]:checked').val(),
+            year: form.find('[name="year"]').val(),
+            lang: form.find('[name="lang"]').val(),
+            quality: $('#filterQuality').val(),
+            codec: $('#filterCodec').val(),
+            source: $('#filterSource').val()
         };
 
         if (!payload.query) {

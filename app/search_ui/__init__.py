@@ -86,10 +86,8 @@ def _sanitize_guessit_output(guess_dict):
     for key, value in guess_dict.items():
         if hasattr(value, '__dict__'): # Vérifie si c'est un objet complexe comme Language
             if isinstance(value, list):
-                # Gère le cas d'une liste d'objets (ex: multiples langues)
                 sanitized[key] = [v.name if hasattr(v, 'name') else str(v) for v in value]
             else:
-                # Gère le cas d'un seul objet
                 sanitized[key] = value.name if hasattr(value, 'name') else str(value)
         else:
             sanitized[key] = value
@@ -98,28 +96,33 @@ def _sanitize_guessit_output(guess_dict):
 @search_ui_bp.route('/api/prowlarr/search', methods=['POST'])
 @login_required
 def prowlarr_search():
+    # L'import est maintenant au niveau du module, plus besoin de l'importer ici
+
     data = request.get_json()
     query = data.get('query')
-    search_type = data.get('search_type') # 'sonarr', 'radarr', ou None pour libre
-
     if not query:
         return jsonify({"error": "La requête est vide."}), 400
 
-    # 1. Déterminer les catégories à utiliser en fonction du type de recherche
-    category_ids = []
-    if search_type in ['sonarr', 'radarr']:
-        search_config = load_search_categories()
-        category_ids = search_config.get(f"{search_type}_categories", [])
+    # Récupération de tous les filtres
+    search_type = data.get('search_type', 'sonarr')
+    lang = data.get('lang')
+    quality = data.get('quality')
+    codec = data.get('codec')
+    source = data.get('source')
+    group = data.get('group')
 
-    # 2. Lancer la recherche Prowlarr
-    raw_results = search_prowlarr(query=query, categories=category_ids)
+    # 1. Pré-filtrage par Catégories Prowlarr
+    search_config = load_search_categories()
+    category_ids = search_config.get(f"{search_type}_categories", [])
+
+    # 2. On envoie la requête de base à Prowlarr (uniquement avec le 'group')
+    query_for_prowlarr = f"{query} {group}".strip() if group else query
+    raw_results = search_prowlarr(query=query_for_prowlarr, categories=category_ids)
 
     if raw_results is None:
         return jsonify({"error": "Erreur de communication avec Prowlarr."}), 500
 
     # 3. Enrichir les résultats avec Guessit et appliquer le premier filtre backend
-    current_app.logger.debug(f"Nombre de résultats bruts de Prowlarr : {len(raw_results)}")
-
     enriched_results = []
     for result in raw_results:
         guess = guessit(result.get('title', ''))
@@ -135,10 +138,7 @@ def prowlarr_search():
         result['guessit'] = _sanitize_guessit_output(guess)
         enriched_results.append(result)
 
-    current_app.logger.debug(f"Nombre de résultats après filtrage backend ('{search_type}') : {len(enriched_results)}")
-
-    if enriched_results:
-        current_app.logger.debug(f"Premier résultat envoyé au frontend : {enriched_results[0]}")
+    current_app.logger.info(f"Prowlarr search for '{query}' with type '{search_type}' returned {len(raw_results)} raw results, {len(enriched_results)} after backend filtering.")
     
     return jsonify(enriched_results)
 

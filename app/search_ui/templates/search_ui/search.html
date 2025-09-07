@@ -81,20 +81,42 @@
                 <p>Recherchez n'importe quel terme sur vos indexers.</p>
                 <form id="search-form">
                     <div class="row g-2">
-                        <div class="col-md-10">
-                            <input type="text" name="query" class="form-control" placeholder="Rechercher n'importe quel terme..." value="{{ query or '' }}">
+                        <div class="col-12 mb-3">
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="search_type" id="search_type_sonarr" value="sonarr" checked>
+                                <label class="form-check-label" for="search_type_sonarr">Recherche Sonarr</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="search_type" id="search_type_radarr" value="radarr">
+                                <label class="form-check-label" for="search_type_radarr">Recherche Radarr</label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <input type="text" name="query" class="form-control" placeholder="Titre du film ou de la série..." value="{{ query or '' }}">
+                        </div>
+                        <div class="col-md-2">
+                            <input type="number" name="year" class="form-control" placeholder="Année">
+                        </div>
+                        <div class="col-md-2">
+                            <select name="lang" class="form-select">
+                                <option value="">Toutes les langues</option>
+                                <option value="fr">Français</option>
+                                <option value="en">Anglais</option>
+                                <!-- Ajouter d'autres langues si nécessaire -->
+                            </select>
                         </div>
                         <div class="col-md-2">
                             <button type="button" id="execute-prowlarr-search-btn" class="btn btn-primary w-100">Rechercher</button>
                         </div>
                     </div>
                     <input type="hidden" name="mode" value="free_search">
+                    <input type="hidden" id="search-form-media-type" value="{{ request.args.get('media_type', 'tv') }}">
                 </form>
                 
                 <!-- Bouton pour déplier les filtres avancés -->
                 <div class="d-grid gap-2 d-md-flex justify-content-md-end mb-3">
                     <button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#advancedFilters" aria-expanded="false" aria-controls="advancedFilters">
-                        <i class="fas fa-sliders-h"></i> Filtres
+                        <i class="fas fa-sliders-h"></i> Filtres avancés
                     </button>
                 </div>
 
@@ -102,28 +124,37 @@
                 <div class="collapse" id="advancedFilters">
                     <div class="card card-body mb-3">
                         <div class="row g-3">
-                            <div class="col-md-3">
+                            <!-- Filtre par Qualité -->
+                            <div class="col-md-4">
                                 <label for="filterQuality" class="form-label">Qualité</label>
-                                <select id="filterQuality" class="form-select dynamic-filter">
+                                <select id="filterQuality" class="form-select">
                                     <option value="" selected>Toutes</option>
+                                    <option value="2160p">2160p (4K)</option>
+                                    <option value="1080p">1080p</option>
+                                    <option value="720p">720p</option>
+                                    <option value="480p">SD (480p)</option>
                                 </select>
                             </div>
-                            <div class="col-md-3">
-                                <label for="filterLanguage" class="form-label">Langue</label>
-                                <select id="filterLanguage" class="form-select dynamic-filter">
-                                    <option value="" selected>Toutes</option>
-                                </select>
-                            </div>
-                            <div class="col-md-3">
-                                <label for="filterSource" class="form-label">Source</label>
-                                <select id="filterSource" class="form-select dynamic-filter">
-                                    <option value="" selected>Toutes</option>
-                                </select>
-                            </div>
-                            <div class="col-md-3">
-                                <label for="filterCodec" class="form-label">Codec</label>
-                                <select id="filterCodec" class="form-select dynamic-filter">
+
+                            <!-- Filtre par Codec -->
+                            <div class="col-md-4">
+                                <label for="filterCodec" class="form-label">Codec Vidéo</label>
+                                <select id="filterCodec" class="form-select">
                                     <option value="" selected>Tous</option>
+                                    <option value="x265">x265 / HEVC</option>
+                                    <option value="x264">x264 / AVC</option>
+                                    <option value="av1">AV1</option>
+                                </select>
+                            </div>
+
+                            <!-- Filtre par Source -->
+                            <div class="col-md-4">
+                                <label for="filterSource" class="form-label">Source</label>
+                                <select id="filterSource" class="form-select">
+                                    <option value="" selected>Toutes</option>
+                                    <option value="bluray">Blu-ray</option>
+                                    <option value="web-dl">WEB-DL</option>
+                                    <option value="remux">Remux</option>
                                 </select>
                             </div>
                         </div>
