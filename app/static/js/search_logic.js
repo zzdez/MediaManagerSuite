@@ -157,17 +157,17 @@ $(document).ready(function() {
 
         // Peupler les selects
         $('#filterQuality').html('<option value="" selected>Toutes</option>').append([...filters.quality].sort().map(q => `<option value="${q}">${q}</option>`).join(''));
-        $('#filterLanguage').html('<option value="" selected>Toutes</option>').append([...filters.lang].sort().map(l => `<option value="${l}">${l}</option>`).join(''));
+        $('select[name="lang"]').html('<option value="" selected>Toutes</option>').append([...filters.lang].sort().map(l => `<option value="${l}">${l}</option>`).join(''));
         $('#filterSource').html('<option value="" selected>Toutes</option>').append([...filters.source].sort().map(s => `<option value="${s}">${s}</option>`).join(''));
         $('#filterCodec').html('<option value="" selected>Toutes</option>').append([...filters.codec].sort().map(c => `<option value="${c}">${c}</option>`).join(''));
     }
 
     function applyClientSideFilters() {
         const activeFilters = {
-            quality: $('#filterQuality').val().toLowerCase(),
-            lang: $('#filterLanguage').val().toLowerCase(),
-            source: $('#filterSource').val().toLowerCase(),
-            codec: $('#filterCodec').val().toLowerCase()
+            quality: ($('#filterQuality').val() || '').toLowerCase(),
+            lang: ($('select[name="lang"]').val() || '').toLowerCase(),
+            source: ($('#filterSource').val() || '').toLowerCase(),
+            codec: ($('#filterCodec').val() || '').toLowerCase()
         };
 
         let visibleCount = 0;
@@ -189,7 +189,13 @@ $(document).ready(function() {
             if (show) visibleCount++;
         });
 
-        $('#results-count').text(visibleCount);
+        // Mettre à jour le compteur de résultats pour afficher "visibles / total"
+        if (prowlarrResultsCache.length > 0) {
+            $('#results-count').text(`${visibleCount} / ${prowlarrResultsCache.length}`);
+        } else {
+            // Fallback si le cache n'est pas rempli pour une raison quelconque
+            $('#results-count').text(visibleCount);
+        }
     }
 
 
