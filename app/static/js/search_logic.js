@@ -145,6 +145,7 @@ $(document).ready(function() {
     let prowlarrResultsCache = []; // Cache pour les résultats actuels
 
     function populateDynamicFilters(results) {
+        console.log("Génération des filtres à partir de", results.length, "résultats.");
         const filters = {
             quality: new Set(),
             lang: new Set(),
@@ -181,6 +182,7 @@ $(document).ready(function() {
             source: $('#filterSource').val(),
             codec: $('#filterCodec').val()
         };
+        console.log("Filtres actifs :", activeFilters);
 
         let visibleCount = 0;
         $('.release-item').each(function() {
@@ -189,6 +191,10 @@ $(document).ready(function() {
             const lang = item.data('lang');
             const source = item.data('source');
             const codec = item.data('codec');
+
+            // Création d'un objet pour un logging plus clair
+            const resultTags = { quality, lang, source, codec };
+            console.log("Vérification de la ligne. Tags:", resultTags, "Filtres:", activeFilters);
 
             const show =
                 (!activeFilters.quality || quality === activeFilters.quality) &&
@@ -220,6 +226,7 @@ $(document).ready(function() {
             return response.json();
         })
         .then(data => {
+            console.log("Données reçues du backend:", data); // Affiche TOUTE la liste des résultats
             prowlarrResultsCache = data; // Mettre en cache les résultats
             if (data.error) {
                 resultsContainer.html(`<div class="alert alert-danger">${data.error}</div>`);

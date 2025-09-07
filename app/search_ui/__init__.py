@@ -118,22 +118,27 @@ def prowlarr_search():
         return jsonify({"error": "Erreur de communication avec Prowlarr."}), 500
 
     # 3. Enrichir les résultats avec Guessit et appliquer le premier filtre backend
+    current_app.logger.debug(f"Nombre de résultats bruts de Prowlarr : {len(raw_results)}")
+
     enriched_results = []
     for result in raw_results:
         guess = guessit(result.get('title', ''))
-        result['guessit'] = _sanitize_guessit_output(guess)
 
         # Appliquer le filtre backend basé sur la présence de 'season' ou 'year'
         if search_type == 'sonarr':
-            if 'season' in guess:
-                enriched_results.append(result)
+            if 'season' not in guess:
+                continue # On saute ce résultat
         elif search_type == 'radarr':
-            if 'year' in guess:
-                enriched_results.append(result)
-        else: # Recherche libre, on garde tout
-            enriched_results.append(result)
+            if 'year' not in guess:
+                continue # On saute ce résultat
 
-    current_app.logger.info(f"Prowlarr search for '{query}' with type '{search_type}' returned {len(raw_results)} raw results, {len(enriched_results)} after backend filtering.")
+        result['guessit'] = _sanitize_guessit_output(guess)
+        enriched_results.append(result)
+
+    current_app.logger.debug(f"Nombre de résultats après filtrage backend ('{search_type}') : {len(enriched_results)}")
+
+    if enriched_results:
+        current_app.logger.debug(f"Premier résultat envoyé au frontend : {enriched_results[0]}")
     
     return jsonify(enriched_results)
 
