@@ -1,8 +1,6 @@
 // Fichier : app/static/js/search_logic.js (Version avec Pré-Mapping Intégré)
 
 $(document).ready(function() {
-    console.log(">>>>>> SCRIPT UNIFIÉ 'search_logic.js' CHARGÉ (V3 - Pre-Mapping) <<<<<<");
-
     // CONTEXTE GLOBAL POUR LE PRE-MAPPING
     window.currentMediaContext = null;
 
@@ -60,7 +58,6 @@ $(document).ready(function() {
 
     function performMediaSearch() {
         window.currentMediaContext = null;
-        console.log("Contexte de pré-mapping réinitialisé par la recherche de média.");
 
         const query = $('#media-search-input').val().trim();
         const mediaType = $('input[name="media_type"]:checked').val();
@@ -166,33 +163,27 @@ $(document).ready(function() {
     }
 
     function applyClientSideFilters() {
-        console.log('Filter changed!');
         const activeFilters = {
-            quality: $('#filterQuality').val(),
-            lang: $('#filterLanguage').val(),
-            source: $('#filterSource').val(),
-            codec: $('#filterCodec').val()
+            quality: $('#filterQuality').val().toLowerCase(),
+            lang: $('#filterLanguage').val().toLowerCase(),
+            source: $('#filterSource').val().toLowerCase(),
+            codec: $('#filterCodec').val().toLowerCase()
         };
-        console.log("Filtres actifs lus depuis l'UI :", activeFilters);
 
         let visibleCount = 0;
         $('.release-item').each(function() {
             const item = $(this);
-            const quality = item.data('quality');
-            const lang = item.data('lang');
-            const source = item.data('source');
-            const codec = item.data('codec');
-
-            const resultTags = { quality, lang, source, codec };
-            console.log("Tags lus pour la ligne :", resultTags);
+            // Lire les données et les normaliser immédiatement (string + lowercase)
+            const quality = (item.data('quality') || '').toString().toLowerCase();
+            const lang = (item.data('lang') || '').toString().toLowerCase();
+            const source = (item.data('source') || '').toString().toLowerCase();
+            const codec = (item.data('codec') || '').toString().toLowerCase();
 
             const show =
                 (!activeFilters.quality || quality === activeFilters.quality) &&
                 (!activeFilters.lang || (lang && lang.includes(activeFilters.lang))) &&
                 (!activeFilters.source || source === activeFilters.source) &&
                 (!activeFilters.codec || codec === activeFilters.codec);
-
-            console.log("La ligne matche-t-elle ? ", show);
 
             item.toggle(show);
             if (show) visibleCount++;
@@ -446,7 +437,6 @@ $(document).ready(function() {
     }
 
 function executeFinalMapping(payload) {
-    console.log("Exécution du mapping final avec le payload :", payload);
 
     const modalInstance = bootstrap.Modal.getInstance(modalEl[0]);
     if (modalInstance) {

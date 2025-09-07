@@ -138,8 +138,6 @@ def prowlarr_search():
         result['guessit'] = _sanitize_guessit_output(guess)
         enriched_results.append(result)
 
-    current_app.logger.info(f"Prowlarr search for '{query}' with type '{search_type}' returned {len(raw_results)} raw results, {len(enriched_results)} after backend filtering.")
-    
     return jsonify(enriched_results)
 
 
