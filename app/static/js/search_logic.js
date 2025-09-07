@@ -185,17 +185,13 @@ $(document).ready(function() {
                 (!activeFilters.source || source === activeFilters.source) &&
                 (!activeFilters.codec || codec === activeFilters.codec);
 
-            item.toggle(show);
+            // Utiliser toggleClass avec d-none pour surcharger le 'display: flex !important' de Bootstrap
+            item.toggleClass('d-none', !show);
             if (show) visibleCount++;
         });
 
-        // Mettre à jour le compteur de résultats pour afficher "visibles / total"
-        if (prowlarrResultsCache.length > 0) {
-            $('#results-count').text(`${visibleCount} / ${prowlarrResultsCache.length}`);
-        } else {
-            // Fallback si le cache n'est pas rempli pour une raison quelconque
-            $('#results-count').text(visibleCount);
-        }
+        // Mettre à jour uniquement le compteur des résultats visibles
+        $('#results-count').text(visibleCount);
     }
 
 
@@ -226,7 +222,7 @@ $(document).ready(function() {
 
             populateDynamicFilters(data);
 
-            let resultsHtml = `<hr><h4 class="mb-3">Résultats pour "${payload.query}" (<span id="results-count">${data.length}</span> / ${data.length})</h4><ul class="list-group">`;
+            let resultsHtml = `<hr><h4 class="mb-3">Résultats pour "${payload.query}" (<span id="results-count">${data.length}</span> / <span id="total-count">${data.length}</span>)</h4><ul class="list-group">`;
             data.forEach(result => {
                 const sizeInGB = (result.size / 1024**3).toFixed(2);
                 const seedersClass = result.seeders > 0 ? 'text-success' : 'text-danger';
