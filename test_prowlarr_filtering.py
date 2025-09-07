@@ -60,8 +60,6 @@ def search_and_analyze(query, categories):
 
     results = search_prowlarr(query, categories)
 
-    print(json.dumps(results, indent=2))
-
     if results is None:
         print("La recherche Prowlarr a échoué. Arrêt du scénario.")
         return

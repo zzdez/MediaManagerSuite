@@ -163,7 +163,6 @@ $(document).ready(function() {
     }
 
     function applyClientSideFilters() {
-        alert($('#filterQuality').val());
         const activeFilters = {
             quality: ($('#filterQuality').val() || '').toLowerCase(),
             lang: ($('select[name="lang"]').val() || '').toLowerCase(),

@@ -77,22 +77,6 @@ def media_search():
         current_app.logger.error(f"Erreur dans /api/media/search: {e}", exc_info=True)
         return jsonify({"error": f"Erreur serveur lors de la recherche de média : {e}"}), 500
 
-def _sanitize_guessit_output(guess_dict):
-    """
-    Nettoie le dictionnaire retourné par guessit pour le rendre sérialisable en JSON.
-    Convertit les objets Language en chaînes de caractères.
-    """
-    sanitized = {}
-    for key, value in guess_dict.items():
-        if hasattr(value, '__dict__'): # Vérifie si c'est un objet complexe comme Language
-            if isinstance(value, list):
-                sanitized[key] = [v.name if hasattr(v, 'name') else str(v) for v in value]
-            else:
-                sanitized[key] = value.name if hasattr(value, 'name') else str(value)
-        else:
-            sanitized[key] = value
-    return sanitized
-
 @search_ui_bp.route('/api/prowlarr/search', methods=['POST'])
 @login_required
 def prowlarr_search():
@@ -135,7 +119,26 @@ def prowlarr_search():
             if 'year' not in guess:
                 continue # On saute ce résultat
 
-        result['guessit'] = _sanitize_guessit_output(guess)
+        # Créer un dictionnaire 'guessit' propre et simple pour le frontend
+        simple_guess = {
+            'screen_size': guess.get('screen_size'),
+            'video_codec': guess.get('video_codec'),
+            'source': guess.get('source'),
+        }
+
+        # Gérer la langue, qui peut être une liste ou un objet unique
+        lang_value = guess.get('language')
+        if lang_value:
+            if isinstance(lang_value, list):
+                # Convertir une liste d'objets Language en une chaîne de caractères
+                simple_guess['language'] = ','.join([str(l) for l in lang_value])
+            else:
+                # Convertir un seul objet Language en chaîne
+                simple_guess['language'] = str(lang_value)
+        else:
+            simple_guess['language'] = None
+
+        result['guessit'] = simple_guess
         enriched_results.append(result)
 
     return jsonify(enriched_results)
