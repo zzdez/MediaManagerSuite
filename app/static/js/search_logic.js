@@ -166,12 +166,14 @@ $(document).ready(function() {
     }
 
     function applyClientSideFilters() {
+        console.log('Filter changed!');
         const activeFilters = {
             quality: $('#filterQuality').val(),
             lang: $('#filterLanguage').val(),
             source: $('#filterSource').val(),
             codec: $('#filterCodec').val()
         };
+        console.log("Filtres actifs lus depuis l'UI :", activeFilters);
 
         let visibleCount = 0;
         $('.release-item').each(function() {
@@ -181,11 +183,16 @@ $(document).ready(function() {
             const source = item.data('source');
             const codec = item.data('codec');
 
+            const resultTags = { quality, lang, source, codec };
+            console.log("Tags lus pour la ligne :", resultTags);
+
             const show =
                 (!activeFilters.quality || quality === activeFilters.quality) &&
                 (!activeFilters.lang || (lang && lang.includes(activeFilters.lang))) &&
                 (!activeFilters.source || source === activeFilters.source) &&
                 (!activeFilters.codec || codec === activeFilters.codec);
+
+            console.log("La ligne matche-t-elle ? ", show);
 
             item.toggle(show);
             if (show) visibleCount++;
