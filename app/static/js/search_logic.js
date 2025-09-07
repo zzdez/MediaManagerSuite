@@ -134,7 +134,13 @@ $(document).ready(function() {
     let prowlarrResultsCache = []; // Cache pour les résultats actuels
 
     function populateDynamicFilters(results) {
-        const filters = {
+        // Define known values for categorization. Using lowercase for case-insensitive matching.
+        const KNOWN_QUALITIES = ['2160p', '1080p', '720p', '480p', '576p', 'sd', 'hd', '4k', 'uhd'];
+        const KNOWN_SOURCES = ['bluray', 'bd-rip', 'bdrip', 'web-dl', 'webdl', 'web', 'hdtv', 'remux', 'bdremux', 'dvd', 'dvd-rip', 'dvdrip'];
+        const KNOWN_CODECS = ['x265', 'hevc', 'x264', 'avc', 'av1', 'xvid', 'divx'];
+        const KNOWN_LANGS = ['french', 'fr', 'vostfr', 'multi', 'vf', 'vff', 'vfq', 'truefrench', 'english', 'en'];
+
+        const foundTags = {
             quality: new Set(),
             lang: new Set(),
             source: new Set(),
@@ -142,54 +148,77 @@ $(document).ready(function() {
         };
 
         results.forEach(result => {
-            const guess = result.guessit;
-            if (guess.screen_size) filters.quality.add(guess.screen_size);
-            if (guess.language) {
-                if (Array.isArray(guess.language)) {
-                    guess.language.forEach(l => filters.lang.add(l));
-                } else {
-                    filters.lang.add(guess.language);
+            if (!result.tags || !Array.isArray(result.tags)) return;
+
+            result.tags.forEach(tag => {
+                const lowerTag = tag.toString().toLowerCase();
+
+                if (KNOWN_QUALITIES.includes(lowerTag)) {
+                    foundTags.quality.add(tag); // Add the original cased tag for display
+                } else if (KNOWN_SOURCES.includes(lowerTag)) {
+                    foundTags.source.add(tag);
+                } else if (KNOWN_CODECS.includes(lowerTag)) {
+                    foundTags.codec.add(tag);
+                } else if (KNOWN_LANGS.includes(lowerTag)) {
+                    foundTags.lang.add(tag);
                 }
-            }
-            if (guess.source) filters.source.add(guess.source);
-            if (guess.video_codec) filters.codec.add(guess.video_codec);
+            });
         });
 
-        // Peupler les selects
-        $('#filterQuality').html('<option value="" selected>Toutes</option>').append([...filters.quality].sort().map(q => `<option value="${q}">${q}</option>`).join(''));
-        $('#filterLanguage').html('<option value="" selected>Toutes</option>').append([...filters.lang].sort().map(l => `<option value="${l}">${l}</option>`).join(''));
-        $('#filterSource').html('<option value="" selected>Toutes</option>').append([...filters.source].sort().map(s => `<option value="${s}">${s}</option>`).join(''));
-        $('#filterCodec').html('<option value="" selected>Toutes</option>').append([...filters.codec].sort().map(c => `<option value="${c}">${c}</option>`).join(''));
+        const populateSelect = (selector, optionsSet) => {
+            const select = $(selector);
+            if (select.length === 0) return; // Do not proceed if selector finds nothing
+
+            const currentValue = select.val();
+            select.html('<option value="" selected>Toutes</option>');
+            [...optionsSet].sort().forEach(opt => {
+                select.append($('<option>', { value: opt, text: opt }));
+            });
+
+            if (currentValue) {
+                select.val(currentValue);
+            }
+        };
+
+        populateSelect('#filterQuality', foundTags.quality);
+        populateSelect('select[name="lang"]', foundTags.lang); // Corrected selector for language
+        populateSelect('#filterSource', foundTags.source);
+        populateSelect('#filterCodec', foundTags.codec);
     }
 
     function applyClientSideFilters() {
         const activeFilters = {
-            quality: $('#filterQuality').val().toLowerCase(),
-            lang: $('#filterLanguage').val().toLowerCase(),
-            source: $('#filterSource').val().toLowerCase(),
-            codec: $('#filterCodec').val().toLowerCase()
+            quality: $('#filterQuality').val(),
+            // The language dropdown is in the main form, not advanced filters. It has name="lang".
+            lang: $('select[name="lang"]').val(),
+            source: $('#filterSource').val(),
+            codec: $('#filterCodec').val()
         };
 
+        const filtersToCheck = Object.values(activeFilters)
+            .filter(val => val) // Remove empty/null values, so "All" options are ignored
+            .map(val => val.toLowerCase());
+
         let visibleCount = 0;
+
         $('.release-item').each(function() {
             const item = $(this);
-            // Lire les données et les normaliser immédiatement (string + lowercase)
-            const quality = (item.data('quality') || '').toString().toLowerCase();
-            const lang = (item.data('lang') || '').toString().toLowerCase();
-            const source = (item.data('source') || '').toString().toLowerCase();
-            const codec = (item.data('codec') || '').toString().toLowerCase();
+            // data-tags should contain a JSON array of strings.
+            const itemTags = (item.data('tags') || []).map(tag => tag.toString().toLowerCase());
 
-            const show =
-                (!activeFilters.quality || quality === activeFilters.quality) &&
-                (!activeFilters.lang || (lang && lang.includes(activeFilters.lang))) &&
-                (!activeFilters.source || source === activeFilters.source) &&
-                (!activeFilters.codec || codec === activeFilters.codec);
+            // An item is shown if its tags array contains EVERY active filter tag.
+            const show = filtersToCheck.every(filterTag => itemTags.includes(filterTag));
 
             item.toggle(show);
-            if (show) visibleCount++;
+            if (show) {
+                visibleCount++;
+            }
         });
 
-        $('#results-count').text(visibleCount);
+        // Update the results counter text, e.g., "25 / 59"
+        if (prowlarrResultsCache.length > 0) {
+            $('#results-count').text(`${visibleCount} / ${prowlarrResultsCache.length}`);
+        }
     }
 
 
@@ -225,19 +254,13 @@ $(document).ready(function() {
                 const sizeInGB = (result.size / 1024**3).toFixed(2);
                 const seedersClass = result.seeders > 0 ? 'text-success' : 'text-danger';
 
-                // Préparer les données pour les filtres
-                const guess = result.guessit;
-                const quality = guess.screen_size || '';
-                let lang = '';
-                if (guess.language) {
-                    lang = Array.isArray(guess.language) ? guess.language.join(',') : (guess.language || '');
-                }
-                const source = guess.source || '';
-                const codec = guess.video_codec || '';
+                // Préparer les données pour les filtres en utilisant l'attribut 'tags'
+                const tags = result.tags || [];
+                const tagsDataAttribute = JSON.stringify(tags);
 
                 resultsHtml += `
                     <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap release-item"
-                        data-quality="${quality}" data-lang="${lang}" data-source="${source}" data-codec="${codec}">
+                        data-tags='${tagsDataAttribute}'>
                         <div class="me-auto" style="flex-basis: 60%; min-width: 300px;">
                             <strong>${result.title}</strong><br>
                             <small class="text-muted">
@@ -267,7 +290,7 @@ $(document).ready(function() {
     }
 
     // Attacher le gestionnaire d'événements pour les filtres dynamiques
-    $('#advancedFilters').on('change', '.dynamic-filter', function() {
+    $('#advancedFilters').on('change', 'select', function() {
         applyClientSideFilters();
     });
 
