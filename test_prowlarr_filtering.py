@@ -18,7 +18,7 @@ from guessit import guessit
 print("Chargement des variables d'environnement...")
 load_dotenv()
 
-PROWLARR_API_URL = os.environ.get("PROWLARR_API_URL")
+PROWLARR_URL = os.environ.get("PROWLARR_URL")
 PROWLARR_API_KEY = os.environ.get("PROWLARR_API_KEY")
 
 # Catégories par défaut (similaires à celles de l'application)
@@ -37,8 +37,8 @@ FILTER_CRITERIA = {
 
 def search_prowlarr(query, categories):
     """Interroge l'API de Prowlarr avec une recherche et des catégories spécifiques."""
-    if not all([PROWLARR_API_URL, PROWLARR_API_KEY]):
-        print("ERREUR : PROWLARR_API_URL ou PROWLARR_API_KEY ne sont pas définis dans le fichier .env.")
+    if not all([PROWLARR_URL, PROWLARR_API_KEY]):
+        print("ERREUR : PROWLARR_URL ou PROWLARR_API_KEY ne sont pas définis dans le fichier .env.")
         return None
 
     params = {
@@ -48,7 +48,7 @@ def search_prowlarr(query, categories):
     }
 
     try:
-        response = requests.get(f"{PROWLARR_API_URL}/api/v1/search", params=params, timeout=30)
+        response = requests.get(f"{PROWLARR_URL}/api/v1/search", params=params, timeout=30)
         response.raise_for_status()  # Lève une exception pour les erreurs HTTP (4xx ou 5xx)
         return response.json()
     except requests.exceptions.RequestException as e:
@@ -115,8 +115,8 @@ def search_and_analyze(query, categories):
 
 def main():
     """Fonction principale qui exécute les scénarios de test."""
-    if not all([PROWLARR_API_URL, PROWLARR_API_KEY]):
-        print("Veuillez vous assurer que PROWLARR_API_URL et PROWLARR_API_KEY sont définis dans votre fichier .env")
+    if not all([PROWLARR_URL, PROWLARR_API_KEY]):
+        print("Veuillez vous assurer que PROWLARR_URL et PROWLARR_API_KEY sont définis dans votre fichier .env")
         return
 
     print("Variables d'environnement chargées avec succès.")
