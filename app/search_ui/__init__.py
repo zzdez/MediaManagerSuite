@@ -9,7 +9,6 @@ from Levenshtein import distance as levenshtein_distance
 from app.utils.arr_client import parse_media_name
 from guessit import guessit
 from app.utils.prowlarr_client import search_prowlarr
-from app.utils.release_parser import parse_release_title
 from app.utils.config_manager import load_search_categories, load_search_filter_aliases
 from app.utils.tmdb_client import TheMovieDBClient
 from app.utils.tvdb_client import CustomTVDBClient
@@ -120,8 +119,34 @@ def prowlarr_search():
             if 'year' not in guess:
                 continue # On saute ce résultat
 
-        # Utiliser le nouveau parseur pour obtenir des données structurées et intelligentes
-        result['parsed_data'] = parse_release_title(result.get('title', ''))
+        # Analyser avec guessit et fusionner les données directement dans le résultat
+        def to_str(value):
+            if value is None: return None
+            return str(value)
+
+        lang_value = guess.get('language')
+        if lang_value:
+            if isinstance(lang_value, list):
+                result['language'] = ','.join([str(l) for l in lang_value])
+            else:
+                result['language'] = str(lang_value)
+        else:
+            result['language'] = None
+
+        result['screen_size'] = to_str(guess.get('screen_size'))
+        result['video_codec'] = to_str(guess.get('video_codec'))
+        result['source'] = to_str(guess.get('source'))
+        result['season'] = guess.get('season')
+        result['episode'] = guess.get('episode')
+
+        is_season_pack = result['season'] is not None and result['episode'] is None
+        is_special = result['season'] == 0 or ('episode_title' in guess and isinstance(guess['episode_title'], str) and 'special' in guess['episode_title'].lower())
+        if isinstance(result['episode'], int) and result['episode'] > 50 and result['season'] is not None:
+            is_special = True
+
+        result['is_season_pack'] = is_season_pack
+        result['is_special'] = is_special
+
         enriched_results.append(result)
 
     return jsonify(enriched_results)

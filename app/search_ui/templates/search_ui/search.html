@@ -148,9 +148,6 @@
                                 <label for="filterCodec" class="form-label">Codec Vidéo</label>
                                 <select id="filterCodec" class="form-select" disabled>
                                     <option value="" selected>Tous</option>
-                                    <option value="x265">x265 / HEVC</option>
-                                    <option value="x264">x264 / AVC</option>
-                                    <option value="av1">AV1</option>
                                 </select>
                             </div>
 
@@ -159,10 +156,19 @@
                                 <label for="filterSource" class="form-label">Source</label>
                                 <select id="filterSource" class="form-select" disabled>
                                     <option value="" selected>Toutes</option>
-                                    <option value="bluray">Blu-ray</option>
-                                    <option value="web-dl">WEB-DL</option>
-                                    <option value="remux">Remux</option>
                                 </select>
+                            </div>
+                        </div>
+                        <div class="row g-3 mt-2">
+                            <!-- Filtre par Saison -->
+                            <div class="col-md-3">
+                                <label for="filterSeason" class="form-label">Saison</label>
+                                <input type="number" id="filterSeason" class="form-control" placeholder="ex: 3" disabled>
+                            </div>
+                            <!-- Filtre par Épisode -->
+                            <div class="col-md-3">
+                                <label for="filterEpisode" class="form-label">Épisode</label>
+                                <input type="number" id="filterEpisode" class="form-control" placeholder="ex: 12" disabled>
                             </div>
                         </div>
                     </div>

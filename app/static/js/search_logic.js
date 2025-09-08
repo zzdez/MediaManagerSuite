@@ -1,4 +1,4 @@
-// Fichier : app/static/js/search_logic.js (Version avec Pré-Mapping Intégré)
+// Fichier : app/static/js/search_logic.js
 
 $(document).ready(function() {
     // CONTEXTE GLOBAL POUR LE PRE-MAPPING
@@ -104,6 +104,7 @@ $(document).ready(function() {
     });
 
     $('#media-results-container').on('click', '.search-torrents-btn', function() {
+        resetFilters(); // Réinitialiser les filtres pour la nouvelle recherche
         const resultIndex = $(this).data('result-index');
         const mediaData = mediaSearchResults[resultIndex];
         const mediaType = $(this).closest('[data-media-type]').data('media-type'); // 'movie' ou 'tv'
@@ -117,10 +118,8 @@ $(document).ready(function() {
         const freeSearchTab = new bootstrap.Tab($('#torrent-search-tab')[0]);
         freeSearchTab.show();
 
-        // LA CORRECTION CRUCIALE EST ICI
         const payload = {
             query: mediaData.title,
-            // Convertir le mediaType ('movie'/'tv') en search_type ('radarr'/'sonarr')
             search_type: mediaType === 'movie' ? 'radarr' : 'sonarr'
         };
 
@@ -142,18 +141,14 @@ $(document).ready(function() {
         };
 
         results.forEach(result => {
-            // S'assurer que `parsed_data` existe avant de l'utiliser
-            if (result && result.parsed_data) {
-                const data = result.parsed_data;
-                if (data.quality) filters.quality.add(data.quality);
-                if (data.source) filters.source.add(data.source);
-                if (data.video_codec) filters.codec.add(data.video_codec);
-
-                if (data.language) {
-                    data.language.split(',').forEach(l => {
-                        if(l) filters.lang.add(l.trim());
-                    });
-                }
+            if (result.screen_size) filters.quality.add(result.screen_size);
+            if (result.source) filters.source.add(result.source);
+            if (result.video_codec) filters.codec.add(result.video_codec);
+            if (result.language) {
+                String(result.language).split(',').forEach(l => {
+                    const lang = l.trim();
+                    if(lang) filters.lang.add(lang);
+                });
             }
         });
 
@@ -164,28 +159,45 @@ $(document).ready(function() {
         $('#filterCodec').html('<option value="" selected>Toutes</option>').append([...filters.codec].sort().map(c => `<option value="${c}">${c}</option>`).join(''));
     }
 
+    function resetFilters() {
+        $('#filterPackType').val('');
+        $('#filterQuality').val('');
+        $('#filterCodec').val('');
+        $('#filterSource').val('');
+        $('select[name="lang"]').val('');
+        $('#filterSeason').val('');
+        $('#filterEpisode').val('');
+        // Déclencher un changement pour que la liste se mette à jour et affiche tout
+        applyClientSideFilters();
+    }
+
     function applyClientSideFilters() {
         const activeFilters = {
             quality: ($('#filterQuality').val() || '').toLowerCase(),
             lang: ($('select[name="lang"]').val() || '').toLowerCase(),
             source: ($('#filterSource').val() || '').toLowerCase(),
             codec: ($('#filterCodec').val() || '').toLowerCase(),
-            packType: ($('#filterPackType').val() || '')
+            packType: ($('#filterPackType').val() || ''),
+            season: ($('#filterSeason').val() || ''),
+            episode: ($('#filterEpisode').val() || '')
         };
 
         let visibleCount = 0;
         $('.release-item').each(function() {
             const item = $(this);
-            const data = JSON.parse(item.attr('data-parsed') || '{}');
+            const data = item.data('parsed') || {}; // LIRE L'OBJET DE DONNÉES
 
-            // --- Logique de filtrage ---
             let show = true;
 
             // Filtres standards
-            if (activeFilters.quality && (data.quality || '').toLowerCase() !== activeFilters.quality) show = false;
+            if (activeFilters.quality && (data.screen_size || '').toLowerCase() !== activeFilters.quality) show = false;
             if (activeFilters.source && (data.source || '').toLowerCase() !== activeFilters.source) show = false;
             if (activeFilters.codec && (data.video_codec || '').toLowerCase() !== activeFilters.codec) show = false;
             if (activeFilters.lang && !(data.language || '').toLowerCase().includes(activeFilters.lang)) show = false;
+
+            // Nouveaux filtres par saison et épisode
+            if (activeFilters.season && data.season != activeFilters.season) show = false;
+            if (activeFilters.episode && data.episode != activeFilters.episode) show = false;
 
             // Filtre intelligent "Type de Pack"
             if (activeFilters.packType) {
@@ -208,9 +220,7 @@ $(document).ready(function() {
         const resultsContainer = $('#search-results-container');
         resultsContainer.html('<div class="text-center p-5"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Recherche en cours...</p></div>');
 
-        // Désactiver les filtres pendant la recherche
-        $('#advancedFilters').find('select').prop('disabled', true);
-        // On ne cache plus le conteneur des filtres, on le laisse visible mais désactivé
+        $('#advancedFilters').find('select, input').prop('disabled', true);
 
         fetch('/search/api/prowlarr/search', {
             method: 'POST',
@@ -222,52 +232,67 @@ $(document).ready(function() {
             return response.json();
         })
         .then(data => {
-            prowlarrResultsCache = data; // Mettre en cache les résultats
+            prowlarrResultsCache = data;
             if (data.error) {
                 resultsContainer.html(`<div class="alert alert-danger">${data.error}</div>`);
                 return;
             }
             if (!data || data.length === 0) {
                 resultsContainer.html('<div class="alert alert-info mt-3">Aucun résultat trouvé.</div>');
+                $('#advancedFilters').collapse('hide');
                 return;
             }
 
             populateDynamicFilters(data);
 
-            let resultsHtml = `<hr><h4 class="mb-3">Résultats pour "${payload.query}" (<span id="results-count">${data.length}</span> / <span id="total-count">${data.length}</span>)</h4><ul class="list-group">`;
+            resultsContainer.empty();
+            const header = $(`<hr><h4 class="mb-3">Résultats pour "${payload.query}" (<span id="results-count">${data.length}</span> / <span>${data.length}</span>)</h4>`);
+            resultsContainer.append(header);
+
+            const listGroup = $('<ul class="list-group"></ul>');
             data.forEach(result => {
                 const sizeInGB = (result.size / 1024**3).toFixed(2);
                 const seedersClass = result.seeders > 0 ? 'text-success' : 'text-danger';
 
-                // Stocker l'objet de données parsées pour une utilisation par les filtres
-                const parsedData = JSON.stringify(result.parsed_data || {});
+                const itemContentHtml = `
+                    <div class="me-auto" style="flex-basis: 60%; min-width: 300px;">
+                        <strong></strong>
+                        <br>
+                        <small class="text-muted">
+                            Indexer: ${result.indexer} | Taille: ${sizeInGB} GB | Seeders: <span class="${seedersClass}">${result.seeders}</span>
+                        </small>
+                    </div>
+                    <div class="p-2" style="min-width: 150px; text-align: center;">
+                        <button class="btn btn-sm btn-outline-info check-status-btn">Vérifier Statut</button>
+                        <div class="spinner-border spinner-border-sm d-none" role="status"></div>
+                    </div>
+                    <div class="p-2">
+                        <a href="#" class="btn btn-sm btn-success download-and-map-btn">
+                            <i class="fas fa-cogs"></i> & Mapper
+                        </a>
+                    </div>`;
 
-                resultsHtml += `
-                    <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap release-item"
-                        data-parsed='${parsedData}'>
-                        <div class="me-auto" style="flex-basis: 60%; min-width: 300px;">
-                            <strong>${result.title}</strong><br>
-                            <small class="text-muted">
-                                Indexer: ${result.indexer} | Taille: ${sizeInGB} GB | Seeders: <span class="${seedersClass}">${result.seeders}</span>
-                            </small>
-                        </div>
-                        <div class="p-2" style="min-width: 150px; text-align: center;">
-                            <button class="btn btn-sm btn-outline-info check-status-btn" data-guid="${result.guid}" data-title="${result.title}">Vérifier Statut</button>
-                            <div class="spinner-border spinner-border-sm d-none" role="status"></div>
-                        </div>
-                        <div class="p-2">
-                            <a href="#" class="btn btn-sm btn-success download-and-map-btn"
-                               data-title="${result.title}" data-download-link="${result.downloadUrl}" data-guid="${result.guid}" data-indexer-id="${result.indexerId}">
-                                <i class="fas fa-cogs"></i> & Mapper
-                            </a>
-                        </div>
-                    </li>`;
+                const listItem = $(`<li class="list-group-item d-flex justify-content-between align-items-center flex-wrap release-item"></li>`);
+                listItem.html(itemContentHtml);
+
+                // Attach data using jQuery's .data() method
+                listItem.data('parsed', result);
+
+                // Populate dynamic content safely
+                listItem.find('strong').text(result.title);
+                listItem.find('.check-status-btn').attr({ 'data-guid': result.guid, 'data-title': result.title });
+                listItem.find('.download-and-map-btn').attr({
+                    'data-title': result.title,
+                    'data-download-link': result.downloadUrl,
+                    'data-guid': result.guid,
+                    'data-indexer-id': result.indexerId
+                });
+
+                listGroup.append(listItem);
             });
-            resultsHtml += '</ul>';
-            resultsContainer.html(resultsHtml);
+            resultsContainer.append(listGroup);
 
-            // Réactiver les filtres maintenant que les résultats sont là
-            $('#advancedFilters').find('select').prop('disabled', false);
+            $('#advancedFilters').find('select, input').prop('disabled', false);
             $('#advancedFilters').collapse('show');
         })
         .catch(error => {
@@ -276,24 +301,18 @@ $(document).ready(function() {
         });
     }
 
-    // Attacher le gestionnaire d'événements pour les filtres dynamiques
-    $('#advancedFilters').on('change', 'select', function() {
+    $('#advancedFilters').on('change', 'select, input', function() {
         applyClientSideFilters();
     });
 
-    // Gestionnaire pour la RECHERCHE LIBRE (initiée par l'utilisateur)
     $('body').on('click', '#execute-prowlarr-search-btn', function() {
-        window.currentMediaContext = null; // Contexte effacé car c'est une nouvelle recherche manuelle
+        window.currentMediaContext = null;
+        resetFilters();
 
         const form = $('#search-form');
         const payload = {
             query: form.find('[name="query"]').val(),
-            search_type: form.find('[name="search_type"]:checked').val(),
-            year: form.find('[name="year"]').val(),
-            lang: form.find('[name="lang"]').val(),
-            quality: $('#filterQuality').val(),
-            codec: $('#filterCodec').val(),
-            source: $('#filterSource').val()
+            search_type: form.find('[name="search_type"]:checked').val()
         };
 
         if (!payload.query) {
@@ -301,7 +320,7 @@ $(document).ready(function() {
             return;
         }
 
-        executeProwlarrSearch(payload); // Appel de la fonction partagée
+        executeProwlarrSearch(payload);
     });
 
     $('body').on('click', '.check-status-btn', function() {
@@ -436,7 +455,6 @@ $(document).ready(function() {
                 qualityProfileSelect.html('<option>Aucun profil trouvé</option>');
             }
 
-            // Activer le bouton si les valeurs par défaut sont valides
             if ($('#root-folder-select').val() && $('#quality-profile-select').val()) {
                 finalButton.prop('disabled', false);
             }
@@ -495,11 +513,9 @@ function executeFinalMapping(payload) {
         new bootstrap.Modal(modalEl[0]).show();
 
         if (window.currentMediaContext) {
-            // --- DÉBUT DE LA LOGIQUE D'AIGUILLAGE ---
             const context = window.currentMediaContext;
             console.log("FLUX PRÉ-MAPPING : Contexte trouvé. Vérification de l'existence...", context);
 
-            // On utilise la route de vérification de l'existence du média
             fetch('/search/api/media/check_existence', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -510,7 +526,6 @@ function executeFinalMapping(payload) {
                 const releaseDetails = modalEl.data('release-details');
 
                 if (existenceData.exists) {
-                    // OUI : Le média existe, on mappe directement
                     console.log("FLUX PRÉ-MAPPING (EXISTANT) : Média trouvé dans *Arr. Mapping direct.");
                     const finalPayload = {
                         releaseName: releaseDetails.title,
@@ -518,7 +533,7 @@ function executeFinalMapping(payload) {
                         guid: releaseDetails.guid,
                         indexerId: releaseDetails.indexerId,
                         instanceType: context.media_type,
-                        mediaId: context.id // On envoie l'ID externe (TVDB/TMDb)
+                        mediaId: context.id
                     };
                     executeFinalMapping(finalPayload);
 
@@ -526,7 +541,6 @@ function executeFinalMapping(payload) {
                     if(modalInstance) modalInstance.hide();
 
                 } else {
-                    // NON : Le média est nouveau, on affiche la vue d'ajout
                     console.log("FLUX PRÉ-MAPPING (NOUVEAU) : Média non trouvé. Affichage de la vue d'ajout.");
                     populateAndShowAddItemView(context);
                 }
@@ -535,7 +549,6 @@ function executeFinalMapping(payload) {
                 console.error("Erreur lors de la vérification de l'existence du média:", error);
                 alert("Une erreur est survenue lors de la communication avec le serveur.");
             });
-            // --- FIN DE LA LOGIQUE D'AIGUILLAGE ---
 
         } else {
             console.log("FLUX CLASSIQUE : Aucun contexte, lancement du lookup.");
@@ -633,7 +646,6 @@ function executeFinalMapping(payload) {
         .then(data => { displayResults(data.results, mediaType); });
     });
 
-    // NOUVEL ÉVÉNEMENT : Activer le bouton final uniquement si les sélections sont valides
     $('body').on('change', '#root-folder-select, #quality-profile-select', function() {
         const rootFolder = $('#root-folder-select').val();
         const qualityProfile = $('#quality-profile-select').val();
