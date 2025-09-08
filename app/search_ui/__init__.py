@@ -117,7 +117,8 @@ def prowlarr_search():
             for keyword in keywords:
                 # Utilise les frontières de mot pour éviter les correspondances partielles (ex: VFF dans STAVFF)
                 if re.search(r'\b' + re.escape(keyword.upper()) + r'\b', title_upper):
-                    tags.add(lang_name) # Ajoute le nom de la catégorie (ex: "Français")
+                    # N'ajoute que le mot-clé trouvé, pas la catégorie.
+                    tags.add(keyword.upper())
         return sorted(list(tags))
 
     # 1. Pré-filtrage par Catégories Prowlarr

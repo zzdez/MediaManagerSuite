@@ -213,11 +213,11 @@ $(document).ready(function() {
 
     function applyClientSideFilters() {
         const activeFilters = {
-            quality: $('#filterQuality').val(),
-            lang: $('#filterLang').val(),
-            group: $('#filterGroup').val(),
-            source: $('#filterSource').val(),
-            codec: $('#filterCodec').val(),
+            quality: ($('#filterQuality').val() || '').toLowerCase(),
+            lang: $('#filterLang').val(), // Garder la casse originale pour la clé de l'objet de config
+            group: ($('#filterGroup').val() || '').toLowerCase(),
+            source: ($('#filterSource').val() || '').toLowerCase(),
+            codec: ($('#filterCodec').val() || '').toLowerCase(),
             packType: $('#filterPackType').val(),
             season: $('#filterSeason').val(),
             episode: $('#filterEpisode').val()
@@ -231,34 +231,26 @@ $(document).ready(function() {
 
             // --- Logique de filtrage ---
 
-            // Filtres à correspondance exacte
-            if (activeFilters.quality && (data.screen_size || '') !== activeFilters.quality) show = false;
-            if (activeFilters.source && (data.source || '') !== activeFilters.source) show = false;
-            if (activeFilters.codec && (data.video_codec || '') !== activeFilters.codec) show = false;
-            if (activeFilters.group && (data.release_group || '') !== activeFilters.group) show = false;
+            if (activeFilters.quality && (data.screen_size || '').toLowerCase() !== activeFilters.quality) show = false;
+            if (activeFilters.source && (data.source || '').toLowerCase() !== activeFilters.source) show = false;
+            if (activeFilters.codec && (data.video_codec || '').toLowerCase() !== activeFilters.codec) show = false;
+            if (activeFilters.group && (data.release_group || '').toLowerCase() !== activeFilters.group) show = false;
 
-            // Filtres Saison/Épisode
             if (activeFilters.season && data.season != activeFilters.season) show = false;
             if (activeFilters.episode && data.episode != activeFilters.episode) show = false;
 
-            // Filtre Type de Pack
             if (activeFilters.packType) {
                 if (activeFilters.packType === 'season' && !data.is_season_pack) show = false;
                 if (activeFilters.packType === 'special' && !data.is_special) show = false;
                 if (activeFilters.packType === 'episode' && (data.is_season_pack || data.is_special)) show = false;
             }
 
-            // Filtre de Langue (basé sur les tags)
+            // Filtre de Langue (logique finale simplifiée)
             if (activeFilters.lang) {
-                const requiredTags = window.CONFIG_LANGUAGES[activeFilters.lang] || [];
-                const itemTags = data.language_tags || [];
-
-                // Si la config existe pour cette langue, on vérifie la correspondance
-                if (requiredTags.length > 0) {
-                    const hasMatchingTag = requiredTags.some(tag => itemTags.includes(tag));
-                    if (!hasMatchingTag) {
-                        show = false;
-                    }
+                const itemTags = data.language_tags || []; // Vient du backend, déjà en majuscules
+                // On vérifie si la catégorie de langue sélectionnée (ex: "FRANÇAIS") est présente dans les tags de l'item.
+                if (!itemTags.includes(activeFilters.lang)) {
+                    show = false;
                 }
             }
 
