@@ -80,59 +80,76 @@ def media_search():
 @search_ui_bp.route('/api/prowlarr/search', methods=['POST'])
 @login_required
 def prowlarr_search():
-    # L'import est maintenant au niveau du module, plus besoin de l'importer ici
+    import os
+    import json
+    import re
 
     data = request.get_json()
     query = data.get('query')
     if not query:
         return jsonify({"error": "La requête est vide."}), 400
 
-    # Récupération de tous les filtres
     search_type = data.get('search_type', 'sonarr')
-    lang = data.get('lang')
-    quality = data.get('quality')
-    codec = data.get('codec')
-    source = data.get('source')
-    group = data.get('group')
+    group = data.get('group') # Note: 'group' est un filtre Prowlarr, pas un filtre client
+
+    # --- Language Tagging Helper ---
+    languages_config_str = os.getenv('SEARCH_FILTER_LANGUAGES', '{}')
+    try:
+        languages_config = json.loads(languages_config_str)
+    except json.JSONDecodeError:
+        languages_config = {}
+
+    def get_language_tags(title, guess):
+        tags = set()
+        title_upper = title.upper()
+
+        # 1. Ajouter les langues détectées par guessit
+        guess_langs = guess.get('language')
+        if guess_langs:
+            if isinstance(guess_langs, list):
+                for lang in guess_langs:
+                    tags.add(str(lang).upper())
+            else:
+                tags.add(str(guess_langs).upper())
+
+        # 2. Chercher les mots-clés de la configuration
+        for lang_name, keywords in languages_config.items():
+            for keyword in keywords:
+                # Utilise les frontières de mot pour éviter les correspondances partielles (ex: VFF dans STAVFF)
+                if re.search(r'\b' + re.escape(keyword.upper()) + r'\b', title_upper):
+                    tags.add(lang_name) # Ajoute le nom de la catégorie (ex: "Français")
+        return sorted(list(tags))
 
     # 1. Pré-filtrage par Catégories Prowlarr
     search_config = load_search_categories()
     category_ids = search_config.get(f"{search_type}_categories", [])
 
-    # 2. On envoie la requête de base à Prowlarr (uniquement avec le 'group')
+    # 2. On envoie la requête de base à Prowlarr
     query_for_prowlarr = f"{query} {group}".strip() if group else query
     raw_results = search_prowlarr(query=query_for_prowlarr, categories=category_ids)
 
     if raw_results is None:
         return jsonify({"error": "Erreur de communication avec Prowlarr."}), 500
 
-    # 3. Enrichir les résultats avec Guessit et appliquer le premier filtre backend
+    # 3. Enrichir les résultats
     enriched_results = []
     for result in raw_results:
-        guess = guessit(result.get('title', ''))
+        title = result.get('title', '')
+        guess = guessit(title)
 
-        # Appliquer le filtre backend basé sur la présence de 'season' ou 'year'
-        if search_type == 'sonarr':
-            if 'season' not in guess:
-                continue # On saute ce résultat
-        elif search_type == 'radarr':
-            if 'year' not in guess:
-                continue # On saute ce résultat
+        if search_type == 'sonarr' and 'season' not in guess:
+            continue
+        if search_type == 'radarr' and 'year' not in guess:
+            continue
 
-        # Analyser avec guessit et fusionner les données directement dans le résultat
         def to_str(value):
-            if value is None: return None
-            return str(value)
+            return str(value) if value is not None else None
 
-        lang_value = guess.get('language')
-        if lang_value:
-            if isinstance(lang_value, list):
-                result['language'] = ','.join([str(l) for l in lang_value])
-            else:
-                result['language'] = str(lang_value)
-        else:
-            result['language'] = None
+        # NOUVEAUX CHAMPS POUR LES FILTRES
+        result['release_group'] = guess.get('release_group')
+        result['language_tags'] = get_language_tags(title, guess)
 
+        # Champs existants
         result['screen_size'] = to_str(guess.get('screen_size'))
         result['video_codec'] = to_str(guess.get('video_codec'))
         result['source'] = to_str(guess.get('source'))

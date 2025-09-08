@@ -98,14 +98,6 @@
                             <input type="number" name="year" class="form-control" placeholder="Année">
                         </div>
                         <div class="col-md-2">
-                            <select name="lang" class="form-select">
-                                <option value="">Toutes les langues</option>
-                                <option value="fr">Français</option>
-                                <option value="en">Anglais</option>
-                                <!-- Ajouter d'autres langues si nécessaire -->
-                            </select>
-                        </div>
-                        <div class="col-md-2">
                             <button type="button" id="execute-prowlarr-search-btn" class="btn btn-primary w-100">Rechercher</button>
                         </div>
                     </div>
@@ -156,6 +148,24 @@
                                 <label for="filterSource" class="form-label">Source</label>
                                 <select id="filterSource" class="form-select" disabled>
                                     <option value="" selected>Toutes</option>
+                                </select>
+                            </div>
+
+                            <!-- Filtre par Langue -->
+                            <div class="col-md-3">
+                                <label for="filterLang" class="form-label">Langue</label>
+                                <select id="filterLang" name="lang" class="form-select" disabled>
+                                    <option value="" selected>Toutes</option>
+                                    <!-- Options will be populated by JS -->
+                                </select>
+                            </div>
+
+                            <!-- Filtre par Release Group -->
+                            <div class="col-md-3">
+                                <label for="filterGroup" class="form-label">Release Group</label>
+                                <select id="filterGroup" class="form-select" disabled>
+                                    <option value="" selected>Tous</option>
+                                    <!-- Options will be populated by JS -->
                                 </select>
                             </div>
                         </div>

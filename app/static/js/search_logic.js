@@ -1,8 +1,55 @@
 // Fichier : app/static/js/search_logic.js
 
 $(document).ready(function() {
+    // =================================================================
+    // ### BLOC 0 : INITIALISATION ET FILTRES STATIQUES ###
+    // =================================================================
+
     // CONTEXTE GLOBAL POUR LE PRE-MAPPING
     window.currentMediaContext = null;
+    window.CONFIG_LANGUAGES = {}; // Stocker la config des langues
+
+    function loadStaticFilterOptions() {
+        fetch('/api/search/filter-options')
+            .then(response => {
+                if (!response.ok) throw new Error('Network response was not ok for filter options.');
+                return response.json();
+            })
+            .then(data => {
+                // Stocker la config pour une utilisation ultérieure
+                window.CONFIG_LANGUAGES = data.languages || {};
+
+                // Peupler le filtre de Langue
+                const langFilter = $('#filterLang');
+                if (data.languages && Object.keys(data.languages).length > 0) {
+                    langFilter.empty().append('<option value="">Toutes</option>');
+                    Object.keys(data.languages).sort().forEach(langName => {
+                        langFilter.append(new Option(langName, langName));
+                    });
+                    // Mettre "Français" par défaut si cette option existe
+                    if (langFilter.find('option[value="Français"]').length) {
+                        langFilter.val('Français');
+                    }
+                }
+
+                // Peupler le filtre de Release Group
+                const groupFilter = $('#filterGroup');
+                if (data.release_groups && data.release_groups.length > 0) {
+                    groupFilter.empty().append('<option value="">Tous</option>');
+                    data.release_groups.forEach(group => {
+                        groupFilter.append(new Option(group, group));
+                    });
+                }
+            })
+            .catch(error => {
+                console.error('Erreur lors du chargement des options de filtre:', error);
+                $('#filterLang, #filterGroup').prop('disabled', true).css('cursor', 'not-allowed');
+            });
+    }
+
+    // Charger les options de filtre statiques au chargement de la page
+    loadStaticFilterOptions();
+
 
     const modalEl = $('#sonarrRadarrSearchModal');
     const modalBody = modalEl.find('.modal-body');
@@ -135,7 +182,6 @@ $(document).ready(function() {
     function populateDynamicFilters(results) {
         const filters = {
             quality: new Set(),
-            lang: new Set(),
             source: new Set(),
             codec: new Set()
         };
@@ -144,17 +190,10 @@ $(document).ready(function() {
             if (result.screen_size) filters.quality.add(result.screen_size);
             if (result.source) filters.source.add(result.source);
             if (result.video_codec) filters.codec.add(result.video_codec);
-            if (result.language) {
-                String(result.language).split(',').forEach(l => {
-                    const lang = l.trim();
-                    if(lang) filters.lang.add(lang);
-                });
-            }
         });
 
-        // Peupler les selects
+        // Peupler les selects dynamiques (ceux qui dépendent des résultats)
         $('#filterQuality').html('<option value="" selected>Toutes</option>').append([...filters.quality].sort().map(q => `<option value="${q}">${q}</option>`).join(''));
-        $('select[name="lang"]').html('<option value="" selected>Toutes</option>').append([...filters.lang].sort().map(l => `<option value="${l}">${l}</option>`).join(''));
         $('#filterSource').html('<option value="" selected>Toutes</option>').append([...filters.source].sort().map(s => `<option value="${s}">${s}</option>`).join(''));
         $('#filterCodec').html('<option value="" selected>Toutes</option>').append([...filters.codec].sort().map(c => `<option value="${c}">${c}</option>`).join(''));
     }
@@ -164,46 +203,63 @@ $(document).ready(function() {
         $('#filterQuality').val('');
         $('#filterCodec').val('');
         $('#filterSource').val('');
-        $('select[name="lang"]').val('');
+        $('#filterLang').val('Français'); // Rétablir le défaut
+        $('#filterGroup').val('');
         $('#filterSeason').val('');
         $('#filterEpisode').val('');
-        // Déclencher un changement pour que la liste se mette à jour et affiche tout
+
         applyClientSideFilters();
     }
 
     function applyClientSideFilters() {
         const activeFilters = {
-            quality: ($('#filterQuality').val() || '').toLowerCase(),
-            lang: ($('select[name="lang"]').val() || '').toLowerCase(),
-            source: ($('#filterSource').val() || '').toLowerCase(),
-            codec: ($('#filterCodec').val() || '').toLowerCase(),
-            packType: ($('#filterPackType').val() || ''),
-            season: ($('#filterSeason').val() || ''),
-            episode: ($('#filterEpisode').val() || '')
+            quality: $('#filterQuality').val(),
+            lang: $('#filterLang').val(),
+            group: $('#filterGroup').val(),
+            source: $('#filterSource').val(),
+            codec: $('#filterCodec').val(),
+            packType: $('#filterPackType').val(),
+            season: $('#filterSeason').val(),
+            episode: $('#filterEpisode').val()
         };
 
         let visibleCount = 0;
         $('.release-item').each(function() {
             const item = $(this);
-            const data = item.data('parsed') || {}; // LIRE L'OBJET DE DONNÉES
-
+            const data = item.data('parsed') || {};
             let show = true;
 
-            // Filtres standards
-            if (activeFilters.quality && (data.screen_size || '').toLowerCase() !== activeFilters.quality) show = false;
-            if (activeFilters.source && (data.source || '').toLowerCase() !== activeFilters.source) show = false;
-            if (activeFilters.codec && (data.video_codec || '').toLowerCase() !== activeFilters.codec) show = false;
-            if (activeFilters.lang && !(data.language || '').toLowerCase().includes(activeFilters.lang)) show = false;
+            // --- Logique de filtrage ---
 
-            // Nouveaux filtres par saison et épisode
+            // Filtres à correspondance exacte
+            if (activeFilters.quality && (data.screen_size || '') !== activeFilters.quality) show = false;
+            if (activeFilters.source && (data.source || '') !== activeFilters.source) show = false;
+            if (activeFilters.codec && (data.video_codec || '') !== activeFilters.codec) show = false;
+            if (activeFilters.group && (data.release_group || '') !== activeFilters.group) show = false;
+
+            // Filtres Saison/Épisode
             if (activeFilters.season && data.season != activeFilters.season) show = false;
             if (activeFilters.episode && data.episode != activeFilters.episode) show = false;
 
-            // Filtre intelligent "Type de Pack"
+            // Filtre Type de Pack
             if (activeFilters.packType) {
                 if (activeFilters.packType === 'season' && !data.is_season_pack) show = false;
                 if (activeFilters.packType === 'special' && !data.is_special) show = false;
                 if (activeFilters.packType === 'episode' && (data.is_season_pack || data.is_special)) show = false;
+            }
+
+            // Filtre de Langue (basé sur les tags)
+            if (activeFilters.lang) {
+                const requiredTags = window.CONFIG_LANGUAGES[activeFilters.lang] || [];
+                const itemTags = data.language_tags || [];
+
+                // Si la config existe pour cette langue, on vérifie la correspondance
+                if (requiredTags.length > 0) {
+                    const hasMatchingTag = requiredTags.some(tag => itemTags.includes(tag));
+                    if (!hasMatchingTag) {
+                        show = false;
+                    }
+                }
             }
 
             // Appliquer le résultat
