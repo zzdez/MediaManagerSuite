@@ -325,6 +325,9 @@ $(document).ready(function() {
                         <a href="#" class="btn btn-sm btn-success download-and-map-btn">
                             <i class="fas fa-cogs"></i> & Mapper
                         </a>
+                        <button type="button" class="btn btn-sm btn-outline-warning ms-1 debug-item-btn" title="Debug Item Data">
+                            <i class="fas fa-bug"></i>
+                        </button>
                     </div>`;
 
                 const listItem = $(`<li class="list-group-item d-flex justify-content-between align-items-center flex-wrap release-item"></li>`);
@@ -359,6 +362,17 @@ $(document).ready(function() {
     $('#advancedFilters').on('change', 'select, input', function() {
         applyClientSideFilters();
     });
+
+    // --- DEBUG HANDLERS ---
+    $('body').on('click', '#debug-config-btn', function() {
+        alert("DEBUG: Language Config\n\n" + JSON.stringify(window.CONFIG_LANGUAGES, null, 2));
+    });
+
+    $('#search-results-container').on('click', '.debug-item-btn', function() {
+        const itemData = $(this).closest('.release-item').data('parsed');
+        alert("DEBUG: Result Item Data\n\n" + JSON.stringify(itemData, null, 2));
+    });
+    // --- END DEBUG HANDLERS ---
 
     $('body').on('click', '#execute-prowlarr-search-btn', function() {
         window.currentMediaContext = null;
