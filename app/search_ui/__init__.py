@@ -90,7 +90,7 @@ def prowlarr_search():
         return jsonify({"error": "La requête est vide."}), 400
 
     search_type = data.get('search_type', 'sonarr')
-    group = data.get('group') # Note: 'group' est un filtre Prowlarr, pas un filtre client
+    group = data.get('group')
 
     # --- Language Tagging Helper ---
     languages_config_str = os.getenv('SEARCH_FILTER_LANGUAGES', '{}')
@@ -103,7 +103,6 @@ def prowlarr_search():
         tags = set()
         title_upper = title.upper()
 
-        # 1. Ajouter les langues détectées par guessit
         guess_langs = guess.get('language')
         if guess_langs:
             if isinstance(guess_langs, list):
@@ -112,62 +111,64 @@ def prowlarr_search():
             else:
                 tags.add(str(guess_langs).upper())
 
-        # 2. Chercher les mots-clés de la configuration
         for lang_name, keywords in languages_config.items():
             for keyword in keywords:
-                # Utilise les frontières de mot pour éviter les correspondances partielles (ex: VFF dans STAVFF)
                 if re.search(r'\b' + re.escape(keyword.upper()) + r'\b', title_upper):
-                    # N'ajoute que le mot-clé trouvé, pas la catégorie.
                     tags.add(keyword.upper())
         return sorted(list(tags))
 
-    # 1. Pré-filtrage par Catégories Prowlarr
+    # --- Main Logic ---
     search_config = load_search_categories()
     category_ids = search_config.get(f"{search_type}_categories", [])
-
-    # 2. On envoie la requête de base à Prowlarr
     query_for_prowlarr = f"{query} {group}".strip() if group else query
     raw_results = search_prowlarr(query=query_for_prowlarr, categories=category_ids)
 
     if raw_results is None:
         return jsonify({"error": "Erreur de communication avec Prowlarr."}), 500
 
-    # 3. Enrichir les résultats
-    enriched_results = []
+    # Defensive Refactoring: Create a new clean list of results
+    final_results = []
     for result in raw_results:
         title = result.get('title', '')
         guess = guessit(title)
 
-        if search_type == 'sonarr' and 'season' not in guess:
+        if search_type == 'sonarr' and 'season' not in guess and 'episode' not in guess:
             continue
         if search_type == 'radarr' and 'year' not in guess:
             continue
 
-        def to_str(value):
-            return str(value) if value is not None else None
+        season = guess.get('season')
+        episode = guess.get('episode')
 
-        # NOUVEAUX CHAMPS POUR LES FILTRES
-        result['release_group'] = guess.get('release_group')
-        result['language_tags'] = get_language_tags(title, guess)
-
-        # Champs existants
-        result['screen_size'] = to_str(guess.get('screen_size'))
-        result['video_codec'] = to_str(guess.get('video_codec'))
-        result['source'] = to_str(guess.get('source'))
-        result['season'] = guess.get('season')
-        result['episode'] = guess.get('episode')
-
-        is_season_pack = result['season'] is not None and result['episode'] is None
-        is_special = result['season'] == 0 or ('episode_title' in guess and isinstance(guess['episode_title'], str) and 'special' in guess['episode_title'].lower())
-        if isinstance(result['episode'], int) and result['episode'] > 50 and result['season'] is not None:
+        is_season_pack = season is not None and episode is None
+        is_special = season == 0 or ('episode_title' in guess and isinstance(guess['episode_title'], str) and 'special' in guess['episode_title'].lower())
+        if isinstance(episode, int) and episode > 50 and season is not None:
             is_special = True
 
-        result['is_season_pack'] = is_season_pack
-        result['is_special'] = is_special
+        clean_result = {
+            # Pass-through fields from Prowlarr
+            'title': title,
+            'guid': result.get('guid'),
+            'indexer': result.get('indexer'),
+            'size': result.get('size'),
+            'seeders': result.get('seeders'),
+            'downloadUrl': result.get('downloadUrl'),
+            'indexerId': result.get('indexerId'),
 
-        enriched_results.append(result)
+            # Fields from Guessit (with defaults)
+            'screen_size': str(guess.get('screen_size')) if guess.get('screen_size') else None,
+            'video_codec': str(guess.get('video_codec')) if guess.get('video_codec') else None,
+            'source': str(guess.get('source')) if guess.get('source') else None,
+            'season': season,
+            'episode': episode,
+            'release_group': guess.get('release_group'),
+            'language_tags': get_language_tags(title, guess),
+            'is_season_pack': is_season_pack,
+            'is_special': is_special
+        }
+        final_results.append(clean_result)
 
-    return jsonify(enriched_results)
+    return jsonify(final_results)
 
 
 @search_ui_bp.route('/api/search/lookup', methods=['POST'])

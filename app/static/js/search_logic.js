@@ -245,11 +245,18 @@ $(document).ready(function() {
                 if (activeFilters.packType === 'episode' && (data.is_season_pack || data.is_special)) show = false;
             }
 
-            // Filtre de Langue (logique finale simplifiée)
+            // Filtre de Langue (logique "Frontend Smart" finale)
             if (activeFilters.lang) {
-                const itemTags = data.language_tags || []; // Vient du backend, déjà en majuscules
-                // On vérifie si la catégorie de langue sélectionnée (ex: "FRANÇAIS") est présente dans les tags de l'item.
-                if (!itemTags.includes(activeFilters.lang)) {
+                const requiredTags = (window.CONFIG_LANGUAGES[activeFilters.lang] || []);
+                const itemTags = data.language_tags || []; // Déjà en majuscules depuis le backend
+
+                if (requiredTags.length > 0) {
+                    const hasMatchingTag = requiredTags.some(requiredTag => itemTags.includes(requiredTag.toUpperCase()));
+                    if (!hasMatchingTag) {
+                        show = false;
+                    }
+                } else if (activeFilters.lang) {
+                    // Si une langue est sélectionnée mais qu'elle n'a pas de config, ou que la config est vide, on ne montre rien
                     show = false;
                 }
             }
