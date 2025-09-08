@@ -142,17 +142,19 @@ $(document).ready(function() {
         };
 
         results.forEach(result => {
-            const guess = result.guessit;
-            if (guess.screen_size) filters.quality.add(guess.screen_size);
-            if (guess.language) {
-                if (Array.isArray(guess.language)) {
-                    guess.language.forEach(l => filters.lang.add(l));
-                } else {
-                    filters.lang.add(guess.language);
+            // S'assurer que `parsed_data` existe avant de l'utiliser
+            if (result && result.parsed_data) {
+                const data = result.parsed_data;
+                if (data.quality) filters.quality.add(data.quality);
+                if (data.source) filters.source.add(data.source);
+                if (data.video_codec) filters.codec.add(data.video_codec);
+
+                if (data.language) {
+                    data.language.split(',').forEach(l => {
+                        if(l) filters.lang.add(l.trim());
+                    });
                 }
             }
-            if (guess.source) filters.source.add(guess.source);
-            if (guess.video_codec) filters.codec.add(guess.video_codec);
         });
 
         // Peupler les selects
