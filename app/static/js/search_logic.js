@@ -167,30 +167,37 @@ $(document).ready(function() {
             quality: ($('#filterQuality').val() || '').toLowerCase(),
             lang: ($('select[name="lang"]').val() || '').toLowerCase(),
             source: ($('#filterSource').val() || '').toLowerCase(),
-            codec: ($('#filterCodec').val() || '').toLowerCase()
+            codec: ($('#filterCodec').val() || '').toLowerCase(),
+            packType: ($('#filterPackType').val() || '')
         };
 
         let visibleCount = 0;
         $('.release-item').each(function() {
             const item = $(this);
-            // Lire les données et les normaliser immédiatement (string + lowercase)
-            const quality = (item.data('quality') || '').toString().toLowerCase();
-            const lang = (item.data('lang') || '').toString().toLowerCase();
-            const source = (item.data('source') || '').toString().toLowerCase();
-            const codec = (item.data('codec') || '').toString().toLowerCase();
+            const data = JSON.parse(item.attr('data-parsed') || '{}');
 
-            const show =
-                (!activeFilters.quality || quality === activeFilters.quality) &&
-                (!activeFilters.lang || (lang && lang.includes(activeFilters.lang))) &&
-                (!activeFilters.source || source === activeFilters.source) &&
-                (!activeFilters.codec || codec === activeFilters.codec);
+            // --- Logique de filtrage ---
+            let show = true;
 
-            // Utiliser toggleClass avec d-none pour surcharger le 'display: flex !important' de Bootstrap
+            // Filtres standards
+            if (activeFilters.quality && (data.quality || '').toLowerCase() !== activeFilters.quality) show = false;
+            if (activeFilters.source && (data.source || '').toLowerCase() !== activeFilters.source) show = false;
+            if (activeFilters.codec && (data.video_codec || '').toLowerCase() !== activeFilters.codec) show = false;
+            if (activeFilters.lang && !(data.language || '').toLowerCase().includes(activeFilters.lang)) show = false;
+
+            // Filtre intelligent "Type de Pack"
+            if (activeFilters.packType) {
+                if (activeFilters.packType === 'season' && !data.is_season_pack) show = false;
+                if (activeFilters.packType === 'special' && !data.is_special) show = false;
+                if (activeFilters.packType === 'episode' && (data.is_season_pack || data.is_special)) show = false;
+            }
+
+            // Appliquer le résultat
             item.toggleClass('d-none', !show);
             if (show) visibleCount++;
         });
 
-        // Mettre à jour uniquement le compteur des résultats visibles
+        // Mettre à jour le compteur
         $('#results-count').text(visibleCount);
     }
 
@@ -198,7 +205,10 @@ $(document).ready(function() {
     function executeProwlarrSearch(payload) {
         const resultsContainer = $('#search-results-container');
         resultsContainer.html('<div class="text-center p-5"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Recherche en cours...</p></div>');
-        $('#advancedFilters').collapse('hide'); // Cacher les filtres pendant la recherche
+
+        // Désactiver les filtres pendant la recherche
+        $('#advancedFilters').find('select').prop('disabled', true);
+        // On ne cache plus le conteneur des filtres, on le laisse visible mais désactivé
 
         fetch('/search/api/prowlarr/search', {
             method: 'POST',
@@ -227,19 +237,12 @@ $(document).ready(function() {
                 const sizeInGB = (result.size / 1024**3).toFixed(2);
                 const seedersClass = result.seeders > 0 ? 'text-success' : 'text-danger';
 
-                // Préparer les données pour les filtres
-                const guess = result.guessit;
-                const quality = guess.screen_size || '';
-                let lang = '';
-                if (guess.language) {
-                    lang = Array.isArray(guess.language) ? guess.language.join(',') : (guess.language || '');
-                }
-                const source = guess.source || '';
-                const codec = guess.video_codec || '';
+                // Stocker l'objet de données parsées pour une utilisation par les filtres
+                const parsedData = JSON.stringify(result.parsed_data || {});
 
                 resultsHtml += `
                     <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap release-item"
-                        data-quality="${quality}" data-lang="${lang}" data-source="${source}" data-codec="${codec}">
+                        data-parsed='${parsedData}'>
                         <div class="me-auto" style="flex-basis: 60%; min-width: 300px;">
                             <strong>${result.title}</strong><br>
                             <small class="text-muted">
@@ -260,8 +263,10 @@ $(document).ready(function() {
             });
             resultsHtml += '</ul>';
             resultsContainer.html(resultsHtml);
-            $('#advancedFilters').collapse('show'); // Afficher les filtres après avoir peuplé les résultats
-            applyClientSideFilters(); // Appliquer les filtres immédiatement
+
+            // Réactiver les filtres maintenant que les résultats sont là
+            $('#advancedFilters').find('select').prop('disabled', false);
+            $('#advancedFilters').collapse('show');
         })
         .catch(error => {
             console.error("Erreur lors de la recherche Prowlarr:", error);

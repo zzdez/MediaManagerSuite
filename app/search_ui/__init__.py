@@ -9,6 +9,7 @@ from Levenshtein import distance as levenshtein_distance
 from app.utils.arr_client import parse_media_name
 from guessit import guessit
 from app.utils.prowlarr_client import search_prowlarr
+from app.utils.release_parser import parse_release_title
 from app.utils.config_manager import load_search_categories, load_search_filter_aliases
 from app.utils.tmdb_client import TheMovieDBClient
 from app.utils.tvdb_client import CustomTVDBClient
@@ -119,26 +120,8 @@ def prowlarr_search():
             if 'year' not in guess:
                 continue # On saute ce résultat
 
-        # Créer un dictionnaire 'guessit' propre et simple pour le frontend
-        simple_guess = {
-            'screen_size': guess.get('screen_size'),
-            'video_codec': guess.get('video_codec'),
-            'source': guess.get('source'),
-        }
-
-        # Gérer la langue, qui peut être une liste ou un objet unique
-        lang_value = guess.get('language')
-        if lang_value:
-            if isinstance(lang_value, list):
-                # Convertir une liste d'objets Language en une chaîne de caractères
-                simple_guess['language'] = ','.join([str(l) for l in lang_value])
-            else:
-                # Convertir un seul objet Language en chaîne
-                simple_guess['language'] = str(lang_value)
-        else:
-            simple_guess['language'] = None
-
-        result['guessit'] = simple_guess
+        # Utiliser le nouveau parseur pour obtenir des données structurées et intelligentes
+        result['parsed_data'] = parse_release_title(result.get('title', ''))
         enriched_results.append(result)
 
     return jsonify(enriched_results)
