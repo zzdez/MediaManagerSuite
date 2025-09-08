@@ -74,6 +74,8 @@ def get_prowlarr_categories():
 def search_prowlarr(query, categories=None, lang=None):
     """
     Recherche des releases sur Prowlarr, avec support optionnel pour les catégories.
+    La gestion de la langue est intentionnellement omise ici pour retourner TOUS les résultats
+    et laisser le filtrage côté client s'en occuper.
     """
     params = {
         'query': query,
@@ -81,11 +83,10 @@ def search_prowlarr(query, categories=None, lang=None):
     }
 
     # Si des catégories sont fournies, les ajouter à la requête.
-    # Le paramètre API correct est 'cat' et il attend une chaîne de caractères séparée par des virgules.
     if categories and isinstance(categories, list) and len(categories) > 0:
         params['cat'] = ','.join(map(str, categories))
         current_app.logger.info(f"Prowlarr search: Using categories {params['cat']}")
 
-    # La gestion de la langue est retirée ici, car elle sera gérée par le filtrage guessit.
+    # Le paramètre 'lang' est intentionnellement ignoré.
 
     return _make_prowlarr_request('search', params)
