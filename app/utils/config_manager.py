@@ -58,10 +58,12 @@ def load_search_filter_aliases():
 
     return aliases
 
+from dotenv import dotenv_values
+
 def load_filter_options():
     """
-    Charge les listes d'options pour les filtres configurables depuis les variables d'environnement.
-    Exemple: SEARCH_FILTER_RELEASE_GROUP_LIST=TFA,FW,SUPPLY
+    Charge les listes d'options pour les filtres configurables directement depuis le fichier .env.
+    Ceci est plus robuste que de dépendre de `current_app.config`.
     """
     options = {
         'quality': [],
@@ -70,7 +72,15 @@ def load_filter_options():
         'release_group': []
     }
 
-    # Mapping entre la clé dans 'options' et le nom de la variable d'environnement
+    # Chemin vers le fichier .env à la racine du projet
+    dotenv_path = os.path.join(current_app.root_path, '..', '.env')
+    if not os.path.exists(dotenv_path):
+        current_app.logger.warning(f"Le fichier .env n'a pas été trouvé à l'emplacement : {dotenv_path}")
+        return options
+
+    # Charger les valeurs du .env sans affecter l'environnement
+    config_values = dotenv_values(dotenv_path)
+
     env_var_map = {
         'quality': 'SEARCH_FILTER_QUALITY_LIST',
         'codec': 'SEARCH_FILTER_CODEC_LIST',
@@ -79,9 +89,8 @@ def load_filter_options():
     }
 
     for key, env_var_name in env_var_map.items():
-        value = current_app.config.get(env_var_name)
+        value = config_values.get(env_var_name)
         if value:
-            # Convertit la chaîne "val1,val2, val3" en une liste de strings en minuscules et nettoyées
             options[key] = [v.strip().lower() for v in value.split(',') if v.strip()]
 
     return options

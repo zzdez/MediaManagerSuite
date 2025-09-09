@@ -1,7 +1,6 @@
 # app/search_ui/__init__.py
 
 import logging
-import json
 from flask import Blueprint, render_template, request, flash, jsonify, Response, stream_with_context, current_app, url_for
 from app.auth import login_required
 from config import Config
@@ -152,10 +151,6 @@ def prowlarr_search():
         'results': enriched_results,
         'filter_options': filter_options
     }
-
-    # --- LIGNE CRUCIALE À AJOUTER ---
-    current_app.logger.info(f"DEBUG_API_RESPONSE: Données envoyées au frontend : {json.dumps(response_data, indent=2)}")
-    # ---------------------------------
 
     return jsonify(response_data)
 
