@@ -274,6 +274,7 @@ $(document).ready(function() {
 
             // Par défaut, sélectionner le filtre de langue sur "french" si l'option existe
             const langSelect = $('#filterLang');
+            console.log('Options de langue disponibles :', Array.from(langSelect.find('option')).map(opt => opt.value));
             if (langSelect.find('option[value="french"]').length > 0) {
                 langSelect.val('french');
             } else if (langSelect.find('option[value="vff"]').length > 0) {
