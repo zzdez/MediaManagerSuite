@@ -26,36 +26,43 @@ def find_plex_trailer(plex_item, plex_server):
 
     return None
 
-def find_youtube_trailer(search_query, api_key):
+def find_youtube_trailer(search_queries, api_key):
     """
-    Effectue une seule recherche sur YouTube et retourne une liste de résultats.
+    Effectue des recherches sur YouTube avec une liste de requêtes
+    et retourne la première liste de résultats non vide.
     """
     if not api_key:
         print("AVERTISSEMENT: Aucune clé API YouTube n'a été fournie.")
-        return [] # Retourne une liste vide
+        return []
 
     try:
         youtube = build('youtube', 'v3', developerKey=api_key, cache_discovery=False)
 
-        print(f"DEBUG: Recherche YouTube avec la requête : {search_query}")
-        request = youtube.search().list(
-            q=search_query,
-            part='snippet',
-            type='video',
-            maxResults=5
-        )
-        response = request.execute()
+        for query in search_queries:
+            print(f"DEBUG: Recherche YouTube avec la requête : '{query}'")
+            request = youtube.search().list(
+                q=query,
+                part='snippet',
+                type='video',
+                maxResults=5,
+                relevanceLanguage='fr' # On spécifie la langue
+            )
+            response = request.execute()
 
-        results = []
-        if response.get('items'):
-            for item in response['items']:
-                results.append({
-                    'videoId': item['id']['videoId'],
-                    'title': item['snippet']['title'],
-                    'thumbnail': item['snippet']['thumbnails']['high']['url'], # Utiliser une meilleure qualité
-                    'channel': item['snippet']['channelTitle']
-                })
-        return results
+            if response.get('items'):
+                print(f"INFO: Trouvé {len(response['items'])} résultats pour la requête '{query}'.")
+                results = []
+                for item in response['items']:
+                    results.append({
+                        'videoId': item['id']['videoId'],
+                        'title': item['snippet']['title'],
+                        'thumbnail': item['snippet']['thumbnails']['high']['url'],
+                        'channel': item['snippet']['channelTitle']
+                    })
+                return results # On retourne dès qu'on a des résultats
+
+        print("INFO: Aucun résultat trouvé pour toutes les requêtes de recherche.")
+        return []
 
     except Exception as e:
         print(f"ERREUR lors de la recherche sur YouTube : {e}")
