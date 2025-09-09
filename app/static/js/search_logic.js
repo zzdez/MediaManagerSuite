@@ -130,6 +130,23 @@ $(document).ready(function() {
     // ### BLOC 2 : RECHERCHE LIBRE (PROWLARR) ET STATUT ###
     // =================================================================
 
+    function updateFilterVisibility() {
+        const searchType = $('input[name="search_type"]:checked').val();
+
+        // Les filtres pour les séries
+        const seriesFilters = $('#filterSeason, #filterEpisode, #filterPackType');
+        // Le filtre pour les films
+        const movieFilters = $('#filterYear');
+
+        if (searchType === 'sonarr') { // Séries
+            seriesFilters.closest('.col-md-3, .col-md-2').show();
+            movieFilters.closest('.col-md-2').hide();
+        } else { // 'radarr' pour les Films
+            seriesFilters.closest('.col-md-3, .col-md-2').hide();
+            movieFilters.closest('.col-md-2').show();
+        }
+    }
+
     let prowlarrResultsCache = []; // Cache pour les résultats actuels
 
     function populateFilters(results, filterOptions) {
@@ -204,7 +221,8 @@ $(document).ready(function() {
             if (activeFilters.packType) {
                 if (activeFilters.packType === 'season' && !data.is_season_pack) show = false;
                 if (activeFilters.packType === 'special' && !data.is_special) show = false;
-                if (activeFilters.packType === 'episode' && (data.is_season_pack || data.is_special)) show = false;
+                if (activeFilters.packType === 'collection' && !data.is_collection) show = false;
+                if (activeFilters.packType === 'episode' && (data.is_season_pack || data.is_special || data.is_collection)) show = false;
             }
 
             // Appliquer le résultat
@@ -796,4 +814,10 @@ function executeFinalMapping(payload) {
             button.prop('disabled', false).text('Choisir ce média');
         });
     });
+
+    // Gestion de la visibilité des filtres intelligents
+    $('input[name="search_type"]').on('change', updateFilterVisibility);
+
+    // Appel initial pour définir le bon état au chargement de la page
+    updateFilterVisibility();
 });

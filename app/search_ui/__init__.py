@@ -148,6 +148,10 @@ def prowlarr_search():
             is_special = True
         result['is_special'] = is_special
 
+        # Détection des intégrales/collections
+        collection_keywords = ['integrale', 'trilogy', 'collection', 'saga', 'complete', 'boxset']
+        result['is_collection'] = any(keyword in title.lower() for keyword in collection_keywords)
+
         enriched_results.append(result)
 
     # 4. Construire la réponse finale
