@@ -94,18 +94,7 @@
                         <div class="col-md-6">
                             <input type="text" name="query" class="form-control" placeholder="Titre du film ou de la série..." value="{{ query or '' }}">
                         </div>
-                        <div class="col-md-2">
-                            <input type="number" name="year" class="form-control" placeholder="Année">
-                        </div>
-                        <div class="col-md-2">
-                            <select name="lang" class="form-select">
-                                <option value="">Toutes les langues</option>
-                                <option value="fr">Français</option>
-                                <option value="en">Anglais</option>
-                                <!-- Ajouter d'autres langues si nécessaire -->
-                            </select>
-                        </div>
-                        <div class="col-md-2">
+                        <div class="col-md-4">
                             <button type="button" id="execute-prowlarr-search-btn" class="btn btn-primary w-100">Rechercher</button>
                         </div>
                     </div>
@@ -157,6 +146,27 @@
                                 <select id="filterSource" class="form-select" disabled>
                                     <option value="" selected>Toutes</option>
                                 </select>
+                            </div>
+                        </div>
+                        <div class="row g-3 mt-2">
+                            <!-- Filtre par Langue -->
+                            <div class="col-md-3">
+                                <label for="filterLang" class="form-label">Langue</label>
+                                <select id="filterLang" class="form-select" disabled>
+                                    <option value="" selected>Toutes</option>
+                                </select>
+                            </div>
+                            <!-- Filtre par Release Group -->
+                            <div class="col-md-3">
+                                <label for="filterReleaseGroup" class="form-label">Release Group</label>
+                                <select id="filterReleaseGroup" class="form-select" disabled>
+                                    <option value="" selected>Tous</option>
+                                </select>
+                            </div>
+                            <!-- Filtre par Année -->
+                            <div class="col-md-2">
+                                <label for="filterYear" class="form-label">Année</label>
+                                <input type="number" id="filterYear" class="form-control" placeholder="ex: 2023" disabled>
                             </div>
                         </div>
                         <div class="row g-3 mt-2">

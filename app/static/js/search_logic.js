@@ -132,41 +132,38 @@ $(document).ready(function() {
 
     let prowlarrResultsCache = []; // Cache pour les résultats actuels
 
-    function populateDynamicFilters(results) {
-        const filters = {
-            quality: new Set(),
-            lang: new Set(),
-            source: new Set(),
-            codec: new Set()
+    function populateFilters(results, filterOptions) {
+        // Helper to populate a select dropdown
+        const populateSelect = (selector, options) => {
+            const select = $(selector);
+            select.html('<option value="" selected>Tous</option>');
+            if (options && options.length > 0) {
+                select.append(options.sort().map(opt => `<option value="${opt}">${opt}</option>`).join(''));
+            }
         };
 
+        // Populate from configured lists
+        populateSelect('#filterQuality', filterOptions.quality);
+        populateSelect('#filterCodec', filterOptions.codec);
+        populateSelect('#filterSource', filterOptions.source);
+        populateSelect('#filterReleaseGroup', filterOptions.release_group);
+
+        // Populate languages dynamically from results
+        const languages = new Set();
         results.forEach(result => {
-            if (result.screen_size) filters.quality.add(result.screen_size);
-            if (result.source) filters.source.add(result.source);
-            if (result.video_codec) filters.codec.add(result.video_codec);
             if (result.language) {
                 String(result.language).split(',').forEach(l => {
                     const lang = l.trim();
-                    if(lang) filters.lang.add(lang);
+                    if(lang) languages.add(lang);
                 });
             }
         });
-
-        // Peupler les selects
-        $('#filterQuality').html('<option value="" selected>Toutes</option>').append([...filters.quality].sort().map(q => `<option value="${q}">${q}</option>`).join(''));
-        $('select[name="lang"]').html('<option value="" selected>Toutes</option>').append([...filters.lang].sort().map(l => `<option value="${l}">${l}</option>`).join(''));
-        $('#filterSource').html('<option value="" selected>Toutes</option>').append([...filters.source].sort().map(s => `<option value="${s}">${s}</option>`).join(''));
-        $('#filterCodec').html('<option value="" selected>Toutes</option>').append([...filters.codec].sort().map(c => `<option value="${c}">${c}</option>`).join(''));
+        populateSelect('#filterLang', [...languages]);
     }
 
     function resetFilters() {
-        $('#filterPackType').val('');
-        $('#filterQuality').val('');
-        $('#filterCodec').val('');
-        $('#filterSource').val('');
-        $('select[name="lang"]').val('');
-        $('#filterSeason').val('');
-        $('#filterEpisode').val('');
+        $('#filterPackType, #filterQuality, #filterCodec, #filterSource, #filterLang, #filterReleaseGroup').val('');
+        $('#filterYear, #filterSeason, #filterEpisode').val('');
         // Déclencher un changement pour que la liste se mette à jour et affiche tout
         applyClientSideFilters();
     }
@@ -174,9 +171,11 @@ $(document).ready(function() {
     function applyClientSideFilters() {
         const activeFilters = {
             quality: ($('#filterQuality').val() || '').toLowerCase(),
-            lang: ($('select[name="lang"]').val() || '').toLowerCase(),
+            lang: ($('#filterLang').val() || '').toLowerCase(),
             source: ($('#filterSource').val() || '').toLowerCase(),
             codec: ($('#filterCodec').val() || '').toLowerCase(),
+            releaseGroup: ($('#filterReleaseGroup').val() || '').toLowerCase(),
+            year: ($('#filterYear').val() || ''),
             packType: ($('#filterPackType').val() || ''),
             season: ($('#filterSeason').val() || ''),
             episode: ($('#filterEpisode').val() || '')
@@ -189,13 +188,15 @@ $(document).ready(function() {
 
             let show = true;
 
-            // Filtres standards
-            if (activeFilters.quality && (data.screen_size || '').toLowerCase() !== activeFilters.quality) show = false;
+            // Filtres sur les chaînes de caractères
+            if (activeFilters.quality && (data.quality || '').toLowerCase() !== activeFilters.quality) show = false;
             if (activeFilters.source && (data.source || '').toLowerCase() !== activeFilters.source) show = false;
-            if (activeFilters.codec && (data.video_codec || '').toLowerCase() !== activeFilters.codec) show = false;
+            if (activeFilters.codec && (data.codec || '').toLowerCase() !== activeFilters.codec) show = false;
+            if (activeFilters.releaseGroup && (data.release_group || '').toLowerCase() !== activeFilters.releaseGroup) show = false;
             if (activeFilters.lang && !(data.language || '').toLowerCase().includes(activeFilters.lang)) show = false;
 
-            // Nouveaux filtres par saison et épisode
+            // Filtres sur les nombres
+            if (activeFilters.year && data.year != activeFilters.year) show = false;
             if (activeFilters.season && data.season != activeFilters.season) show = false;
             if (activeFilters.episode && data.episode != activeFilters.episode) show = false;
 
@@ -232,25 +233,29 @@ $(document).ready(function() {
             return response.json();
         })
         .then(data => {
-            prowlarrResultsCache = data;
             if (data.error) {
                 resultsContainer.html(`<div class="alert alert-danger">${data.error}</div>`);
                 return;
             }
-            if (!data || data.length === 0) {
+
+            const results = data.results || [];
+            const filterOptions = data.filter_options || {};
+            prowlarrResultsCache = results;
+
+            if (results.length === 0) {
                 resultsContainer.html('<div class="alert alert-info mt-3">Aucun résultat trouvé.</div>');
                 $('#advancedFilters').collapse('hide');
                 return;
             }
 
-            populateDynamicFilters(data);
+            populateFilters(results, filterOptions);
 
             resultsContainer.empty();
-            const header = $(`<hr><h4 class="mb-3">Résultats pour "${payload.query}" (<span id="results-count">${data.length}</span> / <span>${data.length}</span>)</h4>`);
+            const header = $(`<hr><h4 class="mb-3">Résultats pour "${payload.query}" (<span id="results-count">${results.length}</span> / <span>${results.length}</span>)</h4>`);
             resultsContainer.append(header);
 
             const listGroup = $('<ul class="list-group"></ul>');
-            data.forEach(result => {
+            results.forEach(result => {
                 const sizeInGB = (result.size / 1024**3).toFixed(2);
                 const seedersClass = result.seeders > 0 ? 'text-success' : 'text-danger';
 
@@ -275,10 +280,8 @@ $(document).ready(function() {
                 const listItem = $(`<li class="list-group-item d-flex justify-content-between align-items-center flex-wrap release-item"></li>`);
                 listItem.html(itemContentHtml);
 
-                // Attach data using jQuery's .data() method
                 listItem.data('parsed', result);
 
-                // Populate dynamic content safely
                 listItem.find('strong').text(result.title);
                 listItem.find('.check-status-btn').attr({ 'data-guid': result.guid, 'data-title': result.title });
                 listItem.find('.download-and-map-btn').attr({

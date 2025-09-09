@@ -57,3 +57,31 @@ def load_search_filter_aliases():
             aliases[filter_type][filter_value] = [v.strip().lower() for v in value.split(',') if v.strip()]
 
     return aliases
+
+def load_filter_options():
+    """
+    Charge les listes d'options pour les filtres configurables depuis les variables d'environnement.
+    Exemple: SEARCH_FILTER_RELEASE_GROUP_LIST=TFA,FW,SUPPLY
+    """
+    options = {
+        'quality': [],
+        'codec': [],
+        'source': [],
+        'release_group': []
+    }
+
+    # Mapping entre la clé dans 'options' et le nom de la variable d'environnement
+    env_var_map = {
+        'quality': 'SEARCH_FILTER_QUALITY_LIST',
+        'codec': 'SEARCH_FILTER_CODEC_LIST',
+        'source': 'SEARCH_FILTER_SOURCE_LIST',
+        'release_group': 'SEARCH_FILTER_RELEASE_GROUP_LIST'
+    }
+
+    for key, env_var_name in env_var_map.items():
+        value = current_app.config.get(env_var_name)
+        if value:
+            # Convertit la chaîne "val1,val2, val3" en une liste de strings en minuscules et nettoyées
+            options[key] = [v.strip().lower() for v in value.split(',') if v.strip()]
+
+    return options

@@ -9,7 +9,7 @@ from Levenshtein import distance as levenshtein_distance
 from app.utils.arr_client import parse_media_name
 from guessit import guessit
 from app.utils.prowlarr_client import search_prowlarr
-from app.utils.config_manager import load_search_categories, load_search_filter_aliases
+from app.utils.config_manager import load_search_categories, load_search_filter_aliases, load_filter_options
 from app.utils.tmdb_client import TheMovieDBClient
 from app.utils.tvdb_client import CustomTVDBClient
 
@@ -80,76 +80,79 @@ def media_search():
 @search_ui_bp.route('/api/prowlarr/search', methods=['POST'])
 @login_required
 def prowlarr_search():
-    # L'import est maintenant au niveau du module, plus besoin de l'importer ici
-
     data = request.get_json()
     query = data.get('query')
     if not query:
         return jsonify({"error": "La requête est vide."}), 400
 
-    # Récupération de tous les filtres
     search_type = data.get('search_type', 'sonarr')
-    lang = data.get('lang')
-    quality = data.get('quality')
-    codec = data.get('codec')
-    source = data.get('source')
-    group = data.get('group')
 
-    # 1. Pré-filtrage par Catégories Prowlarr
+    # 1. Charger les configurations
+    filter_options = load_filter_options()
+    aliases = load_search_filter_aliases().get('lang', {})
     search_config = load_search_categories()
     category_ids = search_config.get(f"{search_type}_categories", [])
 
-    # 2. On envoie la requête de base à Prowlarr (uniquement avec le 'group')
-    query_for_prowlarr = f"{query} {group}".strip() if group else query
-    raw_results = search_prowlarr(query=query_for_prowlarr, categories=category_ids)
+    # Créer un dictionnaire inversé pour la recherche d'alias
+    alias_map = {alias: key for key, alias_list in aliases.items() for alias in alias_list}
+
+    # 2. On envoie la requête de base à Prowlarr
+    raw_results = search_prowlarr(query=query, categories=category_ids)
 
     if raw_results is None:
         return jsonify({"error": "Erreur de communication avec Prowlarr."}), 500
 
-    # 3. Enrichir les résultats avec Guessit et appliquer le premier filtre backend
+    # 3. Enrichir les résultats avec Guessit
     enriched_results = []
     for result in raw_results:
-        guess = guessit(result.get('title', ''))
+        title = result.get('title', '')
+        guess = guessit(title)
 
-        # Appliquer le filtre backend basé sur la présence de 'season' ou 'year'
-        if search_type == 'sonarr':
-            if 'season' not in guess:
-                continue # On saute ce résultat
-        elif search_type == 'radarr':
-            if 'year' not in guess:
-                continue # On saute ce résultat
+        if search_type == 'sonarr' and 'season' not in guess:
+            continue
+        if search_type == 'radarr' and 'year' not in guess:
+            continue
 
-        # Analyser avec guessit et fusionner les données directement dans le résultat
         def to_str(value):
-            if value is None: return None
-            return str(value)
+            return str(value) if value is not None else None
 
-        lang_value = guess.get('language')
-        if lang_value:
-            if isinstance(lang_value, list):
-                result['language'] = ','.join([str(l) for l in lang_value])
-            else:
-                result['language'] = str(lang_value)
-        else:
-            result['language'] = None
+        # Normalisation de la langue avec les alias
+        raw_langs = guess.get('language')
+        if not isinstance(raw_langs, list):
+            raw_langs = [raw_langs] if raw_langs is not None else []
 
-        result['screen_size'] = to_str(guess.get('screen_size'))
-        result['video_codec'] = to_str(guess.get('video_codec'))
+        normalized_langs = set()
+        for lang in raw_langs:
+            lang_str = str(lang).lower()
+            # Si l'alias est trouvé, on utilise la clé normalisée (ex: 'french'), sinon la langue brute
+            normalized_langs.add(alias_map.get(lang_str, lang_str))
+
+        result['language'] = ','.join(sorted(list(normalized_langs))) if normalized_langs else None
+
+        # Ajout des autres champs parsés
+        result['quality'] = to_str(guess.get('screen_size'))
+        result['codec'] = to_str(guess.get('video_codec'))
         result['source'] = to_str(guess.get('source'))
+        result['year'] = guess.get('year')
+        result['release_group'] = to_str(guess.get('release_group'))
         result['season'] = guess.get('season')
         result['episode'] = guess.get('episode')
 
-        is_season_pack = result['season'] is not None and result['episode'] is None
+        result['is_season_pack'] = result['season'] is not None and result['episode'] is None
         is_special = result['season'] == 0 or ('episode_title' in guess and isinstance(guess['episode_title'], str) and 'special' in guess['episode_title'].lower())
         if isinstance(result['episode'], int) and result['episode'] > 50 and result['season'] is not None:
             is_special = True
-
-        result['is_season_pack'] = is_season_pack
         result['is_special'] = is_special
 
         enriched_results.append(result)
 
-    return jsonify(enriched_results)
+    # 4. Construire la réponse finale
+    response_data = {
+        'results': enriched_results,
+        'filter_options': filter_options
+    }
+
+    return jsonify(response_data)
 
 
 @search_ui_bp.route('/api/search/lookup', methods=['POST'])

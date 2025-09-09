@@ -42,7 +42,14 @@ def show_config():
                         key = key.strip()
                         current_value = env_values.get(key, default_value.strip())
                         is_password = any(s in key.upper() for s in ['PASSWORD', 'SECRET', 'TOKEN', 'API_KEY'])
-                        config_items.append({'type': 'variable', 'key': key, 'value': current_value, 'is_password': is_password})
+                        # Détecter si la variable est une liste pour un meilleur affichage
+                        is_list = key.upper().endswith('_LIST')
+                        config_items.append({
+                            'type': 'textarea' if is_list else 'variable',
+                            'key': key,
+                            'value': current_value,
+                            'is_password': is_password
+                        })
                     else: config_items.append({'type': 'description', 'text': line})
     except Exception as e:
         flash(f"Erreur lors de la lecture des fichiers de configuration : {e}", "danger")
