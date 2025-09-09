@@ -272,13 +272,10 @@ $(document).ready(function() {
 
             populateFilters(results, filterOptions);
 
-            // Par défaut, sélectionner le filtre de langue sur "french" si l'option existe
+            // Par défaut, sélectionner le filtre de langue sur "fr" si l'option existe
             const langSelect = $('#filterLang');
-            console.log('Options de langue disponibles :', Array.from(langSelect.find('option')).map(opt => opt.value));
-            if (langSelect.find('option[value="french"]').length > 0) {
-                langSelect.val('french');
-            } else if (langSelect.find('option[value="vff"]').length > 0) {
-                langSelect.val('vff');
+            if (langSelect.find('option[value="fr"]').length > 0) {
+                langSelect.val('fr');
             }
 
             applyClientSideFilters(); // Appliquer les filtres immédiatement
