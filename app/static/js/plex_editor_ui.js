@@ -907,68 +907,138 @@ function sortTable(table, sortBy, sortType, direction) {
         sortTable(table, 'rating', 'number', newDir === 'asc' ? 1 : -1);
     });
 
-// --- DÉBUT DU BLOC SIMPLIFIÉ POUR LA GESTION DES BANDES-ANNONCES ---
+// --- DÉBUT DU BLOC DE GESTION DES BANDES-ANNONCES AVEC PAGINATION ---
 
-// Fonction helper pour jouer une vidéo dans la modale
-function playTrailer(title, videoUrl, isPlex) {
-    const playerModalTitle = $('#trailerModalLabel');
-    const playerModalBody = $('#trailer-modal .modal-body');
-    const playerModalInstance = bootstrap.Modal.getOrCreateInstance(document.getElementById('trailer-modal'));
+// Helper pour ajouter des résultats à la modale
+function appendTrailerResults(results) {
+    const resultsContainer = $('#trailer-results-container');
+    // Si le conteneur est vide et qu'il n'y a pas de résultats, afficher un message.
+    if (!results || results.length === 0) {
+        if (resultsContainer.is(':empty')) {
+             resultsContainer.html('<p class="text-center text-muted">Aucun résultat trouvé.</p>');
+        }
+        return;
+    }
 
-    const source = isPlex ? 'Plex' : 'YouTube';
-    playerModalTitle.text(`Bande-Annonce (${source}): ${title}`);
-    playerModalBody.html(`<div class="ratio ratio-16x9"><iframe src="${videoUrl}" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>`);
-    playerModalInstance.show();
+    results.forEach(result => {
+        const resultHtml = `
+            <div class="trailer-result-item d-flex align-items-center mb-2 p-2 rounded" style="cursor: pointer; background-color: #343a40;"
+                 data-video-id="${result.videoId}" data-video-title="${result.title}">
+                <img src="${result.thumbnail}" width="120" class="me-3 rounded">
+                <div>
+                    <p class="mb-0 text-white font-weight-bold">${result.title}</p>
+                    <small class="text-muted">${result.channel}</small>
+                </div>
+            </div>
+        `;
+        resultsContainer.append(resultHtml);
+    });
 }
 
-// Clic sur le bouton pour chercher/jouer la bande-annonce
+// 1. Clic sur le bouton principal pour lancer la recherche
 $(document).on('click', '.find-and-play-trailer-btn', function() {
     const button = $(this);
     const title = button.data('title');
     const plexTrailerUrl = button.data('plex-trailer-url');
+    const playerModalInstance = bootstrap.Modal.getOrCreateInstance(document.getElementById('trailer-modal'));
+
+    // Cas 1: L'URL Plex existe, on joue directement
+    if (plexTrailerUrl) {
+        $('#trailerModalLabel').text('Bande-Annonce (Plex): ' + title);
+        $('#trailer-modal .modal-body').html(`<div class="ratio ratio-16x9"><iframe src="${plexTrailerUrl}" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>`);
+        playerModalInstance.show();
+        return;
+    }
+
+    // Cas 2: Pas d'URL Plex, on interroge l'agent pour la première page
     const year = button.data('year');
     const mediaType = button.data('media-type');
 
-    if (plexTrailerUrl) {
-        console.log("Lecture du trailer depuis Plex.");
-        playTrailer(title, plexTrailerUrl, true);
-    } else {
-        console.log("Recherche du trailer via l'agent...");
-        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+    console.log("Recherche initiale du trailer via l'agent...");
+    button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
 
-        fetch('/api/agent/suggest_trailers', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: title, year: year, media_type: mediaType })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success && data.result) {
-                const videoId = data.result.videoId;
-                const videoTitle = data.result.title;
-                const youtubeUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1`;
-                playTrailer(videoTitle, youtubeUrl, false);
-            } else {
-                alert('Aucune bande-annonce pertinente n\'a été trouvée. (' + (data.error || 'Erreur inconnue') + ')');
+    // Réinitialiser la modale de sélection
+    $('#trailer-results-container').empty();
+    $('#trailer-load-more-container').hide();
+
+    fetch('/api/agent/suggest_trailers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: title, year: year, media_type: mediaType })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success && data.results && data.results.length > 0) {
+            appendTrailerResults(data.results);
+            const loadMoreBtn = $('#load-more-trailers-btn');
+            if (data.nextPageToken) {
+                loadMoreBtn.data('page-token', data.nextPageToken);
+                loadMoreBtn.data('query', data.query); // Stocker la requête utilisée
+                $('#trailer-load-more-container').show();
             }
-        })
-        .catch(error => {
-            console.error('Erreur lors de la recherche de la bande-annonce:', error);
-            alert('Une erreur technique est survenue lors de la communication avec le serveur.');
-        })
-        .finally(() => {
-            button.prop('disabled', false).html('<i class="bi bi-film"></i>');
-        });
-    }
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('trailer-selection-modal')).show();
+        } else {
+            alert('Aucune bande-annonce pertinente n\'a été trouvée.');
+        }
+    })
+    .catch(error => {
+        console.error('Erreur lors de la recherche de la bande-annonce:', error);
+        alert('Une erreur technique est survenue.');
+    })
+    .finally(() => {
+        button.prop('disabled', false).html('<i class="bi bi-film"></i>');
+    });
 });
 
-// Nettoyage à la fermeture du lecteur vidéo
+// 2. Clic sur le bouton "Afficher plus" pour la pagination
+$(document).on('click', '#load-more-trailers-btn', function() {
+    const button = $(this);
+    const pageToken = button.data('page-token');
+    const query = button.data('query');
+
+    button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Chargement...');
+
+    fetch('/api/agent/suggest_trailers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: query, page_token: pageToken })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success && data.results) {
+            appendTrailerResults(data.results);
+            if (data.nextPageToken) {
+                button.data('page-token', data.nextPageToken);
+            } else {
+                $('#trailer-load-more-container').hide();
+            }
+        }
+    })
+    .catch(error => console.error('Erreur lors du chargement de la page suivante:', error))
+    .finally(() => {
+        button.prop('disabled', false).html('Afficher 5 de plus');
+    });
+});
+
+// 3. Clic sur un résultat dans la modale de sélection pour le jouer
+$(document).on('click', '.trailer-result-item', function() {
+    const videoId = $(this).data('video-id');
+    const videoTitle = $(this).data('video-title');
+
+    bootstrap.Modal.getInstance(document.getElementById('trailer-selection-modal')).hide();
+
+    const playerModalBody = $('#trailer-modal .modal-body');
+    $('#trailerModalLabel').text('Bande-Annonce: ' + videoTitle);
+    playerModalBody.html(`<div class="ratio ratio-16x9"><iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>`);
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('trailer-modal')).show();
+});
+
+// 4. Nettoyage à la fermeture du lecteur vidéo
 $('#trailer-modal').on('hidden.bs.modal', function () {
-    // Vider le contenu du corps de la modale pour stopper la vidéo
     $('#trailer-modal .modal-body').empty();
 });
 
-// --- FIN DU BLOC SIMPLIFIÉ POUR LA GESTION DES BANDES-ANNONCES ---
+// --- FIN DU BLOC DE GESTION DES BANDES-ANNONCES ---
 
     // NOUVEL ÉCOUTEUR D'ÉVÉNEMENT
     $(document).on('click', '#scan-libraries-btn', function() {
