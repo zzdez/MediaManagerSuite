@@ -272,6 +272,16 @@ $(document).ready(function() {
 
             populateFilters(results, filterOptions);
 
+            // Par défaut, sélectionner le filtre de langue sur "french" si l'option existe
+            const langSelect = $('#filterLang');
+            if (langSelect.find('option[value="french"]').length > 0) {
+                langSelect.val('french');
+            } else if (langSelect.find('option[value="vff"]').length > 0) {
+                langSelect.val('vff');
+            }
+
+            applyClientSideFilters(); // Appliquer les filtres immédiatement
+
             resultsContainer.empty();
             const header = $(`<hr><h4 class="mb-3">Résultats pour "${payload.query}" (<span id="results-count">${results.length}</span> / <span>${results.length}</span>)</h4>`);
             resultsContainer.append(header);
