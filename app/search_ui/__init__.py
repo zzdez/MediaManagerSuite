@@ -105,9 +105,18 @@ def prowlarr_search():
         parsed_data = parse_release_data(release_title)
 
         # Fusionner les données parsées avec le résultat original de Prowlarr
-        # Les données de Prowlarr (indexer, seeders, etc.) sont conservées
-        # Les données parsées (quality, codec, etc.) les écrasent ou les ajoutent
         final_result = {**result, **parsed_data}
+
+        # --- Filtre intelligent pour ne garder que les résultats pertinents ---
+        if search_type == 'sonarr':
+            # Pour les séries, on garde les épisodes, les packs de saison et les collections
+            if not (final_result['is_episode'] or final_result['is_season_pack'] or final_result['is_collection']):
+                continue
+        elif search_type == 'radarr':
+            # Pour les films, on garde les collections ou les releases avec une année
+            # (pour exclure les épisodes de séries qui pourraient matcher par titre)
+            if not (final_result['is_collection'] or final_result['year'] is not None):
+                continue
 
         # Le champ 'is_special' est encore géré ici car il dépend de 'season' et 'episode'
         final_result['is_special'] = (
