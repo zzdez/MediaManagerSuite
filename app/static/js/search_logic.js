@@ -272,14 +272,6 @@ $(document).ready(function() {
 
             populateFilters(results, filterOptions);
 
-            // Par défaut, sélectionner le filtre de langue sur "fr" si l'option existe
-            const langSelect = $('#filterLang');
-            if (langSelect.find('option[value="fr"]').length > 0) {
-                langSelect.val('fr');
-            }
-
-            applyClientSideFilters(); // Appliquer les filtres immédiatement
-
             resultsContainer.empty();
             const header = $(`<hr><h4 class="mb-3">Résultats pour "${payload.query}" (<span id="results-count">${results.length}</span> / <span>${results.length}</span>)</h4>`);
             resultsContainer.append(header);
@@ -324,6 +316,13 @@ $(document).ready(function() {
                 listGroup.append(listItem);
             });
             resultsContainer.append(listGroup);
+
+            // Correction: Appliquer le filtre par défaut APRÈS le rendu des résultats
+            const langSelect = $('#filterLang');
+            if (langSelect.find('option[value="fr"]').length > 0) {
+                langSelect.val('fr');
+            }
+            applyClientSideFilters();
 
             $('#advancedFilters').find('select, input').prop('disabled', false);
             $('#advancedFilters').collapse('show');
