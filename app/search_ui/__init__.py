@@ -134,7 +134,11 @@ def prowlarr_search():
         result['codec'] = to_str(guess.get('video_codec'))
         result['source'] = to_str(guess.get('source'))
         result['year'] = guess.get('year')
-        result['release_group'] = to_str(guess.get('release_group'))
+        raw_group = to_str(guess.get('release_group'))
+        if raw_group:
+            result['release_group'] = raw_group.split('(')[0].strip()
+        else:
+            result['release_group'] = None
         result['season'] = guess.get('season')
         result['episode'] = guess.get('episode')
 
