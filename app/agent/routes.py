@@ -39,8 +39,8 @@ def suggest_trailers():
         best_trailer = youtube_results[0]
 
     if best_trailer:
-        # Mettre en cache le résultat final pour 24h (86400s)
-        set_in_cache(cache_key, best_trailer, expiration=86400)
+        # Mettre en cache le résultat final
+        set_in_cache(cache_key, best_trailer)
         return jsonify({'success': True, 'result': best_trailer})
     else:
         # Ce cas est peu probable si youtube_results n'est pas vide, mais par sécurité
