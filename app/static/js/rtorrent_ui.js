@@ -177,7 +177,6 @@ $(document).ready(function() {
 
     function sortTable(table, sortBy, sortType, direction) {
         const tbody = table.find('tbody');
-        const rows = tbody.find('tr').toArray();
         const cellIndex = table.find(`th.sortable-header[data-sort-by='${sortBy}']`).index();
 
         if (cellIndex === -1) {
@@ -185,25 +184,39 @@ $(document).ready(function() {
             return;
         }
 
-        rows.sort(function(a, b) {
+        // 1. Separate main rows from detail rows
+        const mainRows = tbody.find('tr:not(.file-list-row)').toArray();
+        const detailRows = tbody.find('tr.file-list-row').toArray();
+
+        // 2. Create a map of detail rows for easy lookup
+        const detailRowMap = {};
+        detailRows.forEach(row => {
+            const id = $(row).attr('id');
+            if (id) {
+                // Assuming ID is like "files-HASH"
+                const hash = id.substring(6);
+                detailRowMap[hash] = row;
+            }
+        });
+
+        // 3. Sort only the main rows
+        mainRows.sort(function(a, b) {
             const cellA = $(a).children('td').eq(cellIndex);
             const cellB = $(b).children('td').eq(cellIndex);
 
-            // Prioritize data-sort-value attribute, fallback to cell text
             let valA = cellA.data('sort-value') !== undefined ? String(cellA.data('sort-value')) : cellA.text().trim();
             let valB = cellB.data('sort-value') !== undefined ? String(cellB.data('sort-value')) : cellB.text().trim();
 
             if (sortType === 'date') {
-                // Convert ISO date strings to timestamps for comparison
-                valA = new Date(valA).getTime() || 0;
-                valB = new Date(valB).getTime() || 0;
+                valA = parseInt(valA, 10) || 0;
+                valB = parseInt(valB, 10) || 0;
             } else if (sortType === 'size') {
                 valA = parseSize(valA);
                 valB = parseSize(valB);
             } else if (sortType === 'number') {
                 valA = parseFloat(valA.replace('%', '').replace(',', '.')) || 0;
                 valB = parseFloat(valB.replace('%', '').replace(',', '.')) || 0;
-            } else { // 'text' or default
+            } else {
                 valA = valA.toLowerCase();
                 valB = valB.toLowerCase();
             }
@@ -213,7 +226,15 @@ $(document).ready(function() {
             return 0;
         });
 
-        tbody.empty().append(rows);
+        // 4. Rebuild the table, appending detail rows after their corresponding main row
+        tbody.empty();
+        mainRows.forEach(function(mainRow) {
+            tbody.append(mainRow);
+            const hash = $(mainRow).find('.torrent-checkbox').data('torrent-hash');
+            if (hash && detailRowMap[hash]) {
+                tbody.append(detailRowMap[hash]);
+            }
+        });
     }
 
     // Écouteur pour les en-têtes de colonne
@@ -240,4 +261,5 @@ $(document).ready(function() {
         // Appelle la fonction de tri
         sortTable(table, sortBy, sortType, newDir === 'asc' ? 1 : -1);
     });
+
 });

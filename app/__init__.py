@@ -73,6 +73,10 @@ def create_app(config_class=Config):
     app.register_blueprint(ygg_cookie_ui_bp, url_prefix='/ygg-cookie')
     logger.info("Blueprint 'ygg_cookie_ui' enregistré avec succès.")
 
+    from app.api import api_bp
+    app.register_blueprint(api_bp, url_prefix='/api')
+    logger.info("Blueprint 'api' enregistré avec succès.")
+
     from app.search_ui import search_ui_bp
     app.register_blueprint(search_ui_bp, url_prefix='/search')
     logger.info("Blueprint 'search_ui' enregistré avec succès.")

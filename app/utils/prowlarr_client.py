@@ -73,21 +73,19 @@ def get_prowlarr_categories():
 
 def search_prowlarr(query, categories=None, lang=None):
     """
-    [VERSION FILTRAGE CLIENT] Recherche des releases sur Prowlarr.
-    Le filtrage par catégorie sera géré côté MMS pour plus de fiabilité.
+    Recherche des releases sur Prowlarr, avec support optionnel pour les catégories.
     """
-    effective_query = query
-    if lang:
-        lang_map = {'fr': 'FRENCH', 'en': 'ENGLISH'}
-        lang_term = lang_map.get(lang)
-        if lang_term:
-            effective_query = f"{query} {lang_term}"
-
     params = {
-        'query': effective_query,
+        'query': query,
         'type': 'search'
     }
 
-    # On n'envoie PAS le paramètre 'category' à Prowlarr. Il est ignoré.
+    # Si des catégories sont fournies, les ajouter à la requête.
+    # Le paramètre API correct est 'cat' et il attend une chaîne de caractères séparée par des virgules.
+    if categories and isinstance(categories, list) and len(categories) > 0:
+        params['cat'] = ','.join(map(str, categories))
+        current_app.logger.info(f"Prowlarr search: Using categories {params['cat']}")
+
+    # La gestion de la langue est retirée ici, car elle sera gérée par le filtrage guessit.
 
     return _make_prowlarr_request('search', params)

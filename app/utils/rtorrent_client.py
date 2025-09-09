@@ -197,29 +197,10 @@ def list_torrents():
     fields = [
         "d.hash=", "d.name=", "d.base_path=", "d.custom1=", "d.size_bytes=",
         "d.bytes_done=", "d.up.total=", "d.down.rate=", "d.up.rate=",
-        "d.ratio=", "d.is_open=", "d.is_active=", "d.complete=", # Using d.complete=
-        "d.left_bytes=", "d.message="
+        "d.ratio=", "d.is_open=", "d.is_active=", "d.complete=",
+        "d.left_bytes=", "d.message=", "d.load_date="
     ]
-    # Using ["", ""] as first two params, similar to Sonarr's multicall for downloads.
-    # This typically means "all torrents" and "default view".
     params_for_xmlrpc = ["", ""] + fields
-
-    # Note: _send_xmlrpc_request for d.multicall2 is expected to return the direct list of lists.
-    # The previous _send_xmlrpc_request logic was:
-    #   if isinstance(parsed_data, list) and len(parsed_data) > 0: return parsed_data[0], None
-    #   This needs to be adjusted for d.multicall2, which returns a list of lists, so parsed_data itself is the result.
-    # For now, let's assume _send_xmlrpc_request is modified or handles this.
-    # For the purpose of this function, we expect `raw_torrents_data` to be the list of lists.
-    # We need to ensure _send_xmlrpc_request returns the full list for d.multicall2, not just parsed_data[0]
-    # This will require a slight modification in _send_xmlrpc_request or a new specific xmlrpc caller for multicall.
-    # Let's assume _send_xmlrpc_request is generic and returns `parsed_data` directly.
-    # If `_send_xmlrpc_request` returns `parsed_data[0]`, and `parsed_data` is `[[torrent1_fields], [torrent2_fields]]`
-    # then `raw_torrents_data` would incorrectly be `[torrent1_fields]`.
-    # Let's modify the expectation for _send_xmlrpc_request: it should return the *full* `parsed_data` if the method is 'd.multicall2'.
-    # For now, this implementation will assume `_send_xmlrpc_request` correctly returns the list of lists for d.multicall2.
-    # This is a critical assumption. If _send_xmlrpc_request always returns `parsed_data[0]`, this will break.
-    # A quick fix for _send_xmlrpc_request would be:
-    # if method_name == "d.multicall2": return parsed_data, None else: return parsed_data[0] if ... else ...
 
     raw_torrents_data, error = _send_xmlrpc_request(method_name="d.multicall2", params=params_for_xmlrpc)
 
@@ -228,9 +209,6 @@ def list_torrents():
         return None, error
 
     if not isinstance(raw_torrents_data, list):
-        # This will also catch the case where _send_xmlrpc_request returns parsed_data[0] if raw_torrents_data was [[fields_t1], [fields_t2]]
-        # because then raw_torrents_data would be [fields_t1], which is a list, but its elements are not lists.
-        # Or if it was a single torrent, raw_torrents_data would be [field1, field2...], not a list of lists.
         current_app.logger.error(f"XML-RPC d.multicall2 for list_torrents: Expected a list of lists, got {type(raw_torrents_data)}. Data: {str(raw_torrents_data)[:500]}")
         return None, "Unexpected data structure from rTorrent for torrent list (XML-RPC)."
 
@@ -238,7 +216,8 @@ def list_torrents():
     field_keys = [
         'hash', 'name', 'base_path', 'label', 'size_bytes', 'downloaded_bytes',
         'uploaded_bytes', 'down_rate_bytes_sec', 'up_rate_bytes_sec', 'ratio',
-        'is_open', 'is_active', 'is_complete_rt', 'left_bytes', 'rtorrent_message'
+        'is_open', 'is_active', 'is_complete_rt', 'left_bytes', 'rtorrent_message',
+        'load_date'
     ]
 
     for torrent_data_list in raw_torrents_data:
@@ -249,39 +228,33 @@ def list_torrents():
         try:
             data = dict(zip(field_keys, torrent_data_list))
 
-            # Type conversions and calculations
             size_b = int(data.get('size_bytes', 0))
             done_b = int(data.get('downloaded_bytes', 0))
 
-            # Progress
             progress_percent = 0
             if size_b > 0:
                 progress_percent = round((done_b / size_b) * 100, 2)
-            elif int(data.get('is_complete_rt', 0)) == 1 : # if size is 0 but marked complete (e.g. empty torrent)
+            elif int(data.get('is_complete_rt', 0)) == 1:
                 progress_percent = 100.0
 
-            # Status determination
             status_text = "Unknown"
             rt_message = data.get('rtorrent_message', '')
             is_open_val = int(data.get('is_open', 0))
             is_active_val = int(data.get('is_active', 0))
-            # is_complete_val from d.get_complete() is already 0 or 1
             is_complete_val = int(data.get('is_complete_rt', 0))
-            # Alternative completeness check using left_bytes (more reliable with some rTorrent versions)
-            left_bytes_val = int(data.get('left_bytes', -1)) # Use -1 to distinguish from 0 if key missing
-            if left_bytes_val == 0 and size_b > 0 : # if left_bytes is 0 and size > 0, it's complete
+            left_bytes_val = int(data.get('left_bytes', -1))
+            if left_bytes_val == 0 and size_b > 0:
                 is_complete_val = 1
-
 
             if rt_message and rt_message.strip():
                 status_text = "Error"
             elif is_open_val == 0:
                 status_text = "Stopped"
-            elif is_active_val == 0: # and is_open_val == 1
+            elif is_active_val == 0:
                 status_text = "Paused"
-            elif is_complete_val == 1: # and is_open_val == 1 and is_active_val == 1
+            elif is_complete_val == 1:
                 status_text = "Seeding"
-            else: # is_open_val == 1 and is_active_val == 1 and is_complete_val == 0
+            else:
                 status_text = "Downloading"
 
             torrent_info = {
@@ -297,10 +270,11 @@ def list_torrents():
                 'label': str(data.get('label', '')),
                 'base_path': str(data.get('base_path', '')),
                 'status_text': status_text,
-                'is_active': bool(is_active_val and is_open_val), # Active means it's running (not paused, not stopped)
+                'is_active': bool(is_active_val and is_open_val),
                 'is_complete': bool(is_complete_val),
-                'is_paused': bool(is_open_val and not is_active_val), # Paused means open but not active
-                'rtorrent_message': rt_message
+                'is_paused': bool(is_open_val and not is_active_val),
+                'rtorrent_message': rt_message,
+                'load_date': int(data.get('load_date', 0))
             }
             simplified_torrents.append(torrent_info)
         except Exception as e:
@@ -309,6 +283,61 @@ def list_torrents():
 
     current_app.logger.info(f"Successfully parsed {len(simplified_torrents)} torrent(s) via XML-RPC d.multicall2.")
     return simplified_torrents, None
+
+
+def get_torrent_files(torrent_hash):
+    """
+    Retrieves the list of files for a given torrent hash using f.multicall.
+    """
+    logger = current_app.logger
+    if not torrent_hash:
+        return None, "Torrent hash cannot be empty."
+
+    logger.info(f"Fetching file list for torrent hash: {torrent_hash}")
+
+    # Define the fields to retrieve for each file
+    fields = [
+        "f.path=",
+        "f.size_bytes=",
+        "f.priority="
+    ]
+
+    # Construct the parameters for the XML-RPC call
+    # The second parameter "" means "all files for the given hash"
+    params_for_xmlrpc = [torrent_hash, ""] + fields
+
+    # Call the generic XML-RPC request function
+    raw_file_data, error = _send_xmlrpc_request(method_name="f.multicall", params=params_for_xmlrpc)
+
+    if error:
+        logger.error(f"XML-RPC error calling f.multicall for hash {torrent_hash}: {error}")
+        return None, error
+
+    if not isinstance(raw_file_data, list):
+        logger.error(f"XML-RPC f.multicall for hash {torrent_hash}: Expected a list of lists, got {type(raw_file_data)}. Data: {str(raw_file_data)[:500]}")
+        return None, "Unexpected data structure from rTorrent for file list."
+
+    # Process the raw data into a more friendly format
+    file_list = []
+    field_keys = ['path', 'size_bytes', 'priority']
+    for file_data_list in raw_file_data:
+        if not isinstance(file_data_list, list) or len(file_data_list) != len(field_keys):
+            logger.warning(f"Skipping file entry for hash {torrent_hash} due to mismatched data length. Data: {file_data_list}")
+            continue
+
+        try:
+            file_info = dict(zip(field_keys, file_data_list))
+            # Convert types
+            file_info['size_bytes'] = int(file_info.get('size_bytes', 0))
+            file_info['priority'] = int(file_info.get('priority', 0)) # 0 = Off, 1 = Normal, 2 = High
+            file_list.append(file_info)
+        except (ValueError, TypeError) as e:
+            logger.error(f"Error processing file data entry for hash {torrent_hash}: {file_data_list}. Error: {e}")
+            continue
+
+    logger.info(f"Successfully parsed {len(file_list)} files for torrent hash {torrent_hash}.")
+    return file_list, None
+
 
 # add_magnet is refactored to use XML-RPC
 def add_magnet(magnet_link, label=None, download_dir=None):

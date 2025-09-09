@@ -7,9 +7,9 @@ from config import Config
 from app.utils import arr_client
 from Levenshtein import distance as levenshtein_distance
 from app.utils.arr_client import parse_media_name
-from guessit import guessit
 from app.utils.prowlarr_client import search_prowlarr
-from app.utils.config_manager import load_search_categories, load_search_filter_aliases
+from app.utils.config_manager import load_search_categories, load_filter_options
+from app.utils.release_parser import parse_release_data
 from app.utils.tmdb_client import TheMovieDBClient
 from app.utils.tvdb_client import CustomTVDBClient
 
@@ -80,58 +80,59 @@ def media_search():
 @search_ui_bp.route('/api/prowlarr/search', methods=['POST'])
 @login_required
 def prowlarr_search():
-    # L'import est maintenant au niveau du module, plus besoin de l'importer ici
-
     data = request.get_json()
     query = data.get('query')
     if not query:
         return jsonify({"error": "La requête est vide."}), 400
 
-    # Récupération de tous les filtres
     search_type = data.get('search_type', 'sonarr')
-    lang = data.get('lang')
-    quality = data.get('quality')
-    codec = data.get('codec')
-    source = data.get('source')
-    group = data.get('group')
 
-    # 1. Pré-filtrage par Catégories Prowlarr
+    # 1. Charger les configurations
+    filter_options = load_filter_options()
     search_config = load_search_categories()
     category_ids = search_config.get(f"{search_type}_categories", [])
 
-    # 2. On envoie la requête de base à Prowlarr (uniquement avec le 'group')
-    query_for_prowlarr = f"{query} {group}".strip() if group else query
-    raw_results = search_prowlarr(query=query_for_prowlarr, categories=category_ids)
+    # 2. On envoie la requête de base à Prowlarr
+    raw_results = search_prowlarr(query=query, categories=category_ids)
 
     if raw_results is None:
         return jsonify({"error": "Erreur de communication avec Prowlarr."}), 500
 
-    # 3. Filtrage local robuste par recherche d'alias dans le titre
-    filter_aliases = load_search_filter_aliases()
-    active_aliases = {
-        'lang': filter_aliases.get('lang', {}).get(lang),
-        'quality': filter_aliases.get('quality', {}).get(quality),
-        'codec': filter_aliases.get('codec', {}).get(codec),
-        'source': filter_aliases.get('source', {}).get(source),
-    }
-    active_aliases = {k: v for k, v in active_aliases.items() if v}
-
-    if not active_aliases:
-        return jsonify(raw_results)
-
-    final_results = []
+    # 3. Enrichir les résultats en utilisant le nouveau parseur centralisé
+    enriched_results = []
     for result in raw_results:
-        title_lower = result.get('title', '').lower()
-        match = True
-        for filter_type, aliases in active_aliases.items():
-            if not any(alias.lower() in title_lower for alias in aliases):
-                match = False
-                break
-        if match:
-            final_results.append(result)
-    
-    logging.info(f"{len(final_results)} résultats après filtrage final par alias.")
-    return jsonify(final_results)
+        release_title = result.get('title', '')
+        parsed_data = parse_release_data(release_title)
+
+        # Fusionner les données parsées avec le résultat original de Prowlarr
+        final_result = {**result, **parsed_data}
+
+        # --- Filtre intelligent pour ne garder que les résultats pertinents ---
+        if search_type == 'sonarr':
+            # Pour les séries, on garde les épisodes, les packs de saison et les collections
+            if not (final_result['is_episode'] or final_result['is_season_pack'] or final_result['is_collection']):
+                continue
+        elif search_type == 'radarr':
+            # Pour les films, on garde les collections ou les releases avec une année
+            # (pour exclure les épisodes de séries qui pourraient matcher par titre)
+            if not (final_result['is_collection'] or final_result['year'] is not None):
+                continue
+
+        # Le champ 'is_special' est encore géré ici car il dépend de 'season' et 'episode'
+        final_result['is_special'] = (
+            final_result['season'] == 0 or
+            (isinstance(final_result.get('episode'), int) and final_result.get('episode') > 50 and final_result.get('season') is not None)
+        )
+
+        enriched_results.append(final_result)
+
+    # 4. Construire la réponse finale
+    response_data = {
+        'results': enriched_results,
+        'filter_options': filter_options
+    }
+
+    return jsonify(response_data)
 
 
 @search_ui_bp.route('/api/search/lookup', methods=['POST'])
@@ -517,16 +518,21 @@ def download_torrent_proxy():
 
     try:
         if str(ygg_indexer_id) == str(indexer_id):
-            ygg_cookie = current_app.config.get('YGG_COOKIE')
+            from app.utils.cookie_manager import get_ygg_cookie_status
+            cookie_status = get_ygg_cookie_status()
+
+            if not cookie_status["is_valid"]:
+                raise ValueError(f"Cookie YGG invalide ou expiré. Message : {cookie_status.get('status_message', 'Veuillez le mettre à jour.')}")
+
             ygg_user_agent = current_app.config.get('YGG_USER_AGENT')
             ygg_base_url = current_app.config.get('YGG_BASE_URL')
 
-            if not all([ygg_cookie, ygg_user_agent, ygg_base_url]):
-                raise ValueError("Configuration YGG manquante.")
+            if not all([ygg_user_agent, ygg_base_url]):
+                raise ValueError("Configuration YGG (USER_AGENT, BASE_URL) manquante.")
 
             release_id_ygg = guid.split('?id=')[1].split('&')[0]
             final_ygg_download_url = f"{ygg_base_url.rstrip('/')}/engine/download_torrent?id={release_id_ygg}"
-            headers = {'User-Agent': ygg_user_agent, 'Cookie': ygg_cookie}
+            headers = {'User-Agent': ygg_user_agent, 'Cookie': cookie_status["cookie_string"]}
             response = requests.get(final_ygg_download_url, headers=headers, timeout=45, allow_redirects=True)
         else:
             standard_user_agent = current_app.config.get('YGG_USER_AGENT', 'Mozilla/5.0')

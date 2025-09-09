@@ -1,8 +1,6 @@
-// Fichier : app/static/js/search_logic.js (Version avec Pré-Mapping Intégré)
+// Fichier : app/static/js/search_logic.js
 
 $(document).ready(function() {
-    console.log(">>>>>> SCRIPT UNIFIÉ 'search_logic.js' CHARGÉ (V3 - Pre-Mapping) <<<<<<");
-
     // CONTEXTE GLOBAL POUR LE PRE-MAPPING
     window.currentMediaContext = null;
 
@@ -60,7 +58,6 @@ $(document).ready(function() {
 
     function performMediaSearch() {
         window.currentMediaContext = null;
-        console.log("Contexte de pré-mapping réinitialisé par la recherche de média.");
 
         const query = $('#media-search-input').val().trim();
         const mediaType = $('input[name="media_type"]:checked').val();
@@ -107,32 +104,23 @@ $(document).ready(function() {
     });
 
     $('#media-results-container').on('click', '.search-torrents-btn', function() {
+        resetFilters(); // Réinitialiser les filtres pour la nouvelle recherche
         const resultIndex = $(this).data('result-index');
         const mediaData = mediaSearchResults[resultIndex];
-        const mediaType = $(this).closest('[data-media-type]').data('media-type');
+        const mediaType = $(this).closest('[data-media-type]').data('media-type'); // 'movie' ou 'tv'
 
         window.currentMediaContext = { ...mediaData, media_type: mediaType };
-        console.log("Contexte média défini pour le pré-mapping :", window.currentMediaContext);
 
+        // Pré-remplir le champ de recherche de l'autre onglet
         $('#search-form input[name="query"]').val(mediaData.title);
-        if (mediaType === 'movie') {
-            $('#search_type_radarr').prop('checked', true);
-        } else {
-            $('#search_type_sonarr').prop('checked', true);
-        }
 
+        // Basculer vers l'onglet de recherche libre
         const freeSearchTab = new bootstrap.Tab($('#torrent-search-tab')[0]);
         freeSearchTab.show();
 
-        const form = $('#search-form');
         const payload = {
-            query: mediaData.title, // Utilise le titre exact du média
-            search_type: form.find('[name="search_type"]:checked').val(),
-            year: form.find('[name="year"]').val(),
-            lang: form.find('[name="lang"]').val(),
-            quality: $('#filterQuality').val(),
-            codec: $('#filterCodec').val(),
-            source: $('#filterSource').val()
+            query: mediaData.title,
+            search_type: mediaType === 'movie' ? 'radarr' : 'sonarr'
         };
 
         executeProwlarrSearch(payload); // Appel direct de la fonction partagée
@@ -142,11 +130,120 @@ $(document).ready(function() {
     // ### BLOC 2 : RECHERCHE LIBRE (PROWLARR) ET STATUT ###
     // =================================================================
 
+    function updateFilterVisibility() {
+        const searchType = $('input[name="search_type"]:checked').val();
+
+        // Filtres spécifiques aux séries
+        const seriesOnlyFilters = $('#filterSeason, #filterEpisode');
+        // Filtre spécifique aux films
+        const movieOnlyFilters = $('#filterYear');
+        // Le filtre "Type de Pack" est maintenant toujours visible
+        // const packTypeFilter = $('#filterPackType');
+
+        if (searchType === 'sonarr') { // Séries
+            seriesOnlyFilters.closest('.col-md-3, .col-md-2').show();
+            movieOnlyFilters.closest('.col-md-2').hide();
+        } else { // 'radarr' pour les Films
+            seriesOnlyFilters.closest('.col-md-3, .col-md-2').hide();
+            movieOnlyFilters.closest('.col-md-2').show();
+        }
+    }
+
+    let prowlarrResultsCache = []; // Cache pour les résultats actuels
+
+    function populateFilters(results, filterOptions) {
+        // Helper to populate a select dropdown
+        const populateSelect = (selector, options) => {
+            const select = $(selector);
+            select.html('<option value="" selected>Tous</option>');
+            if (options && options.length > 0) {
+                select.append(options.sort().map(opt => `<option value="${opt}">${opt}</option>`).join(''));
+            }
+        };
+
+        // Populate from configured lists
+        populateSelect('#filterQuality', filterOptions.quality);
+        populateSelect('#filterCodec', filterOptions.codec);
+        populateSelect('#filterSource', filterOptions.source);
+        populateSelect('#filterReleaseGroup', filterOptions.release_group);
+
+        // Populate languages dynamically from results
+        const languages = new Set();
+        results.forEach(result => {
+            if (result.language) {
+                String(result.language).split(',').forEach(l => {
+                    const lang = l.trim();
+                    if(lang) languages.add(lang);
+                });
+            }
+        });
+        populateSelect('#filterLang', [...languages]);
+    }
+
+    function resetFilters() {
+        $('#filterPackType, #filterQuality, #filterCodec, #filterSource, #filterLang, #filterReleaseGroup').val('');
+        $('#filterYear, #filterSeason, #filterEpisode').val('');
+        // Déclencher un changement pour que la liste se mette à jour et affiche tout
+        applyClientSideFilters();
+    }
+
+    function applyClientSideFilters() {
+        const activeFilters = {
+            quality: ($('#filterQuality').val() || '').toLowerCase(),
+            lang: ($('#filterLang').val() || '').toLowerCase(),
+            source: ($('#filterSource').val() || '').toLowerCase(),
+            codec: ($('#filterCodec').val() || '').toLowerCase(),
+            releaseGroup: ($('#filterReleaseGroup').val() || '').toLowerCase(),
+            year: ($('#filterYear').val() || ''),
+            packType: ($('#filterPackType').val() || ''),
+            season: ($('#filterSeason').val() || ''),
+            episode: ($('#filterEpisode').val() || '')
+        };
+
+        let visibleCount = 0;
+        $('.release-item').each(function() {
+            const item = $(this);
+            const data = item.data('parsed') || {}; // LIRE L'OBJET DE DONNÉES
+
+            let show = true;
+
+            // Filtres sur les chaînes de caractères
+            if (activeFilters.quality && (data.quality || '').toLowerCase() !== activeFilters.quality) show = false;
+            if (activeFilters.source && (data.source || '').toLowerCase() !== activeFilters.source) show = false;
+            if (activeFilters.codec && (data.codec || '').toLowerCase() !== activeFilters.codec) show = false;
+            if (activeFilters.releaseGroup && (data.release_group || '').toLowerCase() !== activeFilters.releaseGroup) show = false;
+            if (activeFilters.lang && !(data.language || '').toLowerCase().includes(activeFilters.lang)) show = false;
+
+            // Filtres sur les nombres
+            if (activeFilters.year && data.year != activeFilters.year) show = false;
+            if (activeFilters.season && data.season != activeFilters.season) show = false;
+            if (activeFilters.episode && data.episode != activeFilters.episode) show = false;
+
+            // Filtre intelligent "Type de Pack"
+            if (activeFilters.packType) {
+                if (activeFilters.packType === 'episode' && !data.is_episode) show = false;
+                if (activeFilters.packType === 'season' && !data.is_season_pack) show = false;
+                if (activeFilters.packType === 'collection' && !data.is_collection) show = false;
+                // Le filtre "special" peut être combiné, donc on ne l'exclut pas des autres types
+                if (activeFilters.packType === 'special' && !data.is_special) show = false;
+            }
+
+            // Appliquer le résultat
+            item.toggleClass('d-none', !show);
+            if (show) visibleCount++;
+        });
+
+        // Mettre à jour le compteur
+        $('#results-count').text(visibleCount);
+    }
+
+
     function executeProwlarrSearch(payload) {
         const resultsContainer = $('#search-results-container');
         resultsContainer.html('<div class="text-center p-5"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Recherche en cours...</p></div>');
 
-        console.log("Payload de recherche Prowlarr envoyé :", payload);
+        $('#advancedFilters').find('select, input').prop('disabled', true);
+
         fetch('/search/api/prowlarr/search', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -157,40 +254,78 @@ $(document).ready(function() {
             return response.json();
         })
         .then(data => {
+            // Correction: Utiliser un fallback `{}` pour éviter les erreurs si filter_options est manquant.
+            const results = data.results || [];
+            const filterOptions = data.filter_options || {};
+            prowlarrResultsCache = results;
+
             if (data.error) {
                 resultsContainer.html(`<div class="alert alert-danger">${data.error}</div>`);
                 return;
             }
-            if (!data || data.length === 0) {
-                resultsContainer.html('<div class="alert alert-info mt-3">Aucun résultat trouvé pour cette recherche avec les filtres actuels.</div>');
+
+            if (results.length === 0) {
+                resultsContainer.html('<div class="alert alert-info mt-3">Aucun résultat trouvé.</div>');
+                $('#advancedFilters').collapse('hide');
                 return;
             }
-            let resultsHtml = `<hr><h4 class="mb-3">Résultats pour "${payload.query}" (${data.length})</h4><ul class="list-group">`;
-            data.forEach(result => {
+
+            populateFilters(results, filterOptions);
+
+            resultsContainer.empty();
+            const header = $(`<hr><h4 class="mb-3">Résultats pour "${payload.query}" (<span id="results-count">${results.length}</span> / <span>${results.length}</span>)</h4>`);
+            resultsContainer.append(header);
+
+            const listGroup = $('<ul class="list-group"></ul>');
+            results.forEach(result => {
                 const sizeInGB = (result.size / 1024**3).toFixed(2);
                 const seedersClass = result.seeders > 0 ? 'text-success' : 'text-danger';
-                resultsHtml += `
-                    <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap">
-                        <div class="me-auto" style="flex-basis: 60%; min-width: 300px;">
-                            <strong>${result.title}</strong><br>
-                            <small class="text-muted">
-                                Indexer: ${result.indexer} | Taille: ${sizeInGB} GB | Seeders: <span class="${seedersClass}">${result.seeders}</span>
-                            </small>
-                        </div>
-                        <div class="p-2" style="min-width: 150px; text-align: center;">
-                            <button class="btn btn-sm btn-outline-info check-status-btn" data-guid="${result.guid}" data-title="${result.title}">Vérifier Statut</button>
-                            <div class="spinner-border spinner-border-sm d-none" role="status"></div>
-                        </div>
-                        <div class="p-2">
-                            <a href="#" class="btn btn-sm btn-success download-and-map-btn"
-                               data-title="${result.title}" data-download-link="${result.downloadUrl}" data-guid="${result.guid}" data-indexer-id="${result.indexerId}">
-                                <i class="fas fa-cogs"></i> & Mapper
-                            </a>
-                        </div>
-                    </li>`;
+
+                const itemContentHtml = `
+                    <div class="me-auto" style="flex-basis: 60%; min-width: 300px;">
+                        <strong></strong>
+                        <br>
+                        <small class="text-muted">
+                            Indexer: ${result.indexer} | Taille: ${sizeInGB} GB | Seeders: <span class="${seedersClass}">${result.seeders}</span>
+                        </small>
+                    </div>
+                    <div class="p-2" style="min-width: 150px; text-align: center;">
+                        <button class="btn btn-sm btn-outline-info check-status-btn">Vérifier Statut</button>
+                        <div class="spinner-border spinner-border-sm d-none" role="status"></div>
+                    </div>
+                    <div class="p-2">
+                        <a href="#" class="btn btn-sm btn-success download-and-map-btn">
+                            <i class="fas fa-cogs"></i> & Mapper
+                        </a>
+                    </div>`;
+
+                const listItem = $(`<li class="list-group-item d-flex justify-content-between align-items-center flex-wrap release-item"></li>`);
+                listItem.html(itemContentHtml);
+
+                listItem.data('parsed', result);
+
+                listItem.find('strong').text(result.title);
+                listItem.find('.check-status-btn').attr({ 'data-guid': result.guid, 'data-title': result.title });
+                listItem.find('.download-and-map-btn').attr({
+                    'data-title': result.title,
+                    'data-download-link': result.downloadUrl,
+                    'data-guid': result.guid,
+                    'data-indexer-id': result.indexerId
+                });
+
+                listGroup.append(listItem);
             });
-            resultsHtml += '</ul>';
-            resultsContainer.html(resultsHtml);
+            resultsContainer.append(listGroup);
+
+            // Correction: Appliquer le filtre par défaut APRÈS le rendu des résultats
+            const langSelect = $('#filterLang');
+            if (langSelect.find('option[value="fr"]').length > 0) {
+                langSelect.val('fr');
+            }
+            applyClientSideFilters();
+
+            $('#advancedFilters').find('select, input').prop('disabled', false);
+            $('#advancedFilters').collapse('show');
         })
         .catch(error => {
             console.error("Erreur lors de la recherche Prowlarr:", error);
@@ -198,20 +333,18 @@ $(document).ready(function() {
         });
     }
 
-    // Gestionnaire pour la RECHERCHE LIBRE (initiée par l'utilisateur)
+    $('#advancedFilters').on('change', 'select, input', function() {
+        applyClientSideFilters();
+    });
+
     $('body').on('click', '#execute-prowlarr-search-btn', function() {
-        console.log("Recherche libre manuelle initiée. Réinitialisation du contexte.");
-        window.currentMediaContext = null; // Contexte effacé car c'est une nouvelle recherche manuelle
+        window.currentMediaContext = null;
+        resetFilters();
 
         const form = $('#search-form');
         const payload = {
             query: form.find('[name="query"]').val(),
-            search_type: form.find('[name="search_type"]:checked').val(),
-            year: form.find('[name="year"]').val(),
-            lang: form.find('[name="lang"]').val(),
-            quality: $('#filterQuality').val(),
-            codec: $('#filterCodec').val(),
-            source: $('#filterSource').val()
+            search_type: form.find('[name="search_type"]:checked').val()
         };
 
         if (!payload.query) {
@@ -219,7 +352,7 @@ $(document).ready(function() {
             return;
         }
 
-        executeProwlarrSearch(payload); // Appel de la fonction partagée
+        executeProwlarrSearch(payload);
     });
 
     $('body').on('click', '.check-status-btn', function() {
@@ -354,7 +487,6 @@ $(document).ready(function() {
                 qualityProfileSelect.html('<option>Aucun profil trouvé</option>');
             }
 
-            // Activer le bouton si les valeurs par défaut sont valides
             if ($('#root-folder-select').val() && $('#quality-profile-select').val()) {
                 finalButton.prop('disabled', false);
             }
@@ -365,7 +497,6 @@ $(document).ready(function() {
     }
 
 function executeFinalMapping(payload) {
-    console.log("Exécution du mapping final avec le payload :", payload);
 
     const modalInstance = bootstrap.Modal.getInstance(modalEl[0]);
     if (modalInstance) {
@@ -414,11 +545,9 @@ function executeFinalMapping(payload) {
         new bootstrap.Modal(modalEl[0]).show();
 
         if (window.currentMediaContext) {
-            // --- DÉBUT DE LA LOGIQUE D'AIGUILLAGE ---
             const context = window.currentMediaContext;
             console.log("FLUX PRÉ-MAPPING : Contexte trouvé. Vérification de l'existence...", context);
 
-            // On utilise la route de vérification de l'existence du média
             fetch('/search/api/media/check_existence', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -429,7 +558,6 @@ function executeFinalMapping(payload) {
                 const releaseDetails = modalEl.data('release-details');
 
                 if (existenceData.exists) {
-                    // OUI : Le média existe, on mappe directement
                     console.log("FLUX PRÉ-MAPPING (EXISTANT) : Média trouvé dans *Arr. Mapping direct.");
                     const finalPayload = {
                         releaseName: releaseDetails.title,
@@ -437,7 +565,7 @@ function executeFinalMapping(payload) {
                         guid: releaseDetails.guid,
                         indexerId: releaseDetails.indexerId,
                         instanceType: context.media_type,
-                        mediaId: context.id // On envoie l'ID externe (TVDB/TMDb)
+                        mediaId: context.id
                     };
                     executeFinalMapping(finalPayload);
 
@@ -445,7 +573,6 @@ function executeFinalMapping(payload) {
                     if(modalInstance) modalInstance.hide();
 
                 } else {
-                    // NON : Le média est nouveau, on affiche la vue d'ajout
                     console.log("FLUX PRÉ-MAPPING (NOUVEAU) : Média non trouvé. Affichage de la vue d'ajout.");
                     populateAndShowAddItemView(context);
                 }
@@ -454,7 +581,6 @@ function executeFinalMapping(payload) {
                 console.error("Erreur lors de la vérification de l'existence du média:", error);
                 alert("Une erreur est survenue lors de la communication avec le serveur.");
             });
-            // --- FIN DE LA LOGIQUE D'AIGUILLAGE ---
 
         } else {
             console.log("FLUX CLASSIQUE : Aucun contexte, lancement du lookup.");
@@ -552,7 +678,6 @@ function executeFinalMapping(payload) {
         .then(data => { displayResults(data.results, mediaType); });
     });
 
-    // NOUVEL ÉVÉNEMENT : Activer le bouton final uniquement si les sélections sont valides
     $('body').on('change', '#root-folder-select, #quality-profile-select', function() {
         const rootFolder = $('#root-folder-select').val();
         const qualityProfile = $('#quality-profile-select').val();
@@ -699,4 +824,10 @@ function executeFinalMapping(payload) {
             button.prop('disabled', false).text('Choisir ce média');
         });
     });
+
+    // Gestion de la visibilité des filtres intelligents
+    $('input[name="search_type"]').on('change', updateFilterVisibility);
+
+    // Appel initial pour définir le bon état au chargement de la page
+    updateFilterVisibility();
 });

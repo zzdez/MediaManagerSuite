@@ -23,9 +23,10 @@ from app.seedbox_ui import seedbox_ui_bp
 import requests # Pour les appels API externes (Sonarr, Radarr, rTorrent)
 from requests.exceptions import RequestException # Pour gérer les erreurs de connexion
 import paramiko
+from threading import Thread
 # --- Imports spécifiques à l'application MediaManagerSuite ---
 from app.auth import internal_api_required
-from app.utils import staging_processor
+from app.utils import staging_processor, sftp_scanner
 from app.utils.arr_client import search_sonarr_by_title, search_radarr_by_title
 from app.utils.tvdb_client import CustomTVDBClient
 from app.utils.tmdb_client import TheMovieDBClient
@@ -38,6 +39,7 @@ from app.utils.rtorrent_client import (
     add_torrent_file as rtorrent_add_torrent_file_httprpc,
     get_torrent_hash_by_name as rtorrent_get_hash_by_name,
     delete_torrent as rtorrent_delete_torrent_api,
+    get_torrent_files as rtorrent_get_files_api,
 )
 
 # Clients Sonarr/Radarr (pour l'ajout de nouveaux médias)
@@ -1600,34 +1602,10 @@ def index():
     # --- Fin Items du Staging Local ---
 
 
-    # --- NOUVEAU: Items en Attente/Erreur depuis pending_torrents_map.json ---
-    all_pending_torrents = torrent_map_manager.get_all_torrents_in_map()
-    items_requiring_attention = []
-    if isinstance(all_pending_torrents, dict): # S'assurer que c'est un dictionnaire
-        for torrent_hash, data in all_pending_torrents.items():
-            status = data.get("status", "unknown")
-            # Définir les statuts qui nécessitent une attention.
-            # 'completed_auto', 'completed_manual', 'processed_manual' sont OK.
-            # Les autres pourraient nécessiter une attention.
-            if not status.startswith("completed_") and status != "processed_manual":
-                item_info = data.copy() # Copier pour ne pas modifier l'original en ajoutant le hash
-                item_info['torrent_hash'] = torrent_hash # Ajouter le hash pour les actions
-                # Vérifier si l'item est physiquement dans le staging (pour l'action "Réessayer")
-                if local_staging_path and item_info.get('release_name'):
-                    item_info['is_in_staging'] = (Path(local_staging_path) / item_info['release_name']).exists()
-                else:
-                    item_info['is_in_staging'] = False
-                items_requiring_attention.append(item_info)
+    # --- Fin Items du Staging Local ---
 
-    # Trier les items par date de mise à jour (plus récent en premier) ou par statut
-    if items_requiring_attention:
-        try:
-            items_requiring_attention.sort(key=lambda x: x.get('updated_at', x.get('added_at', '')), reverse=True)
-        except Exception as e_sort:
-             logger.warning(f"Index: Erreur lors du tri des items_requiring_attention: {e_sort}")
 
-    logger.debug(f"Index: Items nécessitant attention: {len(items_requiring_attention)}")
-    # --- Fin Items en Attente/Erreur ---
+    # --- Fin Items du Staging Local ---
 
     sonarr_configured = bool(current_app.config.get('SONARR_URL') and current_app.config.get('SONARR_API_KEY'))
     radarr_configured = bool(current_app.config.get('RADARR_URL') and current_app.config.get('RADARR_API_KEY'))
@@ -1636,8 +1614,35 @@ def index():
                            items_tree=items_tree_data,
                            can_scan_sonarr=sonarr_configured,
                            can_scan_radarr=radarr_configured,
-                           staging_dir_display=local_staging_path,
-                           items_requiring_attention=items_requiring_attention) # Passer la nouvelle liste au template
+                           staging_dir_display=local_staging_path)
+
+@seedbox_ui_bp.route('/trigger-sftp-scan', methods=['POST'])
+@login_required
+def trigger_sftp_scanner_route():
+    """
+    Manually triggers the SFTP scanner in a background thread.
+    """
+    logger = current_app.logger
+    lock_file = Path(current_app.instance_path) / 'sftp_scanner.lock'
+
+    if lock_file.exists():
+        flash("Un scan est déjà en cours. Veuillez patienter.", 'warning')
+        logger.warning("Manual SFTP scan trigger failed: Scan already in progress (lock file exists).")
+        return redirect(url_for('seedbox_ui.index'))
+
+    def run_scan_in_thread(app):
+        with app.app_context():
+            logger.info("Background SFTP scan thread started.")
+            sftp_scanner.scan_and_map_torrents()
+            logger.info("Background SFTP scan thread finished.")
+
+    app = current_app._get_current_object()
+    thread = Thread(target=run_scan_in_thread, args=[app])
+    thread.start()
+
+    flash("Le scan des torrents terminés a été démarré en arrière-plan.", 'info')
+    logger.info("Manual SFTP scan triggered successfully in a background thread.")
+    return redirect(url_for('seedbox_ui.index'))
 
 @seedbox_ui_bp.route('/delete/<path:item_name>', methods=['POST'])
 @login_required
@@ -3088,7 +3093,7 @@ def rtorrent_add_torrent_action():
 def rtorrent_list_view():
     current_app.logger.info("Accessing rTorrent list view page (using httprpc client).")
 
-    torrents_data, error_msg_rtorrent = rtorrent_list_torrents_api() # This now calls the httprpc version
+    torrents_data, error_msg_rtorrent = rtorrent_list_torrents_api()
 
     if error_msg_rtorrent:
         current_app.logger.error(f"Error fetching torrents from rTorrent (httprpc): {error_msg_rtorrent}")
@@ -3098,53 +3103,47 @@ def rtorrent_list_view():
                                page_title="Liste des Torrents rTorrent (Erreur)",
                                error_message=error_msg_rtorrent)
 
-    if torrents_data is None: # Should be caught by error_msg_rtorrent
+    if torrents_data is None:
         current_app.logger.warning("rtorrent_list_torrents_api (httprpc) returned None for data without an error message.")
         flash("Aucune donnée reçue de rTorrent.", "warning")
         torrents_data = []
 
-    # Load the full MMS map once
     all_mms_associations = torrent_map_manager.get_all_torrents_in_map()
     if not isinstance(all_mms_associations, dict):
         current_app.logger.error("torrent_map_manager.get_all_torrents_in_map() did not return a dict.")
-        all_mms_associations = {} # Ensure it's a dict for safe lookup
+        all_mms_associations = {}
 
     torrents_with_assoc = []
     local_staging_path = current_app.config.get('LOCAL_STAGING_PATH')
 
     if isinstance(torrents_data, list):
-        for torrent in torrents_data: # Each 'torrent' is a dict from the new list_torrents()
+        for torrent in torrents_data:
             torrent_hash = torrent.get('hash')
-
             mms_status = 'unknown'
             mms_file_exists = False
 
-            if torrent_hash and torrent_hash in all_mms_associations:
-                assoc_data = all_mms_associations[torrent_hash]
-                mms_status = assoc_data.get('status', 'unknown')
-
-                # Check file existence based on status and configured paths
-                if mms_status in ['in_staging', 'pending_staging', 'error_staging_path_missing', 'error_mms_all_files_failed_move', 'error_sonarr_season_undefined_for_file', 'error_mms_file_move']:
-                    # These statuses imply the file should be in local staging
-                    release_name = assoc_data.get('release_name')
-                    if release_name and local_staging_path:
-                        full_path = Path(local_staging_path) / release_name
-                        mms_file_exists = full_path.exists()
-                elif mms_status == 'completed_manual' or mms_status == 'completed_auto':
-                    # For imported items, check if they exist in their final destination (more complex, might need to query Sonarr/Radarr)
-                    # For now, we'll assume if it's imported, it exists, or we'd need more specific path info from the association.
-                    # Or, if the goal is to check if it's still in staging *after* import, that's a different check.
-                    # For simplicity, if it's imported, we'll mark it as existing in its final place.
-                    # A more robust check would involve knowing the final path from the association data.
-                    # For now, we'll just assume it exists if imported.
-                    mms_file_exists = True # Placeholder, actual check would be more complex
-
-            torrent['mms_status'] = mms_status
-            torrent['mms_file_exists'] = mms_file_exists
+            # Format load date from rTorrent
+            load_timestamp = torrent.get('load_date', 0)
+            if load_timestamp > 0:
+                torrent['load_date_str'] = datetime.fromtimestamp(load_timestamp).strftime('%Y-%m-%d %H:%M:%S')
+            else:
+                torrent['load_date_str'] = 'N/A'
 
             association_data = all_mms_associations.get(torrent_hash)
             if association_data:
                 torrent['target_id'] = association_data.get('target_id')
+                mms_status = association_data.get('status', 'unknown')
+
+                if mms_status in ['in_staging', 'pending_staging', 'error_staging_path_missing', 'error_mms_all_files_failed_move', 'error_sonarr_season_undefined_for_file', 'error_mms_file_move']:
+                    release_name = association_data.get('release_name')
+                    if release_name and local_staging_path:
+                        full_path = Path(local_staging_path) / release_name
+                        mms_file_exists = full_path.exists()
+                elif mms_status == 'completed_manual' or mms_status == 'completed_auto':
+                    mms_file_exists = True
+
+            torrent['mms_status'] = mms_status
+            torrent['mms_file_exists'] = mms_file_exists
 
             torrents_with_assoc.append({
                 "details": torrent,
@@ -3153,13 +3152,12 @@ def rtorrent_list_view():
     else:
         current_app.logger.error(f"rtorrent_list_torrents_api (httprpc) did not return a list. Got: {type(torrents_data)}")
         flash("Format de données inattendu reçu de rTorrent.", "danger")
-        # Render with empty list
         return render_template('seedbox_ui/rtorrent_list.html', torrents_with_assoc=[], page_title="Liste des Torrents rTorrent (Erreur Format)", error_message="Format de données rTorrent invalide.")
 
+    torrents_with_assoc.sort(key=lambda x: x['details'].get('load_date', 0), reverse=True)
 
     current_app.logger.info(f"Affichage de {len(torrents_with_assoc)} torrent(s) avec leurs informations d'association (httprpc).")
 
-    # Pass configured labels to the template
     config_label_sonarr = current_app.config.get('RTORRENT_LABEL_SONARR', 'sonarr')
     config_label_radarr = current_app.config.get('RTORRENT_LABEL_RADARR', 'radarr')
 
@@ -3191,6 +3189,25 @@ def delete_rtorrent_torrent():
     except Exception as e:
         logger.error(f"Erreur lors de la suppression du torrent {torrent_hash}: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@seedbox_ui_bp.route('/api/rtorrent/torrent/<string:torrent_hash>/files')
+@login_required
+def get_rtorrent_torrent_files(torrent_hash):
+    """
+    API endpoint to get the file list for a specific torrent.
+    """
+    logger = current_app.logger
+    logger.info(f"API request for files of torrent hash: {torrent_hash}")
+
+    files, error = rtorrent_get_files_api(torrent_hash)
+
+    if error:
+        logger.error(f"Error getting files for torrent {torrent_hash}: {error}")
+        return jsonify({"success": False, "error": error}), 500
+
+    return jsonify({"success": True, "files": files})
+
 
 @seedbox_ui_bp.route('/rtorrent/batch-action', methods=['POST'])
 @login_required

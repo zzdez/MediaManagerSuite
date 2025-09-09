@@ -17,6 +17,17 @@
                            id="{{ item.key }}"
                            name="{{ item.key }}"
                            value="{{ item.value }}">
+            {% elif item.type == 'textarea' %}
+                <div class="mb-3">
+                    <label for="{{ item.key }}" class="form-label"><code>{{ item.key }}</code></label>
+                    <textarea class="form-control"
+                              id="{{ item.key }}"
+                              name="{{ item.key }}"
+                              rows="3">{{ item.value }}</textarea>
+                    {% if item.description %}
+                        <div class="form-text text-muted fst-italic">{{ item.description }}</div>
+                    {% endif %}
+                </div>
                     {% if item.description %}
                         <div class="form-text text-muted fst-italic">{{ item.description }}</div>
                     {% endif %}

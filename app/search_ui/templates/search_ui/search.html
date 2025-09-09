@@ -94,18 +94,7 @@
                         <div class="col-md-6">
                             <input type="text" name="query" class="form-control" placeholder="Titre du film ou de la série..." value="{{ query or '' }}">
                         </div>
-                        <div class="col-md-2">
-                            <input type="number" name="year" class="form-control" placeholder="Année">
-                        </div>
-                        <div class="col-md-2">
-                            <select name="lang" class="form-select">
-                                <option value="">Toutes les langues</option>
-                                <option value="fr">Français</option>
-                                <option value="en">Anglais</option>
-                                <!-- Ajouter d'autres langues si nécessaire -->
-                            </select>
-                        </div>
-                        <div class="col-md-2">
+                        <div class="col-md-4">
                             <button type="button" id="execute-prowlarr-search-btn" class="btn btn-primary w-100">Rechercher</button>
                         </div>
                     </div>
@@ -124,38 +113,73 @@
                 <div class="collapse" id="advancedFilters">
                     <div class="card card-body mb-3">
                         <div class="row g-3">
+                            <!-- Filtre par Type de Pack -->
+                            <div class="col-md-3">
+                                <label for="filterPackType" class="form-label">Type de Pack</label>
+                                <select id="filterPackType" class="form-select" disabled>
+                                    <option value="" selected>Tous</option>
+                                    <option value="episode">Épisode Unique</option>
+                                    <option value="season">Saison Complète</option>
+                                    <option value="collection">Intégrale / Collection</option>
+                                    <option value="special">Spécial</option>
+                                </select>
+                            </div>
+
                             <!-- Filtre par Qualité -->
-                            <div class="col-md-4">
+                            <div class="col-md-3">
                                 <label for="filterQuality" class="form-label">Qualité</label>
-                                <select id="filterQuality" class="form-select">
+                                <select id="filterQuality" class="form-select" disabled>
                                     <option value="" selected>Toutes</option>
-                                    <option value="2160p">2160p (4K)</option>
-                                    <option value="1080p">1080p</option>
-                                    <option value="720p">720p</option>
-                                    <option value="480p">SD (480p)</option>
                                 </select>
                             </div>
 
                             <!-- Filtre par Codec -->
-                            <div class="col-md-4">
+                            <div class="col-md-3">
                                 <label for="filterCodec" class="form-label">Codec Vidéo</label>
-                                <select id="filterCodec" class="form-select">
+                                <select id="filterCodec" class="form-select" disabled>
                                     <option value="" selected>Tous</option>
-                                    <option value="x265">x265 / HEVC</option>
-                                    <option value="x264">x264 / AVC</option>
-                                    <option value="av1">AV1</option>
                                 </select>
                             </div>
 
                             <!-- Filtre par Source -->
-                            <div class="col-md-4">
+                            <div class="col-md-3">
                                 <label for="filterSource" class="form-label">Source</label>
-                                <select id="filterSource" class="form-select">
+                                <select id="filterSource" class="form-select" disabled>
                                     <option value="" selected>Toutes</option>
-                                    <option value="bluray">Blu-ray</option>
-                                    <option value="web-dl">WEB-DL</option>
-                                    <option value="remux">Remux</option>
                                 </select>
+                            </div>
+                        </div>
+                        <div class="row g-3 mt-2">
+                            <!-- Filtre par Langue -->
+                            <div class="col-md-3">
+                                <label for="filterLang" class="form-label">Langue</label>
+                                <select id="filterLang" class="form-select" disabled>
+                                    <option value="" selected>Toutes</option>
+                                </select>
+                            </div>
+                            <!-- Filtre par Release Group -->
+                            <div class="col-md-3">
+                                <label for="filterReleaseGroup" class="form-label">Release Group</label>
+                                <select id="filterReleaseGroup" class="form-select" disabled>
+                                    <option value="" selected>Tous</option>
+                                </select>
+                            </div>
+                            <!-- Filtre par Année -->
+                            <div class="col-md-2">
+                                <label for="filterYear" class="form-label">Année</label>
+                                <input type="number" id="filterYear" class="form-control" placeholder="ex: 2023" disabled>
+                            </div>
+                        </div>
+                        <div class="row g-3 mt-2">
+                            <!-- Filtre par Saison -->
+                            <div class="col-md-3">
+                                <label for="filterSeason" class="form-label">Saison</label>
+                                <input type="number" id="filterSeason" class="form-control" placeholder="ex: 3" disabled>
+                            </div>
+                            <!-- Filtre par Épisode -->
+                            <div class="col-md-3">
+                                <label for="filterEpisode" class="form-label">Épisode</label>
+                                <input type="number" id="filterEpisode" class="form-control" placeholder="ex: 12" disabled>
                             </div>
                         </div>
                     </div>
