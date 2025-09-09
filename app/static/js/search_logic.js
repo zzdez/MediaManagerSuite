@@ -133,17 +133,19 @@ $(document).ready(function() {
     function updateFilterVisibility() {
         const searchType = $('input[name="search_type"]:checked').val();
 
-        // Les filtres pour les séries
-        const seriesFilters = $('#filterSeason, #filterEpisode, #filterPackType');
-        // Le filtre pour les films
-        const movieFilters = $('#filterYear');
+        // Filtres spécifiques aux séries
+        const seriesOnlyFilters = $('#filterSeason, #filterEpisode');
+        // Filtre spécifique aux films
+        const movieOnlyFilters = $('#filterYear');
+        // Le filtre "Type de Pack" est maintenant toujours visible
+        // const packTypeFilter = $('#filterPackType');
 
         if (searchType === 'sonarr') { // Séries
-            seriesFilters.closest('.col-md-3, .col-md-2').show();
-            movieFilters.closest('.col-md-2').hide();
+            seriesOnlyFilters.closest('.col-md-3, .col-md-2').show();
+            movieOnlyFilters.closest('.col-md-2').hide();
         } else { // 'radarr' pour les Films
-            seriesFilters.closest('.col-md-3, .col-md-2').hide();
-            movieFilters.closest('.col-md-2').show();
+            seriesOnlyFilters.closest('.col-md-3, .col-md-2').hide();
+            movieOnlyFilters.closest('.col-md-2').show();
         }
     }
 
@@ -219,10 +221,11 @@ $(document).ready(function() {
 
             // Filtre intelligent "Type de Pack"
             if (activeFilters.packType) {
+                if (activeFilters.packType === 'episode' && !data.is_episode) show = false;
                 if (activeFilters.packType === 'season' && !data.is_season_pack) show = false;
-                if (activeFilters.packType === 'special' && !data.is_special) show = false;
                 if (activeFilters.packType === 'collection' && !data.is_collection) show = false;
-                if (activeFilters.packType === 'episode' && (data.is_season_pack || data.is_special || data.is_collection)) show = false;
+                // Le filtre "special" peut être combiné, donc on ne l'exclut pas des autres types
+                if (activeFilters.packType === 'special' && !data.is_special) show = false;
             }
 
             // Appliquer le résultat

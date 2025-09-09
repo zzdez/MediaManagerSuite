@@ -142,15 +142,25 @@ def prowlarr_search():
         result['season'] = guess.get('season')
         result['episode'] = guess.get('episode')
 
-        result['is_season_pack'] = result['season'] is not None and result['episode'] is None
+        # --- Logique de Détection de Pack Améliorée ---
+        result['is_collection'] = False
+        result['is_season_pack'] = False
+        result['is_episode'] = False
+
+        title_lower = title.lower()
+        collection_keywords = ['integrale', 'trilogy', 'trilogie', 'collection', 'saga', 'complete', 'boxset', 'heptalogy', 'hexalogie']
+
+        if any(keyword in title_lower for keyword in collection_keywords):
+            result['is_collection'] = True
+        elif 'season' in guess and 'episode' not in guess:
+            result['is_season_pack'] = True
+        elif 'episode' in guess:
+            result['is_episode'] = True
+
         is_special = result['season'] == 0 or ('episode_title' in guess and isinstance(guess['episode_title'], str) and 'special' in guess['episode_title'].lower())
         if isinstance(result['episode'], int) and result['episode'] > 50 and result['season'] is not None:
             is_special = True
         result['is_special'] = is_special
-
-        # Détection des intégrales/collections
-        collection_keywords = ['integrale', 'trilogy', 'collection', 'saga', 'complete', 'boxset']
-        result['is_collection'] = any(keyword in title.lower() for keyword in collection_keywords)
 
         enriched_results.append(result)
 
