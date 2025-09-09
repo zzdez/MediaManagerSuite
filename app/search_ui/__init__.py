@@ -107,9 +107,6 @@ def prowlarr_search():
         # Fusionner les données parsées avec le résultat original de Prowlarr
         final_result = {**result, **parsed_data}
 
-        # --- LOG DE DÉBOGAGE CIBLÉ ---
-        current_app.logger.info(f"DEBUG_PARSE_RESULT: Titre='{release_title}', is_collection={final_result.get('is_collection')}, is_season_pack={final_result.get('is_season_pack')}, is_episode={final_result.get('is_episode')}")
-
         # --- Filtre intelligent pour ne garder que les résultats pertinents ---
         if search_type == 'sonarr':
             # Pour les séries, on garde les épisodes, les packs de saison et les collections
