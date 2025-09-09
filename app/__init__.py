@@ -9,6 +9,7 @@ from app.auth import login_required
 
 from flask import Flask, render_template, session, flash, request, redirect, url_for, current_app
 from config import Config
+import google.generativeai as genai
 
 # APScheduler imports
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -54,6 +55,17 @@ def create_app(config_class=Config):
         logging.basicConfig(level=logging.INFO,
                             format='[%(asctime)s] %(levelname)s in %(module)s: %(message)s')
         logger.info('MediaManagerSuite startup in debug/development mode')
+
+    # Initialisation de Google Gemini (une seule fois au démarrage)
+    gemini_api_key = app.config.get('GEMINI_API_KEY')
+    if gemini_api_key:
+        try:
+            genai.configure(api_key=gemini_api_key)
+            app.logger.info("Google Gemini a été configuré avec succès.")
+        except Exception as e:
+            app.logger.error(f"Erreur lors de la configuration de Google Gemini: {e}")
+    else:
+        app.logger.warning("Clé API Gemini non trouvée. Le service de suggestion de requêtes sera limité aux requêtes de secours.")
 
 
     # Enregistrement des Blueprints
