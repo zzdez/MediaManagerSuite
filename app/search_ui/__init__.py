@@ -7,9 +7,9 @@ from config import Config
 from app.utils import arr_client
 from Levenshtein import distance as levenshtein_distance
 from app.utils.arr_client import parse_media_name
-from guessit import guessit
 from app.utils.prowlarr_client import search_prowlarr
-from app.utils.config_manager import load_search_categories, load_search_filter_aliases, load_filter_options
+from app.utils.config_manager import load_search_categories, load_filter_options
+from app.utils.release_parser import parse_release_data
 from app.utils.tmdb_client import TheMovieDBClient
 from app.utils.tvdb_client import CustomTVDBClient
 
@@ -89,12 +89,8 @@ def prowlarr_search():
 
     # 1. Charger les configurations
     filter_options = load_filter_options()
-    aliases = load_search_filter_aliases().get('lang', {})
     search_config = load_search_categories()
     category_ids = search_config.get(f"{search_type}_categories", [])
-
-    # Créer un dictionnaire inversé pour la recherche d'alias
-    alias_map = {alias: key for key, alias_list in aliases.items() for alias in alias_list}
 
     # 2. On envoie la requête de base à Prowlarr
     raw_results = search_prowlarr(query=query, categories=category_ids)
@@ -102,67 +98,24 @@ def prowlarr_search():
     if raw_results is None:
         return jsonify({"error": "Erreur de communication avec Prowlarr."}), 500
 
-    # 3. Enrichir les résultats avec Guessit
+    # 3. Enrichir les résultats en utilisant le nouveau parseur centralisé
     enriched_results = []
     for result in raw_results:
-        title = result.get('title', '')
-        guess = guessit(title)
+        release_title = result.get('title', '')
+        parsed_data = parse_release_data(release_title)
 
-        if search_type == 'sonarr' and 'season' not in guess:
-            continue
-        if search_type == 'radarr' and 'year' not in guess:
-            continue
+        # Fusionner les données parsées avec le résultat original de Prowlarr
+        # Les données de Prowlarr (indexer, seeders, etc.) sont conservées
+        # Les données parsées (quality, codec, etc.) les écrasent ou les ajoutent
+        final_result = {**result, **parsed_data}
 
-        def to_str(value):
-            return str(value) if value is not None else None
+        # Le champ 'is_special' est encore géré ici car il dépend de 'season' et 'episode'
+        final_result['is_special'] = (
+            final_result['season'] == 0 or
+            (isinstance(final_result.get('episode'), int) and final_result.get('episode') > 50 and final_result.get('season') is not None)
+        )
 
-        # Normalisation de la langue avec les alias
-        raw_langs = guess.get('language')
-        if not isinstance(raw_langs, list):
-            raw_langs = [raw_langs] if raw_langs is not None else []
-
-        normalized_langs = set()
-        for lang in raw_langs:
-            lang_str = str(lang).lower()
-            # Si l'alias est trouvé, on utilise la clé normalisée (ex: 'french'), sinon la langue brute
-            normalized_langs.add(alias_map.get(lang_str, lang_str))
-
-        result['language'] = ','.join(sorted(list(normalized_langs))) if normalized_langs else None
-
-        # Ajout des autres champs parsés
-        result['quality'] = to_str(guess.get('screen_size'))
-        result['codec'] = to_str(guess.get('video_codec'))
-        result['source'] = to_str(guess.get('source'))
-        result['year'] = guess.get('year')
-        raw_group = to_str(guess.get('release_group'))
-        if raw_group:
-            result['release_group'] = raw_group.split('(')[0].strip()
-        else:
-            result['release_group'] = None
-        result['season'] = guess.get('season')
-        result['episode'] = guess.get('episode')
-
-        # --- Logique de Détection de Pack Améliorée ---
-        result['is_collection'] = False
-        result['is_season_pack'] = False
-        result['is_episode'] = False
-
-        title_lower = title.lower()
-        collection_keywords = ['integrale', 'trilogy', 'trilogie', 'collection', 'saga', 'complete', 'boxset', 'heptalogy', 'hexalogie']
-
-        if any(keyword in title_lower for keyword in collection_keywords):
-            result['is_collection'] = True
-        elif 'season' in guess and 'episode' not in guess:
-            result['is_season_pack'] = True
-        elif 'episode' in guess:
-            result['is_episode'] = True
-
-        is_special = result['season'] == 0 or ('episode_title' in guess and isinstance(guess['episode_title'], str) and 'special' in guess['episode_title'].lower())
-        if isinstance(result['episode'], int) and result['episode'] > 50 and result['season'] is not None:
-            is_special = True
-        result['is_special'] = is_special
-
-        enriched_results.append(result)
+        enriched_results.append(final_result)
 
     # 4. Construire la réponse finale
     response_data = {
