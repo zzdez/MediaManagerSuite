@@ -233,14 +233,15 @@ $(document).ready(function() {
             return response.json();
         })
         .then(data => {
+            // Correction: Utiliser un fallback `{}` pour éviter les erreurs si filter_options est manquant.
+            const results = data.results || [];
+            const filterOptions = data.filter_options || {};
+            prowlarrResultsCache = results;
+
             if (data.error) {
                 resultsContainer.html(`<div class="alert alert-danger">${data.error}</div>`);
                 return;
             }
-
-            const results = data.results || [];
-            const filterOptions = data.filter_options || {};
-            prowlarrResultsCache = results;
 
             if (results.length === 0) {
                 resultsContainer.html('<div class="alert alert-info mt-3">Aucun résultat trouvé.</div>');
