@@ -47,14 +47,14 @@ def suggest_trailers():
         return jsonify({'success': False, 'error': 'Aucun résultat trouvé pour les requêtes générées.'})
 
     # Étape 3: Premier tri basé sur les titres
-    sorted_by_title = score_and_sort_results(all_results, title, media_type)
+    sorted_by_title = score_and_sort_results(all_results, title, year, media_type)
 
     # Étape 4: Enrichissement avec les détails pour le top 15
     top_15_ids = [res['videoId'] for res in sorted_by_title[:15]]
     if top_15_ids:
         video_details = get_videos_details(top_15_ids, youtube_api_key)
         # Re-trier la liste complète avec les nouvelles informations
-        final_sorted_list = score_and_sort_results(sorted_by_title, title, media_type, video_details=video_details)
+        final_sorted_list = score_and_sort_results(sorted_by_title, title, year, media_type, video_details=video_details)
     else:
         final_sorted_list = sorted_by_title
 

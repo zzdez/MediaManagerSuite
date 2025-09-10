@@ -40,49 +40,71 @@ def generate_youtube_queries(title, year, media_type):
         print(f"ERREUR lors de la génération des requêtes Gemini avec le modèle '{model_name}': {e}. Utilisation des requêtes de secours.")
         return _get_fallback_queries(title, year, media_type)
 
-def score_and_sort_results(results, title, media_type, video_details=None):
+def score_and_sort_results(results, title, year, media_type, video_details=None):
     """
-    Attribue un score à chaque résultat et les trie par pertinence.
-    Le score est affiné si les détails de la vidéo (langue, sous-titres) sont fournis.
+    Attribue un score à chaque résultat et les trie par pertinence en suivant une hiérarchie stricte.
     """
     if video_details is None:
         video_details = {}
 
-    weights = {
+    tie_breaker_weights = {
         "bande annonce": 5, "trailer": 5, "officielle": 3, "official": 3,
-        "vf": 15, "vostfr": 12, # Poids augmentés pour la langue
+        "vf": 15, "vostfr": 12,
         "saison 1": 5 if media_type == 'show' else 0,
         "season 1": 5 if media_type == 'show' else 0,
         "série": 3 if media_type == 'show' else 0,
         "series": 3 if media_type == 'show' else 0,
         "film": 3 if media_type == 'movie' else 0,
         "movie": 3 if media_type == 'movie' else 0,
-        "reaction": -20, "review": -20, "analyse": -15,
-        "ending": -15, "interview": -10, "promo": -5
+        "reaction": -50, "review": -50, "analyse": -50,
+        "ending": -50, "interview": -50, "promo": -20, "episode": -50
     }
 
+    official_channels = ["hbo", "netflix", "disney", "official", "warner bros", "bandes annonces"]
+    distrusted_channels = ["filmsactu"] # Chaînes connues pour des titres trompeurs
+
     scored_results = []
+    # Simplification du titre pour la recherche (ex: "Task (2025)" -> "task")
+    simple_title = title.split('(')[0].strip().lower()
+
     for result in results:
-        score = result.get('score', 0) # On peut re-scorer
+        score = 0
         video_title_lower = result['title'].lower()
+        channel_title_lower = result['channel'].lower()
 
-        # Phase 1: Scoring basé sur le titre (si pas déjà fait)
-        if 'score' not in result:
-            if title.lower() in video_title_lower:
-                score += 10
-            for keyword, weight in weights.items():
-                if keyword in video_title_lower:
-                    score += weight
+        # Étape 1: Le titre du média DOIT être dans le titre de la vidéo. C'est la condition la plus importante.
+        if simple_title not in video_title_lower:
+            score -= 1000  # Pénalité massive pour disqualifier
+        else:
+            score += 100  # Bonus massif si le titre correspond
 
-        # Phase 2: Affinage du score avec les détails de la vidéo
+        # Étape 2: Bonus si l'année correspond
+        if str(year) in video_title_lower:
+            score += 20
+
+        # Étape 3: Bonus pour les chaînes officielles
+        for channel in official_channels:
+            if channel in channel_title_lower:
+                score += 30
+                break # Appliquer le bonus une seule fois
+
+        for channel in distrusted_channels:
+            if channel in channel_title_lower:
+                score -= 50 # Pénalité pour les chaînes non fiables
+                break
+
+        # Étape 4: Mots-clés comme départage (tie-breaker)
+        for keyword, weight in tie_breaker_weights.items():
+            if keyword in video_title_lower:
+                score += weight
+
+        # Étape 5: Affinage avec les détails de la vidéo (si disponibles)
         details = video_details.get(result['videoId'])
         if details:
-            # Bonus pour la langue audio française
             if details['snippet'].get('defaultAudioLanguage', '').lower().startswith('fr'):
-                score += 20
-            # Bonus pour les sous-titres disponibles (proxy pour VOSTFR)
+                score += 40 # Bonus VF
             if details['contentDetails'].get('caption') == 'true':
-                score += 10
+                score += 20 # Bonus sous-titres
 
         result['score'] = score
         scored_results.append(result)
