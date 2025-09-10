@@ -46,6 +46,13 @@ def suggest_trailers():
     if not all([ratingKey, original_title, year, media_type, user_id]):
         return jsonify({'success': False, 'error': 'Données manquantes (ratingKey, title, year, media_type, userId)'}), 400
 
+    # La clé de cache utilise le titre original et le ratingKey pour être unique
+    cache_key = f"trailer_search_{original_title}_{year}_{ratingKey}"
+    cached_result = get_from_cache(cache_key)
+    if cached_result:
+        current_app.logger.info(f"Cache HIT for trailer search: '{original_title}'")
+        return jsonify({'success': True, **cached_result})
+
     current_app.logger.debug(f"Suggest Trailer: Received ratingKey={ratingKey}, title='{original_title}', year={year}, userId={user_id}")
 
     try:
@@ -105,5 +112,8 @@ def suggest_trailers():
     # Log des résultats finaux pour le débogage
     log_results = [{'title': r['title'], 'channel': r['channel'], 'score': r['score']} for r in top_results]
     current_app.logger.debug(f"Suggest Trailer: Top 10 final results: {log_results}")
+
+    # Mettre le résultat final en cache
+    set_in_cache(cache_key, response_data)
 
     return jsonify({'success': True, **response_data})
