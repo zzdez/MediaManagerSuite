@@ -45,6 +45,8 @@ def suggest_trailers():
     if not all([ratingKey, original_title, year, media_type]):
         return jsonify({'success': False, 'error': 'Données manquantes (ratingKey, title, year, media_type)'}), 400
 
+    current_app.logger.debug(f"Suggest Trailer: Received ratingKey={ratingKey}, title='{original_title}', year={year}")
+
     user_id = session.get('plex_user_id')
     if not user_id:
         return jsonify({'success': False, 'error': 'Utilisateur Plex non trouvé dans la session.'}), 401
@@ -56,13 +58,14 @@ def suggest_trailers():
 
         plex_item = plex_server.fetchItem(int(ratingKey))
         actual_title = get_actual_title(plex_item)
-        current_app.logger.info(f"Titre original: '{original_title}', Titre réel trouvé: '{actual_title}'")
+        current_app.logger.debug(f"Suggest Trailer: Original title='{original_title}', Found actual title='{actual_title}'")
 
     except Exception as e:
         current_app.logger.error(f"Erreur lors de la récupération du titre réel pour ratingKey {ratingKey}: {e}", exc_info=True)
         actual_title = original_title # Fallback en cas d'erreur
 
     search_queries = generate_youtube_queries(actual_title, year, media_type)
+    current_app.logger.debug(f"Suggest Trailer: Generated search queries: {search_queries}")
 
     all_results = []
     seen_video_ids = set()
@@ -101,5 +104,9 @@ def suggest_trailers():
         'nextPageToken': first_next_page_token,
         'query': first_successful_query
     }
+
+    # Log des résultats finaux pour le débogage
+    log_results = [{'title': r['title'], 'channel': r['channel'], 'score': r['score']} for r in top_results]
+    current_app.logger.debug(f"Suggest Trailer: Top 10 final results: {log_results}")
 
     return jsonify({'success': True, **response_data})

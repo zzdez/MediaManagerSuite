@@ -967,7 +967,15 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: title, year: year, media_type: mediaType, ratingKey: ratingKey }) // <-- MODIFIÉ
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            // Si la réponse HTTP n'est pas OK, on essaie de lire le JSON de l'erreur
+            return response.json().then(errData => {
+                throw new Error(errData.error || `Erreur HTTP ${response.status}`);
+            });
+        }
+        return response.json();
+    })
     .then(data => {
         if (data.success && data.results && data.results.length > 0) {
             appendTrailerResults(data.results);
@@ -979,12 +987,13 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
             }
             bootstrap.Modal.getOrCreateInstance(document.getElementById('trailer-selection-modal')).show();
         } else {
-            alert('Aucune bande-annonce pertinente n\'a été trouvée.');
+            // Gérer le cas où la requête réussit mais sans résultats, ou avec une erreur métier
+            alert(data.error || 'Aucune bande-annonce pertinente n\'a été trouvée.');
         }
     })
     .catch(error => {
         console.error('Erreur lors de la recherche de la bande-annonce:', error);
-        alert('Une erreur technique est survenue.');
+        alert(`Une erreur technique est survenue : ${error.message}`);
     })
     .finally(() => {
         button.prop('disabled', false).html('<i class="bi bi-film"></i>');
