@@ -768,7 +768,7 @@ def add_new_series_to_sonarr(tvdb_id: int, title: str, quality_profile_id: int, 
         "seasonFolder": season_folder,
         "monitored": monitored,
         "addOptions": {
-            "searchForMissingEpisodes": False,
+            "searchForMissingEpisodes": search_for_missing_episodes,
             # "monitor": "all" or "future" etc. can be specified if needed,
             # but 'monitored' at series level usually suffices.
         }
@@ -817,7 +817,7 @@ def add_new_movie_to_radarr(tmdb_id: int, title: str, quality_profile_id: int, r
         "minimumAvailability": minimum_availability, # e.g., "announced", "inCinemas", "released"
         "monitored": monitored,
         "addOptions": {
-            "searchForMovie": False
+            "searchForMovie": search_for_movie
         }
     }
 

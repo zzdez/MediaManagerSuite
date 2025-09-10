@@ -1,6 +1,6 @@
 # app/debug_tools/routes.py
 import os
-from flask import Blueprint, render_template, request, flash, current_app, redirect, url_for
+from flask import Blueprint, render_template, request, flash, current_app, redirect, url_for, jsonify
 from app.auth import login_required
 from app.utils.mapping_manager import add_or_update_torrent_in_map
 from pathlib import Path
@@ -66,3 +66,26 @@ def run_staging_simulation():
         flash(f"Erreur de simulation : {e}", "danger")
 
     return redirect(url_for('debug_tools.staging_simulator_page'))
+
+@debug_tools_bp.route('/clear_trailer_cache', methods=['POST'])
+@login_required
+def clear_trailer_cache():
+    """Supprime le fichier de cache des trailers."""
+    try:
+        # Le chemin est relatif au répertoire racine de l'instance
+        cache_file_path = Path(current_app.instance_path) / 'trailer_cache.json'
+
+        if cache_file_path.exists():
+            os.remove(cache_file_path)
+            message = "Fichier de cache des trailers ('instance/trailer_cache.json') supprimé avec succès."
+            current_app.logger.info(f"DEBUG: {message}")
+            return jsonify({'success': True, 'message': message})
+        else:
+            message = "Aucun fichier de cache à supprimer."
+            current_app.logger.info(f"DEBUG: {message}")
+            return jsonify({'success': True, 'message': message})
+
+    except Exception as e:
+        error_message = f"Erreur lors de la suppression du cache des trailers: {e}"
+        current_app.logger.error(error_message, exc_info=True)
+        return jsonify({'success': False, 'error': error_message}), 500

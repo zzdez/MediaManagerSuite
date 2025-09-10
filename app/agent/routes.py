@@ -1,43 +1,81 @@
-from flask import request, jsonify, current_app
+from flask import request, jsonify, current_app, session
 from . import agent_bp
 from app.agent.services import generate_youtube_queries, score_and_sort_results
 from app.utils.trailer_finder import find_youtube_trailer, get_videos_details
 from app.agent.cache_manager import get_from_cache, set_in_cache
+from app.utils.plex_client import get_user_specific_plex_server_from_id
+from app.utils.tmdb_client import TheMovieDBClient
+from app.utils.tvdb_client import CustomTVDBClient
+
+def get_actual_title(plex_item):
+    """Tente de trouver le titre réel via les GUIDs et les API externes."""
+    if plex_item.type == 'movie':
+        tmdb_id = next((g.id.replace('tmdb://', '') for g in plex_item.guids if g.id.startswith('tmdb://')), None)
+        if tmdb_id:
+            tmdb_client = TheMovieDBClient()
+            movie_details = tmdb_client.get_movie_details(tmdb_id)
+            if movie_details and movie_details.get('title'):
+                return movie_details['title']
+    elif plex_item.type == 'show':
+        tvdb_id = next((g.id.replace('tvdb://', '') for g in plex_item.guids if g.id.startswith('tvdb://')), None)
+        if tvdb_id:
+            tvdb_client = CustomTVDBClient()
+            series_details = tvdb_client.get_series_details_by_id(tvdb_id)
+            if series_details and series_details.get('name'):
+                return series_details['name']
+    return plex_item.title # Fallback sur le titre de Plex
 
 @agent_bp.route('/suggest_trailers', methods=['POST'])
 def suggest_trailers():
     data = request.json
     youtube_api_key = current_app.config.get('YOUTUBE_API_KEY')
 
-    # NOTE: La pagination est temporairement désactivée pour permettre l'agrégation.
-    # On pourrait la réintroduire plus tard en paginant sur la meilleure requête.
     page_token = data.get('page_token')
-    query = data.get('query')
-    if page_token or query:
-        # Pour l'instant, on ne gère pas la pagination sur une recherche agrégée.
-        # On retourne simplement une réponse vide pour éviter des erreurs.
-        return jsonify({'success': True, 'results': [], 'nextPageToken': None})
+    if page_token:
+        # La logique de pagination existante est conservée pour l'instant
+        query = data.get('query')
+        search_result = find_youtube_trailer(query, youtube_api_key, page_token=page_token)
+        return jsonify({'success': True, 'results': search_result.get('results', []), 'nextPageToken': search_result.get('nextPageToken'), 'query': query})
 
-    title, year, media_type = data.get('title'), data.get('year'), data.get('media_type')
-    if not all([title, year, media_type]):
-        return jsonify({'success': False, 'error': 'Données manquantes (title, year, media_type)'}), 400
+    ratingKey = data.get('ratingKey')
+    original_title = data.get('title')
+    year = data.get('year')
+    media_type = data.get('media_type')
 
-    # NOTE: La mise en cache est désactivée pendant le développement de la nouvelle logique.
-    # cache_key = f"trailer_search_{title}_{year}_{media_type}"
-    # cached_result = get_from_cache(cache_key)
-    # if cached_result:
-    #     return jsonify({'success': True, **cached_result})
+    if not all([ratingKey, original_title, year, media_type]):
+        return jsonify({'success': False, 'error': 'Données manquantes (ratingKey, title, year, media_type)'}), 400
 
-    # Étape 1: Générer toutes les requêtes de recherche
-    search_queries = generate_youtube_queries(title, year, media_type)
+    user_id = session.get('plex_user_id')
+    if not user_id:
+        return jsonify({'success': False, 'error': 'Utilisateur Plex non trouvé dans la session.'}), 401
 
-    # Étape 2: Agréger les résultats de toutes les requêtes
+    try:
+        plex_server = get_user_specific_plex_server_from_id(user_id)
+        if not plex_server:
+            return jsonify({'success': False, 'error': "Impossible d'établir la connexion au serveur Plex."}), 500
+
+        plex_item = plex_server.fetchItem(int(ratingKey))
+        actual_title = get_actual_title(plex_item)
+        current_app.logger.info(f"Titre original: '{original_title}', Titre réel trouvé: '{actual_title}'")
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur lors de la récupération du titre réel pour ratingKey {ratingKey}: {e}", exc_info=True)
+        actual_title = original_title # Fallback en cas d'erreur
+
+    search_queries = generate_youtube_queries(actual_title, year, media_type)
+
     all_results = []
     seen_video_ids = set()
+    first_successful_query = None
+    first_next_page_token = None
 
     for current_query in search_queries:
         search_result = find_youtube_trailer(current_query, youtube_api_key)
         if search_result and search_result['results']:
+            if not first_successful_query:
+                first_successful_query = current_query
+                first_next_page_token = search_result.get('nextPageToken')
+
             for result in search_result['results']:
                 if result['videoId'] not in seen_video_ids:
                     all_results.append(result)
@@ -46,26 +84,22 @@ def suggest_trailers():
     if not all_results:
         return jsonify({'success': False, 'error': 'Aucun résultat trouvé pour les requêtes générées.'})
 
-    # Étape 3: Premier tri basé sur les titres
-    sorted_by_title = score_and_sort_results(all_results, title, year, media_type)
+    sorted_by_title = score_and_sort_results(all_results, actual_title, year, media_type)
 
-    # Étape 4: Enrichissement avec les détails pour le top 15
-    top_15_ids = [res['videoId'] for res in sorted_by_title[:15]]
-    if top_15_ids:
-        video_details = get_videos_details(top_15_ids, youtube_api_key)
-        # Re-trier la liste complète avec les nouvelles informations
-        final_sorted_list = score_and_sort_results(sorted_by_title, title, year, media_type, video_details=video_details)
+    top_ids = [res['videoId'] for res in sorted_by_title[:15]]
+    if top_ids:
+        video_details = get_videos_details(top_ids, youtube_api_key)
+        final_sorted_list = score_and_sort_results(sorted_by_title, actual_title, year, media_type, video_details=video_details)
     else:
         final_sorted_list = sorted_by_title
 
-    # On ne retourne que le top 10 final pour garder la liste gérable
     top_results = final_sorted_list[:10]
 
-    # NOTE: Pas de mise en cache ni de nextPageToken pour l'instant.
+    # La pagination est maintenant basée sur la première requête qui a retourné des résultats
     response_data = {
         'results': top_results,
-        'nextPageToken': None, # Pagination désactivée
-        'query': ", ".join(search_queries) # Pour le debug
+        'nextPageToken': first_next_page_token,
+        'query': first_successful_query
     }
 
     return jsonify({'success': True, **response_data})
