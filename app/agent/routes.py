@@ -41,15 +41,12 @@ def suggest_trailers():
     original_title = data.get('title')
     year = data.get('year')
     media_type = data.get('media_type')
+    user_id = data.get('userId') # <-- NOUVELLE LIGNE
 
-    if not all([ratingKey, original_title, year, media_type]):
-        return jsonify({'success': False, 'error': 'Données manquantes (ratingKey, title, year, media_type)'}), 400
+    if not all([ratingKey, original_title, year, media_type, user_id]):
+        return jsonify({'success': False, 'error': 'Données manquantes (ratingKey, title, year, media_type, userId)'}), 400
 
-    current_app.logger.debug(f"Suggest Trailer: Received ratingKey={ratingKey}, title='{original_title}', year={year}")
-
-    user_id = session.get('plex_user_id')
-    if not user_id:
-        return jsonify({'success': False, 'error': 'Utilisateur Plex non trouvé dans la session.'}), 401
+    current_app.logger.debug(f"Suggest Trailer: Received ratingKey={ratingKey}, title='{original_title}', year={year}, userId={user_id}")
 
     try:
         plex_server = get_user_specific_plex_server_from_id(user_id)

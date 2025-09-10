@@ -953,7 +953,8 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
     // Cas 2: Pas d'URL Plex, on interroge l'agent pour la première page
     const year = button.data('year');
     const mediaType = button.data('media-type');
-    const ratingKey = button.data('rating-key'); // <-- NOUVELLE LIGNE
+    const ratingKey = button.data('rating-key');
+    const userId = $('#user-select').val(); // <-- NOUVELLE LIGNE
 
     console.log("Recherche initiale du trailer via l'agent...");
     button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
@@ -965,7 +966,7 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
     fetch('/api/agent/suggest_trailers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: title, year: year, media_type: mediaType, ratingKey: ratingKey }) // <-- MODIFIÉ
+        body: JSON.stringify({ title: title, year: year, media_type: mediaType, ratingKey: ratingKey, userId: userId })
     })
     .then(response => {
         if (!response.ok) {
