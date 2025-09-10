@@ -65,3 +65,27 @@ def find_youtube_trailer(query, api_key, page_token=None):
     except Exception as e:
         print(f"ERREUR lors de la recherche sur YouTube : {e}")
         return {'results': [], 'nextPageToken': None}
+
+def get_videos_details(video_ids, api_key):
+    """
+    Récupère les détails de plusieurs vidéos YouTube en un seul appel batch.
+    """
+    if not api_key or not video_ids:
+        return {}
+
+    try:
+        youtube = build('youtube', 'v3', developerKey=api_key, cache_discovery=False)
+
+        # On peut demander jusqu'à 50 IDs à la fois.
+        request = youtube.videos().list(
+            part="snippet,contentDetails",
+            id=",".join(video_ids)
+        )
+        response = request.execute()
+
+        video_details = {item['id']: item for item in response.get('items', [])}
+        return video_details
+
+    except Exception as e:
+        print(f"ERREUR lors de la récupération des détails des vidéos : {e}")
+        return {}
