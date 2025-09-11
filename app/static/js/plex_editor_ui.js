@@ -907,8 +907,9 @@ function sortTable(table, sortBy, sortType, direction) {
         sortTable(table, 'rating', 'number', newDir === 'asc' ? 1 : -1);
     });
 
-// --- DÉBUT DU BLOC DE GESTION DES BANDES-ANNONCES (V2) ---
+// --- DÉBUT DU BLOC DE GESTION DES BANDES-ANNONCES ---
 
+// Cette fonction est le point d'entrée pour la recherche de BA dans l'éditeur Plex.
 function fetchAndShowTrailers(button) {
     const title = button.data('title');
     const year = button.data('year');
@@ -916,16 +917,17 @@ function fetchAndShowTrailers(button) {
     const ratingKey = button.data('rating-key');
     const userId = $('#user-select').val();
 
-    console.log("Recherche de trailer via l'agent...");
-    button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
-
     const selectionModal = $('#trailer-selection-modal');
-    // Vider le conteneur avant une nouvelle recherche
-    $('#trailer-results-container').empty();
-    selectionModal.find('#trailer-load-more-container').hide();
-    selectionModal.data({ 'ratingKey': ratingKey, 'title': title, 'year': year, 'mediaType': mediaType });
+    const resultsContainer = $('#trailer-results-container');
+
+    // Préparer la modale
+    resultsContainer.html('<div class="text-center"><div class="spinner-border"></div></div>');
+    $('#trailer-load-more-container').hide();
+    $('#trailer-custom-search-input').val(title); // Pré-remplir la recherche
+    selectionModal.data({ ratingKey, title, year, mediaType, userId }); // Stocker tout le contexte
 
     bootstrap.Modal.getOrCreateInstance(selectionModal[0]).show();
+    button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
 
     fetch('/api/agent/suggest_trailers', {
         method: 'POST',
@@ -934,9 +936,11 @@ function fetchAndShowTrailers(button) {
     })
     .then(response => response.ok ? response.json() : response.json().then(err => Promise.reject(err)))
     .then(data => {
-        if (data.success && data.results && data.results.length > 0) {
+        resultsContainer.empty();
+        if (data.success && data.results) {
             const lockedVideoId = data.is_locked ? data.results[0].videoId : null;
-            appendTrailerResults(data.results, lockedVideoId);
+            // Utilise la fonction globale `renderTrailerResults`
+            renderTrailerResults(data.results, { lockedVideoId: lockedVideoId, showLock: true });
 
             const loadMoreBtn = $('#load-more-trailers-btn');
             if (data.nextPageToken) {
@@ -944,129 +948,47 @@ function fetchAndShowTrailers(button) {
                 $('#trailer-load-more-container').show();
             }
         } else {
-            appendTrailerResults([]); // Affiche le message "Aucun résultat"
+            renderTrailerResults([], { showLock: true }); // Affiche "Aucun résultat" mais permet le verrouillage
         }
     })
     .catch(error => {
         console.error('Erreur lors de la recherche de la bande-annonce:', error);
-        alert(`Une erreur technique est survenue : ${error.message || 'Erreur inconnue'}`);
-        bootstrap.Modal.getInstance(selectionModal[0])?.hide();
+        resultsContainer.html(`<p class="text-danger text-center">Erreur: ${error.message || 'Erreur inconnue'}</p>`);
     })
     .finally(() => {
         button.prop('disabled', false).html('<i class="bi bi-film"></i>');
     });
 }
 
+// Handler pour le bouton principal "Voir la BA" sur la ligne du média
 $(document).on('click', '.find-and-play-trailer-btn', function() {
     const plexTrailerUrl = $(this).data('plex-trailer-url');
     if (plexTrailerUrl) {
+        // Logique pour jouer une BA directement depuis Plex
         const title = $(this).data('title');
         $('#trailerModalLabel').text('Bande-Annonce (Plex): ' + title);
         $('#trailer-modal .modal-body').html(`<div class="ratio ratio-16x9"><iframe src="${plexTrailerUrl}" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>`);
         bootstrap.Modal.getOrCreateInstance(document.getElementById('trailer-modal')).show();
     } else {
+        // Lance la recherche YouTube/Agent
         fetchAndShowTrailers($(this));
     }
 });
 
-// --- FIN DU BLOC DE GESTION DES BANDES-ANNONCES (V2) ---
-
-// NOTE: Les handlers globaux (play, load-more, etc.) sont dans global_trailer_search.js
-// Seuls les handlers spécifiques au contexte de l'éditeur Plex restent ici.
-
-$(document).on('click', '.lock-trailer-btn', function(e) {
-    e.stopPropagation();
-
-    const button = $(this);
-    const isLocked = button.data('is-locked');
-    const videoId = button.data('video-id');
-    const selectionModal = $('#trailer-selection-modal');
-    const mediaContext = selectionModal.data();
-    const mainTrailerBtn = $(`.find-and-play-trailer-btn[data-rating-key='${mediaContext.ratingKey}']`);
-
-    if (!mediaContext.ratingKey) {
-        // This should not happen in plex_editor context, but as a safeguard:
-        alert("Erreur: Le contexte du média (ratingKey) est introuvable pour le verrouillage.");
-        return;
-    }
-
-    const endpoint = isLocked ? '/api/agent/unlock_trailer' : '/api/agent/lock_trailer';
-    let payload = { ratingKey: mediaContext.ratingKey, title: mediaContext.title, year: mediaContext.year };
-    if (!isLocked) {
-        payload.videoId = videoId;
-    }
-
-    button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
-
-    fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            alert(data.message);
-            // On ne ferme pas la modale, on la rafraîchit
+// Écouteur pour l'événement personnalisé déclenché par le script global
+// après un verrouillage/déverrouillage réussi.
+$(document).on('trailerActionSuccess', function(event, mediaContext) {
+    if (mediaContext && mediaContext.ratingKey) {
+        console.log("Action de BA réussie, rafraîchissement pour le ratingKey :", mediaContext.ratingKey);
+        const mainTrailerBtn = $(`.find-and-play-trailer-btn[data-rating-key='${mediaContext.ratingKey}']`);
+        if (mainTrailerBtn.length) {
+            // Relance la recherche pour rafraîchir l'état (verrouillé/déverrouillé) et la liste
             fetchAndShowTrailers(mainTrailerBtn);
-        } else {
-            alert('Erreur: ' + data.error);
-            button.prop('disabled', false).html('<i class="bi bi-lock-fill"></i>');
         }
-    })
-    .catch(error => {
-        console.error('Erreur technique lors du (dé)verrouillage:', error);
-        alert('Une erreur technique est survenue.');
-        button.prop('disabled', false).html('<i class="bi bi-lock-fill"></i>');
-    });
-});
-
-
-$(document).on('click', '#trailer-custom-search-btn', function() {
-    const selectionModal = $('#trailer-selection-modal');
-    const query = $('#trailer-custom-search-input').val().trim();
-    let mediaContext = selectionModal.data();
-    const resultsContainer = $('#trailer-results-container');
-
-    if (!query) return;
-
-    // Standalone mode check (though this file is for plex_editor, good practice)
-    if (!mediaContext || !mediaContext.title) {
-        mediaContext = {
-            title: query,
-            year: '',
-            mediaType: 'movie'
-        };
     }
-
-    const lockedVideoId = resultsContainer.find('.lock-trailer-btn[data-is-locked="true"]').data('video-id');
-
-    resultsContainer.empty().html('<div class="text-center"><div class="spinner-border"></div></div>');
-
-    fetch('/api/agent/custom_trailer_search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            query: query,
-            title: mediaContext.title,
-            year: mediaContext.year,
-            media_type: mediaContext.mediaType
-        })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            appendTrailerResults(data.results, lockedVideoId);
-        } else {
-            alert('Erreur: ' + data.error);
-            appendTrailerResults([], lockedVideoId);
-        }
-    })
-    .catch(error => {
-        console.error('Erreur de recherche personnalisée:', error);
-        alert('Une erreur technique est survenue.');
-    });
 });
+
+// --- FIN DU BLOC DE GESTION DES BANDES-ANNONCES ---
 
     // NOUVEL ÉCOUTEUR D'ÉVÉNEMENT
     $(document).on('click', '#scan-libraries-btn', function() {

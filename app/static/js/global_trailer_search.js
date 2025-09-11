@@ -160,6 +160,53 @@ $(document).ready(function() {
         bootstrap.Modal.getOrCreateInstance(playerModal[0]).show();
     });
 
+    // Gère le clic sur le bouton de verrouillage/déverrouillage
+    $(document).on('click', '.lock-trailer-btn', function(e) {
+        e.stopPropagation();
+
+        const button = $(this);
+        const isLocked = button.data('is-locked') === true;
+        const videoId = button.data('video-id');
+        const selectionModal = $('#trailer-selection-modal');
+        const mediaContext = selectionModal.data(); // ratingKey, title, year...
+
+        if (!mediaContext.ratingKey) {
+            alert("Erreur: Le contexte du média (ratingKey) est introuvable pour le verrouillage.");
+            return;
+        }
+
+        const endpoint = isLocked ? '/api/agent/unlock_trailer' : '/api/agent/lock_trailer';
+        let payload = { ratingKey: mediaContext.ratingKey, title: mediaContext.title, year: mediaContext.year };
+        if (!isLocked) {
+            payload.videoId = videoId;
+        }
+
+        const originalIcon = button.html();
+        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+        fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Déclencher un événement personnalisé pour que le script de la page puisse réagir
+                // et rafraîchir la liste des trailers
+                $(document).trigger('trailerActionSuccess', [mediaContext]);
+            } else {
+                alert('Erreur: ' + (data.error || "Une erreur inconnue est survenue."));
+                button.prop('disabled', false).html(originalIcon);
+            }
+        })
+        .catch(error => {
+            console.error('Erreur technique lors du (dé)verrouillage:', error);
+            alert('Une erreur technique est survenue.');
+            button.prop('disabled', false).html(originalIcon);
+        });
+    });
+
     // Gère la fermeture du lecteur vidéo
     $('#trailer-modal').on('hidden.bs.modal', function () {
         const playerModal = $(this);
