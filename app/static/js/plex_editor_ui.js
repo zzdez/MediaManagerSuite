@@ -1114,11 +1114,21 @@ $('#trailer-modal').on('hidden.bs.modal', function () {
 $(document).on('click', '#trailer-custom-search-btn', function() {
     const selectionModal = $('#trailer-selection-modal');
     const query = $('#trailer-custom-search-input').val().trim();
-    const mediaContext = selectionModal.data();
+    let mediaContext = selectionModal.data();
     const resultsContainer = $('#trailer-results-container');
-    const lockedVideoId = resultsContainer.find('.lock-trailer-btn[data-is-locked="true"]').data('video-id');
 
     if (!query) return;
+
+    // Standalone mode: if no media context, use the query as the context
+    if (!mediaContext || !mediaContext.title) {
+        mediaContext = {
+            title: query,
+            year: '',
+            mediaType: 'movie' // Default to movie for standalone searches
+        };
+    }
+
+    const lockedVideoId = resultsContainer.find('.lock-trailer-btn[data-is-locked="true"]').data('video-id');
 
     resultsContainer.html('<div class="text-center"><div class="spinner-border"></div></div>');
 
@@ -1129,13 +1139,12 @@ $(document).on('click', '#trailer-custom-search-btn', function() {
             query: query,
             title: mediaContext.title,
             year: mediaContext.year,
-            media_type: mediaContext.mediaType // Assurez-vous que mediaType est bien stocké
+            media_type: mediaContext.mediaType
         })
     })
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            // On utilise le lockedVideoId existant pour garder l'état visuel
             appendTrailerResults(data.results, lockedVideoId);
         } else {
             alert('Erreur: ' + data.error);
