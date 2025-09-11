@@ -912,9 +912,9 @@ function sortTable(table, sortBy, sortType, direction) {
 // Helper pour ajouter des résultats à la modale
 function appendTrailerResults(results, lockedVideoId = null) {
     const resultsContainer = $('#trailer-results-container');
-    resultsContainer.empty();
+    // NOTE: La logique de vidage est maintenant gérée par la fonction appelante.
 
-    if (!results || results.length === 0) {
+    if ((!results || results.length === 0) && resultsContainer.is(':empty')) {
         resultsContainer.html('<p class="text-center text-muted">Aucun résultat trouvé.</p>');
         return;
     }
@@ -958,6 +958,7 @@ function fetchAndShowTrailers(button) {
     const selectionModal = $('#trailer-selection-modal');
     selectionModal.find('#trailer-results-container').empty().html('<div class="text-center"><div class="spinner-border"></div></div>');
     selectionModal.find('#trailer-load-more-container').hide();
+    $('#trailer-results-container').empty(); // Vider explicitement ici
     selectionModal.data({ 'ratingKey': ratingKey, 'title': title, 'year': year, 'mediaType': mediaType });
 
     bootstrap.Modal.getOrCreateInstance(selectionModal[0]).show();
@@ -1130,7 +1131,7 @@ $(document).on('click', '#trailer-custom-search-btn', function() {
 
     const lockedVideoId = resultsContainer.find('.lock-trailer-btn[data-is-locked="true"]').data('video-id');
 
-    resultsContainer.html('<div class="text-center"><div class="spinner-border"></div></div>');
+    resultsContainer.empty().html('<div class="text-center"><div class="spinner-border"></div></div>');
 
     fetch('/api/agent/custom_trailer_search', {
         method: 'POST',

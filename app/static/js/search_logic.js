@@ -162,8 +162,16 @@ $(document).ready(function() {
         .then(data => {
             if (data.success && data.results && data.results.length > 0) {
                 appendSearchTrailerResults(data.results);
+                const loadMoreBtn = $('#load-more-trailers-btn');
+                if (data.nextPageToken) {
+                    loadMoreBtn.data('page-token', data.nextPageToken).data('query', data.query);
+                    $('#trailer-load-more-container').show();
+                } else {
+                    $('#trailer-load-more-container').hide();
+                }
             } else {
                 appendSearchTrailerResults([]);
+                $('#trailer-load-more-container').hide();
             }
         })
         .catch(error => {
