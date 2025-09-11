@@ -2,7 +2,7 @@ from flask import request, jsonify, current_app, session
 from . import agent_bp
 from app.agent.services import generate_youtube_queries, score_and_sort_results
 from app.utils.trailer_finder import find_youtube_trailer, get_videos_details
-from app.agent.cache_manager import get_from_cache, set_in_cache, lock_trailer_in_cache
+from app.agent.cache_manager import get_from_cache, set_in_cache, lock_trailer_in_cache, unlock_trailer_in_cache
 from app.utils.plex_client import get_user_specific_plex_server_from_id
 from app.utils.tmdb_client import TheMovieDBClient
 from app.utils.tvdb_client import CustomTVDBClient
@@ -137,3 +137,22 @@ def lock_trailer_route():
         return jsonify({'success': True, 'message': f'Bande-annonce pour {title} verrouillée avec succès.'})
     else:
         return jsonify({'success': False, 'error': 'Impossible de trouver l\'entrée de cache à verrouiller.'}), 404
+
+@agent_bp.route('/unlock_trailer', methods=['POST'])
+def unlock_trailer_route():
+    data = request.json
+    ratingKey = data.get('ratingKey')
+    title = data.get('title')
+    year = data.get('year')
+
+    if not all([ratingKey, title, year]):
+        return jsonify({'success': False, 'error': 'Données manquantes (ratingKey, title, year)'}), 400
+
+    cache_key = f"trailer_search_{title}_{year}_{ratingKey}"
+
+    success = unlock_trailer_in_cache(cache_key)
+
+    if success:
+        return jsonify({'success': True, 'message': f'Verrouillage de la bande-annonce pour {title} retiré.'})
+    else:
+        return jsonify({'success': False, 'error': 'Impossible de trouver l\'entrée de cache à déverrouiller.'}), 404

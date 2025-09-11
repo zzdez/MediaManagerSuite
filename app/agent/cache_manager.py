@@ -91,3 +91,22 @@ def lock_trailer_in_cache(key, video_id, title):
     _save_cache(cache)
     print(f"INFO: Trailer for '{title}' (ID: {video_id}) has been locked in cache.")
     return True
+
+
+def unlock_trailer_in_cache(key):
+    """
+    Déverrouille une bande-annonce dans le cache.
+    """
+    cache = _load_cache()
+    entry = cache.get(key)
+
+    if not entry:
+        print(f"ERROR: Cannot unlock trailer. Cache entry not found for key: {key}")
+        return False
+
+    entry['is_locked'] = False
+    entry['locked_video_id'] = None
+
+    _save_cache(cache)
+    print(f"INFO: Trailer lock has been removed for cache key: {key}")
+    return True
