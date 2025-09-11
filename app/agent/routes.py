@@ -36,15 +36,12 @@ def _search_and_score_trailers(title, year, media_type):
 
     all_results = []
     seen_video_ids = set()
-    first_successful_query = None
-    first_next_page_token = None
 
-    for current_query in search_queries:
-        search_result = find_youtube_trailer(current_query, youtube_api_key)
+    # We now fetch more results to allow for better pagination.
+    # Let's aim for ~20-25 results. find_youtube_trailer fetches max 10 per query.
+    for current_query in search_queries[:3]: # Limit to 3 queries to avoid long waits
+        search_result = find_youtube_trailer(current_query, youtube_api_key, max_results=10)
         if search_result and search_result['results']:
-            if not first_successful_query:
-                first_successful_query = current_query
-                first_next_page_token = search_result.get('nextPageToken')
             for result in search_result['results']:
                 if result['videoId'] not in seen_video_ids:
                     all_results.append(result)
@@ -55,78 +52,93 @@ def _search_and_score_trailers(title, year, media_type):
 
     sorted_by_title = score_and_sort_results(all_results, title, year, media_type)
 
-    top_ids = [res['videoId'] for res in sorted_by_title[:15]]
+    # Fetch details for up to 25 top results to refine scoring
+    top_ids = [res['videoId'] for res in sorted_by_title[:25]]
     if top_ids:
         video_details = get_videos_details(top_ids, youtube_api_key)
         final_sorted_list = score_and_sort_results(sorted_by_title, title, year, media_type, video_details=video_details)
     else:
         final_sorted_list = sorted_by_title
 
-    top_results = final_sorted_list[:10]
-    log_results = [{'title': r['title'], 'channel': r['channel'], 'score': r['score']} for r in top_results]
+    log_results = [{'title': r['title'], 'channel': r['channel'], 'score': r['score']} for r in final_sorted_list[:10]]
     current_app.logger.debug(f"Top 10 final results: {log_results}")
 
-    response_data = {
-        'results': top_results,
-        'nextPageToken': first_next_page_token,
-        'query': first_successful_query
-    }
-    return {'success': True, **response_data}
+    # Return the full sorted list. The calling function will handle pagination.
+    return {'success': True, 'results': final_sorted_list}
 
 @agent_bp.route('/suggest_trailers', methods=['POST'])
 def suggest_trailers():
     data = request.json
 
-    # Handle pagination separately as it's stateless
-    page_token = data.get('page_token')
-    if page_token:
-        query = data.get('query')
-        youtube_api_key = current_app.config.get('YOUTUBE_API_KEY')
-        search_result = find_youtube_trailer(query, youtube_api_key, page_token=page_token)
-        return jsonify({'success': True, 'results': search_result.get('results', []), 'nextPageToken': search_result.get('nextPageToken'), 'query': query})
-
-    # Main logic: either use Plex item context or just search terms
     ratingKey = data.get('ratingKey')
-    original_title = data.get('title')
+    title = data.get('title')
     year = data.get('year')
     media_type = data.get('media_type')
     user_id = data.get('userId')
+    page = data.get('page', 1)
+    page_size = 5 # Return 5 results per page
 
-    if not all([original_title, year, media_type]):
-        return jsonify({'success': False, 'error': 'Données manquantes (title, year, media_type)'}), 400
+    if not ratingKey or not user_id:
+        return jsonify({'success': False, 'error': 'Cette route nécessite un ratingKey et un userId pour la mise en cache.'}), 400
 
-    # If a ratingKey is provided, we can use Plex-specific features (caching, real title)
-    if ratingKey and user_id:
-        cache_key = f"trailer_search_{original_title}_{year}_{ratingKey}"
-        cached_result = get_from_cache(cache_key)
-        if cached_result:
-            current_app.logger.info(f"Cache HIT for trailer search: '{original_title}'")
-            return jsonify({'success': True, **cached_result})
+    cache_key = f"trailer_search_{title}_{year}_{ratingKey}"
 
+    # On an initial search (page 1), we always perform a fresh search.
+    # For subsequent pages, we rely on the cache.
+    if page == 1:
         try:
             plex_server = get_user_specific_plex_server_from_id(user_id)
-            if not plex_server:
-                return jsonify({'success': False, 'error': "Impossible d'établir la connexion au serveur Plex."}), 500
-            plex_item = plex_server.fetchItem(int(ratingKey))
-            search_title = get_actual_title(plex_item)
-            current_app.logger.debug(f"Suggest Trailer: Original title='{original_title}', Found actual title='{search_title}'")
+            item = plex_server.fetchItem(int(ratingKey))
+            search_title = get_actual_title(item)
         except Exception as e:
-            current_app.logger.error(f"Erreur lors de la récupération du titre réel pour ratingKey {ratingKey}: {e}", exc_info=True)
-            search_title = original_title
-    else:
-        # If no ratingKey, we're likely on the search page. No caching, use the title directly.
-        search_title = original_title
+            current_app.logger.warning(f"Could not fetch item from Plex for title search, falling back. Error: {e}")
+            search_title = title
 
-    results = _search_and_score_trailers(search_title, year, media_type)
+        search_response = _search_and_score_trailers(search_title, year, media_type)
+        if not search_response.get('success'):
+            return jsonify(search_response)
 
-    if not results.get('success'):
-        return jsonify(results), 500
+        full_results = search_response['results']
 
-    # Cache the results only if we have a ratingKey
-    if ratingKey:
-        set_in_cache(cache_key, results)
+        # Preserve lock status from previous cache entry if it exists
+        existing_cache = get_from_cache(cache_key)
+        is_locked = existing_cache.get('is_locked', False) if existing_cache else False
+        locked_video_id = existing_cache.get('locked_video_id', None) if existing_cache else None
 
-    return jsonify(results)
+        # If a video was locked, find it in the new results and move it to the top.
+        if is_locked and locked_video_id:
+            locked_item = next((item for item in full_results if item['videoId'] == locked_video_id), None)
+            if locked_item:
+                full_results.remove(locked_item)
+                full_results.insert(0, locked_item)
+
+        # Store the new full list in the cache, maintaining lock state
+        set_in_cache(cache_key, {'results': full_results, 'is_locked': is_locked, 'locked_video_id': locked_video_id})
+
+    else: # page > 1
+        cached_data = get_from_cache(cache_key)
+        if not cached_data:
+            return jsonify({'success': False, 'error': 'Session de recherche expirée. Veuillez relancer la recherche.'}), 404
+        full_results = cached_data.get('results', [])
+
+    # Get the definitive current state from cache for pagination
+    final_cached_data = get_from_cache(cache_key) or {}
+    is_locked_final = final_cached_data.get('is_locked', False)
+    locked_video_id_final = final_cached_data.get('locked_video_id', None) if is_locked_final else None
+
+    # Paginate the full list
+    start_index = (page - 1) * page_size
+    end_index = start_index + page_size
+    paginated_results = full_results[start_index:end_index]
+    has_more = len(full_results) > end_index
+
+    return jsonify({
+        'success': True,
+        'results': paginated_results,
+        'has_more': has_more,
+        'is_locked': is_locked_final,
+        'locked_video_id': locked_video_id_final
+    })
 
 @agent_bp.route('/lock_trailer', methods=['POST'])
 def lock_trailer_route():
@@ -174,17 +186,25 @@ def custom_trailer_search():
     title = data.get('title') # Le titre original pour le scoring
     year = data.get('year')
     media_type = data.get('media_type')
+    page_token = data.get('page_token') # For pagination
     youtube_api_key = current_app.config.get('YOUTUBE_API_KEY')
 
     if not all([query, title, media_type]):
         return jsonify({'success': False, 'error': 'Données manquantes (query, title, media_type)'}), 400
 
-    search_result = find_youtube_trailer(query, youtube_api_key)
+    # For standalone search, we do a simpler search and pagination.
+    # We don't do the multi-query and deep scoring like in suggest_trailers.
+    search_result = find_youtube_trailer(query, youtube_api_key, page_token=page_token, max_results=5)
 
     if not search_result or not search_result['results']:
-        return jsonify({'success': True, 'results': []}) # Retourner succès avec une liste vide
+        return jsonify({'success': True, 'results': []})
 
-    # On score les résultats par rapport au titre original, pas forcément par rapport à la query
+    # We still score the results for relevance
     sorted_results = score_and_sort_results(search_result['results'], title, year, media_type)
 
-    return jsonify({'success': True, 'results': sorted_results, 'nextPageToken': search_result.get('nextPageToken'), 'query': query})
+    return jsonify({
+        'success': True,
+        'results': sorted_results,
+        'nextPageToken': search_result.get('nextPageToken'),
+        'query': query
+    })

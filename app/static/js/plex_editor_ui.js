@@ -929,26 +929,29 @@ function fetchAndShowTrailers(button) {
     bootstrap.Modal.getOrCreateInstance(selectionModal[0]).show();
     button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
 
+    // For a Plex search, the initial page is always 1
+    const payload = { title, year, media_type: mediaType, ratingKey, userId, page: 1 };
+
     fetch('/api/agent/suggest_trailers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, year, media_type: mediaType, ratingKey, userId })
+        body: JSON.stringify(payload)
     })
     .then(response => response.ok ? response.json() : response.json().then(err => Promise.reject(err)))
     .then(data => {
         resultsContainer.empty();
         if (data.success && data.results) {
-            const lockedVideoId = data.is_locked ? data.results[0].videoId : null;
-            // Utilise la fonction globale `renderTrailerResults`
-            renderTrailerResults(data.results, { lockedVideoId: lockedVideoId, showLock: true });
+            // The backend now sends a specific locked_video_id if a lock is active.
+            renderTrailerResults(data.results, { lockedVideoId: data.locked_video_id, showLock: true });
 
             const loadMoreBtn = $('#load-more-trailers-btn');
-            if (data.nextPageToken) {
-                loadMoreBtn.data('page-token', data.nextPageToken).data('query', data.query);
+            if (data.has_more) {
+                // Set up for the next page fetch
+                loadMoreBtn.data('page', 2).data('page-token', null);
                 $('#trailer-load-more-container').show();
             }
         } else {
-            renderTrailerResults([], { showLock: true }); // Affiche "Aucun résultat" mais permet le verrouillage
+            renderTrailerResults([], { showLock: true });
         }
     })
     .catch(error => {

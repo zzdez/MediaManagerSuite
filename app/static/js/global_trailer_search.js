@@ -62,25 +62,18 @@ $(document).ready(function() {
         bootstrap.Modal.getOrCreateInstance(selectionModal[0]).show();
     });
 
-    // Gère la recherche personnalisée depuis la barre de recherche de la modale
+    // Gère la recherche personnalisée depuis la barre de recherche de la modale (pour la recherche autonome)
     $(document).on('click', '#trailer-custom-search-btn', function() {
         const selectionModal = $('#trailer-selection-modal');
         const query = $('#trailer-custom-search-input').val().trim();
-        let mediaContext = selectionModal.data();
         const resultsContainer = $('#trailer-results-container');
+        const loadMoreBtn = $('#load-more-trailers-btn');
 
         if (!query) return;
 
-        let searchTitle = mediaContext.title;
-        let searchYear = mediaContext.year;
-        let searchMediaType = mediaContext.mediaType;
-
-        // Si pas de contexte (recherche autonome), on utilise la requête comme titre
-        if (!searchTitle) {
-            searchTitle = query;
-            searchYear = '';
-            searchMediaType = 'movie'; // Default
-        }
+        // La recherche personnalisée est toujours autonome, donc pas de contexte média.
+        // On stocke la query pour la pagination.
+        selectionModal.data({ 'query': query });
 
         resultsContainer.empty().html('<div class="text-center"><div class="spinner-border"></div></div>');
         $('#trailer-load-more-container').hide();
@@ -90,21 +83,24 @@ $(document).ready(function() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 query: query,
-                title: searchTitle,
-                year: searchYear,
-                media_type: searchMediaType
+                title: query, // Pour le scoring, on utilise la query elle-même
+                year: '',
+                media_type: 'movie' // On assume 'movie' pour une recherche générique
             })
         })
         .then(response => response.json())
         .then(data => {
-            const showLock = !!mediaContext.ratingKey;
-            const lockedVideoId = showLock ? resultsContainer.find('.lock-trailer-btn[data-is-locked="true"]').data('video-id') : null;
-
-            resultsContainer.empty(); // Vider avant d'afficher les nouveaux résultats
+            resultsContainer.empty();
             if (data.success && data.results) {
-                renderTrailerResults(data.results, { lockedVideoId, showLock });
+                // Pour une recherche autonome, showLock est toujours false.
+                renderTrailerResults(data.results, { showLock: false });
+
+                if (data.nextPageToken) {
+                    loadMoreBtn.data('page-token', data.nextPageToken).data('page', null); // Utilise page-token, pas page
+                    $('#trailer-load-more-container').show();
+                }
             } else {
-                renderTrailerResults([], { lockedVideoId, showLock });
+                renderTrailerResults([], { showLock: false });
             }
         })
         .catch(error => {
@@ -116,33 +112,66 @@ $(document).ready(function() {
     // Gère le clic sur "Afficher plus"
     $(document).on('click', '#load-more-trailers-btn', function() {
         const button = $(this);
-        const pageToken = button.data('page-token');
-        const query = button.data('query');
         const selectionModal = $('#trailer-selection-modal');
-        const mediaContext = selectionModal.data();
-        const showLock = !!mediaContext.ratingKey;
-        const lockedVideoId = showLock ? $('#trailer-results-container .lock-trailer-btn[data-is-locked="true"]').data('video-id') : null;
+        const mediaContext = selectionModal.data(); // Contient ratingKey, title, etc.
+        const page = button.data('page');
+        const pageToken = button.data('page-token');
 
         button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
 
-        fetch('/api/agent/suggest_trailers', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query, page_token: pageToken })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success && data.results) {
-                renderTrailerResults(data.results, { lockedVideoId, showLock }); // append
-                if (data.nextPageToken) {
-                    button.data('page-token', data.nextPageToken);
-                } else {
-                    $('#trailer-load-more-container').hide();
+        // Détermine le type de pagination (Plex vs. Autonome)
+        if (mediaContext.ratingKey && page) {
+            // --- Pagination par numéro de page pour la recherche Plex ---
+            fetch('/api/agent/suggest_trailers', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...mediaContext, page: page })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.results) {
+                    renderTrailerResults(data.results, { lockedVideoId: data.locked_video_id, showLock: true });
+                    if (data.has_more) {
+                        button.data('page', page + 1); // Incrémente pour le prochain clic
+                    } else {
+                        $('#trailer-load-more-container').hide();
+                    }
                 }
-            }
-        })
-        .catch(error => console.error('Erreur chargement page suivante:', error))
-        .finally(() => button.prop('disabled', false).html('Afficher 5 de plus'));
+            })
+            .catch(error => console.error('Erreur chargement page suivante (Plex):', error))
+            .finally(() => button.prop('disabled', false).html('Afficher 5 de plus'));
+
+        } else if (pageToken) {
+            // --- Pagination par pageToken pour la recherche autonome ---
+            const query = mediaContext.query; // Récupère la query stockée
+            fetch('/api/agent/custom_trailer_search', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    query: query,
+                    title: query,
+                    year: '',
+                    media_type: 'movie',
+                    page_token: pageToken
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.results) {
+                    renderTrailerResults(data.results, { showLock: false });
+                    if (data.nextPageToken) {
+                        button.data('page-token', data.nextPageToken);
+                    } else {
+                        $('#trailer-load-more-container').hide();
+                    }
+                }
+            })
+            .catch(error => console.error('Erreur chargement page suivante (Autonome):', error))
+            .finally(() => button.prop('disabled', false).html('Afficher 5 de plus'));
+        } else {
+             console.error("Erreur de pagination : Contexte invalide (ni page, ni page-token).");
+             button.prop('disabled', false).html('Erreur');
+        }
     });
 
     // Gère le clic pour jouer une vidéo
