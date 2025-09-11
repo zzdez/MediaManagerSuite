@@ -116,28 +116,35 @@ $(document).ready(function() {
         button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
 
         const selectionModal = $('#trailer-selection-modal');
-        $('#trailer-results-container').empty();
+        const resultsContainer = $('#trailer-results-container');
+        const loadMoreBtn = $('#load-more-trailers-btn');
+
+        // Préparer la modale
+        resultsContainer.empty();
         $('#trailer-load-more-container').hide();
 
-        // Stocke le contexte pour la recherche personnalisée (sans ratingKey)
-        selectionModal.data({ 'title': title, 'year': year, 'mediaType': mediaType });
+        // Stocke le contexte pour la recherche et la pagination
+        // Pas de ratingKey, donc c'est une recherche de type "autonome"
+        const query = `${title} ${year}`;
+        selectionModal.data({ 'title': title, 'year': year, 'mediaType': mediaType, 'query': query });
+        $('#trailer-custom-search-input').val(query);
 
         bootstrap.Modal.getOrCreateInstance(selectionModal[0]).show();
 
-        fetch('/api/agent/suggest_trailers', {
+        // Utilise la route de recherche personnalisée qui ne nécessite pas de ratingKey
+        fetch('/api/agent/custom_trailer_search', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title, year, media_type: mediaType })
+            body: JSON.stringify({ query: query, title: title, year: year, media_type: mediaType })
         })
         .then(response => response.ok ? response.json() : response.json().then(err => Promise.reject(err)))
         .then(data => {
-            if (data.success && data.results && data.results.length > 0) {
-                // Utilise la fonction globale, sans afficher le verrou
+            if (data.success && data.results) {
+                // Pas de verrouillage pour ce type de recherche
                 renderTrailerResults(data.results, { showLock: false });
 
-                const loadMoreBtn = $('#load-more-trailers-btn');
                 if (data.nextPageToken) {
-                    loadMoreBtn.data('page-token', data.nextPageToken).data('query', data.query);
+                    loadMoreBtn.data('page-token', data.nextPageToken).data('page', null);
                     $('#trailer-load-more-container').show();
                 }
             } else {
@@ -146,8 +153,7 @@ $(document).ready(function() {
         })
         .catch(error => {
             console.error('Erreur lors de la recherche de la bande-annonce:', error);
-            alert(`Une erreur technique est survenue : ${error.message || 'Erreur inconnue'}`);
-            bootstrap.Modal.getInstance(selectionModal[0])?.hide();
+            resultsContainer.html(`<p class="text-danger text-center">Erreur: ${error.message || 'Erreur inconnue'}</p>`);
         })
         .finally(() => {
             button.prop('disabled', false).html('<i class="fas fa-video"></i> Bande-annonce');
