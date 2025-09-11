@@ -909,42 +909,6 @@ function sortTable(table, sortBy, sortType, direction) {
 
 // --- DÉBUT DU BLOC DE GESTION DES BANDES-ANNONCES (V2) ---
 
-// Helper pour ajouter des résultats à la modale
-function appendTrailerResults(results, lockedVideoId = null) {
-    const resultsContainer = $('#trailer-results-container');
-    // NOTE: La logique de vidage est maintenant gérée par la fonction appelante.
-
-    if ((!results || results.length === 0) && resultsContainer.is(':empty')) {
-        resultsContainer.html('<p class="text-center text-muted">Aucun résultat trouvé.</p>');
-        return;
-    }
-
-    results.forEach(result => {
-        const isLocked = result.videoId === lockedVideoId;
-        const btnClass = isLocked ? 'btn-success' : 'btn-outline-warning';
-        const btnTitle = isLocked ? 'Déverrouiller cette bande-annonce' : 'Verrouiller cette bande-annonce';
-
-        const resultHtml = `
-            <div class="trailer-result-item d-flex align-items-center justify-content-between mb-2 p-2 rounded" style="background-color: #343a40;">
-                <div class="play-trailer-area d-flex align-items-center" style="cursor: pointer; flex-grow: 1;"
-                     data-video-id="${result.videoId}" data-video-title="${result.title}">
-                    <img src="${result.thumbnail}" width="120" class="me-3 rounded">
-                    <div>
-                        <p class="mb-0 text-white font-weight-bold">${result.title}</p>
-                        <small class="text-muted">${result.channel}</small>
-                    </div>
-                </div>
-                <button class="btn btn-sm ${btnClass} lock-trailer-btn ms-3" title="${btnTitle}"
-                        data-video-id="${result.videoId}"
-                        data-is-locked="${isLocked}">
-                    <i class="bi bi-lock-fill"></i>
-                </button>
-            </div>
-        `;
-        resultsContainer.append(resultHtml);
-    });
-}
-
 function fetchAndShowTrailers(button) {
     const title = button.data('title');
     const year = button.data('year');
@@ -956,9 +920,9 @@ function fetchAndShowTrailers(button) {
     button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
 
     const selectionModal = $('#trailer-selection-modal');
-    selectionModal.find('#trailer-results-container').empty().html('<div class="text-center"><div class="spinner-border"></div></div>');
+    // Vider le conteneur avant une nouvelle recherche
+    $('#trailer-results-container').empty();
     selectionModal.find('#trailer-load-more-container').hide();
-    $('#trailer-results-container').empty(); // Vider explicitement ici
     selectionModal.data({ 'ratingKey': ratingKey, 'title': title, 'year': year, 'mediaType': mediaType });
 
     bootstrap.Modal.getOrCreateInstance(selectionModal[0]).show();
@@ -1005,53 +969,10 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
     }
 });
 
-$(document).on('click', '#load-more-trailers-btn', function() {
-    const button = $(this);
-    const pageToken = button.data('page-token');
-    const query = button.data('query');
-    const lockedVideoId = $('#trailer-results-container .lock-trailer-btn[data-is-locked="true"]').data('video-id');
+// --- FIN DU BLOC DE GESTION DES BANDES-ANNONCES (V2) ---
 
-    button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
-
-    fetch('/api/agent/suggest_trailers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, page_token: pageToken })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success && data.results) {
-            // On doit ré-append les résultats, pas écraser.
-            // Pour cela, on modifie la fonction `appendTrailerResults` pour ne plus vider le conteneur.
-            // On va tricher pour l'instant et juste appeler la fonction existante.
-            const currentHtml = $('#trailer-results-container').html();
-            $('#trailer-results-container').html(currentHtml);
-            appendTrailerResults(data.results, lockedVideoId);
-
-            if (data.nextPageToken) {
-                button.data('page-token', data.nextPageToken);
-            } else {
-                $('#trailer-load-more-container').hide();
-            }
-        }
-    })
-    .catch(error => console.error('Erreur chargement page suivante:', error))
-    .finally(() => button.prop('disabled', false).html('Afficher 5 de plus'));
-});
-
-$(document).on('click', '.play-trailer-area', function() {
-    const videoId = $(this).data('video-id');
-    const videoTitle = $(this).data('video-title');
-    const selectionModal = $('#trailer-selection-modal');
-    const playerModal = $('#trailer-modal');
-
-    bootstrap.Modal.getInstance(selectionModal[0]).hide();
-    playerModal.data('source-modal', 'trailer-selection-modal'); // Marquer la source
-
-    $('#trailerModalLabel').text('Bande-Annonce: ' + videoTitle);
-    playerModal.find('.modal-body').html(`<div class="ratio ratio-16x9"><iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1&cc_lang=fr&cc_load_policy=1" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe></div>`);
-    bootstrap.Modal.getOrCreateInstance(playerModal[0]).show();
-});
+// NOTE: Les handlers globaux (play, load-more, etc.) sont dans global_trailer_search.js
+// Seuls les handlers spécifiques au contexte de l'éditeur Plex restent ici.
 
 $(document).on('click', '.lock-trailer-btn', function(e) {
     e.stopPropagation();
@@ -1064,7 +985,8 @@ $(document).on('click', '.lock-trailer-btn', function(e) {
     const mainTrailerBtn = $(`.find-and-play-trailer-btn[data-rating-key='${mediaContext.ratingKey}']`);
 
     if (!mediaContext.ratingKey) {
-        alert("Erreur: Contexte du média introuvable.");
+        // This should not happen in plex_editor context, but as a safeguard:
+        alert("Erreur: Le contexte du média (ratingKey) est introuvable pour le verrouillage.");
         return;
     }
 
@@ -1099,19 +1021,7 @@ $(document).on('click', '.lock-trailer-btn', function(e) {
     });
 });
 
-$('#trailer-modal').on('hidden.bs.modal', function () {
-    const playerModal = $(this);
-    playerModal.find('.modal-body').empty(); // Toujours nettoyer le lecteur
 
-    const sourceModalId = playerModal.data('source-modal');
-    if (sourceModalId) {
-        const sourceModal = new bootstrap.Modal(document.getElementById(sourceModalId));
-        sourceModal.show();
-        playerModal.removeData('source-modal'); // Nettoyer pour les futurs clics
-    }
-});
-
-// NOUVEAU: Recherche personnalisée dans la modale
 $(document).on('click', '#trailer-custom-search-btn', function() {
     const selectionModal = $('#trailer-selection-modal');
     const query = $('#trailer-custom-search-input').val().trim();
@@ -1120,12 +1030,12 @@ $(document).on('click', '#trailer-custom-search-btn', function() {
 
     if (!query) return;
 
-    // Standalone mode: if no media context, use the query as the context
+    // Standalone mode check (though this file is for plex_editor, good practice)
     if (!mediaContext || !mediaContext.title) {
         mediaContext = {
             title: query,
             year: '',
-            mediaType: 'movie' // Default to movie for standalone searches
+            mediaType: 'movie'
         };
     }
 
@@ -1157,8 +1067,6 @@ $(document).on('click', '#trailer-custom-search-btn', function() {
         alert('Une erreur technique est survenue.');
     });
 });
-
-// --- FIN DU BLOC DE GESTION DES BANDES-ANNONCES (V2) ---
 
     // NOUVEL ÉCOUTEUR D'ÉVÉNEMENT
     $(document).on('click', '#scan-libraries-btn', function() {

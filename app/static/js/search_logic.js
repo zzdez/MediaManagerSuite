@@ -106,37 +106,7 @@ $(document).ready(function() {
         if (e.which == 13) { e.preventDefault(); performMediaSearch(); }
     });
 
-    // --- NOUVEAU BLOC DE GESTION DES BANDES-ANNONCES (UNIFIÉ) ---
-
-    // NOTE: Ce bloc est une adaptation de celui de plex_editor_ui.js.
-    // La fonctionnalité de verrouillage est omise car il n'y a pas d'item persistant (ratingKey).
-
-    function appendSearchTrailerResults(results) {
-        const resultsContainer = $('#trailer-results-container');
-        resultsContainer.empty();
-
-        if (!results || results.length === 0) {
-            resultsContainer.html('<p class="text-center text-muted">Aucun résultat trouvé.</p>');
-            return;
-        }
-
-        results.forEach(result => {
-            const resultHtml = `
-                <div class="trailer-result-item d-flex align-items-center justify-content-between mb-2 p-2 rounded" style="background-color: #343a40;">
-                    <div class="play-trailer-area d-flex align-items-center" style="cursor: pointer; flex-grow: 1;"
-                         data-video-id="${result.videoId}" data-video-title="${result.title}">
-                        <img src="${result.thumbnail}" width="120" class="me-3 rounded">
-                        <div>
-                            <p class="mb-0 text-white font-weight-bold">${result.title}</p>
-                            <small class="text-muted">${result.channel}</small>
-                        </div>
-                    </div>
-                </div>
-            `;
-            resultsContainer.append(resultHtml);
-        });
-    }
-
+    // --- GESTION DES BANDES-ANNONCES DE LA PAGE DE RECHERCHE ---
     $('#media-results-container').on('click', '.search-trailer-btn', function() {
         const button = $(this);
         const title = button.data('title');
@@ -146,9 +116,10 @@ $(document).ready(function() {
         button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
 
         const selectionModal = $('#trailer-selection-modal');
-        selectionModal.find('#trailer-results-container').empty().html('<div class="text-center"><div class="spinner-border"></div></div>');
+        $('#trailer-results-container').empty();
+        $('#trailer-load-more-container').hide();
 
-        // On stocke le contexte pour la recherche personnalisée
+        // Stocke le contexte pour la recherche personnalisée (sans ratingKey)
         selectionModal.data({ 'title': title, 'year': year, 'mediaType': mediaType });
 
         bootstrap.Modal.getOrCreateInstance(selectionModal[0]).show();
@@ -156,22 +127,21 @@ $(document).ready(function() {
         fetch('/api/agent/suggest_trailers', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title, year, media_type: mediaType }) // Pas de ratingKey ici
+            body: JSON.stringify({ title, year, media_type: mediaType })
         })
         .then(response => response.ok ? response.json() : response.json().then(err => Promise.reject(err)))
         .then(data => {
             if (data.success && data.results && data.results.length > 0) {
-                appendSearchTrailerResults(data.results);
+                // Utilise la fonction globale, sans afficher le verrou
+                renderTrailerResults(data.results, { showLock: false });
+
                 const loadMoreBtn = $('#load-more-trailers-btn');
                 if (data.nextPageToken) {
                     loadMoreBtn.data('page-token', data.nextPageToken).data('query', data.query);
                     $('#trailer-load-more-container').show();
-                } else {
-                    $('#trailer-load-more-container').hide();
                 }
             } else {
-                appendSearchTrailerResults([]);
-                $('#trailer-load-more-container').hide();
+                renderTrailerResults([], { showLock: false });
             }
         })
         .catch(error => {
@@ -183,9 +153,6 @@ $(document).ready(function() {
             button.prop('disabled', false).html('<i class="fas fa-video"></i> Bande-annonce');
         });
     });
-
-    // On utilise les mêmes IDs de modale, donc les gestionnaires suivants fonctionneront
-    // à condition que les modales soient bien dans le layout global.
 
     $('#media-results-container').on('click', '.search-torrents-btn', function() {
         resetFilters(); // Réinitialiser les filtres pour la nouvelle recherche
