@@ -62,18 +62,26 @@ $(document).ready(function() {
         bootstrap.Modal.getOrCreateInstance(selectionModal[0]).show();
     });
 
-    // Gère la recherche personnalisée depuis la barre de recherche de la modale (pour la recherche autonome)
+    // Gère la recherche personnalisée depuis la barre de recherche de la modale
     $(document).on('click', '#trailer-custom-search-btn', function() {
         const selectionModal = $('#trailer-selection-modal');
         const query = $('#trailer-custom-search-input').val().trim();
         const resultsContainer = $('#trailer-results-container');
         const loadMoreBtn = $('#load-more-trailers-btn');
+        const mediaContext = selectionModal.data(); // Récupère le contexte existant
 
         if (!query) return;
 
-        // La recherche personnalisée est toujours autonome, donc pas de contexte média.
-        // On stocke la query pour la pagination.
-        selectionModal.data({ 'query': query });
+        // Détermine si on est dans un contexte Plex (avec verrouillage) ou autonome
+        const isPlexContext = !!mediaContext.ratingKey;
+        const searchTitle = isPlexContext ? mediaContext.title : query;
+        const searchYear = isPlexContext ? mediaContext.year : '';
+        const searchMediaType = isPlexContext ? mediaContext.mediaType : 'movie';
+
+        // Stocke la nouvelle query pour la pagination autonome
+        if (!isPlexContext) {
+            selectionModal.data({ 'query': query });
+        }
 
         resultsContainer.empty().html('<div class="text-center"><div class="spinner-border"></div></div>');
         $('#trailer-load-more-container').hide();
@@ -83,24 +91,26 @@ $(document).ready(function() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 query: query,
-                title: query, // Pour le scoring, on utilise la query elle-même
-                year: '',
-                media_type: 'movie' // On assume 'movie' pour une recherche générique
+                title: searchTitle, // Titre original pour le scoring
+                year: searchYear,
+                media_type: searchMediaType
             })
         })
         .then(response => response.json())
         .then(data => {
             resultsContainer.empty();
             if (data.success && data.results) {
-                // Pour une recherche autonome, showLock est toujours false.
-                renderTrailerResults(data.results, { showLock: false });
+                // Affiche le verrou si on est dans un contexte Plex
+                const lockedVideoId = isPlexContext ? mediaContext.locked_video_id : null;
+                renderTrailerResults(data.results, { lockedVideoId: lockedVideoId, showLock: isPlexContext });
 
+                // La pagination pour une recherche personnalisée est toujours par pageToken
                 if (data.nextPageToken) {
-                    loadMoreBtn.data('page-token', data.nextPageToken).data('page', null); // Utilise page-token, pas page
+                    loadMoreBtn.data('page-token', data.nextPageToken).data('page', null);
                     $('#trailer-load-more-container').show();
                 }
             } else {
-                renderTrailerResults([], { showLock: false });
+                renderTrailerResults([], { showLock: isPlexContext });
             }
         })
         .catch(error => {
