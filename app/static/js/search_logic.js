@@ -41,7 +41,10 @@ $(document).ready(function() {
                             <h5 class="mb-1">${item.title} <span class="text-muted">(${item.year || 'N/A'})</span></h5>
                             <p class="mb-1 small">${item.overview ? item.overview.substring(0, 280) + (item.overview.length > 280 ? '...' : '') : 'Pas de synopsis disponible.'}</p>
                             <div class="mt-2">
-                                <button class="btn btn-sm btn-outline-info" disabled>
+                                <button class="btn btn-sm btn-outline-info search-trailer-btn"
+                                        data-title="${item.title}"
+                                        data-year="${item.year || ''}"
+                                        data-media-type="${mediaType}">
                                     <i class="fas fa-video"></i> Bande-annonce
                                 </button>
                                 <button class="btn btn-sm btn-primary search-torrents-btn" data-result-index="${index}">
@@ -101,6 +104,46 @@ $(document).ready(function() {
     $('#execute-media-search-btn').on('click', performMediaSearch);
     $('#media-search-input').on('keypress', function(e) {
         if (e.which == 13) { e.preventDefault(); performMediaSearch(); }
+    });
+
+    // --- NOUVEL ÉCOUTEUR POUR LES BANDES-ANNONCES DE LA PAGE DE RECHERCHE ---
+    $('#media-results-container').on('click', '.search-trailer-btn', function() {
+        const button = $(this);
+        const title = button.data('title');
+        const year = button.data('year');
+        const mediaType = button.data('media-type');
+
+        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+        // La modale de lecture est globale, on peut la réutiliser
+        const playerModal = $('#trailer-modal');
+        const playerModalLabel = $('#trailerModalLabel');
+        const playerModalBody = playerModal.find('.modal-body');
+
+        // NOTE: L'API /api/trailer/find sera créée à l'étape suivante.
+        // En attendant, la logique est prête.
+        fetch('/api/trailer/find', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: title, year: year, media_type: mediaType })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.url) {
+                playerModalLabel.text('Bande-Annonce: ' + title);
+                playerModalBody.html(`<div class="ratio ratio-16x9"><iframe src="${data.url}" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>`);
+                bootstrap.Modal.getOrCreateInstance(playerModal[0]).show();
+            } else {
+                alert(data.message || 'Impossible de trouver une bande-annonce pour ce média.');
+            }
+        })
+        .catch(error => {
+            console.error('Erreur recherche de bande-annonce:', error);
+            alert('Une erreur technique est survenue lors de la recherche de la bande-annonce.');
+        })
+        .finally(() => {
+            button.prop('disabled', false).html('<i class="fas fa-video"></i> Bande-annonce');
+        });
     });
 
     $('#media-results-container').on('click', '.search-torrents-btn', function() {

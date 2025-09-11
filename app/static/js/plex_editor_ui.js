@@ -922,13 +922,18 @@ function appendTrailerResults(results) {
 
     results.forEach(result => {
         const resultHtml = `
-            <div class="trailer-result-item d-flex align-items-center mb-2 p-2 rounded" style="cursor: pointer; background-color: #343a40;"
-                 data-video-id="${result.videoId}" data-video-title="${result.title}">
-                <img src="${result.thumbnail}" width="120" class="me-3 rounded">
-                <div>
-                    <p class="mb-0 text-white font-weight-bold">${result.title}</p>
-                    <small class="text-muted">${result.channel}</small>
+            <div class="trailer-result-item d-flex align-items-center justify-content-between mb-2 p-2 rounded" style="background-color: #343a40;">
+                <div class="d-flex align-items-center" style="cursor: pointer;">
+                    <img src="${result.thumbnail}" width="120" class="me-3 rounded">
+                    <div>
+                        <p class="mb-0 text-white font-weight-bold">${result.title}</p>
+                        <small class="text-muted">${result.channel}</small>
+                    </div>
                 </div>
+                <button class="btn btn-sm btn-outline-warning lock-trailer-btn" title="Verrouiller cette bande-annonce"
+                        data-video-id="${result.videoId}">
+                    <i class="bi bi-lock-fill"></i>
+                </button>
             </div>
         `;
         resultsContainer.append(resultHtml);
@@ -959,9 +964,15 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
     console.log("Recherche initiale du trailer via l'agent...");
     button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
 
-    // Réinitialiser la modale de sélection
-    $('#trailer-results-container').empty();
-    $('#trailer-load-more-container').hide();
+    // Réinitialiser et préparer la modale de sélection
+    const selectionModal = $('#trailer-selection-modal');
+    selectionModal.find('#trailer-results-container').empty();
+    selectionModal.find('#trailer-load-more-container').hide();
+    selectionModal.data({
+        'ratingKey': ratingKey,
+        'title': title,
+        'year': year
+    });
 
     fetch('/api/agent/suggest_trailers', {
         method: 'POST',
@@ -1032,9 +1043,10 @@ $(document).on('click', '#load-more-trailers-btn', function() {
 });
 
 // 3. Clic sur un résultat dans la modale de sélection pour le jouer
-$(document).on('click', '.trailer-result-item', function() {
-    const videoId = $(this).data('video-id');
-    const videoTitle = $(this).data('video-title');
+$(document).on('click', '.trailer-result-item > .d-flex', function() { // On rend le sélecteur plus spécifique
+    const parent = $(this).parent();
+    const videoId = parent.find('.lock-trailer-btn').data('video-id'); // On récupère l'ID depuis le bouton
+    const videoTitle = parent.find('.font-weight-bold').text();
 
     bootstrap.Modal.getInstance(document.getElementById('trailer-selection-modal')).hide();
 
@@ -1042,6 +1054,50 @@ $(document).on('click', '.trailer-result-item', function() {
     $('#trailerModalLabel').text('Bande-Annonce: ' + videoTitle);
     playerModalBody.html(`<div class="ratio ratio-16x9"><iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>`);
     bootstrap.Modal.getOrCreateInstance(document.getElementById('trailer-modal')).show();
+});
+
+// NOUVEAU: Clic sur le bouton de verrouillage
+$(document).on('click', '.lock-trailer-btn', function(e) {
+    e.stopPropagation(); // Empêche le clic de se propager à l'élément parent
+
+    const button = $(this);
+    const videoId = button.data('video-id');
+    const selectionModal = $('#trailer-selection-modal');
+    const mediaContext = selectionModal.data();
+
+    if (!mediaContext.ratingKey) {
+        alert("Erreur: Contexte du média introuvable pour le verrouillage.");
+        return;
+    }
+
+    button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+    fetch('/api/agent/lock_trailer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            ratingKey: mediaContext.ratingKey,
+            title: mediaContext.title,
+            year: mediaContext.year,
+            videoId: videoId
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('Bande-annonce verrouillée avec succès ! La prochaine recherche utilisera directement celle-ci.');
+            bootstrap.Modal.getInstance(selectionModal[0]).hide();
+        } else {
+            alert('Erreur lors du verrouillage: ' + data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Erreur technique lors du verrouillage:', error);
+        alert('Une erreur technique est survenue.');
+    })
+    .finally(() => {
+        button.prop('disabled', false).html('<i class="bi bi-lock-fill"></i>');
+    });
 });
 
 // 4. Nettoyage à la fermeture du lecteur vidéo
