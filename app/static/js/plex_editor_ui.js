@@ -958,7 +958,7 @@ function fetchAndShowTrailers(button) {
     const selectionModal = $('#trailer-selection-modal');
     selectionModal.find('#trailer-results-container').empty().html('<div class="text-center"><div class="spinner-border"></div></div>');
     selectionModal.find('#trailer-load-more-container').hide();
-    selectionModal.data({ 'ratingKey': ratingKey, 'title': title, 'year': year });
+    selectionModal.data({ 'ratingKey': ratingKey, 'title': title, 'year': year, 'mediaType': mediaType });
 
     bootstrap.Modal.getOrCreateInstance(selectionModal[0]).show();
 
@@ -1048,7 +1048,7 @@ $(document).on('click', '.play-trailer-area', function() {
     playerModal.data('source-modal', 'trailer-selection-modal'); // Marquer la source
 
     $('#trailerModalLabel').text('Bande-Annonce: ' + videoTitle);
-    playerModal.find('.modal-body').html(`<div class="ratio ratio-16x9"><iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>`);
+    playerModal.find('.modal-body').html(`<div class="ratio ratio-16x9"><iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1&cc_lang=fr&cc_load_policy=1" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe></div>`);
     bootstrap.Modal.getOrCreateInstance(playerModal[0]).show();
 });
 
@@ -1108,6 +1108,44 @@ $('#trailer-modal').on('hidden.bs.modal', function () {
         sourceModal.show();
         playerModal.removeData('source-modal'); // Nettoyer pour les futurs clics
     }
+});
+
+// NOUVEAU: Recherche personnalisée dans la modale
+$(document).on('click', '#trailer-custom-search-btn', function() {
+    const selectionModal = $('#trailer-selection-modal');
+    const query = $('#trailer-custom-search-input').val().trim();
+    const mediaContext = selectionModal.data();
+    const resultsContainer = $('#trailer-results-container');
+    const lockedVideoId = resultsContainer.find('.lock-trailer-btn[data-is-locked="true"]').data('video-id');
+
+    if (!query) return;
+
+    resultsContainer.html('<div class="text-center"><div class="spinner-border"></div></div>');
+
+    fetch('/api/agent/custom_trailer_search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            query: query,
+            title: mediaContext.title,
+            year: mediaContext.year,
+            media_type: mediaContext.mediaType // Assurez-vous que mediaType est bien stocké
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // On utilise le lockedVideoId existant pour garder l'état visuel
+            appendTrailerResults(data.results, lockedVideoId);
+        } else {
+            alert('Erreur: ' + data.error);
+            appendTrailerResults([], lockedVideoId);
+        }
+    })
+    .catch(error => {
+        console.error('Erreur de recherche personnalisée:', error);
+        alert('Une erreur technique est survenue.');
+    });
 });
 
 // --- FIN DU BLOC DE GESTION DES BANDES-ANNONCES (V2) ---

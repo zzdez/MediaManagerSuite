@@ -97,10 +97,6 @@ def create_app(config_class=Config):
     app.register_blueprint(agent_bp)
     logger.info("Blueprint 'agent' enregistré avec succès.")
 
-    from app.trailer_routes import trailer_bp
-    app.register_blueprint(trailer_bp)
-    logger.info("Blueprint 'trailer' enregistré avec succès.")
-
     # Dans app/__init__.py
     from app.debug_tools.routes import debug_tools_bp
     app.register_blueprint(debug_tools_bp, url_prefix='/debug')

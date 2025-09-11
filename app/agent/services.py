@@ -23,11 +23,15 @@ def generate_youtube_queries(title, year, media_type):
             ])
         return queries
 
+    use_gemini = current_app.config.get('USE_GEMINI_FOR_QUERIES', True)
     api_key = current_app.config.get('GEMINI_API_KEY')
     model_name = current_app.config.get('GEMINI_MODEL_NAME')
 
-    if not api_key:
-        print("AVERTISSEMENT: Clé GEMINI_API_KEY non configurée. Utilisation des requêtes de secours.")
+    if not api_key or not use_gemini:
+        if not use_gemini:
+            print("INFO: L'utilisation de Gemini est désactivée dans la configuration.")
+        else:
+            print("AVERTISSEMENT: Clé GEMINI_API_KEY non configurée. Utilisation des requêtes de secours.")
         return _get_fallback_queries(title, year, media_type)
 
     try:
