@@ -26,7 +26,7 @@ def find_plex_trailer(plex_item, plex_server):
 
     return None
 
-def find_youtube_trailer(query, api_key, page_token=None):
+def find_youtube_trailer(query, api_key, page_token=None, max_results=5):
     """
     Effectue une recherche paginée sur YouTube pour une seule requête.
     Retourne un dictionnaire avec les résultats et le token pour la page suivante.
@@ -38,12 +38,12 @@ def find_youtube_trailer(query, api_key, page_token=None):
     try:
         youtube = build('youtube', 'v3', developerKey=api_key, cache_discovery=False)
 
-        print(f"DEBUG: Recherche YouTube avec la requête : '{query}', page_token: {page_token}")
+        print(f"DEBUG: Recherche YouTube avec la requête : '{query}', page_token: {page_token}, max_results: {max_results}")
         request = youtube.search().list(
             q=query,
             part='snippet',
             type='video',
-            maxResults=5,
+            maxResults=max_results,
             relevanceLanguage='fr',
             pageToken=page_token
         )
