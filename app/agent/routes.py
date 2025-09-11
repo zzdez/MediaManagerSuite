@@ -76,57 +76,56 @@ def suggest_trailers():
     media_type = data.get('media_type')
     user_id = data.get('userId')
     page = data.get('page', 1)
-    page_size = 5 # Return 5 results per page
+    page_size = 5
 
     if not ratingKey or not user_id:
-        return jsonify({'success': False, 'error': 'Cette route nécessite un ratingKey et un userId pour la mise en cache.'}), 400
+        return jsonify({'success': False, 'error': 'Cette route nécessite un ratingKey et un userId.'}), 400
 
     cache_key = f"trailer_search_{title}_{year}_{ratingKey}"
 
-    # On an initial search (page 1), we always perform a fresh search.
-    # For subsequent pages, we rely on the cache.
-    if page == 1:
+    # Check cache first, regardless of page number.
+    cached_data = get_from_cache(cache_key)
+
+    # If it's page 1 and the item is NOT locked, we can perform a fresh search.
+    # Otherwise, we use the cached data.
+    if page == 1 and (not cached_data or not cached_data.get('is_locked')):
         try:
             plex_server = get_user_specific_plex_server_from_id(user_id)
             item = plex_server.fetchItem(int(ratingKey))
             search_title = get_actual_title(item)
         except Exception as e:
-            current_app.logger.warning(f"Could not fetch item from Plex for title search, falling back. Error: {e}")
+            current_app.logger.warning(f"Could not fetch item from Plex, falling back to title. Error: {e}")
             search_title = title
 
         search_response = _search_and_score_trailers(search_title, year, media_type)
         if not search_response.get('success'):
             return jsonify(search_response)
 
-        full_results = search_response['results']
+        full_results = search_response.get('results', [])
 
-        # Preserve lock status from previous cache entry if it exists
-        existing_cache = get_from_cache(cache_key)
-        is_locked = existing_cache.get('is_locked', False) if existing_cache else False
-        locked_video_id = existing_cache.get('locked_video_id', None) if existing_cache else None
+        # Preserve lock status from any previous (potentially expired) cache entry.
+        is_locked = cached_data.get('is_locked', False) if cached_data else False
+        locked_video_id = cached_data.get('locked_video_id', None) if cached_data else None
 
-        # If a video was locked, find it in the new results and move it to the top.
+        # If a lock was already in place, ensure the locked video is at the top of the new results.
         if is_locked and locked_video_id:
             locked_item = next((item for item in full_results if item['videoId'] == locked_video_id), None)
             if locked_item:
                 full_results.remove(locked_item)
                 full_results.insert(0, locked_item)
 
-        # Store the new full list in the cache, maintaining lock state
-        set_in_cache(cache_key, {'results': full_results, 'is_locked': is_locked, 'locked_video_id': locked_video_id})
+        # Use the new unified set_in_cache function
+        set_in_cache(cache_key, full_results, is_locked, locked_video_id)
+        # Re-fetch from cache to have the definitive state
+        final_data = get_from_cache(cache_key)
 
-    else: # page > 1
-        cached_data = get_from_cache(cache_key)
-        if not cached_data:
-            return jsonify({'success': False, 'error': 'Session de recherche expirée. Veuillez relancer la recherche.'}), 404
-        full_results = cached_data.get('results', [])
+    elif cached_data: # Use cache for page > 1 or if locked
+        final_data = cached_data
+    else: # No cache and page > 1
+        return jsonify({'success': False, 'error': 'Session de recherche expirée. Veuillez relancer la recherche.'}), 404
 
-    # Get the definitive current state from cache for pagination
-    final_cached_data = get_from_cache(cache_key) or {}
-    is_locked_final = final_cached_data.get('is_locked', False)
-    locked_video_id_final = final_cached_data.get('locked_video_id', None) if is_locked_final else None
-
-    # Paginate the full list
+    # Paginate the full list from the final data
+    full_results = final_data.get('results', [])
     start_index = (page - 1) * page_size
     end_index = start_index + page_size
     paginated_results = full_results[start_index:end_index]
@@ -136,8 +135,8 @@ def suggest_trailers():
         'success': True,
         'results': paginated_results,
         'has_more': has_more,
-        'is_locked': is_locked_final,
-        'locked_video_id': locked_video_id_final
+        'is_locked': final_data.get('is_locked', False),
+        'locked_video_id': final_data.get('locked_video_id')
     })
 
 @agent_bp.route('/lock_trailer', methods=['POST'])
