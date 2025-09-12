@@ -3,25 +3,57 @@ import os
 from datetime import datetime, timedelta
 
 CACHE_FILE = os.path.join('instance', 'trailer_cache.json')
+PENDING_LOCKS_FILE = os.path.join('instance', 'pending_trailer_locks.json')
 CACHE_DURATION_DAYS = 30 # Garder les résultats en cache pendant 30 jours
 
-def _load_cache():
-    if not os.path.exists(CACHE_FILE):
+def _load_json_file(file_path):
+    if not os.path.exists(file_path):
         return {}
     try:
-        with open(CACHE_FILE, 'r') as f:
+        with open(file_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except (IOError, json.JSONDecodeError):
         return {}
 
-def _save_cache(cache_data):
+def _save_json_file(file_path, data):
     try:
-        # Assurer que le répertoire 'instance' existe
-        os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
-        with open(CACHE_FILE, 'w') as f: # Correction du nom de la variable
-            json.dump(cache_data, f, indent=4)
-    except IOError:
-        pass
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4)
+    except IOError as e:
+        print(f"ERROR: Could not save JSON file at {file_path}: {e}")
+
+def _load_cache():
+    return _load_json_file(CACHE_FILE)
+
+def _save_cache(cache_data):
+    _save_json_file(CACHE_FILE, cache_data)
+
+# --- Pending Lock Functions ---
+
+def add_pending_lock(media_id, video_id):
+    """Ajoute un verrou en attente pour un média non encore dans Plex."""
+    pending_locks = _load_json_file(PENDING_LOCKS_FILE)
+    pending_locks[str(media_id)] = {'video_id': video_id, 'timestamp': datetime.now().isoformat()}
+    _save_json_file(PENDING_LOCKS_FILE, pending_locks)
+    print(f"INFO: Pending lock added for media ID {media_id} with video ID {video_id}.")
+
+def get_pending_lock(media_id):
+    """Récupère un verrou en attente."""
+    pending_locks = _load_json_file(PENDING_LOCKS_FILE)
+    return pending_locks.get(str(media_id))
+
+def remove_pending_lock(media_id):
+    """Supprime un verrou en attente une fois qu'il a été traité."""
+    pending_locks = _load_json_file(PENDING_LOCKS_FILE)
+    if str(media_id) in pending_locks:
+        del pending_locks[str(media_id)]
+        _save_json_file(PENDING_LOCKS_FILE, pending_locks)
+        print(f"INFO: Pending lock removed for media ID {media_id}.")
+        return True
+    return False
+
+# --- Main Cache Functions ---
 
 def get_from_cache(key):
     """

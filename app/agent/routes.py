@@ -2,7 +2,10 @@ from flask import request, jsonify, current_app, session
 from . import agent_bp
 from app.agent.services import generate_youtube_queries, score_and_sort_results
 from app.utils.trailer_finder import find_youtube_trailer, get_videos_details
-from app.agent.cache_manager import get_from_cache, set_in_cache, lock_trailer_in_cache, unlock_trailer_in_cache
+from app.agent.cache_manager import (
+    get_from_cache, set_in_cache, lock_trailer_in_cache, unlock_trailer_in_cache,
+    add_pending_lock
+)
 from app.utils.plex_client import get_user_specific_plex_server_from_id
 from app.utils.tmdb_client import TheMovieDBClient
 from app.utils.tvdb_client import CustomTVDBClient
@@ -158,6 +161,19 @@ def lock_trailer_route():
         return jsonify({'success': True, 'message': f'Bande-annonce pour {title} verrouillée avec succès.'})
     else:
         return jsonify({'success': False, 'error': 'Impossible de trouver l\'entrée de cache à verrouiller.'}), 404
+
+@agent_bp.route('/pending_lock', methods=['POST'])
+def pending_lock_route():
+    data = request.json
+    media_id = data.get('media_id') # tmdbId ou tvdbId
+    video_id = data.get('video_id')
+
+    if not all([media_id, video_id]):
+        return jsonify({'success': False, 'error': 'Données manquantes (media_id, video_id)'}), 400
+
+    add_pending_lock(media_id, video_id)
+    return jsonify({'success': True, 'message': f'Verrouillage en attente enregistré pour {media_id}.'})
+
 
 @agent_bp.route('/unlock_trailer', methods=['POST'])
 def unlock_trailer_route():

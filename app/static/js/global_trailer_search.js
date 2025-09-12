@@ -207,17 +207,33 @@ $(document).ready(function() {
         const isLocked = button.data('is-locked') === true;
         const videoId = button.data('video-id');
         const selectionModal = $('#trailer-selection-modal');
-        const mediaContext = selectionModal.data(); // ratingKey, title, year...
+        const mediaContext = selectionModal.data();
 
-        if (!mediaContext.ratingKey) {
-            alert("Erreur: Le contexte du média (ratingKey) est introuvable pour le verrouillage.");
+        let endpoint;
+        let payload;
+
+        if (mediaContext.ratingKey) {
+            // --- Cas 1: Verrouillage permanent pour un item Plex ---
+            if (isLocked) {
+                // Le déverrouillage ne fonctionne que pour les items Plex
+                endpoint = '/api/agent/unlock_trailer';
+                payload = { ratingKey: mediaContext.ratingKey, title: mediaContext.title, year: mediaContext.year };
+            } else {
+                endpoint = '/api/agent/lock_trailer';
+                payload = { ratingKey: mediaContext.ratingKey, title: mediaContext.title, year: mediaContext.year, videoId: videoId };
+            }
+        } else if (mediaContext.media_id) {
+            // --- Cas 2: Verrouillage en attente pour un item non-Plex ---
+            if (isLocked) {
+                // Pas de déverrouillage pour un verrou en attente, on change juste l'UI
+                alert("Ce verrouillage est temporaire et sera appliqué lors de l'ajout du média.");
+                return;
+            }
+            endpoint = '/api/agent/pending_lock';
+            payload = { media_id: mediaContext.media_id, video_id: videoId };
+        } else {
+            alert("Erreur: Contexte de verrouillage invalide.");
             return;
-        }
-
-        const endpoint = isLocked ? '/api/agent/unlock_trailer' : '/api/agent/lock_trailer';
-        let payload = { ratingKey: mediaContext.ratingKey, title: mediaContext.title, year: mediaContext.year };
-        if (!isLocked) {
-            payload.videoId = videoId;
         }
 
         const originalIcon = button.html();
@@ -231,16 +247,22 @@ $(document).ready(function() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                // Déclencher un événement personnalisé pour que le script de la page puisse réagir
-                // et rafraîchir la liste des trailers
-                $(document).trigger('trailerActionSuccess', [mediaContext]);
+                alert(data.message); // Affiche le message de succès
+                if (mediaContext.ratingKey) {
+                    // Pour un item Plex, on rafraîchit la modale pour voir le changement
+                    $(document).trigger('trailerActionSuccess', [mediaContext]);
+                } else {
+                    // Pour un verrou en attente, on met juste à jour l'UI de ce bouton
+                    button.data('is-locked', true).removeClass('btn-outline-warning').addClass('btn-success');
+                    button.prop('disabled', false).html(originalIcon);
+                }
             } else {
                 alert('Erreur: ' + (data.error || "Une erreur inconnue est survenue."));
                 button.prop('disabled', false).html(originalIcon);
             }
         })
         .catch(error => {
-            console.error('Erreur technique lors du (dé)verrouillage:', error);
+            console.error('Erreur technique lors du verrouillage:', error);
             alert('Une erreur technique est survenue.');
             button.prop('disabled', false).html(originalIcon);
         });

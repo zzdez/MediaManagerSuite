@@ -42,6 +42,7 @@ $(document).ready(function() {
                             <p class="mb-1 small">${item.overview ? item.overview.substring(0, 280) + (item.overview.length > 280 ? '...' : '') : 'Pas de synopsis disponible.'}</p>
                             <div class="mt-2">
                                 <button class="btn btn-sm btn-outline-info search-trailer-btn"
+                                        data-result-index="${index}"
                                         data-title="${item.title}"
                                         data-year="${item.year || ''}"
                                         data-media-type="${mediaType}">
@@ -109,9 +110,13 @@ $(document).ready(function() {
     // --- GESTION DES BANDES-ANNONCES DE LA PAGE DE RECHERCHE ---
     $('#media-results-container').on('click', '.search-trailer-btn', function() {
         const button = $(this);
-        const title = button.data('title');
-        const year = button.data('year');
+        const resultIndex = button.data('result-index');
+        const mediaData = mediaSearchResults[resultIndex];
+
+        const title = mediaData.title;
+        const year = mediaData.year;
         const mediaType = button.data('media-type');
+        const mediaId = mediaData.id; // tmdbId ou tvdbId
 
         button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
 
@@ -119,36 +124,33 @@ $(document).ready(function() {
         const resultsContainer = $('#trailer-results-container');
         const loadMoreBtn = $('#load-more-trailers-btn');
 
-        // Préparer la modale
         resultsContainer.empty();
         $('#trailer-load-more-container').hide();
 
-        // Stocke le contexte pour la recherche et la pagination
-        // Pas de ratingKey, donc c'est une recherche de type "autonome"
         const query = `${title} ${year}`;
-        selectionModal.data({ 'title': title, 'year': year, 'mediaType': mediaType, 'query': query });
+        // Stocke le contexte complet, incluant le media_id pour le verrouillage en attente
+        selectionModal.data({ title, year, mediaType, query, media_id: mediaId });
         $('#trailer-custom-search-input').val(query);
 
         bootstrap.Modal.getOrCreateInstance(selectionModal[0]).show();
 
-        // Utilise la route de recherche personnalisée qui ne nécessite pas de ratingKey
         fetch('/api/agent/custom_trailer_search', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query: query, title: title, year: year, media_type: mediaType })
+            body: JSON.stringify({ query, title, year, media_type: mediaType })
         })
         .then(response => response.ok ? response.json() : response.json().then(err => Promise.reject(err)))
         .then(data => {
             if (data.success && data.results) {
-                // Pas de verrouillage pour ce type de recherche
-                renderTrailerResults(data.results, { showLock: false });
+                // On affiche le verrouillage, même pour les items non-Plex
+                renderTrailerResults(data.results, { showLock: true });
 
                 if (data.nextPageToken) {
                     loadMoreBtn.data('page-token', data.nextPageToken).data('page', null);
                     $('#trailer-load-more-container').show();
                 }
             } else {
-                renderTrailerResults([], { showLock: false });
+                renderTrailerResults([], { showLock: true });
             }
         })
         .catch(error => {
