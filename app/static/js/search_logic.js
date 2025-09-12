@@ -459,13 +459,27 @@ $(document).ready(function() {
                 const bestMatchClass = item.is_best_match ? 'best-match' : '';
                 const externalId = mediaType === 'tv' ? item.tvdbId : item.tmdbId;
                 const mediaExists = item.id && item.id > 0;
-                const buttonHtml = mediaExists ?
+
+                const trailerButtonHtml = `
+                    <button class="btn btn-sm btn-outline-info find-trailer-from-map-btn"
+                            data-media-id="${externalId}"
+                            data-title="${item.title}"
+                            data-year="${item.year}"
+                            data-media-type="${mediaType}">
+                        <i class="fas fa-video"></i>
+                    </button>`;
+
+                const mainButtonHtml = mediaExists ?
                     `<button class="btn btn-sm btn-outline-primary enrich-details-btn" data-media-id="${externalId}" data-media-type="${mediaType}">Voir les détails</button>` :
                     `<button class="btn btn-sm btn-outline-success add-and-enrich-btn" data-ext-id="${externalId}" data-title="${item.title}" data-year="${item.year}" data-media-type="${mediaType}">Ajouter & Voir les détails</button>`;
+
                 return `
                     <div class="list-group-item d-flex justify-content-between align-items-center ${bestMatchClass}" data-result-item>
                         <div><strong>${item.title}</strong> (${item.year})${!mediaExists ? '<span class="badge bg-info ms-2">Nouveau</span>' : ''}</div>
-                        ${buttonHtml}
+                        <div class="btn-group">
+                            ${trailerButtonHtml}
+                            ${mainButtonHtml}
+                        </div>
                     </div>`;
             }).join('');
         } else {
@@ -889,4 +903,56 @@ function executeFinalMapping(payload) {
 
     // Appel initial pour définir le bon état au chargement de la page
     updateFilterVisibility();
+
+    // --- GESTION DES BANDES-ANNONCES DEPUIS LA MODALE DE MAPPING ---
+    $('body').on('click', '.find-trailer-from-map-btn', function(e) {
+        e.stopPropagation(); // Empêche d'autres clics (comme celui sur l'item de la liste) de se déclencher
+
+        const button = $(this);
+        const title = button.data('title');
+        const year = button.data('year');
+        const mediaType = button.data('media-type');
+        const mediaId = button.data('media-id'); // tmdbId ou tvdbId
+
+        // On ne désactive pas le bouton pour pouvoir cliquer plusieurs fois si besoin
+        // button.prop('disabled', true);
+
+        const selectionModal = $('#trailer-selection-modal');
+        const resultsContainer = $('#trailer-results-container');
+        const loadMoreBtn = $('#load-more-trailers-btn');
+
+        resultsContainer.empty();
+        $('#trailer-load-more-container').hide();
+
+        const query = `${title} ${year}`;
+        // Stocke le contexte complet pour le verrouillage en attente
+        selectionModal.data({ title, year, mediaType, query, media_id: mediaId });
+        $('#trailer-custom-search-input').val(query);
+
+        // Ouvre la modale de sélection de BA par-dessus la modale de mapping
+        bootstrap.Modal.getOrCreateInstance(selectionModal[0]).show();
+
+        fetch('/api/agent/custom_trailer_search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query, title, year, media_type: mediaType })
+        })
+        .then(response => response.ok ? response.json() : response.json().then(err => Promise.reject(err)))
+        .then(data => {
+            if (data.success && data.results) {
+                renderTrailerResults(data.results, { showLock: true });
+                if (data.nextPageToken) {
+                    loadMoreBtn.data('page-token', data.nextPageToken).data('page', null);
+                    $('#trailer-load-more-container').show();
+                }
+            } else {
+                renderTrailerResults([], { showLock: true });
+            }
+        })
+        .catch(error => {
+            console.error('Erreur lors de la recherche de la bande-annonce:', error);
+            resultsContainer.html(`<p class="text-danger text-center">Erreur: ${error.message || 'Erreur inconnue'}</p>`);
+        });
+        // On ne met pas de .finally() pour ne pas réactiver un bouton qu'on ne désactive plus
+    });
 });
