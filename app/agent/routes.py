@@ -1,73 +1,14 @@
-from flask import request, jsonify, current_app, session
+from flask import request, jsonify, current_app
 from . import agent_bp
-from app.agent.services import generate_youtube_queries, score_and_sort_results
-from app.utils.trailer_finder import find_youtube_trailer, get_videos_details
-from app.agent.cache_manager import (
+from app.agent.services import (
+    _search_and_score_trailers, get_actual_title, score_and_sort_results
+)
+from app.utils.trailer_finder import find_youtube_trailer
+from app.utils.cache_manager import (
     get_from_cache, set_in_cache, lock_trailer_in_cache, unlock_trailer_in_cache,
     add_pending_lock
 )
 from app.utils.plex_client import get_user_specific_plex_server_from_id
-from app.utils.tmdb_client import TheMovieDBClient
-from app.utils.tvdb_client import CustomTVDBClient
-
-def get_actual_title(plex_item):
-    """Tente de trouver le titre réel via les GUIDs et les API externes."""
-    if plex_item.type == 'movie':
-        tmdb_id = next((g.id.replace('tmdb://', '') for g in plex_item.guids if g.id.startswith('tmdb://')), None)
-        if tmdb_id:
-            tmdb_client = TheMovieDBClient()
-            movie_details = tmdb_client.get_movie_details(tmdb_id)
-            if movie_details and movie_details.get('title'):
-                return movie_details['title']
-    elif plex_item.type == 'show':
-        tvdb_id = next((g.id.replace('tvdb://', '') for g in plex_item.guids if g.id.startswith('tvdb://')), None)
-        if tvdb_id:
-            tvdb_client = CustomTVDBClient()
-            series_details = tvdb_client.get_series_details_by_id(tvdb_id)
-            if series_details and series_details.get('name'):
-                return series_details['name']
-    return plex_item.title # Fallback sur le titre de Plex
-
-def _search_and_score_trailers(title, year, media_type):
-    """Helper function to search and score trailers, used by multiple routes."""
-    youtube_api_key = current_app.config.get('YOUTUBE_API_KEY')
-    if not youtube_api_key:
-        return {'success': False, 'error': "La clé API YouTube n'est pas configurée."}
-
-    search_queries = generate_youtube_queries(title, year, media_type)
-    current_app.logger.debug(f"Generated search queries: {search_queries}")
-
-    all_results = []
-    seen_video_ids = set()
-
-    # We now fetch more results to allow for better pagination.
-    # Let's aim for ~20-25 results. find_youtube_trailer fetches max 10 per query.
-    for current_query in search_queries[:3]: # Limit to 3 queries to avoid long waits
-        search_result = find_youtube_trailer(current_query, youtube_api_key, max_results=10)
-        if search_result and search_result['results']:
-            for result in search_result['results']:
-                if result['videoId'] not in seen_video_ids:
-                    all_results.append(result)
-                    seen_video_ids.add(result['videoId'])
-
-    if not all_results:
-        return {'success': False, 'error': 'Aucun résultat trouvé pour les requêtes générées.'}
-
-    sorted_by_title = score_and_sort_results(all_results, title, year, media_type)
-
-    # Fetch details for up to 25 top results to refine scoring
-    top_ids = [res['videoId'] for res in sorted_by_title[:25]]
-    if top_ids:
-        video_details = get_videos_details(top_ids, youtube_api_key)
-        final_sorted_list = score_and_sort_results(sorted_by_title, title, year, media_type, video_details=video_details)
-    else:
-        final_sorted_list = sorted_by_title
-
-    log_results = [{'title': r['title'], 'channel': r['channel'], 'score': r['score']} for r in final_sorted_list[:10]]
-    current_app.logger.debug(f"Top 10 final results: {log_results}")
-
-    # Return the full sorted list. The calling function will handle pagination.
-    return {'success': True, 'results': final_sorted_list}
 
 @agent_bp.route('/suggest_trailers', methods=['POST'])
 def suggest_trailers():
@@ -81,24 +22,39 @@ def suggest_trailers():
     page = data.get('page', 1)
     page_size = 5
 
-    if not ratingKey or not user_id:
-        return jsonify({'success': False, 'error': 'Cette route nécessite un ratingKey et un userId.'}), 400
+    # This unified endpoint can work with or without a ratingKey.
+    # If no ratingKey, it's a standalone search.
+    is_plex_item = ratingKey and user_id
 
-    cache_key = f"trailer_search_{title}_{year}_{ratingKey}"
+    # Use a more generic cache key for standalone searches
+    if is_plex_item:
+        cache_key = f"trailer_search_{title}_{year}_{ratingKey}"
+    else:
+        # Standalone searches are not cached in the same way, but this provides a key if needed later
+        cache_key = f"trailer_search_standalone_{title}_{year}"
 
-    # Check cache first, regardless of page number.
-    cached_data = get_from_cache(cache_key)
+    # Check cache first for Plex items. Standalone searches are always fresh.
+    if is_plex_item:
+        cached_data = get_from_cache(cache_key)
+        # If it's page 1 and the item is NOT locked, we can perform a fresh search.
+        # Otherwise, we use the cached data.
+        if page == 1 and (not cached_data or not cached_data.get('is_locked')):
+            fresh_search = True
+        else:
+            fresh_search = False
+    else:
+        cached_data = None
+        fresh_search = True
 
-    # If it's page 1 and the item is NOT locked, we can perform a fresh search.
-    # Otherwise, we use the cached data.
-    if page == 1 and (not cached_data or not cached_data.get('is_locked')):
-        try:
-            plex_server = get_user_specific_plex_server_from_id(user_id)
-            item = plex_server.fetchItem(int(ratingKey))
-            search_title = get_actual_title(item)
-        except Exception as e:
-            current_app.logger.warning(f"Could not fetch item from Plex, falling back to title. Error: {e}")
-            search_title = title
+    if fresh_search:
+        search_title = title
+        if is_plex_item:
+            try:
+                plex_server = get_user_specific_plex_server_from_id(user_id)
+                item = plex_server.fetchItem(int(ratingKey))
+                search_title = get_actual_title(item)
+            except Exception as e:
+                current_app.logger.warning(f"Could not fetch item from Plex, falling back to title. Error: {e}")
 
         search_response = _search_and_score_trailers(search_title, year, media_type)
         if not search_response.get('success'):
@@ -106,26 +62,28 @@ def suggest_trailers():
 
         full_results = search_response.get('results', [])
 
-        # Preserve lock status from any previous (potentially expired) cache entry.
-        is_locked = cached_data.get('is_locked', False) if cached_data else False
-        locked_video_id = cached_data.get('locked_video_id', None) if cached_data else None
+        if is_plex_item:
+            # Preserve lock status from any previous (potentially expired) cache entry.
+            is_locked = cached_data.get('is_locked', False) if cached_data else False
+            locked_video_id = cached_data.get('locked_video_id', None) if cached_data else None
 
-        # If a lock was already in place, ensure the locked video is at the top of the new results.
-        if is_locked and locked_video_id:
-            locked_item = next((item for item in full_results if item['videoId'] == locked_video_id), None)
-            if locked_item:
-                full_results.remove(locked_item)
-                full_results.insert(0, locked_item)
+            # If a lock was already in place, ensure the locked video is at the top of the new results.
+            if is_locked and locked_video_id:
+                locked_item = next((item for item in full_results if item['videoId'] == locked_video_id), None)
+                if locked_item:
+                    full_results.remove(locked_item)
+                    full_results.insert(0, locked_item)
 
-        # Use the new unified set_in_cache function
-        set_in_cache(cache_key, full_results, is_locked, locked_video_id)
-        # Re-fetch from cache to have the definitive state
-        final_data = get_from_cache(cache_key)
+            set_in_cache(cache_key, full_results, is_locked, locked_video_id)
+            final_data = get_from_cache(cache_key)
+        else:
+            # For standalone search, we don't cache. We just return the results.
+            final_data = {'results': full_results, 'is_locked': False, 'locked_video_id': None}
 
-    elif cached_data: # Use cache for page > 1 or if locked
+    elif is_plex_item and cached_data: # Use cache for page > 1 or if locked
         final_data = cached_data
-    else: # No cache and page > 1
-        return jsonify({'success': False, 'error': 'Session de recherche expirée. Veuillez relancer la recherche.'}), 404
+    else: # No cache and page > 1, or other weird state
+        return jsonify({'success': False, 'error': 'Session de recherche expirée ou invalide. Veuillez relancer la recherche.'}), 404
 
     # Paginate the full list from the final data
     full_results = final_data.get('results', [])

@@ -1,6 +1,27 @@
 import google.generativeai as genai
 import json
 from flask import current_app
+from app.utils.trailer_finder import find_youtube_trailer, get_videos_details
+from app.utils.tmdb_client import TheMovieDBClient
+from app.utils.tvdb_client import CustomTVDBClient
+
+def get_actual_title(plex_item):
+    """Tente de trouver le titre réel via les GUIDs et les API externes."""
+    if plex_item.type == 'movie':
+        tmdb_id = next((g.id.replace('tmdb://', '') for g in plex_item.guids if g.id.startswith('tmdb://')), None)
+        if tmdb_id:
+            tmdb_client = TheMovieDBClient()
+            movie_details = tmdb_client.get_movie_details(tmdb_id)
+            if movie_details and movie_details.get('title'):
+                return movie_details['title']
+    elif plex_item.type == 'show':
+        tvdb_id = next((g.id.replace('tvdb://', '') for g in plex_item.guids if g.id.startswith('tvdb://')), None)
+        if tvdb_id:
+            tvdb_client = CustomTVDBClient()
+            series_details = tvdb_client.get_series_details_by_id(tvdb_id)
+            if series_details and series_details.get('name'):
+                return series_details['name']
+    return plex_item.title # Fallback sur le titre de Plex
 
 def generate_youtube_queries(title, year, media_type):
     """
@@ -43,6 +64,48 @@ def generate_youtube_queries(title, year, media_type):
     except Exception as e:
         print(f"ERREUR lors de la génération des requêtes Gemini avec le modèle '{model_name}': {e}. Utilisation des requêtes de secours.")
         return _get_fallback_queries(title, year, media_type)
+
+def _search_and_score_trailers(title, year, media_type):
+    """Helper function to search and score trailers, used by multiple routes."""
+    youtube_api_key = current_app.config.get('YOUTUBE_API_KEY')
+    if not youtube_api_key:
+        return {'success': False, 'error': "La clé API YouTube n'est pas configurée."}
+
+    search_queries = generate_youtube_queries(title, year, media_type)
+    current_app.logger.debug(f"Generated search queries: {search_queries}")
+
+    all_results = []
+    seen_video_ids = set()
+
+    # We now fetch more results to allow for better pagination.
+    # Let's aim for ~20-25 results. find_youtube_trailer fetches max 10 per query.
+    for current_query in search_queries[:3]: # Limit to 3 queries to avoid long waits
+        search_result = find_youtube_trailer(current_query, youtube_api_key, max_results=10)
+        if search_result and search_result['results']:
+            for result in search_result['results']:
+                if result['videoId'] not in seen_video_ids:
+                    all_results.append(result)
+                    seen_video_ids.add(result['videoId'])
+
+    if not all_results:
+        return {'success': False, 'error': 'Aucun résultat trouvé pour les requêtes générées.'}
+
+    sorted_by_title = score_and_sort_results(all_results, title, year, media_type)
+
+    # Fetch details for up to 25 top results to refine scoring
+    top_ids = [res['videoId'] for res in sorted_by_title[:25]]
+    if top_ids:
+        video_details = get_videos_details(top_ids, youtube_api_key)
+        final_sorted_list = score_and_sort_results(sorted_by_title, title, year, media_type, video_details=video_details)
+    else:
+        final_sorted_list = sorted_by_title
+
+    log_results = [{'title': r['title'], 'channel': r['channel'], 'score': r['score']} for r in final_sorted_list[:10]]
+    current_app.logger.debug(f"Top 10 final results: {log_results}")
+
+    # Return the full sorted list. The calling function will handle pagination.
+    return {'success': True, 'results': final_sorted_list}
+
 
 def score_and_sort_results(results, title, year, media_type, video_details=None):
     """
