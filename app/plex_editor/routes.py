@@ -27,7 +27,7 @@ from app.utils.arr_client import (
     sonarr_trigger_series_rename,
     search_sonarr_series_by_title_and_year
 )
-from app.utils.trailer_finder import find_plex_trailer
+from app.utils.trailer_finder import find_plex_trailer, get_videos_details
 from app.utils.tmdb_client import TheMovieDBClient
 from app.utils.tvdb_client import CustomTVDBClient
 from app.utils.cache_manager import SimpleCache, get_pending_lock, remove_pending_lock, set_in_cache
@@ -480,18 +480,33 @@ def get_media_items():
             video_id_to_lock = pending_lock['video_id']
             cache_key = f"trailer_search_{item.title}_{item.year}_{item.ratingKey}"
 
-            # Au lieu de refaire une recherche complète, nous créons une entrée de cache minimale mais valide.
-            # C'est plus robuste et évite des appels API inutiles.
-            # L'objet doit avoir les clés minimales attendues par le frontend.
-            minimal_locked_trailer = {
-                'videoId': video_id_to_lock,
-                'title': f"Bande-annonce verrouillée pour {item.title}",
-                'channel': "N/A",
-                'thumbnail': '', # Le frontend peut gérer une miniature vide
-                'score': 9999 # Score élevé pour le maintenir en haut si jamais il est mélangé
-            }
+            # Amélioration: au lieu de créer une entrée minimale, on tente de récupérer les vrais détails de la vidéo.
+            youtube_api_key = current_app.config.get('YOUTUBE_API_KEY')
+            video_details = None
+            if youtube_api_key:
+                video_details = get_videos_details([video_id_to_lock], youtube_api_key)
 
-            results_list = [minimal_locked_trailer]
+            if video_details and video_id_to_lock in video_details:
+                details = video_details[video_id_to_lock]['snippet']
+                final_trailer_object = {
+                    'videoId': video_id_to_lock,
+                    'title': details.get('title', f"Bande-annonce pour {item.title}"),
+                    'channel': details.get('channelTitle', "N/A"),
+                    'thumbnail': details.get('thumbnails', {}).get('high', {}).get('url', ''),
+                    'score': 9999 # Maintenir le score élevé pour le verrouillage
+                }
+            else:
+                # Fallback: si l'appel API échoue, on utilise l'ancienne méthode robuste.
+                current_app.logger.warning(f"FINALIZATION: Could not fetch details for videoId {video_id_to_lock}. Using fallback.")
+                final_trailer_object = {
+                    'videoId': video_id_to_lock,
+                    'title': f"Bande-annonce verrouillée pour {item.title}",
+                    'channel': "N/A",
+                    'thumbnail': '',
+                    'score': 9999
+                }
+
+            results_list = [final_trailer_object]
 
             # Créer l'entrée de cache, directement verrouillée.
             current_app.logger.info(f"FINALIZATION: Setting permanent locked cache for key '{cache_key}' with videoId '{video_id_to_lock}'.")
