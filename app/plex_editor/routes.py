@@ -30,7 +30,8 @@ from app.utils.arr_client import (
 from app.utils.trailer_finder import find_plex_trailer
 from app.utils.tmdb_client import TheMovieDBClient
 from app.utils.tvdb_client import CustomTVDBClient
-from app.utils.cache_manager import SimpleCache
+from app.utils.cache_manager import SimpleCache, get_pending_lock, remove_pending_lock, set_in_cache
+from app.agent.services import _search_and_score_trailers as search_and_score_trailers_agent
 
 # --- Routes du Blueprint ---
 
@@ -443,6 +444,71 @@ def get_media_items():
 
             except Exception as e_lib:
                 current_app.logger.error(f"Erreur accès bibliothèque {lib_key}: {e_lib}", exc_info=True)
+
+        # --- NOUVELLE ÉTAPE 3.5: FINALISATION DES VERROUS EN ATTENTE (VERSION DÉFINITIVE) ---
+        for item in all_plex_items.values():
+            if not hasattr(item, 'guids'):
+                continue
+
+            # Extraire tous les IDs externes de l'item Plex (tmdb, tvdb, imdb)
+            plex_external_ids = set()
+            for guid_obj in item.guids:
+                try:
+                    # format 'tvdb://12345' -> '12345'
+                    id_val = guid_obj.id.split('//')[1]
+                    plex_external_ids.add(id_val)
+                except IndexError:
+                    continue
+
+            if not plex_external_ids:
+                continue
+
+            # Chercher un verrou en attente pour n'importe lequel des IDs de l'item
+            pending_lock = None
+            matched_id = None
+            for ext_id in plex_external_ids:
+                pending_lock = get_pending_lock(ext_id)
+                if pending_lock:
+                    matched_id = ext_id
+                    break
+
+            if not pending_lock:
+                continue
+
+            current_app.logger.info(f"FINALIZATION: Pending lock found for '{item.title}' (matched Plex ID {matched_id}). Finalizing...")
+
+            video_id_to_lock = pending_lock['video_id']
+            # La clé de cache utilise le titre et l'année de l'item Plex final
+            cache_key = f"trailer_search_{item.title}_{item.year}_{item.ratingKey}"
+            # La recherche de l'agent utilise le titre original pour de meilleurs résultats
+            search_title_for_agent = getattr(item, 'originalTitle', item.title) or item.title
+
+            search_response = search_and_score_trailers_agent(search_title_for_agent, item.year, item.type)
+
+            results_list = []
+            if search_response.get('success'):
+                results_list = search_response.get('results', [])
+            else:
+                current_app.logger.warning(f"FINALIZATION: Agent search failed for '{item.title}'. Cache will be created with an empty list.")
+
+            # S'assurer que la vidéo verrouillée est en haut de la liste.
+            locked_item_in_results = next((res for res in results_list if res['videoId'] == video_id_to_lock), None)
+            if locked_item_in_results:
+                results_list.remove(locked_item_in_results)
+                results_list.insert(0, locked_item_in_results)
+            else:
+                current_app.logger.warning(f"FINALIZATION: Locked video {video_id_to_lock} not found in new search for '{item.title}'.")
+                # On ne peut pas facilement recréer l'objet complet, donc on ne fait rien,
+                # mais le locked_video_id sera quand même correctement enregistré.
+                pass
+
+            # Créer l'entrée de cache en la marquant comme verrouillée dès le début.
+            current_app.logger.info(f"FINALIZATION: Setting permanent locked cache for key '{cache_key}' with videoId '{video_id_to_lock}'.")
+            set_in_cache(cache_key, results_list, is_locked=True, locked_video_id=video_id_to_lock)
+
+            # Supprimer le verrou en attente.
+            remove_pending_lock(matched_id)
+            current_app.logger.info(f"FINALIZATION: Success for '{item.title}'. Pending lock for {matched_id} removed.")
 
         # --- 4. LA DÉCISION : Chercher à l'extérieur ? ---
         final_plex_results_unfiltered = list(all_plex_items.values())
