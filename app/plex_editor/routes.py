@@ -30,8 +30,7 @@ from app.utils.arr_client import (
 from app.utils.trailer_finder import find_plex_trailer
 from app.utils.tmdb_client import TheMovieDBClient
 from app.utils.tvdb_client import CustomTVDBClient
-from app.utils.cache_manager import SimpleCache, get_pending_lock, remove_pending_lock, set_in_cache, lock_trailer_in_cache
-from app.agent.routes import _search_and_score_trailers as search_and_score_trailers_agent
+from app.utils.cache_manager import SimpleCache
 
 # --- Routes du Blueprint ---
 
@@ -444,53 +443,6 @@ def get_media_items():
 
             except Exception as e_lib:
                 current_app.logger.error(f"Erreur accès bibliothèque {lib_key}: {e_lib}", exc_info=True)
-
-        # --- NOUVELLE ÉTAPE 3.5: FINALISATION DES VERROUS EN ATTENTE ---
-        for item in all_plex_items.values():
-            if not hasattr(item, 'guids'):
-                continue
-
-            # Chercher le meilleur ID externe (TVDB pour les séries, TMDb pour les films)
-            external_id = None
-            if item.type == 'show':
-                external_id = next((g.id.replace('tvdb://', '') for g in item.guids if g.id.startswith('tvdb://')), None)
-            elif item.type == 'movie':
-                external_id = next((g.id.replace('tmdb://', '') for g in item.guids if g.id.startswith('tmdb://')), None)
-
-            if not external_id:
-                continue
-
-            pending_lock = get_pending_lock(external_id)
-            if pending_lock:
-                current_app.logger.info(f"Verrou en attente trouvé pour '{item.title}' (ID: {external_id}). Finalisation...")
-
-                video_id_to_lock = pending_lock['video_id']
-                cache_key = f"trailer_search_{item.title}_{item.year}_{item.ratingKey}"
-
-                # On effectue une nouvelle recherche pour obtenir une liste de résultats complète
-                search_response = search_and_score_trailers_agent(item.title, item.year, item.type)
-                if search_response.get('success'):
-                    results_list = search_response.get('results', [])
-
-                    # On s'assure que la vidéo verrouillée est bien en haut de la liste
-                    locked_item = next((res for res in results_list if res['videoId'] == video_id_to_lock), None)
-                    if locked_item:
-                        results_list.remove(locked_item)
-                        results_list.insert(0, locked_item)
-                    else:
-                        # Si la vidéo n'est pas dans les nouveaux résultats, on l'ajoute manuellement
-                        # (cela nécessite de récupérer ses détails, ce qui est complexe ici.
-                        # Pour l'instant, on loggue une erreur et on continue. Le verrou sera quand même appliqué.)
-                        current_app.logger.warning(f"La vidéo verrouillée {video_id_to_lock} n'a pas été trouvée dans la nouvelle recherche pour '{item.title}'.")
-
-                    # On crée l'entrée de cache directement comme étant verrouillée
-                    set_in_cache(cache_key, results_list, is_locked=True, locked_video_id=video_id_to_lock)
-
-                    # On supprime le verrou en attente
-                    remove_pending_lock(external_id)
-                    current_app.logger.info(f"Finalisation du verrouillage pour '{item.title}' réussie.")
-                else:
-                    current_app.logger.error(f"Échec de la recherche de BA pendant la finalisation pour '{item.title}'. Le verrou en attente est conservé.")
 
         # --- 4. LA DÉCISION : Chercher à l'extérieur ? ---
         final_plex_results_unfiltered = list(all_plex_items.values())

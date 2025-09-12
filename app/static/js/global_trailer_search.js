@@ -72,14 +72,16 @@ $(document).ready(function() {
 
         if (!query) return;
 
-        // Détermine si on est dans un contexte Plex (avec verrouillage) ou autonome
-        const isPlexContext = !!mediaContext.ratingKey;
-        const searchTitle = isPlexContext ? mediaContext.title : query;
-        const searchYear = isPlexContext ? mediaContext.year : '';
-        const searchMediaType = isPlexContext ? mediaContext.mediaType : 'movie';
+        // MODIFICATION : Un contexte de verrouillage existe s'il y a un ratingKey (Plex) OU un media_id (pré-Plex)
+        const canLock = !!mediaContext.ratingKey || !!mediaContext.media_id;
 
-        // Stocke la nouvelle query pour la pagination autonome
-        if (!isPlexContext) {
+        // Le titre/année original est utilisé pour le scoring, même si la query change
+        const searchTitle = mediaContext.title || query;
+        const searchYear = mediaContext.year || '';
+        const searchMediaType = mediaContext.mediaType || 'movie';
+
+        // Stocke la nouvelle query pour la pagination si c'est une recherche autonome
+        if (!canLock) {
             selectionModal.data({ 'query': query });
         }
 
@@ -91,7 +93,7 @@ $(document).ready(function() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 query: query,
-                title: searchTitle, // Titre original pour le scoring
+                title: searchTitle,
                 year: searchYear,
                 media_type: searchMediaType
             })
@@ -100,9 +102,9 @@ $(document).ready(function() {
         .then(data => {
             resultsContainer.empty();
             if (data.success && data.results) {
-                // Affiche le verrou si on est dans un contexte Plex
-                const lockedVideoId = isPlexContext ? mediaContext.locked_video_id : null;
-                renderTrailerResults(data.results, { lockedVideoId: lockedVideoId, showLock: isPlexContext });
+                // Affiche le verrou si on est dans un contexte qui le permet
+                const lockedVideoId = canLock ? mediaContext.locked_video_id : null;
+                renderTrailerResults(data.results, { lockedVideoId: lockedVideoId, showLock: canLock });
 
                 // La pagination pour une recherche personnalisée est toujours par pageToken
                 if (data.nextPageToken) {
@@ -110,7 +112,7 @@ $(document).ready(function() {
                     $('#trailer-load-more-container').show();
                 }
             } else {
-                renderTrailerResults([], { showLock: isPlexContext });
+                renderTrailerResults([], { showLock: canLock });
             }
         })
         .catch(error => {
