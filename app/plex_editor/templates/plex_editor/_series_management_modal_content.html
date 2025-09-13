@@ -16,6 +16,14 @@
     </div>
     {% if series.sonarr_series_id %}
     <div class="d-flex align-items-center">
+        <button class="btn btn-sm {% if series.has_locked_trailer %}btn-outline-success{% else %}btn-outline-info{% endif %} find-and-play-trailer-btn me-2"
+                data-title="{{ series.title }}"
+                data-year="{{ series.year }}"
+                data-media-type="show"
+                data-rating-key="{{ series.ratingKey }}"
+                title="Chercher et voir la bande-annonce pour la série">
+            <i class="bi bi-film"></i>
+        </button>
         <button id="rename-series-files-btn"
                 class="btn btn-outline-secondary btn-sm me-3"
                 data-sonarr-id="{{ series.sonarr_series_id }}"

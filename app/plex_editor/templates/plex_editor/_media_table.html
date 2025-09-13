@@ -123,7 +123,7 @@
                         <i class="bi bi-eye-fill"></i>
                     </button>
 
-                    <button class="btn btn-sm btn-outline-info find-and-play-trailer-btn"
+                    <button class="btn btn-sm {% if item.has_locked_trailer %}btn-outline-success{% else %}btn-outline-info{% endif %} find-and-play-trailer-btn"
                             data-title="{{ item.title }}"
                             data-year="{{ item.year }}"
                             data-media-type="{{ item.type }}"

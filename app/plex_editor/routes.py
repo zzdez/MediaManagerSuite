@@ -30,7 +30,7 @@ from app.utils.arr_client import (
 from app.utils.trailer_finder import find_plex_trailer, get_videos_details
 from app.utils.tmdb_client import TheMovieDBClient
 from app.utils.tvdb_client import CustomTVDBClient
-from app.utils.cache_manager import SimpleCache, get_pending_lock, remove_pending_lock, set_in_cache
+from app.utils.cache_manager import SimpleCache, get_pending_lock, remove_pending_lock, set_in_cache, get_from_cache
 from app.agent.services import _search_and_score_trailers
 
 # --- Routes du Blueprint ---
@@ -648,6 +648,12 @@ def get_media_items():
                     item.total_size_display = "0 B"
 
                 item.plex_trailer_url = find_plex_trailer(item, target_plex_server)
+
+                # Vérification du statut du trailer pour l'indicateur visuel
+                trailer_cache_key = f"trailer_search_{item.title}_{item.year}_{item.ratingKey}"
+                cached_trailer = get_from_cache(trailer_cache_key)
+                item.has_locked_trailer = cached_trailer and cached_trailer.get('is_locked', False)
+
                 items_to_render.append(item)
 
         items_to_render.sort(key=lambda x: getattr(x, 'titleSort', x.title).lower())
@@ -2054,11 +2060,23 @@ def get_series_details_for_management(rating_key):
                     'episodes': episodes_list_for_season
                 })
 
+            # Vérification du statut du trailer pour l'indicateur visuel
+            trailer_cache_key = f"trailer_search_{series.title}_{series.year}_{series.ratingKey}"
+            cached_trailer = get_from_cache(trailer_cache_key)
+            has_locked_trailer = cached_trailer and cached_trailer.get('is_locked', False)
+
             series_data = {
-                'title': series.title, 'ratingKey': series.ratingKey, 'plex_status': getattr(series, 'status', 'unknown'),
-                'total_seasons_plex': series.childCount, 'viewed_seasons_plex': viewed_seasons_count,
-                'is_monitored_global': is_monitored_global_status, 'sonarr_series_id': sonarr_series_id_val,
-                'total_size_on_disk': total_series_size, 'seasons': seasons_list
+                'title': series.title,
+                'year': series.year,
+                'ratingKey': series.ratingKey,
+                'plex_status': getattr(series, 'status', 'unknown'),
+                'total_seasons_plex': series.childCount,
+                'viewed_seasons_plex': viewed_seasons_count,
+                'is_monitored_global': is_monitored_global_status,
+                'sonarr_series_id': sonarr_series_id_val,
+                'total_size_on_disk': total_series_size,
+                'seasons': seasons_list,
+                'has_locked_trailer': has_locked_trailer
             }
             return render_template('plex_editor/_series_management_modal_content.html', series=series_data)
 

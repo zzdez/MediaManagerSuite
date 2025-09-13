@@ -7,7 +7,8 @@ from flask import current_app
 class SimpleCache:
     def __init__(self, cache_name, cache_dir=None, default_lifetime_hours=6):
         if cache_dir is None:
-            cache_dir = current_app.config.get('INSTANCE_PATH', 'instance')
+            # Déplacer l'accès à current_app ici
+            cache_dir = current_app.config.get('INSTANCE_PATH', os.path.join(os.getcwd(), 'instance'))
 
         if not os.path.exists(cache_dir):
             os.makedirs(cache_dir)
