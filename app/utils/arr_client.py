@@ -613,7 +613,7 @@ def check_sonarr_episode_exists(series_title: str, season_number: int, episode_n
         
         if not found_series:
             logger.info(f"Sonarr: Series '{series_title}' not in Sonarr. Guardrail considers season ABSENT.")
-            return False # Series not even added, so we want the pack.
+            return False # Series not even added, so we want the pack..
 
         # Check if the specific season is monitored
         for season_data in found_series.get('seasons', []):
@@ -768,7 +768,7 @@ def add_new_series_to_sonarr(tvdb_id: int, title: str, quality_profile_id: int, 
         "seasonFolder": season_folder,
         "monitored": monitored,
         "addOptions": {
-            "searchForMissingEpisodes": search_for_missing_episodes,
+            "searchForMissingEpisodes": False,
             # "monitor": "all" or "future" etc. can be specified if needed,
             # but 'monitored' at series level usually suffices.
         }
@@ -817,7 +817,7 @@ def add_new_movie_to_radarr(tmdb_id: int, title: str, quality_profile_id: int, r
         "minimumAvailability": minimum_availability, # e.g., "announced", "inCinemas", "released"
         "monitored": monitored,
         "addOptions": {
-            "searchForMovie": search_for_movie
+            "searchForMovie": False
         }
     }
 
