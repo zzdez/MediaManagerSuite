@@ -20,28 +20,34 @@ class CustomTVDBClient:
     def get_series_details_by_id(self, tvdb_id, lang='fra'):
         if not self.client: return None
         try:
-            details = self.client.get_series(tvdb_id)
-            logger.debug(f"TVDB details response for ID {tvdb_id}: {details}")
-            if not details: return None
+            # Étape 1: Récupérer l'objet de base de la librairie
+            series_data = self.client.get_series(tvdb_id)
+            if not series_data:
+                return None
 
-            # Try to get translation
+            # Étape 2: Initialiser notre dictionnaire de retour simple avec les valeurs de base
+            simple_details = {
+                'name': series_data.get('name'),
+                'year': series_data.get('year'),
+                'overview': series_data.get('overview')
+            }
+
+            # Étape 3: Tenter d'enrichir avec la traduction française
             try:
                 translation = self.client.get_series_translation(tvdb_id, lang)
                 if translation and translation.get('name'):
-                    details['seriesName'] = translation.get('name')
+                    simple_details['name'] = translation.get('name')
                 if translation and translation.get('overview'):
-                    details['overview'] = translation.get('overview')
+                    simple_details['overview'] = translation.get('overview')
             except Exception:
-                logger.debug(f"No translation found for {tvdb_id}, will use original title.")
-                pass # Ignore if translation fails
+                logger.debug(f"Pas de traduction '{lang}' trouvée pour la série ID {tvdb_id}. Utilisation des données originales.")
+                # Pas besoin de faire plus, les valeurs originales sont déjà dans simple_details
 
-            # IMPORTANT: Ensure 'seriesName' exists, falling back to 'name'
-            if 'seriesName' not in details and 'name' in details:
-                details['seriesName'] = details['name']
+            # Étape 4: Retourner le dictionnaire simple et fiable
+            return simple_details
 
-            return details
         except Exception as e:
-            logger.error(f"An unexpected error occurred in get_series_details_by_id for {tvdb_id}: {e}")
+            logger.error(f"Une erreur inattendue est survenue dans get_series_details_by_id pour {tvdb_id}: {e}")
             return None
 
     def search_series(self, title, lang='fra'):

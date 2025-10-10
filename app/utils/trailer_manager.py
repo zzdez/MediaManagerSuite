@@ -137,13 +137,9 @@ def get_trailer_info(media_type, external_id, page_token=None):
             client = CustomTVDBClient()
             details = client.get_series_details_by_id(external_id)
             if details:
-                # Robustly get title, whether details is a dict or an object
-                if isinstance(details, dict):
-                    title = details.get('seriesName') or details.get('name')
-                    year = details.get('year')
-                else:
-                    title = getattr(details, 'seriesName', None) or getattr(details, 'name', None)
-                    year = getattr(details, 'year', None)
+                # The client now returns a simple, reliable dict
+                title = details.get('name')
+                year = details.get('year')
     except Exception as e:
         logger.error(f"Erreur lors de la récupération des détails du média pour {db_key}: {e}")
         return {'status': 'error', 'message': 'Impossible de récupérer les détails du média.'}
