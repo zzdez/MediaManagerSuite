@@ -21,17 +21,27 @@ class CustomTVDBClient:
         if not self.client: return None
         try:
             details = self.client.get_series(tvdb_id)
-            logger.debug(f"TVDB details response for ID {tvdb_id}: {details}") # LOG DE DÉBOGAGE
+            logger.debug(f"TVDB details response for ID {tvdb_id}: {details}")
             if not details: return None
+
+            # Try to get translation
             try:
                 translation = self.client.get_series_translation(tvdb_id, lang)
+                if translation and translation.get('name'):
+                    details['seriesName'] = translation.get('name')
                 if translation and translation.get('overview'):
-                    details['seriesName'] = translation.get('name') or details.get('seriesName')
-                    details['overview'] = translation.get('overview') or details.get('overview')
+                    details['overview'] = translation.get('overview')
             except Exception:
-                pass # On ignore si la traduction échoue
+                logger.debug(f"No translation found for {tvdb_id}, will use original title.")
+                pass # Ignore if translation fails
+
+            # IMPORTANT: Ensure 'seriesName' exists, falling back to 'name'
+            if 'seriesName' not in details and 'name' in details:
+                details['seriesName'] = details['name']
+
             return details
-        except Exception:
+        except Exception as e:
+            logger.error(f"An unexpected error occurred in get_series_details_by_id for {tvdb_id}: {e}")
             return None
 
     def search_series(self, title, lang='fra'):
