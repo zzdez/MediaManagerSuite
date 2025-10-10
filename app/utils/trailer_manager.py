@@ -161,8 +161,10 @@ def get_trailer_info(media_type, external_id, title, year=None, page_token=None)
         'next_page_token': new_next_page_token
     }
 
-def lock_trailer(media_type, external_id, video_id):
-    """Verrouille une bande-annonce spécifique pour un média."""
+def lock_trailer(media_type, external_id, video_data):
+    """
+    Verrouille une bande-annonce spécifique pour un média en sauvegardant toutes ses données.
+    """
     db_key = _get_key(media_type, external_id)
     database = _load_database()
     _, logger = _get_db_path_and_logger()
@@ -170,15 +172,22 @@ def lock_trailer(media_type, external_id, video_id):
     entry = database.get(db_key, {})
 
     entry['is_locked'] = True
-    entry['locked_video_id'] = video_id
+    # Au lieu de juste stocker l'ID, on stocke l'objet vidéo complet
+    entry['locked_video_data'] = {
+        'videoId': video_data.get('videoId'),
+        'title': video_data.get('title'),
+        'thumbnail': video_data.get('thumbnail'),
+        'channel': video_data.get('channel')
+    }
     entry['last_updated_timestamp'] = datetime.utcnow().isoformat()
-    # On purge les résultats de recherche précédents pour ne garder que le verrou
+
+    # On purge les anciens résultats de recherche pour ne garder que le verrou
     entry.pop('search_results', None)
     entry.pop('next_page_token', None)
 
     database[db_key] = entry
     _save_database(database)
-    logger.info(f"Bande-annonce verrouillée pour {db_key} avec video_id: {video_id}")
+    logger.info(f"Bande-annonce verrouillée pour {db_key} avec les données : {video_data}")
     return True
 
 def unlock_trailer(media_type, external_id):

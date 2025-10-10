@@ -8,8 +8,9 @@
  * @param {string|null} options.lockedVideoId - L'ID de la vidéo actuellement verrouillée.
  */
 function renderTrailerResults(results, options = {}) {
-    const { lockedVideoId = null } = options;
+    const { lockedVideoData = null } = options;
     const resultsContainer = $('#trailer-results-container');
+    const lockedVideoId = lockedVideoData ? lockedVideoData.videoId : null;
 
     if (!results || results.length === 0) {
         resultsContainer.html('<p class="text-center text-muted">Aucun résultat trouvé.</p>');
@@ -18,8 +19,10 @@ function renderTrailerResults(results, options = {}) {
 
     results.forEach(result => {
         const isLocked = result.videoId === lockedVideoId;
-        const btnClass = isLocked ? 'btn-outline-success' : 'btn-outline-secondary';
+        // Correction de la logique des classes et icônes
+        const btnClass = isLocked ? 'btn-danger' : 'btn-outline-secondary';
         const btnTitle = isLocked ? 'Déverrouiller cette bande-annonce' : 'Verrouiller cette bande-annonce';
+        const iconClass = isLocked ? 'bi-unlock-fill' : 'bi-lock-fill'; // Inversé pour la logique
 
         const resultHtml = `
             <div class="trailer-result-item d-flex align-items-center justify-content-between mb-2 p-2 rounded" style="background-color: #343a40;">
@@ -33,8 +36,11 @@ function renderTrailerResults(results, options = {}) {
                 </div>
                 <button class="btn btn-sm ${btnClass} lock-trailer-btn" title="${btnTitle}"
                         data-video-id="${result.videoId}"
-                        data-is-locked="${isLocked}">
-                    <i class="bi ${isLocked ? 'bi-unlock-fill' : 'bi-lock-fill'}"></i>
+                        data-is-locked="${isLocked}"
+                        data-video-title="${result.title}"
+                        data-video-thumbnail="${result.thumbnail}"
+                        data-video-channel="${result.channel}">
+                    <i class="bi ${iconClass}"></i>
                 </button>
             </div>
         `;
@@ -82,9 +88,8 @@ function fetchAndRenderTrailers(mediaType, externalId, title, year = null, pageT
             }
 
             if (data.status === 'locked') {
-                // Si c'est verrouillé, on affiche juste la vidéo verrouillée
-                const lockedVideo = { videoId: data.locked_video_id, title: 'Bande-annonce verrouillée', thumbnail: '/static/img/placeholder.png', channel: '' };
-                renderTrailerResults([lockedVideo], { lockedVideoId: data.locked_video_id });
+                // Si c'est verrouillé, on affiche juste les données de la vidéo verrouillée
+                renderTrailerResults([data.locked_video_data], { lockedVideoData: data.locked_video_data });
             } else if (data.status === 'success' && data.results) {
                 renderTrailerResults(data.results, { lockedVideoId: null });
                 if (data.next_page_token) {
@@ -126,14 +131,31 @@ $(document).ready(function() {
 
         const button = $(this);
         const isLocked = button.data('is-locked') === true;
-        const videoId = button.data('video-id');
         const selectionModal = $('#trailer-selection-modal');
-        const { mediaType, externalId } = selectionModal.data();
+        const { mediaType, externalId, title, year } = selectionModal.data();
 
-        if (!mediaType || !externalId || !videoId) return;
+        if (!mediaType || !externalId) return;
+
+        const videoData = {
+            videoId: button.data('video-id'),
+            title: button.data('video-title'),
+            thumbnail: button.data('video-thumbnail'),
+            channel: button.data('video-channel')
+        };
+
+        if (!videoData.videoId) return;
 
         const endpoint = isLocked ? '/api/agent/unlock_trailer' : '/api/agent/lock_trailer';
-        const payload = { media_type: mediaType, external_id: externalId, video_id: videoId };
+        const payload = {
+            media_type: mediaType,
+            external_id: externalId,
+            video_data: videoData // On envoie l'objet complet
+        };
+
+        // Pour le déverrouillage, seul media_type et external_id sont nécessaires
+        if (isLocked) {
+            delete payload.video_data;
+        }
 
         button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
 
@@ -146,7 +168,7 @@ $(document).ready(function() {
         .then(data => {
             if (data.status === 'success') {
                 // Rafraîchit toute la modale pour obtenir le nouvel état du backend
-                fetchAndRenderTrailers(mediaType, externalId);
+                fetchAndRenderTrailers(mediaType, externalId, title, year);
             } else {
                 alert('Erreur: ' + (data.message || 'Une erreur inconnue est survenue.'));
                 button.prop('disabled', false).html(`<i class="bi ${isLocked ? 'bi-unlock-fill' : 'bi-lock-fill'}"></i>`);

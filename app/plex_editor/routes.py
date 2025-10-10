@@ -30,7 +30,8 @@ from app.utils.arr_client import (
 from app.utils.trailer_finder import find_plex_trailer, get_videos_details
 from app.utils.tmdb_client import TheMovieDBClient
 from app.utils.tvdb_client import CustomTVDBClient
-from app.utils.cache_manager import SimpleCache, get_pending_lock, remove_pending_lock, set_in_cache, get_from_cache
+from app.utils.cache_manager import SimpleCache, get_pending_lock, remove_pending_lock
+from app.utils import trailer_manager # Import du nouveau manager
 from app.agent.services import _search_and_score_trailers
 
 # --- Routes du Blueprint ---
@@ -676,10 +677,14 @@ def get_media_items():
 
                 item.plex_trailer_url = find_plex_trailer(item, target_plex_server)
 
-                # Vérification du statut du trailer pour l'indicateur visuel
-                trailer_cache_key = f"trailer_search_{item.title}_{item.year}_{item.ratingKey}"
-                cached_trailer = get_from_cache(trailer_cache_key)
-                item.has_locked_trailer = cached_trailer and cached_trailer.get('is_locked', False)
+                # Vérification du statut du trailer pour l'indicateur visuel avec le nouveau manager
+                trailer_info = trailer_manager.get_trailer_info(
+                    media_type=item.media_type_for_trailer,
+                    external_id=item.external_id,
+                    title=item.title,
+                    year=item.year
+                )
+                item.has_locked_trailer = trailer_info.get('status') == 'locked'
 
                 items_to_render.append(item)
 

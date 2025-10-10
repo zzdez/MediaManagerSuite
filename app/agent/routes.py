@@ -32,13 +32,13 @@ def lock_trailer_route():
     data = request.json
     media_type = data.get('media_type')
     external_id = data.get('external_id')
-    video_id = data.get('video_id')
+    video_data = data.get('video_data')
 
-    if not all([media_type, external_id, video_id]):
-        return jsonify({'status': 'error', 'message': 'Les paramètres media_type, external_id et video_id sont requis.'}), 400
+    if not all([media_type, external_id, video_data]):
+        return jsonify({'status': 'error', 'message': 'Les paramètres media_type, external_id et video_data sont requis.'}), 400
 
     try:
-        trailer_manager.lock_trailer(media_type, external_id, video_id)
+        trailer_manager.lock_trailer(media_type, external_id, video_data)
         return jsonify({'status': 'success', 'message': 'Bande-annonce verrouillée avec succès.'})
     except Exception as e:
         current_app.logger.error(f"Erreur inattendue dans lock_trailer_route pour {media_type}_{external_id}: {e}", exc_info=True)
