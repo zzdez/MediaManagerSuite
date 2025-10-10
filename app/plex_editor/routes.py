@@ -2105,6 +2105,7 @@ def get_series_details_for_management(rating_key):
                 'title': series.title,
                 'year': series.year,
                 'ratingKey': series.ratingKey,
+                'external_id': tvdb_id, # Ajout de l'ID externe
                 'plex_status': getattr(series, 'status', 'unknown'),
                 'total_seasons_plex': series.childCount,
                 'viewed_seasons_plex': viewed_seasons_count,
