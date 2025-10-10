@@ -113,13 +113,14 @@ $(document).ready(function() {
         const resultIndex = button.data('result-index');
         const mediaData = mediaSearchResults[resultIndex];
 
-        const mediaType = button.data('media-type'); // 'movie' ou 'tv'
-        const externalId = mediaData.id; // tmdbId ou tvdbId
+        const mediaType = button.data('media-type');
+        const externalId = mediaData.id;
         const title = mediaData.title;
+        const year = mediaData.year;
 
         if (mediaType && externalId && title) {
             // Déclenche l'événement global géré par `global_trailer_search.js`
-            $(document).trigger('openTrailerSearch', { mediaType, externalId, title });
+            $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
         } else {
             alert('Erreur: Informations manquantes pour rechercher la bande-annonce.');
         }
@@ -872,14 +873,15 @@ function executeFinalMapping(payload) {
         e.stopPropagation(); // Empêche d'autres clics de se déclencher
 
         const button = $(this);
-        const mediaType = button.data('media-type'); // 'tv' ou 'movie'
-        const externalId = button.data('media-id'); // tvdbId ou tmdbId
+        const mediaType = button.data('media-type');
+        const externalId = button.data('media-id');
         const title = button.data('title');
+        const year = button.data('year');
 
         if (mediaType && externalId && title) {
             // Déclenche l'événement global géré par `global_trailer_search.js`
             // Cela ouvrira la modale de recherche de BA par-dessus la modale actuelle.
-            $(document).trigger('openTrailerSearch', { mediaType, externalId, title });
+            $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
         } else {
             alert('Erreur: Informations manquantes pour rechercher la bande-annonce.');
         }

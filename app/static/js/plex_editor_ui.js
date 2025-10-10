@@ -922,16 +922,17 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
         bootstrap.Modal.getOrCreateInstance(document.getElementById('trailer-modal')).show();
     } else {
         // Cas 2: Pas de bande-annonce Plex, on utilise notre nouveau système de recherche.
-        // On récupère les identifiants externes directement depuis le bouton.
-        const mediaType = button.data('media-type'); // 'tmdb' ou 'tvdb'
-        const externalId = button.data('external-id'); // l'ID numérique
+        // On récupère toutes les informations nécessaires directement depuis le bouton.
+        const mediaType = button.data('media-type');
+        const externalId = button.data('external-id');
         const title = button.data('title');
+        const year = button.data('year'); // On récupère aussi l'année
 
         if (mediaType && externalId && title) {
-            // On déclenche l'événement global que `global_trailer_search.js` écoute.
-            $(document).trigger('openTrailerSearch', { mediaType, externalId, title });
+            // On déclenche l'événement global avec toutes les données.
+            $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
         } else {
-            alert('Erreur: Informations manquantes pour rechercher la bande-annonce. L\'identifiant externe est introuvable.');
+            alert('Erreur: Informations manquantes pour rechercher la bande-annonce (mediaType, externalId, title).');
             console.error('Attributs de données manquants sur le bouton de bande-annonce:', {
                 mediaType: mediaType,
                 externalId: externalId,

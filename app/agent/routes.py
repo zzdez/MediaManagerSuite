@@ -10,13 +10,15 @@ def get_trailer_info_route():
     """
     media_type = request.args.get('media_type')
     external_id = request.args.get('external_id')
+    title = request.args.get('title')
+    year = request.args.get('year')
     page_token = request.args.get('page_token')
 
-    if not all([media_type, external_id]):
-        return jsonify({'status': 'error', 'message': 'Les paramètres media_type et external_id sont requis.'}), 400
+    if not all([media_type, external_id, title]):
+        return jsonify({'status': 'error', 'message': 'Les paramètres media_type, external_id et title sont requis.'}), 400
 
     try:
-        result = trailer_manager.get_trailer_info(media_type, external_id, page_token=page_token)
+        result = trailer_manager.get_trailer_info(media_type, external_id, title=title, year=year, page_token=page_token)
         return jsonify(result)
     except Exception as e:
         current_app.logger.error(f"Erreur inattendue dans get_trailer_info_route pour {media_type}_{external_id}: {e}", exc_info=True)

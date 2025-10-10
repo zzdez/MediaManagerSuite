@@ -90,7 +90,7 @@ def _get_key(media_type, external_id):
     """Construit la clé de base de données standardisée."""
     return f"{media_type.lower()}_{external_id}"
 
-def get_trailer_info(media_type, external_id, page_token=None):
+def get_trailer_info(media_type, external_id, title, year=None, page_token=None):
     """
     Fonction principale pour obtenir les informations sur la bande-annonce d'un média.
     Implémente la logique de cache, de verrouillage et de recherche externe.
@@ -123,30 +123,10 @@ def get_trailer_info(media_type, external_id, page_token=None):
     # Cas 3: Le cache est expiré, inexistant, ou on demande une nouvelle page -> Recherche externe
     logger.info(f"Cache expiré ou inexistant pour {db_key}. Lancement d'une nouvelle recherche.")
 
-    # Étape A: Obtenir le titre du média
-    title = None
-    year = None
-    try:
-        if media_type.lower() == 'tmdb':
-            client = TheMovieDBClient()
-            details = client.get_movie_details(external_id)
-            if details:
-                title = details.get('title')
-                year = details.get('year')
-        elif media_type.lower() == 'tvdb':
-            client = CustomTVDBClient()
-            details = client.get_series_details_by_id(external_id)
-            if details:
-                # The client now returns a simple, reliable dict
-                title = details.get('name')
-                year = details.get('year')
-    except Exception as e:
-        logger.error(f"Erreur lors de la récupération des détails du média pour {db_key}: {e}")
-        return {'status': 'error', 'message': 'Impossible de récupérer les détails du média.'}
-
+    # Étape A: Vérifier que le titre a été fourni par l'appelant.
     if not title:
-        logger.error(f"Impossible de trouver un titre pour {db_key}.")
-        return {'status': 'error', 'message': 'Titre du média introuvable.'}
+        logger.error(f"Titre non fourni pour la recherche de bande-annonce pour {db_key}. C'est une erreur de l'appelant.")
+        return {'status': 'error', 'message': 'Le titre est manquant pour lancer la recherche.'}
 
     # Étape B: Construire la requête et appeler l'API YouTube
     query = f"{title} {year if year else ''} bande annonce fr"

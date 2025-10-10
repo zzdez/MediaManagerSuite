@@ -46,16 +46,18 @@ function renderTrailerResults(results, options = {}) {
  * Fonction centrale pour récupérer et afficher les bandes-annonces.
  * @param {string} mediaType - 'tmdb' ou 'tvdb'.
  * @param {string} externalId - L'ID du média.
+ * @param {string} title - Le titre du média.
+ * @param {string|null} year - L'année du média.
  * @param {string|null} pageToken - Le token pour la pagination.
  */
-function fetchAndRenderTrailers(mediaType, externalId, pageToken = null) {
+function fetchAndRenderTrailers(mediaType, externalId, title, year = null, pageToken = null) {
     const resultsContainer = $('#trailer-results-container');
     const loadMoreContainer = $('#trailer-load-more-container');
     const loadMoreBtn = $('#load-more-trailers-btn');
     const selectionModal = $('#trailer-selection-modal');
 
     // Stocke le contexte pour les actions futures (verrouillage, pagination)
-    selectionModal.data({ mediaType, externalId });
+    selectionModal.data({ mediaType, externalId, title, year });
 
     // Affiche un spinner seulement pour la première charge
     if (!pageToken) {
@@ -63,7 +65,10 @@ function fetchAndRenderTrailers(mediaType, externalId, pageToken = null) {
     }
     loadMoreContainer.hide();
 
-    let apiUrl = `/api/agent/get_trailer_info?media_type=${mediaType}&external_id=${externalId}`;
+    let apiUrl = `/api/agent/get_trailer_info?media_type=${mediaType}&external_id=${externalId}&title=${encodeURIComponent(title)}`;
+    if (year) {
+        apiUrl += `&year=${year}`;
+    }
     if (pageToken) {
         apiUrl += `&page_token=${pageToken}`;
     }
@@ -186,7 +191,7 @@ $(document).ready(function() {
     });
 
     // Déclencheur global pour ouvrir la modale de recherche de BA
-    $(document).on('openTrailerSearch', function(event, { mediaType, externalId, title }) {
+    $(document).on('openTrailerSearch', function(event, { mediaType, externalId, title, year }) {
         const selectionModal = $('#trailer-selection-modal');
         const modalInstance = bootstrap.Modal.getOrCreateInstance(selectionModal[0]);
 
@@ -196,7 +201,7 @@ $(document).ready(function() {
         $('#trailer-selection-modal-label').text(`Bande-annonce pour : ${title}`);
 
         // Lance la recherche
-        fetchAndRenderTrailers(mediaType, externalId);
+        fetchAndRenderTrailers(mediaType, externalId, title, year);
 
         modalInstance.show();
     });
