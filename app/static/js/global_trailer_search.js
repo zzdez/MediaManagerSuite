@@ -19,10 +19,9 @@ function renderTrailerResults(results, options = {}) {
 
     results.forEach(result => {
         const isLocked = result.videoId === lockedVideoId;
-        // Correction de la logique des classes et icônes
         const btnClass = isLocked ? 'btn-danger' : 'btn-outline-secondary';
         const btnTitle = isLocked ? 'Déverrouiller cette bande-annonce' : 'Verrouiller cette bande-annonce';
-        const iconClass = isLocked ? 'bi-unlock-fill' : 'bi-lock-fill'; // Inversé pour la logique
+        const iconClass = isLocked ? 'bi-lock-fill' : 'bi-unlock-fill'; // Correct: lock-fill for locked state
 
         const resultHtml = `
             <div class="trailer-result-item d-flex align-items-center justify-content-between mb-2 p-2 rounded" style="background-color: #343a40;">
@@ -91,7 +90,7 @@ function fetchAndRenderTrailers(mediaType, externalId, title, year = null, pageT
                 // Si c'est verrouillé, on affiche juste les données de la vidéo verrouillée
                 renderTrailerResults([data.locked_video_data], { lockedVideoData: data.locked_video_data });
             } else if (data.status === 'success' && data.results) {
-                renderTrailerResults(data.results, { lockedVideoId: null });
+                renderTrailerResults(data.results, { lockedVideoData: null });
                 if (data.next_page_token) {
                     loadMoreBtn.data('page-token', data.next_page_token);
                     loadMoreContainer.show();

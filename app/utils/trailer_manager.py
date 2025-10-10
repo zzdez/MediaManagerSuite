@@ -102,9 +102,23 @@ def get_trailer_info(media_type, external_id, title, year=None, page_token=None)
     entry = database.get(db_key, {})
 
     # Cas 1: La bande-annonce est verrouillée
-    if entry.get('is_locked') and entry.get('locked_video_id'):
-        logger.info(f"Retourne la bande-annonce verrouillée pour {db_key}.")
-        return {'status': 'locked', 'locked_video_id': entry['locked_video_id']}
+    if entry.get('is_locked'):
+        # Rétrocompatibilité : si on trouve un ancien format, on le migre
+        if entry.get('locked_video_id') and not entry.get('locked_video_data'):
+            logger.info(f"Migration de l'ancien format de verrouillage pour {db_key}.")
+            entry['locked_video_data'] = {
+                'videoId': entry['locked_video_id'],
+                'title': 'Bande-annonce verrouillée (données à rafraîchir)',
+                'thumbnail': '/static/img/placeholder.png',
+                'channel': ''
+            }
+            entry.pop('locked_video_id', None)
+            database[db_key] = entry # Met à jour la base de données en mémoire
+            _save_database(database) # Sauvegarde la migration sur le disque
+
+        if entry.get('locked_video_data'):
+            logger.info(f"Retourne la bande-annonce verrouillée pour {db_key}.")
+            return {'status': 'locked', 'locked_video_data': entry['locked_video_data']}
 
     # Cas 2: Il y a une recherche en cache et on ne demande pas une autre page
     cache_age_days = current_app.config.get('TRAILER_CACHE_AGE_DAYS', 7)
@@ -198,7 +212,8 @@ def unlock_trailer(media_type, external_id):
 
     if db_key in database:
         database[db_key]['is_locked'] = False
-        database[db_key].pop('locked_video_id', None)
+        database[db_key].pop('locked_video_id', None) # Ancien format
+        database[db_key].pop('locked_video_data', None) # Nouveau format
         database[db_key]['last_updated_timestamp'] = datetime.utcnow().isoformat()
         _save_database(database)
         logger.info(f"Bande-annonce déverrouillée pour {db_key}.")
