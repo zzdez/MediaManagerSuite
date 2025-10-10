@@ -2092,10 +2092,14 @@ def get_series_details_for_management(rating_key):
                     'episodes': episodes_list_for_season
                 })
 
-            # Vérification du statut du trailer pour l'indicateur visuel
-            trailer_cache_key = f"trailer_search_{series.title}_{series.year}_{series.ratingKey}"
-            cached_trailer = get_from_cache(trailer_cache_key)
-            has_locked_trailer = cached_trailer and cached_trailer.get('is_locked', False)
+            # Vérification du statut du trailer avec le nouveau manager
+            trailer_info = trailer_manager.get_trailer_info(
+                media_type='tv',  # Le type est 'show', donc 'tv' pour le manager
+                external_id=tvdb_id,
+                title=series.title,
+                year=series.year
+            )
+            has_locked_trailer = trailer_info.get('status') == 'locked'
 
             series_data = {
                 'title': series.title,
