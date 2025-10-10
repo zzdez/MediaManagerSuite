@@ -20,19 +20,26 @@ class CustomTVDBClient:
     def get_series_details_by_id(self, tvdb_id, lang='fra'):
         if not self.client: return None
         try:
-            # Étape 1: Récupérer l'objet de base de la librairie
             series_data = self.client.get_series(tvdb_id)
             if not series_data:
                 return None
 
-            # Étape 2: Initialiser notre dictionnaire de retour simple avec les valeurs de base
+            # --- DÉBUT DU BLOC DE DÉBOGAGE DÉTAILLÉ ---
+            logger.info(f"--- DÉBUT DÉBOGAGE TVDB ID: {tvdb_id} ---")
+            logger.info(f"Type de l'objet 'series_data': {type(series_data)}")
+            if isinstance(series_data, dict):
+                logger.info(f"Clés du dictionnaire 'series_data': {series_data.keys()}")
+            else:
+                logger.info(f"Attributs de l'objet 'series_data': {dir(series_data)}")
+            logger.info(f"Valeur de 'series_data': {series_data}")
+            logger.info(f"--- FIN DÉBOGAGE TVDB ---")
+            # --- FIN DU BLOC DE DÉBOGAGE DÉTAILLÉ ---
+
             simple_details = {
                 'name': series_data.get('name'),
                 'year': series_data.get('year'),
                 'overview': series_data.get('overview')
             }
-
-            # Étape 3: Tenter d'enrichir avec la traduction française
             try:
                 translation = self.client.get_series_translation(tvdb_id, lang)
                 if translation and translation.get('name'):
@@ -40,10 +47,8 @@ class CustomTVDBClient:
                 if translation and translation.get('overview'):
                     simple_details['overview'] = translation.get('overview')
             except Exception:
-                logger.debug(f"Pas de traduction '{lang}' trouvée pour la série ID {tvdb_id}. Utilisation des données originales.")
-                # Pas besoin de faire plus, les valeurs originales sont déjà dans simple_details
+                logger.debug(f"Pas de traduction '{lang}' pour la série ID {tvdb_id}.")
 
-            # Étape 4: Retourner le dictionnaire simple et fiable
             return simple_details
 
         except Exception as e:
