@@ -137,7 +137,7 @@ def get_trailer_info(media_type, external_id, page_token=None):
             client = CustomTVDBClient()
             details = client.get_series_details_by_id(external_id)
             if details:
-                title = details.get('seriesName')
+                title = details.get('seriesName') or details.get('name')
                 year = details.get('year')
     except Exception as e:
         logger.error(f"Erreur lors de la récupération des détails du média pour {db_key}: {e}")

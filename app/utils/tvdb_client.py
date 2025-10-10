@@ -21,6 +21,7 @@ class CustomTVDBClient:
         if not self.client: return None
         try:
             details = self.client.get_series(tvdb_id)
+            logger.debug(f"TVDB details response for ID {tvdb_id}: {details}") # LOG DE DÉBOGAGE
             if not details: return None
             try:
                 translation = self.client.get_series_translation(tvdb_id, lang)
