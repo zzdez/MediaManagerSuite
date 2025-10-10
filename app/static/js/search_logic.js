@@ -107,59 +107,22 @@ $(document).ready(function() {
         if (e.which == 13) { e.preventDefault(); performMediaSearch(); }
     });
 
-    // --- GESTION DES BANDES-ANNONCES DE LA PAGE DE RECHERCHE ---
+    // --- GESTION DES BANDES-ANNONCES DE LA PAGE DE RECHERCHE (NOUVELLE VERSION) ---
     $('#media-results-container').on('click', '.search-trailer-btn', function() {
         const button = $(this);
         const resultIndex = button.data('result-index');
         const mediaData = mediaSearchResults[resultIndex];
 
+        const mediaType = button.data('media-type'); // 'movie' ou 'tv'
+        const externalId = mediaData.id; // tmdbId ou tvdbId
         const title = mediaData.title;
-        const year = mediaData.year;
-        const mediaType = button.data('media-type');
-        const mediaId = mediaData.id; // tmdbId ou tvdbId
 
-        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
-
-        const selectionModal = $('#trailer-selection-modal');
-        const resultsContainer = $('#trailer-results-container');
-        const loadMoreBtn = $('#load-more-trailers-btn');
-
-        resultsContainer.empty();
-        $('#trailer-load-more-container').hide();
-
-        const query = `${title} ${year}`;
-        // Stocke le contexte complet, incluant le media_id pour le verrouillage en attente
-        selectionModal.data({ title, year, mediaType, query, media_id: mediaId });
-        $('#trailer-custom-search-input').val(query);
-
-        bootstrap.Modal.getOrCreateInstance(selectionModal[0]).show();
-
-        fetch('/api/agent/custom_trailer_search', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query, title, year, media_type: mediaType })
-        })
-        .then(response => response.ok ? response.json() : response.json().then(err => Promise.reject(err)))
-        .then(data => {
-            if (data.success && data.results) {
-                // On affiche le verrouillage, même pour les items non-Plex
-                renderTrailerResults(data.results, { showLock: true });
-
-                if (data.nextPageToken) {
-                    loadMoreBtn.data('page-token', data.nextPageToken).data('page', null);
-                    $('#trailer-load-more-container').show();
-                }
-            } else {
-                renderTrailerResults([], { showLock: true });
-            }
-        })
-        .catch(error => {
-            console.error('Erreur lors de la recherche de la bande-annonce:', error);
-            resultsContainer.html(`<p class="text-danger text-center">Erreur: ${error.message || 'Erreur inconnue'}</p>`);
-        })
-        .finally(() => {
-            button.prop('disabled', false).html('<i class="fas fa-video"></i> Bande-annonce');
-        });
+        if (mediaType && externalId && title) {
+            // Déclenche l'événement global géré par `global_trailer_search.js`
+            $(document).trigger('openTrailerSearch', { mediaType, externalId, title });
+        } else {
+            alert('Erreur: Informations manquantes pour rechercher la bande-annonce.');
+        }
     });
 
     $('#media-results-container').on('click', '.search-torrents-btn', function() {
@@ -904,55 +867,21 @@ function executeFinalMapping(payload) {
     // Appel initial pour définir le bon état au chargement de la page
     updateFilterVisibility();
 
-    // --- GESTION DES BANDES-ANNONCES DEPUIS LA MODALE DE MAPPING ---
+    // --- GESTION DES BANDES-ANNONCES DEPUIS LA MODALE DE MAPPING (NOUVELLE VERSION) ---
     $('body').on('click', '.find-trailer-from-map-btn', function(e) {
-        e.stopPropagation(); // Empêche d'autres clics (comme celui sur l'item de la liste) de se déclencher
+        e.stopPropagation(); // Empêche d'autres clics de se déclencher
 
         const button = $(this);
+        const mediaType = button.data('media-type'); // 'tv' ou 'movie'
+        const externalId = button.data('media-id'); // tvdbId ou tmdbId
         const title = button.data('title');
-        const year = button.data('year');
-        const mediaType = button.data('media-type');
-        const mediaId = button.data('media-id'); // tmdbId ou tvdbId
 
-        // On ne désactive pas le bouton pour pouvoir cliquer plusieurs fois si besoin
-        // button.prop('disabled', true);
-
-        const selectionModal = $('#trailer-selection-modal');
-        const resultsContainer = $('#trailer-results-container');
-        const loadMoreBtn = $('#load-more-trailers-btn');
-
-        resultsContainer.empty();
-        $('#trailer-load-more-container').hide();
-
-        const query = `${title} ${year}`;
-        // Stocke le contexte complet pour le verrouillage en attente
-        selectionModal.data({ title, year, mediaType, query, media_id: mediaId });
-        $('#trailer-custom-search-input').val(query);
-
-        // Ouvre la modale de sélection de BA par-dessus la modale de mapping
-        bootstrap.Modal.getOrCreateInstance(selectionModal[0]).show();
-
-        fetch('/api/agent/custom_trailer_search', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query, title, year, media_type: mediaType })
-        })
-        .then(response => response.ok ? response.json() : response.json().then(err => Promise.reject(err)))
-        .then(data => {
-            if (data.success && data.results) {
-                renderTrailerResults(data.results, { showLock: true });
-                if (data.nextPageToken) {
-                    loadMoreBtn.data('page-token', data.nextPageToken).data('page', null);
-                    $('#trailer-load-more-container').show();
-                }
-            } else {
-                renderTrailerResults([], { showLock: true });
-            }
-        })
-        .catch(error => {
-            console.error('Erreur lors de la recherche de la bande-annonce:', error);
-            resultsContainer.html(`<p class="text-danger text-center">Erreur: ${error.message || 'Erreur inconnue'}</p>`);
-        });
-        // On ne met pas de .finally() pour ne pas réactiver un bouton qu'on ne désactive plus
+        if (mediaType && externalId && title) {
+            // Déclenche l'événement global géré par `global_trailer_search.js`
+            // Cela ouvrira la modale de recherche de BA par-dessus la modale actuelle.
+            $(document).trigger('openTrailerSearch', { mediaType, externalId, title });
+        } else {
+            alert('Erreur: Informations manquantes pour rechercher la bande-annonce.');
+        }
     });
 });

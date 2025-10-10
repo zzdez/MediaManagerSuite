@@ -907,86 +907,36 @@ function sortTable(table, sortBy, sortType, direction) {
         sortTable(table, 'rating', 'number', newDir === 'asc' ? 1 : -1);
     });
 
-// --- DÉBUT DU BLOC DE GESTION DES BANDES-ANNONCES ---
-
-// Cette fonction est le point d'entrée pour la recherche de BA dans l'éditeur Plex.
-function fetchAndShowTrailers(button) {
-    const title = button.data('title');
-    const year = button.data('year');
-    const mediaType = button.data('media-type');
-    const ratingKey = button.data('rating-key');
-    const userId = $('#user-select').val();
-
-    const selectionModal = $('#trailer-selection-modal');
-    const resultsContainer = $('#trailer-results-container');
-
-    // Préparer la modale
-    resultsContainer.html('<div class="text-center"><div class="spinner-border"></div></div>');
-    $('#trailer-load-more-container').hide();
-    $('#trailer-custom-search-input').val(title); // Pré-remplir la recherche
-    selectionModal.data({ ratingKey, title, year, mediaType, userId }); // Stocker tout le contexte
-
-    bootstrap.Modal.getOrCreateInstance(selectionModal[0]).show();
-    button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
-
-    // For a Plex search, the initial page is always 1
-    const payload = { title, year, media_type: mediaType, ratingKey, userId, page: 1 };
-
-    fetch('/api/agent/suggest_trailers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    })
-    .then(response => response.ok ? response.json() : response.json().then(err => Promise.reject(err)))
-    .then(data => {
-        resultsContainer.empty();
-        if (data.success && data.results) {
-            // The backend now sends a specific locked_video_id if a lock is active.
-            renderTrailerResults(data.results, { lockedVideoId: data.locked_video_id, showLock: true });
-
-            const loadMoreBtn = $('#load-more-trailers-btn');
-            if (data.has_more) {
-                // Set up for the next page fetch
-                loadMoreBtn.data('page', 2).data('page-token', null);
-                $('#trailer-load-more-container').show();
-            }
-        } else {
-            renderTrailerResults([], { showLock: true });
-        }
-    })
-    .catch(error => {
-        console.error('Erreur lors de la recherche de la bande-annonce:', error);
-        resultsContainer.html(`<p class="text-danger text-center">Erreur: ${error.message || 'Erreur inconnue'}</p>`);
-    })
-    .finally(() => {
-        button.prop('disabled', false).html('<i class="bi bi-film"></i>');
-    });
-}
+// --- DÉBUT DU BLOC DE GESTION DES BANDES-ANNONCES (NOUVELLE VERSION) ---
 
 // Handler pour le bouton principal "Voir la BA" sur la ligne du média
 $(document).on('click', '.find-and-play-trailer-btn', function() {
-    const plexTrailerUrl = $(this).data('plex-trailer-url');
+    const button = $(this);
+    const plexTrailerUrl = button.data('plex-trailer-url');
+
     if (plexTrailerUrl) {
-        // Logique pour jouer une BA directement depuis Plex
-        const title = $(this).data('title');
+        // Cas 1: La bande-annonce est fournie directement par Plex. On la joue.
+        const title = button.data('title');
         $('#trailerModalLabel').text('Bande-Annonce (Plex): ' + title);
         $('#trailer-modal .modal-body').html(`<div class="ratio ratio-16x9"><iframe src="${plexTrailerUrl}" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>`);
         bootstrap.Modal.getOrCreateInstance(document.getElementById('trailer-modal')).show();
     } else {
-        // Lance la recherche YouTube/Agent
-        fetchAndShowTrailers($(this));
-    }
-});
+        // Cas 2: Pas de bande-annonce Plex, on utilise notre nouveau système de recherche.
+        // On récupère les identifiants externes directement depuis le bouton.
+        const mediaType = button.data('media-type'); // 'tmdb' ou 'tvdb'
+        const externalId = button.data('external-id'); // l'ID numérique
+        const title = button.data('title');
 
-// Écouteur pour l'événement personnalisé déclenché par le script global
-// après un verrouillage/déverrouillage réussi.
-$(document).on('trailerActionSuccess', function(event, mediaContext) {
-    if (mediaContext && mediaContext.ratingKey) {
-        console.log("Action de BA réussie, rafraîchissement pour le ratingKey :", mediaContext.ratingKey);
-        const mainTrailerBtn = $(`.find-and-play-trailer-btn[data-rating-key='${mediaContext.ratingKey}']`);
-        if (mainTrailerBtn.length) {
-            // Relance la recherche pour rafraîchir l'état (verrouillé/déverrouillé) et la liste
-            fetchAndShowTrailers(mainTrailerBtn);
+        if (mediaType && externalId && title) {
+            // On déclenche l'événement global que `global_trailer_search.js` écoute.
+            $(document).trigger('openTrailerSearch', { mediaType, externalId, title });
+        } else {
+            alert('Erreur: Informations manquantes pour rechercher la bande-annonce. L\'identifiant externe est introuvable.');
+            console.error('Attributs de données manquants sur le bouton de bande-annonce:', {
+                mediaType: mediaType,
+                externalId: externalId,
+                title: title
+            });
         }
     }
 });

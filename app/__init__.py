@@ -15,6 +15,7 @@ import google.generativeai as genai
 from apscheduler.schedulers.background import BackgroundScheduler
 from app.utils.sftp_scanner import scan_and_map_torrents
 from app.utils.staging_processor import process_pending_staging_items
+from app.utils.trailer_manager import clean_stale_entries
 import datetime
 import atexit
 import threading
@@ -167,6 +168,13 @@ def create_app(config_class=Config):
                 current_app.logger.info("Scheduler: Triggering staging processor job. Interval: 1 min.")
                 process_pending_staging_items()
 
+        # Define the function for the trailer database cleanup job
+        def scheduled_trailer_cleanup_job():
+            with app.app_context():
+                current_app.logger.info("Scheduler: Triggering trailer database cleanup job. Interval: 24 hours.")
+                cleaned_count = clean_stale_entries()
+                current_app.logger.info(f"Scheduler: Trailer cleanup job finished. Cleaned {cleaned_count} entries.")
+
         # Add the rTorrent scanner job
         scheduler.add_job(
             func=scheduled_rtorrent_scan_job,
@@ -187,8 +195,18 @@ def create_app(config_class=Config):
             replace_existing=True
         )
 
+        # Add the trailer cleanup job
+        scheduler.add_job(
+            func=scheduled_trailer_cleanup_job,
+            trigger='interval',
+            hours=24,
+            id='trailer_cleanup_job',
+            next_run_time=datetime.datetime.now() + datetime.timedelta(minutes=5), # Run 5 mins after startup
+            replace_existing=True
+        )
+
         scheduler.start()
-        app.logger.info(f"APScheduler started. rTorrent scan job scheduled every {rtorrent_scan_interval} minutes. Staging processor job scheduled every 1 minute.")
+        app.logger.info(f"APScheduler started. rTorrent scan job scheduled every {rtorrent_scan_interval} minutes. Staging processor job scheduled every 1 minute. Trailer cleanup job scheduled every 24 hours.")
 
         # Ensure scheduler shuts down cleanly when the app exits
         atexit.register(lambda: scheduler.shutdown() if scheduler and scheduler.running else None)
