@@ -292,6 +292,27 @@ def select_user_route():
 
 # Dans app/plex_editor/routes.py
 
+def _parse_main_external_id(guids):
+    """
+    Parses the list of guids from a Plex item to find the primary external ID.
+    Prefers 'tvdb' for shows and 'tmdb' for movies.
+    """
+    # Priorité des sources
+    priority_order = ['tvdb', 'tmdb', 'imdb']
+
+    for source in priority_order:
+        for guid_obj in guids:
+            if guid_obj.id.startswith(f'{source}://'):
+                try:
+                    # 'tmdb://12345' -> ('tmdb', '12345')
+                    id_val = guid_obj.id.split('//')[1]
+                    # Pour les séries, on veut le type 'tv' pour notre API
+                    media_type = 'tv' if source == 'tvdb' else source
+                    return media_type, id_val
+                except (IndexError, ValueError):
+                    continue
+    return None, None
+
 def get_user_specific_plex_server_from_id(user_id):
     """
     Helper function to get a PlexServer instance for a specific user ID,
@@ -595,6 +616,12 @@ def get_media_items():
                 item.original_title = getattr(item, 'originalTitle', None)
                 thumb_path = getattr(item, 'thumb', None)
                 item.poster_url = target_plex_server.url(thumb_path, includeToken=True) if thumb_path else None
+
+                # Enrichissement avec l'ID externe pour la recherche de bande-annonce
+                item.external_source, item.external_id = _parse_main_external_id(item.guids)
+                # Correction du type pour correspondre à l'API du trailer_manager ('movie' ou 'tv')
+                item.media_type_for_trailer = 'tv' if item.type == 'show' else 'movie'
+
 
                 if item.type == 'movie':
                     item.file_path = getattr(item.media[0].parts[0], 'file', None) if item.media and item.media[0].parts else None
