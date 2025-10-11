@@ -19,7 +19,7 @@
         <button class="btn btn-sm {% if series.has_locked_trailer %}btn-outline-success{% else %}btn-outline-info{% endif %} find-and-play-trailer-btn me-2"
                 data-title="{{ series.title }}"
                 data-year="{{ series.year }}"
-                data-media-type="show"
+                data-media-type="tv"
                 data-external-id="{{ series.external_id }}"
                 data-plex-trailer-url="{{ series.plex_trailer_url or '' }}"
                 data-rating-key="{{ series.ratingKey }}"
