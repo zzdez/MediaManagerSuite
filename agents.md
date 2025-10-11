@@ -30,3 +30,22 @@ Ces règles doivent être respectées scrupuleusement lors de toute modification
 - **Identifiants Externes (`tmdb_id`, `tvdb_id`)**: La source de vérité pour l'identification des médias. Toute nouvelle fonctionnalité de cache ou de mapping doit utiliser ces identifiants comme clés primaires pour garantir la cohérence et la fiabilité.
 - **`trailer_database.json`**: La base de données centralisée pour toutes les informations relatives aux bandes-annonces. Elle stocke les résultats de recherche mis en cache et, surtout, les bandes-annonces verrouillées par l'utilisateur.
 - **`trailer_manager.py`**: Le gardien du `trailer_database.json`. Toute interaction avec les données des bandes-annonces (recherche, verrouillage, nettoyage du cache) doit passer par ce manager.
+
+### **Logique de Gestion des Bandes-Annonces : La Recette**
+
+Pour garantir la performance et la cohérence, toute fonctionnalité liée aux bandes-annonces doit suivre cette logique :
+
+1.  **Pour Afficher le Statut d'un Verrou (ex: bouton vert dans une liste)** :
+    *   **Utiliser `trailer_manager.is_trailer_locked(media_type, external_id)`**.
+    *   Cette fonction est "légère" : elle ne fait qu'une lecture rapide du fichier JSON et ne déclenche **jamais** d'appel API. C'est la méthode à privilégier pour les vues de liste pour ne pas impacter les performances.
+
+2.  **Pour Lancer une Recherche de Bande-Annonce (ex: clic sur le bouton "Bande-annonce")** :
+    *   **Utiliser `trailer_manager.get_trailer_info(media_type, external_id, title, year)`**.
+    *   Cette fonction est "lourde" : elle vérifie d'abord le cache. Si les résultats sont présents et récents, elle les retourne. Sinon, elle lance une recherche sur YouTube et met en cache la liste complète des résultats.
+    *   **Ne jamais appeler cette fonction en boucle sur une liste de médias.**
+
+3.  **Pour Verrouiller une Bande-Annonce** :
+    *   **Utiliser `trailer_manager.lock_trailer(media_type, external_id, video_data)`**.
+    *   Cette fonction sauvegarde les données de la vidéo choisie et, pour garder la base de données propre, **purge automatiquement tous les autres résultats de recherche** qui étaient en cache pour ce média.
+
+En respectant cette "recette", nous assurons une expérience utilisateur fluide, une consommation d'API maîtrisée et une base de données pertinente.
