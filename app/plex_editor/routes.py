@@ -677,14 +677,11 @@ def get_media_items():
 
                 item.plex_trailer_url = find_plex_trailer(item, target_plex_server)
 
-                # Vérification du statut du trailer pour l'indicateur visuel avec le nouveau manager
-                trailer_info = trailer_manager.get_trailer_info(
+                # Vérification du statut du trailer pour l'indicateur visuel avec la nouvelle fonction légère
+                item.has_locked_trailer = trailer_manager.is_trailer_locked(
                     media_type=item.media_type_for_trailer,
-                    external_id=item.external_id,
-                    title=item.title,
-                    year=item.year
+                    external_id=item.external_id
                 )
-                item.has_locked_trailer = trailer_info.get('status') == 'locked'
 
                 items_to_render.append(item)
 
