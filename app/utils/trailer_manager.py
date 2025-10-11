@@ -206,15 +206,32 @@ def lock_trailer(media_type, external_id, video_data):
     logger.info(f"Bande-annonce verrouillée pour {db_key} avec les données : {video_data}")
     return True
 
-def is_trailer_locked(media_type, external_id):
+def get_trailer_status(media_type, external_id):
     """
-    Vérifie de manière légère si une bande-annonce est verrouillée, sans déclencher de recherche.
-    Retourne True si un verrou est actif, False sinon.
+    Vérifie le statut d'une bande-annonce pour un média donné.
+
+    Retourne:
+        str: 'LOCKED' si une bande-annonce est verrouillée.
+             'UNLOCKED' si des résultats de recherche existent mais rien n'est verrouillé.
+             'NONE' si aucune information n'est disponible.
     """
     db_key = _get_key(media_type, external_id)
     database = _load_database()
     entry = database.get(db_key, {})
-    return entry.get('is_locked', False)
+
+    if entry.get('is_locked'):
+        return 'LOCKED'
+    if entry.get('search_results'):
+        return 'UNLOCKED'
+    return 'NONE'
+
+def is_trailer_locked(media_type, external_id):
+    """
+    Vérifie de manière légère si une bande-annonce est verrouillée.
+    Utilise maintenant get_trailer_status pour la cohérence.
+    Retourne True si le statut est 'LOCKED', False sinon.
+    """
+    return get_trailer_status(media_type, external_id) == 'LOCKED'
 
 def unlock_trailer(media_type, external_id):
     """Déverrouille la bande-annonce pour un média."""

@@ -226,4 +226,88 @@ $(document).ready(function() {
 
         modalInstance.show();
     });
+
+    // --- GESTION DU MENU LATÉRAL "BANDES-ANNONCES" ---
+    $('#standalone-trailer-search-btn').on('click', function(e) {
+        e.preventDefault();
+        const summaryModal = $('#trailer-summary-modal');
+        const container = $('#trailer-summary-container');
+        const modalInstance = bootstrap.Modal.getOrCreateInstance(summaryModal[0]);
+
+        container.html('<div class="text-center"><div class="spinner-border"></div></div>');
+        modalInstance.show();
+
+        fetch('/api/plex_editor/trailers/summary')
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    container.html(`<p class="text-danger text-center">${data.error}</p>`);
+                    return;
+                }
+                if (data.length === 0) {
+                    container.html('<p class="text-center text-muted">Aucune bande-annonce trouvée ou verrouillée.</p>');
+                    return;
+                }
+
+                let html = '<ul class="list-group">';
+                data.forEach(item => {
+                    let btn_class, btn_icon, btn_title, disabled_attr = '';
+
+                    if (item.status === 'LOCKED') {
+                        btn_class = 'btn-success';
+                        btn_icon = 'bi-lock-fill';
+                        btn_title = 'Bande-annonce verrouillée';
+                    } else if (item.status === 'UNLOCKED') {
+                        btn_class = 'btn-primary';
+                        btn_icon = 'bi-film';
+                        btn_title = 'Plusieurs résultats, non verrouillé';
+                    } else { // NONE
+                        btn_class = 'btn-danger';
+                        btn_icon = 'bi-search'; // On garde l'icône de recherche pour inciter à l'action
+                        btn_title = 'Aucune bande-annonce, cliquer pour chercher';
+                        // Cas spécial : si le média n'a pas d'ID externe, on ne peut rien faire.
+                        if (!item.external_id) {
+                            btn_class = 'btn-secondary';
+                            btn_icon = 'bi-question-circle-fill';
+                            btn_title = 'ID externe manquant, recherche impossible';
+                            disabled_attr = 'disabled';
+                        }
+                    }
+
+                    html += `
+                        <li class="list-group-item bg-dark d-flex justify-content-between align-items-center">
+                            <span>${item.title} ${item.year ? `(${item.year})` : ''}</span>
+                            <button class="btn btn-sm ${btn_class} open-trailer-search-from-summary"
+                                    data-media-type="${item.media_type}"
+                                    data-external-id="${item.external_id}"
+                                    data-title="${item.title}"
+                                    data-year="${item.year || ''}"
+                                    title="${btn_title}"
+                                    ${disabled_attr}>
+                                <i class="bi ${btn_icon}"></i>
+                            </button>
+                        </li>`;
+                });
+                html += '</ul>';
+                container.html(html);
+            })
+            .catch(error => {
+                console.error('Erreur lors du chargement du résumé des BA:', error);
+                container.html('<p class="text-danger text-center">Erreur de chargement du résumé.</p>');
+            });
+    });
+
+    // Gère le clic sur un bouton DANS la modale de résumé pour ouvrir la modale de recherche
+    $(document).on('click', '.open-trailer-search-from-summary', function() {
+        const data = $(this).data();
+        // On cache la modale de résumé
+        bootstrap.Modal.getInstance($('#trailer-summary-modal')[0]).hide();
+        // On déclenche l'événement global pour ouvrir la recherche
+        $(document).trigger('openTrailerSearch', {
+            mediaType: data.mediaType,
+            externalId: data.externalId,
+            title: data.title,
+            year: data.year
+        });
+    });
 });
