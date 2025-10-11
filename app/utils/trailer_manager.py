@@ -196,8 +196,10 @@ def lock_trailer(media_type, external_id, video_data):
     entry['last_updated_timestamp'] = datetime.utcnow().isoformat()
 
     # On purge les anciens résultats de recherche pour ne garder que le verrou
-    entry.pop('search_results', None)
-    entry.pop('next_page_token', None)
+    if 'search_results' in entry:
+        del entry['search_results']
+    if 'next_page_token' in entry:
+        del entry['next_page_token']
 
     database[db_key] = entry
     _save_database(database)
