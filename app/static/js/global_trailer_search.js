@@ -250,7 +250,7 @@ $(document).ready(function() {
 
         resultsContainer.html('<div class="text-center"><div class="spinner-border"></div></div>');
 
-        fetch(`/search_ui/api/media/search`, {
+        fetch(`/search/api/media/search`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ query: query, media_type: mediaType })
