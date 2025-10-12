@@ -455,13 +455,20 @@ $(document).ready(function() {
                 const externalId = mediaType === 'tv' ? item.tvdbId : item.tmdbId;
                 const mediaExists = item.id && item.id > 0;
 
+                let trailerBtnClass = 'btn-outline-danger';
+                if (item.trailer_status === 'LOCKED') {
+                    trailerBtnClass = 'btn-outline-success';
+                } else if (item.trailer_status === 'UNLOCKED') {
+                    trailerBtnClass = 'btn-outline-primary';
+                }
+
                 const trailerButtonHtml = `
-                    <button class="btn btn-sm btn-outline-info find-trailer-from-map-btn"
+                    <button class="btn btn-sm ${trailerBtnClass} find-trailer-from-map-btn"
                             data-media-id="${externalId}"
                             data-title="${item.title}"
                             data-year="${item.year}"
                             data-media-type="${mediaType}">
-                        <i class="fas fa-video"></i>
+                        <i class="bi bi-film"></i>
                     </button>`;
 
                 const mainButtonHtml = mediaExists ?

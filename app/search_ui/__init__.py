@@ -204,6 +204,13 @@ def api_search_lookup():
     # Déterminer le format de la réponse
     render_as_html = request.args.get('render_html', 'false').lower() == 'true'
 
+    # Enrichir les résultats avec le statut du trailer
+    from app.utils import trailer_manager # Import local
+    for item in final_results:
+        item_media_type = 'tv' if item.get('tvdbId') else 'movie'
+        external_id = item.get('tvdbId') or item.get('tmdbId')
+        item['trailer_status'] = trailer_manager.get_trailer_status(item_media_type, external_id) if external_id else 'NONE'
+
     if render_as_html:
         return render_template(
             'search_ui/_media_result_list.html',
