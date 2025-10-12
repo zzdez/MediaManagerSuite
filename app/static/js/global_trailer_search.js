@@ -255,7 +255,7 @@ $(document).ready(function() {
 
                     if (item.status === 'LOCKED') {
                         btn_class = 'btn-success';
-                        btn_icon = 'bi-lock-fill';
+                        btn_icon = 'bi-film';
                         btn_title = 'Bande-annonce verrouillée';
                     } else if (item.status === 'UNLOCKED') {
                         btn_class = 'btn-primary';
