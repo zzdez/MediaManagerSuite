@@ -16,14 +16,25 @@
     </div>
     {% if series.sonarr_series_id %}
     <div class="d-flex align-items-center">
-        <button class="btn btn-sm {% if series.has_locked_trailer %}btn-outline-success{% else %}btn-outline-info{% endif %} find-and-play-trailer-btn me-2"
+        {# --- NOUVELLE LOGIQUE POUR LE BOUTON BANDE-ANNONCE --- #}
+        {% set status = series.trailer_status or 'NONE' %}
+        {% if status == 'LOCKED' %}
+            {% set btn_class = 'btn-outline-success' %}
+            {% set btn_title = 'Bande-annonce verrouillée' %}
+        {% elif status == 'UNLOCKED' %}
+            {% set btn_class = 'btn-outline-primary' %}
+            {% set btn_title = 'Plusieurs bandes-annonces trouvées (non verrouillé)' %}
+        {% else %} {# 'NONE' #}
+            {% set btn_class = 'btn-outline-danger' %}
+            {% set btn_title = 'Aucune bande-annonce trouvée' %}
+        {% endif %}
+        <button class="btn btn-sm {{ btn_class }} find-and-play-trailer-btn me-2"
                 data-title="{{ series.title }}"
                 data-year="{{ series.year }}"
                 data-media-type="tv"
                 data-external-id="{{ series.external_id }}"
-                data-plex-trailer-url="{{ series.plex_trailer_url or '' }}"
                 data-rating-key="{{ series.ratingKey }}"
-                title="Chercher et voir la bande-annonce pour la série">
+                title="{{ btn_title }}">
             <i class="bi bi-film"></i>
         </button>
         <button id="rename-series-files-btn"

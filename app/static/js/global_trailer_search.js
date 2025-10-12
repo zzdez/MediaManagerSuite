@@ -254,20 +254,20 @@ $(document).ready(function() {
                     let btn_class, btn_icon, btn_title, disabled_attr = '';
 
                     if (item.status === 'LOCKED') {
-                        btn_class = 'btn-success';
+                        btn_class = 'btn-outline-success';
                         btn_icon = 'bi-film';
                         btn_title = 'Bande-annonce verrouillée';
                     } else if (item.status === 'UNLOCKED') {
-                        btn_class = 'btn-primary';
+                        btn_class = 'btn-outline-primary';
                         btn_icon = 'bi-film';
                         btn_title = 'Plusieurs résultats, non verrouillé';
                     } else { // NONE
-                        btn_class = 'btn-danger';
-                        btn_icon = 'bi-film'; // Remplacé pour la cohérence
+                        btn_class = 'btn-outline-danger';
+                        btn_icon = 'bi-film';
                         btn_title = 'Aucune bande-annonce, cliquer pour chercher';
                         // Cas spécial : si le média n'a pas d'ID externe, on ne peut rien faire.
                         if (!item.external_id) {
-                            btn_class = 'btn-secondary';
+                            btn_class = 'btn-outline-secondary';
                             btn_icon = 'bi-question-circle-fill';
                             btn_title = 'ID externe manquant, recherche impossible';
                             disabled_attr = 'disabled';

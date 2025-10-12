@@ -126,15 +126,15 @@
                     {# --- NOUVELLE LOGIQUE POUR LE BOUTON BANDE-ANNONCE --- #}
                     {% set status = item.trailer_status or 'NONE' %}
                     {% if status == 'LOCKED' %}
-                        {% set btn_class = 'btn-success' %}
+                        {% set btn_class = 'btn-outline-success' %}
                         {% set btn_icon = 'bi-film' %}
                         {% set btn_title = 'Bande-annonce verrouillée' %}
                     {% elif status == 'UNLOCKED' %}
-                        {% set btn_class = 'btn-primary' %}
+                        {% set btn_class = 'btn-outline-primary' %}
                         {% set btn_icon = 'bi-film' %}
                         {% set btn_title = 'Plusieurs bandes-annonces trouvées (non verrouillé)' %}
                     {% else %} {# 'NONE' #}
-                        {% set btn_class = 'btn-danger' %}
+                        {% set btn_class = 'btn-outline-danger' %}
                         {% set btn_icon = 'bi-film' %}
                         {% set btn_title = 'Aucune bande-annonce trouvée' %}
                     {% endif %}

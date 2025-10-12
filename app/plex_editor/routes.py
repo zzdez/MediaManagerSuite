@@ -2092,21 +2092,18 @@ def get_series_details_for_management(rating_key):
                 })
 
             # Vérification du statut du trailer avec le nouveau manager
-            trailer_info = trailer_manager.get_trailer_info(
-                media_type='tv',  # Le type est 'show', donc 'tv' pour le manager
-                external_id=tvdb_id,
-                title=series.title,
-                year=series.year
-            )
-            has_locked_trailer = trailer_info.get('status') == 'locked'
-            locked_video_id = trailer_info.get('video_id') if has_locked_trailer else None
-            plex_trailer_url = f"https://www.youtube.com/watch?v={locked_video_id}" if locked_video_id else ""
+            trailer_status = 'NONE'
+            if tvdb_id:
+                trailer_status = trailer_manager.get_trailer_status(
+                    media_type='tv',
+                    external_id=tvdb_id
+                )
 
             series_data = {
                 'title': series.title,
                 'year': series.year,
                 'ratingKey': series.ratingKey,
-                'external_id': tvdb_id, # Ajout de l'ID externe
+                'external_id': tvdb_id,
                 'plex_status': getattr(series, 'status', 'unknown'),
                 'total_seasons_plex': series.childCount,
                 'viewed_seasons_plex': viewed_seasons_count,
@@ -2114,8 +2111,7 @@ def get_series_details_for_management(rating_key):
                 'sonarr_series_id': sonarr_series_id_val,
                 'total_size_on_disk': total_series_size,
                 'seasons': seasons_list,
-                'has_locked_trailer': has_locked_trailer,
-                'plex_trailer_url': plex_trailer_url
+                'trailer_status': trailer_status  # Ajout du statut complet
             }
             return render_template('plex_editor/_series_management_modal_content.html', series=series_data)
 
