@@ -263,7 +263,7 @@ $(document).ready(function() {
                         btn_title = 'Plusieurs résultats, non verrouillé';
                     } else { // NONE
                         btn_class = 'btn-danger';
-                        btn_icon = 'bi-search'; // On garde l'icône de recherche pour inciter à l'action
+                        btn_icon = 'bi-film'; // Remplacé pour la cohérence
                         btn_title = 'Aucune bande-annonce, cliquer pour chercher';
                         // Cas spécial : si le média n'a pas d'ID externe, on ne peut rien faire.
                         if (!item.external_id) {
