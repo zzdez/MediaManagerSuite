@@ -34,39 +34,45 @@ def search_page():
 @search_ui_bp.route('/api/media/search', methods=['POST'])
 @login_required
 def media_search():
-    """Recherche des médias (films ou séries) via les API externes (TMDb/TVDB)."""
+    """Recherche des médias (films ou séries) via les API externes (TMDb/TVDB) et enrichit avec le statut du trailer."""
+    from app.utils import trailer_manager # Import local
+
     data = request.get_json()
     query = data.get('query')
-    media_type = data.get('media_type', 'movie') # 'movie' par défaut
+    media_type_search = data.get('media_type', 'movie')
 
     if not query:
         return jsonify({"error": "La requête de recherche est vide."}), 400
 
     try:
         results = []
-        if media_type == 'movie':
+        if media_type_search == 'movie':
             client = TheMovieDBClient()
             search_results = client.search_movie(query, lang='fr-FR')
-            # Formater pour être cohérent et simple pour le frontend
             for item in search_results:
+                external_id = item.get('id')
+                trailer_status = trailer_manager.get_trailer_status('movie', external_id) if external_id else 'NONE'
                 results.append({
-                    'id': item.get('id'),
+                    'id': external_id,
                     'title': item.get('title'),
                     'year': item.get('release_date', 'N/A')[:4],
                     'overview': item.get('overview'),
-                    'poster': item.get('poster_path')
+                    'poster': item.get('poster_path'),
+                    'trailer_status': trailer_status
                 })
-        elif media_type == 'tv':
+        elif media_type_search == 'tv':
             client = CustomTVDBClient()
             search_results = client.search_and_translate_series(query, lang='fra')
-            # Formater les résultats de notre fonction optimisée
             for item in search_results:
+                external_id = item.get('tvdb_id')
+                trailer_status = trailer_manager.get_trailer_status('tv', external_id) if external_id else 'NONE'
                 results.append({
-                    'id': item.get('tvdb_id'),
+                    'id': external_id,
                     'title': item.get('name'),
                     'year': item.get('year'),
                     'overview': item.get('overview'),
-                    'poster': item.get('poster_url')
+                    'poster': item.get('poster_url'),
+                    'trailer_status': trailer_status
                 })
         else:
             return jsonify({"error": "Type de média non supporté."}), 400

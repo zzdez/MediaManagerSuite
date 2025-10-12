@@ -31,6 +31,14 @@ $(document).ready(function() {
                 ? `${TMDB_POSTER_BASE_URL}${item.poster}`
                 : (item.poster || 'https://via.placeholder.com/185x278.png?text=No+Poster');
 
+            // Logique pour déterminer la classe du bouton de bande-annonce
+            let trailerBtnClass = 'btn-outline-danger'; // Rouge par défaut (NONE)
+            if (item.trailer_status === 'LOCKED') {
+                trailerBtnClass = 'btn-outline-success'; // Vert
+            } else if (item.trailer_status === 'UNLOCKED') {
+                trailerBtnClass = 'btn-outline-primary'; // Bleu
+            }
+
             const cardHtml = `
                 <div class="list-group-item list-group-item-action" data-media-type="${mediaType}">
                     <div class="row g-3">
@@ -41,7 +49,7 @@ $(document).ready(function() {
                             <h5 class="mb-1">${item.title} <span class="text-muted">(${item.year || 'N/A'})</span></h5>
                             <p class="mb-1 small">${item.overview ? item.overview.substring(0, 280) + (item.overview.length > 280 ? '...' : '') : 'Pas de synopsis disponible.'}</p>
                             <div class="mt-2">
-                                <button class="btn btn-sm btn-outline-info search-trailer-btn"
+                                <button class="btn btn-sm ${trailerBtnClass} search-trailer-btn"
                                         data-result-index="${index}"
                                         data-title="${item.title}"
                                         data-year="${item.year || ''}"
@@ -117,12 +125,35 @@ $(document).ready(function() {
         const externalId = mediaData.id;
         const title = mediaData.title;
         const year = mediaData.year;
+        const trailerStatus = mediaData.trailer_status;
 
-        if (mediaType && externalId && title) {
-            // Déclenche l'événement global géré par `global_trailer_search.js`
-            $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
+        if (!mediaType || !externalId || !title) {
+            alert('Erreur: Informations de base manquantes pour la bande-annonce.');
+            return;
+        }
+
+        if (trailerStatus === 'LOCKED') {
+            // Si la bande-annonce est verrouillée, on récupère son ID et on la joue directement.
+            fetch(`/api/agent/get_locked_trailer_id?media_type=${mediaType}&external_id=${externalId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success' && data.video_id) {
+                        const playerModal = $('#trailer-modal');
+                        $('#trailerModalLabel').text('Bande-Annonce: ' + title);
+                        playerModal.find('.modal-body').html(`<div class="ratio ratio-16x9"><iframe src="https://www.youtube.com/embed/${data.video_id}?autoplay=1&cc_lang=fr&cc_load_policy=1" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe></div>`);
+                        bootstrap.Modal.getOrCreateInstance(playerModal[0]).show();
+                    } else {
+                        // Fallback au cas où l'ID ne serait pas trouvé (ne devrait pas arriver)
+                        $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
+                    }
+                })
+                .catch(() => {
+                    // En cas d'erreur de communication, on ouvre la recherche standard
+                    $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
+                });
         } else {
-            alert('Erreur: Informations manquantes pour rechercher la bande-annonce.');
+            // Pour 'UNLOCKED' ou 'NONE', on ouvre la modale de recherche/sélection.
+            $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
         }
     });
 

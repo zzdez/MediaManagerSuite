@@ -233,6 +233,20 @@ def is_trailer_locked(media_type, external_id):
     """
     return get_trailer_status(media_type, external_id) == 'LOCKED'
 
+def get_locked_trailer_video_id(media_type, external_id):
+    """
+    Récupère l'ID vidéo de la bande-annonce verrouillée, si elle existe.
+    Retourne:
+        str|None: L'ID de la vidéo YouTube, ou None si non verrouillée ou non trouvée.
+    """
+    db_key = _get_key(media_type, external_id)
+    database = _load_database()
+    entry = database.get(db_key, {})
+
+    if entry.get('is_locked') and entry.get('locked_video_data'):
+        return entry['locked_video_data'].get('videoId')
+    return None
+
 def unlock_trailer(media_type, external_id):
     """Déverrouille la bande-annonce pour un média."""
     db_key = _get_key(media_type, external_id)

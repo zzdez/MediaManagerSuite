@@ -65,3 +65,24 @@ def unlock_trailer_route():
     except Exception as e:
         current_app.logger.error(f"Erreur inattendue dans unlock_trailer_route pour {media_type}_{external_id}: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': 'Une erreur interne est survenue.'}), 500
+
+@agent_bp.route('/get_locked_trailer_id', methods=['GET'])
+def get_locked_trailer_id_route():
+    """
+    Retourne l'ID de la vidéo d'une bande-annonce verrouillée.
+    """
+    media_type = request.args.get('media_type')
+    external_id = request.args.get('external_id')
+
+    if not all([media_type, external_id]):
+        return jsonify({'status': 'error', 'message': 'Les paramètres media_type et external_id sont requis.'}), 400
+
+    try:
+        video_id = trailer_manager.get_locked_trailer_video_id(media_type, external_id)
+        if video_id:
+            return jsonify({'status': 'success', 'video_id': video_id})
+        else:
+            return jsonify({'status': 'not_found', 'message': 'Aucune bande-annonce verrouillée trouvée.'}), 404
+    except Exception as e:
+        current_app.logger.error(f"Erreur inattendue dans get_locked_trailer_id_route pour {media_type}_{external_id}: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': 'Une erreur interne est survenue.'}), 500
