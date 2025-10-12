@@ -2478,55 +2478,6 @@ def update_single_episode_monitoring():
 
     return jsonify({'status': 'error', 'message': 'Échec de la mise à jour dans Sonarr.'}), 500
 
-@plex_editor_bp.route('/api/trailers/summary')
-@login_required
-def get_trailers_summary():
-    """
-    Retourne un résumé de TOUS les médias Plex avec leur statut de bande-annonce
-    ('LOCKED', 'UNLOCKED', ou 'NONE').
-    """
-    try:
-        plex_server = get_plex_admin_server()
-        if not plex_server:
-            return jsonify({'error': 'Connexion admin au serveur Plex impossible.'}), 500
-
-        summary = []
-        # Ignorer les bibliothèques spécifiées dans la configuration
-        ignored_library_names = current_app.config.get('PLEX_LIBRARIES_TO_IGNORE', [])
-
-        # Parcourir toutes les bibliothèques de films et de séries
-        for lib in plex_server.library.sections():
-            if lib.type not in ['movie', 'show'] or lib.title in ignored_library_names:
-                continue
-
-            current_app.logger.info(f"Scanning library '{lib.title}' for trailers summary...")
-            for item in lib.all():
-                media_type_for_trailer = 'tv' if item.type == 'show' else 'movie'
-                external_source, external_id = _parse_main_external_id(item.guids)
-
-                status = 'NONE'
-                if external_id:
-                    status = trailer_manager.get_trailer_status(
-                        media_type=media_type_for_trailer,
-                        external_id=external_id
-                    )
-
-                summary.append({
-                    'media_type': media_type_for_trailer,
-                    'external_id': external_id,
-                    'status': status,
-                    'title': item.title,
-                    'year': item.year if hasattr(item, 'year') else None
-                })
-
-        # Trier par statut (LOCKED, UNLOCKED, NONE) puis par titre
-        status_order = {'LOCKED': 0, 'UNLOCKED': 1, 'NONE': 2}
-        summary.sort(key=lambda x: (status_order.get(x['status'], 99), x['title'].lower()))
-
-        return jsonify(summary)
-    except Exception as e:
-        current_app.logger.error(f"Erreur API get_trailers_summary: {e}", exc_info=True)
-        return jsonify({'error': str(e)}), 500
 
 @plex_editor_bp.route('/api/series/rename_files', methods=['POST'])
 @login_required

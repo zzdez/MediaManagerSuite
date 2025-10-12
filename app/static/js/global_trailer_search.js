@@ -227,82 +227,87 @@ $(document).ready(function() {
         modalInstance.show();
     });
 
-    // --- GESTION DU MENU LATÉRAL "BANDES-ANNONCES" ---
+    // --- GESTION DU MENU LATÉRAL "BANDES-ANNONCES" (NOUVELLE VERSION) ---
+
+    // Ouvre la nouvelle modale de recherche autonome
     $('#standalone-trailer-search-btn').on('click', function(e) {
         e.preventDefault();
-        const summaryModal = $('#trailer-summary-modal');
-        const container = $('#trailer-summary-container');
-        const modalInstance = bootstrap.Modal.getOrCreateInstance(summaryModal[0]);
-
-        container.html('<div class="text-center"><div class="spinner-border"></div></div>');
-        modalInstance.show();
-
-        fetch('/api/plex_editor/trailers/summary')
-            .then(response => response.json())
-            .then(data => {
-                if (data.error) {
-                    container.html(`<p class="text-danger text-center">${data.error}</p>`);
-                    return;
-                }
-                if (data.length === 0) {
-                    container.html('<p class="text-center text-muted">Aucune bande-annonce trouvée ou verrouillée.</p>');
-                    return;
-                }
-
-                let html = '<ul class="list-group">';
-                data.forEach(item => {
-                    let btn_class, btn_icon, btn_title, disabled_attr = '';
-
-                    if (item.status === 'LOCKED') {
-                        btn_class = 'btn-outline-success';
-                        btn_icon = 'bi-film';
-                        btn_title = 'Bande-annonce verrouillée';
-                    } else if (item.status === 'UNLOCKED') {
-                        btn_class = 'btn-outline-primary';
-                        btn_icon = 'bi-film';
-                        btn_title = 'Plusieurs résultats, non verrouillé';
-                    } else { // NONE
-                        btn_class = 'btn-outline-danger';
-                        btn_icon = 'bi-film';
-                        btn_title = 'Aucune bande-annonce, cliquer pour chercher';
-                        // Cas spécial : si le média n'a pas d'ID externe, on ne peut rien faire.
-                        if (!item.external_id) {
-                            btn_class = 'btn-outline-secondary';
-                            btn_icon = 'bi-question-circle-fill';
-                            btn_title = 'ID externe manquant, recherche impossible';
-                            disabled_attr = 'disabled';
-                        }
-                    }
-
-                    html += `
-                        <li class="list-group-item bg-dark d-flex justify-content-between align-items-center">
-                            <span>${item.title} ${item.year ? `(${item.year})` : ''}</span>
-                            <button class="btn btn-sm ${btn_class} open-trailer-search-from-summary"
-                                    data-media-type="${item.media_type}"
-                                    data-external-id="${item.external_id}"
-                                    data-title="${item.title}"
-                                    data-year="${item.year || ''}"
-                                    title="${btn_title}"
-                                    ${disabled_attr}>
-                                <i class="bi ${btn_icon}"></i>
-                            </button>
-                        </li>`;
-                });
-                html += '</ul>';
-                container.html(html);
-            })
-            .catch(error => {
-                console.error('Erreur lors du chargement du résumé des BA:', error);
-                container.html('<p class="text-danger text-center">Erreur de chargement du résumé.</p>');
-            });
+        const searchModal = new bootstrap.Modal(document.getElementById('standalone-trailer-search-modal'));
+        searchModal.show();
     });
 
-    // Gère le clic sur un bouton DANS la modale de résumé pour ouvrir la modale de recherche
-    $(document).on('click', '.open-trailer-search-from-summary', function() {
+    // Gère la soumission du formulaire de recherche dans la modale
+    $('#standalone-trailer-search-form').on('submit', function(e) {
+        e.preventDefault();
+        const query = $('#standalone-trailer-search-input').val().trim();
+        const mediaType = $('input[name="standalone_media_type"]:checked').val();
+        const resultsContainer = $('#standalone-trailer-search-results-container');
+
+        if (!query) {
+            resultsContainer.html('<div class="alert alert-warning">Veuillez entrer un titre.</div>');
+            return;
+        }
+
+        resultsContainer.html('<div class="text-center"><div class="spinner-border"></div></div>');
+
+        fetch(`/api/media/search`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: query, media_type: mediaType })
+        })
+        .then(response => response.json())
+        .then(data => {
+            renderStandaloneResults(data, mediaType);
+        })
+        .catch(error => {
+            console.error('Erreur lors de la recherche de média autonome:', error);
+            resultsContainer.html('<p class="text-danger">Erreur de communication.</p>');
+        });
+    });
+
+    // Affiche les résultats dans la modale de recherche autonome
+    function renderStandaloneResults(results, mediaType) {
+        const resultsContainer = $('#standalone-trailer-search-results-container');
+        resultsContainer.empty();
+
+        if (!results || results.length === 0) {
+            resultsContainer.html('<p class="text-muted text-center">Aucun résultat trouvé.</p>');
+            return;
+        }
+
+        const listGroup = $('<div class="list-group list-group-flush"></div>');
+        results.forEach(item => {
+            let trailerBtnClass = 'btn-outline-danger';
+            if (item.trailer_status === 'LOCKED') {
+                trailerBtnClass = 'btn-outline-success';
+            } else if (item.trailer_status === 'UNLOCKED') {
+                trailerBtnClass = 'btn-outline-primary';
+            }
+
+            const itemHtml = `
+                <div class="list-group-item bg-dark d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>${item.title}</strong>
+                        <small class="text-muted d-block">${item.year || 'Année inconnue'}</small>
+                    </div>
+                    <button class="btn btn-sm ${trailerBtnClass} open-trailer-search-from-standalone"
+                            data-media-type="${mediaType}"
+                            data-external-id="${item.id}"
+                            data-title="${item.title}"
+                            data-year="${item.year || ''}">
+                        <i class="bi bi-film"></i>
+                    </button>
+                </div>
+            `;
+            listGroup.append(itemHtml);
+        });
+        resultsContainer.append(listGroup);
+    }
+
+    // Gère le clic sur un bouton de trailer DANS la modale de recherche autonome
+    $(document).on('click', '.open-trailer-search-from-standalone', function() {
         const data = $(this).data();
-        // On cache la modale de résumé
-        bootstrap.Modal.getInstance($('#trailer-summary-modal')[0]).hide();
-        // On déclenche l'événement global pour ouvrir la recherche
+        // On déclenche l'événement global pour ouvrir la modale de recherche/sélection de BA
         $(document).trigger('openTrailerSearch', {
             mediaType: data.mediaType,
             externalId: data.externalId,

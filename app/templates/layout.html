@@ -110,7 +110,38 @@
     </div>
 </div>
 
-{% include 'plex_editor/_trailer_summary_modal.html' %}
+<div class="modal fade" id="standalone-trailer-search-modal" tabindex="-1" aria-labelledby="standaloneTrailerSearchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content bg-dark text-white">
+            <div class="modal-header">
+                <h5 class="modal-title" id="standaloneTrailerSearchModalLabel">Rechercher une Bande-Annonce</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="standalone-trailer-search-form">
+                    <div class="input-group mb-3">
+                        <input type="text" id="standalone-trailer-search-input" class="form-control" placeholder="Entrez un titre de film ou de série...">
+                        <button class="btn btn-primary" type="submit" id="execute-standalone-trailer-search-btn">
+                            <i class="bi bi-search"></i>
+                        </button>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="standalone_media_type" id="standalone_media_type_movie" value="movie" checked>
+                        <label class="form-check-label" for="standalone_media_type_movie">Film</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="standalone_media_type" id="standalone_media_type_tv" value="tv">
+                        <label class="form-check-label" for="standalone_media_type_tv">Série</label>
+                    </div>
+                </form>
+                <hr>
+                <div id="standalone-trailer-search-results-container">
+                    <!-- Les résultats de la recherche seront injectés ici -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
