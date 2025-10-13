@@ -571,40 +571,6 @@ $(document).ready(function() {
         });
     }
 
-function executeFinalMapping(payload) {
-
-    const modalInstance = bootstrap.Modal.getInstance(modalEl[0]);
-    if (modalInstance) {
-        modalBody.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div><p class="mt-2">Envoi au téléchargement...</p></div>');
-    }
-
-    fetch('/search/download-and-map', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.status === 'success') {
-            if(modalInstance) modalInstance.hide();
-            alert("Succès ! La release a été envoyée au téléchargement et sera mappée.");
-        } else {
-            if(modalInstance) {
-                modalBody.html(`<div class="alert alert-danger">${data.message || 'Une erreur inconnue est survenue.'}</div>`);
-            } else {
-                alert("Erreur : " + (data.message || 'Une erreur inconnue est survenue.'));
-            }
-        }
-    })
-    .catch(error => {
-        console.error("Erreur lors du mapping final:", error);
-        if(modalInstance) {
-            modalBody.html(`<div class="alert alert-danger">Une erreur de communication est survenue.</div>`);
-        } else {
-            alert("Une erreur de communication est survenue.");
-        }
-    });
-}
 
     $('body').off('click', '.download-and-map-btn').on('click', '.download-and-map-btn', function(event) {
         event.preventDefault();

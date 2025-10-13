@@ -263,8 +263,16 @@ def enrich_details():
             details = client.get_movie_details(media_id, lang='fr-FR')
             if not details: return jsonify({'error': 'Film non trouvé'}), 404
 
-            # La sortie du client TMDB est déjà parfaite, on la transmet.
-            return jsonify(details)
+            # On formate la sortie pour qu'elle soit identique à celle des séries
+            formatted_details = {
+                'id': details.get('id'),
+                'title': details.get('title'),
+                'year': details.get('year'),
+                'overview': details.get('overview'),
+                'poster': details.get('poster'), # Le client construit déjà l'URL complète
+                'status': details.get('status', 'Inconnu')
+            }
+            return jsonify(formatted_details)
 
     except Exception as e:
         current_app.logger.error(f"Erreur dans enrich_details: {e}", exc_info=True)
