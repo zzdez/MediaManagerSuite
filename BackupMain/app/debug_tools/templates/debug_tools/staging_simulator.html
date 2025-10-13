@@ -1,0 +1,45 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ title }} - MediaManagerSuite{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1><i class="fas fa-vial"></i> Simulateur de Staging</h1>
+    <p class="lead">Cet outil permet de créer un faux item dans le répertoire de staging et dans le fichier de mapping pour tester le `staging_processor`.</p>
+
+    <div class="card">
+        <div class="card-header">
+            Lancer une nouvelle simulation
+        </div>
+        <div class="card-body">
+            <form action="{{ url_for('debug_tools.run_staging_simulation') }}" method="POST">
+                <div class="mb-3">
+                    <label for="release_name" class="form-label">Nom de la Release (et du fichier/dossier)</label>
+                    <input type="text" class="form-control" id="release_name" name="release_name" placeholder="Ex: My.Show.S01E01.1080p.mkv" required>
+                </div>
+                <div class="mb-3">
+                    <label for="torrent_hash" class="form-label">Hash du Torrent (fictif)</label>
+                    <input type="text" class="form-control" id="torrent_hash" name="torrent_hash" value="SIMULATION_{{ range(1000, 9999) | random }}" required>
+                    <div class="form-text">Un hash unique est généré, mais vous pouvez le modifier.</div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="app_type" class="form-label">Type de Média</label>
+                        <select class="form-select" id="app_type" name="app_type" required>
+                            <option value="sonarr">Série (Sonarr)</option>
+                            <option value="radarr">Film (Radarr)</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="target_id" class="form-label">ID Cible (TVDB / TMDb)</label>
+                        <input type="text" class="form-control" id="target_id" name="target_id" placeholder="Ex: 450932" required>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-play-circle"></i> Lancer la Simulation
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

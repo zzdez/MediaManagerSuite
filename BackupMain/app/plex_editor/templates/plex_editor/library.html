@@ -1,0 +1,734 @@
+<!doctype html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    {# Bootstrap 5 CSS pour la modale #}
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    {# Font Awesome pour les icônes #}
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
+
+    <title>{{ title }} - Editeur Plex</title>
+    <style>
+        /* Styles généraux (similaires à index.html) */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f8f9fa;
+            color: #343a40;
+            line-height: 1.6;
+        }
+        .container {
+             max-width: 1100px; /* Plus large pour potentiellement plus d'infos */
+             margin: 20px auto;
+             background-color: #fff;
+             padding: 25px 30px;
+             border-radius: 8px;
+             box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        }
+
+        /* Messages Flash (idem index.html) */
+        .alert { padding: 1rem; margin-bottom: 1.5rem; border: 1px solid transparent; border-radius: .375rem; font-size: 0.95rem; display: flex; align-items: center; gap: 0.75rem; }
+        .alert::before { content: "ℹ️"; font-size: 1.2em; }
+        .alert-success { color: #0f5132; background-color: #d1e7dd; border-color: #badbcc; }
+        .alert-success::before { content: "✅"; }
+        .alert-danger { color: #842029; background-color: #f8d7da; border-color: #f5c2c7; }
+        .alert-danger::before { content: "❌"; }
+        .alert-info { color: #055160; background-color: #cff4fc; border-color: #b6effb; }
+        .alert-info::before { content: "ℹ️"; }
+        .alert-warning { color: #664d03; background-color: #fff3cd; border-color: #ffecb5; }
+        .alert-warning::before { content: "⚠️"; }
+
+
+        /* Liens et Titres */
+        .back-link {
+            margin-bottom: 1.5rem;
+            display: inline-block;
+            font-size: 0.9em;
+            color: #0d6efd;
+            text-decoration: none;
+        }
+        .back-link:hover { text-decoration: underline; }
+        h1 { color: #212529; margin-bottom: 0.5rem; font-weight: 500; font-size: 2rem; }
+        .user-context { font-size: 1rem; color: #6c757d; margin-bottom: 1.5rem; }
+        h2 { color: #495057; margin-top: 2.5rem; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 2px solid #dee2e6; font-weight: 500; font-size: 1.5rem; }
+
+        /* Formulaire de Filtres */
+        .filter-form {
+            background-color: #f1f3f5; /* Léger fond */
+            padding: 20px 25px;
+            border-radius: 6px;
+            margin-bottom: 2.5rem;
+            border: 1px solid #dee2e6;
+        }
+        .filter-form .form-row {
+            display: flex;
+            flex-wrap: wrap; /* Permet aux éléments de passer à la ligne */
+            align-items: center;
+            gap: 15px; /* Espace entre les éléments d'une ligne */
+            margin-bottom: 15px;
+        }
+        .filter-form .form-row:last-of-type { margin-bottom: 0; } /* Pas de marge en bas pour la dernière ligne de champs */
+
+        .filter-form .filter-group { /* Grouper label + input */
+             display: flex;
+             align-items: center;
+             gap: 8px;
+             flex-grow: 1; /* Permet aux groupes de prendre l'espace */
+             min-width: 200px; /* Empêche d'être trop petit */
+        }
+
+        .filter-form label {
+            font-weight: 500; /* Moins gras que bold */
+            color: #495057;
+            font-size: 0.9em;
+            width: auto; /* Ajustement auto */
+            text-align: left;
+            margin-bottom: 0; /* Enlevé car aligné avec flex */
+        }
+        .filter-form input[type=number], .filter-form input[type=date], .filter-form select, .filter-form input[type=text] {
+            padding: 8px 10px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 0.95rem;
+            flex-grow: 1; /* Prend l'espace dans le groupe */
+            background-color: #fff;
+        }
+         /* Style spécifique pour select pour l'icône flèche */
+        .filter-form select {
+            -webkit-appearance: none; appearance: none;
+             background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%236c757d%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E');
+             background-repeat: no-repeat; background-position: right .7em top 50%; background-size: .65em auto; padding-right: 2em;
+        }
+
+        /* Ligne des boutons */
+        .filter-form .button-row {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #dee2e6;
+            display: flex;
+            justify-content: flex-end; /* Boutons à droite */
+            gap: 10px; /* Espace entre boutons */
+        }
+        .filter-form button, .filter-form a.button {
+            padding: 8px 18px;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.95em;
+            text-decoration: none; /* Pour le lien reset */
+            display: inline-block; /* Pour le lien reset */
+             transition: background-color 0.2s ease, opacity 0.2s ease;
+        }
+        .filter-form button[type=submit] { background-color: #0d6efd; }
+        .filter-form button[type=submit]:hover { background-color: #0b5ed7; }
+        .filter-form a.reset-button { background-color: #6c757d; }
+        .filter-form a.reset-button:hover { background-color: #5a6268; color: white; }
+
+
+        /* Liste des éléments */
+        ul#item-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        ul#item-list li {
+            margin-bottom: 8px;
+            padding: 12px 18px;
+            border: 1px solid #e0e0e0;
+            border-radius: 5px;
+            background-color: #fff;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background-color 0.2s;
+        }
+        ul#item-list li:nth-child(odd) { background-color: #f9f9f9; } /* Alternance couleurs */
+        ul#item-list li:hover { background-color: #e9ecef; }
+
+        .item-title { font-weight: 500; color: #343a40; flex-grow: 1; margin-right: 20px;}
+        .item-details {
+            font-size: 0.85em;
+            color: #6c757d;
+            text-align: right;
+            flex-shrink: 0; /* Empêche de rétrécir */
+            white-space: nowrap; /* Empêche le retour à la ligne des détails */
+        }
+        .item-details strong { color: #343a40; font-weight: 500; }
+        .item-details .watched-yes { color: #198754; }
+        .item-details .watched-no { color: #dc3545; }
+        .item-details span { margin-left: 12px; }
+        .item-details span:first-child { margin-left: 0; }
+
+        /* Message si liste vide */
+        #item-list li.no-results {
+             justify-content: center;
+             color: #6c757d;
+             font-style: italic;
+             background-color: transparent;
+             border: 1px dashed #ced4da;
+             padding: 15px;
+        }
+        .item-actions {
+            margin-left: 20px;
+            flex-shrink: 0;
+            display: flex;
+            gap: 5px; /* Espace entre les boutons d'action */
+        }
+
+        .action-button {
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+            transition: background-color 0.2s ease;
+        }
+        .delete-button { background-color: #dc3545; } /* Rouge danger Bootstrap */
+        .delete-button:hover { background-color: #c82333; }
+
+        .archive-button { background-color: #ffc107; color: #000; } /* Jaune warning Bootstrap */
+        .archive-button:hover { background-color: #e0a800; }
+        .archive-button:disabled { background-color: #e9ecef; color: #6c757d; cursor: not-allowed; opacity: 0.7;}
+        .item-title-link {
+            font-weight: 500;
+            color: #343a40; /* Même couleur que le texte normal */
+            text-decoration: none; /* Pas de soulignement */
+            cursor: pointer; /* Change le curseur en main pour indiquer que c'est cliquable */
+            transition: color 0.2s;
+        }
+        .item-title-link:hover {
+            color: #007bff; /* Change de couleur au survol */
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <p class="back-link"><a href="{{ url_for('plex_editor.list_libraries') }}">← Retour à la liste des bibliothèques</a></p>
+
+        <h1>{{ display_title }}</h1>
+        {% if user_title %}
+            <p class="user-context">Affichage pour l'utilisateur : <strong>{{ user_title }}</strong></p>
+        {% endif %}
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        {# --- Formulaire de Filtres (VERSION CORRIGÉE ET COMPLÈTE) --- #}
+        {# B.2: Form action always points to show_library without path params #}
+        <form method="GET" action="{{ url_for('plex_editor.show_library') }}" class="filter-form">
+            {# B.2: Add hidden inputs for each selected library name #}
+            {% if selected_libs %} {# This variable is passed from the route (A.6) #}
+                {% for lib_name in selected_libs %}
+                    <input type="hidden" name="selected_libs" value="{{ lib_name }}">
+                {% endfor %}
+            {% endif %}
+            <!-- Ligne de Tri -->
+            <div class="form-row">
+                <div class="filter-group" style="flex-grow: 1;">
+                    <label for="sort_by">Trier par :</label>
+                    <select name="sort_by" id="sort_by" class="form-select">
+                        <option value="addedAt:desc" {% if current_filters.sort_by == 'addedAt:desc' %}selected{% endif %}>Date d'ajout (plus récent d'abord)</option>
+                        <option value="addedAt:asc" {% if current_filters.sort_by == 'addedAt:asc' %}selected{% endif %}>Date d'ajout (plus ancien d'abord)</option>
+                        <option value="lastViewedAt:desc" {% if current_filters.sort_by == 'lastViewedAt:desc' %}selected{% endif %}>Date de visionnage (plus récent d'abord)</option>
+                        <option value="lastViewedAt:asc" {% if current_filters.sort_by == 'lastViewedAt:asc' %}selected{% endif %}>Date de visionnage (plus ancien d'abord)</option>
+                        <option value="titleSort:asc" {% if current_filters.sort_by == 'titleSort:asc' %}selected{% endif %}>Titre (A-Z)</option>
+                        <option value="titleSort:desc" {% if current_filters.sort_by == 'titleSort:desc' %}selected{% endif %}>Titre (Z-A)</option>
+                        <option value="originallyAvailableAt:desc" {% if current_filters.sort_by == 'originallyAvailableAt:desc' %}selected{% endif %}>Date de sortie (plus récent d'abord)</option>
+                        <option value="originallyAvailableAt:asc" {% if current_filters.sort_by == 'originallyAvailableAt:asc' %}selected{% endif %}>Date de sortie (plus ancien d'abord)</option>
+                        <option value="userRating:desc" {% if current_filters.sort_by == 'userRating:desc' %}selected{% endif %}>Note (meilleure d'abord)</option>
+                        <option value="userRating:asc" {% if current_filters.sort_by == 'userRating:asc' %}selected{% endif %}>Note (moins bonne d'abord)</option>
+                    </select>
+                </div>
+            </div>
+
+            {# ### NOUVELLE LIGNE POUR LA RECHERCHE PAR TITRE ### #}
+            <div class="form-row">
+                <div class="filter-group" style="flex-grow: 1;">
+                    <label for="title_filter"><i class="fas fa-search"></i> Rechercher par Titre :</label>
+                    <input type="text" name="title_filter" id="title_filter" class="form-control"
+                           value="{{ current_filters.title_filter or '' }}"
+                           placeholder="Entrez une partie du titre...">
+                </div>
+            </div>
+
+            <!-- Ligne Statut Vu & Note -->
+            <div class="form-row">
+                <div class="filter-group">
+                    <label for="vu">Statut Vu:</label>
+                    <select name="vu" id="vu" class="form-select">
+                        <option value="tous" {% if current_filters.vu == 'tous' %}selected{% endif %}>Indifférent</option>
+                        <option value="vu" {% if current_filters.vu == 'vu' %}selected{% endif %}>Vus Uniquement</option>
+                        <option value="nonvu" {% if current_filters.vu == 'nonvu' %}selected{% endif %}>Non Vus Uniquement</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="note_filter_type">Filtre Note:</label>
+                    <select name="note_filter_type" id="note_filter_type" class="form-select">
+                        <option value="toutes" {% if not current_filters.note_filter_type or current_filters.note_filter_type == 'toutes' %}selected{% endif %}>Toutes les notes</option>
+                        <option value="non_notes" {% if current_filters.note_filter_type == 'non_notes' %}selected{% endif %}>Non Notés</option>
+                        <option value="note_exacte" {% if current_filters.note_filter_type == 'note_exacte' %}selected{% endif %}>Note Egale à</option>
+                        <option value="note_min" {% if current_filters.note_filter_type == 'note_min' %}selected{% endif %}>Note >= à</option>
+                        <option value="note_max" {% if current_filters.note_filter_type == 'note_max' %}selected{% endif %}>Note <= à</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="note_filter_value">Valeur Note:</label>
+                    <input type="number" name="note_filter_value" id="note_filter_value" class="form-control" min="0" max="10" step="0.5" value="{{ current_filters.note_filter_value if current_filters.note_filter_value is not none else '' }}" placeholder="0-10">
+                </div>
+            </div>
+
+            <!-- Ligne Date d'Ajout/Sortie -->
+            <div class="form-row">
+                <div class="filter-group">
+                    <label for="date_filter_type">Date Ajout/Sortie:</label>
+                    <select name="date_filter_type" id="date_filter_type" class="form-select">
+                        <option value="aucun" {% if not current_filters.date_filter_type or current_filters.date_filter_type == 'aucun' %}selected{% endif %}>-- Non Spécifié --</option>
+                        <option value="ajout_recent_jours" {% if current_filters.date_filter_type == 'ajout_recent_jours' %}selected{% endif %}>Ajouté (X derniers jours)</option>
+                        <option value="ajout_apres_date" {% if current_filters.date_filter_type == 'ajout_apres_date' %}selected{% endif %}>Ajouté après le...</option>
+                        <option value="ajout_avant_date" {% if current_filters.date_filter_type == 'ajout_avant_date' %}selected{% endif %}>Ajouté avant le...</option>
+                        <option value="sortie_annee" {% if current_filters.date_filter_type == 'sortie_annee' %}selected{% endif %}>Sorti en (YYYY)</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="date_filter_value">Valeur Date A/S:</label>
+                    <input type="text" name="date_filter_value" id="date_filter_value" class="form-control" value="{{ current_filters.date_filter_value or '' }}" placeholder="Ex: 30, 2024, 2024-05-20">
+                </div>
+            </div>
+
+            <!-- Ligne Date de Visionnage -->
+            <div class="form-row">
+                <div class="filter-group">
+                    <label for="viewdate_filter_type">Date de Visionnage:</label>
+                    <select name="viewdate_filter_type" id="viewdate_filter_type" class="form-select">
+                        <option value="aucun" {% if not current_filters.viewdate_filter_type or current_filters.viewdate_filter_type == 'aucun' %}selected{% endif %}>-- Non Spécifié --</option>
+                        <option value="viewed_recent_days" {% if current_filters.viewdate_filter_type == 'viewed_recent_days' %}selected{% endif %}>Vu (X derniers jours)</option>
+                        <option value="viewed_after_date" {% if current_filters.viewdate_filter_type == 'viewed_after_date' %}selected{% endif %}>Vu après le...</option>
+                        <option value="viewed_before_date" {% if current_filters.viewdate_filter_type == 'viewed_before_date' %}selected{% endif %}>Vu avant le...</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label for="viewdate_filter_value">Valeur Date Visionnage:</label>
+                    <input type="text" name="viewdate_filter_value" id="viewdate_filter_value" class="form-control" value="{{ current_filters.viewdate_filter_value or '' }}" placeholder="Ex: 30, 2024-05-20">
+                </div>
+            </div>
+
+            <!-- Ligne des Boutons -->
+            <div class="button-row">
+                {# B.2: Simplified Reset Link - passes current selected_libs as query parameters #}
+                <a href="{{ url_for('plex_editor.show_library', selected_libs=selected_libs if selected_libs else None) }}" class="button reset-button">Réinitialiser</a>
+                <button type="submit" class="button">Appliquer les Filtres</button>
+            </div>
+                    {# ### BLOC POUR LES FILTRES INTELLIGENTS ### #}
+        {# On affiche ce bloc seulement si :
+           1. On visualise UNE SEULE bibliothèque (selected_libs|length == 1)
+           2. L'objet de cette bibliothèque existe et est de type 'show'
+        #}
+        {% if selected_libs and selected_libs|length == 1 and library_obj and library_obj.type == 'show' %}
+        <div class="mb-4 p-3 bg-light border rounded shadow-sm">
+            <h5 class="mb-3">Filtres Intelligents</h5>
+            <a href="{{ url_for('plex_editor.show_library', library_name=library_obj.title, special_filter='ready_to_watch') }}" class="btn btn-success">
+                <i class="fas fa-magic"></i> Séries Prêtes à Regarder
+            </a>
+            {# On pourra ajouter d'autres boutons ici plus tard, comme "Séries à continuer" #}
+        </div>
+        {% endif %}
+        {# ### FIN DU BLOC ### #}
+
+        <form method="GET" action="..." class="filter-form">
+            ...
+        </form>
+
+
+        {% if plex_error %}
+            <div class="alert alert-danger">{{ plex_error }}</div>
+        {% elif items is not none %}
+
+            <form id="bulk-delete-form" method="POST" action="{{ url_for('plex_editor.bulk_delete_items') }}">
+                <input type="hidden" name="current_library_name" value="{{ display_title }}">
+
+                {% if items %}
+                <div class="bulk-actions-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; padding: 10px; background-color: #f1f3f5; border-radius: 5px;">
+                    <div>
+                        <input type="checkbox" id="select-all-checkbox" style="margin-right: 10px; vertical-align: middle;">
+                        <label for="select-all-checkbox" style="font-weight: 500; cursor: pointer; vertical-align: middle;">Sélectionner Tout / Rien</label>
+                    </div>
+                    <button type="submit" id="bulk-delete-button" class="delete-button" style="background-color: #0d6efd; padding: 8px 15px;">
+                        Supprimer la Sélection (<span id="selected-count">0</span>)
+                    </button>
+                </div>
+                {% endif %}
+
+                <h2>Résultats ({{ items|length }}) :</h2>
+                <ul id="item-list">
+                    {% for item in items %}
+                        <li data-rating-key="{{ item.ratingKey }}"> {# Ajout d'un identifiant à la ligne #}
+                            <input type="checkbox" name="selected_item_keys" value="{{ item.ratingKey }}" class="item-checkbox" style="flex-shrink: 0; margin-right: 15px;">
+                            <div class="item-content" style="flex-grow: 1; display: flex; justify-content: space-between; align-items: center;">
+                                                                {# ### Le titre est maintenant un lien cliquable ### #}
+                                <a href="#"
+                                   class="item-title-link"
+                                   data-bs-toggle="modal"
+                                   data-bs-target="#detailsModal"
+                                   data-rating-key="{{ item.ratingKey }}"
+                                   title="Afficher les détails de {{ item.title }}">
+                                    {{ item.title }} {% if item.year %}({{ item.year }}){% endif %}
+                                </a>
+                                {# ### Fin de la modification ### #}
+                                <span class="item-details">
+                                    <span>Vu: <strong class="{{ 'watched-yes' if item.isWatched else 'watched-no' }}">{{ 'Oui' if item.isWatched else 'Non' }}</strong></span>
+                                    <span>Note: <strong>{{ item.userRating if item.userRating is not none else 'N/A' }}</strong></span>
+                                    <span>Ajouté: <strong>{{ item.addedAt.strftime('%d/%m/%Y') if item.addedAt else 'N/A' }}</strong></span>
+                                </span>
+                            </div>
+
+                            <div class="item-actions">
+                                {# Le bouton Supprimer est toujours disponible #}
+                                <form method="POST" action="{{ url_for('plex_editor.delete_item', rating_key=item.ratingKey) }}" onsubmit="return confirm('Êtes-vous sûr de vouloir supprimer définitivement : « {{ item.title }} » ?');">
+                                    <input type="hidden" name="current_library_name" value="{{ library_name }}">
+                                    <button type="submit" class="action-button delete-button" title="Supprimer de Plex et du disque dur">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </form>
+
+                                {# Le bouton Archiver Film n'est PAS affiché dans cette vue spéciale #}
+                                {% if item.type == 'movie' and view_mode != 'ready_to_watch' %}
+                                <button type="button" class="action-button archive-button archive-movie-btn"
+                                        data-bs-toggle="modal" data-bs-target="#archiveMovieModal"
+                                        data-rating-key="{{ item.ratingKey }}" data-title="{{ item.title|e }}"
+                                        {% if not item.isWatched %}disabled{% endif %} title="Archiver le film">
+                                    <i class="fas fa-archive"></i>
+                                </button>
+                                {% endif %}
+
+                                {% if item.type == 'show' %}
+                                    {# Le bouton Gérer Saisons n'est pas affiché en mode "Prêtes à Regarder" #}
+                                    {% if view_mode != 'ready_to_watch' %}
+                                    <a href="{{ url_for('plex_editor.manage_seasons', rating_key=item.ratingKey) }}"
+                                       class="action-button" style="background-color: #6f42c1; color: white;"
+                                       title="Gérer les saisons">
+                                        <i class="fas fa-list-ol"></i>
+                                    </a>
+                                    {% endif %}
+
+                                    {# Le bouton Archiver Série n'est pas affiché en mode "Prêtes à Regarder" #}
+                                    {% if view_mode != 'ready_to_watch' %}
+                                    <button type="button" class="action-button archive-show-btn"
+                                            style="background-color: #0dcaf0; color: #000;"
+                                            data-bs-toggle="modal" data-bs-target="#archiveShowModal"
+                                            data-rating-key="{{ item.ratingKey }}" data-title="{{ item.title|e }}"
+                                            data-leaf-count="{{ item.leafCount }}" data-viewed-leaf-count="{{ item.viewedLeafCount }}"
+                                            title="Archiver la série complète">
+                                        <i class="fas fa-tv"></i> <i class="fas fa-archive"></i>
+                                    </button>
+                                    {% endif %}
+
+                                    {# Le bouton Rejeter est TOUJOURS disponible pour les séries #}
+                                    <button type="button" class="action-button reject-show-btn"
+                                            style="background-color: #dc3545; color: white;"
+                                            data-bs-toggle="modal" data-bs-target="#rejectShowModal"
+                                            data-rating-key="{{ item.ratingKey }}" data-title="{{ item.title|e }}">
+                                        <i class="fas fa-thumbs-down"></i>
+                                    </button>
+                                {% endif %}
+                            </div>
+                        </li>
+                    {% else %}
+                        <li class="no-results">Aucun élément ne correspond aux filtres sélectionnés dans cette bibliothèque pour l'utilisateur <strong>{{ user_title }}</strong>.</li>
+                    {% endfor %}
+                </ul>
+
+                {% if items %}
+                <div class="bulk-actions-footer" style="display: flex; justify-content: flex-end; margin-top: 1rem;">
+                    <button type="submit" id="bulk-delete-button-footer" class="delete-button" style="background-color: #0d6efd; padding: 8px 15px;">
+                       Supprimer la Sélection (<span id="selected-count-footer">0</span>)
+                   </button>
+                </div>
+                {% endif %}
+            </form>
+
+        {% else %}
+             <div class="alert alert-warning">Aucun élément à afficher ou une erreur est survenue lors de la récupération des données.</div>
+        {% endif %}
+
+    </div> {# Fin .container #}
+
+    <!-- Archive Movie Confirmation Modal -->
+    <div class="modal fade" id="archiveMovieModal" tabindex="-1" aria-labelledby="archiveMovieModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="archiveMovieModalLabel">Archiver le film</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Vous êtes sur le point d'archiver le film : <strong id="archiveMovieModalTitle"></strong>.</p>
+                    <p>Veuillez confirmer les actions à effectuer :</p>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" value="" id="archiveDeleteFiles" checked>
+                        <label class="form-check-label" for="archiveDeleteFiles">
+                            <strong>Supprimer les fichiers</strong> du disque dur.
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" value="" id="archiveUnmonitor" checked>
+                        <label class="form-check-label" for="archiveUnmonitor">
+                            Marquer comme <strong>non surveillé</strong> dans Radarr.
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" value="" id="archiveAddTag" checked>
+                        <label class="form-check-label" for="archiveAddTag">
+                            Ajouter le tag <strong>'{{ config.RADARR_TAG_ON_ARCHIVE }}'</strong> dans Radarr.
+                        </label>
+                    </div>
+                    <div class="alert alert-warning mt-3" role="alert">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <strong>Attention :</strong> La suppression des fichiers est définitive.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="button" class="btn btn-primary" id="confirmArchiveMovieBtn">Confirmer l'archivage</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Fin Modale Film -->
+
+    <!-- ### NOUVELLE MODALE POUR LES SÉRIES ### -->
+    <div class="modal fade" id="archiveShowModal" tabindex="-1" aria-labelledby="archiveShowModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="archiveShowModalLabel">Archiver la Série Complète</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Vous êtes sur le point d'archiver la série : <strong id="archiveShowModalTitle"></strong>.</p>
+                    <p><strong>Conditions :</strong> Cette action n'est possible que si la série est considérée comme "Terminée" (Ended) dans Sonarr.</p>
+
+                    <div class="alert alert-info" role="alert">
+                        <span id="archiveShowModalEpisodeCount"></span> épisodes sur <span id="archiveShowModalTotalCount"></span> sont marqués comme vus.
+                    </div>
+
+                    <p>Veuillez confirmer les actions à effectuer :</p>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="archiveShowDeleteFiles" checked>
+                        <label class="form-check-label" for="archiveShowDeleteFiles">
+                            <strong>Supprimer tous les fichiers</strong> de la série du disque dur.
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="archiveShowUnmonitor" checked>
+                        <label class="form-check-label" for="archiveShowUnmonitor">
+                            Marquer la série comme <strong>non surveillée</strong> dans Sonarr.
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="archiveShowAddTag" checked>
+                        <label class="form-check-label" for="archiveShowAddTag">
+                            Ajouter les tags (ex: 'vu', 'vu-complet') dans Sonarr.
+                        </label>
+                    </div>
+                    <div class="alert alert-danger mt-3" role="alert">
+                        <i class="fas fa-skull-crossbones"></i>
+                        <strong>ACTION IRRÉVERSIBLE :</strong> La suppression de tous les épisodes est définitive.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="button" class="btn btn-info" id="confirmArchiveShowBtn">Confirmer l'archivage de la série</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- ### FIN NOUVELLE MODALE ### -->
+        <!-- Rejet Show Confirmation Modal -->
+    <div class="modal fade" id="rejectShowModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title">Rejeter la Série</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Vous êtes sur le point de rejeter et supprimer définitivement la série : <strong id="rejectShowModalTitle"></strong>.</p>
+                    <p>Actions qui seront effectuées :</p>
+                    <ul>
+                        <li>Les fichiers de la série seront <strong>supprimés</strong> du disque.</li>
+                        <li>La série sera marquée comme <strong>non surveillée</strong> dans Sonarr.</li>
+                        <li>Un tag (ex: 'rejeté') sera ajouté dans Sonarr.</li>
+                    </ul>
+                    <div class="alert alert-danger mt-3">
+                        <strong>ATTENTION :</strong> Cette action est irréversible !
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="button" class="btn btn-danger" id="confirmRejectShowBtn">Oui, rejeter et supprimer</button>
+                </div>
+            </div>
+        </div>
+    </div>
+        <!-- ================================================================== -->
+    <!-- ### NOUVELLE MODALE POUR LES DÉTAILS D'UN ITEM ### -->
+    <!-- ================================================================== -->
+    <div class="modal fade" id="detailsModal" tabindex="-1" aria-labelledby="detailsModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered"> {# On utilise une modale plus grande #}
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="detailsModalLabel">Détails</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="detailsModalContent" style="display: none;">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <img id="detailsModalPoster" src="" class="img-fluid rounded" alt="Affiche">
+                            </div>
+                            <div class="col-md-8">
+                                <h3 id="detailsModalTitle"></h3>
+                                <p class="text-muted">
+                                    <span id="detailsModalYear"></span>
+                                    <span class="mx-2">|</span>
+                                    <span id="detailsModalDuration"></span>
+                                    <span class="mx-2">|</span>
+                                    <span id="detailsModalRating"></span>
+                                </p>
+                                <p><strong>Genres :</strong> <span id="detailsModalGenres"></span></p>
+                                <h5>Résumé</h5>
+                                <p id="detailsModalSummary"></p>
+                            </div>
+                        </div>
+
+                        <!-- ### NOUVEAU BLOC D'INFOS POUR SÉRIES (initialement caché) ### -->
+                        <div id="detailsShowInfo" style="display: none;">
+                            <hr>
+                            <h5>Détails de la Série</h5>
+                            <ul class="list-unstyled">
+                                <li><strong>Statut Sonarr :</strong> <span id="detailsSonarrStatus" class="badge bg-primary"></span></li>
+                                <li><strong>Saisons (connues par Sonarr) :</strong> <span id="detailsSonarrSeasonCount"></span></li>
+                                <li><strong>Progression (Plex) :</strong> <span id="detailsPlexProgress"></span></li>
+                                <li><strong>Ajouté le :</strong> <span id="detailsAddedAt"></span></li>
+                                <li><strong>Sortie initiale :</strong> <span id="detailsFirstAired"></span></li>
+                            </ul>
+                        </div>
+                        <!-- ### FIN DU NOUVEAU BLOC ### -->
+
+                        <hr>
+                        <div>
+                            <h5>Acteurs</h5>
+                            <p id="detailsModalActors"></p>
+                            <!-- On va mettre les réalisateurs dans un conteneur pour pouvoir le cacher -->
+                            <div id="detailsDirectorsBlock">
+                                <h5>Réalisateur(s)</h5>
+                                <p id="detailsModalDirectors"></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- ### FIN DE LA MODALE DE DÉTAILS ### -->
+    {# Bootstrap 5 JS Bundle (pour la modale) #}
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    {# jQuery (si vous l'utilisez ailleurs, sinon on peut s'en passer) #}
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+    {# --- SCRIPT JAVASCRIPT POUR LA SUPPRESSION GROUPEE (Votre code existant) --- #}
+    {% if items is not none and items %}
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Votre code JS existant pour la suppression groupée va ici...
+            // (Laissé intact car il fonctionne bien)
+            const selectAllCheckbox = document.getElementById('select-all-checkbox');
+            const itemCheckboxes = document.querySelectorAll('.item-checkbox');
+            const bulkDeleteForm = document.getElementById('bulk-delete-form');
+            const bulkDeleteButton = document.getElementById('bulk-delete-button');
+            const bulkDeleteButtonFooter = document.getElementById('bulk-delete-button-footer');
+            const selectedCountSpan = document.getElementById('selected-count');
+            const selectedCountSpanFooter = document.getElementById('selected-count-footer');
+
+            function updateSelectedCount() {
+                let checkedCount = document.querySelectorAll('.item-checkbox:checked').length;
+                if (selectedCountSpan) selectedCountSpan.textContent = checkedCount;
+                if (selectedCountSpanFooter) selectedCountSpanFooter.textContent = checkedCount;
+            }
+
+            if (selectAllCheckbox) {
+                selectAllCheckbox.addEventListener('change', function(event) {
+                    itemCheckboxes.forEach(function(checkbox) {
+                        checkbox.checked = event.target.checked;
+                    });
+                    updateSelectedCount();
+                });
+            }
+
+            itemCheckboxes.forEach(function(checkbox) {
+                checkbox.addEventListener('change', function() {
+                    updateSelectedCount();
+                    if (selectAllCheckbox) {
+                        if (!this.checked) {
+                            selectAllCheckbox.checked = false;
+                        } else {
+                            let allChecked = true;
+                            itemCheckboxes.forEach(function(cb) {
+                                if (!cb.checked) allChecked = false;
+                            });
+                            selectAllCheckbox.checked = allChecked;
+                        }
+                    }
+                });
+            });
+
+            updateSelectedCount();
+
+            if (bulkDeleteForm) {
+                bulkDeleteForm.addEventListener('submit', function(event) {
+                    let checkedCount = document.querySelectorAll('.item-checkbox:checked').length;
+                    if (checkedCount === 0) {
+                        alert("Veuillez sélectionner au moins un élément à supprimer.");
+                        event.preventDefault();
+                        return false;
+                    }
+                    if (!confirm('Êtes-vous sûr de vouloir supprimer définitivement les ' + checkedCount + ' éléments sélectionnés ? Cette action est irréversible.')) {
+                        event.preventDefault();
+                        return false;
+                    }
+                    function updateButtonText(buttonElement) {
+                        if (buttonElement) {
+                            buttonElement.disabled = true;
+                            let textNode = Array.from(buttonElement.childNodes).find(node => node.nodeType === Node.TEXT_NODE && node.textContent.includes('Supprimer la Sélection'));
+                            if (textNode) {
+                                textNode.textContent = 'Suppression en cours... (';
+                            } else {
+                                buttonElement.innerHTML = 'Suppression en cours... (<span id="'+ (buttonElement.id.includes('footer') ? 'selected-count-footer' : 'selected-count') +'">'+checkedCount+'</span>)';
+                            }
+                        }
+                    }
+                    updateButtonText(bulkDeleteButton);
+                    updateButtonText(bulkDeleteButtonFooter);
+                });
+            }
+        });
+    </script>
+    {% endif %}
+
+    {# --- SCRIPT JAVASCRIPT POUR LA NOUVELLE FONCTIONNALITE D'ARCHIVAGE --- #}
+    <script src="{{ url_for('static', filename='js/plex_editor_ui.js') }}"></script>
+
+</body>
+</html>

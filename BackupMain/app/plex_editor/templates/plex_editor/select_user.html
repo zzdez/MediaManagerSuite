@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title }} - Editeur Plex</title>
+    <style>
+        /* Styles basiques pour la page de sélection */
+        body { font-family: sans-serif; margin: 0; padding: 0; background-color: #e9ecef; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .container { background-color: #fff; padding: 30px 40px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); text-align: center; max-width: 450px; width: 90%; }
+        h1 { margin-bottom: 25px; color: #343a40; }
+        .alert { padding: 15px; margin-bottom: 20px; border: 1px solid transparent; border-radius: 4px; text-align: left; font-size: 0.9rem; }
+        .alert-success { color: #0f5132; background-color: #d1e7dd; border-color: #badbcc; }
+        .alert-danger { color: #842029; background-color: #f8d7da; border-color: #f5c2c7; }
+        .alert-info { color: #055160; background-color: #cff4fc; border-color: #b6effb; }
+        .alert-warning { color: #664d03; background-color: #fff3cd; border-color: #ffecb5; }
+        label { display: block; margin-bottom: 8px; font-weight: bold; color: #495057; text-align: left; }
+        select { width: 100%; padding: 12px; margin-bottom: 25px; border: 1px solid #ced4da; border-radius: 4px; box-sizing: border-box; font-size: 1rem; background-color: #fff; -webkit-appearance: none; appearance: none; background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23007bff%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E'); background-repeat: no-repeat; background-position: right .7em top 50%; background-size: .65em auto; }
+        button { padding: 12px 25px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; transition: background-color 0.2s ease; width: 100%; }
+        button:hover { background-color: #0056b3; }
+        .error-message { color: #dc3545; margin-top: 15px; font-weight: bold;}
+        .user-list-info { margin-top: 20px; font-size: 0.9rem; color: #6c757d; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>{{ title }}</h1>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        {% if plex_error %}
+            <p class="error-message">Impossible de charger la liste des utilisateurs :<br>{{ plex_error }}</p>
+            <p class="user-list-info">Vérifiez votre connexion, l'URL et le Token Plex dans la configuration.</p>
+        {% elif users %}
+            <form method="POST" action="{{ url_for('plex_editor.index') }}" id="user-select-form">
+                <label for="user_select">Choisissez l'utilisateur Plex :</label>
+                <select name="user_id" id="user_select" required>
+                    <option value="" disabled selected hidden>-- Sélectionnez un utilisateur --</option>
+                    {% for user in users %}
+                        {# La valeur est l'ID, le texte affiché est le titre #}
+                        <option value="{{ user.id }}">{{ user.title }}</option>
+                    {% endfor %}
+                </select>
+                {# Champ caché pour stocker le titre sélectionné (rempli par JS) #}
+                <input type="hidden" name="user_title_hidden" id="user_title_hidden">
+
+                <button type="submit">Valider et Continuer</button>
+            </form>
+            <p class="user-list-info">Vous pourrez effectuer des actions pour l'utilisateur sélectionné.</p>
+        {% else %}
+            {# Cas où il n'y a pas d'erreur mais la liste est vide (peu probable avec compte principal) #}
+            <p class="error-message">Aucun utilisateur Plex trouvé sur le serveur.</p>
+             <p class="user-list-info">Assurez-vous que le serveur Plex est accessible et que le Token est correct.</p>
+        {% endif %}
+    </div>
+
+    <script>
+        const userSelect = document.getElementById('user_select');
+        const userTitleHidden = document.getElementById('user_title_hidden');
+        const userSelectForm = document.getElementById('user-select-form');
+
+        if (userSelect && userTitleHidden) {
+            // Fonction pour mettre à jour le champ caché
+            function updateUserTitleHidden() {
+                const selectedOption = userSelect.options[userSelect.selectedIndex];
+                // Mettre à jour seulement si une vraie option est sélectionnée (pas le placeholder)
+                if (selectedOption && userSelect.value) {
+                    userTitleHidden.value = selectedOption.text;
+                } else {
+                    userTitleHidden.value = ''; // Vider si placeholder sélectionné
+                }
+            }
+
+            // Mettre à jour au changement
+            userSelect.addEventListener('change', updateUserTitleHidden);
+
+            // Mettre à jour au chargement initial (au cas où le navigateur pré-remplit)
+             updateUserTitleHidden();
+        }
+
+         // Optionnel : Désactiver le bouton si aucune sélection
+         if(userSelectForm && userSelect){
+            const submitButton = userSelectForm.querySelector('button[type=submit]');
+            function toggleSubmitButton() {
+                if (userSelect.value) {
+                    submitButton.disabled = false;
+                    submitButton.style.opacity = '1';
+                } else {
+                    submitButton.disabled = true;
+                    submitButton.style.opacity = '0.6';
+                }
+            }
+            userSelect.addEventListener('change', toggleSubmitButton);
+            // État initial
+            toggleSubmitButton();
+         }
+    </script>
+
+</body>
+</html>

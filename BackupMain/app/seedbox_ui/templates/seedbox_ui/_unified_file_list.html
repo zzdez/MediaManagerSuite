@@ -1,0 +1,85 @@
+<table id="dashboard-table" class="table table-dark table-striped table-hover mt-3 align-middle">
+    <thead>
+        <tr>
+            <th scope="col" style="width: 5%;"><input type="checkbox" class="form-check-input" id="select-all-checkbox"></th>
+            <th scope="col" style="width: 10%;">Type</th>
+            <th scope="col" class="sortable-header" data-sort-by="name">Nom du Fichier</th>
+            <th scope="col" style="width: 15%;" class="sortable-header" data-sort-by="size" data-sort-type="size">Taille</th>
+            <th scope="col" class="sortable-header" data-sort-by="status">Statut</th>
+            <th scope="col" style="width: 20%;">Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for item in items %}
+        <tr>
+            <td><input type="checkbox" class="form-check-input item-checkbox" data-filename="{{ item.name }}"></td>
+            <td>
+                {% if item.app_type == 'sonarr' %}
+                    <span class="badge bg-primary fs-6">Série</span>
+                {% elif item.app_type == 'radarr' %}
+                    <span class="badge bg-success fs-6">Film</span>
+                {% endif %}
+            </td>
+            <td><code>{{ item.name }}</code></td>
+            <td>{{ item.size_human }}</td> {# Adapte si le nom de la variable de taille est différent #}
+            <td>
+                {# --- NOUVEAU BLOC DE LOGIQUE DE STATUT --- #}
+                {% set status = item.status or item.mms_info.status %} {# Gère les deux templates #}
+                {% set status_msg = item.status_message or item.mms_info.status_message %}
+
+                {% if status == 'completed_auto' or status in ['imported_by_sonarr', 'imported_by_radarr', 'imported_by_sonarr_manual', 'imported_by_radarr_manual'] %}
+                    <span class="badge bg-success">Traité (Auto)</span>
+                {% elif status == 'completed_manual' or status == 'imported_by_mms' %}
+                    <span class="badge bg-info">Traité (MMS)</span>
+                {% elif status == 'processed_manual' %}
+                    <span class="badge bg-secondary">Traité (Ignoré)</span>
+                {% elif status == 'in_staging' %}
+                    <span class="badge bg-primary">En Staging</span>
+                {% elif status == 'pending_staging' %}
+                    <span class="badge" style="background-color: #6f42c1;">Prêt à Rapatrier</span> {# Mauve #}
+                {% elif status == 'pending_download' %}
+                    <span class="badge bg-warning text-dark">En Attente</span>
+                {% elif 'error' in status %}
+                    <span class="badge bg-danger">Erreur</span>
+                    <small class="d-block text-muted" title="{{ status_msg }}">{{ status }}</small>
+                {% elif status == 'unknown' %}
+                    <span class="badge bg-secondary">Inconnu</span>
+                {% else %}
+                    <span class="badge bg-dark">{{ status or 'Inconnu' }}</span>
+                {% endif %}
+            </td>
+            <td>
+                {# Point CRUCIAL : les data-attributes pour le JS #}
+                <button class="btn btn-sm btn-info map-and-repatriate-btn"
+                        data-filename="{{ item.name }}"
+                        data-app-type="{{ item.app_type }}">
+                    <i class="bi bi-diagram-3-fill"></i> Mapper & Rapatrier
+                </button>
+                {# BLOC DE CODE À AJOUTER #}
+                {% if item.status == 'pending_staging' or item.status == 'error_rapatriation' %}
+                    <button class="btn btn-sm btn-outline-primary repatriate-btn"
+                            data-hash="{{ item.torrent_hash }}"
+                            title="Télécharger cet item vers le dossier de staging local">
+                        <i class="bi bi-cloud-download"></i> Rapatrier
+                    </button>
+                {% endif %}
+
+                {% if item.status not in ['completed_auto', 'completed_manual', 'processed_manual'] %}
+                    <button class="btn btn-sm btn-outline-success mark-processed-btn"
+                            data-hash="{{ item.torrent_hash }}"
+                            title="Marquer ce torrent comme traité manuellement (ne sera plus processé)">
+                        <i class="bi bi-check-circle"></i> Traité
+                    </button>
+                {% endif %}
+                <button class="btn btn-sm btn-danger delete-btn">
+                    <i class="bi bi-trash-fill"></i>
+                </button>
+            </td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="5" class="text-center py-4">Aucun fichier terminé trouvé. Le dossier est vide ou le scan n'a pas pu être effectué.</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>

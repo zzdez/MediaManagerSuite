@@ -1,0 +1,850 @@
+{% extends "layout.html" %}
+
+{% block title %}Seedbox Staging UI - MediaManagerSuite{% endblock %}
+
+{% block head_styles %}
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" integrity="sha512-Fo3rlrZj/k7ujTnHg4CGR2D7kSs0v4LLanw2qksYuRlEzO+tcaEPQogQ0KaoGN26/zrn20ImR1DfuLWnOo7aBA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>
+        /* Styles specific to seedbox_ui/index.html */
+        .action-buttons form, .action-buttons button { margin-right: 3px; margin-bottom: 3px; }
+        ul.file-tree, ul.children-list { list-style-type: none; padding-left: 0; }
+        .file-tree li > div { display: flex; align-items: flex-start; padding: 0.25rem 0.5rem; border-bottom: 1px solid #eee; }
+        .file-tree li > div:hover { background-color: #f8f9fa; }
+        .file-tree .toggle-children { cursor: pointer; color: #0d6efd; text-decoration: none; }
+        .file-tree .toggle-children i { transition: transform 0.2s ease-in-out; }
+        .file-tree .icon-container { width: 25px; text-align: center; flex-shrink: 0; }
+        .file-tree .item-name-details { flex-grow: 1; margin-left: 5px; word-break: break-all; }
+        .file-tree .item-actions { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; }
+        .file-tree .btn-sm { padding: 0.15rem 0.3rem; font-size: 0.75rem; }
+        .modal-lg { max-width: 800px; }
+        .btn-toolbar .btn { margin-right: 0.5rem; margin-bottom: 0.5rem;}
+    </style>
+{% endblock %}
+
+{% block content %}
+{% macro render_tree_node(node, can_scan_sonarr, can_scan_radarr, level=0) %}
+  <li style="margin-left: {{ level * 20 }}px;">
+    <div class="tree-node-item d-flex align-items-center">
+      <span style="width: 25px; flex-shrink: 0; text-align: center;">
+          {% if level == 0 %}
+              <input type="checkbox" class="form-check-input staging-item-checkbox"
+                     value="{{ node.path_for_actions }}"
+                     aria-label="Sélectionner {{ node.name }}"
+                     style="margin-top: 0; vertical-align: middle;">
+          {% endif %}
+       </span>
+      <span class="icon-container" style="width: 25px; text-align: center; flex-shrink: 0;">
+        {% if node.is_dir and node.children %}
+          <a href="#" class="toggle-children me-1" data-bs-toggle="tooltip" title="Déplier/Replier"><i class="fas fa-plus-square"></i></a>
+        {% elif node.is_dir %}
+          <i class="fas fa-folder text-warning me-1"></i>
+        {% else %}
+          <i class="fas fa-file text-info me-1"></i>
+        {% endif %}
+      </span>
+      <span class="item-name-details flex-grow-1" title="{{ node.name }}">
+         {{ node.name }}
+         <small class="text-muted" style="font-size: 0.8em;">
+             ({{ node.size_readable if node.size_readable else 'N/A' }}, {{ node.last_modified if node.last_modified else 'N/A' }})
+         </small>
+         {% if node.association %}
+            <div class="mt-1">
+                <span class="badge {% if node.association.app_type == 'sonarr' %}bg-primary{% elif node.association.app_type == 'radarr' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                    <i class="fas fa-link"></i> Associé: {{ node.association.app_type | capitalize }} (ID: {{ node.association.target_id }})
+                </span>
+                <small class="text-muted d-block">Label rTorrent: {{ node.association.label }}</small>
+                {% if node.association.torrent_hash %}
+                    <small class="text-muted d-block" title="Hash: {{ node.association.torrent_hash }}">Hash: {{ node.association.torrent_hash | truncate(10) }}...</small>
+                {% elif node.association.release_name %}
+                    <small class="text-muted d-block">Release: {{ node.association.release_name | truncate(20) }}</small>
+                {% endif %}
+                {% if node.association.status %}
+                    <small class="text-muted d-block">Statut: {{ node.association.status | replace('_', ' ') | capitalize }}</small>
+                {% endif %}
+                <small class="text-muted d-block">Ajouté: {{ node.association.added_at.split('.')[0].replace('T', ' ') if node.association.added_at else 'N/A' }}</small>
+            </div>
+         {% endif %}
+      </span>
+      <div class="action-buttons item-actions ms-auto">
+         {% if not node.name.endswith("(Erreur de lecture)") %}
+             {% if level == 0 %}
+                {% if can_scan_sonarr %}
+                <button class="btn btn-sm btn-outline-primary mb-1 open-map-modal-btn"
+                        data-bs-target="#sonarrSearchModal"
+                        data-item-path="{{ node.path_for_actions }}"
+                        data-item-type="{{ 'directory' if node.is_dir else 'file' }}"
+                        data-app-type="sonarr"
+                        title="Rechercher et mapper manuellement avec Sonarr"
+                        onclick="openSonarrSearchModal('{{ node.path_for_actions | e }}', '{{ 'directory' if node.is_dir else 'file' }}')">
+                    <i class="fas fa-search"></i> <span class="d-none d-md-inline">Mapper Sonarr</span>
+                </button>
+
+                <button class="btn btn-sm btn-outline-warning text-dark mb-1 open-map-modal-btn"
+                        data-bs-target="#radarrSearchModal"
+                        data-item-path="{{ node.path_for_actions }}"
+                        data-item-type="{{ 'directory' if node.is_dir else 'file' }}"
+                        data-app-type="radarr"
+                        title="Rechercher et mapper manuellement avec Radarr"
+                        onclick="openRadarrSearchModal('{{ node.path_for_actions | e }}', '{{ 'directory' if node.is_dir else 'file' }}')">
+                    <i class="fas fa-search"></i> <span class="d-none d-md-inline">Mapper Radarr</span>
+                </button>
+                {% endif %}
+                <form action="{{ url_for('seedbox_ui.delete_item', item_name=node.path_for_actions) }}" method="POST" style="display: inline-block;" onsubmit="return confirm('Supprimer \'{{ node.name | e }}\' ? Cette action est irréversible et supprimera tout le contenu.');">
+                    <button type="submit" class="btn btn-sm btn-danger mb-1" title="Supprimer l'item et son contenu du staging">
+                        <i class="fas fa-trash-alt"></i> <span class="d-none d-md-inline">Suppr.</span>
+                    </button>
+                </form>
+                {% if node.is_dir %}
+                <form action="{{ url_for('seedbox_ui.cleanup_staging_item_action', item_name=node.path_for_actions) }}" method="POST" style="display: inline-block;" onsubmit="return confirm('Nettoyer le dossier \'{{ node.name | e }}\' ?\n\nCeci va :\n1. Supprimer les fichiers orphelins (ex: .nfo, .txt) à l\'intérieur.\n2. Supprimer les sous-dossiers qui deviendraient vides.\n3. Supprimer le dossier principal \'{{ node.name | e }}\' lui-même s\'il devient vide ou ne contient plus que des orphelins (maintenant supprimés).\n\nLes fichiers vidéo ou autres fichiers non-orphelins ne seront PAS supprimés par cette action.');">
+                    <button type="submit" class="btn btn-sm btn-warning mb-1" title="Nettoyer le dossier (supprime orphelins et dossiers vides récursivement)">
+                        <i class="fas fa-broom"></i> <span class="d-none d-md-inline">Nettoyer</span>
+                    </button>
+                </form>
+                {% endif %}
+                {% if node.association %}
+                    <form method="POST" action="{{ url_for('seedbox_ui.process_staged_with_association', item_name_in_staging=node.path_for_actions) }}" style="display: inline-block;" onsubmit="return confirm('Lancer l\'importation de \'{{ node.name | e }}\' en utilisant la pré-association ?');">
+                        <button type="submit" class="btn btn-sm btn-success mb-1" title="Lancer l'importation en utilisant la pré-association">
+                            <i class="fas fa-magic"></i> <span class="d-none d-md-inline">Importer (Associé)</span>
+                        </button>
+                    </form>
+                {% endif %}
+             {% endif %}
+         {% endif %}
+      </div>
+    </div>
+    {% if node.is_dir and node.children %}
+      <ul class="children-list" style="display: none;">
+        {% for child_node in node.children %}
+          {{ render_tree_node(child_node, can_scan_sonarr, can_scan_radarr, level + 1) }}
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </li>
+{% endmacro %}
+
+<div class="container-fluid mt-4">
+    <header class="pb-3 mb-4 border-bottom">
+        <a href="{{ url_for('seedbox_ui.index') }}" class="d-flex align-items-center text-dark text-decoration-none">
+            <span class="fs-4">MediaManagerSuite - Tableau de Bord Seedbox</span>
+        </a>
+    </header>
+
+    <div class="d-flex justify-content-end mb-3">
+        <div class="btn-toolbar" role="toolbar" aria-label="Toolbar with button groups">
+            <button type="button" class="btn btn-success btn-md" data-bs-toggle="modal" data-bs-target="#addTorrentModal">
+                <i class="bi bi-plus-circle-fill"></i> Ajouter un Torrent
+            </button>
+            <form action="{{ url_for('seedbox_ui.trigger_sftp_scanner_route') }}" method="POST" style="display: inline;">
+                <button type="submit" class="btn btn-info btn-md" title="Lance manuellement le scan des torrents terminés sur la seedbox. Utile pour accélérer la détection de nouveaux items sans attendre le cycle automatique.">
+                    <i class="bi bi-broadcast"></i> Lancer le Scan des Torrents
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <ul class="nav nav-tabs mb-3" id="mainTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="rtorrent-view-tab" data-bs-toggle="tab" data-bs-target="#rtorrent-view-content" type="button" role="tab" aria-controls="rtorrent-view-content" aria-selected="true">
+                <i class="bi bi-hdd-stack"></i> Vue rTorrent
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="dashboard-tab" data-bs-toggle="tab" data-bs-target="#dashboard-content" type="button" role="tab" aria-controls="dashboard-content" aria-selected="false">
+                <i class="bi bi-folder-symlink"></i> Vue Staging
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="maintenance-tab" data-bs-toggle="tab" data-bs-target="#maintenance-content" type="button" role="tab" aria-controls="maintenance-content" aria-selected="false">
+                <i class="bi bi-tools"></i> Maintenance
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content" id="mainTabsContent">
+        <div class="tab-pane fade show active" id="rtorrent-view-content" role="tabpanel" aria-labelledby="rtorrent-view-tab">
+            <div class="text-center mt-5" id="rtorrent-loader">
+                <div class="spinner-border text-info" style="width: 3rem; height: 3rem;" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2">Chargement de la liste des torrents depuis rTorrent...</p>
+            </div>
+            <div id="rtorrent-content-container"></div>
+        </div>
+
+        <div class="tab-pane fade" id="dashboard-content" role="tabpanel" aria-labelledby="dashboard-tab">
+            <div class="d-flex justify-content-between align-items-center mt-3 mb-3">
+                <h3><i class="bi bi-folder2-open"></i> Staging Local MediaManagerSuite : <code>{{ staging_dir_display or 'Non configuré' }}</code></h3>
+                <div>
+                    <button id="batchMapToSonarrBtn" class="btn btn-sm btn-primary me-2" onclick="openBatchSonarrMapModal()" title="Mapper les items sélectionnés du staging à une série Sonarr" disabled>
+                        <i class="fas fa-object-group"></i> Mapper Sélection vers Sonarr
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary" onclick="location.reload()">
+                        <i class="bi bi-arrow-clockwise"></i> Actualiser Staging
+                    </button>
+                </div>
+            </div>
+            {% if items_tree %}
+                <ul class="file-tree">
+                    {% for root_node in items_tree %}
+                        {{ render_tree_node(root_node, can_scan_sonarr, can_scan_radarr, 0) }}
+                    {% endfor %}
+                </ul>
+            {% elif not get_flashed_messages(category_filter=['danger']) %}
+                <div class="alert alert-info mt-3 text-center" role="alert">
+                    <i class="bi bi-info-circle-fill"></i> Le dossier de staging est vide, non configuré, ou inaccessible.
+                </div>
+            {% endif %}
+
+        </div>
+
+        <div class="tab-pane fade" id="maintenance-content" role="tabpanel" aria-labelledby="maintenance-tab">
+            <h4 class="mt-3 mb-3"><i class="bi bi-tools"></i> Outils de Maintenance</h4>
+
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h5 class="mb-0">Gestion des Files d'Attente *Arr</h5>
+                </div>
+                <div class="card-body">
+                    <p class="card-text">Visualiser et nettoyer les éléments potentiellement bloqués dans les files d'attente de Sonarr et Radarr.</p>
+                    <button class="btn btn-primary" id="load-arr-queue-btn" type="button">
+                        <i class="bi bi-hourglass-split"></i> Charger le Gestionnaire
+                    </button>
+                    <div class="text-center mt-3" id="arr-queue-loader" style="display: none;">
+                        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Chargement...</span></div>
+                        <p class="mt-2">Chargement du gestionnaire des files d'attente...</p>
+                    </div>
+                    <div id="arr-queue-container" class="mt-3"></div>
+                </div>
+            </div>
+
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h5 class="mb-0">Nettoyage des Dossiers de Travail Seedbox (SFTP)</h5>
+                </div>
+                <div class="card-body">
+                    <p class="card-text">Lister le contenu et potentiellement supprimer les fichiers/dossiers orphelins ou inutiles dans les dossiers de travail distants de Sonarr et Radarr sur la seedbox.</p>
+                    <div class="btn-group mb-3" role="group" aria-label="Charger dossiers de travail">
+                        <button class="btn btn-info" id="load-sonarr-workdir-btn" type="button">
+                            <i class="bi bi-tv"></i> Sonarr (Dossier Travail)
+                        </button>
+                        <button class="btn btn-success" id="load-radarr-workdir-btn" type="button">
+                            <i class="bi bi-film"></i> Radarr (Dossier Travail)
+                        </button>
+                    </div>
+                    <div class="text-center mt-3" id="workdir-loader" style="display: none;">
+                        <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Chargement...</span></div>
+                        <p class="mt-2">Chargement des dossiers de travail...</p>
+                    </div>
+                    <div id="workdir-container" class="mt-3">
+                        <!-- Le contenu de remote_seedbox_list.html pour sonarr_working ou radarr_working sera chargé ici -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Vous pouvez ajouter d'autres cartes ici pour d'autres outils de maintenance -->
+        </div>
+    </div>
+</div>
+
+{% include "seedbox_ui/_modals.html" %}
+{% endblock %}
+
+{% block scripts %}
+    {{ super() }}
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+    <script>
+        window.appUrls = {
+            searchSonarrApi: "{{ url_for('seedbox_ui.search_sonarr_api') }}",
+            searchRadarrApi: "{{ url_for('seedbox_ui.search_radarr_api') }}",
+            triggerSonarrImport: "{{ url_for('seedbox_ui.trigger_sonarr_import') }}",
+            triggerRadarrImport: "{{ url_for('seedbox_ui.trigger_radarr_import') }}",
+            forceSonarrImport: "{{ url_for('seedbox_ui.force_sonarr_import_action') }}",
+            rtorrentAddTorrent: "{{ url_for('seedbox_ui.rtorrent_add_torrent_action') }}",
+            getSonarrRootfolders: "{{ url_for('seedbox_ui.get_sonarr_rootfolders_api') }}",
+            getSonarrQualityprofiles: "{{ url_for('seedbox_ui.get_sonarr_qualityprofiles_api') }}",
+            getRadarrRootfolders: "{{ url_for('seedbox_ui.get_radarr_rootfolders_api') }}",
+            getRadarrQualityprofiles: "{{ url_for('seedbox_ui.get_radarr_qualityprofiles_api') }}",
+            batchMapToSonarrSeries: "{{ url_for('seedbox_ui.batch_map_to_sonarr_series_action') }}",
+            rtorrentMapSonarr: "{{ url_for('seedbox_ui.rtorrent_map_sonarr') }}",
+            rtorrentMapRadarr: "{{ url_for('seedbox_ui.rtorrent_map_radarr') }}",
+            searchTvdbEnriched: '{{ url_for("seedbox_ui.search_tvdb_enriched") }}',
+            searchTmdbEnriched: '{{ url_for("seedbox_ui.search_tmdb_enriched") }}',
+            getTorrentFiles: "{{ url_for('seedbox_ui.get_rtorrent_torrent_files', torrent_hash='__HASH__') }}"
+        };
+    </script>
+    <script src="{{ url_for('static', filename='js/seedbox_ui_modals.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/rtorrent_ui.js') }}"></script>
+<script>
+    // ==================================================================== //
+    // --- SCRIPT SPÉCIFIQUE À LA PAGE SEEDBOX/INDEX.HTML (VERSION STABLE) ---
+    // ==================================================================== //
+
+    let isRtorrentContentLoaded = false;
+    function loadRtorrentView() {
+        if (isRtorrentContentLoaded) return;
+
+        const contentContainer = document.getElementById('rtorrent-content-container');
+        const loader = document.getElementById('rtorrent-loader');
+        const url = "{{ url_for('seedbox_ui.rtorrent_list_view') }}";
+
+        if (!contentContainer || !loader) {
+            console.error("rTorrent container or loader not found.");
+            return;
+        }
+
+        loader.style.display = 'block';
+        contentContainer.innerHTML = '';
+
+        fetch(url)
+            .then(res => res.ok ? res.text() : Promise.reject(new Error('Erreur réseau')))
+            .then(html => {
+                contentContainer.innerHTML = html;
+                isRtorrentContentLoaded = true;
+            })
+            .catch(err => {
+                contentContainer.innerHTML = `<div class="alert alert-danger">${err.message}</div>`;
+            })
+            .finally(() => {
+                loader.style.display = 'none';
+            });
+    }
+
+    // --- SECTION 1 : DÉFINITION DE TOUTES LES FONCTIONS "HELPER" ---
+
+    let selectedStagingItemsForBatch = [];
+
+    function updateBatchActionButtonState() {
+        const batchMapButton = document.getElementById('batchMapToSonarrBtn');
+        const stagingItemCheckboxes = document.querySelectorAll('.staging-item-checkbox');
+        selectedStagingItemsForBatch = [];
+        stagingItemCheckboxes.forEach(checkbox => {
+            if (checkbox.checked) {
+                selectedStagingItemsForBatch.push(checkbox.value);
+            }
+        });
+        if (batchMapButton) {
+            batchMapButton.disabled = selectedStagingItemsForBatch.length === 0;
+        }
+    }
+
+    function openBatchSonarrMapModal() {
+        updateBatchActionButtonState();
+        if (selectedStagingItemsForBatch.length === 0) {
+            alert("Veuillez sélectionner au moins un item du staging.");
+            return;
+        }
+        console.log("Batch Map (Staging): Ouvrir modal pour items:", selectedStagingItemsForBatch);
+        const sonarrModalElement = document.getElementById('sonarrSearchModal');
+        if (!sonarrModalElement) {
+            console.error("Modal Sonarr (ID: sonarrSearchModal) non trouvé !");
+            return;
+        }
+        sonarrModalElement.setAttribute('data-current-action', 'batchMapStaging');
+        document.getElementById('sonarrSearchQuery').value = '';
+        document.getElementById('sonarrSearchResults').innerHTML = `<p class="text-muted">Recherchez une série Sonarr pour mapper les <strong>${selectedStagingItemsForBatch.length} items</strong> sélectionnés du staging.</p>`;
+        document.getElementById('sonarrSelectedSeriesId').value = '';
+        document.getElementById('sonarrSelectedSeriesTitle').innerText = 'Aucune série sélectionnée';
+        document.getElementById('sonarrManualSeasonDiv').style.display = 'none';
+        if (typeof currentlySelectedSonarrSeriesIdInModal !== 'undefined') {
+             currentlySelectedSonarrSeriesIdInModal = null;
+        }
+        const modalMapButton = document.getElementById('sonarrModalMapButton');
+        if (modalMapButton) {
+            modalMapButton.innerHTML = '<i class="fas fa-object-group"></i> Mapper Sélection à cette Série';
+            modalMapButton.disabled = true;
+            modalMapButton.className = 'btn btn-primary';
+            modalMapButton.onclick = function() {
+                const seriesId = document.getElementById('sonarrSelectedSeriesId').value;
+                if (seriesId) {
+                    triggerBatchSonarrMapAction(seriesId);
+                } else {
+                    alert("Veuillez d'abord rechercher et sélectionner une série Sonarr.");
+                }
+            };
+        }
+        var modal = new bootstrap.Modal(sonarrModalElement);
+        modal.show();
+    }
+
+    async function triggerBatchSonarrMapAction(selectedSeriesIdForBatch) {
+        updateBatchActionButtonState();
+        if (!selectedSeriesIdForBatch) {
+            alert("Aucune série Sonarr n'a été sélectionnée.");
+            return;
+        }
+        if (selectedStagingItemsForBatch.length === 0) {
+            alert("Aucun item du staging n'est sélectionné pour le mappage groupé.");
+            return;
+        }
+        const payload = {
+            item_names: selectedStagingItemsForBatch,
+            series_id: parseInt(selectedSeriesIdForBatch)
+        };
+        const resultsDivInModal = document.getElementById('sonarrSearchResults');
+        if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-info">Traitement groupé pour le staging en cours (${selectedStagingItemsForBatch.length} items)...</div>`;
+        const modalMapButton = document.getElementById('sonarrModalMapButton');
+        if(modalMapButton) modalMapButton.disabled = true;
+        try {
+            const response = await fetch(window.appUrls.batchMapToSonarrSeries, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            const result = await response.json();
+            if (response.ok && result.success) {
+                let message = `Traitement groupé du staging terminé. ${result.processed_count || 0} items traités.`;
+                if (result.errors_count && result.errors_count > 0) {
+                    message += ` ${result.errors_count} items ont échoué ou nécessité une attention.`;
+                }
+                if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-${(result.errors_count && result.errors_count > 0) ? 'warning' : 'success'}">${escapeJsString(message)}</div>`;
+                if (typeof flashMessageGlobally === "function" && typeof escapeJsString === "function") {
+                    flashMessageGlobally(message, (result.errors_count && result.errors_count > 0) ? 'warning' : 'success');
+                } else {
+                    alert(message);
+                }
+                setTimeout(() => {
+                    const modalInstance = bootstrap.Modal.getInstance(document.getElementById('sonarrSearchModal'));
+                    if (modalInstance) modalInstance.hide();
+                    window.location.reload();
+                }, 3500);
+            } else {
+                throw new Error(result.error || `Erreur HTTP ${response.status}`);
+            }
+        } catch (error) {
+            const errorMessage = (typeof escapeJsString === "function") ? escapeJsString(error.message) : error.message;
+            if(resultsDivInModal) resultsDivInModal.innerHTML = `<div class="alert alert-danger">Erreur: ${errorMessage}</div>`;
+            if (typeof flashMessageGlobally === "function") {
+                flashMessageGlobally(`Erreur lors du mapping groupé du staging: ${errorMessage}`, 'danger');
+            } else {
+                 alert(`Erreur lors du mapping groupé du staging: ${errorMessage}`);
+            }
+        } finally {
+             if(modalMapButton) modalMapButton.disabled = false;
+        }
+    }
+
+    function updateArrDeleteButtonState(arrType) {
+        const container = document.querySelector('#arr-queue-container');
+        if (!container) return;
+        const form = document.querySelector(`#${arrType}QueueForm`);
+        if (!form) return;
+        const checkedCheckboxes = form.querySelectorAll(`.arr-item-checkbox:checked`);
+        const deleteButton = form.querySelector(`button[name="delete_${arrType}_selection"]`);
+        if (deleteButton) deleteButton.disabled = checkedCheckboxes.length === 0;
+    }
+
+    function handleArrDelete(form, arrType) {
+        const selectedCheckboxes = form.querySelectorAll('input[name="selected_item_ids"]:checked');
+        if (selectedCheckboxes.length === 0) { alert('Veuillez sélectionner au moins un élément.'); return; }
+        const selectedIds = Array.from(selectedCheckboxes).map(cb => cb.value);
+        const removeFromClientCheckbox = form.querySelector(`input[name^="removeFromClient"]`);
+        const removeFromClient = removeFromClientCheckbox ? removeFromClientCheckbox.checked : false;
+        const url = form.action;
+        const dataToSend = { ids: selectedIds, removeFromClient: removeFromClient };
+        const container = document.querySelector('#arr-queue-container');
+        if(container) container.innerHTML = `<div class="text-center mt-5"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div><p>Suppression en cours...</p></div>`;
+        fetch(url, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(dataToSend) })
+            .then(response => response.json().then(data => ({ ok: response.ok, data })))
+            .then(({ ok, data }) => {
+                if (ok) {
+                    if (data.message) alert(data.message);
+                    document.querySelector('#load-arr-queue-btn')?.click();
+                } else { throw new Error(data.message || 'Erreur du serveur'); }
+            })
+            .catch(error => {
+                alert(`Erreur: ${error.message}`);
+                document.querySelector('#load-arr-queue-btn')?.click();
+            });
+    }
+
+    function updateWorkdirDeleteButtonState() {
+        const container = document.querySelector('#workdir-container');
+        if (!container) return;
+        const checkedCheckboxes = container.querySelectorAll('.workdir-item-checkbox:checked');
+        const deleteButton = container.querySelector('#delete-workdir-selection-btn');
+        if (deleteButton) deleteButton.disabled = checkedCheckboxes.length === 0;
+    }
+
+    function handleWorkdirDelete(button) {
+        const container = document.querySelector('#workdir-container');
+        if (!container) return;
+        const checkedCheckboxes = container.querySelectorAll('.workdir-item-checkbox:checked');
+        if (checkedCheckboxes.length === 0) { alert('Veuillez sélectionner au moins un élément à supprimer.'); return; }
+        if (!confirm(`Êtes-vous sûr de vouloir supprimer ${checkedCheckboxes.length} élément(s) de la seedbox ? Cette action est irréversible.`)) { return; }
+        const appType = container.dataset.appType;
+        if (!appType) { alert('Erreur : Type d\'application (Sonarr/Radarr) non trouvé.'); return; }
+        const itemsToDelete = Array.from(checkedCheckboxes).map(cb => ({ path: cb.dataset.path, type: cb.dataset.type }));
+        const url = `{{ url_for('seedbox_ui.sftp_delete_items_action', app_type='__DUMMY__') }}`.replace('__DUMMY__', appType);
+        fetch(url, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ items: itemsToDelete, app_type_source: appType + '_working' }) })
+            .then(response => response.json().then(data => ({ ok: response.ok, data })))
+            .then(({ ok, data }) => {
+                if (ok) {
+                    alert(data.message || 'Suppression réussie !');
+                    document.querySelector(`#load-${appType}-workdir-btn`)?.click();
+                } else { throw new Error(data.error || 'Une erreur est survenue.'); }
+            })
+            .catch(error => alert(`Erreur: ${error.message}`));
+    }
+
+    // --- SECTION 2 : LE CŒUR DE L'EXÉCUTION ---
+    function handleProblematicItemMapClick(button) {
+        const appType = button.dataset.appType;
+        const releaseName = button.dataset.releaseName;
+        const torrentHash = button.dataset.torrentHash;
+        if (appType === 'sonarr') {
+            openSonarrSearchModalForProblemItem(releaseName, null, torrentHash);
+        } else if (appType === 'radarr') {
+            openRadarrSearchModalForProblemItem(releaseName, null, torrentHash);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+
+        // --- Initialisation Générale ---
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.map(function (tooltipTriggerEl) { return new bootstrap.Tooltip(tooltipTriggerEl); });
+
+        // --- Logique pour la persistance de l'onglet actif ---
+        const allTabs = document.querySelectorAll('button[data-bs-toggle="tab"]');
+        allTabs.forEach(tab => {
+            tab.addEventListener('shown.bs.tab', function (event) {
+                sessionStorage.setItem('activeTabId', event.target.id);
+            });
+        });
+
+        const activeTabId = sessionStorage.getItem('activeTabId');
+        if (activeTabId) {
+            const tabEl = document.getElementById(activeTabId);
+            if (tabEl) {
+                new bootstrap.Tab(tabEl).show();
+            }
+        } else {
+            // Default to rTorrent tab if nothing is stored
+            const rtorrentTabEl = document.getElementById('rtorrent-view-tab');
+            if (rtorrentTabEl) {
+                new bootstrap.Tab(rtorrentTabEl).show();
+            }
+        }
+
+        // --- Chargement initial de la vue rTorrent si elle est active ---
+        // This needs to run after the tab persistence logic.
+        if (!activeTabId || activeTabId === 'rtorrent-view-tab') {
+            loadRtorrentView();
+        }
+        
+        const addTorrentModalEl = document.getElementById('addTorrentModal');
+        if (addTorrentModalEl && typeof initializeAddTorrentModal === 'function') {
+            addTorrentModalEl.addEventListener('show.bs.modal', initializeAddTorrentModal);
+        }
+
+        // --- Logique pour le Batch Mapping du Staging ---
+        const batchMapButton = document.getElementById('batchMapToSonarrBtn');
+        const stagingItemCheckboxes = document.querySelectorAll('.staging-item-checkbox');
+        stagingItemCheckboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', updateBatchActionButtonState);
+        });
+        if (batchMapButton) {
+            updateBatchActionButtonState();
+        }
+
+        // --- Logique pour déplier/replier l'arbre de fichiers ---
+        document.querySelectorAll('.file-tree .toggle-children').forEach(toggler => {
+            toggler.addEventListener('click', function (event) {
+                event.preventDefault();
+                const childrenList = this.closest('li').querySelector('.children-list');
+                const icon = this.querySelector('i');
+                if (childrenList) {
+                    const isHidden = childrenList.style.display === 'none' || childrenList.style.display === '';
+                    childrenList.style.display = isHidden ? 'block' : 'none';
+                    icon.classList.toggle('fa-plus-square', !isHidden);
+                    icon.classList.toggle('fa-minus-square', isHidden);
+                }
+            });
+        });
+
+        // --- Logique pour le chargement dynamique de contenu ---
+        function loadDynamicContent(buttonId, containerId, loaderId, url, appType = null) {
+            const button = document.getElementById(buttonId);
+            const container = document.getElementById(containerId);
+            const loader = document.getElementById(loaderId);
+            if (!button || !container || !loader) {
+                console.error(`Missing elements for loader: ${buttonId}, ${containerId}, ${loaderId}`);
+                return;
+            }
+            button.addEventListener('click', function() {
+                if (appType) {
+                    container.dataset.appType = appType;
+                }
+                loader.style.display = 'block';
+                container.innerHTML = '';
+                fetch(url)
+                    .then(response => response.ok ? response.text() : Promise.reject(new Error(`Erreur réseau ${response.status}`)))
+                    .then(html => { container.innerHTML = html; })
+                    .catch(error => { container.innerHTML = `<div class="alert alert-danger mt-2">Erreur: ${error.message}</div>`; })
+                    .finally(() => { loader.style.display = 'none'; });
+            });
+        }
+        
+        // Chargement des contenus de la Maintenance
+        loadDynamicContent('load-arr-queue-btn', 'arr-queue-container', 'arr-queue-loader', "{{ url_for('seedbox_ui.queue_manager_view') }}");
+        loadDynamicContent('load-sonarr-workdir-btn', 'workdir-container', 'workdir-loader', "{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='sonarr_working') }}", 'sonarr');
+        loadDynamicContent('load-radarr-workdir-btn', 'workdir-container', 'workdir-loader', "{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='radarr_working') }}", 'radarr');
+
+        // --- Logique pour l'onglet Maintenance (Écouteurs Délégués) ---
+        const maintenanceContainer = document.getElementById('maintenance-content');
+        if (maintenanceContainer) {
+            maintenanceContainer.addEventListener('submit', function(event) {
+                if (event.target.id === 'sonarrQueueForm' || event.target.id === 'radarrQueueForm') {
+                    event.preventDefault();
+                    handleArrDelete(event.target, (event.target.id === 'sonarrQueueForm') ? 'sonarr' : 'radarr');
+                }
+            });
+            maintenanceContainer.addEventListener('click', function(event) {
+                if (event.target.id === 'delete-workdir-selection-btn') {
+                    handleWorkdirDelete(event.target);
+                }
+            });
+            maintenanceContainer.addEventListener('change', function(event) {
+                if (event.target.classList.contains('arr-item-checkbox')) {
+                    updateArrDeleteButtonState(event.target.dataset.arrType);
+                }
+                if (event.target.classList.contains('workdir-item-checkbox')) {
+                    updateWorkdirDeleteButtonState();
+                }
+            });
+        }
+
+        // --- Logique pour les actions sur les "Items en Attente" (jQuery Event Delegation) ---
+        $(document).on('click', '.retry-import-btn', function() {
+            const torrentHash = this.dataset.torrentHash;
+            if (!torrentHash) return;
+            if (confirm("Voulez-vous vraiment réessayer l'importation pour cet item ?")) {
+                fetch(`/seedbox/problematic-import/retry/${torrentHash}`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                })
+                .then(response => response.json().then(data => ({ ok: response.ok, data })))
+                .then(({ ok, data }) => {
+                    if (ok) {
+                        alert(data.message || 'Action réussie.');
+                        window.location.reload();
+                    } else {
+                        throw new Error(data.message || 'Une erreur est survenue.');
+                    }
+                }).catch(error => {
+                    alert(`Erreur: ${error.message}`);
+                });
+            }
+        });
+
+        $(document).on('click', '.delete-association-btn', function(event) {
+            event.preventDefault();
+            const torrentHash = this.dataset.torrentHash;
+            if (!torrentHash) return;
+            if (confirm("Êtes-vous sûr de vouloir supprimer cette association ? L'item ne sera plus suivi.")) {
+                const url = `{{ url_for('seedbox_ui.delete_problematic_association_action', torrent_hash='__HASH__') }}`.replace('__HASH__', torrentHash);
+                fetch(url, { method: 'POST' })
+                    .then(response => response.json().then(data => ({ ok: response.ok, data })))
+                    .then(({ ok, data }) => {
+                        alert(data.message || "L'opération est terminée.");
+                        if (ok) window.location.reload();
+                    })
+                    .catch(error => {
+                        console.error('Erreur lors de la suppression de l\'association:', error);
+                        alert('Une erreur de communication est survenue.');
+                    });
+            }
+        });
+
+        // --- CORRECTION APPLIQUÉE ICI ---
+        // Utilisation de la délégation d'événements jQuery sur `document`
+        $(document).on('click', '.ignore-torrent-btn', function() {
+            // `this` fait référence au bouton cliqué, ce qui est plus direct.
+            handleIgnoreTorrent(this);
+        });
+
+        // --- NOUVELLE Logique pour les actions de la Vue rTorrent ---
+        const rtorrentContainer = document.getElementById('rtorrent-view-content');
+        if (rtorrentContainer) {
+            rtorrentContainer.addEventListener('click', function(event) {
+                const button = event.target.closest('button');
+                const toggleLink = event.target.closest('.toggle-files');
+
+                if (toggleLink) {
+                    event.preventDefault();
+                    const hash = toggleLink.dataset.hash;
+                    const icon = toggleLink.querySelector('i');
+                    const fileRow = document.getElementById(`files-${hash}`);
+
+                    if (!fileRow) return;
+
+                    const isVisible = fileRow.style.display !== 'none';
+                    if (isVisible) {
+                        fileRow.style.display = 'none';
+                        icon.classList.remove('fa-minus-square');
+                        icon.classList.add('fa-plus-square');
+                    } else {
+                        fileRow.style.display = '';
+                        icon.classList.remove('fa-plus-square');
+                        icon.classList.add('fa-minus-square');
+
+                        const container = fileRow.querySelector('.file-list-container');
+                        if (container.dataset.loaded === 'true') return;
+
+                        const apiUrl = window.appUrls.getTorrentFiles.replace('__HASH__', hash);
+                        fetch(apiUrl)
+                            .then(response => response.ok ? response.json() : Promise.reject('Network response was not ok.'))
+                            .then(data => {
+                                if (data.success && data.files) {
+                                    let html = '<ul class="list-group list-group-flush">';
+                                    if (data.files.length > 0) {
+                                        data.files.sort((a, b) => a.path.localeCompare(b.path)).forEach(file => {
+                                            const sizeMB = (file.size_bytes / (1024*1024)).toFixed(2);
+                                            html += `<li class="list-group-item d-flex justify-content-between align-items-center bg-transparent border-secondary text-white py-1 px-2">${file.path}<span class="badge bg-primary rounded-pill">${sizeMB} MB</span></li>`;
+                                        });
+                                    } else {
+                                        html += `<li class="list-group-item bg-transparent border-secondary text-white py-1 px-2">Aucun fichier dans ce torrent.</li>`;
+                                    }
+                                    html += '</ul>';
+                                    container.innerHTML = html;
+                                } else {
+                                    container.innerHTML = `<p class="text-danger p-2">${data.error || 'Erreur lors de la récupération des fichiers.'}</p>`;
+                                }
+                                container.dataset.loaded = 'true';
+                            })
+                            .catch(error => {
+                                container.innerHTML = `<p class="text-danger p-2">Erreur de chargement: ${error}</p>`;
+                            });
+                    }
+                } else if (button) {
+                    const torrentHash = button.dataset.torrentHash;
+                    // --- Action : Forcer l'Import ---
+                    if (button.classList.contains('force-import-btn')) {
+                        event.preventDefault();
+                        if (!torrentHash) return;
+                        if (confirm("Forcer le traitement de cet item depuis le staging ?")) {
+                            const url = `{{ url_for('seedbox_ui.retry_problematic_import_action', torrent_hash='__HASH__') }}`.replace('__HASH__', torrentHash);
+                            fetch(url, { method: 'POST' })
+                                .then(response => response.json().then(data => ({ ok: response.ok, data })))
+                                .then(({ ok, data }) => {
+                                    alert(data.message);
+                                    if (ok) {
+                                        sessionStorage.setItem('activeTab', '#rtorrent-view-tab');
+                                        window.location.reload();
+                                    }
+                                })
+                                .catch(error => alert('Erreur de communication.'));
+                        }
+                    }
+                    // --- Action : Réessayer le Rapatriement ---
+                    else if (button.classList.contains('retry-repatriation-btn')) {
+                        event.preventDefault();
+                        handleRetryRepatriation(button);
+                    }
+                    // --- Action : Ignorer Définitivement ---
+                    else if (button.classList.contains('ignore-torrent-btn')) {
+                        event.preventDefault();
+                        handleIgnoreTorrent(button);
+                    }
+                    // --- Action : Oublier l'Association ---
+                    else if (button.classList.contains('forget-association-btn')) {
+                        event.preventDefault();
+                        if (!torrentHash) return;
+                        if (confirm("Supprimer l'association MMS ?")) {
+                            const url = `{{ url_for('seedbox_ui.delete_problematic_association_action', torrent_hash='__HASH__') }}`.replace('__HASH__', torrentHash);
+                            fetch(url, { method: 'POST' })
+                                .then(response => response.json().then(data => ({ ok: response.ok, data })))
+                                .then(({ ok, data }) => {
+                                    alert(data.message);
+                                    if (ok) {
+                                        sessionStorage.setItem('activeTab', '#rtorrent-view-tab');
+                                        window.location.reload();
+                                    }
+                                })
+                                .catch(error => alert('Erreur de communication.'));
+                        }
+                    }
+                    // --- Action : Supprimer de rTorrent ---
+                    else if (button.classList.contains('delete-rtorrent-btn')) {
+                        event.preventDefault();
+                        const torrentName = button.dataset.torrentName;
+                        const torrentHash = button.dataset.torrentHash;
+
+                        // Prépare la modale
+                        document.getElementById('torrentNameToDelete').textContent = torrentName;
+                        document.getElementById('torrentHashToDelete').value = torrentHash;
+                        document.getElementById('deleteTorrentDataCheckbox').checked = false;
+
+                        // Ouvre la modale
+                        const deleteModal = new bootstrap.Modal(document.getElementById('deleteRtorrentModal'));
+                        deleteModal.show();
+                    }
+                    // --- Action : Mapper ---
+                    else if (button.classList.contains('open-mapping-modal-btn')) {
+                        event.preventDefault();
+                        const torrentName = button.dataset.torrentName;
+
+                        // Mettre à jour la modale de choix
+                        document.getElementById('torrentNameToMap').textContent = torrentName;
+                        document.getElementById('torrentNameToMapInput').value = torrentName;
+
+                        // Ouvrir la modale de choix
+                        const mappingChoiceModal = new bootstrap.Modal(document.getElementById('mappingChoiceModal'));
+                        mappingChoiceModal.show();
+                    }
+                }
+            });
+        }
+            
+        // --- Logique pour les onglets principaux ---
+        const rtorrentTab = document.getElementById('rtorrent-view-tab');
+        if (rtorrentTab) {
+            rtorrentTab.addEventListener('shown.bs.tab', function(event) {
+                if (!isRtorrentContentLoaded) {
+                    loadRtorrentView();
+                }
+            });
+        }
+
+        // Ajoute ce nouvel écouteur en dehors de l'autre, mais dans DOMContentLoaded
+        const mappingChoiceModalEl = document.getElementById('mappingChoiceModal');
+        if (mappingChoiceModalEl) {
+            document.getElementById('mapToSonarrBtn').addEventListener('click', function() {
+                const torrentName = document.getElementById('torrentNameToMapInput').value;
+                openSonarrSearchModal(torrentName, 'torrent');
+                bootstrap.Modal.getInstance(mappingChoiceModalEl).hide();
+            });
+
+            document.getElementById('mapToRadarrBtn').addEventListener('click', function() {
+                const torrentName = document.getElementById('torrentNameToMapInput').value;
+                openRadarrSearchModal(torrentName, 'torrent');
+                bootstrap.Modal.getInstance(mappingChoiceModalEl).hide();
+            });
+        }
+
+        document.getElementById('confirmDeleteRtorrentBtn')?.addEventListener('click', function() {
+            const torrentHash = document.getElementById('torrentHashToDelete').value;
+            const deleteData = document.getElementById('deleteTorrentDataCheckbox').checked;
+
+            fetch("{{ url_for('seedbox_ui.delete_rtorrent_torrent') }}", {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ hash: torrentHash, delete_data: deleteData })
+            })
+            .then(response => response.json().then(data => ({ ok: response.ok, data })))
+            .then(({ ok, data }) => {
+                alert(data.message);
+                if (ok) {
+                    sessionStorage.setItem('activeTab', '#rtorrent-view-tab');
+                    bootstrap.Modal.getInstance(document.getElementById('deleteRtorrentModal')).hide();
+                    window.location.reload();
+                }
+            })
+            .catch(error => alert('Erreur de communication.'));
+        });
+    });
+</script>
+{% endblock %}

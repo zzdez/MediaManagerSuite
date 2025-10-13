@@ -1,0 +1,26 @@
+<div class="manual-search-container mb-3">
+    <div class="input-group">
+        <input type="text" id="manual-search-input" class="form-control" placeholder="New search..." data-original-query="{{ original_query }}">
+        <button id="manual-search-button" class="btn btn-secondary">Rechercher</button>
+    </div>
+</div>
+
+<input type="hidden" id="media_type" value="{{ candidates[0].media_type if candidates else '' }}">
+{% for candidate in candidates %}
+<div class="card mb-3">
+    <div class="row g-0">
+        <div class="col-md-2">
+            <img src="{{ candidate.poster_path or 'https://via.placeholder.com/150x225' }}" class="img-fluid rounded-start" alt="Poster">
+        </div>
+        <div class="col-md-10">
+            <div class="card-body">
+                <h5 class="card-title">{{ candidate.title }} ({{ candidate.year }})</h5>
+                <p class="card-text">{{ candidate.overview }}</p>
+                <button class="btn btn-primary select-candidate-btn" data-media-id="{{ candidate.id }}" data-title="{{ candidate.title }}">
+                    Select
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}

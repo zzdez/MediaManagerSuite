@@ -1,0 +1,117 @@
+<!-- Specific styles for remote_seedbox_list, ensure they are scoped or not conflicting -->
+<style>
+    /* Styles specific to remote_seedbox_list.html, excluding body padding */
+    ul.file-tree, ul.children-list { list-style-type: none; padding-left: 0; }
+    .file-tree li > div.tree-node-item { display: flex; align-items: center; padding: 0.25rem 0.5rem; border-bottom: 1px solid #eee; }
+    /* .file-tree li > div.tree-node-item:hover { background-color: #f8f9fa; } */ /* Adjusted for dark theme consistency */
+    .file-tree .toggle-children { cursor: pointer; color: #0d6efd; text-decoration: none; }
+    .file-tree .toggle-children i { transition: transform 0.2s ease-in-out; }
+    .file-tree .icon-container { width: 25px; text-align: center; flex-shrink: 0; }
+    .file-tree .checkbox-container { width: 30px; text-align: center; flex-shrink: 0; }
+    .file-tree .item-name-details { flex-grow: 1; margin-left: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-tree .item-actions { margin-left: auto; flex-shrink: 0; min-width: 200px; }
+    .file-tree .btn-xs { padding: 0.1rem 0.3rem; font-size: 0.75rem; margin-left: 3px; }
+</style>
+
+{% macro render_remote_tree_node(node, app_type, allow_sftp_delete, level=0) %}
+  <li style="margin-left: {{ level * 20 }}px;">
+    <div class="tree-node-item d-flex align-items-center">
+      <span style="width: 30px; flex-shrink: 0; text-align: center; padding-right: 5px;">
+          <input type="checkbox" class="form-check-input batch-action-item-checkbox workdir-item-checkbox"
+                 name="selected_items_paths"
+                 value="{{ node.path_for_actions | e }}"
+                 data-item-name="{{ node.name | e }}"
+                 data-path="{{ node.path_for_actions | e }}"
+                 data-type="{{ 'directory' if node.is_dir else 'file' }}"
+                 aria-label="Sélectionner {{ node.name | e }} pour une action groupée">
+      </span>
+      <span class="icon-container" style="width: 25px; text-align: center; flex-shrink: 0;">
+        {% if node.is_dir and node.children %}
+          <a href="#" class="toggle-children me-1" title="Déplier/Replier"><i class="fas fa-plus-square"></i></a>
+        {% elif node.is_dir %}
+          <i class="fas fa-folder text-warning me-1"></i>
+        {% else %}
+          <i class="fas fa-file text-info me-1"></i>
+        {% endif %}
+      </span>
+      <span class="item-name-details flex-grow-1" title="{{ node.name }}">
+         {{ node.name }}
+         <small class="text-muted fs-sm">
+             ({{ node.size_readable if node.size_readable else 'N/A' }}{% if node.last_modified != 'N/A' %}, {{ node.last_modified }}{% endif %})
+         </small>
+         {% if level == 0 and not allow_sftp_delete and node.is_in_local_staging %}
+            <span class="badge bg-success ms-2">Déjà dans Staging Local</span>
+         {% endif %}
+      </span>
+      <div class="action-buttons item-actions ms-auto">
+        {% if not allow_sftp_delete %}
+            <button class="btn btn-xs btn-outline-secondary"
+                    data-remote-path="{{ node.path_for_actions | e }}"
+                    data-app-type="{{ app_type | e }}"
+                    onclick="triggerManualSftpDownload(this)"
+                    title="Rapatrier vers staging (traitement manuel ensuite)">
+                <i class="fas fa-download"></i> <span class="d-none d-md-inline">Staging</span>
+            </button>
+            <button type="button" class="btn btn-xs btn-outline-primary"
+                    data-remote-path="{{ node.path_for_actions | e }}"
+                    data-app-type="{{ app_type | e }}"
+                    data-item-name-for-modal="{{ node.name | e }}"
+                    data-item-type="{{ 'directory' if node.is_dir else 'file' }}"
+                    onclick="openSftpRetrieveAndMapModal(this)"
+                    title="Rapatrier et mapper directement cet item">
+                <i class="fas fa-link"></i> <span class="d-none d-md-inline">Rapatrier & Mapper</span>
+            </button>
+        {% endif %}
+      </div>
+    </div>
+    {% if node.is_dir and node.children %}
+      <ul class="children-list" style="display: none;">
+        {% for child_node in node.children %}
+          {{ render_remote_tree_node(child_node, app_type, allow_sftp_delete, level + 1) }}
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </li>
+{% endmacro %}
+
+<div id="sftpActionFeedback" class="mt-3"></div>
+
+{% if error_message %}<div class="alert alert-danger mt-3" role="alert"><strong>Erreur :</strong> {{ error_message }}</div>{% endif %}
+
+<h4 class="mt-3 mb-2">{{ page_title }}</h4>
+<p class="text-muted small">Contenu de : <code>{{ target_root_folder_path }}</code> sur la seedbox.</p>
+
+<div class="mb-3 mt-2 btn-toolbar" role="toolbar">
+    {% if 'working' not in app_type %}
+    <div class="btn-group me-2" role="group">
+        <button type="button" class="btn btn-success btn-sm" id="batchRapatrierBtn" disabled>
+            <i class="fas fa-download"></i> Rapatrier Sélection vers Staging
+        </button>
+    </div>
+    {% if 'sonarr' in app_type and 'working' not in app_type %}
+    <div class="btn-group me-2" role="group">
+        <button type="button" class="btn btn-primary btn-sm" id="batchRapatrierAndPremapSonarrBtn" disabled>
+            <i class="fas fa-link"></i> Rapatrier & Pré-Mapper Sélection (Sonarr)
+        </button>
+    </div>
+    {% endif %}
+    {% endif %}
+    <div class="btn-group me-2" role="group" aria-label="Groupe d'action de suppression">
+        <button type="button" class="btn btn-danger btn-sm" id="delete-workdir-selection-btn" disabled>
+            <i class="fas fa-trash-alt"></i> Supprimer Sélection de la Seedbox
+        </button>
+    </div>
+    <div class="ms-auto">
+         <span id="batchGlobalStatus" class="ms-3"></span>
+    </div>
+</div>
+
+{% if items_tree %}
+    <ul class="file-tree">
+        {% for root_node in items_tree %}
+            {{ render_remote_tree_node(root_node, app_type, allow_sftp_delete, 0) }}
+        {% endfor %}
+    </ul>
+{% elif not error_message %}
+    <div class="alert alert-info mt-3">Aucun item trouvé dans ce dossier distant ou dossier inaccessible.</div>
+{% endif %}

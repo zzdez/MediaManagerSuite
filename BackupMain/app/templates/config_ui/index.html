@@ -1,0 +1,110 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="container">
+    <h1>Configuration de l'Application</h1>
+    <p class="text-muted">Modifiez les valeurs ci-dessous et sauvegardez pour mettre à jour votre fichier <code>.env</code> et la configuration de recherche.</p>
+
+    <form method="post" action="{{ url_for('config_ui.save_config') }}">
+        {% for item in config_items %}
+            {% if item.type == 'header' %}
+                <h3 class="mt-4 mb-3">{{ item.text }}</h3>
+            {% elif item.type == 'variable' %}
+                <div class="mb-3">
+                    <label for="{{ item.key }}" class="form-label"><code>{{ item.key }}</code></label>
+                    <input type="{{ 'password' if item.is_password else 'text' }}"
+                           class="form-control"
+                           id="{{ item.key }}"
+                           name="{{ item.key }}"
+                           value="{{ item.value }}">
+            {% elif item.type == 'textarea' %}
+                <div class="mb-3">
+                    <label for="{{ item.key }}" class="form-label"><code>{{ item.key }}</code></label>
+                    <textarea class="form-control"
+                              id="{{ item.key }}"
+                              name="{{ item.key }}"
+                              rows="3">{{ item.value }}</textarea>
+                    {% if item.description %}
+                        <div class="form-text text-muted fst-italic">{{ item.description }}</div>
+                    {% endif %}
+                </div>
+                    {% if item.description %}
+                        <div class="form-text text-muted fst-italic">{{ item.description }}</div>
+                    {% endif %}
+                </div>
+            {% elif item.type == 'comment' %}
+                <p class="text-muted fst-italic">{{ item.text }}</p>
+            {% elif item.type == 'description' %}
+                 <p class="text-muted">{{ item.text }}</p>
+            {% elif item.type == 'spacer' %}
+                <hr class="my-4">
+            {% endif %}
+        {% endfor %}
+
+        <hr class="my-5">
+
+        <h3 class="mt-4 mb-3">Catégories de Recherche Prowlarr</h3>
+        <p class="text-muted">Sélectionnez les catégories à inclure dans les recherches "Sonarr" et "Radarr". Les badges indiquent quels indexers actifs proposent chaque catégorie.</p>
+
+<div class="row">
+    <!-- Colonne Sonarr -->
+    <div class="col-md-6">
+        <h4><i class="fas fa-tv"></i> Écosystème Sonarr</h4>
+        <div class="card p-3" style="max-height: 500px; overflow-y: auto;">
+            {% for category in all_categories %}
+                <!-- Conteneur principal pour un item de catégorie, avec une marge inférieure solide -->
+                <div class="mb-4">
+                    <!-- Ligne 1: Uniquement la checkbox et le label -->
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="sonarr_categories" value="{{ category.id }}" id="sonarr-cat-{{ category.id }}"
+                        {% if category.id|int in search_config.sonarr_categories %}checked{% endif %}>
+                        <label class="form-check-label" for="sonarr-cat-{{ category.id }}">
+                            {{ category.name }} <span class="text-muted small">({{ category.id }})</span>
+                        </label>
+                    </div>
+                    <!-- Ligne 2: Le conteneur des badges, en tant que frère et non enfant de form-check -->
+                    <div class="ps-4 mt-1 d-flex flex-wrap">
+                        {% for indexer in category.indexers %}
+                            <span class="badge bg-secondary me-1 mb-1">{{ indexer }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% else %}
+                <p class="text-warning">Aucune catégorie Prowlarr n'a pu être chargée. Vérifiez la configuration et les logs.</p>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Colonne Radarr -->
+    <div class="col-md-6">
+        <h4><i class="fas fa-film"></i> Écosystème Radarr</h4>
+        <div class="card p-3" style="max-height: 500px; overflow-y: auto;">
+            {% for category in all_categories %}
+                 <!-- Conteneur principal pour un item de catégorie, avec une marge inférieure solide -->
+                 <div class="mb-4">
+                    <!-- Ligne 1: Uniquement la checkbox et le label -->
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="radarr_categories" value="{{ category.id }}" id="radarr-cat-{{ category.id }}"
+                        {% if category.id|int in search_config.radarr_categories %}checked{% endif %}>
+                        <label class="form-check-label" for="radarr-cat-{{ category.id }}">
+                            {{ category.name }} <span class="text-muted small">({{ category.id }})</span>
+                        </label>
+                    </div>
+                    <!-- Ligne 2: Le conteneur des badges, en tant que frère et non enfant de form-check -->
+                    <div class="ps-4 mt-1 d-flex flex-wrap">
+                        {% for indexer in category.indexers %}
+                            <span class="badge bg-secondary me-1 mb-1">{{ indexer }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% else %}
+                 <p class="text-warning">Aucune catégorie Prowlarr n'a pu être chargée. Vérifiez la configuration et les logs.</p>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+        <button type="submit" class="btn btn-primary mt-4 w-100">Sauvegarder Toute la Configuration</button>
+    </form>
+</div>
+{% endblock %}

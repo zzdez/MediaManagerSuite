@@ -1,0 +1,199 @@
+{% if items %}
+    <table class="table table-dark table-striped table-hover mt-4 align-middle" id="plex-results-table">
+        <thead>
+            <tr>
+                <th scope="col" style="width: 5%;"><input type="checkbox" class="form-check-input" id="select-all-checkbox"></th>
+                <th scope="col" class="sortable-header" data-sort-by="title">Titre</th>
+                <th scope="col" class="sortable-header" data-sort-by="library" style="width: 15%;">Bibliothèque</th>
+                <th scope="col" class="sortable-header" data-sort-by="size" data-sort-type="size" style="width: 10%;">Taille Disque</th>
+                <th scope="col" class="sortable-header" data-sort-by="added" data-sort-type="date" style="width: 10%;">Date d'Ajout</th>
+                <th scope="col" class="sortable-header" data-sort-by="status" data-sort-type="text" style="width: 10%;">Statut</th>
+                <th scope="col" style="width: 15%;">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in items %}
+            <tr data-rating="{{ item.userRating or 0 }}" data-incomplete="{{ 'true' if item.type == 'show' and item.is_incomplete else 'false' }}">
+                <td><input type="checkbox" class="form-check-input item-checkbox" data-rating-key="{{ item.ratingKey }}"></td>
+                <td>
+                    <div class="d-flex align-items-center">
+                        {# --- NOUVEAU BLOC POUR L'IMAGE --- #}
+                        <div class="me-3">
+                            <img src="{{ item.poster_url or url_for('static', filename='img/placeholder.png') }}"
+                                 alt="Poster for {{ item.title }}"
+                                 style="width: 50px; height: 75px; object-fit: cover; border-radius: 4px;">
+                        </div>
+                        {# --- FIN DU BLOC IMAGE --- #}
+
+                        {# Le contenu textuel est maintenant dans sa propre div pour l'alignement #}
+                        <div>
+                            <a href="#" class="text-white item-title-link"
+                               data-bs-toggle="modal"
+                               data-bs-target="#item-details-modal"
+                               data-rating-key="{{ item.ratingKey }}">
+                                {{ item.title }}
+                            </a>
+                            <small class="d-block text-muted">Année: {{ item.year }}</small>
+
+                            {# --- DÉBUT DU BLOC D'ÉTOILES --- #}
+                            {% if item.userRating is not none and item.userRating > 0 %}
+                                <div class="star-rating">
+                                    {# On convertit la note sur 10 en note sur 5 #}
+                                    {% set star_rating = item.userRating / 2 %}
+
+                                    {# Boucle pour les étoiles pleines #}
+                                    {% for i in range(star_rating|int) %}
+                                        <i class="bi bi-star-fill"></i>
+                                    {% endfor %}
+
+                                    {# Condition pour la demi-étoile #}
+                                    {% if (star_rating - (star_rating|int)) >= 0.5 %}
+                                        <i class="bi bi-star-half"></i>
+                                    {% endif %}
+
+                                    {# Boucle pour les étoiles vides #}
+                                    {% set full_stars = (star_rating + 0.5)|int %}
+                                    {% for i in range(5 - full_stars) %}
+                                        <i class="bi bi-star"></i>
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                            {# --- FIN DU BLOC D'ÉTOILES --- #}
+
+                            {% if item.original_title and item.original_title|lower != item.title|lower %}
+                                <small class="d-block" style="color: #6c757d; font-style: italic;">(Titre Original: {{ item.original_title }})</small>
+                            {% endif %}
+                            {% if item.title_sort and item.title_sort|lower != item.title|lower %}
+                                <small class="d-block" style="color: #6c757d; font-style: italic;">(Titre de Tri: {{ item.title_sort }})</small>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    {# --- AJOUTE CE BLOC ENTIER --- #}
+                    {% if item.file_path %}
+                    <div class="mt-2" style="font-size: 0.8em;">
+                        <code class="text-muted">{{ item.file_path }}</code>
+                        <button class="btn btn-outline-secondary btn-sm ms-2 py-0 copy-path-btn"
+                                title="Copier le chemin"
+                                data-path="{{ item.file_path }}">
+                            <i class="bi bi-clipboard"></i>
+                        </button>
+                    </div>
+                    {% endif %}
+                    {# --- FIN DU BLOC À AJOUTER --- #}
+                </td>
+                <td><span class="badge bg-secondary">{{ item.library_name }}</span></td>
+                <td>{{ item.total_size_display if item.total_size_display else 'N/A' }}</td> {# MODIFIED CELLULE #}
+                <td>{{ item.addedAt.strftime('%Y-%m-%d') if item.addedAt else 'N/A' }}</td>
+                <td class="media-status-cell" data-rating-key="{{ item.ratingKey }}">
+                    {% if item.type == 'show' %}
+                        {% if item.viewed_episodes == 0 and item.total_episodes > 0 %}
+                            <span class="badge bg-warning text-dark">Non commencé</span>
+                        {% elif item.viewed_episodes == item.total_episodes and item.total_episodes > 0 %}
+                            <span class="badge bg-success">Terminé</span>
+                        {% elif item.total_episodes > 0 %}
+                            <span class="badge bg-info">En cours</span>
+                        {% else %}
+                            <span class="badge bg-secondary">Inconnu</span>
+                        {% endif %}
+
+                        {% if item.total_episodes > 0 %}
+                        <small class="d-block text-muted">
+                            {{ item.viewed_episodes }} / {{ item.total_episodes }} ép.
+
+                            {# ### DÉBUT DE L'AJOUT ### #}
+                            {% if item.is_incomplete %}
+                                <span class="badge bg-danger ms-1" title="Des épisodes diffusés sont manquants selon Sonarr.">
+                                    <i class="bi bi-exclamation-triangle-fill"></i>
+                                </span>
+                            {% endif %}
+                            {# ### FIN DE L'AJOUT ### #}
+                        </small>
+                        {% endif %}
+                    {% elif item.isWatched %}
+                        <span class="badge bg-success">Vu</span>
+                    {% else %}
+                        <span class="badge bg-warning text-dark">Non Vu</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <button class="btn btn-sm btn-outline-light toggle-watched-btn"
+                            title="Basculer Vu/Non Vu"
+                            data-rating-key="{{ item.ratingKey }}">
+                        <i class="bi bi-eye-fill"></i>
+                    </button>
+
+                    <button class="btn btn-sm btn-outline-info find-and-play-trailer-btn"
+                            data-title="{{ item.title }}"
+                            data-year="{{ item.year }}"
+                            data-media-type="{{ item.type }}"
+                            data-plex-trailer-url="{{ item.plex_trailer_url or '' }}"
+                            title="Chercher et voir la bande-annonce">
+                        <i class="bi bi-film"></i>
+                    </button>
+
+                    {% if item.type == 'movie' %}
+                    <button class="btn btn-sm btn-outline-primary archive-movie-btn"
+                            title="Archiver le film"
+                            data-bs-toggle="modal" data-bs-target="#archiveMovieModal"
+                            data-rating-key="{{ item.ratingKey }}"
+                            data-title="{{ item.title }}">
+                        <i class="bi bi-archive-fill"></i> <span class="d-none d-md-inline">Archiver</span>
+                    </button>
+                    {% elif item.type == 'show' %}
+                    <button class="btn btn-sm btn-outline-primary archive-show-btn"
+                            title="Archiver la série"
+                            data-bs-toggle="modal" data-bs-target="#archiveShowModal"
+                            data-rating-key="{{ item.ratingKey }}"
+                            data-title="{{ item.title }}"
+                            data-leaf-count="{{ item.leafCount }}"
+                            data-viewed-leaf-count="{{ item.viewedLeafCount }}">
+                        <i class="bi bi-archive-fill"></i> <span class="d-none d-md-inline">Archiver</span>
+                    </button>
+                    <button class="btn btn-sm btn-outline-warning reject-show-btn"
+                            title="Rejeter la série (Oublier)"
+                            data-bs-toggle="modal" data-bs-target="#rejectShowModal"
+                            data-rating-key="{{ item.ratingKey }}"
+                            data-title="{{ item.title }}">
+                        <i class="bi bi-eraser-fill"></i> <span class="d-none d-md-inline">Rejeter</span>
+                    </button>
+                    {# Bouton Gérer les Saisons obsolète remplacé par le bouton Gérer ci-dessous #}
+                    {# <a href="{{ url_for('plex_editor.manage_seasons', rating_key=item.ratingKey) }}"
+                       class="btn btn-sm btn-outline-info"
+                       title="Gérer les saisons">
+                        <i class="bi bi-list-task"></i> <span class="d-none d-md-inline">Saisons</span>
+                    </a> #}
+                    <button class="btn btn-sm btn-outline-success manage-series-btn"
+                            title="Gérer la série et les saisons"
+                            data-bs-toggle="modal"
+                            data-bs-target="#series-management-modal"
+                            data-rating-key="{{ item.ratingKey }}"
+                            data-title="{{ item.title }}">
+                        <i class="bi bi-gear-fill"></i> <span class="d-none d-md-inline">Gérer</span>
+                    </button>
+                    {% endif %}
+
+                    <button class="btn btn-sm btn-outline-danger delete-item-btn"
+                            title="Supprimer définitivement de Plex"
+                            data-rating-key="{{ item.ratingKey }}"
+                            data-item-title="{{ item.title }}">
+                        <i class="bi bi-trash-fill"></i>
+                    </button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+{% elif external_suggestions %}
+    <div class="mt-4">
+        <h4>Aucun résultat dans Plex. Suggestions externes :</h4>
+        <hr>
+        {% for suggestion in external_suggestions %}
+            {% include 'plex_editor/_external_suggestions.html' %}
+        {% endfor %}
+    </div>
+{% else %}
+    <div class="text-center mt-4">
+        <p>Aucun média trouvé pour les filtres sélectionnés.</p>
+    </div>
+{% endif %}

@@ -1,0 +1,148 @@
+:root {
+    --sidebar-width: 260px;
+    --sidebar-bg-color: #0d1117; /* Un noir GitHub-like */
+    --sidebar-text-color: #adb5bd;
+    --sidebar-hover-bg-color: #212529;
+    --sidebar-hover-text-color: #ffffff;
+    --main-bg-color: #161b22; /* Fond principal plus sombre */
+}
+
+body {
+    display: flex;
+    background-color: var(--main-bg-color);
+}
+
+.sidebar {
+    width: var(--sidebar-width);
+    height: 100vh;
+    position: fixed;
+    top: 0;
+    left: 0;
+    background-color: var(--sidebar-bg-color);
+    color: var(--sidebar-text-color);
+    border-right: 1px solid #30363d;
+    padding-top: 20px;
+    z-index: 1030;
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar-header-link { text-decoration: none; }
+
+.sidebar-header {
+    text-align: center;
+    margin-bottom: 25px;
+    font-size: 2.2rem;
+    font-weight: bold;
+    color: var(--sidebar-hover-text-color);
+    letter-spacing: 2px;
+}
+
+.sidebar .nav-link {
+    color: var(--sidebar-text-color);
+    font-size: 1.1rem;
+    padding: 12px 25px;
+    transition: all 0.2s ease-in-out;
+    border-left: 3px solid transparent;
+}
+
+.sidebar .nav-link i { margin-right: 16px; width: 20px; text-align: center; }
+
+.sidebar .nav-link:hover {
+    color: var(--sidebar-hover-text-color);
+    background-color: var(--sidebar-hover-bg-color);
+    border-left-color: #3b82f6;
+}
+
+.sidebar .nav-link.active {
+    color: var(--sidebar-hover-text-color);
+    font-weight: bold;
+    border-left-color: #3b82f6;
+}
+
+.sidebar-footer { margin-top: auto; padding-bottom: 20px; }
+
+.main-content {
+    margin-left: var(--sidebar-width);
+    padding: 30px;
+    width: calc(100% - var(--sidebar-width));
+    position: relative;
+}
+
+/* Seedbox Staging Table Row Hover */
+.file-tree li > div.tree-node-item:hover {
+    background-color: #343a40 !important; /* Dark grey hover */
+    color: #f8f9fa; /* Light text color for contrast on dark hover */
+}
+
+/* Ensure text on hovered items is light */
+.file-tree li > div.tree-node-item:hover .item-name-details,
+.file-tree li > div.tree-node-item:hover .item-name-details small,
+.file-tree li > div.tree-node-item:hover .item-name-details .badge {
+    color: #f8f9fa !important;
+}
+.file-tree li > div.tree-node-item:hover .item-name-details .badge.bg-warning {
+    color: #000 !important; /* Keep text dark for yellow warning badge for readability */
+}
+
+
+/* Radarr Button Text Color */
+.btn.btn-outline-warning.text-dark { /* Targeting the existing classes for the Radarr button */
+    color: white !important;
+}
+
+/* Style pour le synopsis dans la modale de recherche */
+.modal-synopsis {
+    max-height: 55px; /* Hauteur limitée par défaut (environ 3 lignes) */
+    overflow: hidden;
+    transition: max-height 0.3s ease-in-out; /* Animation douce */
+    text-align: justify; /* Pour une meilleure lisibilité */
+    cursor: pointer; /* Indique que l'élément est interactif */
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.2); /* Indice visuel qu'il y a plus à voir */
+    padding-bottom: 5px;
+}
+
+/* Au survol de la souris, on étend la hauteur pour tout afficher */
+.modal-synopsis:hover {
+    max-height: 200px; /* Augmente la hauteur maximale */
+    overflow-y: auto;  /* Affiche une barre de défilement si nécessaire */
+    border-bottom: 1px dashed transparent; /* Cache la ligne pointillée au survol */
+}
+
+/* Style pour la suggestion du meilleur candidat dans la modale de mapping */
+.best-match {
+    border: 2px solid #0d6efd; /* Utilise la couleur bleue primaire de Bootstrap */
+    border-radius: .375rem; /* Arrondi standard de Bootstrap */
+    background-color: rgba(13, 110, 253, 0.05); /* Teinte de fond très légère */
+}
+
+.star-rating i {
+    color: #ffc107; /* Couleur "warning" de Bootstrap, un jaune doré */
+    font-size: 0.9rem; /* Légèrement plus petit pour ne pas être trop imposant */
+}
+
+.sortable-header {
+    cursor: pointer;
+    position: relative;
+    padding-left: 25px !important; /* Ajoute de l'espace pour l'icône */
+}
+
+.sortable-header::before {
+    content: '\2195'; /* Flèche haut/bas par défaut */
+    position: absolute;
+    left: 8px; /* Positionne à gauche */
+    opacity: 0.3;
+}
+
+.sortable-header.sort-asc::before,
+.sortable-header.sort-desc::before {
+    opacity: 1; /* Rend l'icône active visible */
+}
+
+.sortable-header.sort-asc::before {
+    content: '\25B2'; /* Flèche vers le haut */
+}
+
+.sortable-header.sort-desc::before {
+    content: '\25BC'; /* Flèche vers le bas */
+}

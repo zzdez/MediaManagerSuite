@@ -1,0 +1,307 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ title }} - MediaManagerSuite{% endblock %}
+
+{% block head_styles %}
+    {# Bootstrap CSS is inherited from layout.html (v5.3.2) #}
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css">
+    {# Removed inline styles for nav-tabs, Bootstrap 5.3 dark theme should handle this #}
+{% endblock %}
+
+{% block content %}
+<div id="search-page-container"
+     data-prepare-mapping-url="{{ url_for('search_ui.prepare_mapping_details') }}"
+     data-sonarr-url="{{ sonarr_url }}"
+     data-radarr-url="{{ radarr_url }}"
+     data-media-search-url="{{ url_for('search_ui.media_search') }}">
+    <div class="container mt-4">
+        {# Headings and paragraphs should inherit text color from the dark theme #}
+        <h1><i class="fas fa-search-plus"></i> Découverte de Contenu</h1>
+        <p class="lead">Recherchez des nouveautés ou complétez votre bibliothèque existante.</p>
+        
+        {# Flash messages are handled by layout.html, no need to repeat here unless special placement is needed #}
+        {# {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="alert alert-{{ category }} mt-3">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %} #}
+
+        <ul class="nav nav-tabs mt-4" id="searchTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="media-search-tab" data-bs-toggle="tab" data-bs-target="#media-search-pane" type="button">
+                    <i class="fas fa-film"></i> Recherche par Média
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="torrent-search-tab" data-bs-toggle="tab" data-bs-target="#free-search" type="button">
+                    <i class="fas fa-search"></i> Recherche Libre
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content border border-top-0 p-3 rounded-bottom">
+            <!-- ================================================================== -->
+            <!-- ### NOUVEAU : Panneau de Recherche par Média ### -->
+            <!-- ================================================================== -->
+            <div class="tab-pane fade show active" id="media-search-pane" role="tabpanel">
+                <p><strong>Étape 1 :</strong> Recherchez un film ou une série.</p>
+                <form id="media-search-form">
+                    <div class="row g-2 align-items-center">
+                        <div class="col-auto">
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="media_type" id="media_type_movie" value="movie" checked>
+                                <label class="form-check-label" for="media_type_movie">Film</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="media_type" id="media_type_tv" value="tv">
+                                <label class="form-check-label" for="media_type_tv">Série</label>
+                            </div>
+                        </div>
+                        <div class="col">
+                            <input type="text" id="media-search-input" class="form-control" placeholder="Entrez un titre...">
+                        </div>
+                        <div class="col-auto">
+                            <button type="button" id="execute-media-search-btn" class="btn btn-primary w-100">
+                                <i class="fas fa-search"></i> Rechercher le Média
+                            </button>
+                        </div>
+                    </div>
+                </form>
+
+                <!-- Conteneur pour les résultats de la recherche de médias -->
+                <div id="media-results-container" class="mt-4"></div>
+
+                <!-- Conteneur pour les résultats de torrents (phase 2) -->
+                <div id="torrent-results-for-media-container" class="mt-4"></div>
+            </div>
+
+            <div class="tab-pane fade" id="free-search" role="tabpanel">
+                <p>Recherchez n'importe quel terme sur vos indexers.</p>
+                <form id="search-form">
+                    <div class="row g-2">
+                        <div class="col-12 mb-3">
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="search_type" id="search_type_sonarr" value="sonarr" checked>
+                                <label class="form-check-label" for="search_type_sonarr">Recherche Sonarr</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="search_type" id="search_type_radarr" value="radarr">
+                                <label class="form-check-label" for="search_type_radarr">Recherche Radarr</label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <input type="text" name="query" class="form-control" placeholder="Titre du film ou de la série..." value="{{ query or '' }}">
+                        </div>
+                        <div class="col-md-4">
+                            <button type="button" id="execute-prowlarr-search-btn" class="btn btn-primary w-100">Rechercher</button>
+                        </div>
+                    </div>
+                    <input type="hidden" name="mode" value="free_search">
+                    <input type="hidden" id="search-form-media-type" value="{{ request.args.get('media_type', 'tv') }}">
+                </form>
+                
+                <!-- Bouton pour déplier les filtres avancés -->
+                <div class="d-grid gap-2 d-md-flex justify-content-md-end mb-3">
+                    <button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#advancedFilters" aria-expanded="false" aria-controls="advancedFilters">
+                        <i class="fas fa-sliders-h"></i> Filtres avancés
+                    </button>
+                </div>
+
+                <!-- Section des filtres avancés repliable -->
+                <div class="collapse" id="advancedFilters">
+                    <div class="card card-body mb-3">
+                        <div class="row g-3">
+                            <!-- Filtre par Type de Pack -->
+                            <div class="col-md-3">
+                                <label for="filterPackType" class="form-label">Type de Pack</label>
+                                <select id="filterPackType" class="form-select" disabled>
+                                    <option value="" selected>Tous</option>
+                                    <option value="episode">Épisode Unique</option>
+                                    <option value="season">Saison Complète</option>
+                                    <option value="collection">Intégrale / Collection</option>
+                                    <option value="special">Spécial</option>
+                                </select>
+                            </div>
+
+                            <!-- Filtre par Qualité -->
+                            <div class="col-md-3">
+                                <label for="filterQuality" class="form-label">Qualité</label>
+                                <select id="filterQuality" class="form-select" disabled>
+                                    <option value="" selected>Toutes</option>
+                                </select>
+                            </div>
+
+                            <!-- Filtre par Codec -->
+                            <div class="col-md-3">
+                                <label for="filterCodec" class="form-label">Codec Vidéo</label>
+                                <select id="filterCodec" class="form-select" disabled>
+                                    <option value="" selected>Tous</option>
+                                </select>
+                            </div>
+
+                            <!-- Filtre par Source -->
+                            <div class="col-md-3">
+                                <label for="filterSource" class="form-label">Source</label>
+                                <select id="filterSource" class="form-select" disabled>
+                                    <option value="" selected>Toutes</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="row g-3 mt-2">
+                            <!-- Filtre par Langue -->
+                            <div class="col-md-3">
+                                <label for="filterLang" class="form-label">Langue</label>
+                                <select id="filterLang" class="form-select" disabled>
+                                    <option value="" selected>Toutes</option>
+                                </select>
+                            </div>
+                            <!-- Filtre par Release Group -->
+                            <div class="col-md-3">
+                                <label for="filterReleaseGroup" class="form-label">Release Group</label>
+                                <select id="filterReleaseGroup" class="form-select" disabled>
+                                    <option value="" selected>Tous</option>
+                                </select>
+                            </div>
+                            <!-- Filtre par Année -->
+                            <div class="col-md-2">
+                                <label for="filterYear" class="form-label">Année</label>
+                                <input type="number" id="filterYear" class="form-control" placeholder="ex: 2023" disabled>
+                            </div>
+                        </div>
+                        <div class="row g-3 mt-2">
+                            <!-- Filtre par Saison -->
+                            <div class="col-md-3">
+                                <label for="filterSeason" class="form-label">Saison</label>
+                                <input type="number" id="filterSeason" class="form-control" placeholder="ex: 3" disabled>
+                            </div>
+                            <!-- Filtre par Épisode -->
+                            <div class="col-md-3">
+                                <label for="filterEpisode" class="form-label">Épisode</label>
+                                <input type="number" id="filterEpisode" class="form-control" placeholder="ex: 12" disabled>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="search-results-container" class="mt-3"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- ### MODALE POUR LE MAPPING SONARR/RADARR (Coquille Vide) ### -->
+    <!-- ================================================================== -->
+    <div class="modal fade" id="sonarrRadarrSearchModal" tabindex="-1" aria-labelledby="sonarrRadarrModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="sonarrRadarrModalLabel">Initialisation...</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- ### Zone pour les options d'ajout d'un nouveau média (cachée par défaut) ### -->
+                    <div id="add-item-options-container" class="d-none">
+                        <!-- Ce conteneur recevra la carte de détails enrichis (poster, synopsis...) -->
+                        <div id="new-media-details-container" class="mb-3"></div>
+
+                        <h5 class="mb-3">Options d'ajout</h5>
+
+                        <!-- Le contenu (menus déroulants, etc.) sera injecté ici par JS -->
+                        <div class="mb-3">
+                            <label for="root-folder-select" class="form-label">Dossier Racine</label>
+                            <select id="root-folder-select" class="form-select"></select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="quality-profile-select" class="form-label">Profil de Qualité</label>
+                            <select id="quality-profile-select" class="form-select"></select>
+                        </div>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="search-on-add-check" checked>
+                            <label class="form-check-label" for="search-on-add-check">
+                                Lancer la recherche du média après l'ajout
+                            </label>
+                        </div>
+                        <div id="add-item-error-container" class="text-danger small mt-2"></div>
+                    </div>
+
+                    <!-- Ce contenu sera remplacé dynamiquement par search_logic.js lors du lookup initial -->
+                    <div id="initial-lookup-content">
+                        <div class="text-center p-4">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="button" class="btn btn-primary d-none" id="confirm-add-and-map-btn">Ajouter, Télécharger & Mapper</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- ### FIN DE LA MODALE ### -->
+
+    <!-- La modale #intelligent-mapping-modal a été supprimée. -->
+</div>
+{% endblock %}
+
+{% block scripts %}
+    {# jQuery and Bootstrap JS are inherited from layout.html (jQuery 3.7.1, Bootstrap 5.3.2) #}
+    
+     <script src="{{ url_for('static', filename='js/seedbox_ui_modals.js') }}"></script> 
+    {# <script src="{{ url_for('static', filename='js/search_actions.js') }}"></script> #}
+    <script src="{{ url_for('static', filename='js/search_logic.js') }}"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const mediaTypeRadios = document.querySelectorAll('input[name="media_type"]');
+            const hiddenInput = document.getElementById('search-form-media-type');
+
+            mediaTypeRadios.forEach(radio => {
+                radio.addEventListener('change', function() {
+                    hiddenInput.value = this.value;
+                });
+            });
+        });
+    </script>
+{% endblock %}
+{% block modals %}
+{{ super() }}
+<!-- Modale pour l'ajout manuel d'un média -->
+<div class="modal fade" id="manualAddModal" tabindex="-1" aria-labelledby="manualAddModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="manualAddModalLabel">Création Manuelle</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small">Veuillez fournir un ID externe (TVDB pour les séries, TMDb pour les films) pour garantir une correspondance exacte.</p>
+                <form id="manual-add-form">
+                    <input type="hidden" id="manual-add-media-type" name="media_type">
+
+                    <div class="mb-3">
+                        <label for="manual-add-id" class="form-label">ID (TVDB / TMDb)</label>
+                        <input type="number" class="form-control" id="manual-add-id" name="media_id" required>
+                        <div class="form-text">ID numérique de la série sur TheTVDB ou du film sur TheMovieDB.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="manual-add-title" class="form-label">Titre (Optionnel)</label>
+                        <input type="text" class="form-control" id="manual-add-title" name="title">
+                        <div class="form-text">Le titre sera automatiquement récupéré depuis l'ID, mais vous pouvez le spécifier si nécessaire.</div>
+                    </div>
+
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" id="confirm-manual-add-btn">Ajouter et Mapper</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
