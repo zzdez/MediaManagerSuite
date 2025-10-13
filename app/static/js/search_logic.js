@@ -620,41 +620,45 @@ function executeFinalMapping(payload) {
         new bootstrap.Modal(modalEl[0]).show();
 
         if (window.currentMediaContext) {
+            // NOUVEAU FLUX PRÉ-MAPPING : Utilise le contexte pour rechercher par ID mais affiche TOUJOURS la modale pour confirmation.
             const context = window.currentMediaContext;
-            console.log("FLUX PRÉ-MAPPING : Contexte trouvé. Vérification de l'existence...", context);
+            console.log("FLUX PRÉ-MAPPING (Corrigé) : Contexte trouvé. Lancement du lookup par ID.", context);
 
-            fetch('/search/api/media/check_existence', {
+            const mediaType = context.media_type;
+            modalBody.find('#add-item-options-container').addClass('d-none');
+            modalEl.find('#confirm-add-and-map-btn').addClass('d-none');
+            const lookupContent = modalBody.find('#initial-lookup-content').removeClass('d-none').show();
+            lookupContent.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div><p class="mt-2">Recherche de la correspondance exacte...</p></div>');
+
+            fetch('/search/api/search/lookup', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ media_id: context.id, media_type: context.media_type })
+                // Envoi de l'ID du média pour un résultat ciblé
+                body: JSON.stringify({ media_id: context.id, media_type: mediaType })
             })
-            .then(res => res.json())
-            .then(existenceData => {
-                const releaseDetails = modalEl.data('release-details');
-
-                if (existenceData.exists) {
-                    console.log("FLUX PRÉ-MAPPING (EXISTANT) : Média trouvé dans *Arr. Mapping direct.");
-                    const finalPayload = {
-                        releaseName: releaseDetails.title,
-                        downloadLink: releaseDetails.downloadLink,
-                        guid: releaseDetails.guid,
-                        indexerId: releaseDetails.indexerId,
-                        instanceType: context.media_type,
-                        mediaId: context.id
-                    };
-                    executeFinalMapping(finalPayload);
-
-                    const modalInstance = bootstrap.Modal.getInstance(modalEl[0]);
-                    if(modalInstance) modalInstance.hide();
-
-                } else {
-                    console.log("FLUX PRÉ-MAPPING (NOUVEAU) : Média non trouvé. Affichage de la vue d'ajout.");
-                    populateAndShowAddItemView(context);
-                }
+            .then(response => response.json())
+            .then(data => {
+                const idPlaceholder = mediaType === 'tv' ? 'ID TVDB...' : 'ID TMDb...';
+                // On réutilise le même template que la recherche manuelle pour la cohérence
+                const modalHtml = `
+                    <div data-media-type="${mediaType}">
+                        <p class="text-muted small">Le média correspondant a été pré-sélectionné. Confirmez ou effectuez une recherche manuelle.</p>
+                        <h6>Recherche manuelle par Titre</h6>
+                        <div class="input-group mb-2"><input type="text" id="manual-search-input" class="form-control" value="${context.title}"></div>
+                        <div class="text-center text-muted my-2 small">OU</div>
+                        <h6>Recherche manuelle par ID</h6>
+                        <div class="input-group mb-3"><input type="number" id="manual-id-input" class="form-control" placeholder="${idPlaceholder}"></div>
+                        <button id="unified-search-button" class="btn btn-primary w-100 mb-3">Rechercher manuellement</button>
+                        <hr>
+                        <div id="lookup-results-container"></div>
+                    </div>`;
+                lookupContent.html(modalHtml);
+                // La réponse contient le résultat unique qui sera marqué comme "best_match" par le backend
+                displayResults(data.results, mediaType);
             })
             .catch(error => {
-                console.error("Erreur lors de la vérification de l'existence du média:", error);
-                alert("Une erreur est survenue lors de la communication avec le serveur.");
+                console.error("Erreur lors du lookup pré-mappé:", error);
+                lookupContent.html('<div class="alert alert-danger">Erreur lors de la récupération des détails du média.</div>');
             });
 
         } else {
