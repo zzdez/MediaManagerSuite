@@ -77,6 +77,20 @@ En raison de restrictions imposées par le fournisseur de la seedbox, la suppres
 ---
 ## Journal des Sessions
 
+### **Session du 2025-10-14 (Partie Finale) : Correction Définitive du Tableau de Bord Média**
+Cette session a été consacrée à la résolution d'une `ImportError` et à la finalisation complète de la fonctionnalité du tableau de bord média.
+
+1.  **Correction de l'Erreur d'Importation (`ImportError`)**:
+    *   **Problème** : Une `ImportError` empêchait l'application de démarrer car la fonction `get_all_radarr_movies` était manquante dans `arr_client.py` suite à une reconstruction incomplète du code.
+    *   **Solution** : La fonction a été correctement restaurée dans `arr_client.py`, résolvant ainsi le crash au démarrage.
+
+2.  **Correction de la Logique de Traduction d'ID (TVDB -> TMDB)**:
+    *   **Problème** : Les erreurs persistantes dans la console étaient dues à l'utilisation d'ID TVDB pour des appels à l'API TMDB.
+    *   **Solution** : Une fonction de traduction `find_series_by_tvdb_id` a été ajoutée au `tmdb_client`. Le `media_info_manager` a été rendu plus intelligent pour détecter les ID TVDB, les traduire en ID TMDB, et s'assurer que chaque service (Plex, Sonarr, etc.) reçoit l'identifiant approprié.
+
+3.  **Restauration Complète de la Fonctionnalité**:
+    *   Tous les composants (backend, route API, frontend) ont été méticuleusement restaurés pour garantir que la fonctionnalité est complète et fonctionne comme prévu, avec le tableau de bord s'affichant au bon endroit et avec des données exactes.
+
 ### **Session du 2025-10-14 : Amélioration de l'UX des Bandes-Annonces**
 
 Cette session a porté sur l'amélioration de l'expérience utilisateur de la fonctionnalité de recherche de bandes-annonces autonome, accessible depuis le menu latéral.
