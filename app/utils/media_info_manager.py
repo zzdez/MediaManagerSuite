@@ -28,22 +28,40 @@ class MediaInfoManager:
         if self._sonarr_series is None: self._sonarr_series = get_all_sonarr_series() or []
         if self._radarr_movies is None: self._radarr_movies = get_all_radarr_movies() or []
 
-    def get_media_details(self, media_type, tmdb_id):
+    def get_media_details(self, media_type, external_id):
         self._init_clients_if_needed()
         self._load_libraries()
 
-        tmdb_details = self._get_tmdb_details(media_type, tmdb_id)
-        tvdb_id = tmdb_details.get('tvdb_id') if tmdb_details else None
+        tmdb_id = None
+        tvdb_id = None
+        tmdb_details = {}
+
+        if media_type == 'tv':
+            tvdb_id = external_id # L'ID entrant est un TVDB ID
+            tmdb_details = self._get_tmdb_details_from_tvdb(tvdb_id)
+            if tmdb_details:
+                tmdb_id = tmdb_details.get('id')
+        else: # movie
+            tmdb_id = external_id
+            tmdb_details = self._get_tmdb_details_from_tmdb(media_type, tmdb_id)
 
         details = {
-            'sonarr_status': self._get_sonarr_status(tmdb_id, tmdb_details),
+            'sonarr_status': self._get_sonarr_status(tmdb_id),
             'radarr_status': self._get_radarr_status(tmdb_id),
             'plex_status': self._get_plex_status(media_type, tmdb_id, tvdb_id),
             'production_status': {"status": tmdb_details.get('status', 'Inconnu'), "total_seasons": tmdb_details.get('number_of_seasons'), "total_episodes": tmdb_details.get('number_of_episodes')},
         }
         return details
 
-    def _get_tmdb_details(self, media_type, tmdb_id):
+    def _get_tmdb_details_from_tvdb(self, tvdb_id):
+        if not self.tmdb_client: return {}
+        try:
+            return self.tmdb_client.find_series_by_tvdb_id(tvdb_id) or {}
+        except Exception as e:
+            logger.error(f"Erreur de traduction TVDB->TMDB pour {tvdb_id}: {e}")
+            return {}
+
+    def _get_tmdb_details_from_tmdb(self, media_type, tmdb_id):
         if not self.tmdb_client: return {}
         try:
             return (self.tmdb_client.get_series_details(tmdb_id) if media_type == 'tv' else self.tmdb_client.get_movie_details(tmdb_id)) or {}
@@ -51,22 +69,18 @@ class MediaInfoManager:
             logger.error(f"Erreur TMDB pour {media_type}_{tmdb_id}: {e}")
             return {}
 
-    def _get_sonarr_status(self, tmdb_id, tmdb_details):
+    def _get_sonarr_status(self, tmdb_id):
         if self._sonarr_series is None: return {"present": False}
+        if not tmdb_id: return {"present": False}
         for series in self._sonarr_series:
             if series.get('tmdbId') == tmdb_id:
                 stats = series.get('statistics', {})
-                return {
-                    "present": True,
-                    "monitored": series.get('monitored', False),
-                    "seasons_count": series.get('seasonCount', 0),
-                    "episodes_count": stats.get('episodeCount', 0),
-                    "episodes_file_count": stats.get('episodeFileCount', 0),
-                }
+                return {"present": True, "monitored": series.get('monitored', False), "episodes_file_count": stats.get('episodeFileCount', 0), "episodes_count": stats.get('episodeCount', 0)}
         return {"present": False}
 
     def _get_radarr_status(self, tmdb_id):
         if self._radarr_movies is None: return {"present": False}
+        if not tmdb_id: return {"present": False}
         for movie in self._radarr_movies:
             if movie.get('tmdbId') == tmdb_id:
                 return {"present": True, "monitored": movie.get('monitored', False), "has_file": movie.get('hasFile', False)}
@@ -83,9 +97,7 @@ class MediaInfoManager:
 
         physical_presence = any(hasattr(part, 'file') and part.file for media in plex_media.media for part in media.parts)
 
-        watched_episodes_str = None
-        if media_type == 'tv':
-            watched_episodes_str = f"{plex_media.viewedLeafCount}/{plex_media.leafCount}"
+        watched_episodes_str = f"{plex_media.viewedLeafCount}/{plex_media.leafCount}" if media_type == 'tv' else None
 
         return {
             "present": True,

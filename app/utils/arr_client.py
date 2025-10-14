@@ -460,11 +460,6 @@ def get_all_sonarr_series():
     """Fetches all series from Sonarr."""
     current_app.logger.info("Récupération de toutes les séries depuis l'API Sonarr.")
     return _sonarr_api_request('GET', 'series')
-
-def get_all_radarr_movies():
-    """Fetches all movies from Radarr."""
-    current_app.logger.info("Récupération de tous les films depuis l'API Radarr.")
-    return _radarr_api_request('GET', 'movie')
     
 def find_sonarr_series_by_title(title, retries=3, delay=5):
     """
