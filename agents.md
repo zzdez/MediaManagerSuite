@@ -47,6 +47,8 @@ Pour faciliter le développement et la maintenance, voici les liens vers les doc
 - **Identifiants Externes (`tmdb_id`, `tvdb_id`)**: La source de vérité pour l'identification des médias. Toute nouvelle fonctionnalité de cache ou de mapping doit utiliser ces identifiants comme clés primaires pour garantir la cohérence et la fiabilité.
 - **`trailer_database.json`**: La base de données centralisée pour toutes les informations relatives aux bandes-annonces. Elle stocke les résultats de recherche mis en cache et, surtout, les bandes-annonces verrouillées par l'utilisateur.
 - **`trailer_manager.py`**: Le gardien du `trailer_database.json`. Toute interaction avec les données des bandes-annonces (recherche, verrouillage, nettoyage du cache) doit passer par ce manager.
+- **`media_info_manager.py`**: Le "Tableau de Bord" centralisé pour un média. Ce manager a pour unique responsabilité d'agréger des informations complètes sur un film ou une série en interrogeant Plex, Sonarr, Radarr et TMDB. Il est conçu pour être la source unique de vérité pour des questions comme "Ce média est-il présent dans Plex ?" ou "Cette série est-elle encore en production ?".
+- **API `/api/agent/media/details/<media_type>/<external_id>`**: Le point d'accès unique pour récupérer les informations agrégées par le `media_info_manager`. Il doit être utilisé par toute fonctionnalité frontend ayant besoin d'un aperçu détaillé d'un média.
 
 ### **Logique de Gestion des Bandes-Annonces : La Recette**
 
@@ -76,6 +78,21 @@ En raison de restrictions imposées par le fournisseur de la seedbox, la suppres
 
 ---
 ## Journal des Sessions
+
+### **Session du 2025-10-14 (Partie 2) : Implémentation du Tableau de Bord Média**
+Cette session a introduit une nouvelle fonctionnalité majeure visant à fournir des informations contextuelles détaillées sur les médias lors de la recherche de bandes-annonces.
+
+1.  **Création du `MediaInfoManager` (`app/utils/media_info_manager.py`)**:
+    *   **Rôle**: Un nouveau service centralisé a été créé pour agréger des données provenant de multiples sources (Plex, Sonarr, Radarr, TMDB).
+    *   **Fonctionnalité**: Il peut déterminer si un média est présent dans les bibliothèques, s'il possède des fichiers physiques, son statut de visionnage sur Plex (y compris via des tags personnalisés comme `vu`), et son statut de production (terminé ou en cours).
+    *   **Optimisation**: Le manager charge en mémoire les listes complètes de Sonarr et Radarr au premier appel pour minimiser les requêtes API lors des vérifications ultérieures.
+
+2.  **Nouveau Point d'API (`/api/agent/media/details/...`)**:
+    *   Une nouvelle route a été ajoutée pour exposer les fonctionnalités du `MediaInfoManager` au frontend de manière propre et réutilisable.
+
+3.  **Intégration dans la Modale de Bande-Annonce**:
+    *   **Problème**: La modale de recherche de bandes-annonces manquait de contexte sur le statut du média.
+    *   **Solution**: Le fichier `global_trailer_search.js` a été mis à jour pour appeler le nouveau point d'API à chaque ouverture de la modale. Un "tableau de bord" d'informations est maintenant affiché dynamiquement au-dessus des résultats, informant l'utilisateur du statut du média sur Plex, Sonarr, Radarr, etc., avant même de lancer la recherche de bande-annonce.
 
 ### **Session du 2025-10-14 : Amélioration de l'UX des Bandes-Annonces**
 
