@@ -250,10 +250,10 @@ def enrich_details():
             
             formatted_details = {
                 'id': details.get('id'),
-                'title': details.get('seriesName'),
+                'title': details.get('name') or details.get('seriesName'),
                 'year': details.get('year'),
                 'overview': details.get('overview'),
-                'poster': poster_url, # L'URL est maintenant correcte.
+                'poster': poster_url,
                 'status': details.get('status', {}).get('name', 'Inconnu')
             }
             return jsonify(formatted_details)
