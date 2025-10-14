@@ -265,7 +265,7 @@ $(document).ready(function() {
         });
     });
 
-    // Affiche les résultats dans la modale de recherche autonome
+    // Affiche les résultats dans la modale de recherche autonome (version enrichie)
     function renderStandaloneResults(results, mediaType) {
         const resultsContainer = $('#standalone-trailer-search-results-container');
         resultsContainer.empty();
@@ -275,8 +275,17 @@ $(document).ready(function() {
             return;
         }
 
+        // Base URL for TMDB posters, necessary for movies.
+        const TMDB_POSTER_BASE_URL = 'https://image.tmdb.org/t/p/w185';
+
         const listGroup = $('<div class="list-group list-group-flush"></div>');
         results.forEach(item => {
+            // Build poster URL with the same logic as the main search page
+            const posterUrl = mediaType === 'movie' && item.poster
+                ? `${TMDB_POSTER_BASE_URL}${item.poster}`
+                : (item.poster || 'https://via.placeholder.com/185x278.png?text=Affiche+non+disponible');
+
+            // Determine button class based on trailer status
             let trailerBtnClass = 'btn-outline-danger';
             if (item.trailer_status === 'LOCKED') {
                 trailerBtnClass = 'btn-outline-success';
@@ -284,19 +293,31 @@ $(document).ready(function() {
                 trailerBtnClass = 'btn-outline-primary';
             }
 
+            // New enriched HTML structure inspired by renderMediaResults
             const itemHtml = `
-                <div class="list-group-item bg-dark d-flex justify-content-between align-items-center">
-                    <div>
-                        <strong>${item.title}</strong>
-                        <small class="text-muted d-block">${item.year || 'Année inconnue'}</small>
+                <div class="list-group-item bg-dark text-white p-3">
+                    <div class="row g-3">
+                        <div class="col-3">
+                            <img src="${posterUrl}" class="img-fluid rounded" alt="Poster de ${item.title}">
+                        </div>
+                        <div class="col-9 d-flex flex-column">
+                            <div>
+                                <h6 class="mb-1">${item.title} <span class="text-white-50">(${item.year || 'N/A'})</span></h6>
+                                <p class="mb-2 small text-white-50" style="max-height: 100px; overflow-y: auto;">
+                                    ${item.overview ? item.overview.substring(0, 150) + (item.overview.length > 150 ? '...' : '') : 'Pas de synopsis disponible.'}
+                                </p>
+                            </div>
+                            <div class="mt-auto">
+                                 <button class="btn btn-sm ${trailerBtnClass} open-trailer-search-from-standalone"
+                                        data-media-type="${mediaType}"
+                                        data-external-id="${item.id}"
+                                        data-title="${item.title}"
+                                        data-year="${item.year || ''}">
+                                    <i class="bi bi-film"></i> Voir les bandes-annonces
+                                </button>
+                            </div>
+                        </div>
                     </div>
-                    <button class="btn btn-sm ${trailerBtnClass} open-trailer-search-from-standalone"
-                            data-media-type="${mediaType}"
-                            data-external-id="${item.id}"
-                            data-title="${item.title}"
-                            data-year="${item.year || ''}">
-                        <i class="bi bi-film"></i>
-                    </button>
                 </div>
             `;
             listGroup.append(itemHtml);

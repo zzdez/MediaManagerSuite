@@ -146,3 +146,17 @@ body {
 .sortable-header.sort-desc::before {
     content: '\25BC'; /* Flèche vers le bas */
 }
+
+/* Assure que la modale du lecteur de bande-annonce s'affiche toujours au-dessus des autres modales */
+#trailer-modal {
+    z-index: 1060 !important;
+}
+
+/*
+   Bootstrap crée un backdrop par modale. Le leur donne un z-index incrémentiel.
+   Celui de la modale de recherche sera à ~1050, celui de la sélection de BA à ~1055.
+   On force le backdrop de la modale de lecture à être juste en dessous de sa propre modale.
+*/
+#trailer-modal + .modal-backdrop {
+    z-index: 1059 !important;
+}
