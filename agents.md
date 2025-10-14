@@ -22,6 +22,23 @@ Ces règles doivent être respectées scrupuleusement lors de toute modification
 2.  **NE PAS RÉINVENTER LA ROUE** : L'application est riche en fonctionnalités. La priorité est de réutiliser, d'adapter et d'étendre le code existant avant d'écrire une nouvelle logique. Cherchez d'abord dans `app/utils` et les Blueprints existants.
 3.  **ÉVITER LES RÉGRESSIONS À TOUT PRIX** : Chaque nouvelle fonctionnalité doit être implémentée de la manière la moins intrusive possible pour ne pas casser ce qui fonctionne déjà. Une phase d'investigation et d'analyse d'impact doit toujours précéder une phase de modification.
 
+## Note sur les Limitations de Test
+
+En tant qu'agent de développement, je n'ai pas accès aux clés API réelles pour les services externes (Plex, Sonarr, Radarr, Prowlarr, TMDB, TheTVDB, etc.). Par conséquent, bien que je puisse écrire et exécuter des tests unitaires et des tests de logique interne, je ne peux pas effectuer de tests d'intégration de bout en bout qui dépendent de ces services. Par exemple, une recherche de média qui échoue à cause d'une clé API manquante est un comportement attendu dans mon environnement de test. L'utilisateur final est responsable de la validation de ces intégrations avec ses propres clés.
+
+Cependant, les clés API pour **Gemini** et **YouTube** sont disponibles et peuvent être utilisées pour des fonctionnalités futures.
+
+## Documentation des API
+
+Pour faciliter le développement et la maintenance, voici les liens vers les documentations des principales API utilisées dans ce projet :
+
+-   **Plex:** [python-plexapi.readthedocs.io](https://python-plexapi.readthedocs.io/en/stable/introduction.html)
+-   **TheTVDB:** [thetvdb.github.io/v4-api/](https://thetvdb.github.io/v4-api/)
+-   **TMDB:** [developer.themoviedb.org/docs/getting-started](https://developer.themoviedb.org/docs/getting-started)
+-   **Prowlarr:** [prowlarr.com/docs/api/](https://prowlarr.com/docs/api/)
+-   **Sonarr:** [sonarr.tv/docs/api/](https://sonarr.tv/docs/api/)
+-   **Radarr:** [radarr.video/docs/api/](https://radarr.video/docs/api/)
+
 ## Composants Clés et Concepts
 
 - **`pending_torrents_map.json`**: Le "cerveau" de l'application. Ce fichier est la source de vérité unique pour toutes les opérations de téléchargement et d'importation en cours. Il fonctionne comme une machine à états.
@@ -57,4 +74,31 @@ En raison de restrictions imposées par le fournisseur de la seedbox, la suppres
 - **Fonction Clé** : `_sftp_delete_recursive` dans `app/utils/rtorrent_client.py`.
 - **Compatibilité des Chemins** : Le serveur SFTP attend des chemins avec des **slashes (`/`)** comme séparateurs. Lors de la construction de chemins pour les opérations SFTP, il est crucial de ne pas utiliser `os.path.join` ou `pathlib.Path` qui dépendent de l'OS, mais de forcer l'utilisation de slashes pour garantir la compatibilité.
 
-## Session du 2025-10-12 : Finalisation de la Gestion des Bandes-Annonces Cette session a permis de finaliser l'implémentation d'un système de gestion de bandes-annonces complet et visuellement cohérent. ### Architecture et Logique Backend 1. **Centralisation du Statut :** La logique de statut a été centralisée dans `app/utils/trailer_manager.py` via une nouvelle fonction `get_trailer_status(media_type, external_id)`. Elle retourne un des trois états : `'LOCKED'`, `'UNLOCKED'`, ou `'NONE'`. Cette fonction est maintenant la méthode de référence pour vérifier l'état d'une bande-annonce. 2. **Enrichissement des API :** Toutes les routes API retournant des listes de médias ont été mises à jour pour inclure le champ `trailer_status`. Cela concerne : * `/api/media/search` (Recherche Média) * `/api/search/lookup` (Modale de Mapping) * `/api/media_items` (Éditeur Plex) * `/api/series_details` (Modale de gestion des séries) 3. **Lecture Directe :** Une nouvelle route `/api/agent/get_locked_trailer_id` a été créée pour récupérer directement l'ID d'une vidéo verrouillée, permettant une lecture instantanée sans passer par la modale de sélection. ### Interface et Expérience Utilisateur 1. **Système de Couleurs :** Un système de couleurs `btn-outline-*` a été appliqué de manière cohérente : * `btn-outline-success` (Vert) pour `LOCKED`. * `btn-outline-primary` (Bleu) pour `UNLOCKED`. * `btn-outline-danger` (Rouge) pour `NONE`. 2. **Icônes Unifiées :** L'icône `bi-film` est maintenant utilisée sur tous les boutons de bande-annonce pour une meilleure cohérence visuelle. 3. **Recherche Autonome :** Le bouton "Bandes-annonces" du menu latéral est désormais fonctionnel. Il ouvre une modale de recherche dédiée (`#standalone-trailer-search-modal`) gérée par `global_trailer_search.js`. Cette fonctionnalité réutilise l'API `/search_ui/api/media/search` et le système d'événements globaux (`openTrailerSearch`) pour une intégration transparente. 4. **Nettoyage :** L'ancienne fonctionnalité de résumé des bandes-annonces, son template (`_trailer_summary_modal.html`) et sa route API (`/api/plex_editor/trailers/summary`) ont été entièrement supprimés. 
+---
+## Journal des Sessions
+
+### **Session du 2025-10-14 : Amélioration de l'UX des Bandes-Annonces**
+
+Cette session a porté sur l'amélioration de l'expérience utilisateur de la fonctionnalité de recherche de bandes-annonces autonome, accessible depuis le menu latéral.
+
+1.  **Correction du Bug de Superposition des Modales :**
+    *   **Problème :** La modale du lecteur vidéo (`#trailer-modal`) s'ouvrait derrière la modale de recherche (`#standalone-trailer-search-modal`), obligeant l'utilisateur à fermer manuellement la première pour voir la seconde.
+    *   **Solution :** Une approche purement CSS (`z-index`) s'étant révélée insuffisante, la logique a été déplacée dans le JavaScript (`global_trailer_search.js`). Désormais, la modale de recherche est explicitement cachée avant l'ouverture de la modale de sélection des bandes-annonces, et une logique de "retour" a été implémentée pour la réafficher lorsque l'utilisateur a terminé, assurant un flux fluide et sans superposition.
+
+2.  **Enrichissement des Résultats de Recherche :**
+    *   **Problème :** Les résultats dans la modale de recherche de bandes-annonces étaient minimalistes (titre et année seulement).
+    *   **Solution :** La fonction `renderStandaloneResults` a été mise à jour pour afficher des résultats enrichis, incluant le poster du média, un synopsis tronqué, et une mise en page plus claire, s'alignant sur l'apparence des autres pages de recherche de l'application pour une meilleure cohérence visuelle.
+---
+### **Session du 2025-10-12 : Finalisation de la Gestion des Bandes-Annonces**
+Cette session a permis de finaliser l'implémentation d'un système de gestion de bandes-annonces complet et visuellement cohérent.
+
+#### Architecture et Logique Backend
+1. **Centralisation du Statut :** La logique de statut a été centralisée dans `app/utils/trailer_manager.py` via une nouvelle fonction `get_trailer_status(media_type, external_id)`. Elle retourne un des trois états : `'LOCKED'`, `'UNLOCKED'`, ou `'NONE'`. Cette fonction est maintenant la méthode de référence pour vérifier l'état d'une bande-annonce.
+2. **Enrichissement des API :** Toutes les routes API retournant des listes de médias ont été mises à jour pour inclure le champ `trailer_status`. Cela concerne : * `/api/media/search` (Recherche Média) * `/api/search/lookup` (Modale de Mapping) * `/api/media_items` (Éditeur Plex) * `/api/series_details` (Modale de gestion des séries)
+3. **Lecture Directe :** Une nouvelle route `/api/agent/get_locked_trailer_id` a été créée pour récupérer directement l'ID d'une vidéo verrouillée, permettant une lecture instantanée sans passer par la modale de sélection.
+
+#### Interface et Expérience Utilisateur
+1. **Système de Couleurs :** Un système de couleurs `btn-outline-*` a été appliqué de manière cohérente : * `btn-outline-success` (Vert) pour `LOCKED`. * `btn-outline-primary` (Bleu) pour `UNLOCKED`. * `btn-outline-danger` (Rouge) pour `NONE`.
+2. **Icônes Unifiées :** L'icône `bi-film` est maintenant utilisée sur tous les boutons de bande-annonce pour une meilleure cohérence visuelle.
+3. **Recherche Autonome :** Le bouton "Bandes-annonces" du menu latéral est désormais fonctionnel. Il ouvre une modale de recherche dédiée (`#standalone-trailer-search-modal`) gérée par `global_trailer_search.js`. Cette fonctionnalité réutilise l'API `/search_ui/api/media/search` et le système d'événements globaux (`openTrailerSearch`) pour une intégration transparente.
+4. **Nettoyage :** L'ancienne fonctionnalité de résumé des bandes-annonces, son template (`_trailer_summary_modal.html`) et sa route API (`/api/plex_editor/trailers/summary`) ont été entièrement supprimés.
