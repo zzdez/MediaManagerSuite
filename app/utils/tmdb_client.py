@@ -130,7 +130,7 @@ class TheMovieDBClient:
         try:
             self.tmdb.language = lang
             find = Find()
-            results = find.find_by_external_id(external_source='tvdb_id', external_id=tvdb_id)
+            results = find.find_by_tvdb_id(str(tvdb_id))
             if results and results['tv_results']:
                 return self.get_series_details(results['tv_results'][0]['id'], lang=lang)
             return None

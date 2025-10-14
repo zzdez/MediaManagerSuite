@@ -46,11 +46,17 @@ class MediaInfoManager:
             tmdb_details = self._get_tmdb_details_from_tmdb(media_type, tmdb_id)
 
         details = {
-            'sonarr_status': self._get_sonarr_status(tmdb_id),
-            'radarr_status': self._get_radarr_status(tmdb_id),
             'plex_status': self._get_plex_status(media_type, tmdb_id, tvdb_id),
             'production_status': {"status": tmdb_details.get('status', 'Inconnu'), "total_seasons": tmdb_details.get('number_of_seasons'), "total_episodes": tmdb_details.get('number_of_episodes')},
         }
+
+        if media_type == 'tv':
+            details['sonarr_status'] = self._get_sonarr_status(tmdb_id)
+            details['radarr_status'] = {"present": False}  # Les séries ne sont pas dans Radarr
+        else:  # movie
+            details['radarr_status'] = self._get_radarr_status(tmdb_id)
+            details['sonarr_status'] = {"present": False}  # Les films ne sont pas dans Sonarr
+
         return details
 
     def _get_tmdb_details_from_tvdb(self, tvdb_id):
