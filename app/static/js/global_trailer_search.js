@@ -212,9 +212,14 @@ $(document).ready(function() {
     });
 
     // Déclencheur global pour ouvrir la modale de recherche de BA
-    $(document).on('openTrailerSearch', function(event, { mediaType, externalId, title, year }) {
+    $(document).on('openTrailerSearch', function(event, { mediaType, externalId, title, year, sourceModalId }) {
         const selectionModal = $('#trailer-selection-modal');
         const modalInstance = bootstrap.Modal.getOrCreateInstance(selectionModal[0]);
+
+        // Stocke l'ID de la modale source pour y revenir plus tard
+        if (sourceModalId) {
+            selectionModal.data('source-modal-id', sourceModalId);
+        }
 
         // Nettoyage de l'état précédent
         $('#trailer-results-container').empty();
@@ -228,6 +233,22 @@ $(document).ready(function() {
     });
 
     // --- GESTION DU MENU LATÉRAL "BANDES-ANNONCES" (NOUVELLE VERSION) ---
+
+    // Gère la fermeture de la modale de sélection pour potentiellement rouvrir la modale source
+    $('#trailer-selection-modal').on('hidden.bs.modal', function () {
+        const selectionModal = $(this);
+        const sourceModalId = selectionModal.data('source-modal-id');
+
+        if (sourceModalId) {
+            const sourceModalEl = document.getElementById(sourceModalId);
+            const sourceModalInstance = bootstrap.Modal.getInstance(sourceModalEl);
+            if (sourceModalInstance) {
+                sourceModalInstance.show();
+            }
+            // Nettoie la donnée pour éviter les réouvertures non désirées
+            selectionModal.removeData('source-modal-id');
+        }
+    });
 
     // Ouvre la nouvelle modale de recherche autonome
     $('#standalone-trailer-search-btn').on('click', function(e) {
@@ -328,12 +349,21 @@ $(document).ready(function() {
     // Gère le clic sur un bouton de trailer DANS la modale de recherche autonome
     $(document).on('click', '.open-trailer-search-from-standalone', function() {
         const data = $(this).data();
-        // On déclenche l'événement global pour ouvrir la modale de recherche/sélection de BA
+
+        // On cache la modale de recherche avant d'ouvrir la suivante
+        const standaloneModalEl = document.getElementById('standalone-trailer-search-modal');
+        const standaloneModalInstance = bootstrap.Modal.getInstance(standaloneModalEl);
+        if (standaloneModalInstance) {
+            standaloneModalInstance.hide();
+        }
+
+        // On déclenche l'événement global en passant l'ID de la modale source pour pouvoir y revenir
         $(document).trigger('openTrailerSearch', {
             mediaType: data.mediaType,
             externalId: data.externalId,
             title: data.title,
-            year: data.year
+            year: data.year,
+            sourceModalId: 'standalone-trailer-search-modal'
         });
     });
 });
