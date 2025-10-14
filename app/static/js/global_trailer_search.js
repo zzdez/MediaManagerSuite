@@ -349,7 +349,10 @@ $(document).ready(function() {
     function fetchAndRenderDashboard(placeholderId, mediaType, externalId) {
         const placeholder = $(`#${placeholderId}`);
         fetch(`/api/agent/media/details/${mediaType}/${externalId}`)
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                return response.json();
+            })
             .then(data => {
                 if (data.status === 'success') {
                     placeholder.html(formatDashboard(data.details, mediaType));
@@ -373,7 +376,7 @@ $(document).ready(function() {
             let badgeClass = prod.status === 'Ended' ? 'bg-danger' : 'bg-success';
             content += `<li><strong>Statut:</strong> <span class="badge ${badgeClass}">${statusText}</span>`;
             if (mediaType === 'tv' && prod.total_seasons) {
-                content += ` <small>(${prod.total_seasons} saisons / ${prod.total_episodes} ép.)</small>`;
+                content += ` <small>(${prod.total_seasons} S / ${prod.total_episodes} Ep)</small>`;
             }
             content += `</li>`;
         }

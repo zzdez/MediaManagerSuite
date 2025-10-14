@@ -92,6 +92,10 @@ Suite aux retours de l'utilisateur, cette session a été consacrée à la corre
     *   **Problème** : Le tableau de bord manquait d'informations sur le nombre de saisons et d'épisodes.
     *   **Solution** : Le `MediaInfoManager` a été enrichi pour récupérer et retourner le nombre total de saisons/épisodes (depuis TMDB), le nombre d'épisodes dans la bibliothèque Sonarr, le nombre de fichiers physiques, et le nombre d'épisodes vus dans Plex. Le frontend a été adapté pour afficher ces nouvelles informations de manière claire et concise.
 
+4.  **Correction du Bug API (404 Not Found)**:
+    *   **Problème** : Suite à une réinitialisation du code, la route API `/api/agent/media/details/...` n'avait pas été restaurée, provoquant des erreurs 404.
+    *   **Solution** : La route API a été correctement rétablie dans `app/agent/routes.py`, restaurant la communication entre le frontend et le backend.
+
 ### **Session du 2025-10-14 : Amélioration de l'UX des Bandes-Annonces**
 
 Cette session a porté sur l'amélioration de l'expérience utilisateur de la fonctionnalité de recherche de bandes-annonces autonome, accessible depuis le menu latéral.
