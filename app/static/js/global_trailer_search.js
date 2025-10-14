@@ -48,78 +48,6 @@ function renderTrailerResults(results, options = {}) {
 }
 
 /**
- * Affiche les détails enrichis du média (statuts Plex, Sonarr, etc.).
- * @param {Object} details - L'objet contenant les détails du média.
- */
-function renderMediaDetails(details) {
-    const placeholder = $('#media-details-placeholder');
-    if (!placeholder.length) return;
-
-    let content = '<ul class="list-unstyled mb-0 small text-white-50">';
-
-    // Statut de Production (TMDB)
-    if (details.production_status && details.production_status.status) {
-        let statusText = details.production_status.status;
-        let badgeClass = 'bg-secondary';
-        if (statusText === 'Ended') { statusText = 'Terminée'; badgeClass = 'bg-danger'; }
-        else if (statusText === 'Returning Series' || statusText === 'In Production') { statusText = 'En cours'; badgeClass = 'bg-success'; }
-        else if (statusText === 'Released') { statusText = 'Sorti'; badgeClass = 'bg-info text-dark'; }
-        content += `<li><strong>Statut:</strong> <span class="badge ${badgeClass}">${statusText}</span></li>`;
-    }
-
-    // Statut Radarr
-    if (details.radarr_status && details.radarr_status.present) {
-        let status = `<strong>Radarr:</strong> <span class="text-success">Présent</span>`;
-        if (details.radarr_status.has_file) status += ' <small class="text-muted">(avec fichier)</small>';
-        content += `<li>${status}</li>`;
-    }
-
-    // Statut Sonarr
-    if (details.sonarr_status && details.sonarr_status.present) {
-        let status = `<strong>Sonarr:</strong> <span class="text-success">Présente</span>`;
-        if (details.sonarr_status.has_file) status += ' <small class="text-muted">(avec fichiers)</small>';
-        content += `<li>${status}</li>`;
-    }
-
-    // Statut Plex
-    if (details.plex_status && details.plex_status.present) {
-        let plexText = '<strong>Plex:</strong> <span class="text-info">Présent</span>';
-        if (details.plex_status.physical_presence) plexText += ' <small class="text-muted">(physiquement)</small>';
-        else plexText += ' <small class="text-muted">(métadonnées seules)</small>';
-
-        let watchStatus = [];
-        if (details.plex_status.is_watched) watchStatus.push('Vu');
-        if (details.plex_status.seen_via_tag) watchStatus.push('Archivé');
-        if (details.plex_status.watched_episodes && details.plex_status.watched_episodes !== '0/0') {
-             watchStatus.push(`Vus: ${details.plex_status.watched_episodes}`);
-        }
-        if (watchStatus.length > 0) plexText += ` <span class="text-warning">(${watchStatus.join(', ')})</span>`;
-        content += `<li>${plexText}</li>`;
-    } else if (details.plex_status) {
-        content += `<li><strong>Plex:</strong> <span class="text-muted">Absent</span></li>`;
-    }
-
-    content += '</ul>';
-    placeholder.html(content);
-}
-
-function fetchMediaDetails(mediaType, externalId) {
-    const placeholder = $('#media-details-placeholder');
-    placeholder.html('<div class="text-center text-muted small"><div class="spinner-border spinner-border-sm me-2"></div>Chargement des détails...</div>');
-
-    fetch(`/api/agent/media/details/${mediaType}/${externalId}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === 'success') renderMediaDetails(data.details);
-            else placeholder.html('<p class="text-warning small text-center">Détails indisponibles.</p>');
-        })
-        .catch(error => {
-            console.error('Error fetching media details:', error);
-            placeholder.html('<p class="text-danger small text-center">Erreur de communication.</p>');
-        });
-}
-
-/**
  * Fonction centrale pour récupérer et afficher les bandes-annonces.
  * @param {string} mediaType - 'tmdb' ou 'tvdb'.
  * @param {string} externalId - L'ID du média.
@@ -135,15 +63,6 @@ function fetchAndRenderTrailers(mediaType, externalId, title, year = null, pageT
 
     // Stocke le contexte pour les actions futures (verrouillage, pagination)
     selectionModal.data({ mediaType, externalId, title, year });
-
-    // --- AJOUT : Récupération des détails du média ---
-    // On nettoie l'ancien placeholder et on en crée un nouveau.
-    // Cela garantit que les détails sont rafraîchis à chaque ouverture.
-    $('#media-details-placeholder').remove();
-    const detailsPlaceholder = $('<div id="media-details-placeholder" class="mb-3 p-3 rounded" style="background-color: #212529;"></div>');
-    resultsContainer.before(detailsPlaceholder);
-    fetchMediaDetails(mediaType, externalId);
-    // --- FIN DE L'AJOUT ---
 
     // Affiche un spinner seulement pour la première charge
     if (!pageToken) {
@@ -377,25 +296,20 @@ $(document).ready(function() {
             return;
         }
 
-        // Base URL for TMDB posters, necessary for movies.
         const TMDB_POSTER_BASE_URL = 'https://image.tmdb.org/t/p/w185';
-
         const listGroup = $('<div class="list-group list-group-flush"></div>');
+
         results.forEach(item => {
-            // Build poster URL with the same logic as the main search page
-            const posterUrl = mediaType === 'movie' && item.poster
+            const posterUrl = (mediaType === 'movie' && item.poster)
                 ? `${TMDB_POSTER_BASE_URL}${item.poster}`
                 : (item.poster || 'https://via.placeholder.com/185x278.png?text=Affiche+non+disponible');
 
-            // Determine button class based on trailer status
             let trailerBtnClass = 'btn-outline-danger';
-            if (item.trailer_status === 'LOCKED') {
-                trailerBtnClass = 'btn-outline-success';
-            } else if (item.trailer_status === 'UNLOCKED') {
-                trailerBtnClass = 'btn-outline-primary';
-            }
+            if (item.trailer_status === 'LOCKED') trailerBtnClass = 'btn-outline-success';
+            else if (item.trailer_status === 'UNLOCKED') trailerBtnClass = 'btn-outline-primary';
 
-            // New enriched HTML structure inspired by renderMediaResults
+            const placeholderId = `dashboard-placeholder-${mediaType}-${item.id}`;
+
             const itemHtml = `
                 <div class="list-group-item bg-dark text-white p-3">
                     <div class="row g-3">
@@ -405,9 +319,12 @@ $(document).ready(function() {
                         <div class="col-9 d-flex flex-column">
                             <div>
                                 <h6 class="mb-1">${item.title} <span class="text-white-50">(${item.year || 'N/A'})</span></h6>
-                                <p class="mb-2 small text-white-50" style="max-height: 100px; overflow-y: auto;">
-                                    ${item.overview ? item.overview.substring(0, 150) + (item.overview.length > 150 ? '...' : '') : 'Pas de synopsis disponible.'}
+                                <p class="mb-2 small text-white-50" style="max-height: 80px; overflow-y: auto;">
+                                    ${item.overview ? item.overview.substring(0, 150) + (item.overview.length > 150 ? '...' : '') : 'Pas de synopsis.'}
                                 </p>
+                            </div>
+                            <div id="${placeholderId}" class="mt-auto mb-2 dashboard-container">
+                                <div class="text-center text-muted small"><div class="spinner-border spinner-border-sm"></div></div>
                             </div>
                             <div class="mt-auto">
                                  <button class="btn btn-sm ${trailerBtnClass} open-trailer-search-from-standalone"
@@ -423,8 +340,77 @@ $(document).ready(function() {
                 </div>
             `;
             listGroup.append(itemHtml);
+            // Lancer le chargement du tableau de bord pour cet item
+            fetchAndRenderDashboard(placeholderId, mediaType, item.id);
         });
         resultsContainer.append(listGroup);
+    }
+
+    function fetchAndRenderDashboard(placeholderId, mediaType, externalId) {
+        const placeholder = $(`#${placeholderId}`);
+        fetch(`/api/agent/media/details/${mediaType}/${externalId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    placeholder.html(formatDashboard(data.details, mediaType));
+                } else {
+                    placeholder.html('<p class="text-warning small text-center mb-0">Détails indisponibles.</p>');
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching dashboard:', error);
+                placeholder.html('<p class="text-danger small text-center mb-0">Erreur.</p>');
+            });
+    }
+
+    function formatDashboard(details, mediaType) {
+        let content = '<ul class="list-unstyled mb-0 small text-white-50">';
+
+        // Statut de Production
+        const prod = details.production_status;
+        if (prod && prod.status) {
+            let statusText = prod.status === 'Ended' ? 'Terminée' : (prod.status === 'Returning Series' ? 'En cours' : prod.status);
+            let badgeClass = prod.status === 'Ended' ? 'bg-danger' : 'bg-success';
+            content += `<li><strong>Statut:</strong> <span class="badge ${badgeClass}">${statusText}</span>`;
+            if (mediaType === 'tv' && prod.total_seasons) {
+                content += ` <small>(${prod.total_seasons} saisons / ${prod.total_episodes} ép.)</small>`;
+            }
+            content += `</li>`;
+        }
+
+        // Statuts Sonarr/Radarr
+        const arr = mediaType === 'tv' ? details.sonarr_status : details.radarr_status;
+        if (arr && arr.present) {
+            let arrName = mediaType === 'tv' ? 'Sonarr' : 'Radarr';
+            let fileInfo = '';
+            if (mediaType === 'tv') {
+                fileInfo = `(${arr.episodes_file_count}/${arr.episodes_count} fichiers)`;
+            } else if (arr.has_file) {
+                fileInfo = '(avec fichier)';
+            }
+            content += `<li><strong>${arrName}:</strong> <span class="text-success">Présent</span> <small class="text-muted">${fileInfo}</small></li>`;
+        }
+
+        // Statut Plex
+        const plex = details.plex_status;
+        if (plex && plex.present) {
+            let plexText = `<strong>Plex:</strong> <span class="text-info">Présent</span>`;
+            if (plex.physical_presence) {
+                let watchStatus = [];
+                if (plex.is_watched) watchStatus.push('Vu Intégralement');
+                else if (plex.watched_episodes && plex.watched_episodes !== '0/0') {
+                    watchStatus.push(`Vus: ${plex.watched_episodes}`);
+                }
+                if (plex.seen_via_tag) watchStatus.push('Archivé');
+                if (watchStatus.length > 0) plexText += ` <small class="text-warning">(${watchStatus.join(', ')})</small>`;
+            } else {
+                plexText += ' <small class="text-muted">(métadonnées)</small>';
+            }
+            content += `<li>${plexText}</li>`;
+        }
+
+        content += '</ul>';
+        return content;
     }
 
     // Gère le clic sur un bouton de trailer DANS la modale de recherche autonome

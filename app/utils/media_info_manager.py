@@ -25,73 +25,63 @@ class MediaInfoManager:
             self.plex_server = get_plex_admin_server()
 
     def _load_libraries(self):
-        if self._sonarr_series is None:
-            self._sonarr_series = get_all_sonarr_series() or []
-        if self._radarr_movies is None:
-            self._radarr_movies = get_all_radarr_movies() or []
+        if self._sonarr_series is None: self._sonarr_series = get_all_sonarr_series() or []
+        if self._radarr_movies is None: self._radarr_movies = get_all_radarr_movies() or []
 
     def get_media_details(self, media_type, tmdb_id):
         self._init_clients_if_needed()
         self._load_libraries()
 
         tmdb_details = self._get_tmdb_details(media_type, tmdb_id)
-        tvdb_id = tmdb_details.get('tvdb_id') if media_type == 'tv' else None
+        tvdb_id = tmdb_details.get('tvdb_id') if tmdb_details else None
 
         details = {
-            'sonarr_status': self._get_sonarr_status(tmdb_id),
+            'sonarr_status': self._get_sonarr_status(tmdb_id, tmdb_details),
             'radarr_status': self._get_radarr_status(tmdb_id),
             'plex_status': self._get_plex_status(media_type, tmdb_id, tvdb_id),
-            'production_status': {"status": tmdb_details.get('status', 'Inconnu')},
+            'production_status': {"status": tmdb_details.get('status', 'Inconnu'), "total_seasons": tmdb_details.get('number_of_seasons'), "total_episodes": tmdb_details.get('number_of_episodes')},
         }
         return details
 
     def _get_tmdb_details(self, media_type, tmdb_id):
-        if not self.tmdb_client:
-            return {}
+        if not self.tmdb_client: return {}
         try:
-            if media_type == 'tv':
-                return self.tmdb_client.get_series_details(tmdb_id) or {}
-            else:
-                return self.tmdb_client.get_movie_details(tmdb_id) or {}
+            return (self.tmdb_client.get_series_details(tmdb_id) if media_type == 'tv' else self.tmdb_client.get_movie_details(tmdb_id)) or {}
         except Exception as e:
             logger.error(f"Erreur TMDB pour {media_type}_{tmdb_id}: {e}")
             return {}
 
-    def _get_sonarr_status(self, tmdb_id):
-        if self._sonarr_series is None: return {"present": False, "message": "Bibliothèque Sonarr non chargée."}
+    def _get_sonarr_status(self, tmdb_id, tmdb_details):
+        if self._sonarr_series is None: return {"present": False}
         for series in self._sonarr_series:
             if series.get('tmdbId') == tmdb_id:
-                return {"present": True, "monitored": series.get('monitored', False), "has_file": series.get('statistics', {}).get('episodeFileCount', 0) > 0}
+                stats = series.get('statistics', {})
+                return {
+                    "present": True,
+                    "monitored": series.get('monitored', False),
+                    "seasons_count": series.get('seasonCount', 0),
+                    "episodes_count": stats.get('episodeCount', 0),
+                    "episodes_file_count": stats.get('episodeFileCount', 0),
+                }
         return {"present": False}
 
     def _get_radarr_status(self, tmdb_id):
-        if self._radarr_movies is None: return {"present": False, "message": "Bibliothèque Radarr non chargée."}
+        if self._radarr_movies is None: return {"present": False}
         for movie in self._radarr_movies:
             if movie.get('tmdbId') == tmdb_id:
                 return {"present": True, "monitored": movie.get('monitored', False), "has_file": movie.get('hasFile', False)}
         return {"present": False}
 
     def _get_plex_status(self, media_type, tmdb_id, tvdb_id):
-        if not self.plex_server:
-            return {"present": False, "message": "Serveur Plex non disponible."}
+        if not self.plex_server: return {"present": False}
 
-        if media_type == 'tv':
-            if not tvdb_id:
-                return {"present": False, "message": "ID TVDB manquant pour la recherche Plex."}
-            guid = f"tvdb://{tvdb_id}"
-            libtype = 'show'
-        else:
-            guid = f"tmdb://{tmdb_id}"
-            libtype = 'movie'
+        guid = f"tvdb://{tvdb_id}" if media_type == 'tv' and tvdb_id else f"tmdb://{tmdb_id}"
+        libtype = 'show' if media_type == 'tv' else 'movie'
 
         plex_media = find_plex_media_by_external_id(self.plex_server, guid, libtype)
+        if not plex_media: return {"present": False}
 
-        if not plex_media:
-            return {"present": False}
-
-        is_watched = plex_media.isWatched
-        physical_presence = any(part.file for media in plex_media.media for part in media.parts if hasattr(part, 'file'))
-        seen_via_tag = any(tag.tag.lower() == 'vu' for tag in getattr(plex_media, 'tags', []))
+        physical_presence = any(hasattr(part, 'file') and part.file for media in plex_media.media for part in media.parts)
 
         watched_episodes_str = None
         if media_type == 'tv':
@@ -100,8 +90,8 @@ class MediaInfoManager:
         return {
             "present": True,
             "physical_presence": physical_presence,
-            "is_watched": is_watched,
-            "seen_via_tag": seen_via_tag,
+            "is_watched": plex_media.isWatched,
+            "seen_via_tag": any(tag.tag.lower() == 'vu' for tag in getattr(plex_media, 'tags', [])),
             "watched_episodes": watched_episodes_str
         }
 

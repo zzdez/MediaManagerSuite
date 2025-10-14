@@ -99,7 +99,7 @@ class TheMovieDBClient:
 
     def get_series_details(self, tmdb_id, lang='fr-FR'):
         """
-        Récupère les détails d'une série depuis TMDb en utilisant son ID et une langue spécifique.
+        Récupère les détails d'une série depuis TMDb, y compris son TVDB ID.
         """
         if not self.api_key:
             logger.error("La clé API TMDb n'est pas disponible.")
@@ -107,7 +107,6 @@ class TheMovieDBClient:
 
         original_lang = self.tmdb.language
         try:
-            logger.info(f"Récupération des détails de série TMDb pour l'ID : {tmdb_id} en langue '{lang}'")
             self.tmdb.language = lang
             tv_api = TV()
             series = tv_api.details(tmdb_id)
@@ -120,8 +119,10 @@ class TheMovieDBClient:
                 'overview': series.overview,
                 'poster': f"https://image.tmdb.org/t/p/w500{series.poster_path}" if series.poster_path else "",
                 'year': series.first_air_date.split('-')[0] if hasattr(series, 'first_air_date') and series.first_air_date else 'N/A',
-                'status': series.status, # e.g., "Ended", "Returning Series"
+                'status': series.status,
                 'tvdb_id': tvdb_id,
+                'number_of_seasons': series.number_of_seasons,
+                'number_of_episodes': series.number_of_episodes
             }
             return details
         except Exception as e:
