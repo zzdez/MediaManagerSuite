@@ -29,6 +29,7 @@ class MediaInfoManager:
         if self._radarr_movies is None: self._radarr_movies = get_all_radarr_movies() or []
 
     def get_media_details(self, media_type, external_id):
+        logger.info(f"Début du traitement pour {media_type}_{external_id}")
         self._init_clients_if_needed()
         self._load_libraries()
 
@@ -37,7 +38,7 @@ class MediaInfoManager:
         tmdb_details = {}
 
         if media_type == 'tv':
-            tvdb_id = external_id # L'ID entrant est un TVDB ID
+            tvdb_id = external_id
             tmdb_details = self._get_tmdb_details_from_tvdb(tvdb_id)
             if tmdb_details:
                 tmdb_id = tmdb_details.get('id')
@@ -52,11 +53,12 @@ class MediaInfoManager:
 
         if media_type == 'tv':
             details['sonarr_status'] = self._get_sonarr_status(tmdb_id)
-            details['radarr_status'] = {"present": False}  # Les séries ne sont pas dans Radarr
-        else:  # movie
+            details['radarr_status'] = {"present": False}
+        else: # movie
             details['radarr_status'] = self._get_radarr_status(tmdb_id)
-            details['sonarr_status'] = {"present": False}  # Les films ne sont pas dans Sonarr
+            details['sonarr_status'] = {"present": False}
 
+        logger.info(f"Détails finaux pour {media_type}_{external_id}: {details}")
         return details
 
     def _get_tmdb_details_from_tvdb(self, tvdb_id):

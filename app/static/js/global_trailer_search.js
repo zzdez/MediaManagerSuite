@@ -299,6 +299,7 @@ $(document).ready(function() {
         const TMDB_POSTER_BASE_URL = 'https://image.tmdb.org/t/p/w185';
         const listGroup = $('<div class="list-group list-group-flush"></div>');
 
+        // Étape 1: Construire et ajouter tous les éléments HTML au fragment de document (listGroup)
         results.forEach(item => {
             const posterUrl = (mediaType === 'movie' && item.poster)
                 ? `${TMDB_POSTER_BASE_URL}${item.poster}`
@@ -340,10 +341,16 @@ $(document).ready(function() {
                 </div>
             `;
             listGroup.append(itemHtml);
-            // Lancer le chargement du tableau de bord pour cet item
+        });
+
+        // Étape 2: Insérer tous les éléments dans le DOM en une seule fois
+        resultsContainer.append(listGroup);
+
+        // Étape 3: Maintenant que les éléments sont dans le DOM, lancer les chargements des tableaux de bord
+        results.forEach(item => {
+            const placeholderId = `dashboard-placeholder-${mediaType}-${item.id}`;
             fetchAndRenderDashboard(placeholderId, mediaType, item.id);
         });
-        resultsContainer.append(listGroup);
     }
 
     function fetchAndRenderDashboard(placeholderId, mediaType, externalId) {
