@@ -28,15 +28,12 @@ class MediaInfoManager:
         if self._sonarr_series is None: self._sonarr_series = get_all_sonarr_series() or []
         if self._radarr_movies is None: self._radarr_movies = get_all_radarr_movies() or []
 
-    def get_media_details(self, media_type, external_id, user_plex_server=None):
+    def get_media_details(self, media_type, external_id, user_plex_server=None, watch_history=None):
         logger.info(f"Début du traitement pour {media_type}_{external_id}")
         self._init_clients_if_needed(user_plex_server)
         self._load_libraries()
 
-        watch_history = []
-        if self.plex_server:
-            from .plex_client import get_full_watch_history
-            watch_history = get_full_watch_history(self.plex_server)
+        watch_history = watch_history or []
 
         tmdb_id = None
         tvdb_id = None

@@ -2497,50 +2497,6 @@ def rename_series_files_endpoint():
     else:
         return jsonify({'status': 'error', 'message': 'Échec de l\'envoi de la commande à Sonarr.'}), 500
 
-@plex_editor_bp.route('/api/plex/watched_history')
-@login_required
-def get_watched_history():
-    """
-    Retourne l'historique de visionnage complet pour l'utilisateur de la session.
-    Les résultats sont mis en cache.
-    """
-    user_id = session.get('plex_user_id')
-    if not user_id:
-        return jsonify({'error': 'Utilisateur Plex non sélectionné dans la session.'}), 400
-
-    cache_key = f"plex_watch_history_{user_id}"
-    history_cache = SimpleCache('plex_history', default_lifetime_hours=6)
-    cached_history = history_cache.get(cache_key)
-
-    if cached_history is not None:
-        current_app.logger.info(f"Cache HIT for watch history for user {user_id}.")
-        return jsonify(cached_history)
-
-    current_app.logger.info(f"Cache MISS for watch history for user {user_id}. Fetching from Plex.")
-    user_plex_server = get_user_specific_plex_server()
-    if not user_plex_server:
-        return jsonify({'error': 'Impossible de se connecter au serveur Plex pour cet utilisateur.'}), 500
-
-    try:
-        history = get_full_watch_history(user_plex_server)
-
-        results = []
-        for item in history:
-            media_source = item.source()
-            if media_source is None:
-                results.append({
-                    'title': item.title,
-                    'type': 'deleted',
-                    'viewedAt': item.viewedAt.isoformat() if item.viewedAt else None,
-                })
-
-        history_cache.set(cache_key, results)
-        return jsonify(results)
-
-    except Exception as e:
-        current_app.logger.error(f"Erreur API /api/plex/watched_history: {e}", exc_info=True)
-        return jsonify({'error': str(e)}), 500
-
 # --- Gestionnaires d'erreur ---
 #@app.errorhandler(404)
 #def page_not_found(e):

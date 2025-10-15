@@ -90,25 +90,40 @@ def get_locked_trailer_id_route():
         current_app.logger.error(f"Erreur inattendue dans get_locked_trailer_id_route pour {media_type}_{external_id}: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': 'Une erreur interne est survenue.'}), 500
 
+from app.utils.cache_manager import SimpleCache
+from app.utils.plex_client import get_full_watch_history
+
 @agent_bp.route('/media/details/<media_type>/<external_id>', methods=['GET'])
-@login_required
 def get_media_details_route(media_type, external_id):
     """
     Point de terminaison pour obtenir le "tableau de bord" d'informations
-    pour un média donné, en utilisant le contexte de l'utilisateur de la session.
+    pour un média donné. Utilise le contexte de l'utilisateur si disponible,
+    sinon utilise le compte admin.
     """
     if not all([media_type, external_id]):
         return jsonify({'status': 'error', 'message': 'Les paramètres media_type et external_id sont requis.'}), 400
 
     try:
-        # Récupérer le serveur Plex spécifique à l'utilisateur de la session
-        user_plex_server = get_user_specific_plex_server()
-        if not user_plex_server:
-            # get_user_specific_plex_server flashe déjà un message en cas d'erreur
-            return jsonify({'status': 'error', 'message': 'Impossible de se connecter au serveur Plex pour l_utilisateur de la session.'}), 500
+        user_plex_server = get_user_specific_plex_server(silent=True)
+        watch_history = []
 
-        # Passer le serveur de l'utilisateur au manager
-        details = media_info_manager.get_media_details(media_type, external_id, user_plex_server=user_plex_server)
+        if user_plex_server:
+            user_id = session.get('plex_user_id')
+            cache_key = f"plex_watch_history_{user_id}"
+            history_cache = SimpleCache('plex_history', default_lifetime_hours=6)
+            cached_history = history_cache.get(cache_key)
+
+            if cached_history is not None:
+                current_app.logger.info(f"Cache HIT for watch history for user {user_id}.")
+                watch_history = cached_history
+            else:
+                current_app.logger.info(f"Cache MISS for watch history for user {user_id}. Fetching from Plex.")
+                history_items = get_full_watch_history(user_plex_server)
+                # On ne stocke que les données nécessaires pour éviter de cacher des objets complexes
+                watch_history = [{'title': item.title, 'guids': [g.id for g in item.guids]} for item in history_items if item.source() is None and hasattr(item, 'guids')]
+                history_cache.set(cache_key, watch_history)
+
+        details = media_info_manager.get_media_details(media_type, external_id, user_plex_server=user_plex_server, watch_history=watch_history)
         return jsonify({'status': 'success', 'details': details})
     except Exception as e:
         current_app.logger.error(f"Erreur inattendue dans get_media_details_route pour {media_type}_{external_id}: {e}", exc_info=True)
