@@ -48,6 +48,18 @@ Pour faciliter le développement et la maintenance, voici les liens vers les doc
 - **`trailer_database.json`**: La base de données centralisée pour toutes les informations relatives aux bandes-annonces. Elle stocke les résultats de recherche mis en cache et, surtout, les bandes-annonces verrouillées par l'utilisateur.
 - **`trailer_manager.py`**: Le gardien du `trailer_database.json`. Toute interaction avec les données des bandes-annonces (recherche, verrouillage, nettoyage du cache) doit passer par ce manager.
 
+### **Logique de Statut de Visionnage (Plex)**
+
+Pour déterminer si un média a été vu, l'application utilise une approche à plusieurs niveaux pour garantir la fiabilité de l'information :
+
+1.  **Statut Actuel dans Plex** : Si le média est présent dans la bibliothèque Plex de l'utilisateur, l'application vérifie son statut `isWatched` (pour les films) ou le ratio `viewedLeafCount`/`leafCount` (pour les séries).
+2.  **Historique de Visionnage** : Si le média n'est **pas** présent dans la bibliothèque Plex, l'application consulte l'historique de visionnage complet de l'utilisateur sur le serveur Plex.
+    *   Grâce à la bibliothèque `python-plexapi` et sa méthode `account.history()`, l'application peut récupérer une liste de tous les médias vus par l'utilisateur, y compris ceux dont les fichiers ont été supprimés du serveur.
+    *   La correspondance se fait via les identifiants externes (ex: `tmdb://12345` ou `tvdb://12345`). Si un média non présent dans la bibliothèque est trouvé dans cet historique, il est considéré comme "Déjà vu (supprimé)".
+3.  **Mise en Cache** : L'historique de visionnage est une donnée coûteuse à récupérer. Pour cette raison, il est mis en cache côté serveur pendant plusieurs heures pour chaque utilisateur, afin de ne pas surcharger le serveur Plex lors de recherches répétées.
+
+Cette approche garantit que l'utilisateur dispose d'un "pense-bête" fiable, même pour les contenus qu'il a déjà regardés et archivés.
+
 ### **Logique de Gestion des Bandes-Annonces : La Recette**
 
 Pour garantir la performance et la cohérence, toute fonctionnalité liée aux bandes-annonces doit suivre cette logique :

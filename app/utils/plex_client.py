@@ -271,3 +271,23 @@ def find_plex_media_by_titles(plex_server, titles_list: list, year: int, media_t
 
     logger.warn(f"Plex Client: Could not find Plex media by any of the titles: {titles_list} (Year: {year}).")
     return None
+
+def get_full_watch_history(plex_server):
+    """
+    Récupère l'historique de visionnage complet pour le compte associé au serveur Plex.
+    Retourne une liste d'objets PlexHistory.
+    """
+    if not plex_server:
+        logger.error("get_full_watch_history: L'objet plex_server est manquant.")
+        return []
+
+    try:
+        logger.debug(f"Tentative de récupération du compte Plex associé au serveur.")
+        account = plex_server.myPlexAccount()
+        logger.info(f"Récupération de l'historique pour le compte : {account.title}")
+        history = account.history()
+        logger.info(f"{len(history)} éléments trouvés dans l'historique.")
+        return history
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération de l'historique de visionnage Plex : {e}", exc_info=True)
+        return []

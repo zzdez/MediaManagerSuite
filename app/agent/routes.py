@@ -1,7 +1,9 @@
 from flask import request, jsonify, current_app
 from . import agent_bp
+from app.auth import login_required
 from app.utils import trailer_manager
 from app.utils.media_info_manager import media_info_manager
+from app.utils.plex_client import get_user_specific_plex_server
 
 @agent_bp.route('/get_trailer_info', methods=['GET'])
 def get_trailer_info_route():
@@ -88,17 +90,25 @@ def get_locked_trailer_id_route():
         current_app.logger.error(f"Erreur inattendue dans get_locked_trailer_id_route pour {media_type}_{external_id}: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': 'Une erreur interne est survenue.'}), 500
 
-@agent_bp.route('/media/details/<media_type>/<int:external_id>', methods=['GET'])
+@agent_bp.route('/media/details/<media_type>/<external_id>', methods=['GET'])
+@login_required
 def get_media_details_route(media_type, external_id):
     """
     Point de terminaison pour obtenir le "tableau de bord" d'informations
-    pour un média donné.
+    pour un média donné, en utilisant le contexte de l'utilisateur de la session.
     """
     if not all([media_type, external_id]):
         return jsonify({'status': 'error', 'message': 'Les paramètres media_type et external_id sont requis.'}), 400
 
     try:
-        details = media_info_manager.get_media_details(media_type, external_id)
+        # Récupérer le serveur Plex spécifique à l'utilisateur de la session
+        user_plex_server = get_user_specific_plex_server()
+        if not user_plex_server:
+            # get_user_specific_plex_server flashe déjà un message en cas d'erreur
+            return jsonify({'status': 'error', 'message': 'Impossible de se connecter au serveur Plex pour l_utilisateur de la session.'}), 500
+
+        # Passer le serveur de l'utilisateur au manager
+        details = media_info_manager.get_media_details(media_type, external_id, user_plex_server=user_plex_server)
         return jsonify({'status': 'success', 'details': details})
     except Exception as e:
         current_app.logger.error(f"Erreur inattendue dans get_media_details_route pour {media_type}_{external_id}: {e}", exc_info=True)
