@@ -36,6 +36,7 @@ class CustomTVDBClient:
             # --- FIN DU BLOC DE DÉBOGAGE DÉTAILLÉ ---
 
             simple_details = {
+                'id': series_data.get('id'),
                 'name': series_data.get('name'),
                 'year': series_data.get('year'),
                 'overview': series_data.get('overview'),
@@ -43,10 +44,15 @@ class CustomTVDBClient:
             }
             try:
                 translation = self.client.get_series_translation(tvdb_id, lang)
-                if translation and translation.get('name'):
-                    simple_details['name'] = translation.get('name')
-                if translation and translation.get('overview'):
-                    simple_details['overview'] = translation.get('overview')
+                if translation:
+                    # On utilise la traduction seulement si elle n'est pas vide ou composée d'espaces
+                    translated_name = translation.get('name')
+                    if translated_name and translated_name.strip():
+                        simple_details['name'] = translated_name
+
+                    translated_overview = translation.get('overview')
+                    if translated_overview and translated_overview.strip():
+                        simple_details['overview'] = translated_overview
             except Exception:
                 logger.debug(f"Pas de traduction '{lang}' pour la série ID {tvdb_id}.")
 
