@@ -15,14 +15,14 @@ class MediaInfoManager:
         self.tmdb_client = None
         self.plex_server = None
 
-    def _init_clients_if_needed(self):
+    def _init_clients_if_needed(self, user_plex_server=None):
         if self.tmdb_client is None:
             try:
                 self.tmdb_client = TheMovieDBClient()
             except ValueError:
                 logger.warning("Client TMDB non initialisé (clé API manquante).")
-        if self.plex_server is None:
-            self.plex_server = get_plex_admin_server()
+
+        self.plex_server = user_plex_server or get_plex_admin_server()
 
     def _load_libraries(self):
         if self._sonarr_series is None: self._sonarr_series = get_all_sonarr_series() or []
