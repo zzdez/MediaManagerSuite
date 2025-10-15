@@ -91,14 +91,15 @@ def get_user_specific_plex_server_from_id(user_id):
         flash(f"Une erreur inattendue est survenue: {e}", "danger")
         return None
 
-def get_user_specific_plex_server():
+def get_user_specific_plex_server(silent=False):
     """
     Returns a PlexServer instance connected as the user in session.
     Handles impersonation for managed users. Returns None on failure.
     """
     current_app.logger.debug("--- Appel de get_user_specific_plex_server ---")
     if 'plex_user_id' not in session:
-        flash("Session utilisateur invalide ou expirée. Veuillez sélectionner un utilisateur.", "danger")
+        if not silent:
+            flash("Session utilisateur invalide ou expirée. Veuillez sélectionner un utilisateur.", "danger")
         current_app.logger.warning("get_user_specific_plex_server: 'plex_user_id' non trouvé dans la session.")
         return None
 
