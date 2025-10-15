@@ -15,14 +15,14 @@ class MediaInfoManager:
         self.tmdb_client = None
         self.plex_server = None
 
-    def _init_clients_if_needed(self, user_plex_server=None):
+    def _init_clients_if_needed(self):
         if self.tmdb_client is None:
             try:
                 self.tmdb_client = TheMovieDBClient()
             except ValueError:
                 logger.warning("Client TMDB non initialisé (clé API manquante).")
-
-        self.plex_server = user_plex_server or get_plex_admin_server()
+        if self.plex_server is None:
+            self.plex_server = get_plex_admin_server()
 
     def _load_libraries(self):
         if self._sonarr_series is None: self._sonarr_series = get_all_sonarr_series() or []
@@ -115,20 +115,17 @@ class MediaInfoManager:
                 "is_watched": plex_media.isWatched,
                 "seen_via_tag": any(tag.tag.lower() == 'vu' for tag in getattr(plex_media, 'tags', [])),
                 "watched_episodes": watched_episodes_str,
-                "watched_in_history": False  # N'est pas pertinent si le média est présent
+                "watched_in_history": False
             }
         else:
             # Le média n'est pas dans Plex, on vérifie l'historique
             if watch_history:
                 for history_item in watch_history:
-                    # On vérifie que c'est bien un item supprimé et qu'il a des GUIDs
-                    if history_item.source() is None and hasattr(history_item, 'guids'):
-                        for guid_obj in history_item.guids:
-                            if guid_obj.id == guid_to_find:
-                                logger.info(f"Média '{history_item.title}' trouvé dans l'historique de visionnage (supprimé de Plex).")
-                                return {"present": False, "watched_in_history": True}
+                    # L'historique mis en cache contient des dicts simples
+                    if any(guid_obj == guid_to_find for guid_obj in history_item.get('guids', [])):
+                        logger.info(f"Média '{history_item.get('title')}' trouvé dans l'historique de visionnage (supprimé de Plex).")
+                        return {"present": False, "watched_in_history": True}
 
-            # Non trouvé dans Plex ni dans l'historique
             return {"present": False, "watched_in_history": False}
 
 media_info_manager = MediaInfoManager()

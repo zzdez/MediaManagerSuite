@@ -403,20 +403,24 @@ $(document).ready(function() {
 
         // Statut Plex
         const plex = details.plex_status;
-        if (plex && plex.present) {
-            let plexText = `<strong>Plex:</strong> <span class="text-info">Présent</span>`;
-            if (plex.physical_presence) {
-                let watchStatus = [];
-                if (plex.is_watched) watchStatus.push('Vu Intégralement');
-                else if (plex.watched_episodes && plex.watched_episodes !== '0/0') {
-                    watchStatus.push(`Vus: ${plex.watched_episodes}`);
+        if (plex) {
+            if (plex.present) {
+                let plexText = `<strong>Plex:</strong> <span class="text-info">Présent</span>`;
+                if (plex.physical_presence) {
+                    let watchStatus = [];
+                    if (plex.is_watched) watchStatus.push('Vu Intégralement');
+                    else if (plex.watched_episodes && plex.watched_episodes !== '0/0') {
+                        watchStatus.push(`Vus: ${plex.watched_episodes}`);
+                    }
+                    if (plex.seen_via_tag) watchStatus.push('Archivé');
+                    if (watchStatus.length > 0) plexText += ` <small class="text-warning">(${watchStatus.join(', ')})</small>`;
+                } else {
+                    plexText += ' <small class="text-muted">(métadonnées)</small>';
                 }
-                if (plex.seen_via_tag) watchStatus.push('Archivé');
-                if (watchStatus.length > 0) plexText += ` <small class="text-warning">(${watchStatus.join(', ')})</small>`;
-            } else {
-                plexText += ' <small class="text-muted">(métadonnées)</small>';
+                content += `<li>${plexText}</li>`;
+            } else if (plex.watched_in_history) {
+                content += `<li><strong>Plex:</strong> <span class="text-secondary">Déjà vu (supprimé)</span></li>`;
             }
-            content += `<li>${plexText}</li>`;
         }
 
         content += '</ul>';
