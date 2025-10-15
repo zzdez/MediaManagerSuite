@@ -327,6 +327,15 @@ $(document).ready(function() {
             populateFilters(results, filterOptions);
 
             resultsContainer.empty();
+            const batchActionsContainer = $(`
+                <div id="batch-actions-container" class="mb-3" style="display: none;">
+                    <button id="batch-map-btn" class="btn btn-primary">
+                        <i class="fas fa-object-group"></i> Mapper la sélection (<span id="batch-count">0</span>)
+                    </button>
+                </div>
+            `);
+            resultsContainer.append(batchActionsContainer);
+
             const header = $(`<hr><h4 class="mb-3">Résultats pour "${payload.query}" (<span id="results-count">${results.length}</span> / <span>${results.length}</span>)</h4>`);
             resultsContainer.append(header);
 
@@ -336,6 +345,9 @@ $(document).ready(function() {
                 const seedersClass = result.seeders > 0 ? 'text-success' : 'text-danger';
 
                 const itemContentHtml = `
+                    <div class="p-2">
+                        <input type="checkbox" class="form-check-input release-checkbox" aria-label="Sélectionner cette release">
+                    </div>
                     <div class="me-auto" style="flex-basis: 60%; min-width: 300px;">
                         <strong></strong>
                         <br>
@@ -348,7 +360,7 @@ $(document).ready(function() {
                         <div class="spinner-border spinner-border-sm d-none" role="status"></div>
                     </div>
                     <div class="p-2">
-                        <a href="#" class="btn btn-sm btn-success download-and-map-btn">
+                        <a href="#" class="btn btn-sm btn-success download-and-map-btn individual-map-btn">
                             <i class="fas fa-cogs"></i> & Mapper
                         </a>
                     </div>`;
@@ -764,15 +776,36 @@ $(document).ready(function() {
         .then(data => {
             if (data.error || !data.new_media_id) { throw new Error(data.error || "L'ID du nouveau média n'a pas été retourné."); }
             button.html('<span class="spinner-border spinner-border-sm"></span> Envoi au téléchargement...');
-            const finalPayload = {
-                releaseName: releaseDetails.title,
-                downloadLink: releaseDetails.downloadLink,
-                guid: releaseDetails.guid,
-                indexerId: releaseDetails.indexerId,
-                instanceType: mediaType,
-                mediaId: data.new_media_id
-            };
-            return fetch('/search/download-and-map', {
+
+            const batchReleaseDetails = modalEl.data('release-details-batch');
+            const singleReleaseDetails = modalEl.data('release-details');
+            let fetchUrl, finalPayload;
+
+            if (batchReleaseDetails && batchReleaseDetails.length > 0) {
+                fetchUrl = '/search/batch-download-and-map';
+                finalPayload = {
+                    releases: batchReleaseDetails.map(release => ({
+                        releaseName: release.title,
+                        downloadLink: release.downloadLink,
+                        guid: release.guid,
+                        indexerId: release.indexerId
+                    })),
+                    instanceType: mediaType,
+                    mediaId: data.new_media_id
+                };
+            } else {
+                fetchUrl = '/search/download-and-map';
+                finalPayload = {
+                    releaseName: singleReleaseDetails.title,
+                    downloadLink: singleReleaseDetails.downloadLink,
+                    guid: singleReleaseDetails.guid,
+                    indexerId: singleReleaseDetails.indexerId,
+                    instanceType: mediaType,
+                    mediaId: data.new_media_id
+                };
+            }
+
+            return fetch(fetchUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(finalPayload)
@@ -783,7 +816,7 @@ $(document).ready(function() {
             const modalInstance = bootstrap.Modal.getInstance(modalEl[0]);
             if (data.status === 'success') {
                 if(modalInstance) modalInstance.hide();
-                alert("Succès ! Le média a été ajouté et la release a été envoyée au téléchargement.");
+                alert(data.message || "Succès ! Le média a été ajouté et la ou les releases ont été envoyées au téléchargement.");
             } else {
                 throw new Error(data.message || "Erreur lors de l'envoi au téléchargement.");
             }
@@ -837,27 +870,50 @@ $(document).ready(function() {
         const button = $(this);
         const selectedMediaId = button.data('media-id');
         const mediaType = button.closest('[data-media-type]').data('media-type');
-        const releaseDetails = modalEl.data('release-details');
+        const batchReleaseDetails = modalEl.data('release-details-batch');
+        const singleReleaseDetails = modalEl.data('release-details');
+
         button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Confirmation...');
-        const finalPayload = {
-            releaseName: releaseDetails.title,
-            downloadLink: releaseDetails.downloadLink,
-            guid: releaseDetails.guid,
-            indexerId: releaseDetails.indexerId,
-            instanceType: mediaType,
-            mediaId: selectedMediaId
-        };
-        fetch('/search/download-and-map', {
+
+        let fetchUrl, payload;
+
+        if (batchReleaseDetails && batchReleaseDetails.length > 0) {
+            // Mode Batch
+            fetchUrl = '/search/batch-download-and-map';
+            payload = {
+                releases: batchReleaseDetails.map(release => ({
+                    releaseName: release.title,
+                    downloadLink: release.downloadLink,
+                    guid: release.guid,
+                    indexerId: release.indexerId
+                })),
+                instanceType: mediaType,
+                mediaId: selectedMediaId
+            };
+        } else {
+            // Mode Unique
+            fetchUrl = '/search/download-and-map';
+            payload = {
+                releaseName: singleReleaseDetails.title,
+                downloadLink: singleReleaseDetails.downloadLink,
+                guid: singleReleaseDetails.guid,
+                indexerId: singleReleaseDetails.indexerId,
+                instanceType: mediaType,
+                mediaId: selectedMediaId
+            };
+        }
+
+        fetch(fetchUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(finalPayload)
+            body: JSON.stringify(payload)
         })
         .then(response => response.json())
         .then(data => {
             const modalInstance = bootstrap.Modal.getInstance(modalEl[0]);
             if (data.status === 'success') {
                 if(modalInstance) modalInstance.hide();
-                alert("Succès ! La release a été envoyée au téléchargement et sera mappée.");
+                alert(data.message || "Succès ! La ou les releases ont été envoyées au téléchargement.");
             } else {
                 alert("Erreur : " + data.message);
                 button.prop('disabled', false).text('Choisir ce média');
@@ -892,6 +948,67 @@ $(document).ready(function() {
             $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
         } else {
             alert('Erreur: Informations manquantes pour rechercher la bande-annonce.');
+        }
+    });
+
+    // =================================================================
+    // ### BLOC 4 : LOGIQUE DE SÉLECTION MULTIPLE (BATCH) ###
+    // =================================================================
+
+    function updateBatchActions() {
+        const selectedCheckboxes = $('.release-checkbox:checked');
+        const batchActionsContainer = $('#batch-actions-container');
+        const batchMapBtn = $('#batch-map-btn');
+        const batchCount = $('#batch-count');
+        const individualMapButtons = $('.individual-map-btn');
+
+        if (selectedCheckboxes.length >= 2) {
+            batchActionsContainer.show();
+            batchCount.text(selectedCheckboxes.length);
+            individualMapButtons.addClass('disabled').attr('aria-disabled', 'true');
+        } else {
+            batchActionsContainer.hide();
+            individualMapButtons.removeClass('disabled').attr('aria-disabled', 'false');
+        }
+    }
+
+    // Écouteur pour les changements sur les cases à cocher
+    $('#search-results-container').on('change', '.release-checkbox', function() {
+        updateBatchActions();
+    });
+
+    // Écouteur pour le bouton de mappage de lot
+    $('#search-results-container').on('click', '#batch-map-btn', function() {
+        const selectedItems = [];
+        $('.release-checkbox:checked').each(function() {
+            const listItem = $(this).closest('.release-item');
+            const releaseDetails = {
+                title: listItem.find('.download-and-map-btn').data('title'),
+                downloadLink: listItem.find('.download-and-map-btn').data('download-link'),
+                guid: listItem.find('.download-and-map-btn').data('guid'),
+                indexerId: listItem.find('.download-and-map-btn').data('indexer-id')
+            };
+            selectedItems.push(releaseDetails);
+        });
+
+        if (selectedItems.length > 0) {
+            // On prend le titre du premier item comme référence pour la recherche dans la modale
+            const referenceTitle = selectedItems[0].title;
+
+            modalEl.data('release-details-batch', selectedItems);
+            modalEl.find('.modal-title').text(`Mapper ${selectedItems.length} releases`);
+            new bootstrap.Modal(modalEl[0]).show();
+
+            // Le reste de la logique de la modale est déclenché par l'ouverture
+            // On simule le clic sur le premier item pour remplir la modale
+            const mockFirstItemButton = $('<a href="#"></a>').data({
+                'title': referenceTitle,
+                // Les autres data ne sont pas nécessaires car on va surcharger le comportement
+            });
+
+            // Simuler l'ouverture de la modale comme pour un item unique
+            // La logique existante va s'exécuter, on va simplement surcharger le bouton final
+            mockFirstItemButton.trigger('click');
         }
     });
 });
