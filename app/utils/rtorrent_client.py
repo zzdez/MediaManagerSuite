@@ -9,6 +9,7 @@ import json
 import time
 import xmlrpc.client
 import logging
+import re
 # import base64 # For xmlrpc.client.Binary later
 
 def _send_xmlrpc_request(method_name, params):
