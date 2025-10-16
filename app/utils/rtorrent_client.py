@@ -48,7 +48,7 @@ def _make_httprpc_request(method='POST', params=None, data=None, files=None, tim
     if not ssl_verify: requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
     try:
         response = requests.request(method, api_url, params=params, data=data, files=files, auth=auth, verify=ssl_verify, timeout=timeout, headers=headers)
-        if 200 <= response.status_code < 300: return True, None
+        if 200 <= response.status_code < 300: return True, None # Simple success for adds
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
         return None, str(e)
@@ -61,30 +61,46 @@ def list_torrents():
     keys = ['hash', 'name', 'base_path', 'label', 'size_bytes', 'downloaded_bytes', 'uploaded_bytes', 'down_rate_bytes_sec', 'up_rate_bytes_sec', 'ratio', 'is_open', 'is_active', 'is_complete_rt', 'left_bytes', 'rtorrent_message', 'load_date']
     return [dict(zip(keys, item)) for item in raw_data], None
 
-def add_magnet_httprpc(magnet_link, label, download_dir):
+def add_magnet(magnet_link, label, download_dir):
     return _make_httprpc_request(params={'mode': 'add', 'url': magnet_link, 'label': label, 'dir_edit': download_dir})
 
-def add_torrent_file_httprpc(content, filename, label, download_dir):
-    return _make_httprpc_request(data={'mode': 'addtorrent', 'label': label, 'dir_edit': download_dir}, files={'torrent_file': (filename, content, 'application/x-bittorrent')})
+def add_torrent_file(file_content_bytes, filename, label, download_dir):
+    files = {'torrent_file': (filename, file_content_bytes, 'application/x-bittorrent')}
+    return _make_httprpc_request(data={'mode': 'addtorrent', 'label': label, 'dir_edit': download_dir}, files=files)
 
-def get_torrent_hash_by_name(name, retries=20, delay=2):
-    for _ in range(retries):
-        torrents, err = list_torrents()
+def get_torrent_hash_by_name(torrent_name, max_retries=20, delay_seconds=2):
+    if not torrent_name: return None
+    for attempt in range(max_retries):
+        torrents, error = list_torrents()
+        if error:
+            time.sleep(delay_seconds)
+            continue
         if torrents:
-            for t in torrents:
-                if t.get('name') == name: return t.get('hash')
-        time.sleep(delay)
+            for torrent in torrents:
+                if torrent.get('name') == torrent_name:
+                    return torrent.get('hash')
+        time.sleep(delay_seconds)
     return None
 
 def _decode_bencode_name(bencoded_data):
     try:
-        match = re.search(b'4:name(\d+):', bencoded_data)
-        if not match: return None
-        length = int(match.group(1))
-        start = match.end(0)
-        name_bytes = bencoded_data[start:start+length]
-        return name_bytes.decode('utf-8', errors='ignore')
-    except Exception: return None
+        info_dict_match = re.search(b'4:infod', bencoded_data)
+        if not info_dict_match: return None
+        start_index = info_dict_match.end(0)
+        name_key_match = re.search(b'4:name', bencoded_data[start_index:])
+        if not name_key_match: return None
+        pos_after_name_key = start_index + name_key_match.end(0)
+        len_match = re.match(rb'(\d+):', bencoded_data[pos_after_name_key:])
+        if not len_match: return None
+        str_len = int(len_match.group(1))
+        pos_after_len_colon = pos_after_name_key + len_match.end(0)
+        name_bytes = bencoded_data[pos_after_len_colon : pos_after_len_colon + str_len]
+        try:
+            return name_bytes.decode('utf-8')
+        except UnicodeDecodeError:
+            return name_bytes.decode('latin-1')
+    except Exception:
+        return None
 
 def get_completed_torrents():
     torrents, error = list_torrents()
@@ -118,7 +134,7 @@ def delete_torrent(torrent_hash, delete_data=False):
             transport.connect(username=cfg['SEEDBOX_SFTP_USER'], password=cfg['SEEDBOX_SFTP_PASSWORD'])
             with paramiko.SFTPClient.from_transport(transport) as sftp:
                 from app.seedbox_ui.routes import _translate_rtorrent_path_to_sftp_path
-                sftp_path = _translate_rtorrent_path_to_sftp_path(path, 'sonarr') # Assume sonarr for now
+                sftp_path = _translate_rtorrent_path_to_sftp_path(path, 'sonarr')
                 if sftp_path: _sftp_delete_recursive(sftp, sftp_path, current_app.logger)
     except Exception as e:
         return False, f"SFTP deletion failed: {e}"

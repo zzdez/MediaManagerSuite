@@ -44,7 +44,7 @@ def _determine_media_identity(media_id, instance_type):
 
 def _process_single_release(release_details, final_app_type, final_target_id):
     import requests
-    from app.utils.rtorrent_client import add_magnet_httprpc, add_torrent_file_httprpc, get_torrent_hash_by_name, _decode_bencode_name
+    from app.utils.rtorrent_client import add_magnet, add_torrent_file, get_torrent_hash_by_name, _decode_bencode_name
     from app.utils.mapping_manager import add_or_update_torrent_in_map
 
     logger = current_app.logger
@@ -67,7 +67,7 @@ def _process_single_release(release_details, final_app_type, final_target_id):
         if download_link.startswith('magnet:'):
             parsed_magnet = urllib.parse.parse_qs(urllib.parse.urlparse(download_link).query)
             if parsed_magnet.get('dn'): release_name_for_map = parsed_magnet.get('dn')[0]
-            success_add, error_add = add_magnet_httprpc(download_link, rtorrent_label, rtorrent_download_dir)
+            success_add, error_add = add_magnet(download_link, rtorrent_label, rtorrent_download_dir)
         else:
             proxy_url = url_for('search_ui.download_torrent_proxy', _external=True)
             params = {'url': download_link, 'release_name': release_name, 'indexer_id': indexer_id, 'guid': guid}
@@ -78,7 +78,7 @@ def _process_single_release(release_details, final_app_type, final_target_id):
             torrent_content = response.content
             decoded_name = _decode_bencode_name(torrent_content)
             if decoded_name: release_name_for_map = decoded_name
-            success_add, error_add = add_torrent_file_httprpc(torrent_content, f"{release_name}.torrent", rtorrent_label, rtorrent_download_dir)
+            success_add, error_add = add_torrent_file(torrent_content, f"{release_name}.torrent", rtorrent_label, rtorrent_download_dir)
 
         if not success_add:
             return False, f"Échec de l'ajout à rTorrent: {error_add}"
@@ -142,11 +142,18 @@ def prowlarr_search():
 
 @search_ui_bp.route('/api/search/lookup', methods=['POST'])
 def api_search_lookup():
-    data, media_type, final_results, clean_title = request.get_json(), data.get('media_type'), [], ""
-    if not media_type or (not data.get('term') and not data.get('media_id')): return jsonify({'error': 'Titre ou ID requis.'}), 400
+    data = request.get_json()
+    media_type = data.get('media_type')
+    final_results = []
+    clean_title = ""
+    if not media_type or (not data.get('term') and not data.get('media_id')):
+        return jsonify({'error': 'Titre ou ID requis.'}), 400
     if data.get('media_id'):
         api_response = arr_client.search_sonarr_by_title(f"tvdb:{data.get('media_id')}") if media_type == 'tv' else arr_client.search_radarr_by_title(f"tmdb:{data.get('media_id')}")
-        if api_response: final_results, final_results[0]['is_best_match'], clean_title = api_response, True, api_response[0].get('title', '')
+        if api_response:
+            final_results = api_response
+            final_results[0]['is_best_match'] = True
+            clean_title = api_response[0].get('title', '')
     elif data.get('term'):
         parsed_info = parse_media_name(data.get('term'))
         clean_title, year = parsed_info.get('title', data.get('term')).lower(), parsed_info.get('year')
@@ -154,7 +161,8 @@ def api_search_lookup():
         if api_response:
             scored_results = sorted([{'score': levenshtein_distance(clean_title, item.get('title', '').lower()) - (10 if clean_title == item.get('title', '').lower() else 0) + (20 if year and item.get('year') and year != item.get('year') else 0), 'data': item} for item in api_response], key=lambda x: x['score'])
             final_results = [result['data'] for result in scored_results]
-            if final_results: final_results[0]['is_best_match'] = True
+            if final_results:
+                final_results[0]['is_best_match'] = True
     from app.utils import trailer_manager
     for item in final_results:
         item_media_type = 'tv' if item.get('tvdbId') else 'movie'
