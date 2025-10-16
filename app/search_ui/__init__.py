@@ -511,6 +511,7 @@ def download_and_map():
 @search_ui_bp.route('/batch-download-and-map', methods=['POST'])
 @login_required
 def batch_download_and_map():
+    import time
     logger = current_app.logger
     data = request.get_json()
 
@@ -536,26 +537,53 @@ def batch_download_and_map():
     if not final_app_type:
         final_app_type = 'sonarr' if instance_type == 'tv' else 'radarr'
 
-    processed_count = 0
-    for release in releases:
-        # La fonction _process_single_release attend un dictionnaire avec des clés spécifiques
-        release_details_for_processing = {
-            'releaseName': release.get('releaseName'),
-            'downloadLink': release.get('downloadLink'),
-            'indexerId': release.get('indexerId'),
-            'guid': release.get('guid')
-        }
-        success, message = _process_single_release(release_details_for_processing, final_app_type, final_target_id)
-        if not success:
-            # Arrêt à la première erreur
-            error_message = f"Échec du lot après {processed_count} succès. Erreur sur '{release.get('releaseName')}': {message}"
-            logger.error(error_message)
-            return jsonify({'status': 'error', 'message': error_message}), 500
-        processed_count += 1
+    batch_results = []
+    logger.info(f"Début du traitement par lot pour {len(releases)} releases.")
 
-    success_message = f"{processed_count} releases ont été ajoutées et mappées avec succès."
-    logger.info(success_message)
-    return jsonify({'status': 'success', 'message': success_message})
+    for i, release in enumerate(releases):
+        release_name = release.get('releaseName', 'Titre inconnu')
+        logger.info(f"Traitement de la release {i+1}/{len(releases)}: '{release_name}'")
+
+        try:
+            release_details_for_processing = {
+                'releaseName': release_name,
+                'downloadLink': release.get('downloadLink'),
+                'indexerId': release.get('indexerId'),
+                'guid': release.get('guid')
+            }
+            success, message = _process_single_release(release_details_for_processing, final_app_type, final_target_id)
+
+            if success:
+                logger.info(f"Succès pour '{release_name}': {message}")
+                batch_results.append({
+                    'status': 'success',
+                    'releaseName': release_name,
+                    'message': message
+                })
+            else:
+                logger.error(f"Échec contrôlé pour '{release_name}': {message}")
+                batch_results.append({
+                    'status': 'error',
+                    'releaseName': release_name,
+                    'message': message
+                })
+
+        except Exception as e:
+            error_message = f"Erreur inattendue lors du traitement de '{release_name}': {str(e)}"
+            logger.error(error_message, exc_info=True)
+            batch_results.append({
+                'status': 'error',
+                'releaseName': release_name,
+                'message': error_message
+            })
+
+        # Ajouter une pause entre chaque traitement pour ne pas surcharger rTorrent
+        if i < len(releases) - 1:
+            logger.debug("Pause de 1 seconde avant la prochaine release.")
+            time.sleep(1)
+
+    logger.info("Traitement par lot terminé.")
+    return jsonify({'status': 'batch_complete', 'results': batch_results})
 
 # =====================================================================
 # ROUTES DE PROXY DE TÉLÉCHARGEMENT RESTAURÉES
