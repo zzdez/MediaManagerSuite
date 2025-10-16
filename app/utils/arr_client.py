@@ -17,6 +17,10 @@ def parse_media_name(item_name: str) -> dict:
     Parses a media item name to determine if it's a TV show or a movie and extracts details.
     """
     logger.debug(f"parse_media_name: Called with item_name='{item_name}'")
+
+    # Nettoyer le titre en amont pour enlever les titres alternatifs entre parenthèses
+    item_name = re.sub(r'\s*\([^)]*\)$', '', item_name).strip()
+
     # Regex patterns for TV shows
     tv_patterns = [
         # More specific patterns first
