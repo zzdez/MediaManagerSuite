@@ -393,8 +393,9 @@ def _process_single_release(release_details, final_app_type, final_target_id):
     from pathlib import Path
     from app.utils.rtorrent_client import (
         _decode_bencode_name,
-        add_magnet_and_get_hash_robustly,
-        add_torrent_data_and_get_hash_robustly
+        add_magnet_httprpc,
+        add_torrent_file_httprpc,
+        get_torrent_hash_by_name
     )
     from app.utils.mapping_manager import add_or_update_torrent_in_map
 
@@ -418,20 +419,18 @@ def _process_single_release(release_details, final_app_type, final_target_id):
         if not rtorrent_label or not rtorrent_download_dir:
             return False, f"Config rTorrent manquante pour {final_app_type}."
 
-        # 2. Ajouter le torrent et obtenir le hash
-        actual_hash = None
-        release_name_for_map = release_name_original
+        # 2. Ajouter le torrent via httprpc (ancienne méthode fiable)
+        release_name_for_map = release_name_original # Fallback
+        success_add = False
+        error_add = "Unknown error"
 
         if download_link.startswith('magnet:'):
-            actual_hash = add_magnet_and_get_hash_robustly(
-                magnet_link=download_link,
-                label=rtorrent_label,
-                destination_path=rtorrent_download_dir
-            )
             parsed_magnet = urllib.parse.parse_qs(urllib.parse.urlparse(download_link).query)
             display_names = parsed_magnet.get('dn')
             if display_names and display_names[0]:
                 release_name_for_map = display_names[0].strip()
+
+            success_add, error_add = add_magnet_httprpc(download_link, rtorrent_label, rtorrent_download_dir)
         else: # Fichier .torrent
             proxy_url = url_for('search_ui.download_torrent_proxy', _external=True)
             params = {'url': download_link, 'release_name': release_name_original, 'indexer_id': indexer_id, 'guid': guid}
@@ -441,28 +440,28 @@ def _process_single_release(release_details, final_app_type, final_target_id):
             cookies = {session_cookie_name: request.cookies.get(session_cookie_name)}
             response = requests.get(proxy_url, params=params, cookies=cookies, timeout=60)
 
-            # Vérifier la réponse avant de continuer
             if not response.ok:
                 try:
-                    # Essayer de lire le message d'erreur JSON du proxy
                     error_data = response.json()
-                    error_message = error_data.get('message', 'Erreur inconnue du proxy de téléchargement.')
+                    error_message = error_data.get('message', 'Erreur inconnue du proxy.')
                 except ValueError:
-                    # Si la réponse n'est pas du JSON
                     error_message = response.text or f"Erreur {response.status_code} du proxy."
                 raise requests.exceptions.HTTPError(error_message, response=response)
 
             torrent_content_bytes = response.content
+            decoded_name = _decode_bencode_name(torrent_content_bytes)
+            if decoded_name:
+                release_name_for_map = decoded_name
             
-            release_name_for_map = _decode_bencode_name(torrent_content_bytes) or release_name_original.replace('.torrent', '').strip()
-            actual_hash = add_torrent_data_and_get_hash_robustly(
-                torrent_content_bytes=torrent_content_bytes,
-                filename_for_rtorrent=f"{release_name_original}.torrent",
-                label=rtorrent_label,
-                destination_path=rtorrent_download_dir
-            )
+            success_add, error_add = add_torrent_file_httprpc(torrent_content_bytes, f"{release_name_original}.torrent", rtorrent_label, rtorrent_download_dir)
 
-        # 3. Gérer le résultat
+        if not success_add:
+            return False, f"Échec de l'ajout à rTorrent: {error_add}"
+
+        # 3. Gérer le résultat et récupérer le hash
+        time.sleep(2) # Laisser le temps à rTorrent de traiter
+        actual_hash = get_torrent_hash_by_name(release_name_for_map, max_retries=10, delay_seconds=2)
+
         if actual_hash:
             logger.info(f"Torrent '{release_name_for_map}' ajouté. Hash: {actual_hash}. Sauvegarde de l'association.")
             folder_name = release_name_for_map

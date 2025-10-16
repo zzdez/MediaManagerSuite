@@ -9,7 +9,6 @@ import json
 import time
 import xmlrpc.client
 import logging
-import re
 # import base64 # For xmlrpc.client.Binary later
 
 def _send_xmlrpc_request(method_name, params):
@@ -421,6 +420,13 @@ def add_torrent_file(file_content_bytes, filename, label=None, download_dir=None
         return False, f"Torrent file add via XML-RPC ('{method_name}') for '{filename}' returned an unexpected result: {result}. Expected 0 for success."
 
 # get_torrent_hash_by_name remains the same
+def add_magnet_httprpc(magnet_link, label, download_dir):
+    return _make_httprpc_request(params={'mode': 'add', 'url': magnet_link, 'label': label, 'dir_edit': download_dir})
+
+def add_torrent_file_httprpc(file_content_bytes, filename, label, download_dir):
+    files = {'torrent_file': (filename, file_content_bytes, 'application/x-bittorrent')}
+    return _make_httprpc_request(data={'mode': 'addtorrent', 'label': label, 'dir_edit': download_dir}, files=files)
+
 def get_torrent_hash_by_name(torrent_name, max_retries=3, delay_seconds=2):
     # ... (implementation unchanged) ...
     if not torrent_name: return None
@@ -449,52 +455,41 @@ def get_torrent_hash_by_name(torrent_name, max_retries=3, delay_seconds=2):
 
 def add_magnet_and_get_hash_robustly(magnet_link, label=None, destination_path=None):
     """
-    Ajoute un magnet à rTorrent, force son démarrage, et retourne son hash de manière fiable.
+    Ajoute un magnet à rTorrent en spécifiant le chemin/label, et retourne son hash de manière fiable.
+    Retourne le hash (str) en cas de succès, ou None en cas d'échec.
     """
     logger = current_app.logger
-    logger.info(f"Début de l'ajout robuste de magnet: {magnet_link[:100]}...")
-
+    logger.info(f"Début de add_magnet_and_get_hash_robustly pour: {magnet_link[:100]}...")
     try:
-        # 1. Obtenir les hashs existants
         torrents_before_raw, error_before = _send_xmlrpc_request("d.multicall2", ["", "main", "d.hash="])
         if error_before:
-            logger.error(f"Erreur XML-RPC (avant ajout magnet): {error_before}")
+            logger.error(f"Erreur XML-RPC avant l'ajout (magnet): {error_before}")
             return None
         hashes_before = {item[0] for item in torrents_before_raw if item} if torrents_before_raw else set()
-        logger.debug(f"{len(hashes_before)} hashs présents avant l'ajout.")
 
-        # 2. Ajouter le magnet avec la commande pour démarrer
-        params_for_load = ["", magnet_link, "d.start_now.set=1"] # Force le démarrage
+        params_for_load = ["", magnet_link]
         if destination_path:
             params_for_load.append(f"d.directory.set={destination_path}")
         if label:
             params_for_load.append(f"d.custom1.set={label}")
 
-        result, error_load = _send_xmlrpc_request("load.start", params_for_load)
-        if error_load or result != 0:
-            logger.error(f"Échec de l'envoi du magnet à rTorrent. Erreur: {error_load}, Résultat: {result}")
-            return None
+        _send_xmlrpc_request("load.start", params_for_load)
+        time.sleep(2) # Laisser à rTorrent le temps de traiter le magnet
 
-        # 3. Attendre et trouver le nouveau hash
-        time.sleep(2) # Délai initial pour que rTorrent traite la commande
-        max_retries, retry_delay = 20, 1 # Total de 22 secondes d'attente max
+        max_retries, retry_delay = 20, 2
         for i in range(max_retries):
+            time.sleep(retry_delay)
             torrents_after_raw, error_after = _send_xmlrpc_request("d.multicall2", ["", "main", "d.hash="])
-            if error_after:
-                time.sleep(retry_delay)
-                continue
+            if error_after: continue
             
             hashes_after = {item[0] for item in torrents_after_raw if item} if torrents_after_raw else set()
             new_hashes = hashes_after - hashes_before
-
             if new_hashes:
                 new_hash = new_hashes.pop()
-                logger.info(f"Nouveau hash trouvé ({new_hash}) après {i+1} tentative(s).")
+                logger.info(f"Nouveau hash trouvé : {new_hash}")
                 return new_hash
 
-            time.sleep(retry_delay)
-
-        logger.error(f"Impossible de trouver le nouveau hash pour le magnet après {max_retries} tentatives.")
+        logger.error(f"Impossible de trouver le nouveau hash après {max_retries} tentatives.")
         return None
     except Exception as e:
         logger.error(f"Erreur inattendue dans add_magnet_and_get_hash_robustly: {e}", exc_info=True)
@@ -502,53 +497,41 @@ def add_magnet_and_get_hash_robustly(magnet_link, label=None, destination_path=N
 
 def add_torrent_data_and_get_hash_robustly(torrent_content_bytes, filename_for_rtorrent, label=None, destination_path=None):
     """
-    Ajoute un torrent (via data), force son démarrage, et retourne son hash de manière fiable.
+    Ajoute un torrent (via data), en spécifiant le chemin/label, et retourne son hash de manière fiable.
+    Retourne le hash (str) en cas de succès, ou None en cas d'échec.
     """
     logger = current_app.logger
-    logger.info(f"Début de l'ajout robuste de fichier torrent: '{filename_for_rtorrent}'...")
-    if not torrent_content_bytes:
-        return None
+    logger.info(f"Début de add_torrent_data_and_get_hash_robustly pour '{filename_for_rtorrent}'...")
+    if not torrent_content_bytes: return None
 
     try:
-        # 1. Obtenir les hashs existants
         torrents_before_raw, error_before = _send_xmlrpc_request("d.multicall2", ["", "main", "d.hash="])
-        if error_before:
-            logger.error(f"Erreur XML-RPC (avant ajout fichier): {error_before}")
-            return None
+        if error_before: return None
         hashes_before = {item[0] for item in torrents_before_raw if item} if torrents_before_raw else set()
-        logger.debug(f"{len(hashes_before)} hashs présents avant l'ajout.")
 
-        # 2. Ajouter le torrent avec la commande pour démarrer
-        params_for_load_raw = ["", xmlrpc.client.Binary(torrent_content_bytes), "d.start_now.set=1"] # Force le démarrage
+        params_for_load_raw = ["", xmlrpc.client.Binary(torrent_content_bytes)]
         if destination_path:
             params_for_load_raw.append(f"d.directory.set={destination_path}")
         if label:
             params_for_load_raw.append(f"d.custom1.set={label}")
 
-        result, error_load = _send_xmlrpc_request("load.raw_start", params_for_load_raw)
-        if error_load or result != 0:
-            logger.error(f"Échec de l'envoi du fichier torrent à rTorrent. Erreur: {error_load}, Résultat: {result}")
-            return None
+        _send_xmlrpc_request("load.raw_start", params_for_load_raw)
+        time.sleep(2)
 
-        # 3. Attendre et trouver le nouveau hash
-        time.sleep(2) # Délai initial
-        max_retries, retry_delay = 20, 1
+        max_retries, retry_delay = 20, 2
         for i in range(max_retries):
+            time.sleep(retry_delay)
             torrents_after_raw, error_after = _send_xmlrpc_request("d.multicall2", ["", "main", "d.hash="])
-            if error_after:
-                time.sleep(retry_delay)
-                continue
+            if error_after: continue
             
             hashes_after = {item[0] for item in torrents_after_raw if item} if torrents_after_raw else set()
             new_hashes = hashes_after - hashes_before
             if new_hashes:
                 new_hash = new_hashes.pop()
-                logger.info(f"Nouveau hash trouvé ({new_hash}) pour '{filename_for_rtorrent}' après {i+1} tentative(s).")
+                logger.info(f"Nouveau hash trouvé : {new_hash}")
                 return new_hash
 
-            time.sleep(retry_delay)
-
-        logger.error(f"Impossible de trouver le nouveau hash pour '{filename_for_rtorrent}' après {max_retries} tentatives.")
+        logger.error(f"Impossible de trouver le nouveau hash après {max_retries} tentatives.")
         return None
     except Exception as e:
         logger.error(f"Erreur inattendue dans add_torrent_data_and_get_hash_robustly: {e}", exc_info=True)
