@@ -428,6 +428,54 @@ def add_torrent_file_httprpc(file_content_bytes, filename, label, download_dir):
     files = {'torrent_file': (filename, file_content_bytes, 'application/x-bittorrent')}
     return _make_httprpc_request(data={'mode': 'addtorrent', 'label': label, 'dir_edit': download_dir}, files=files)
 
+def get_all_hashes_xmlrpc():
+    """Récupère tous les hashs via XML-RPC."""
+    torrents_raw, error = _send_xmlrpc_request("d.multicall2", ["", "main", "d.hash="])
+    if error:
+        current_app.logger.error(f"Erreur XML-RPC lors de la récupération des hashs: {error}")
+        return None
+    return {item[0] for item in torrents_raw if item} if torrents_raw else set()
+
+def add_magnet_and_get_hash_httprpc(magnet_link, label, download_dir):
+    hashes_before = get_all_hashes_xmlrpc()
+    if hashes_before is None:
+        return None, "Impossible de récupérer les hashs avant l'ajout."
+
+    success, error = add_magnet_httprpc(magnet_link, label, download_dir)
+    if not success:
+        return None, error
+
+    time.sleep(2)
+    for _ in range(10): # 10 tentatives, 2 secondes d'intervalle
+        hashes_after = get_all_hashes_xmlrpc()
+        if hashes_after is not None:
+            new_hashes = hashes_after - hashes_before
+            if new_hashes:
+                return new_hashes.pop(), None
+        time.sleep(2)
+
+    return None, "Impossible de trouver le nouveau hash après l'ajout."
+
+def add_torrent_file_and_get_hash_httprpc(file_content, filename, label, download_dir):
+    hashes_before = get_all_hashes_xmlrpc()
+    if hashes_before is None:
+        return None, "Impossible de récupérer les hashs avant l'ajout."
+
+    success, error = add_torrent_file_httprpc(file_content, filename, label, download_dir)
+    if not success:
+        return None, error
+
+    time.sleep(2)
+    for _ in range(10):
+        hashes_after = get_all_hashes_xmlrpc()
+        if hashes_after is not None:
+            new_hashes = hashes_after - hashes_before
+            if new_hashes:
+                return new_hashes.pop(), None
+        time.sleep(2)
+
+    return None, "Impossible de trouver le nouveau hash après l'ajout."
+
 def get_torrent_hash_by_name(torrent_name, max_retries=3, delay_seconds=2):
     # ... (implementation unchanged) ...
     if not torrent_name: return None

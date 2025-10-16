@@ -393,9 +393,8 @@ def _process_single_release(release_details, final_app_type, final_target_id):
     from pathlib import Path
     from app.utils.rtorrent_client import (
         _decode_bencode_name,
-        add_magnet_httprpc,
-        add_torrent_file_httprpc,
-        get_torrent_hash_by_name
+        add_magnet_and_get_hash_httprpc,
+        add_torrent_file_and_get_hash_httprpc
     )
     from app.utils.mapping_manager import add_or_update_torrent_in_map
 
@@ -419,18 +418,17 @@ def _process_single_release(release_details, final_app_type, final_target_id):
         if not rtorrent_label or not rtorrent_download_dir:
             return False, f"Config rTorrent manquante pour {final_app_type}."
 
-        # 2. Ajouter le torrent via httprpc (ancienne méthode fiable)
-        release_name_for_map = release_name_original # Fallback
-        success_add = False
+        # 2. Ajouter le torrent et récupérer le hash de manière robuste
+        actual_hash = None
         error_add = "Unknown error"
+        release_name_for_map = release_name_original # Fallback
 
         if download_link.startswith('magnet:'):
             parsed_magnet = urllib.parse.parse_qs(urllib.parse.urlparse(download_link).query)
             display_names = parsed_magnet.get('dn')
             if display_names and display_names[0]:
                 release_name_for_map = display_names[0].strip()
-
-            success_add, error_add = add_magnet_httprpc(download_link, rtorrent_label, rtorrent_download_dir)
+            actual_hash, error_add = add_magnet_and_get_hash_httprpc(download_link, rtorrent_label, rtorrent_download_dir)
         else: # Fichier .torrent
             proxy_url = url_for('search_ui.download_torrent_proxy', _external=True)
             params = {'url': download_link, 'release_name': release_name_original, 'indexer_id': indexer_id, 'guid': guid}
@@ -453,14 +451,11 @@ def _process_single_release(release_details, final_app_type, final_target_id):
             if decoded_name:
                 release_name_for_map = decoded_name
             
-            success_add, error_add = add_torrent_file_httprpc(torrent_content_bytes, f"{release_name_original}.torrent", rtorrent_label, rtorrent_download_dir)
+            actual_hash, error_add = add_torrent_file_and_get_hash_httprpc(torrent_content_bytes, f"{release_name_original}.torrent", rtorrent_label, rtorrent_download_dir)
 
-        if not success_add:
-            return False, f"Échec de l'ajout à rTorrent: {error_add}"
-
-        # 3. Gérer le résultat et récupérer le hash
-        time.sleep(2) # Laisser le temps à rTorrent de traiter
-        actual_hash = get_torrent_hash_by_name(release_name_for_map, max_retries=10, delay_seconds=2)
+        # 3. Gérer le résultat
+        if not actual_hash:
+            return False, error_add or "Impossible de récupérer le hash après l'ajout."
 
         if actual_hash:
             logger.info(f"Torrent '{release_name_for_map}' ajouté. Hash: {actual_hash}. Sauvegarde de l'association.")
