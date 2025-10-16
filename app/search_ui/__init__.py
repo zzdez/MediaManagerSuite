@@ -438,7 +438,18 @@ def _process_single_release(release_details, final_app_type, final_target_id):
             session_cookie_name = current_app.config.get("SESSION_COOKIE_NAME", "session")
             cookies = {session_cookie_name: request.cookies.get(session_cookie_name)}
             response = requests.get(proxy_url, params=params, cookies=cookies, timeout=60)
-            response.raise_for_status()
+
+            # Vérifier la réponse avant de continuer
+            if not response.ok:
+                try:
+                    # Essayer de lire le message d'erreur JSON du proxy
+                    error_data = response.json()
+                    error_message = error_data.get('message', 'Erreur inconnue du proxy de téléchargement.')
+                except ValueError:
+                    # Si la réponse n'est pas du JSON
+                    error_message = response.text or f"Erreur {response.status_code} du proxy."
+                raise requests.exceptions.HTTPError(error_message, response=response)
+
             torrent_content_bytes = response.content
             
             release_name_for_map = _decode_bencode_name(torrent_content_bytes) or release_name_original.replace('.torrent', '').strip()
@@ -508,6 +519,8 @@ def download_and_map():
     else:
         return jsonify({'status': 'error', 'message': message}), 500
 
+import time
+
 @search_ui_bp.route('/batch-download-and-map', methods=['POST'])
 @login_required
 def batch_download_and_map():
@@ -552,6 +565,7 @@ def batch_download_and_map():
             logger.error(error_message)
             return jsonify({'status': 'error', 'message': error_message}), 500
         processed_count += 1
+        time.sleep(1) # Ajout d'une pause de 1 seconde entre chaque ajout
 
     success_message = f"{processed_count} releases ont été ajoutées et mappées avec succès."
     logger.info(success_message)
@@ -564,8 +578,8 @@ def batch_download_and_map():
 @search_ui_bp.route('/download_torrent_proxy')
 @login_required
 def download_torrent_proxy():
-    # Imports locaux
     import requests
+    from app.utils.cookie_manager import get_ygg_cookie_status
 
     url = request.args.get('url')
     release_name = request.args.get('release_name', 'download.torrent')
@@ -573,23 +587,23 @@ def download_torrent_proxy():
     guid = request.args.get('guid')
 
     if not all([url, release_name, indexer_id, guid]):
-        current_app.logger.error(f"Proxy download: Paramètres manquants.")
-        return Response("Erreur: Paramètres manquants.", status=400)
+        return jsonify({'status': 'error', 'message': 'Paramètres manquants.'}), 400
 
     ygg_indexer_id = current_app.config.get('YGG_INDEXER_ID')
     final_filename = f"{release_name.replace(' ', '_')}.torrent"
 
     try:
         if str(ygg_indexer_id) == str(indexer_id):
-            from app.utils.cookie_manager import get_ygg_cookie_status
             cookie_status = get_ygg_cookie_status()
-
             if not cookie_status["is_valid"]:
-                raise ValueError(f"Cookie YGG invalide ou expiré. Message : {cookie_status.get('status_message', 'Veuillez le mettre à jour.')}")
+                # Erreur spécifique pour le cookie
+                error_message = f"Cookie YGG invalide ou expiré. Message : {cookie_status.get('status_message', 'Veuillez le mettre à jour.')}"
+                current_app.logger.warning(f"Proxy download: {error_message}")
+                # Retourner une erreur JSON claire que le frontend peut afficher
+                return jsonify({'status': 'error', 'message': error_message}), 400
 
             ygg_user_agent = current_app.config.get('YGG_USER_AGENT')
             ygg_base_url = current_app.config.get('YGG_BASE_URL')
-
             if not all([ygg_user_agent, ygg_base_url]):
                 raise ValueError("Configuration YGG (USER_AGENT, BASE_URL) manquante.")
 
@@ -613,9 +627,15 @@ def download_torrent_proxy():
             mimetype='application/x-bittorrent',
             headers={'Content-Disposition': f'attachment;filename="{final_filename}"'}
         )
+    except requests.exceptions.HTTPError as e:
+        # Erreur HTTP lors du téléchargement du torrent lui-même
+        error_message = f"Erreur lors du téléchargement du torrent depuis l'indexer : {e.response.status_code} {e.response.reason}"
+        current_app.logger.error(f"Proxy download: {error_message}", exc_info=True)
+        return jsonify({'status': 'error', 'message': error_message}), 502 # Bad Gateway
     except Exception as e:
+        # Autres erreurs (y compris la ValueError de config manquante)
         current_app.logger.error(f"Proxy download: Erreur pour '{release_name}': {e}", exc_info=True)
-        return Response(f"Une erreur est survenue lors du proxy de téléchargement: {e}", status=500)
+        return jsonify({'status': 'error', 'message': f"Erreur interne du proxy : {e}"}), 500
 
 @search_ui_bp.route('/api/add/manual', methods=['POST'])
 @login_required
