@@ -594,6 +594,7 @@ $(document).ready(function() {
             indexerId: button.data('indexer-id')
         };
         modalEl.data('release-details', releaseDetails);
+        modalEl.data('release-details-batch', null); // Nettoyer les données du lot
         modalEl.find('.modal-title').text(`Mapper : ${releaseDetails.title}`);
         new bootstrap.Modal(modalEl[0]).show();
 
@@ -982,33 +983,74 @@ $(document).ready(function() {
         const selectedItems = [];
         $('.release-checkbox:checked').each(function() {
             const listItem = $(this).closest('.release-item');
+            // Correction ici : utiliser .individual-map-btn pour être plus spécifique
+            const mapButton = listItem.find('.individual-map-btn');
             const releaseDetails = {
-                title: listItem.find('.download-and-map-btn').data('title'),
-                downloadLink: listItem.find('.download-and-map-btn').data('download-link'),
-                guid: listItem.find('.download-and-map-btn').data('guid'),
-                indexerId: listItem.find('.download-and-map-btn').data('indexer-id')
+                title: mapButton.data('title'),
+                downloadLink: mapButton.data('download-link'),
+                guid: mapButton.data('guid'),
+                indexerId: mapButton.data('indexer-id')
             };
             selectedItems.push(releaseDetails);
         });
 
         if (selectedItems.length > 0) {
-            // On prend le titre du premier item comme référence pour la recherche dans la modale
             const referenceTitle = selectedItems[0].title;
-
             modalEl.data('release-details-batch', selectedItems);
+            modalEl.data('release-details', null); // Nettoyer les données de la sélection unique
             modalEl.find('.modal-title').text(`Mapper ${selectedItems.length} releases`);
+
+            // Afficher la modale
             new bootstrap.Modal(modalEl[0]).show();
 
-            // Le reste de la logique de la modale est déclenché par l'ouverture
-            // On simule le clic sur le premier item pour remplir la modale
-            const mockFirstItemButton = $('<a href="#"></a>').data({
-                'title': referenceTitle,
-                // Les autres data ne sont pas nécessaires car on va surcharger le comportement
-            });
+            // Déterminer le media_type et préparer le contenu de la modale
+            const mediaType = $('input[name="search_type"]:checked').val() === 'sonarr' ? 'tv' : 'movie';
+            const lookupContent = modalBody.find('#initial-lookup-content').removeClass('d-none').show();
 
-            // Simuler l'ouverture de la modale comme pour un item unique
-            // La logique existante va s'exécuter, on va simplement surcharger le bouton final
-            mockFirstItemButton.trigger('click');
+            // Vider les autres parties de la modale
+            modalBody.find('#add-item-options-container').addClass('d-none');
+            modalEl.find('#confirm-add-and-map-btn').addClass('d-none');
+
+            // Afficher le spinner
+            lookupContent.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div><p class="mt-2">Recherche des correspondances...</p></div>');
+
+            // Lancer la recherche de correspondance
+            fetch('/search/api/search/lookup', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ term: referenceTitle, media_type: mediaType })
+            })
+            .then(response => response.json())
+            .then(data => {
+                const idPlaceholder = mediaType === 'tv' ? 'ID TVDB...' : 'ID TMDb...';
+
+                // Construire le résumé des releases sélectionnées
+                let releasesSummaryHtml = '<div class="alert alert-secondary mb-3"><h6>Releases sélectionnées :</h6><ul class="list-unstyled mb-0 small">';
+                selectedItems.forEach(item => {
+                    releasesSummaryHtml += `<li><i class="fas fa-file-video me-2"></i>${item.title}</li>`;
+                });
+                releasesSummaryHtml += '</ul></div>';
+
+                const modalHtml = `
+                    ${releasesSummaryHtml}
+                    <div data-media-type="${mediaType}">
+                        <p class="text-muted small">Le meilleur résultat pour le lot est surligné. Si ce n'est pas le bon, utilisez la recherche manuelle.</p>
+                        <h6>Recherche manuelle par Titre</h6>
+                        <div class="input-group mb-2"><input type="text" id="manual-search-input" class="form-control" value="${data.cleaned_query}"></div>
+                        <div class="text-center text-muted my-2 small">OU</div>
+                        <h6>Recherche manuelle par ID</h6>
+                        <div class="input-group mb-3"><input type="number" id="manual-id-input" class="form-control" placeholder="${idPlaceholder}"></div>
+                        <button id="unified-search-button" class="btn btn-primary w-100 mb-3">Rechercher manuellement</button>
+                        <hr>
+                        <div id="lookup-results-container"></div>
+                    </div>`;
+                lookupContent.html(modalHtml);
+                displayResults(data.results, mediaType);
+            })
+            .catch(error => {
+                console.error("Erreur lors du lookup pour le lot:", error);
+                lookupContent.html('<div class="alert alert-danger">Erreur lors de la recherche des correspondances.</div>');
+            });
         }
     });
 });
