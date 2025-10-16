@@ -23,8 +23,11 @@ def parse_release_data(release_name):
     Analyse un nom de release avec guessit et le nettoie pour le filtrage.
     Retourne un dictionnaire structuré et fiable.
     """
-    guess = guessit(release_name)
-    title_lower_normalized = _normalize_string(release_name)
+    # Nettoyer le titre en amont pour enlever les titres alternatifs entre parenthèses
+    cleaned_release_name = re.sub(r'\s*\([^)]*\)$', '', release_name).strip()
+
+    guess = guessit(cleaned_release_name)
+    title_lower_normalized = _normalize_string(cleaned_release_name)
 
     # Initialisation de notre objet de données propres
     parsed_data = {
