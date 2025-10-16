@@ -9,6 +9,11 @@ Ce fichier contient des informations importantes et des leçons apprises lors du
 -   **Gestion des traductions** : La fonction `get_series_details_by_id` doit gérer les traductions manquantes ou incomplètes de manière robuste. Si une traduction est demandée (par ex. en français) mais que les champs `name` ou `overview` de cette traduction sont vides ou ne contiennent que des espaces, le système **doit** utiliser les données de la langue originale (anglais) comme solution de secours. Cela évite d'envoyer des données vides au frontend.
 -   **Intégrité des données** : Le dictionnaire retourné par `get_series_details_by_id` **doit** toujours contenir la clé `id` correspondant à l'ID TVDB de la série. Cet identifiant est crucial pour les opérations en aval, notamment pour le mappage et le téléchargement de médias. Son absence a déjà provoqué des régressions (erreur HTTP 400).
 
+### Communication rTorrent (`app/utils/rtorrent_client.py`)
+
+-   **Ne pas mélanger les protocoles** : Le client rTorrent de l'utilisateur fonctionne de manière fiable avec des commandes `httprpc` pour l'ajout de torrents, mais `xmlrpc` pour lister les torrents. Toute tentative de modifier ou de "moderniser" la méthode d'ajout en utilisant `xmlrpc` a provoqué des comportements instables (torrents en pause, échecs d'ajout silencieux). **Leçon :** Si une méthode de communication fonctionne, ne pas la changer. Isoler les nouvelles fonctionnalités (comme la récupération de hash par comparaison) de manière à ce qu'elles utilisent le protocole `xmlrpc` uniquement pour la lecture, sans interférer avec l'écriture (`httprpc`).
+-   **Vérifier les dépendances d'import** : Lors de la restauration ou de la modification de fichiers utilitaires comme `rtorrent_client.py`, il est **impératif** de vérifier tous les autres modules qui l'importent (`seedbox_ui`, `search_ui`, etc.) pour s'assurer qu'aucune fonction renommée ou supprimée ne provoque une `ImportError`. Une recherche globale (grep) des noms de fonction est obligatoire avant de valider une telle modification.
+
 ### Recherche & Téléchargement (`app/search_ui/`)
 
 -   **Téléchargement par lots** : La page de recherche libre (`/search/`) permet désormais le téléchargement de plusieurs releases en une seule fois.
