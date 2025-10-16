@@ -435,6 +435,8 @@ def _process_single_release(release_details, final_app_type, final_target_id):
         else: # Fichier .torrent
             proxy_url = url_for('search_ui.download_torrent_proxy', _external=True)
             params = {'url': download_link, 'release_name': release_name_original, 'indexer_id': indexer_id, 'guid': guid}
+            debug_url = f"{proxy_url}?{urllib.parse.urlencode(params)}"
+            logger.info(f"URL DE DÉBOGAGE DU TORRENT : {debug_url}")
             session_cookie_name = current_app.config.get("SESSION_COOKIE_NAME", "session")
             cookies = {session_cookie_name: request.cookies.get(session_cookie_name)}
             response = requests.get(proxy_url, params=params, cookies=cookies, timeout=60)
