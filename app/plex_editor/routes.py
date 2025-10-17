@@ -60,19 +60,24 @@ def get_root_folders():
 def move_media_item():
     data = request.get_json()
     media_id = data.get('mediaId')
-    media_type = data.get('mediaType') # 'sonarr' or 'radarr'
+    media_type = data.get('mediaType')
     new_path = data.get('newPath')
+    current_app.logger.info(f"MOVE_DIAG: Received move request. Media ID: {media_id}, Type: {media_type}, New Path: {new_path}")
 
     if not all([media_id, media_type, new_path]):
+        current_app.logger.error("MOVE_DIAG: Move request failed due to missing data.")
         return jsonify({'status': 'error', 'message': 'Données manquantes.'}), 400
 
     if move_manager.is_move_in_progress():
+        current_app.logger.warning("MOVE_DIAG: Move request rejected because another move is in progress.")
         return jsonify({'status': 'error', 'message': 'Un autre déplacement est déjà en cours.'}), 409
 
     task_id = move_manager.start_move(media_id, media_type)
     if not task_id:
+        current_app.logger.error("MOVE_DIAG: Failed to start a new move task in move_manager.")
         return jsonify({'status': 'error', 'message': 'Impossible de démarrer la tâche de déplacement.'}), 500
 
+    current_app.logger.info(f"MOVE_DIAG: Move task {task_id} started. Calling {media_type} move function...")
     command_response, error = None, None
     if media_type == 'sonarr':
         command_response, error = move_sonarr_series(media_id, new_path)
@@ -80,11 +85,14 @@ def move_media_item():
         command_response, error = move_radarr_movie(media_id, new_path)
 
     if error or not command_response or not command_response.get('id'):
+        current_app.logger.error(f"MOVE_DIAG: Move command failed for task {task_id}. Error: {error}. Response: {command_response}")
         move_manager.end_move(task_id)
         return jsonify({'status': 'error', 'message': error or 'Failed to trigger move command.'}), 500
 
-    move_manager._current_move['command_id'] = command_response.get('id')
+    command_id = command_response.get('id')
+    move_manager._current_move['command_id'] = command_id
     move_manager._current_move['status'] = 'pending'
+    current_app.logger.info(f"MOVE_DIAG: Move command for task {task_id} accepted. Command ID: {command_id}. Status set to 'pending'.")
 
     return jsonify({'status': 'success', 'message': 'Déplacement initié.', 'task_id': task_id})
 
@@ -93,31 +101,40 @@ def move_media_item():
 def get_move_status():
     current_move = move_manager.get_current_move_status()
     if not current_move:
+        # Pas de log ici pour ne pas polluer, car c'est l'état normal.
         return jsonify({'status': 'idle'})
 
     task_id = current_move['task_id']
     command_id = current_move.get('command_id')
     media_type = current_move['media_type']
+    current_app.logger.info(f"MOVE_DIAG: Polling status for task_id={task_id}, command_id={command_id}, type={media_type}")
 
     if not command_id:
+        current_app.logger.error(f"MOVE_DIAG: Task {task_id} is invalid (no command_id). Ending move.")
         move_manager.end_move(task_id)
         return jsonify({'status': 'error', 'message': 'Tâche de déplacement invalide sans ID de commande.'})
 
     command_status = get_arr_command_status(media_type, command_id)
+    current_app.logger.info(f"MOVE_DIAG: Raw command status from {media_type} for command {command_id}: {command_status}")
 
     if not command_status:
+        # Ce cas peut se produire si la commande est introuvable (ex: 99999) ou si l'API est en panne
+        current_app.logger.error(f"MOVE_DIAG: Could not get status for command {command_id} from {media_type}. Ending move.")
         move_manager.end_move(task_id)
         return jsonify({'status': 'error', 'message': f'Impossible de récupérer le statut de la commande {command_id}.'})
 
     status = command_status.get('status')
     if status == 'completed':
+        current_app.logger.info(f"MOVE_DIAG: Command {command_id} completed. Ending move task {task_id}.")
         move_manager.end_move(task_id)
         return jsonify({'status': 'completed', 'message': 'Déplacement terminé avec succès.'})
     elif status in ['failed', 'aborted']:
         error_message = command_status.get('body', {}).get('exception', 'Erreur inconnue.')
+        current_app.logger.error(f"MOVE_DIAG: Command {command_id} failed with status '{status}'. Error: {error_message}. Ending move task {task_id}.")
         move_manager.end_move(task_id)
         return jsonify({'status': 'failed', 'message': f'Le déplacement a échoué: {error_message}'})
     else: # 'pending', 'started', 'running'
+        current_app.logger.debug(f"MOVE_DIAG: Command {command_id} is still running with status '{status}'.")
         return jsonify({'status': 'running', 'message': f'Déplacement en cours... (Statut: {status})'})
 
 
