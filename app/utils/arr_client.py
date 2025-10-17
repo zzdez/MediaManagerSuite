@@ -4,7 +4,6 @@ import requests
 from flask import current_app
 import re
 import logging
-import time
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -1292,48 +1291,46 @@ def radarr_trigger_import(download_id):
     return radarr_post_command(payload)
 
 def move_sonarr_series(series_id, new_root_folder_path):
-    """Moves a Sonarr series to a new root folder using the 'series/editor' endpoint."""
-    logger.info(f"MOVE_DIAG: Entering move_sonarr_series for series_id={series_id}, new_path='{new_root_folder_path}'")
-    payload = {
-        "seriesIds": [series_id],
-        "rootFolderPath": new_root_folder_path,
-        "moveFiles": True
-    }
-    logger.debug(f"MOVE_DIAG: Sonarr move payload: {payload}")
+    """
+    Moves a Sonarr series to a new root folder.
+    This is done by editing the series and changing its rootFolderPath.
+    Sonarr handles the move as a background task.
+    """
+    logger.info(f"Sonarr: Initiating move for series ID {series_id} to '{new_root_folder_path}'.")
 
-    response = _sonarr_api_request('PUT', 'series/editor', json_data=payload)
-    logger.info(f"MOVE_DIAG: Sonarr 'series/editor' raw response: {response}")
+    # First, get the existing series object
+    series_data = get_sonarr_series_by_id(series_id)
+    if not series_data:
+        logger.error(f"Sonarr: Could not retrieve series {series_id} to move it.")
+        return None, "Series not found."
 
-    if not response or not isinstance(response, list) or not response[0].get('id'):
-        error_msg = "Failed to initiate move via series editor."
-        if isinstance(response, list) and response and response[0].get('errorMessage'):
-            error_msg = response[0].get('errorMessage')
-        logger.error(f"MOVE_DIAG: Sonarr move command failed. Error: {error_msg}")
+    # Update the rootFolderPath
+    series_data['rootFolderPath'] = new_root_folder_path
+
+    # Use the existing update function. The 'moveFiles' flag must be passed as a query parameter.
+    params = {'moveFiles': 'true'}
+    response = _sonarr_api_request('PUT', f"series/{series_id}", params=params, json_data=series_data)
+
+    if response and response.get('id'):
+        logger.info(f"Sonarr: Move command for series ID {series_id} accepted.")
+        return response, None
+    else:
+        error_msg = "Failed to initiate move."
+        if isinstance(response, list) and response:
+            error_msg = response[0].get('errorMessage', str(response))
+        logger.error(f"Sonarr: Failed to move series {series_id}. Response: {response}")
         return None, error_msg
 
-    logger.info("MOVE_DIAG: Sonarr move command accepted. Waiting 2s before searching for tracking command...")
-    time.sleep(2)
-    commands = _sonarr_api_request('GET', 'command')
-    logger.debug(f"MOVE_DIAG: Found Sonarr commands: {commands}")
-
-    if commands:
-        for command in commands:
-            if command.get('name') == 'MoveSeries' and command.get('status') in ['queued', 'started']:
-                body = command.get('body', {})
-                if 'seriesIds' in body and series_id in body.get('seriesIds', []):
-                    logger.info(f"MOVE_DIAG: Found trackable Sonarr command {command.get('id')}. Returning it.")
-                    return command, None
-
-    logger.warning("MOVE_DIAG: Could not find a trackable 'MoveSeries' command after initiation.")
-    return {'id': 99999, 'status': 'completed', 'name': 'MoveSeries', 'message': 'Move initiated but not tracked (fallback)'}, None
-
 def move_radarr_movie(movie_id, new_root_folder_path):
-    """Triggers a 'MoveMovies' command in Radarr."""
-    logger.info(f"MOVE_DIAG: Entering move_radarr_movie for movie_id={movie_id}, new_path='{new_root_folder_path}'")
+    """
+    Triggers a 'MoveMovies' command in Radarr.
+    This is an asynchronous operation that can be tracked via the command API.
+    """
+    logger.info(f"Radarr: Initiating move for movie ID {movie_id} to '{new_root_folder_path}'.")
 
+    # Get the movie object to get its current path
     movie_data = get_radarr_movie_by_id(movie_id)
     if not movie_data:
-        logger.error(f"MOVE_DIAG: Radarr movie with ID {movie_id} not found.")
         return None, f"Movie with ID {movie_id} not found in Radarr."
 
     payload = {
@@ -1341,20 +1338,18 @@ def move_radarr_movie(movie_id, new_root_folder_path):
         "movieIds": [movie_id],
         "destinationPath": new_root_folder_path,
     }
-    logger.debug(f"MOVE_DIAG: Radarr move payload: {payload}")
 
     command_response = radarr_post_command(payload)
-    logger.info(f"MOVE_DIAG: Radarr 'MoveMovies' raw response: {command_response}")
 
     if command_response and command_response.get('id'):
-        logger.info(f"MOVE_DIAG: Radarr MoveMovies command accepted. Command ID: {command_response.get('id')}")
+        logger.info(f"Radarr: MoveMovies command for movie ID {movie_id} accepted. Command ID: {command_response.get('id')}")
         return command_response, None
-
-    error_msg = "Failed to trigger MoveMovies command."
-    if isinstance(command_response, list) and command_response:
-        error_msg = command_response[0].get('errorMessage', str(command_response))
-    logger.error(f"MOVE_DIAG: Radarr move command failed. Error: {error_msg}. Response: {command_response}")
-    return None, error_msg
+    else:
+        error_msg = "Failed to trigger MoveMovies command."
+        if isinstance(command_response, list) and command_response:
+            error_msg = command_response[0].get('errorMessage', str(command_response))
+        logger.error(f"Radarr: Failed to trigger MoveMovies command for movie {movie_id}. Response: {command_response}")
+        return None, error_msg
 
 def get_arr_command_status(arr_type, command_id):
     """

@@ -11,7 +11,7 @@ class MoveManager:
     manager suitable for a single-worker server setup.
     """
     _instance = None
-    _lock = threading.Lock()
+    _lock = threading.RLock()
     _current_move = {}  # { 'task_id': str, 'media_id': int, 'media_type': str, 'status': str }
 
     def __new__(cls):
