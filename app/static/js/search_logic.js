@@ -975,6 +975,9 @@ $(document).ready(function() {
 
             if (data.status === 'batch_complete') {
                 showBatchReportModal(data);
+                // On décoche les cases et on met à jour l'interface
+                $('.release-checkbox:checked').prop('checked', false);
+                updateBatchActions();
             } else if (data.status === 'success') {
                 alert(data.message || "Succès ! La release a été envoyée au téléchargement.");
             } else {
