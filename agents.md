@@ -77,20 +77,3 @@ Une nouvelle route /batch-download-and-map a été créée pour gérer les requ�
 La logique de traitement d'une release unique a été refactorisée dans une fonction _process_single_release pour être réutilisée.
 La route de lot boucle sur les releases et appelle _process_single_release pour chacune.
 Conformément à la demande, le processus s'arrête à la première erreur rencontrée.
-
-
-### Fiabilisation des Processus par Lots
-
-Lors du développement du téléchargement par lot, plusieurs leçons importantes ont été apprises pour garantir la stabilité et éviter de surcharger les services externes comme rTorrent.
-
-1.  **Gestion Individuelle des Erreurs** : Un processus par lot qui interagit avec une API externe ne doit pas s'arrêter complètement à la première erreur.
-    *   **Problème** : Si une seule release sur dix échoue, l'approche initiale bloquait les neuf autres.
-    *   **Solution** : Chaque appel (par exemple, chaque téléchargement) doit être encapsulé dans un bloc `try...except`. Le processus principal doit continuer même en cas d'échec d'un élément, et collecter les résultats (succès et échecs).
-
-2.  **Introduction de Pauses (Throttling)** : Les appels rapides et successifs à une même API peuvent être interprétés comme une attaque par déni de service (DoS) ou simplement surcharger le service cible, provoquant des échecs en cascade.
-    *   **Problème** : L'envoi de multiples commandes d'ajout à rTorrent en l'espace de quelques millisecondes a probablement causé l'échec silencieux de certains ajouts.
-    *   **Solution** : Introduire une courte pause (par exemple, `time.sleep(1)`) entre chaque appel dans une boucle de traitement par lot. Cette temporisation simple mais efficace laisse le temps au service de traiter chaque requête individuellement.
-
-3.  **Retour Détaillé à l'Utilisateur** : Pour une meilleure expérience utilisateur et un débogage facilité, il est crucial de fournir un rapport complet à la fin d'un processus par lot.
-    *   **Problème** : Un simple message "Opération terminée" masque les échecs partiels.
-    *   **Solution** : Le backend doit retourner une structure de données (par exemple, une liste d'objets JSON) détaillant le résultat de chaque opération. Le frontend doit ensuite interpréter ces données pour afficher un résumé clair, séparant les succès des échecs et affichant les messages d'erreur pertinents.
