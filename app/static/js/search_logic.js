@@ -867,65 +867,6 @@ $(document).ready(function() {
         });
     });
 
-    function showBatchReportModal(reportData) {
-        // Détruire toute modale de rapport précédente pour éviter les conflits
-        const existingModal = document.getElementById('batchReportModal');
-        if (existingModal) {
-            var modal = bootstrap.Modal.getInstance(existingModal);
-            if (modal) {
-                modal.hide();
-            }
-            existingModal.remove();
-        }
-
-        const successes = reportData.results.filter(r => r.status === 'success');
-        const errors = reportData.results.filter(r => r.status === 'error');
-
-        let modalHtml = `
-        <div class="modal fade" id="batchReportModal" tabindex="-1" aria-labelledby="batchReportModalLabel" aria-hidden="true">
-            <div class="modal-dialog modal-lg modal-dialog-scrollable">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title" id="batchReportModalLabel">Rapport du traitement par lot</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                    </div>
-                    <div class="modal-body">
-        `;
-
-        if (successes.length > 0) {
-            modalHtml += `
-            <h6><i class="fas fa-check-circle text-success me-2"></i>Succès (${successes.length})</h6>
-            <ul class="list-group list-group-flush mb-3">`;
-            successes.forEach(item => {
-                modalHtml += `<li class="list-group-item small">${item.releaseName}</li>`;
-            });
-            modalHtml += `</ul>`;
-        }
-
-        if (errors.length > 0) {
-            modalHtml += `
-            <h6><i class="fas fa-times-circle text-danger me-2"></i>Échecs (${errors.length})</h6>
-            <ul class="list-group list-group-flush">`;
-            errors.forEach(item => {
-                modalHtml += `<li class="list-group-item small"><strong>${item.releaseName}</strong><br><span class="text-danger">${item.message}</span></li>`;
-            });
-            modalHtml += `</ul>`;
-        }
-
-        modalHtml += `
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
-                    </div>
-                </div>
-            </div>
-        </div>`;
-
-        $('body').append(modalHtml);
-        const reportModal = new bootstrap.Modal(document.getElementById('batchReportModal'));
-        reportModal.show();
-    }
-
     $('body').on('click', '#sonarrRadarrSearchModal .confirm-mapping-btn', function() {
         const button = $(this);
         const selectedMediaId = button.data('media-id');
@@ -971,25 +912,17 @@ $(document).ready(function() {
         .then(response => response.json())
         .then(data => {
             const modalInstance = bootstrap.Modal.getInstance(modalEl[0]);
-            if (modalInstance) modalInstance.hide();
-
-            if (data.status === 'batch_complete') {
-                showBatchReportModal(data);
-                // On décoche les cases et on met à jour l'interface
-                $('.release-checkbox:checked').prop('checked', false);
-                updateBatchActions();
-            } else if (data.status === 'success') {
-                alert(data.message || "Succès ! La release a été envoyée au téléchargement.");
+            if (data.status === 'success') {
+                if(modalInstance) modalInstance.hide();
+                alert(data.message || "Succès ! La ou les releases ont été envoyées au téléchargement.");
             } else {
                 alert("Erreur : " + data.message);
+                button.prop('disabled', false).text('Choisir ce média');
             }
         })
         .catch(error => {
             console.error("Erreur lors du mapping final:", error);
             alert("Une erreur de communication est survenue.");
-        })
-        .finally(() => {
-            // Réactiver le bouton dans la modale principale, au cas où l'utilisateur voudrait réessayer
             button.prop('disabled', false).text('Choisir ce média');
         });
     });
