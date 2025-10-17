@@ -77,3 +77,14 @@ Une nouvelle route /batch-download-and-map a été créée pour gérer les requ�
 La logique de traitement d'une release unique a été refactorisée dans une fonction _process_single_release pour être réutilisée.
 La route de lot boucle sur les releases et appelle _process_single_release pour chacune.
 Conformément à la demande, le processus s'arrête à la première erreur rencontrée.
+
+### Déplacement de Média Asynchrone
+
+Pour permettre le déplacement de médias (films, séries) entre différents dossiers racines sans bloquer l'interface, une approche asynchrone a été mise en place.
+
+1.  **Initiation (Backend)**: Une route API (`/api/media/move`) reçoit la demande de déplacement. Elle utilise un `move_manager` pour s'assurer qu'une seule opération de ce type est en cours. Si la voie est libre, elle envoie une commande de déplacement (ex: `MoveMovies`) à Sonarr/Radarr, qui retourne un ID de tâche.
+2.  **Suivi (Frontend)**: Le client JavaScript, après avoir reçu la confirmation que la tâche est lancée, commence une interrogation (polling) à intervalle régulier (toutes les 15 secondes) vers une autre route API (`/api/media/move_status`).
+3.  **Mise à jour de l'état (Backend)**: La route de statut interroge l'API de Sonarr/Radarr avec l'ID de la tâche pour connaître son état (`pending`, `running`, `completed`, `failed`).
+4.  **Finalisation (Frontend)**: Lorsque le client reçoit un statut final (`completed` ou `failed`), il arrête le polling, met à jour l'interface (restaure les boutons, affiche une notification) et rafraîchit la vue pour refléter le nouvel emplacement du média.
+
+Cette architecture permet de gérer des opérations potentiellement longues de manière transparente pour l'utilisateur.
