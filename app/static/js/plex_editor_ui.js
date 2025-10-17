@@ -1026,4 +1026,143 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
             button.closest('.btn-group').find('button').prop('disabled', false);
         });
     });
+
+    // =================================================================
+    // ### PARTIE 5 : GESTION DU DÉPLACEMENT DE MÉDIAS ###
+    // =================================================================
+
+    let activeMoveTaskId = null;
+    let activeMoveMediaId = null;
+    let moveCheckInterval = null;
+
+    // --- A. Ouvrir la modale et charger les dossiers ---
+    $(document).on('click', '.move-media-btn', function() {
+        if (activeMoveTaskId) {
+            alert("Un déplacement est déjà en cours. Veuillez attendre sa fin.");
+            return;
+        }
+
+        const button = $(this);
+        const mediaId = button.data('media-id');
+        const mediaTitle = button.data('media-title');
+        const mediaType = button.data('media-type'); // 'sonarr' or 'radarr'
+
+        const modal = $('#move-media-modal');
+        modal.find('#move-media-title').text(mediaTitle);
+        const confirmBtn = modal.find('#confirm-move-btn');
+        const folderSelect = modal.find('#root-folder-select');
+
+        confirmBtn.data({ mediaId, mediaType });
+        folderSelect.html('<option>Chargement...</option>').prop('disabled', true);
+
+        fetch(`/plex/api/media/root_folders?type=${mediaType}`)
+            .then(response => response.json())
+            .then(folders => {
+                folderSelect.html('').prop('disabled', false);
+                if (folders && folders.length > 0) {
+                    folders.forEach(folder => {
+                        folderSelect.append(new Option(folder.path, folder.path));
+                    });
+                } else {
+                    folderSelect.html('<option>Aucun dossier trouvé.</option>').prop('disabled', true);
+                }
+            })
+            .catch(err => {
+                console.error("Erreur chargement dossiers:", err);
+                folderSelect.html('<option>Erreur de chargement.</option>').prop('disabled', true);
+            });
+    });
+
+    // --- B. Confirmer le déplacement et démarrer le polling ---
+    $('#confirm-move-btn').on('click', function() {
+        const btn = $(this);
+        const mediaId = btn.data('mediaId');
+        const mediaType = btn.data('mediaType');
+        const newPath = $('#move-media-modal #root-folder-select').val();
+
+        if (!newPath) {
+            alert("Veuillez sélectionner un dossier de destination.");
+            return;
+        }
+
+        if (!confirm(`Êtes-vous sûr de vouloir déplacer ce média vers "${newPath}" ?`)) {
+            return;
+        }
+
+        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Lancement...');
+
+        fetch('/plex/api/media/move', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mediaId, mediaType, newPath })
+        })
+        .then(response => response.json())
+        .then(data => {
+            bootstrap.Modal.getInstance(document.getElementById('move-media-modal')).hide();
+            if (data.status === 'success') {
+                activeMoveTaskId = data.task_id;
+                activeMoveMediaId = mediaId; // Store the mediaId
+                updateUIAfterMoveStart(mediaId);
+                startMoveStatusPolling();
+            } else {
+                alert('Erreur: ' + data.message);
+            }
+        })
+        .catch(err => {
+            console.error("Erreur API déplacement:", err);
+            alert("Erreur de communication lors du lancement du déplacement.");
+        })
+        .finally(() => {
+            btn.prop('disabled', false).html('Valider le déplacement');
+        });
+    });
+
+    function updateUIAfterMoveStart(mediaId) {
+        const row = $(`tr[data-rating-key="${mediaId}"]`);
+        row.addClass('opacity-50');
+        row.find('.move-media-btn').html('<span class="spinner-border spinner-border-sm"></span>').prop('disabled', true);
+        row.find('button').not('.move-media-btn').prop('disabled', true);
+    }
+
+    function startMoveStatusPolling() {
+        if (moveCheckInterval) clearInterval(moveCheckInterval);
+
+        moveCheckInterval = setInterval(() => {
+            fetch('/plex/api/media/move_status')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'idle' || data.status === 'completed' || data.status === 'failed') {
+                        clearInterval(moveCheckInterval);
+                        moveCheckInterval = null;
+                        const mediaIdToEnd = activeMoveMediaId; // Use the stored mediaId
+                        activeMoveTaskId = null;
+                        activeMoveMediaId = null;
+                        updateUIAfterMoveEnd(mediaIdToEnd, data.status === 'completed');
+                        alert(data.message || "Opération terminée.");
+                        $('#apply-filters-btn').click(); // Refresh the table
+                    }
+                })
+                .catch(err => {
+                    console.error("Erreur polling statut:", err);
+                    clearInterval(moveCheckInterval);
+                    activeMoveTaskId = null;
+                });
+        }, 15000); // Poll every 15 seconds
+    }
+
+    function updateUIAfterMoveEnd(mediaId, wasSuccessful) {
+        const row = $(`tr[data-rating-key="${mediaId}"]`);
+        row.removeClass('opacity-50');
+        const moveBtn = row.find('.move-media-btn');
+        moveBtn.html('<i class="bi bi-folder-symlink"></i>').prop('disabled', false);
+        row.find('button').prop('disabled', false);
+
+        if(wasSuccessful) {
+            moveBtn.addClass('btn-success').removeClass('btn-outline-info');
+            setTimeout(() => {
+                 moveBtn.removeClass('btn-success').addClass('btn-outline-info');
+            }, 5000);
+        }
+    }
+
 }); // Fin de $(document).ready

@@ -200,6 +200,34 @@
     </div>
 </div>
 
+<!-- Modale de Déplacement -->
+<div class="modal fade" id="move-media-modal" tabindex="-1" aria-labelledby="moveMediaModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark text-white">
+            <div class="modal-header">
+                <h5 class="modal-title" id="moveMediaModalLabel">Déplacer le média</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Sélectionnez le nouveau dossier de destination pour <strong id="move-media-title"></strong>.</p>
+                <div class="mb-3">
+                    <label for="root-folder-select" class="form-label">Nouveau dossier</label>
+                    <select id="root-folder-select" class="form-select">
+                        <option>Chargement...</option>
+                    </select>
+                </div>
+                <div class="alert alert-warning small">
+                    <strong>Attention :</strong> Le déplacement peut prendre plusieurs minutes pour les gros fichiers.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" id="confirm-move-btn">Valider le déplacement</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Les modales de bande-annonce sont maintenant dans layout.html -->
 
 <!-- Modale d'Archivage de Film -->

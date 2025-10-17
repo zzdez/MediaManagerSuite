@@ -34,7 +34,92 @@ from app.utils.cache_manager import SimpleCache, get_pending_lock, remove_pendin
 from app.utils import trailer_manager # Import du nouveau manager
 from app.agent.services import _search_and_score_trailers
 
+from app.utils.move_manager import move_manager
+from app.utils.arr_client import get_sonarr_root_folders, get_radarr_root_folders, move_sonarr_series, move_radarr_movie, get_arr_command_status, radarr_post_command
+
 # --- Routes du Blueprint ---
+
+@plex_editor_bp.route('/api/media/root_folders', methods=['GET'])
+@login_required
+def get_root_folders():
+    media_type = request.args.get('type')
+    if media_type == 'sonarr':
+        folders = get_sonarr_root_folders()
+    elif media_type == 'radarr':
+        folders = get_radarr_root_folders()
+    else:
+        return jsonify({'error': 'Invalid media type specified.'}), 400
+
+    if folders is None:
+        return jsonify({'error': f'Could not fetch root folders from {media_type}.'}), 500
+
+    return jsonify(folders)
+
+@plex_editor_bp.route('/api/media/move', methods=['POST'])
+@login_required
+def move_media_item():
+    data = request.get_json()
+    media_id = data.get('mediaId')
+    media_type = data.get('mediaType') # 'sonarr' or 'radarr'
+    new_path = data.get('newPath')
+
+    if not all([media_id, media_type, new_path]):
+        return jsonify({'status': 'error', 'message': 'Données manquantes.'}), 400
+
+    if move_manager.is_move_in_progress():
+        return jsonify({'status': 'error', 'message': 'Un autre déplacement est déjà en cours.'}), 409
+
+    task_id = move_manager.start_move(media_id, media_type)
+    if not task_id:
+        return jsonify({'status': 'error', 'message': 'Impossible de démarrer la tâche de déplacement.'}), 500
+
+    command_response, error = None, None
+    if media_type == 'sonarr':
+        command_response, error = move_sonarr_series(media_id, new_path)
+    elif media_type == 'radarr':
+        command_response, error = move_radarr_movie(media_id, new_path)
+
+    if error or not command_response or not command_response.get('id'):
+        move_manager.end_move(task_id)
+        return jsonify({'status': 'error', 'message': error or 'Failed to trigger move command.'}), 500
+
+    move_manager._current_move['command_id'] = command_response.get('id')
+    move_manager._current_move['status'] = 'pending'
+
+    return jsonify({'status': 'success', 'message': 'Déplacement initié.', 'task_id': task_id})
+
+@plex_editor_bp.route('/api/media/move_status', methods=['GET'])
+@login_required
+def get_move_status():
+    current_move = move_manager.get_current_move_status()
+    if not current_move:
+        return jsonify({'status': 'idle'})
+
+    task_id = current_move['task_id']
+    command_id = current_move.get('command_id')
+    media_type = current_move['media_type']
+
+    if not command_id:
+        move_manager.end_move(task_id)
+        return jsonify({'status': 'error', 'message': 'Tâche de déplacement invalide sans ID de commande.'})
+
+    command_status = get_arr_command_status(media_type, command_id)
+
+    if not command_status:
+        move_manager.end_move(task_id)
+        return jsonify({'status': 'error', 'message': f'Impossible de récupérer le statut de la commande {command_id}.'})
+
+    status = command_status.get('status')
+    if status == 'completed':
+        move_manager.end_move(task_id)
+        return jsonify({'status': 'completed', 'message': 'Déplacement terminé avec succès.'})
+    elif status in ['failed', 'aborted']:
+        error_message = command_status.get('body', {}).get('exception', 'Erreur inconnue.')
+        move_manager.end_move(task_id)
+        return jsonify({'status': 'failed', 'message': f'Le déplacement a échoué: {error_message}'})
+    else: # 'pending', 'started', 'running'
+        return jsonify({'status': 'running', 'message': f'Déplacement en cours... (Statut: {status})'})
+
 
 @plex_editor_bp.route('/api/users')
 @login_required

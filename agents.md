@@ -78,19 +78,13 @@ La logique de traitement d'une release unique a été refactorisée dans une fon
 La route de lot boucle sur les releases et appelle _process_single_release pour chacune.
 Conformément à la demande, le processus s'arrête à la première erreur rencontrée.
 
+### Déplacement de Média Asynchrone
 
-### Fiabilisation des Processus par Lots
+Pour permettre le déplacement de médias (films, séries) entre différents dossiers racines sans bloquer l'interface, une approche asynchrone a été mise en place.
 
-Lors du développement du téléchargement par lot, plusieurs leçons importantes ont été apprises pour garantir la stabilité et éviter de surcharger les services externes comme rTorrent.
+1.  **Initiation (Backend)**: Une route API (`/api/media/move`) reçoit la demande de déplacement. Elle utilise un `move_manager` pour s'assurer qu'une seule opération de ce type est en cours. Si la voie est libre, elle envoie une commande de déplacement (ex: `MoveMovies`) à Sonarr/Radarr, qui retourne un ID de tâche.
+2.  **Suivi (Frontend)**: Le client JavaScript, après avoir reçu la confirmation que la tâche est lancée, commence une interrogation (polling) à intervalle régulier (toutes les 15 secondes) vers une autre route API (`/api/media/move_status`).
+3.  **Mise à jour de l'état (Backend)**: La route de statut interroge l'API de Sonarr/Radarr avec l'ID de la tâche pour connaître son état (`pending`, `running`, `completed`, `failed`).
+4.  **Finalisation (Frontend)**: Lorsque le client reçoit un statut final (`completed` ou `failed`), il arrête le polling, met à jour l'interface (restaure les boutons, affiche une notification) et rafraîchit la vue pour refléter le nouvel emplacement du média.
 
-1.  **Gestion Individuelle des Erreurs** : Un processus par lot qui interagit avec une API externe ne doit pas s'arrêter complètement à la première erreur.
-    *   **Problème** : Si une seule release sur dix échoue, l'approche initiale bloquait les neuf autres.
-    *   **Solution** : Chaque appel (par exemple, chaque téléchargement) doit être encapsulé dans un bloc `try...except`. Le processus principal doit continuer même en cas d'échec d'un élément, et collecter les résultats (succès et échecs).
-
-2.  **Introduction de Pauses (Throttling)** : Les appels rapides et successifs à une même API peuvent être interprétés comme une attaque par déni de service (DoS) ou simplement surcharger le service cible, provoquant des échecs en cascade.
-    *   **Problème** : L'envoi de multiples commandes d'ajout à rTorrent en l'espace de quelques millisecondes a probablement causé l'échec silencieux de certains ajouts.
-    *   **Solution** : Introduire une courte pause (par exemple, `time.sleep(1)`) entre chaque appel dans une boucle de traitement par lot. Cette temporisation simple mais efficace laisse le temps au service de traiter chaque requête individuellement.
-
-3.  **Retour Détaillé à l'Utilisateur** : Pour une meilleure expérience utilisateur et un débogage facilité, il est crucial de fournir un rapport complet à la fin d'un processus par lot.
-    *   **Problème** : Un simple message "Opération terminée" masque les échecs partiels.
-    *   **Solution** : Le backend doit retourner une structure de données (par exemple, une liste d'objets JSON) détaillant le résultat de chaque opération. Le frontend doit ensuite interpréter ces données pour afficher un résumé clair, séparant les succès des échecs et affichant les messages d'erreur pertinents.
+Cette architecture permet de gérer des opérations potentiellement longues de manière transparente pour l'utilisateur.

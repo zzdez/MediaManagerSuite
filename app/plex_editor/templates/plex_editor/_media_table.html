@@ -188,6 +188,14 @@
                     </button>
                     {% endif %}
 
+                    <button class="btn btn-sm btn-outline-info move-media-btn"
+                            title="Déplacer le média vers un autre dossier"
+                            data-bs-toggle="modal" data-bs-target="#move-media-modal"
+                            data-media-id="{{ item.ratingKey }}"
+                            data-media-title="{{ item.title }}"
+                            data-media-type="{{ 'sonarr' if item.type == 'show' else 'radarr' }}">
+                        <i class="bi bi-folder-symlink"></i>
+                    </button>
                     <button class="btn btn-sm btn-outline-danger delete-item-btn"
                             title="Supprimer définitivement de Plex"
                             data-rating-key="{{ item.ratingKey }}"
