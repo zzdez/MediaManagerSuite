@@ -1026,4 +1026,138 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
             button.closest('.btn-group').find('button').prop('disabled', false);
         });
     });
+
+    // =================================================================
+    // ### PARTIE 5 : GESTION DU DÉPLACEMENT DES MÉDIAS ###
+    // =================================================================
+    let activeMoveCommand = null;
+
+    // --- A. Ouvrir la modale et charger les dossiers ---
+    $(document).on('click', '.move-media-btn', function() {
+        if ($(this).find('.spinner-border').length > 0) return; // Déjà en cours
+
+        const mediaId = $(this).data('media-id');
+        const mediaType = $(this).data('media-type');
+        const title = $(this).data('title');
+
+        const modal = $('#move-media-modal');
+        const loader = modal.find('#move-media-loader');
+        const content = modal.find('#move-media-content');
+        const select = modal.find('#root-folder-select');
+        const errorDiv = modal.find('#move-media-error');
+        const confirmBtn = modal.find('#confirm-move-btn');
+
+        modal.find('#move-media-title').text(title);
+        loader.show();
+        content.hide();
+        errorDiv.hide();
+        select.empty();
+        confirmBtn.prop('disabled', true);
+
+        // Stocker les infos sur le bouton de confirmation
+        confirmBtn.data({ 'media-id': mediaId, 'media-type': mediaType });
+
+        new bootstrap.Modal(modal[0]).show();
+
+        fetch('/plex/api/media/root_folders', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ media_type: mediaType })
+        })
+        .then(response => response.json())
+        .then(folders => {
+            loader.hide();
+            content.show();
+            if (folders && folders.length > 0) {
+                folders.forEach(folder => {
+                    select.append(new Option(folder.path, folder.path));
+                });
+                confirmBtn.prop('disabled', false);
+            } else {
+                errorDiv.text("Aucun dossier racine n'a été trouvé.").show();
+            }
+        })
+        .catch(error => {
+            loader.hide();
+            content.show();
+            errorDiv.text("Erreur lors de la récupération des dossiers.").show();
+        });
+    });
+
+    // --- B. Confirmer et lancer le déplacement ---
+    $('#confirm-move-btn').on('click', function() {
+        const btn = $(this);
+        const mediaId = btn.data('media-id');
+        const mediaType = btn.data('media-type');
+        const newPath = $('#root-folder-select').val();
+        const title = $('#move-media-title').text();
+
+        if (!confirm(`Êtes-vous sûr de vouloir déplacer "${title}" vers "${newPath}" ?`)) {
+            return;
+        }
+
+        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Lancement...');
+
+        fetch('/plex/api/media/move', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ media_id: mediaId, media_type: mediaType, new_path: newPath })
+        })
+        .then(response => response.json())
+        .then(data => {
+            bootstrap.Modal.getInstance(document.getElementById('move-media-modal')).hide();
+            if (data.status === 'success') {
+                const moveButton = $(`.move-media-btn[data-media-id='${mediaId}']`);
+                moveButton.html('<span class="spinner-border spinner-border-sm"></span>').prop('disabled', true);
+
+                if (data.command_id) {
+                    pollCommandStatus(mediaType, data.command_id, moveButton);
+                } else {
+                    alert(data.message); // Fallback si pas de command_id
+                    moveButton.html('<i class="bi bi-folder-symlink"></i>').prop('disabled', false);
+                }
+            } else {
+                alert('Erreur: ' + data.message);
+            }
+        })
+        .catch(error => {
+            alert('Erreur de communication lors du lancement du déplacement.');
+        })
+        .finally(() => {
+            btn.prop('disabled', false).text('Valider le déplacement');
+        });
+    });
+
+    // --- C. Polling du statut de la commande ---
+    function pollCommandStatus(mediaType, commandId, button) {
+        const interval = setInterval(() => {
+            fetch(`/plex/api/media/command/${mediaType}/${commandId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    if (data.command_status === 'completed') {
+                        clearInterval(interval);
+                        button.html('<i class="bi bi-check-lg text-success"></i>').prop('disabled', false);
+                        setTimeout(() => button.html('<i class="bi bi-folder-symlink"></i>'), 3000);
+                        alert(`Le déplacement de "${button.data('title')}" est terminé.`);
+                    } else if (data.command_status === 'failed' || data.command_status === 'cancelled') {
+                        clearInterval(interval);
+                        button.html('<i class="bi bi-x-lg text-danger"></i>').prop('disabled', false);
+                        alert(`Le déplacement de "${button.data('title')}" a échoué.`);
+                        setTimeout(() => button.html('<i class="bi bi-folder-symlink"></i>'), 3000);
+                    }
+                    // Si 'queued' ou 'started', on continue le polling
+                } else {
+                    clearInterval(interval);
+                    button.html('<i class="bi bi-question-lg text-warning"></i>').prop('disabled', false);
+                    setTimeout(() => button.html('<i class="bi bi-folder-symlink"></i>'), 3000);
+                }
+            })
+            .catch(error => {
+                clearInterval(interval);
+                button.html('<i class="bi bi-question-lg text-warning"></i>').prop('disabled', false);
+                setTimeout(() => button.html('<i class="bi bi-folder-symlink"></i>'), 3000);
+            });
+        }, 15000); // Poll toutes les 15 secondes
+    }
 }); // Fin de $(document).ready

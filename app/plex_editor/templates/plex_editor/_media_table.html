@@ -148,6 +148,7 @@
                     </button>
 
                     {% if item.type == 'movie' %}
+                    <button class="btn btn-sm btn-outline-warning move-media-btn" data-media-id="{{ item.arr_id }}" data-media-type="radarr" data-title="{{ item.title }}" title="Déplacer le média"><i class="bi bi-folder-symlink"></i></button>
                     <button class="btn btn-sm btn-outline-primary archive-movie-btn"
                             title="Archiver le film"
                             data-bs-toggle="modal" data-bs-target="#archiveMovieModal"
@@ -178,6 +179,7 @@
                        title="Gérer les saisons">
                         <i class="bi bi-list-task"></i> <span class="d-none d-md-inline">Saisons</span>
                     </a> #}
+                    <button class="btn btn-sm btn-outline-warning move-media-btn" data-media-id="{{ item.arr_id }}" data-media-type="sonarr" data-title="{{ item.title }}" title="Déplacer le média"><i class="bi bi-folder-symlink"></i></button>
                     <button class="btn btn-sm btn-outline-success manage-series-btn"
                             title="Gérer la série et les saisons"
                             data-bs-toggle="modal"

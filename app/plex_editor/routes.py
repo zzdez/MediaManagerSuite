@@ -2497,6 +2497,109 @@ def rename_series_files_endpoint():
     else:
         return jsonify({'status': 'error', 'message': 'Échec de l\'envoi de la commande à Sonarr.'}), 500
 
+# --- NOUVELLES ROUTES POUR LE DÉPLACEMENT DE MÉDIAS ---
+
+@plex_editor_bp.route('/api/media/root_folders', methods=['POST'])
+@login_required
+def get_root_folders():
+    """Récupère les dossiers racines de Sonarr ou Radarr."""
+    data = request.json
+    media_type = data.get('media_type')  # 'sonarr' ou 'radarr'
+
+    if not media_type:
+        return jsonify({'error': 'Le type de média est requis.'}), 400
+
+    try:
+        if media_type == 'sonarr':
+            folders = _sonarr_api_request('GET', 'rootfolder')
+        elif media_type == 'radarr':
+            folders = _radarr_api_request('GET', 'rootfolder')
+        else:
+            return jsonify({'error': 'Type de média invalide.'}), 400
+
+        if folders is None:
+            return jsonify({'error': f'Échec de la récupération des dossiers depuis {media_type}.'}), 500
+
+        return jsonify(folders)
+    except Exception as e:
+        current_app.logger.error(f"Erreur API /api/media/root_folders: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+@plex_editor_bp.route('/api/media/move', methods=['POST'])
+@login_required
+def move_media_item():
+    """Déplace un média (film ou série) vers un nouveau dossier racine."""
+    data = request.json
+    media_id = data.get('media_id')
+    media_type = data.get('media_type')
+    new_root_path = data.get('new_path')
+
+    if not all([media_id, media_type, new_root_path]):
+        return jsonify({'status': 'error', 'message': 'Paramètres manquants.'}), 400
+
+    try:
+        command_name = None
+        command_key = None
+        media_item = None
+        update_func = None
+
+        if media_type == 'sonarr':
+            series = get_sonarr_series_by_id(media_id)
+            if not series: return jsonify({'status': 'error', 'message': 'Série non trouvée dans Sonarr.'}), 404
+            series['rootFolderPath'] = new_root_path
+            response = _sonarr_api_request('PUT', f"series/{series['id']}", params={'moveFiles': 'true'}, json_data=series)
+            command_name, command_key = 'MoveSeries', 'seriesIds'
+            media_item = series
+        elif media_type == 'radarr':
+            movie = get_radarr_movie_by_id(media_id)
+            if not movie: return jsonify({'status': 'error', 'message': 'Film non trouvé dans Radarr.'}), 404
+            old_path = movie['rootFolderPath']
+            movie['rootFolderPath'] = new_root_path
+            movie['path'] = movie['path'].replace(old_path, new_root_path)
+            response = _radarr_api_request('PUT', f"movie/{movie['id']}", params={'moveFiles': 'true'}, json_data=movie)
+            command_name, command_key = 'MoveMovies', 'movieIds'
+            media_item = movie
+
+        if response and response.get('id'):
+            time.sleep(2) # Laisser le temps à l'API de créer la tâche
+            commands_api = _sonarr_api_request if media_type == 'sonarr' else _radarr_api_request
+            commands = commands_api('GET', 'command')
+            if commands:
+                move_command = next((c for c in sorted(commands, key=lambda x: x['id'], reverse=True)
+                                     if c.get('name') == command_name and
+                                     media_id in c.get('body', {}).get(command_key, [])), None)
+                if move_command:
+                    return jsonify({'status': 'success', 'message': f"Déplacement initié pour '{media_item['title']}'.", 'command_id': move_command['id']})
+
+            return jsonify({'status': 'success', 'message': 'Déplacement initié (suivi non disponible).'})
+        else:
+            return jsonify({'status': 'error', 'message': f"Échec de la mise à jour dans {media_type.capitalize()}."}), 500
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur API /api/media/move: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@plex_editor_bp.route('/api/media/command/<media_type>/<int:command_id>')
+@login_required
+def get_command_status(media_type, command_id):
+    """Vérifie le statut d'une commande dans Sonarr ou Radarr."""
+    try:
+        if media_type == 'sonarr':
+            command = _sonarr_api_request('GET', f'command/{command_id}')
+        elif media_type == 'radarr':
+            command = _radarr_api_request('GET', f'command/{command_id}')
+        else:
+            return jsonify({'status': 'error', 'message': 'Type de média invalide.'}), 400
+
+        if command and command.get('id') == command_id:
+            return jsonify({'status': 'success', 'command_status': command.get('status')})
+        else:
+            return jsonify({'status': 'error', 'message': 'Commande non trouvée.'}), 404
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur API /api/media/command: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 # --- Gestionnaires d'erreur ---
 #@app.errorhandler(404)
 #def page_not_found(e):

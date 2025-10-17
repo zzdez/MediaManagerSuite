@@ -331,6 +331,35 @@
         </div>
     </div>
 </div>
+
+<!-- Modale de Déplacement de Média -->
+<div class="modal fade" id="move-media-modal" tabindex="-1" aria-labelledby="moveMediaModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark text-white">
+            <div class="modal-header">
+                <h5 class="modal-title" id="moveMediaModalLabel">Déplacer : <span id="move-media-title"></span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Sélectionnez un nouveau dossier racine de destination :</p>
+                <div id="move-media-loader" class="text-center">
+                    <div class="spinner-border text-primary" role="status"></div>
+                </div>
+                <div id="move-media-content" style="display: none;">
+                    <div class="mb-3">
+                        <label for="root-folder-select" class="form-label">Nouveau dossier</label>
+                        <select id="root-folder-select" class="form-select"></select>
+                    </div>
+                    <div id="move-media-error" class="alert alert-danger" style="display: none;"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" id="confirm-move-btn" disabled>Valider le déplacement</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}

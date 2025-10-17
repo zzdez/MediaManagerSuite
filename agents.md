@@ -14,6 +14,12 @@ Ce fichier contient des informations importantes et des leçons apprises lors du
 -   **Ne pas mélanger les protocoles** : Le client rTorrent de l'utilisateur fonctionne de manière fiable avec des commandes `httprpc` pour l'ajout de torrents, mais `xmlrpc` pour lister les torrents. Toute tentative de modifier ou de "moderniser" la méthode d'ajout en utilisant `xmlrpc` a provoqué des comportements instables (torrents en pause, échecs d'ajout silencieux). **Leçon :** Si une méthode de communication fonctionne, ne pas la changer. Isoler les nouvelles fonctionnalités (comme la récupération de hash par comparaison) de manière à ce qu'elles utilisent le protocole `xmlrpc` uniquement pour la lecture, sans interférer avec l'écriture (`httprpc`).
 -   **Vérifier les dépendances d'import** : Lors de la restauration ou de la modification de fichiers utilitaires comme `rtorrent_client.py`, il est **impératif** de vérifier tous les autres modules qui l'importent (`seedbox_ui`, `search_ui`, etc.) pour s'assurer qu'aucune fonction renommée ou supprimée ne provoque une `ImportError`. Une recherche globale (grep) des noms de fonction est obligatoire avant de valider une telle modification.
 
+### Éditeur Plex (`app/plex_editor/`)
+
+-   **Déplacement de médias** : Il est désormais possible de déplacer un film ou une série vers un autre "root folder" directement depuis l'Éditeur Plex.
+    -   **Frontend** (`plex_editor_ui.js`) : Un bouton "Déplacer" ouvre une modale. Cette modale appelle une API pour lister les dossiers racines disponibles. Après confirmation, elle envoie la commande de déplacement et lance un "polling" pour suivre le statut de la tâche. Le bouton se transforme en icône de chargement pendant l'opération.
+    -   **Backend** (`routes.py`) : Trois nouvelles routes ont été créées : `/api/media/root_folders` (pour lister les dossiers), `/api/media/move` (pour lancer le déplacement via une commande `PUT` sur l'API Sonarr/Radarr avec `moveFiles=true`), et `/api/media/command/...` (pour suivre le statut de la tâche).
+
 ### Recherche & Téléchargement (`app/search_ui/`)
 
 -   **Téléchargement par lots** : La page de recherche libre (`/search/`) permet désormais le téléchargement de plusieurs releases en une seule fois.
