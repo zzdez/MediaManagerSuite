@@ -818,6 +818,7 @@ $(document).ready(function() {
             if (data.status === 'success') {
                 if(modalInstance) modalInstance.hide();
                 alert(data.message || "Succès ! Le média a été ajouté et la ou les releases ont été envoyées au téléchargement.");
+                resetSelection(); // Réinitialiser la sélection
             } else {
                 throw new Error(data.message || "Erreur lors de l'envoi au téléchargement.");
             }
@@ -915,6 +916,7 @@ $(document).ready(function() {
             if (data.status === 'success') {
                 if(modalInstance) modalInstance.hide();
                 alert(data.message || "Succès ! La ou les releases ont été envoyées au téléchargement.");
+                resetSelection(); // Réinitialiser la sélection
             } else {
                 alert("Erreur : " + data.message);
                 button.prop('disabled', false).text('Choisir ce média');
@@ -955,6 +957,11 @@ $(document).ready(function() {
     // =================================================================
     // ### BLOC 4 : LOGIQUE DE SÉLECTION MULTIPLE (BATCH) ###
     // =================================================================
+
+    function resetSelection() {
+        $('.release-checkbox:checked').prop('checked', false);
+        updateBatchActions();
+    }
 
     function updateBatchActions() {
         const selectedCheckboxes = $('.release-checkbox:checked');
