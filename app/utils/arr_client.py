@@ -1292,49 +1292,33 @@ def radarr_trigger_import(download_id):
 
 def move_sonarr_series(series_id, new_root_folder_path):
     """
-    Moves a Sonarr series to a new root folder using the 'series/editor' endpoint.
-    This is an asynchronous operation.
+    Triggers a 'MoveSeries' command in Sonarr.
+    This is an asynchronous operation that can be tracked via the command API.
     """
-    logger.info(f"Sonarr: Initiating move for series ID {series_id} to '{new_root_folder_path}' via series editor.")
+    logger.info(f"Sonarr: Initiating 'MoveSeries' command for series ID {series_id} to '{new_root_folder_path}'.")
 
     try:
-        # Assurer que l'ID est un entier, car c'est une cause fréquente d'erreur 500 avec l'API Sonarr.
         series_id_int = int(series_id)
     except (ValueError, TypeError):
         logger.error(f"L'ID de la série '{series_id}' n'est pas un entier valide.")
         return None, f"L'ID de la série '{series_id}' est invalide."
 
     payload = {
+        "name": "MoveSeries",
         "seriesIds": [series_id_int],
-        "rootFolderPath": new_root_folder_path,
-        "moveFiles": True
+        "destinationPath": new_root_folder_path,
     }
 
-    # This endpoint is designed for bulk actions and is generally more reliable for moves.
-    response = _sonarr_api_request('PUT', 'series/editor', json_data=payload)
+    command_response = sonarr_post_command(payload)
 
-    # A successful response is a list of the series objects that were affected.
-    if response and isinstance(response, list) and response[0].get('id'):
-        logger.info(f"Sonarr: Move command for series ID {series_id} accepted by editor.")
-        # This endpoint doesn't return a command ID. To make it trackable,
-        # we search for a 'MoveSeries' command right after initiation.
-        time.sleep(2) # Give Sonarr a moment to create the command
-        commands = _sonarr_api_request('GET', 'command')
-        if commands:
-            for command in commands:
-                if command.get('name') == 'MoveSeries' and command.get('status') in ['queued', 'started']:
-                    if 'seriesIds' in command.get('body', {}) and series_id in command['body']['seriesIds']:
-                        logger.info(f"Found corresponding MoveSeries command {command.get('id')} for series {series_id}.")
-                        return command, None
-
-        logger.warning(f"Move for series {series_id} initiated, but could not find a corresponding command to track.")
-        # Return a mock successful response if no command is found, to not break the UI flow.
-        return {'id': 99999, 'status': 'completed', 'name': 'MoveSeries', 'message': 'Move initiated but not tracked'}, None
+    if command_response and command_response.get('id'):
+        logger.info(f"Sonarr: 'MoveSeries' command for series ID {series_id_int} accepted. Command ID: {command_response.get('id')}")
+        return command_response, None
     else:
-        error_msg = "Failed to initiate move via series editor."
-        if isinstance(response, list) and response:
-            error_msg = response[0].get('errorMessage', str(response))
-        logger.error(f"Sonarr: Failed to move series {series_id} via editor. Response: {response}")
+        error_msg = "Failed to trigger 'MoveSeries' command."
+        if isinstance(command_response, list) and command_response:
+            error_msg = command_response[0].get('errorMessage', str(command_response))
+        logger.error(f"Sonarr: Failed to trigger 'MoveSeries' command for series {series_id_int}. Response: {command_response}")
         return None, error_msg
 
 def move_radarr_movie(movie_id, new_root_folder_path):
