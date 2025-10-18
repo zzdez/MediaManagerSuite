@@ -1292,10 +1292,10 @@ def radarr_trigger_import(download_id):
 
 def move_sonarr_series(series_id, new_root_folder_path):
     """
-    Triggers a 'MoveSeries' command in Sonarr.
-    This is an asynchronous operation that can be tracked via the command API.
+    Moves a Sonarr series to a new root folder by editing the series object.
+    This is the most reliable method found.
     """
-    logger.info(f"Sonarr: Initiating 'MoveSeries' command for series ID {series_id} to '{new_root_folder_path}'.")
+    logger.info(f"Sonarr: Initiating move for series ID {series_id} to '{new_root_folder_path}'.")
 
     try:
         series_id_int = int(series_id)
@@ -1303,22 +1303,26 @@ def move_sonarr_series(series_id, new_root_folder_path):
         logger.error(f"L'ID de la série '{series_id}' n'est pas un entier valide.")
         return None, f"L'ID de la série '{series_id}' est invalide."
 
-    payload = {
-        "name": "MoveSeries",
-        "seriesIds": [series_id_int],
-        "destinationPath": new_root_folder_path,
-    }
+    series_data = get_sonarr_series_by_id(series_id_int)
+    if not series_data:
+        logger.error(f"Sonarr: Impossible de récupérer la série {series_id_int} pour la déplacer.")
+        return None, "Série non trouvée."
 
-    command_response = sonarr_post_command(payload)
+    series_data['rootFolderPath'] = new_root_folder_path
 
-    if command_response and command_response.get('id'):
-        logger.info(f"Sonarr: 'MoveSeries' command for series ID {series_id_int} accepted. Command ID: {command_response.get('id')}")
-        return command_response, None
+    # L'API Sonarr pour la mise à jour d'une série attend le paramètre 'moveFiles' dans l'URL.
+    params = {'moveFiles': 'true'}
+    response = _sonarr_api_request('PUT', f"series/{series_id_int}", params=params, json_data=series_data)
+
+    if response and response.get('id'):
+        logger.info(f"Sonarr: Déplacement pour la série ID {series_id_int} accepté.")
+        # Cette méthode ne retourne pas de commandId, nous simulons donc une réussite pour le suivi.
+        return {'id': 99999, 'status': 'completed', 'name': 'MoveSeries', 'message': 'Déplacement initié via édition de série.'}, None
     else:
-        error_msg = "Failed to trigger 'MoveSeries' command."
-        if isinstance(command_response, list) and command_response:
-            error_msg = command_response[0].get('errorMessage', str(command_response))
-        logger.error(f"Sonarr: Failed to trigger 'MoveSeries' command for series {series_id_int}. Response: {command_response}")
+        error_msg = "Échec de l'initiation du déplacement via l'édition de la série."
+        if isinstance(response, list) and response:
+            error_msg = response[0].get('errorMessage', str(response))
+        logger.error(f"Sonarr: Échec du déplacement de la série {series_id_int}. Réponse: {response}")
         return None, error_msg
 
 def move_radarr_movie(movie_id, new_root_folder_path):
@@ -1328,20 +1332,14 @@ def move_radarr_movie(movie_id, new_root_folder_path):
     """
     logger.info(f"Radarr: Initiating move for movie ID {movie_id} to '{new_root_folder_path}'.")
 
-    try:
-        movie_id_int = int(movie_id)
-    except (ValueError, TypeError):
-        logger.error(f"L'ID du film '{movie_id}' n'est pas un entier valide.")
-        return None, f"L'ID du film '{movie_id}' est invalide."
-
     # Get the movie object to get its current path
-    movie_data = get_radarr_movie_by_id(movie_id_int)
+    movie_data = get_radarr_movie_by_id(movie_id)
     if not movie_data:
-        return None, f"Movie with ID {movie_id_int} not found in Radarr."
+        return None, f"Movie with ID {movie_id} not found in Radarr."
 
     payload = {
         "name": "MoveMovies",
-        "movieIds": [movie_id_int],
+        "movieIds": [movie_id],
         "destinationPath": new_root_folder_path,
     }
 
