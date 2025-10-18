@@ -59,25 +59,50 @@ def get_root_folders():
 @login_required
 def move_media_item():
     data = request.get_json()
-    media_id = data.get('mediaId')
+    plex_rating_key = data.get('mediaId')
     media_type = data.get('mediaType') # 'sonarr' or 'radarr'
     new_path = data.get('newPath')
 
-    if not all([media_id, media_type, new_path]):
+    if not all([plex_rating_key, media_type, new_path]):
         return jsonify({'status': 'error', 'message': 'Données manquantes.'}), 400
 
     if move_manager.is_move_in_progress():
         return jsonify({'status': 'error', 'message': 'Un autre déplacement est déjà en cours.'}), 409
 
-    task_id = move_manager.start_move(media_id, media_type)
+    # --- TRADUCTION DE L'ID PLEX EN ID SONARR/RADARR ---
+    try:
+        plex_server = get_plex_admin_server()
+        if not plex_server:
+            return jsonify({'status': 'error', 'message': 'Connexion au serveur Plex admin échouée.'}), 500
+
+        plex_item = plex_server.fetchItem(int(plex_rating_key))
+
+        arr_item = None
+        if media_type == 'sonarr':
+            guid = next((g.id for g in plex_item.guids if 'tvdb' in g.id), None)
+            if guid: arr_item = get_sonarr_series_by_guid(guid)
+        elif media_type == 'radarr':
+            guid = next((g.id for g in plex_item.guids if 'tmdb' in g.id), None)
+            if guid: arr_item = get_radarr_movie_by_guid(guid)
+
+        if not arr_item or not arr_item.get('id'):
+            return jsonify({'status': 'error', 'message': f"Média non trouvé dans {media_type.capitalize()}."}), 404
+
+        arr_item_id = arr_item.get('id')
+    except Exception as e:
+        current_app.logger.error(f"Erreur lors de la traduction de l'ID Plex {plex_rating_key}: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': "Erreur lors de la recherche du média correspondant."}), 500
+    # --- FIN DE LA TRADUCTION ---
+
+    task_id = move_manager.start_move(arr_item_id, media_type)
     if not task_id:
         return jsonify({'status': 'error', 'message': 'Impossible de démarrer la tâche de déplacement.'}), 500
 
     command_response, error = None, None
     if media_type == 'sonarr':
-        command_response, error = move_sonarr_series(media_id, new_path)
+        command_response, error = move_sonarr_series(arr_item_id, new_path)
     elif media_type == 'radarr':
-        command_response, error = move_radarr_movie(media_id, new_path)
+        command_response, error = move_radarr_movie(arr_item_id, new_path)
 
     if error or not command_response or not command_response.get('id'):
         move_manager.end_move(task_id)
