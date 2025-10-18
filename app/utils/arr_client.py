@@ -1292,8 +1292,8 @@ def radarr_trigger_import(download_id):
 
 def move_sonarr_series(series_id, new_root_folder_path):
     """
-    Moves a Sonarr series to a new root folder by editing the series object.
-    This is the most reliable method found.
+    Moves a Sonarr series to a new root folder by editing the series object and
+    passing 'moveFiles=true' as a URL parameter. This is based on Sonarr's own UI calls.
     """
     logger.info(f"Sonarr: Initiating move for series ID {series_id} to '{new_root_folder_path}'.")
 
@@ -1303,20 +1303,25 @@ def move_sonarr_series(series_id, new_root_folder_path):
         logger.error(f"L'ID de la série '{series_id}' n'est pas un entier valide.")
         return None, f"L'ID de la série '{series_id}' est invalide."
 
+    # First, get the existing series object
     series_data = get_sonarr_series_by_id(series_id_int)
     if not series_data:
         logger.error(f"Sonarr: Impossible de récupérer la série {series_id_int} pour la déplacer.")
         return None, "Série non trouvée."
 
+    # Update the rootFolderPath in the series object
     series_data['rootFolderPath'] = new_root_folder_path
 
-    # L'API Sonarr pour la mise à jour d'une série attend le paramètre 'moveFiles' dans l'URL.
+    # The 'moveFiles' flag must be passed as a URL parameter, as observed in Sonarr's UI logs.
     params = {'moveFiles': 'true'}
+
+    # The request is a PUT to the specific series endpoint
     response = _sonarr_api_request('PUT', f"series/{series_id_int}", params=params, json_data=series_data)
 
     if response and response.get('id'):
-        logger.info(f"Sonarr: Déplacement pour la série ID {series_id_int} accepté.")
-        # Cette méthode ne retourne pas de commandId, nous simulons donc une réussite pour le suivi.
+        logger.info(f"Sonarr: Déplacement pour la série ID {series_id_int} accepté. Réponse: {response}")
+        # This method is asynchronous in Sonarr but doesn't return a command ID.
+        # We simulate a success to allow the UI to refresh. The move happens in the background.
         return {'id': 99999, 'status': 'completed', 'name': 'MoveSeries', 'message': 'Déplacement initié via édition de série.'}, None
     else:
         error_msg = "Échec de l'initiation du déplacement via l'édition de la série."
