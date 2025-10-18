@@ -1297,8 +1297,15 @@ def move_sonarr_series(series_id, new_root_folder_path):
     """
     logger.info(f"Sonarr: Initiating move for series ID {series_id} to '{new_root_folder_path}' via series editor.")
 
+    try:
+        # Assurer que l'ID est un entier, car c'est une cause fréquente d'erreur 500 avec l'API Sonarr.
+        series_id_int = int(series_id)
+    except (ValueError, TypeError):
+        logger.error(f"L'ID de la série '{series_id}' n'est pas un entier valide.")
+        return None, f"L'ID de la série '{series_id}' est invalide."
+
     payload = {
-        "seriesIds": [series_id],
+        "seriesIds": [series_id_int],
         "rootFolderPath": new_root_folder_path,
         "moveFiles": True
     }
@@ -1337,14 +1344,20 @@ def move_radarr_movie(movie_id, new_root_folder_path):
     """
     logger.info(f"Radarr: Initiating move for movie ID {movie_id} to '{new_root_folder_path}'.")
 
+    try:
+        movie_id_int = int(movie_id)
+    except (ValueError, TypeError):
+        logger.error(f"L'ID du film '{movie_id}' n'est pas un entier valide.")
+        return None, f"L'ID du film '{movie_id}' est invalide."
+
     # Get the movie object to get its current path
-    movie_data = get_radarr_movie_by_id(movie_id)
+    movie_data = get_radarr_movie_by_id(movie_id_int)
     if not movie_data:
-        return None, f"Movie with ID {movie_id} not found in Radarr."
+        return None, f"Movie with ID {movie_id_int} not found in Radarr."
 
     payload = {
         "name": "MoveMovies",
-        "movieIds": [movie_id],
+        "movieIds": [movie_id_int],
         "destinationPath": new_root_folder_path,
     }
 
