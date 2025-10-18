@@ -1308,6 +1308,10 @@ def move_sonarr_series(series_id, new_root_folder_path):
         return False, "Série non trouvée."
 
     series_data['rootFolderPath'] = new_root_folder_path
+    # Mettre à jour le chemin de la série pour refléter le nouveau dossier racine
+    series_folder = os.path.basename(series_data['path'])
+    series_data['path'] = os.path.join(new_root_folder_path, series_folder)
+
     params = {'moveFiles': 'true'}
     response = _sonarr_api_request('PUT', f"series/{series_id_int}", params=params, json_data=series_data)
 
