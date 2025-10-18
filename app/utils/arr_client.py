@@ -1292,36 +1292,34 @@ def radarr_trigger_import(download_id):
 
 def move_sonarr_series(series_id, new_root_folder_path):
     """
-    Moves a Sonarr series to a new root folder by editing the series object and
-    passing 'moveFiles=true' as a URL parameter.
+    Moves a Sonarr series to a new root folder by editing the series object.
+    Returns True on success, False on failure.
     """
     logger.info(f"Sonarr: Initiating move for series ID {series_id} to '{new_root_folder_path}'.")
-
     try:
         series_id_int = int(series_id)
     except (ValueError, TypeError):
         logger.error(f"L'ID de la série '{series_id}' n'est pas un entier valide.")
-        return None, f"L'ID de la série '{series_id}' est invalide."
+        return False, f"L'ID de la série '{series_id}' est invalide."
 
     series_data = get_sonarr_series_by_id(series_id_int)
     if not series_data:
         logger.error(f"Sonarr: Impossible de récupérer la série {series_id_int} pour la déplacer.")
-        return None, "Série non trouvée."
+        return False, "Série non trouvée."
 
     series_data['rootFolderPath'] = new_root_folder_path
-
     params = {'moveFiles': 'true'}
     response = _sonarr_api_request('PUT', f"series/{series_id_int}", params=params, json_data=series_data)
 
     if response and response.get('id'):
         logger.info(f"Sonarr: Déplacement pour la série ID {series_id_int} accepté. L'opération se poursuit en arrière-plan.")
-        return {'id': series_id_int, 'status': 'completed', 'name': 'MoveSeries'}, None
-    else:
-        error_msg = "Échec de l'initiation du déplacement via l'édition de la série."
-        if isinstance(response, list) and response:
-            error_msg = response[0].get('errorMessage', str(response))
-        logger.error(f"Sonarr: Échec du déplacement de la série {series_id_int}. Réponse: {response}")
-        return None, error_msg
+        return True, None
+
+    error_msg = "Échec de l'initiation du déplacement via l'édition de la série."
+    if isinstance(response, list) and response:
+        error_msg = response[0].get('errorMessage', str(response))
+    logger.error(f"Sonarr: Échec du déplacement de la série {series_id_int}. Réponse: {response}")
+    return False, error_msg
 
 def move_radarr_movie(movie_id, new_root_folder_path):
     """
