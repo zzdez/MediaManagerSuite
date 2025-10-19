@@ -173,6 +173,12 @@ def get_radarr_movie_by_guid(plex_guid):
 
     movies = _radarr_api_request('GET', 'movie')
     if movies:
+        # --- START DEBUG LOGGING ---
+        if id_key == 'tmdbId':
+            all_tmdb_ids = [m.get('tmdbId') for m in movies if m.get('tmdbId')]
+            current_app.logger.info(f"DEBUG: Searching for tmdbId: {id_value}")
+            current_app.logger.info(f"DEBUG: All tmdbIds found in Radarr: {all_tmdb_ids}")
+        # --- END DEBUG LOGGING ---
         for movie in movies:
             if movie.get(id_key) and str(movie.get(id_key)) == str(id_value):
                 return movie
