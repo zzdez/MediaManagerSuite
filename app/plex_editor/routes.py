@@ -82,9 +82,11 @@ def move_media_item():
             if guid: arr_item = get_sonarr_series_by_guid(guid)
         elif media_type == 'radarr':
             guid = next((g.id for g in plex_item.guids if 'tmdb' in g.id), None)
+            current_app.logger.info(f"Move '{plex_item.title}': Found Plex GUID for Radarr: {guid}")
             if guid: arr_item = get_radarr_movie_by_guid(guid)
 
         if not arr_item or not arr_item.get('id'):
+            current_app.logger.error(f"Move '{plex_item.title}': Could not find corresponding media in {media_type.capitalize()} using GUID {guid}.")
             return jsonify({'status': 'error', 'message': f"Média non trouvé dans {media_type.capitalize()}."}), 404
 
         arr_item_id = arr_item.get('id')
@@ -100,18 +102,13 @@ def move_media_item():
             return jsonify({'status': 'error', 'message': error or 'Échec du déplacement dans Sonarr.'}), 500
 
     elif media_type == 'radarr':
-        task_id = move_manager.start_move(arr_item_id, media_type)
-        if not task_id:
-            return jsonify({'status': 'error', 'message': 'Impossible de démarrer la tâche de déplacement.'}), 500
-
-        command_response, error = move_radarr_movie(arr_item_id, new_path)
-        if error or not command_response or not command_response.get('id'):
-            move_manager.end_move(task_id)
-            return jsonify({'status': 'error', 'message': error or 'Failed to trigger move command.'}), 500
-
-        move_manager._current_move['command_id'] = command_response.get('id')
-        move_manager._current_move['status'] = 'pending'
-        return jsonify({'status': 'success', 'message': 'Déplacement initié.', 'task_id': task_id})
+        # La nouvelle fonction move_radarr_movie est synchrone, comme pour Sonarr.
+        # Le système de polling n'est plus nécessaire pour Radarr.
+        success, error = move_radarr_movie(arr_item_id, new_path)
+        if success:
+            return jsonify({'status': 'success', 'message': 'Déplacement initié dans Radarr.'})
+        else:
+            return jsonify({'status': 'error', 'message': error or 'Échec du déplacement dans Radarr.'}), 500
 
     return jsonify({'status': 'error', 'message': 'Type de média non supporté.'}), 400
 
