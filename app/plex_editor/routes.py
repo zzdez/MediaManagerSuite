@@ -92,28 +92,32 @@ def move_media_item():
         current_app.logger.error(f"Erreur lors de la traduction de l'ID Plex {plex_rating_key}: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': "Erreur lors de la recherche du média correspondant."}), 500
 
+    # --- Unified Move Logic ---
+    task_id = move_manager.start_move(arr_item_id, media_type)
+    if not task_id:
+        return jsonify({'status': 'error', 'message': 'Impossible de démarrer la tâche de déplacement.'}), 500
+
+    command_response, error = None, None
     if media_type == 'sonarr':
-        success, error = move_sonarr_series(arr_item_id, new_path)
-        if success:
-            return jsonify({'status': 'success', 'message': 'Déplacement initié dans Sonarr.'})
-        else:
-            return jsonify({'status': 'error', 'message': error or 'Échec du déplacement dans Sonarr.'}), 500
-
+        command_response, error = move_sonarr_series(arr_item_id, new_path)
     elif media_type == 'radarr':
-        task_id = move_manager.start_move(arr_item_id, media_type)
-        if not task_id:
-            return jsonify({'status': 'error', 'message': 'Impossible de démarrer la tâche de déplacement.'}), 500
-
         command_response, error = move_radarr_movie(arr_item_id, new_path)
-        if error or not command_response or not command_response.get('id'):
-            move_manager.end_move(task_id)
-            return jsonify({'status': 'error', 'message': error or 'Failed to trigger move command.'}), 500
+    else:
+        move_manager.end_move(task_id)
+        return jsonify({'status': 'error', 'message': 'Type de média non supporté.'}), 400
 
-        move_manager._current_move['command_id'] = command_response.get('id')
-        move_manager._current_move['status'] = 'pending'
-        return jsonify({'status': 'success', 'message': 'Déplacement initié.', 'task_id': task_id})
+    if error or not command_response or not command_response.get('id'):
+        move_manager.end_move(task_id)
+        error_message = error or f"La commande de déplacement vers {media_type.capitalize()} a échoué ou n'a pas retourné d'ID."
+        current_app.logger.error(f"Move command failed for {media_type} item {arr_item_id}: {error_message}")
+        return jsonify({'status': 'error', 'message': error_message}), 500
 
-    return jsonify({'status': 'error', 'message': 'Type de média non supporté.'}), 400
+    move_manager._current_move['command_id'] = command_response.get('id')
+    move_manager._current_move['status'] = 'pending'
+
+    current_app.logger.info(f"Move command initiated for {media_type} item {arr_item_id}. Task ID: {task_id}, Command ID: {command_response.get('id')}")
+
+    return jsonify({'status': 'success', 'message': f'Déplacement initié dans {media_type.capitalize()}.', 'task_id': task_id})
 
 @plex_editor_bp.route('/api/media/move_status', methods=['GET'])
 @login_required
