@@ -88,32 +88,3 @@ Pour permettre le déplacement de médias (films, séries) entre différents dos
 4.  **Finalisation (Frontend)**: Lorsque le client reçoit un statut final (`completed` ou `failed`), il arrête le polling, met à jour l'interface (restaure les boutons, affiche une notification) et rafraîchit la vue pour refléter le nouvel emplacement du média.
 
 Cette architecture permet de gérer des opérations potentiellement longues de manière transparente pour l'utilisateur.
-
-### Déplacement de Séries Sonarr : Une Leçon de Précision
-
-Le déplacement de séries via l'API Sonarr v3 s'est avéré plus complexe qu'il n'y paraît et a nécessité un débogage approfondi. La méthode la plus fiable, identifiée en analysant les propres appels de l'interface web de Sonarr, est la suivante :
-
-- **Endpoint**: `PUT /api/v3/series/{id}`
-- **Paramètre d'URL**: `moveFiles=true` (essentiel pour déclencher le déplacement physique des fichiers).
-- **Corps de la requête (Payload)**: L'objet JSON complet de la série, modifié avec les nouvelles informations de chemin.
-
-**Leçon Apprise Clé :** Il ne suffit pas de mettre à jour le `rootFolderPath`. Il est **impératif** de mettre à jour également le champ `path` de la série. Le nouveau `path` doit être une combinaison du nouveau `rootFolderPath` et du nom du dossier de la série.
-
-**Exemple de logique correcte :**
-```python
-# 1. Récupérer l'objet série complet
-series_data = get_sonarr_series_by_id(series_id)
-
-# 2. Mettre à jour le dossier racine
-series_data['rootFolderPath'] = new_root_folder_path
-
-# 3. Mettre à jour le chemin complet (CRUCIAL)
-series_folder_name = os.path.basename(series_data['path'])
-series_data['path'] = os.path.join(new_root_folder_path, series_folder_name)
-
-# 4. Envoyer la requête avec le paramètre moveFiles
-params = {'moveFiles': 'true'}
-response = _sonarr_api_request('PUT', f"series/{series_id}", params=params, json_data=series_data)
-```
-
-Toute autre approche (utilisation de l'endpoint `/series/editor` ou de la commande `MoveSeries`) a échoué car elle n'était pas adaptée à ce cas d'usage ou était mal interprétée par l'API de Sonarr, provoquant des erreurs ou des déplacements incorrects.
