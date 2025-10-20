@@ -1153,7 +1153,7 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
                         moveButton.prop('disabled', false)
                                   .html(originalIcon)
                                   .attr('class', originalClasses); // Restaure toutes les classes d'origine
-                        applyBtn.click(); // Rafraîchir la table pour refléter le changement de chemin
+                        $('#apply-filters-btn').click(); // Rafraîchir la table pour refléter le changement de chemin
                     }, 5000); // 5 secondes
                 })
                 .catch(error => {

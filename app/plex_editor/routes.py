@@ -64,27 +64,58 @@ def get_root_folders():
     ]
     return jsonify(response_data)
 
+import time
+
 def _move_media_in_background(task_id, media_type, arr_item_id, new_path, app_context):
-    """Fonction à exécuter en arrière-plan pour le déplacement de média."""
+    """
+    Fonction à exécuter en arrière-plan pour le déplacement de média,
+    avec suivi de l'état de la commande.
+    """
     with app_context:
-        current_app.logger.info(f"Tâche d'arrière-plan {task_id}: Début du déplacement pour {media_type} ID {arr_item_id} vers {new_path}")
-        success = False
-        error = "Erreur inconnue"
+        command_id = None
+        error = None
+        current_app.logger.info(f"BG Task {task_id}: Starting move for {media_type} ID {arr_item_id} to {new_path}")
+
         try:
             if media_type == 'sonarr':
-                success, error = move_sonarr_series(arr_item_id, new_path)
+                command_id, error = move_sonarr_series(arr_item_id, new_path)
             elif media_type == 'radarr':
-                success, error = move_radarr_movie(arr_item_id, new_path)
+                command_id, error = move_radarr_movie(arr_item_id, new_path)
 
-            if success:
-                current_app.logger.info(f"Tâche d'arrière-plan {task_id}: Déplacement réussi.")
-                move_manager.update_task_status(task_id, success=True)
-            else:
-                current_app.logger.error(f"Tâche d'arrière-plan {task_id}: Échec du déplacement. Raison: {error}")
+            if error:
+                current_app.logger.error(f"BG Task {task_id}: Failed to initiate move command. Reason: {error}")
                 move_manager.update_task_status(task_id, success=False, error_message=error)
+                return
+
+            if not command_id:
+                current_app.logger.error(f"BG Task {task_id}: Move command initiated but no command ID was returned.")
+                move_manager.update_task_status(task_id, success=False, error_message="Aucun ID de commande retourné par l'API.")
+                return
+
+            # Boucle de surveillance du statut de la commande
+            while True:
+                time.sleep(10) # Attendre 10 secondes entre chaque vérification
+                status_info = get_arr_command_status(media_type, command_id)
+                if not status_info:
+                    current_app.logger.warning(f"BG Task {task_id}: Could not retrieve status for command {command_id}. Retrying...")
+                    continue
+
+                status = status_info.get('status')
+                current_app.logger.info(f"BG Task {task_id}: Polling command {command_id}. Current status: {status}")
+
+                if status == 'completed':
+                    current_app.logger.info(f"BG Task {task_id}: Move completed successfully.")
+                    move_manager.update_task_status(task_id, success=True)
+                    break
+                elif status in ['failed', 'aborted']:
+                    error_message = status_info.get('body', {}).get('exception', 'Erreur inconnue durant le déplacement.')
+                    current_app.logger.error(f"BG Task {task_id}: Move failed with status '{status}'. Reason: {error_message}")
+                    move_manager.update_task_status(task_id, success=False, error_message=error_message)
+                    break
+                # Si 'pending', 'started', 'running', on continue la boucle
 
         except Exception as e:
-            current_app.logger.error(f"Tâche d'arrière-plan {task_id}: Une exception est survenue durant le déplacement. Exception: {e}", exc_info=True)
+            current_app.logger.error(f"BG Task {task_id}: An exception occurred during the move process: {e}", exc_info=True)
             move_manager.update_task_status(task_id, success=False, error_message=str(e))
 
 @plex_editor_bp.route('/api/media/move', methods=['POST'])
