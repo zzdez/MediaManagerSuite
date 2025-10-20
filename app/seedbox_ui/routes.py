@@ -27,7 +27,12 @@ from threading import Thread
 # --- Imports spécifiques à l'application MediaManagerSuite ---
 from app.auth import internal_api_required
 from app.utils import staging_processor, sftp_scanner
-from app.utils.arr_client import search_sonarr_by_title, search_radarr_by_title
+from app.utils.arr_client import (
+    search_sonarr_by_title,
+    search_radarr_by_title,
+    get_sonarr_root_folders,
+    get_radarr_root_folders
+)
 from app.utils.tvdb_client import CustomTVDBClient
 from app.utils.tmdb_client import TheMovieDBClient
 
@@ -1890,34 +1895,14 @@ def search_tmdb_enriched():
 @login_required
 def get_sonarr_rootfolders_api():
     logger = current_app.logger
-    logger.info("API: Demande de récupération des dossiers racine Sonarr.")
+    logger.info("API: Demande de récupération des dossiers racine Sonarr (avec espace disque).")
 
-    sonarr_url = current_app.config.get('SONARR_URL')
-    sonarr_api_key = current_app.config.get('SONARR_API_KEY')
+    folders = get_sonarr_root_folders()
+    if folders is None:
+        return jsonify({"error": "Erreur lors de la récupération des dossiers racine Sonarr."}), 500
 
-    if not sonarr_url or not sonarr_api_key:
-        logger.error("API Get Sonarr Root Folders: Configuration Sonarr manquante.")
-        return jsonify({"error": "Sonarr non configuré dans l'application."}), 500
-
-    api_endpoint = f"{sonarr_url.rstrip('/')}/api/v3/rootfolder"
-
-    rootfolders_data, error_msg = _make_arr_request('GET', api_endpoint, sonarr_api_key)
-
-    if error_msg:
-        logger.error(f"API Get Sonarr Root Folders: Erreur lors de l'appel à Sonarr: {error_msg}")
-        return jsonify({"error": f"Erreur Sonarr: {error_msg}"}), 502 # Bad Gateway ou erreur de l'API distante
-
-    if rootfolders_data and isinstance(rootfolders_data, list):
-        logger.info(f"API Get Sonarr Root Folders: {len(rootfolders_data)} dossier(s) racine trouvé(s).")
-        # On ne retourne que les champs utiles pour le frontend : id (non utilisé pour l'ajout) et path
-        # L'API Sonarr pour /rootfolder retourne une liste d'objets comme :
-        # [ { "id": 1, "path": "/mnt/series", "freeSpace": 123456, ... }, ... ]
-        # Pour l'ajout d'une série, Sonarr attend le `rootFolderPath` (le chemin).
-        formatted_folders = [{"id": folder.get("id"), "path": folder.get("path")} for folder in rootfolders_data if folder.get("path")]
-        return jsonify(formatted_folders), 200
-    else:
-        logger.warning("API Get Sonarr Root Folders: Aucune donnée ou format inattendu reçu de Sonarr pour les dossiers racine.")
-        return jsonify([]), 200 # Retourner une liste vide si rien n'est trouvé ou erreur de format
+    # La fonction get_sonarr_root_folders inclut déjà le champ 'freeSpace_formatted'
+    return jsonify(folders)
 
 
 @seedbox_ui_bp.route('/api/get-sonarr-qualityprofiles', methods=['GET'])
@@ -1959,39 +1944,14 @@ def get_sonarr_qualityprofiles_api():
 @login_required
 def get_radarr_rootfolders_api():
     logger = current_app.logger
-    logger.info("API: Demande de récupération des dossiers racine Radarr.")
+    logger.info("API: Demande de récupération des dossiers racine Radarr (avec espace disque).")
 
-    radarr_url = current_app.config.get('RADARR_URL')
-    radarr_api_key = current_app.config.get('RADARR_API_KEY')
+    folders = get_radarr_root_folders()
+    if folders is None:
+        return jsonify({"error": "Erreur lors de la récupération des dossiers racine Radarr."}), 500
 
-    if not radarr_url or not radarr_api_key:
-        logger.error("API Get Radarr Root Folders: Configuration Radarr manquante.")
-        return jsonify({"error": "Radarr non configuré dans l'application."}), 500
-
-    api_endpoint = f"{radarr_url.rstrip('/')}/api/v3/rootfolder"
-
-    # Utilisation de votre helper _make_arr_request
-    rootfolders_data, error_msg = _make_arr_request('GET', api_endpoint, radarr_api_key)
-
-    if error_msg:
-        logger.error(f"API Get Radarr Root Folders: Erreur lors de l'appel à Radarr: {error_msg}")
-        return jsonify({"error": f"Erreur Radarr: {error_msg}"}), 502 # Bad Gateway ou erreur de l'API distante
-
-    if rootfolders_data and isinstance(rootfolders_data, list):
-        logger.info(f"API Get Radarr Root Folders: {len(rootfolders_data)} dossier(s) racine trouvé(s).")
-        # Radarr retourne une liste d'objets avec 'path' et 'id'.
-        # Pour l'ajout de film, Radarr attend le 'rootFolderPath' (le chemin).
-        formatted_folders = []
-        for folder in rootfolders_data:
-            if folder.get("path"): # S'assurer que le chemin existe
-                # Radarr peut avoir des 'unmappedFolders', on ne les veut pas forcément.
-                # Un dossier racine valide a généralement un ID et un chemin.
-                # On peut ajouter plus de filtres si nécessaire (ex: folder.get('accessible') is True)
-                formatted_folders.append({"id": folder.get("id"), "path": folder.get("path")})
-        return jsonify(formatted_folders), 200
-    else:
-        logger.warning("API Get Radarr Root Folders: Aucune donnée ou format inattendu reçu de Radarr pour les dossiers racine.")
-        return jsonify([]), 200
+    # La fonction get_radarr_root_folders inclut déjà le champ 'freeSpace_formatted'
+    return jsonify(folders)
 
 
 @seedbox_ui_bp.route('/api/get-radarr-qualityprofiles', methods=['GET'])

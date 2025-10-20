@@ -1122,7 +1122,13 @@ async function populateSelectFromServer(apiUrl, selectElementId, valueField, tex
         const dataItems = await response.json();
         selectElement.innerHTML = `<option value="">-- Choisir ${selectTypeForLog} --</option>`;
         if (dataItems && dataItems.length > 0) {
-            dataItems.forEach(item => selectElement.add(new Option(item[textField], item[valueField])));
+            dataItems.forEach(item => {
+                let displayText = item[textField];
+                if (item.freeSpace_formatted) {
+                    displayText += ` (${item.freeSpace_formatted})`;
+                }
+                selectElement.add(new Option(displayText, item[valueField]));
+            });
             selectElement.disabled = false;
             selectElement.removeEventListener('change', updateSubmitAddTorrentButtonState);
             selectElement.addEventListener('change', updateSubmitAddTorrentButtonState);

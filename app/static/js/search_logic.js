@@ -561,7 +561,10 @@ $(document).ready(function() {
             const [rootFolders, qualityProfiles] = options;
             const rootFolderSelect = $('#root-folder-select').empty();
             if (rootFolders && rootFolders.length > 0) {
-                rootFolders.forEach(folder => rootFolderSelect.append(new Option(folder.path, folder.id)));
+                rootFolders.forEach(folder => {
+                    const displayText = `${folder.path} (${folder.freeSpace_formatted} libres)`;
+                    rootFolderSelect.append(new Option(displayText, folder.id));
+                });
                 rootFolderSelect.prop('disabled', false);
             } else {
                 rootFolderSelect.html('<option>Aucun dossier trouvé</option>');

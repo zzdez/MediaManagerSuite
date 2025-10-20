@@ -1031,24 +1031,22 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
     // ### PARTIE 5 : GESTION DU DÉPLACEMENT DE MÉDIAS ###
     // =================================================================
 
-    let activeMoveTaskId = null;
-    let activeMoveMediaId = null;
-    let moveCheckInterval = null;
-
     // --- A. Ouvrir la modale et charger les dossiers ---
     $(document).on('click', '.move-media-btn', function() {
-        if (activeMoveTaskId) {
-            alert("Un déplacement est déjà en cours. Veuillez attendre sa fin.");
+        const button = $(this);
+        // Vérifie si un déplacement est déjà en cours pour cet item spécifique
+        if (button.find('.spinner-border').length) {
+            alert("Ce média est déjà en cours de déplacement.");
             return;
         }
 
-        const button = $(this);
         const mediaId = button.data('media-id');
         const mediaTitle = button.data('media-title');
         const mediaType = button.data('media-type'); // 'sonarr' or 'radarr'
 
         const modal = $('#move-media-modal');
         modal.find('#move-media-title').text(mediaTitle);
+        new bootstrap.Modal(modal[0]).show(); // LIGNE AJOUTÉE
         const confirmBtn = modal.find('#confirm-move-btn');
         const folderSelect = modal.find('#root-folder-select');
 
@@ -1061,7 +1059,9 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
                 folderSelect.html('').prop('disabled', false);
                 if (folders && folders.length > 0) {
                     folders.forEach(folder => {
-                        folderSelect.append(new Option(folder.path, folder.path));
+                        const freeSpace = folder.freeSpace_formatted ? `(${folder.freeSpace_formatted} libres)` : '';
+                        const optionText = `${folder.path} ${freeSpace}`;
+                        folderSelect.append(new Option(optionText, folder.path));
                     });
                 } else {
                     folderSelect.html('<option>Aucun dossier trouvé.</option>').prop('disabled', true);
@@ -1099,13 +1099,11 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
         .then(response => response.json())
         .then(data => {
             bootstrap.Modal.getInstance(document.getElementById('move-media-modal')).hide();
-            if (data.status === 'success') {
-                activeMoveTaskId = data.task_id;
-                activeMoveMediaId = mediaId; // Store the mediaId
-                updateUIAfterMoveStart(mediaId);
-                startMoveStatusPolling();
+            if (data.status === 'success' && data.task_id) {
+                // Démarrer le suivi du statut pour ce média spécifique
+                pollMoveStatus(data.task_id, mediaId);
             } else {
-                alert('Erreur: ' + data.message);
+                alert('Erreur au lancement: ' + data.message);
             }
         })
         .catch(err => {
@@ -1117,52 +1115,58 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
         });
     });
 
-    function updateUIAfterMoveStart(mediaId) {
-        const row = $(`tr[data-rating-key="${mediaId}"]`);
-        row.addClass('opacity-50');
-        row.find('.move-media-btn').html('<span class="spinner-border spinner-border-sm"></span>').prop('disabled', true);
-        row.find('button').not('.move-media-btn').prop('disabled', true);
-    }
+    function pollMoveStatus(taskId, mediaId) {
+        const moveButton = $(`#move-btn-${mediaId}`);
+        const originalIcon = moveButton.html();
+        const originalClasses = moveButton.attr('class');
 
-    function startMoveStatusPolling() {
-        if (moveCheckInterval) clearInterval(moveCheckInterval);
+        // 1. Mettre à jour l'UI pour indiquer le début du traitement
+        moveButton.prop('disabled', true)
+                  .html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>')
+                  .removeClass('btn-outline-info btn-outline-success btn-outline-danger')
+                  .addClass('btn-outline-warning');
 
-        moveCheckInterval = setInterval(() => {
-            fetch('/plex/api/media/move_status')
+        const interval = setInterval(() => {
+            fetch(`/plex/api/media/move_status/${taskId}`)
                 .then(response => response.json())
                 .then(data => {
-                    if (data.status === 'idle' || data.status === 'completed' || data.status === 'failed') {
-                        clearInterval(moveCheckInterval);
-                        moveCheckInterval = null;
-                        const mediaIdToEnd = activeMoveMediaId; // Use the stored mediaId
-                        activeMoveTaskId = null;
-                        activeMoveMediaId = null;
-                        updateUIAfterMoveEnd(mediaIdToEnd, data.status === 'completed');
-                        alert(data.message || "Opération terminée.");
-                        $('#apply-filters-btn').click(); // Refresh the table
+                    if (data.status === 'in_progress') {
+                        // C'est en cours, on ne fait rien, on attend le prochain poll.
+                        return;
                     }
+
+                    // 2. Si la tâche est terminée (succès ou échec), on arrête le polling
+                    clearInterval(interval);
+
+                    if (data.status === 'success') {
+                        // 3a. UI en cas de succès
+                        moveButton.removeClass('btn-outline-warning').addClass('btn-outline-success')
+                                  .html('<i class="bi bi-check-lg"></i>');
+                    } else {
+                        // 3b. UI en cas d'échec
+                        moveButton.removeClass('btn-outline-warning').addClass('btn-outline-danger')
+                                  .html('<i class="bi bi-x-lg"></i>');
+                        alert(`Le déplacement a échoué: ${data.error_message || 'Erreur inconnue'}`);
+                    }
+
+                    // 4. Après un délai, restaurer le bouton à son état initial
+                    setTimeout(() => {
+                        moveButton.prop('disabled', false)
+                                  .html(originalIcon)
+                                  .attr('class', originalClasses); // Restaure toutes les classes d'origine
+                        $('#apply-filters-btn').click(); // Rafraîchir la table pour refléter le changement de chemin
+                    }, 5000); // 5 secondes
                 })
-                .catch(err => {
-                    console.error("Erreur polling statut:", err);
-                    clearInterval(moveCheckInterval);
-                    activeMoveTaskId = null;
+                .catch(error => {
+                    console.error('Erreur lors du polling:', error);
+                    clearInterval(interval);
+                    // Restaurer en cas d'erreur de communication
+                    moveButton.prop('disabled', false)
+                              .html(originalIcon)
+                              .attr('class', originalClasses);
+                    alert("Erreur de communication lors de la vérification du statut du déplacement.");
                 });
-        }, 15000); // Poll every 15 seconds
-    }
-
-    function updateUIAfterMoveEnd(mediaId, wasSuccessful) {
-        const row = $(`tr[data-rating-key="${mediaId}"]`);
-        row.removeClass('opacity-50');
-        const moveBtn = row.find('.move-media-btn');
-        moveBtn.html('<i class="bi bi-folder-symlink"></i>').prop('disabled', false);
-        row.find('button').prop('disabled', false);
-
-        if(wasSuccessful) {
-            moveBtn.addClass('btn-success').removeClass('btn-outline-info');
-            setTimeout(() => {
-                 moveBtn.removeClass('btn-success').addClass('btn-outline-info');
-            }, 5000);
-        }
+        }, 15000); // Interroger toutes les 15 secondes
     }
 
 }); // Fin de $(document).ready
