@@ -34,6 +34,7 @@ from app.utils.cache_manager import SimpleCache, get_pending_lock, remove_pendin
 from app.utils import trailer_manager # Import du nouveau manager
 from app.agent.services import _search_and_score_trailers
 
+import threading
 from app.utils.move_manager import move_manager
 from app.utils.arr_client import get_sonarr_root_folders, get_radarr_root_folders, move_sonarr_series, move_radarr_movie, get_arr_command_status, radarr_post_command
 
@@ -63,6 +64,29 @@ def get_root_folders():
     ]
     return jsonify(response_data)
 
+def _move_media_in_background(task_id, media_type, arr_item_id, new_path, app_context):
+    """Fonction à exécuter en arrière-plan pour le déplacement de média."""
+    with app_context:
+        current_app.logger.info(f"Tâche d'arrière-plan {task_id}: Début du déplacement pour {media_type} ID {arr_item_id} vers {new_path}")
+        success = False
+        error = "Erreur inconnue"
+        try:
+            if media_type == 'sonarr':
+                success, error = move_sonarr_series(arr_item_id, new_path)
+            elif media_type == 'radarr':
+                success, error = move_radarr_movie(arr_item_id, new_path)
+
+            if success:
+                current_app.logger.info(f"Tâche d'arrière-plan {task_id}: Déplacement réussi.")
+                move_manager.update_task_status(task_id, success=True)
+            else:
+                current_app.logger.error(f"Tâche d'arrière-plan {task_id}: Échec du déplacement. Raison: {error}")
+                move_manager.update_task_status(task_id, success=False, error_message=error)
+
+        except Exception as e:
+            current_app.logger.error(f"Tâche d'arrière-plan {task_id}: Une exception est survenue durant le déplacement. Exception: {e}", exc_info=True)
+            move_manager.update_task_status(task_id, success=False, error_message=str(e))
+
 @plex_editor_bp.route('/api/media/move', methods=['POST'])
 @login_required
 def move_media_item():
@@ -90,67 +114,41 @@ def move_media_item():
             if guid: arr_item = get_sonarr_series_by_guid(guid)
         elif media_type == 'radarr':
             guid = next((g.id for g in plex_item.guids if 'tmdb' in g.id), None)
-            current_app.logger.info(f"Move '{plex_item.title}': Found Plex GUID for Radarr: {guid}")
             if guid: arr_item = get_radarr_movie_by_guid(guid)
 
         if not arr_item or not arr_item.get('id'):
-            current_app.logger.error(f"Move '{plex_item.title}': Could not find corresponding media in {media_type.capitalize()} using GUID {guid}.")
             return jsonify({'status': 'error', 'message': f"Média non trouvé dans {media_type.capitalize()}."}), 404
 
         arr_item_id = arr_item.get('id')
     except Exception as e:
-        current_app.logger.error(f"Erreur lors de la traduction de l'ID Plex {plex_rating_key}: {e}", exc_info=True)
+        current_app.logger.error(f"Erreur lors de la recherche du média: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': "Erreur lors de la recherche du média correspondant."}), 500
 
-    if media_type == 'sonarr':
-        success, error = move_sonarr_series(arr_item_id, new_path)
-        if success:
-            return jsonify({'status': 'success', 'message': 'Déplacement initié dans Sonarr.'})
-        else:
-            return jsonify({'status': 'error', 'message': error or 'Échec du déplacement dans Sonarr.'}), 500
+    task_id = move_manager.start_move(plex_rating_key, media_type)
+    if not task_id:
+        return jsonify({'status': 'error', 'message': 'Impossible de démarrer le déplacement, une autre tâche est en cours.'}), 409
 
-    elif media_type == 'radarr':
-        # La nouvelle fonction move_radarr_movie est synchrone, comme pour Sonarr.
-        # Le système de polling n'est plus nécessaire pour Radarr.
-        success, error = move_radarr_movie(arr_item_id, new_path)
-        if success:
-            return jsonify({'status': 'success', 'message': 'Déplacement initié dans Radarr.'})
-        else:
-            return jsonify({'status': 'error', 'message': error or 'Échec du déplacement dans Radarr.'}), 500
+    thread = threading.Thread(target=_move_media_in_background, args=(
+        task_id, media_type, arr_item_id, new_path, current_app.app_context()
+    ))
+    thread.daemon = True
+    thread.start()
 
-    return jsonify({'status': 'error', 'message': 'Type de média non supporté.'}), 400
+    return jsonify({'status': 'success', 'message': 'Déplacement initié.', 'task_id': task_id})
 
-@plex_editor_bp.route('/api/media/move_status', methods=['GET'])
+@plex_editor_bp.route('/api/media/move_status/<task_id>', methods=['GET'])
 @login_required
-def get_move_status():
-    current_move = move_manager.get_current_move_status()
-    if not current_move:
-        return jsonify({'status': 'idle'})
+def get_move_status(task_id):
+    status_info = move_manager.get_task_status(task_id)
+    if not status_info:
+        return jsonify({'status': 'not_found', 'message': 'Tâche non trouvée.'}), 404
 
-    task_id = current_move['task_id']
-    command_id = current_move.get('command_id')
-    media_type = current_move['media_type']
-
-    if not command_id:
-        move_manager.end_move(task_id)
-        return jsonify({'status': 'error', 'message': 'Tâche de déplacement invalide sans ID de commande.'})
-
-    command_status = get_arr_command_status(media_type, command_id)
-
-    if not command_status:
-        move_manager.end_move(task_id)
-        return jsonify({'status': 'error', 'message': f'Impossible de récupérer le statut de la commande {command_id}.'})
-
-    status = command_status.get('status')
-    if status == 'completed':
-        move_manager.end_move(task_id)
-        return jsonify({'status': 'completed', 'message': 'Déplacement terminé avec succès.'})
-    elif status in ['failed', 'aborted']:
-        error_message = command_status.get('body', {}).get('exception', 'Erreur inconnue.')
-        move_manager.end_move(task_id)
-        return jsonify({'status': 'failed', 'message': f'Le déplacement a échoué: {error_message}'})
-    else: # 'pending', 'started', 'running'
-        return jsonify({'status': 'running', 'message': f'Déplacement en cours... (Statut: {status})'})
+    response = {
+        'task_id': status_info.get('task_id'),
+        'status': status_info.get('status'),
+        'error_message': status_info.get('error_message')
+    }
+    return jsonify(response)
 
 
 @plex_editor_bp.route('/api/users')
