@@ -1389,12 +1389,36 @@ def get_arr_command_status(arr_type, command_id):
         return _radarr_api_request('GET', f'command/{command_id}')
     return None
 
+def _format_bytes(size_bytes):
+    """Converts bytes to a human-readable string (KB, MB, GB, TB)."""
+    if size_bytes is None:
+        return "N/A"
+    if size_bytes == 0:
+        return "0 B"
+    power = 1024
+    n = 0
+    power_labels = {0: '', 1: 'K', 2: 'M', 3: 'G', 4: 'T'}
+    while size_bytes >= power and n < len(power_labels):
+        size_bytes /= power
+        n += 1
+    return f"{size_bytes:.2f} {power_labels[n]}B"
+
 def get_sonarr_root_folders():
-    """Fetches all root folders from Sonarr."""
+    """Fetches all root folders from Sonarr and adds formatted free space."""
     logger.info("Sonarr: Fetching root folders.")
-    return _sonarr_api_request('GET', 'rootfolder')
+    folders = _sonarr_api_request('GET', 'rootfolder')
+    if folders and isinstance(folders, list):
+        for folder in folders:
+            free_space = folder.get('freeSpace')
+            folder['freeSpace_formatted'] = _format_bytes(free_space)
+    return folders
 
 def get_radarr_root_folders():
-    """Fetches all root folders from Radarr."""
+    """Fetches all root folders from Radarr and adds formatted free space."""
     logger.info("Radarr: Fetching root folders.")
-    return _radarr_api_request('GET', 'rootfolder')
+    folders = _radarr_api_request('GET', 'rootfolder')
+    if folders and isinstance(folders, list):
+        for folder in folders:
+            free_space = folder.get('freeSpace')
+            folder['freeSpace_formatted'] = _format_bytes(free_space)
+    return folders
