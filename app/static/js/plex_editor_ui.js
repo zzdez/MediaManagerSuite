@@ -1061,7 +1061,7 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
                 folderSelect.html('').prop('disabled', false);
                 if (folders && folders.length > 0) {
                     folders.forEach(folder => {
-                        const freeSpace = folder.freeSpace_formatted ? `(Espace libre: ${folder.freeSpace_formatted})` : '';
+                        const freeSpace = folder.freeSpace_formatted ? `(${folder.freeSpace_formatted} libres)` : '';
                         const optionText = `${folder.path} ${freeSpace}`;
                         folderSelect.append(new Option(optionText, folder.path));
                     });
