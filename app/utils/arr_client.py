@@ -1298,37 +1298,37 @@ def radarr_trigger_import(download_id):
 
 def move_sonarr_series(series_id, new_root_folder_path):
     """
-    Moves a Sonarr series using the 'MoveFiles' command.
-    Returns (command_id, error_message)
+    Moves a Sonarr series to a new root folder by editing the series object.
+    Returns (True, error_message) on initiation success, (False, error_message) on failure.
     """
     logger.info(f"Sonarr: Initiating move for series ID {series_id} to '{new_root_folder_path}'.")
     try:
         series_id_int = int(series_id)
     except (ValueError, TypeError):
-        return None, f"L'ID de la série '{series_id}' est invalide."
+        logger.error(f"L'ID de la série '{series_id}' n'est pas un entier valide.")
+        return False, f"L'ID de la série '{series_id}' est invalide."
 
-    all_files = get_sonarr_episode_files(series_id_int)
-    if not all_files:
-        return None, "Aucun fichier d'épisode trouvé pour cette série, déplacement annulé."
+    series_data = get_sonarr_series_by_id(series_id_int)
+    if not series_data:
+        logger.error(f"Sonarr: Impossible de récupérer la série {series_id_int} pour la déplacer.")
+        return False, "Série non trouvée."
 
-    file_ids = [f['id'] for f in all_files]
+    series_data['rootFolderPath'] = new_root_folder_path
+    series_folder = os.path.basename(series_data['path'])
+    series_data['path'] = os.path.join(new_root_folder_path, series_folder)
 
-    payload = {
-        'name': 'MoveFiles',
-        'seriesId': series_id_int,
-        'destinationPath': new_root_folder_path,
-        'files': file_ids
-    }
-    response = sonarr_post_command(payload)
+    params = {'moveFiles': 'true'}
+    response = _sonarr_api_request('PUT', f"series/{series_id_int}", params=params, json_data=series_data)
 
     if response and response.get('id'):
-        command_id = response['id']
-        logger.info(f"Sonarr: Commande 'MoveFiles' envoyée avec succès. ID de commande: {command_id}")
-        return command_id, None
-    else:
-        error = "Échec de l'envoi de la commande 'MoveFiles' à Sonarr."
-        logger.error(f"{error} Réponse: {response}")
-        return None, error
+        logger.info(f"Sonarr: Déplacement pour la série ID {series_id_int} accepté. L'opération se poursuit en arrière-plan.")
+        return True, None
+
+    error_msg = "Échec de l'initiation du déplacement via l'édition de la série."
+    if isinstance(response, list) and response:
+        error_msg = response[0].get('errorMessage', str(response))
+    logger.error(f"Sonarr: Échec du déplacement de la série {series_id_int}. Réponse: {response}")
+    return False, error_msg
 
 def move_radarr_movie(movie_id, new_root_folder_path):
     """

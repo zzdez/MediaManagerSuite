@@ -24,6 +24,7 @@ from app.utils.arr_client import (
     get_sonarr_tag_id, get_sonarr_series_by_guid, get_sonarr_series_by_id,
     update_sonarr_series, get_sonarr_episode_files, get_sonarr_episodes_by_series_id,
     get_all_sonarr_series, # <--- AJOUT ICI
+    get_sonarr_series_by_id,
     sonarr_trigger_series_rename,
     search_sonarr_series_by_title_and_year
 )
@@ -68,54 +69,59 @@ import time
 
 def _move_media_in_background(task_id, media_type, arr_item_id, new_path, app_context):
     """
-    Fonction à exécuter en arrière-plan pour le déplacement de média,
-    avec suivi de l'état de la commande.
+    Fonction à exécuter en arrière-plan pour le déplacement de média.
+    Utilise le suivi de commande pour Radarr et le polling de l'état pour Sonarr.
     """
     with app_context:
-        command_id = None
-        error = None
-        current_app.logger.info(f"BG Task {task_id}: Starting move for {media_type} ID {arr_item_id} to {new_path}")
-
+        current_app.logger.info(f"BG Task {task_id}: Starting move for {media_type} ID {arr_item_id} to '{new_path}'")
         try:
-            if media_type == 'sonarr':
-                command_id, error = move_sonarr_series(arr_item_id, new_path)
-            elif media_type == 'radarr':
+            if media_type == 'radarr':
+                # --- Logique Radarr (suivi de commande) ---
                 command_id, error = move_radarr_movie(arr_item_id, new_path)
+                if error:
+                    move_manager.update_task_status(task_id, success=False, error_message=error)
+                    return
+                if not command_id:
+                    move_manager.update_task_status(task_id, success=False, error_message="Aucun ID de commande retourné par Radarr.")
+                    return
 
-            if error:
-                current_app.logger.error(f"BG Task {task_id}: Failed to initiate move command. Reason: {error}")
-                move_manager.update_task_status(task_id, success=False, error_message=error)
-                return
+                timeout = time.time() + 60 * 30 # 30 minutes timeout
+                while time.time() < timeout:
+                    time.sleep(15)
+                    status_info = get_arr_command_status('radarr', command_id)
+                    if not status_info: continue
 
-            if not command_id:
-                current_app.logger.error(f"BG Task {task_id}: Move command initiated but no command ID was returned.")
-                move_manager.update_task_status(task_id, success=False, error_message="Aucun ID de commande retourné par l'API.")
-                return
+                    status = status_info.get('status')
+                    current_app.logger.info(f"BG Task {task_id} (Radarr): Polling command {command_id}. Status: {status}")
+                    if status == 'completed':
+                        move_manager.update_task_status(task_id, success=True)
+                        return
+                    if status in ['failed', 'aborted']:
+                        error_msg = status_info.get('body', {}).get('exception', 'Échec du déplacement Radarr.')
+                        move_manager.update_task_status(task_id, success=False, error_message=error_msg)
+                        return
+                move_manager.update_task_status(task_id, success=False, error_message="Le déplacement Radarr a dépassé le temps maximum.")
 
-            # Boucle de surveillance du statut de la commande
-            while True:
-                time.sleep(10) # Attendre 10 secondes entre chaque vérification
-                status_info = get_arr_command_status(media_type, command_id)
-                if not status_info:
-                    current_app.logger.warning(f"BG Task {task_id}: Could not retrieve status for command {command_id}. Retrying...")
-                    continue
+            elif media_type == 'sonarr':
+                # --- Logique Sonarr (polling de l'objet) ---
+                success, error = move_sonarr_series(arr_item_id, new_path)
+                if not success:
+                    move_manager.update_task_status(task_id, success=False, error_message=error)
+                    return
 
-                status = status_info.get('status')
-                current_app.logger.info(f"BG Task {task_id}: Polling command {command_id}. Current status: {status}")
-
-                if status == 'completed':
-                    current_app.logger.info(f"BG Task {task_id}: Move completed successfully.")
-                    move_manager.update_task_status(task_id, success=True)
-                    break
-                elif status in ['failed', 'aborted']:
-                    error_message = status_info.get('body', {}).get('exception', 'Erreur inconnue durant le déplacement.')
-                    current_app.logger.error(f"BG Task {task_id}: Move failed with status '{status}'. Reason: {error_message}")
-                    move_manager.update_task_status(task_id, success=False, error_message=error_message)
-                    break
-                # Si 'pending', 'started', 'running', on continue la boucle
+                timeout = time.time() + 60 * 30 # 30 minutes timeout
+                while time.time() < timeout:
+                    time.sleep(15)
+                    series_data = get_sonarr_series_by_id(arr_item_id)
+                    if series_data and series_data.get('rootFolderPath') == new_path:
+                        current_app.logger.info(f"BG Task {task_id} (Sonarr): Move confirmed. Root folder path matches '{new_path}'.")
+                        move_manager.update_task_status(task_id, success=True)
+                        return
+                    current_app.logger.info(f"BG Task {task_id} (Sonarr): Polling series {arr_item_id}. Path is still '{series_data.get('rootFolderPath')}'. Waiting...")
+                move_manager.update_task_status(task_id, success=False, error_message="Le déplacement Sonarr a dépassé le temps maximum.")
 
         except Exception as e:
-            current_app.logger.error(f"BG Task {task_id}: An exception occurred during the move process: {e}", exc_info=True)
+            current_app.logger.error(f"BG Task {task_id}: An exception occurred: {e}", exc_info=True)
             move_manager.update_task_status(task_id, success=False, error_message=str(e))
 
 @plex_editor_bp.route('/api/media/move', methods=['POST'])
