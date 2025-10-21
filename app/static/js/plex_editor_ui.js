@@ -907,98 +907,42 @@ function sortTable(table, sortBy, sortType, direction) {
         sortTable(table, 'rating', 'number', newDir === 'asc' ? 1 : -1);
     });
 
-// --- DÉBUT DU BLOC COMPLET POUR LA GESTION DES BANDES-ANNONCES ---
+// --- DÉBUT DU BLOC DE GESTION DES BANDES-ANNONCES (NOUVELLE VERSION) ---
 
-// Étape 1: Le clic sur le bouton pour chercher/jouer la bande-annonce
+// Handler pour le bouton principal "Voir la BA" sur la ligne du média
 $(document).on('click', '.find-and-play-trailer-btn', function() {
     const button = $(this);
-    const title = button.data('title');
     const plexTrailerUrl = button.data('plex-trailer-url');
-    const year = button.data('year');
-    const mediaType = button.data('media-type');
 
-    // Cibles pour les modales
-    const playerModalTitle = $('#trailerModalLabel');
-    const playerModalBody = $('#trailer-modal .modal-body');
-    const playerModalInstance = bootstrap.Modal.getOrCreateInstance(document.getElementById('trailer-modal'));
-
-    // Logique Hybride
     if (plexTrailerUrl) {
-        // CAS 1: L'URL Plex existe, on joue directement dans l'iframe
-        console.log("Lecture du trailer depuis Plex.");
-        playerModalTitle.text('Bande-Annonce (Plex): ' + title);
-        playerModalBody.html(`<div class="ratio ratio-16x9"><iframe src="${plexTrailerUrl}" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>`);
-        playerModalInstance.show();
+        // Cas 1: La bande-annonce est fournie directement par Plex. On la joue.
+        const title = button.data('title');
+        $('#trailerModalLabel').text('Bande-Annonce (Plex): ' + title);
+        $('#trailer-modal .modal-body').html(`<div class="ratio ratio-16x9"><iframe src="${plexTrailerUrl}" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>`);
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('trailer-modal')).show();
     } else {
-        // CAS 2: Pas d'URL Plex, on interroge l'agent
-        console.log("Recherche du trailer via l'agent...");
-        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+        // Cas 2: Pas de bande-annonce Plex, on utilise notre nouveau système de recherche.
+        // On récupère toutes les informations nécessaires directement depuis le bouton.
+        const mediaType = button.data('media-type');
+        const externalId = button.data('external-id');
+        const title = button.data('title');
+        const year = button.data('year'); // On récupère aussi l'année
 
-        fetch('/api/agent/suggest_trailers', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: title, year: year, media_type: mediaType })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success && data.results && data.results.length > 0) {
-                // On peuple et on ouvre la modale de SÉLECTION
-                const resultsContainer = $('#trailer-results-container');
-                resultsContainer.empty();
-                data.results.forEach(result => {
-                    const resultHtml = `
-                        <div class="trailer-result-item d-flex align-items-center mb-2 p-2 rounded" style="cursor: pointer; background-color: #343a40;"
-                             data-video-id="${result.videoId}" data-video-title="${result.title}">
-                            <img src="${result.thumbnail}" width="120" class="me-3 rounded">
-                            <div>
-                                <p class="mb-0 text-white font-weight-bold">${result.title}</p>
-                                <small class="text-muted">${result.channel}</small>
-                            </div>
-                        </div>
-                    `;
-                    resultsContainer.append(resultHtml);
-                });
-                const selectionModal = bootstrap.Modal.getOrCreateInstance(document.getElementById('trailer-selection-modal'));
-                selectionModal.show();
-            } else {
-                alert('Aucune bande-annonce pertinente n\'a été trouvée.');
-            }
-        })
-        .catch(error => {
-            console.error('Erreur lors de la recherche de la bande-annonce:', error);
-            alert('Une erreur technique est survenue.');
-        })
-        .finally(() => {
-            button.prop('disabled', false).html('<i class="bi bi-film"></i>');
-        });
+        if (mediaType && externalId && title) {
+            // On déclenche l'événement global avec toutes les données.
+            $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
+        } else {
+            alert('Erreur: Informations manquantes pour rechercher la bande-annonce (mediaType, externalId, title).');
+            console.error('Attributs de données manquants sur le bouton de bande-annonce:', {
+                mediaType: mediaType,
+                externalId: externalId,
+                title: title
+            });
+        }
     }
 });
 
-// Étape 2: Le clic sur un résultat dans la modale de sélection
-$(document).on('click', '.trailer-result-item', function() {
-    const videoId = $(this).data('video-id');
-    const videoTitle = $(this).data('video-title');
-
-    // On ferme la modale de sélection
-    bootstrap.Modal.getInstance(document.getElementById('trailer-selection-modal')).hide();
-
-    // On prépare et on ouvre la modale du lecteur avec un IFRAME
-    const playerModalTitle = $('#trailerModalLabel');
-    const playerModalBody = $('#trailer-modal .modal-body');
-    const playerModalInstance = bootstrap.Modal.getOrCreateInstance(document.getElementById('trailer-modal'));
-
-    playerModalTitle.text('Bande-Annonce: ' + videoTitle);
-    playerModalBody.html(`<div class="ratio ratio-16x9"><iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>`);
-    playerModalInstance.show();
-});
-
-// Étape 3: Nettoyage à la fermeture du lecteur vidéo
-$('#trailer-modal').on('hidden.bs.modal', function () {
-    // Vider le contenu du corps de la modale pour stopper la vidéo
-    $('#trailer-modal .modal-body').empty();
-});
-
-// --- FIN DU BLOC COMPLET POUR LA GESTION DES BANDES-ANNONCES ---
+// --- FIN DU BLOC DE GESTION DES BANDES-ANNONCES ---
 
     // NOUVEL ÉCOUTEUR D'ÉVÉNEMENT
     $(document).on('click', '#scan-libraries-btn', function() {
@@ -1082,4 +1026,145 @@ $('#trailer-modal').on('hidden.bs.modal', function () {
             button.closest('.btn-group').find('button').prop('disabled', false);
         });
     });
+
+    // =================================================================
+    // ### PARTIE 5 : GESTION DU DÉPLACEMENT DE MÉDIAS ###
+    // =================================================================
+
+    let activeMoveTaskId = null;
+    let activeMoveMediaId = null;
+    let moveCheckInterval = null;
+
+    // --- A. Ouvrir la modale et charger les dossiers ---
+    $(document).on('click', '.move-media-btn', function() {
+        if (activeMoveTaskId) {
+            alert("Un déplacement est déjà en cours. Veuillez attendre sa fin.");
+            return;
+        }
+
+        const button = $(this);
+        const mediaId = button.data('media-id');
+        const mediaTitle = button.data('media-title');
+        const mediaType = button.data('media-type'); // 'sonarr' or 'radarr'
+
+        const modal = $('#move-media-modal');
+        modal.find('#move-media-title').text(mediaTitle);
+        const confirmBtn = modal.find('#confirm-move-btn');
+        const folderSelect = modal.find('#root-folder-select');
+
+        confirmBtn.data({ mediaId, mediaType });
+        folderSelect.html('<option>Chargement...</option>').prop('disabled', true);
+
+        fetch(`/plex/api/media/root_folders?type=${mediaType}`)
+            .then(response => response.json())
+            .then(folders => {
+                folderSelect.html('').prop('disabled', false);
+                if (folders && folders.length > 0) {
+                    folders.forEach(folder => {
+                        const freeSpace = folder.freeSpace_formatted ? `(Espace libre: ${folder.freeSpace_formatted})` : '';
+                        const optionText = `${folder.path} ${freeSpace}`;
+                        folderSelect.append(new Option(optionText, folder.path));
+                    });
+                } else {
+                    folderSelect.html('<option>Aucun dossier trouvé.</option>').prop('disabled', true);
+                }
+            })
+            .catch(err => {
+                console.error("Erreur chargement dossiers:", err);
+                folderSelect.html('<option>Erreur de chargement.</option>').prop('disabled', true);
+            });
+    });
+
+    // --- B. Confirmer le déplacement et démarrer le polling ---
+    $('#confirm-move-btn').on('click', function() {
+        const btn = $(this);
+        const mediaId = btn.data('mediaId');
+        const mediaType = btn.data('mediaType');
+        const newPath = $('#move-media-modal #root-folder-select').val();
+
+        if (!newPath) {
+            alert("Veuillez sélectionner un dossier de destination.");
+            return;
+        }
+
+        if (!confirm(`Êtes-vous sûr de vouloir déplacer ce média vers "${newPath}" ?`)) {
+            return;
+        }
+
+        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Lancement...');
+
+        fetch('/plex/api/media/move', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mediaId, mediaType, newPath })
+        })
+        .then(response => response.json())
+        .then(data => {
+            bootstrap.Modal.getInstance(document.getElementById('move-media-modal')).hide();
+            if (data.status === 'success') {
+                activeMoveTaskId = data.task_id;
+                activeMoveMediaId = mediaId; // Store the mediaId
+                updateUIAfterMoveStart(mediaId);
+                startMoveStatusPolling();
+            } else {
+                alert('Erreur: ' + data.message);
+            }
+        })
+        .catch(err => {
+            console.error("Erreur API déplacement:", err);
+            alert("Erreur de communication lors du lancement du déplacement.");
+        })
+        .finally(() => {
+            btn.prop('disabled', false).html('Valider le déplacement');
+        });
+    });
+
+    function updateUIAfterMoveStart(mediaId) {
+        const row = $(`tr[data-rating-key="${mediaId}"]`);
+        row.addClass('opacity-50');
+        row.find('.move-media-btn').html('<span class="spinner-border spinner-border-sm"></span>').prop('disabled', true);
+        row.find('button').not('.move-media-btn').prop('disabled', true);
+    }
+
+    function startMoveStatusPolling() {
+        if (moveCheckInterval) clearInterval(moveCheckInterval);
+
+        moveCheckInterval = setInterval(() => {
+            fetch('/plex/api/media/move_status')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'idle' || data.status === 'completed' || data.status === 'failed') {
+                        clearInterval(moveCheckInterval);
+                        moveCheckInterval = null;
+                        const mediaIdToEnd = activeMoveMediaId; // Use the stored mediaId
+                        activeMoveTaskId = null;
+                        activeMoveMediaId = null;
+                        updateUIAfterMoveEnd(mediaIdToEnd, data.status === 'completed');
+                        alert(data.message || "Opération terminée.");
+                        $('#apply-filters-btn').click(); // Refresh the table
+                    }
+                })
+                .catch(err => {
+                    console.error("Erreur polling statut:", err);
+                    clearInterval(moveCheckInterval);
+                    activeMoveTaskId = null;
+                });
+        }, 15000); // Poll every 15 seconds
+    }
+
+    function updateUIAfterMoveEnd(mediaId, wasSuccessful) {
+        const row = $(`tr[data-rating-key="${mediaId}"]`);
+        row.removeClass('opacity-50');
+        const moveBtn = row.find('.move-media-btn');
+        moveBtn.html('<i class="bi bi-folder-symlink"></i>').prop('disabled', false);
+        row.find('button').prop('disabled', false);
+
+        if(wasSuccessful) {
+            moveBtn.addClass('btn-success').removeClass('btn-outline-info');
+            setTimeout(() => {
+                 moveBtn.removeClass('btn-success').addClass('btn-outline-info');
+            }, 5000);
+        }
+    }
+
 }); // Fin de $(document).ready

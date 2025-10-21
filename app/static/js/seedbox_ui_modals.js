@@ -907,6 +907,45 @@ function initializeAddTorrentModal() {
     modalElement.removeAttribute('data-selected-media-id');
     modalElement.removeAttribute('data-selected-media-title');
     modalElement.removeAttribute('data-selected-media-type');
+    modalElement.removeAttribute('data-selected-media-year');
+    modalElement.removeAttribute('data-locked-trailer-id');
+
+    // --- NOUVELLE LOGIQUE POUR LA BANDE-ANNONCE ---
+    const trailerPanel = document.getElementById('trailer-search-panel');
+    if (trailerPanel) {
+        trailerPanel.style.display = 'none';
+        document.getElementById('trailer-search-query').value = '';
+        document.getElementById('trailer-results-container').innerHTML = '';
+        document.getElementById('trailer-search-feedback').innerHTML = '';
+    }
+    const trailerSearchBtn = document.getElementById('execute-trailer-search-btn');
+    if (trailerSearchBtn) {
+        trailerSearchBtn.removeEventListener('click', executeTrailerSearchForAddTorrent);
+        trailerSearchBtn.addEventListener('click', executeTrailerSearchForAddTorrent);
+    }
+    // Utiliser la délégation d'événements pour les clics dans la modale
+    modalElement.removeEventListener('click', handleAddTorrentModalClicks);
+    modalElement.addEventListener('click', handleAddTorrentModalClicks);
+}
+
+function handleAddTorrentModalClicks(event) {
+    // Gérer le verrouillage/déverrouillage de la bande-annonce
+    const lockBtn = event.target.closest('.lock-trailer-btn-add-modal');
+    if (lockBtn) {
+        handleTrailerLockForAddTorrent(lockBtn);
+        return; // Empêche d'autres actions si on clique sur le bouton de verrouillage
+    }
+
+    // Gérer la lecture de la bande-annonce
+    const playArea = event.target.closest('.play-trailer-area-add-modal');
+    if (playArea) {
+        const videoId = playArea.dataset.videoId;
+        if (videoId) {
+            // Ouvre la vidéo dans un nouvel onglet pour éviter tout conflit de modale
+            const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
+            window.open(youtubeUrl, '_blank');
+        }
+    }
 }
 
 function handleAddTorrentAppTypeChange() {
@@ -963,7 +1002,7 @@ function renderEnrichedArrSearchResultsForAddTorrent(results, appType, resultsDi
     results.forEach(item => {
         const displayTitle = (appType === 'sonarr' && item.seriesName) ? item.seriesName : item.title;
         const escapedTitle = escapeJsString(displayTitle);
-        const year = item.year || 'N/A';
+        const year = item.year || 0; // Utiliser 0 comme fallback pour l'année
         const overview = item.overview || 'Synopsis non disponible.';
         let posterUrl = item.remotePoster || (item.images && item.images.length > 0 ? item.images.find(img => img.coverType === 'poster')?.remoteUrl : null) || '/static/img/placeholder.png';
 
@@ -995,12 +1034,12 @@ function renderEnrichedArrSearchResultsForAddTorrent(results, appType, resultsDi
                         <img src="${posterUrl}" alt="Poster" class="img-fluid rounded" style="max-height: 120px;" onerror="this.onerror=null; this.src='/static/img/placeholder.png';">
                     </div>
                     <div class="col">
-                        <strong>${displayTitle}</strong> (${year})<br>
+                        <strong>${displayTitle}</strong> (${year || 'N/A'})<br>
                         <small class="text-muted">Statut: <span class="fw-bold ${isAlreadyAdded ? 'text-success' : 'text-primary'}">${isAlreadyAdded ? (item.status || 'Géré(e)') : 'Non Ajouté(e)'}</span> | ${idTypeForDisplay}: ${externalIdForDisplay} ${internalIdDisplay}</small>
                         <p class="mb-0 small mt-2" style="max-height: 60px; overflow-y: auto;">${overview}</p>
                     </div>
                     <div class="col-auto d-flex align-items-center" style="height: 120px;">
-                        <button type="button" class="btn ${buttonClass} btn-sm" onclick="selectArrItemForAddTorrent(${idForSelection || 0}, '${escapedTitle}', '${appType}', ${isAlreadyAdded})" title="${buttonTitle}" ${idForSelection ? '' : 'disabled title="ID manquant"'}>
+                        <button type="button" class="btn ${buttonClass} btn-sm" onclick="selectArrItemForAddTorrent(${idForSelection || 0}, '${escapedTitle}', '${appType}', ${isAlreadyAdded}, ${year})" title="${buttonTitle}" ${idForSelection ? '' : 'disabled title="ID manquant"'}>
                             <i class="${buttonIcon}"></i> ${buttonText}
                         </button>
                     </div>
@@ -1011,7 +1050,7 @@ function renderEnrichedArrSearchResultsForAddTorrent(results, appType, resultsDi
     resultsDiv.innerHTML = html;
 }
 
-function selectArrItemForAddTorrent(itemId, itemTitle, appType, isAddedBoolean) {
+function selectArrItemForAddTorrent(itemId, itemTitle, appType, isAddedBoolean, itemYear) {
     document.getElementById('addTorrentTargetId').value = itemId;
     document.getElementById('addTorrentSelectedMediaDisplay').innerHTML = `${appType === 'sonarr' ? 'Série' : 'Film'}: <strong>${itemTitle}</strong> (ID: ${itemId})`;
     const addTorrentModalElement = document.getElementById('addTorrentModal');
@@ -1019,6 +1058,8 @@ function selectArrItemForAddTorrent(itemId, itemTitle, appType, isAddedBoolean) 
     addTorrentModalElement.setAttribute('data-selected-media-id', itemId);
     addTorrentModalElement.setAttribute('data-selected-media-title', itemTitle);
     addTorrentModalElement.setAttribute('data-selected-media-type', appType);
+    addTorrentModalElement.setAttribute('data-selected-media-year', itemYear || 0); // Stocke l'année
+
     const resultsDiv = document.getElementById('addTorrentArrSearchResults');
     const feedbackDiv = document.getElementById('addTorrentFeedback');
     if (resultsDiv) { // Clear search results
@@ -1027,8 +1068,18 @@ function selectArrItemForAddTorrent(itemId, itemTitle, appType, isAddedBoolean) 
     if (feedbackDiv) { // Show selection in main feedback area for this modal
         feedbackDiv.innerHTML = `<p class="alert alert-info mt-2"><strong>${itemTitle}</strong> sélectionné.<br>
             ${isAddedBoolean ? 'Média déjà géré.' : 'Nouveau média à ajouter.'}<br>
-            ${!isAddedBoolean ? 'Choisir options d\'ajout.' : ''} Prêt.</p>`;
+            ${!isAddedBoolean ? 'Veuillez choisir les options d\'ajout ci-dessous.' : 'Vous pouvez maintenant chercher une bande-annonce ou lancer l\'ajout.'}</p>`;
     }
+
+    // Affiche le panneau de recherche de bande-annonce
+    const trailerPanel = document.getElementById('trailer-search-panel');
+    if (trailerPanel) {
+        trailerPanel.style.display = 'block';
+        document.getElementById('trailer-search-query').value = itemTitle; // Pré-remplir la recherche
+        document.getElementById('trailer-results-container').innerHTML = ''; // Nettoyer les anciens résultats
+        document.getElementById('trailer-search-feedback').innerHTML = '';
+    }
+
     const sonarrOptionsDiv = document.getElementById('addTorrentSonarrNewSeriesOptions');
     const radarrOptionsDiv = document.getElementById('addTorrentRadarrNewMovieOptions');
     if (sonarrOptionsDiv) sonarrOptionsDiv.style.display = 'none';
@@ -1556,7 +1607,173 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 // [end of app/static/js/seedbox_ui_modals.js]
 
-// ==============================================================================
+// ========================================================================== //
+// --- NOUVELLES FONCTIONS POUR LA RECHERCHE DE BANDE-ANNONCE INTÉGRÉE ---
+// ========================================================================== //
+
+async function executeTrailerSearchForAddTorrent() {
+    const modalElement = document.getElementById('addTorrentModal');
+    const query = document.getElementById('trailer-search-query').value.trim();
+    const resultsContainer = document.getElementById('trailer-results-container');
+    const feedbackDiv = document.getElementById('trailer-search-feedback');
+
+    if (!query) {
+        if(feedbackDiv) feedbackDiv.innerHTML = '<p class="text-warning small">Veuillez entrer un terme de recherche.</p>';
+        return;
+    }
+
+    resultsContainer.innerHTML = '<div class="text-center p-3"><div class="spinner-border spinner-border-sm"></div></div>';
+    if(feedbackDiv) feedbackDiv.innerHTML = '';
+
+    const mediaTitle = modalElement.getAttribute('data-selected-media-title');
+    const mediaYear = modalElement.getAttribute('data-selected-media-year');
+    const mediaType = modalElement.getAttribute('data-selected-media-type'); // sonarr or radarr
+
+    // L'API attend 'tv' ou 'movie'
+    const apiMediaType = mediaType === 'sonarr' ? 'tv' : 'movie';
+
+    try {
+        const response = await fetch('/api/agent/suggest_trailers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                query: query,
+                title: mediaTitle,
+                year: mediaYear,
+                media_type: apiMediaType,
+                page: 1 // On ne gère pas la pagination pour cette interface simplifiée
+            })
+        });
+
+        const data = await response.json();
+        resultsContainer.innerHTML = ''; // Nettoyer le spinner
+
+        if (data.success && data.results) {
+            // Le `locked_video_id` est maintenant un `pending_lock` qui est aussi stocké dans la session backend
+            // On peut l'utiliser pour pré-selectionner le bon trailer
+            renderTrailerResultsInModal(data.results, { lockedVideoId: data.locked_video_id, showLock: true });
+        } else {
+            resultsContainer.innerHTML = '<p class="text-center text-muted small">Aucun résultat trouvé.</p>';
+        }
+
+    } catch (error) {
+        resultsContainer.innerHTML = '';
+        if(feedbackDiv) feedbackDiv.innerHTML = `<p class="alert alert-danger small">${escapeJsString(error.message)}</p>`;
+        console.error("Erreur de recherche de bande-annonce:", error);
+    }
+}
+
+function renderTrailerResultsInModal(results, options = {}) {
+    const { lockedVideoId = null, showLock = false } = options;
+    const resultsContainer = document.getElementById('trailer-results-container');
+    if (!resultsContainer) return;
+
+    resultsContainer.innerHTML = '';
+
+    if (!results || results.length === 0) {
+        resultsContainer.innerHTML = '<p class="text-center text-muted small">Aucun résultat trouvé.</p>';
+        return;
+    }
+
+    results.forEach(result => {
+        const isLocked = result.videoId === lockedVideoId;
+        const btnClass = isLocked ? 'btn-success' : 'btn-outline-warning';
+        const btnTitle = isLocked ? 'Bande-annonce sélectionnée' : 'Sélectionner cette bande-annonce';
+
+        const lockButtonHtml = showLock ? `
+            <button class="btn btn-sm ${btnClass} lock-trailer-btn-add-modal" title="${btnTitle}"
+                    data-video-id="${result.videoId}"
+                    data-is-locked="${isLocked}">
+                <i class="fas ${isLocked ? 'fa-check-circle' : 'fa-lock'}"></i>
+            </button>
+        ` : '';
+
+        const resultHtml = `
+            <div class="trailer-result-item d-flex align-items-center justify-content-between mb-2 p-2 rounded" style="background-color: #3e444a;">
+                <div class="play-trailer-area-add-modal d-flex align-items-center" style="cursor: pointer; flex-grow: 1;"
+                     data-video-id="${result.videoId}" data-video-title="${escapeJsString(result.title)}">
+                    <img src="${result.thumbnail}" width="100" class="me-3 rounded">
+                    <div>
+                        <p class="mb-0 text-white small">${escapeJsString(result.title)}</p>
+                        <small class="text-muted">${escapeJsString(result.channel)}</small>
+                    </div>
+                </div>
+                ${lockButtonHtml}
+            </div>
+        `;
+        resultsContainer.insertAdjacentHTML('beforeend', resultHtml);
+    });
+}
+
+async function handleTrailerLockForAddTorrent(button) {
+    const videoId = button.dataset.videoId;
+    const modalElement = document.getElementById('addTorrentModal');
+    const feedbackDiv = document.getElementById('trailer-search-feedback');
+
+    // Si on clique sur un bouton déjà sélectionné, on ne fait rien.
+    if (button.dataset.isLocked === 'true') {
+        if(feedbackDiv) feedbackDiv.innerHTML = '<p class="text-info small">Cette bande-annonce est déjà sélectionnée.</p>';
+        return;
+    }
+
+    const mediaId = modalElement.getAttribute('data-selected-media-id');
+    const mediaType = modalElement.getAttribute('data-selected-media-type');
+    const isNewMedia = modalElement.getAttribute('data-selected-is-new') === 'true';
+
+    if (!mediaId) {
+        alert("Erreur: Contexte média invalide pour le verrouillage.");
+        return;
+    }
+
+    const originalIcon = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    try {
+        const response = await fetch('/api/agent/pending_lock', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                media_id: mediaId,
+                media_type: mediaType,
+                is_new_media: isNewMedia,
+                video_id: videoId
+            })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            if(feedbackDiv) feedbackDiv.innerHTML = `<p class="alert alert-success small p-2">${escapeJsString(data.message)}</p>`;
+
+            // Met à jour l'UI de tous les boutons de verrouillage dans la modale
+            const allLockButtons = modalElement.querySelectorAll('.lock-trailer-btn-add-modal');
+            allLockButtons.forEach(btn => {
+                btn.classList.remove('btn-success');
+                btn.classList.add('btn-outline-warning');
+                btn.dataset.isLocked = 'false';
+                btn.title = 'Sélectionner cette bande-annonce';
+                btn.innerHTML = '<i class="fas fa-lock"></i>';
+            });
+
+            // Met en évidence le bouton cliqué
+            button.classList.remove('btn-outline-warning');
+            button.classList.add('btn-success');
+            button.dataset.isLocked = 'true';
+            button.title = 'Bande-annonce sélectionnée';
+            button.innerHTML = '<i class="fas fa-check-circle"></i>';
+
+            modalElement.setAttribute('data-locked-trailer-id', videoId);
+
+        } else {
+            throw new Error(data.error || "Une erreur inconnue est survenue.");
+        }
+    } catch (error) {
+        if(feedbackDiv) feedbackDiv.innerHTML = `<p class="alert alert-danger small p-2">Erreur: ${escapeJsString(error.message)}</p>`;
+    } finally {
+        button.disabled = false;
+        // On ne remet pas l'icône originale car elle a été mise à jour par la logique de succès
+    }
+}
 // --- NOUVELLE LOGIQUE POUR LES ACTIONS MANUELLES DE LA VUE RTORRENT ---
 // ==============================================================================
 

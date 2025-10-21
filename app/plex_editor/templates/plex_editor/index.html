@@ -200,37 +200,35 @@
     </div>
 </div>
 
-<!-- Trailer Modal -->
-<div class="modal fade" id="trailer-modal" tabindex="-1" aria-labelledby="trailerModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
-        <div class="modal-content bg-dark">
+<!-- Modale de Déplacement -->
+<div class="modal fade" id="move-media-modal" tabindex="-1" aria-labelledby="moveMediaModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark text-white">
             <div class="modal-header">
-                <h5 class="modal-title" id="trailerModalLabel">Bande-Annonce</h5>
+                <h5 class="modal-title" id="moveMediaModalLabel">Déplacer le média</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body p-0">
-                <!-- Le contenu (iframe) sera injecté ici -->
+            <div class="modal-body">
+                <p>Sélectionnez le nouveau dossier de destination pour <strong id="move-media-title"></strong>.</p>
+                <div class="mb-3">
+                    <label for="root-folder-select" class="form-label">Nouveau dossier</label>
+                    <select id="root-folder-select" class="form-select">
+                        <option>Chargement...</option>
+                    </select>
+                </div>
+                <div class="alert alert-warning small">
+                    <strong>Attention :</strong> Le déplacement peut prendre plusieurs minutes pour les gros fichiers.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" id="confirm-move-btn">Valider le déplacement</button>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Modale de Sélection de Bande-Annonce -->
-<div class="modal fade" id="trailer-selection-modal" tabindex="-1" aria-labelledby="trailerSelectionModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
-        <div class="modal-content bg-dark text-white">
-            <div class="modal-header">
-                <h5 class="modal-title" id="trailerSelectionModalLabel">Choisissez une bande-annonce</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <div id="trailer-results-container">
-                    <!-- Les résultats de la recherche seront injectés ici -->
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
+<!-- Les modales de bande-annonce sont maintenant dans layout.html -->
 
 <!-- Modale d'Archivage de Film -->
 <div class="modal fade" id="archiveMovieModal" tabindex="-1" aria-labelledby="archiveMovieModalLabel" aria-hidden="true">

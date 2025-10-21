@@ -31,6 +31,14 @@ $(document).ready(function() {
                 ? `${TMDB_POSTER_BASE_URL}${item.poster}`
                 : (item.poster || 'https://via.placeholder.com/185x278.png?text=No+Poster');
 
+            // Logique pour déterminer la classe du bouton de bande-annonce
+            let trailerBtnClass = 'btn-outline-danger'; // Rouge par défaut (NONE)
+            if (item.trailer_status === 'LOCKED') {
+                trailerBtnClass = 'btn-outline-success'; // Vert
+            } else if (item.trailer_status === 'UNLOCKED') {
+                trailerBtnClass = 'btn-outline-primary'; // Bleu
+            }
+
             const cardHtml = `
                 <div class="list-group-item list-group-item-action" data-media-type="${mediaType}">
                     <div class="row g-3">
@@ -41,7 +49,11 @@ $(document).ready(function() {
                             <h5 class="mb-1">${item.title} <span class="text-muted">(${item.year || 'N/A'})</span></h5>
                             <p class="mb-1 small">${item.overview ? item.overview.substring(0, 280) + (item.overview.length > 280 ? '...' : '') : 'Pas de synopsis disponible.'}</p>
                             <div class="mt-2">
-                                <button class="btn btn-sm btn-outline-info" disabled>
+                                <button class="btn btn-sm ${trailerBtnClass} search-trailer-btn"
+                                        data-result-index="${index}"
+                                        data-title="${item.title}"
+                                        data-year="${item.year || ''}"
+                                        data-media-type="${mediaType}">
                                     <i class="fas fa-video"></i> Bande-annonce
                                 </button>
                                 <button class="btn btn-sm btn-primary search-torrents-btn" data-result-index="${index}">
@@ -101,6 +113,48 @@ $(document).ready(function() {
     $('#execute-media-search-btn').on('click', performMediaSearch);
     $('#media-search-input').on('keypress', function(e) {
         if (e.which == 13) { e.preventDefault(); performMediaSearch(); }
+    });
+
+    // --- GESTION DES BANDES-ANNONCES DE LA PAGE DE RECHERCHE (NOUVELLE VERSION) ---
+    $('#media-results-container').on('click', '.search-trailer-btn', function() {
+        const button = $(this);
+        const resultIndex = button.data('result-index');
+        const mediaData = mediaSearchResults[resultIndex];
+
+        const mediaType = button.data('media-type');
+        const externalId = mediaData.id;
+        const title = mediaData.title;
+        const year = mediaData.year;
+        const trailerStatus = mediaData.trailer_status;
+
+        if (!mediaType || !externalId || !title) {
+            alert('Erreur: Informations de base manquantes pour la bande-annonce.');
+            return;
+        }
+
+        if (trailerStatus === 'LOCKED') {
+            // Si la bande-annonce est verrouillée, on récupère son ID et on la joue directement.
+            fetch(`/api/agent/get_locked_trailer_id?media_type=${mediaType}&external_id=${externalId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success' && data.video_id) {
+                        const playerModal = $('#trailer-modal');
+                        $('#trailerModalLabel').text('Bande-Annonce: ' + title);
+                        playerModal.find('.modal-body').html(`<div class="ratio ratio-16x9"><iframe src="https://www.youtube.com/embed/${data.video_id}?autoplay=1&cc_lang=fr&cc_load_policy=1" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe></div>`);
+                        bootstrap.Modal.getOrCreateInstance(playerModal[0]).show();
+                    } else {
+                        // Fallback au cas où l'ID ne serait pas trouvé (ne devrait pas arriver)
+                        $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
+                    }
+                })
+                .catch(() => {
+                    // En cas d'erreur de communication, on ouvre la recherche standard
+                    $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
+                });
+        } else {
+            // Pour 'UNLOCKED' ou 'NONE', on ouvre la modale de recherche/sélection.
+            $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
+        }
     });
 
     $('#media-results-container').on('click', '.search-torrents-btn', function() {
@@ -273,6 +327,15 @@ $(document).ready(function() {
             populateFilters(results, filterOptions);
 
             resultsContainer.empty();
+            const batchActionsContainer = $(`
+                <div id="batch-actions-container" class="mb-3" style="display: none;">
+                    <button id="batch-map-btn" class="btn btn-primary">
+                        <i class="fas fa-object-group"></i> Mapper la sélection (<span id="batch-count">0</span>)
+                    </button>
+                </div>
+            `);
+            resultsContainer.append(batchActionsContainer);
+
             const header = $(`<hr><h4 class="mb-3">Résultats pour "${payload.query}" (<span id="results-count">${results.length}</span> / <span>${results.length}</span>)</h4>`);
             resultsContainer.append(header);
 
@@ -282,6 +345,9 @@ $(document).ready(function() {
                 const seedersClass = result.seeders > 0 ? 'text-success' : 'text-danger';
 
                 const itemContentHtml = `
+                    <div class="p-2">
+                        <input type="checkbox" class="form-check-input release-checkbox" aria-label="Sélectionner cette release">
+                    </div>
                     <div class="me-auto" style="flex-basis: 60%; min-width: 300px;">
                         <strong></strong>
                         <br>
@@ -294,7 +360,7 @@ $(document).ready(function() {
                         <div class="spinner-border spinner-border-sm d-none" role="status"></div>
                     </div>
                     <div class="p-2">
-                        <a href="#" class="btn btn-sm btn-success download-and-map-btn">
+                        <a href="#" class="btn btn-sm btn-success download-and-map-btn individual-map-btn">
                             <i class="fas fa-cogs"></i> & Mapper
                         </a>
                     </div>`;
@@ -400,13 +466,34 @@ $(document).ready(function() {
                 const bestMatchClass = item.is_best_match ? 'best-match' : '';
                 const externalId = mediaType === 'tv' ? item.tvdbId : item.tmdbId;
                 const mediaExists = item.id && item.id > 0;
-                const buttonHtml = mediaExists ?
+
+                let trailerBtnClass = 'btn-outline-danger';
+                if (item.trailer_status === 'LOCKED') {
+                    trailerBtnClass = 'btn-outline-success';
+                } else if (item.trailer_status === 'UNLOCKED') {
+                    trailerBtnClass = 'btn-outline-primary';
+                }
+
+                const trailerButtonHtml = `
+                    <button class="btn btn-sm ${trailerBtnClass} find-trailer-from-map-btn"
+                            data-media-id="${externalId}"
+                            data-title="${item.title}"
+                            data-year="${item.year}"
+                            data-media-type="${mediaType}">
+                        <i class="bi bi-film"></i>
+                    </button>`;
+
+                const mainButtonHtml = mediaExists ?
                     `<button class="btn btn-sm btn-outline-primary enrich-details-btn" data-media-id="${externalId}" data-media-type="${mediaType}">Voir les détails</button>` :
                     `<button class="btn btn-sm btn-outline-success add-and-enrich-btn" data-ext-id="${externalId}" data-title="${item.title}" data-year="${item.year}" data-media-type="${mediaType}">Ajouter & Voir les détails</button>`;
+
                 return `
                     <div class="list-group-item d-flex justify-content-between align-items-center ${bestMatchClass}" data-result-item>
                         <div><strong>${item.title}</strong> (${item.year})${!mediaExists ? '<span class="badge bg-info ms-2">Nouveau</span>' : ''}</div>
-                        ${buttonHtml}
+                        <div class="btn-group">
+                            ${trailerButtonHtml}
+                            ${mainButtonHtml}
+                        </div>
                     </div>`;
             }).join('');
         } else {
@@ -496,40 +583,6 @@ $(document).ready(function() {
         });
     }
 
-function executeFinalMapping(payload) {
-
-    const modalInstance = bootstrap.Modal.getInstance(modalEl[0]);
-    if (modalInstance) {
-        modalBody.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div><p class="mt-2">Envoi au téléchargement...</p></div>');
-    }
-
-    fetch('/search/download-and-map', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.status === 'success') {
-            if(modalInstance) modalInstance.hide();
-            alert("Succès ! La release a été envoyée au téléchargement et sera mappée.");
-        } else {
-            if(modalInstance) {
-                modalBody.html(`<div class="alert alert-danger">${data.message || 'Une erreur inconnue est survenue.'}</div>`);
-            } else {
-                alert("Erreur : " + (data.message || 'Une erreur inconnue est survenue.'));
-            }
-        }
-    })
-    .catch(error => {
-        console.error("Erreur lors du mapping final:", error);
-        if(modalInstance) {
-            modalBody.html(`<div class="alert alert-danger">Une erreur de communication est survenue.</div>`);
-        } else {
-            alert("Une erreur de communication est survenue.");
-        }
-    });
-}
 
     $('body').off('click', '.download-and-map-btn').on('click', '.download-and-map-btn', function(event) {
         event.preventDefault();
@@ -541,45 +594,50 @@ function executeFinalMapping(payload) {
             indexerId: button.data('indexer-id')
         };
         modalEl.data('release-details', releaseDetails);
+        modalEl.data('release-details-batch', null); // Nettoyer les données du lot
         modalEl.find('.modal-title').text(`Mapper : ${releaseDetails.title}`);
         new bootstrap.Modal(modalEl[0]).show();
 
         if (window.currentMediaContext) {
+            // NOUVEAU FLUX PRÉ-MAPPING : Utilise le contexte pour rechercher par ID mais affiche TOUJOURS la modale pour confirmation.
             const context = window.currentMediaContext;
-            console.log("FLUX PRÉ-MAPPING : Contexte trouvé. Vérification de l'existence...", context);
+            console.log("FLUX PRÉ-MAPPING (Corrigé) : Contexte trouvé. Lancement du lookup par ID.", context);
 
-            fetch('/search/api/media/check_existence', {
+            const mediaType = context.media_type;
+            modalBody.find('#add-item-options-container').addClass('d-none');
+            modalEl.find('#confirm-add-and-map-btn').addClass('d-none');
+            const lookupContent = modalBody.find('#initial-lookup-content').removeClass('d-none').show();
+            lookupContent.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div><p class="mt-2">Recherche de la correspondance exacte...</p></div>');
+
+            fetch('/search/api/search/lookup', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ media_id: context.id, media_type: context.media_type })
+                // Envoi de l'ID du média pour un résultat ciblé
+                body: JSON.stringify({ media_id: context.id, media_type: mediaType })
             })
-            .then(res => res.json())
-            .then(existenceData => {
-                const releaseDetails = modalEl.data('release-details');
-
-                if (existenceData.exists) {
-                    console.log("FLUX PRÉ-MAPPING (EXISTANT) : Média trouvé dans *Arr. Mapping direct.");
-                    const finalPayload = {
-                        releaseName: releaseDetails.title,
-                        downloadLink: releaseDetails.downloadLink,
-                        guid: releaseDetails.guid,
-                        indexerId: releaseDetails.indexerId,
-                        instanceType: context.media_type,
-                        mediaId: context.id
-                    };
-                    executeFinalMapping(finalPayload);
-
-                    const modalInstance = bootstrap.Modal.getInstance(modalEl[0]);
-                    if(modalInstance) modalInstance.hide();
-
-                } else {
-                    console.log("FLUX PRÉ-MAPPING (NOUVEAU) : Média non trouvé. Affichage de la vue d'ajout.");
-                    populateAndShowAddItemView(context);
-                }
+            .then(response => response.json())
+            .then(data => {
+                const idPlaceholder = mediaType === 'tv' ? 'ID TVDB...' : 'ID TMDb...';
+                // On réutilise le même template que la recherche manuelle pour la cohérence
+                const modalHtml = `
+                    <div data-media-type="${mediaType}">
+                        <p class="text-muted small">Le média correspondant a été pré-sélectionné. Confirmez ou effectuez une recherche manuelle.</p>
+                        <h6>Recherche manuelle par Titre</h6>
+                        <div class="input-group mb-2"><input type="text" id="manual-search-input" class="form-control" value="${context.title}"></div>
+                        <div class="text-center text-muted my-2 small">OU</div>
+                        <h6>Recherche manuelle par ID</h6>
+                        <div class="input-group mb-3"><input type="number" id="manual-id-input" class="form-control" placeholder="${idPlaceholder}"></div>
+                        <button id="unified-search-button" class="btn btn-primary w-100 mb-3">Rechercher manuellement</button>
+                        <hr>
+                        <div id="lookup-results-container"></div>
+                    </div>`;
+                lookupContent.html(modalHtml);
+                // La réponse contient le résultat unique qui sera marqué comme "best_match" par le backend
+                displayResults(data.results, mediaType);
             })
             .catch(error => {
-                console.error("Erreur lors de la vérification de l'existence du média:", error);
-                alert("Une erreur est survenue lors de la communication avec le serveur.");
+                console.error("Erreur lors du lookup pré-mappé:", error);
+                lookupContent.html('<div class="alert alert-danger">Erreur lors de la récupération des détails du média.</div>');
             });
 
         } else {
@@ -719,15 +777,36 @@ function executeFinalMapping(payload) {
         .then(data => {
             if (data.error || !data.new_media_id) { throw new Error(data.error || "L'ID du nouveau média n'a pas été retourné."); }
             button.html('<span class="spinner-border spinner-border-sm"></span> Envoi au téléchargement...');
-            const finalPayload = {
-                releaseName: releaseDetails.title,
-                downloadLink: releaseDetails.downloadLink,
-                guid: releaseDetails.guid,
-                indexerId: releaseDetails.indexerId,
-                instanceType: mediaType,
-                mediaId: data.new_media_id
-            };
-            return fetch('/search/download-and-map', {
+
+            const batchReleaseDetails = modalEl.data('release-details-batch');
+            const singleReleaseDetails = modalEl.data('release-details');
+            let fetchUrl, finalPayload;
+
+            if (batchReleaseDetails && batchReleaseDetails.length > 0) {
+                fetchUrl = '/search/batch-download-and-map';
+                finalPayload = {
+                    releases: batchReleaseDetails.map(release => ({
+                        releaseName: release.title,
+                        downloadLink: release.downloadLink,
+                        guid: release.guid,
+                        indexerId: release.indexerId
+                    })),
+                    instanceType: mediaType,
+                    mediaId: data.new_media_id
+                };
+            } else {
+                fetchUrl = '/search/download-and-map';
+                finalPayload = {
+                    releaseName: singleReleaseDetails.title,
+                    downloadLink: singleReleaseDetails.downloadLink,
+                    guid: singleReleaseDetails.guid,
+                    indexerId: singleReleaseDetails.indexerId,
+                    instanceType: mediaType,
+                    mediaId: data.new_media_id
+                };
+            }
+
+            return fetch(fetchUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(finalPayload)
@@ -738,7 +817,7 @@ function executeFinalMapping(payload) {
             const modalInstance = bootstrap.Modal.getInstance(modalEl[0]);
             if (data.status === 'success') {
                 if(modalInstance) modalInstance.hide();
-                alert("Succès ! Le média a été ajouté et la release a été envoyée au téléchargement.");
+                alert(data.message || "Succès ! Le média a été ajouté et la ou les releases ont été envoyées au téléchargement.");
             } else {
                 throw new Error(data.message || "Erreur lors de l'envoi au téléchargement.");
             }
@@ -792,27 +871,50 @@ function executeFinalMapping(payload) {
         const button = $(this);
         const selectedMediaId = button.data('media-id');
         const mediaType = button.closest('[data-media-type]').data('media-type');
-        const releaseDetails = modalEl.data('release-details');
+        const batchReleaseDetails = modalEl.data('release-details-batch');
+        const singleReleaseDetails = modalEl.data('release-details');
+
         button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Confirmation...');
-        const finalPayload = {
-            releaseName: releaseDetails.title,
-            downloadLink: releaseDetails.downloadLink,
-            guid: releaseDetails.guid,
-            indexerId: releaseDetails.indexerId,
-            instanceType: mediaType,
-            mediaId: selectedMediaId
-        };
-        fetch('/search/download-and-map', {
+
+        let fetchUrl, payload;
+
+        if (batchReleaseDetails && batchReleaseDetails.length > 0) {
+            // Mode Batch
+            fetchUrl = '/search/batch-download-and-map';
+            payload = {
+                releases: batchReleaseDetails.map(release => ({
+                    releaseName: release.title,
+                    downloadLink: release.downloadLink,
+                    guid: release.guid,
+                    indexerId: release.indexerId
+                })),
+                instanceType: mediaType,
+                mediaId: selectedMediaId
+            };
+        } else {
+            // Mode Unique
+            fetchUrl = '/search/download-and-map';
+            payload = {
+                releaseName: singleReleaseDetails.title,
+                downloadLink: singleReleaseDetails.downloadLink,
+                guid: singleReleaseDetails.guid,
+                indexerId: singleReleaseDetails.indexerId,
+                instanceType: mediaType,
+                mediaId: selectedMediaId
+            };
+        }
+
+        fetch(fetchUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(finalPayload)
+            body: JSON.stringify(payload)
         })
         .then(response => response.json())
         .then(data => {
             const modalInstance = bootstrap.Modal.getInstance(modalEl[0]);
             if (data.status === 'success') {
                 if(modalInstance) modalInstance.hide();
-                alert("Succès ! La release a été envoyée au téléchargement et sera mappée.");
+                alert(data.message || "Succès ! La ou les releases ont été envoyées au téléchargement.");
             } else {
                 alert("Erreur : " + data.message);
                 button.prop('disabled', false).text('Choisir ce média');
@@ -830,4 +932,125 @@ function executeFinalMapping(payload) {
 
     // Appel initial pour définir le bon état au chargement de la page
     updateFilterVisibility();
+
+    // --- GESTION DES BANDES-ANNONCES DEPUIS LA MODALE DE MAPPING (NOUVELLE VERSION) ---
+    $('body').on('click', '.find-trailer-from-map-btn', function(e) {
+        e.stopPropagation(); // Empêche d'autres clics de se déclencher
+
+        const button = $(this);
+        const mediaType = button.data('media-type');
+        const externalId = button.data('media-id');
+        const title = button.data('title');
+        const year = button.data('year');
+
+        if (mediaType && externalId && title) {
+            // Déclenche l'événement global géré par `global_trailer_search.js`
+            // Cela ouvrira la modale de recherche de BA par-dessus la modale actuelle.
+            $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
+        } else {
+            alert('Erreur: Informations manquantes pour rechercher la bande-annonce.');
+        }
+    });
+
+    // =================================================================
+    // ### BLOC 4 : LOGIQUE DE SÉLECTION MULTIPLE (BATCH) ###
+    // =================================================================
+
+    function updateBatchActions() {
+        const selectedCheckboxes = $('.release-checkbox:checked');
+        const batchActionsContainer = $('#batch-actions-container');
+        const batchMapBtn = $('#batch-map-btn');
+        const batchCount = $('#batch-count');
+        const individualMapButtons = $('.individual-map-btn');
+
+        if (selectedCheckboxes.length >= 2) {
+            batchActionsContainer.show();
+            batchCount.text(selectedCheckboxes.length);
+            individualMapButtons.addClass('disabled').attr('aria-disabled', 'true');
+        } else {
+            batchActionsContainer.hide();
+            individualMapButtons.removeClass('disabled').attr('aria-disabled', 'false');
+        }
+    }
+
+    // Écouteur pour les changements sur les cases à cocher
+    $('#search-results-container').on('change', '.release-checkbox', function() {
+        updateBatchActions();
+    });
+
+    // Écouteur pour le bouton de mappage de lot
+    $('#search-results-container').on('click', '#batch-map-btn', function() {
+        const selectedItems = [];
+        $('.release-checkbox:checked').each(function() {
+            const listItem = $(this).closest('.release-item');
+            // Correction ici : utiliser .individual-map-btn pour être plus spécifique
+            const mapButton = listItem.find('.individual-map-btn');
+            const releaseDetails = {
+                title: mapButton.data('title'),
+                downloadLink: mapButton.data('download-link'),
+                guid: mapButton.data('guid'),
+                indexerId: mapButton.data('indexer-id')
+            };
+            selectedItems.push(releaseDetails);
+        });
+
+        if (selectedItems.length > 0) {
+            const referenceTitle = selectedItems[0].title;
+            modalEl.data('release-details-batch', selectedItems);
+            modalEl.data('release-details', null); // Nettoyer les données de la sélection unique
+            modalEl.find('.modal-title').text(`Mapper ${selectedItems.length} releases`);
+
+            // Afficher la modale
+            new bootstrap.Modal(modalEl[0]).show();
+
+            // Déterminer le media_type et préparer le contenu de la modale
+            const mediaType = $('input[name="search_type"]:checked').val() === 'sonarr' ? 'tv' : 'movie';
+            const lookupContent = modalBody.find('#initial-lookup-content').removeClass('d-none').show();
+
+            // Vider les autres parties de la modale
+            modalBody.find('#add-item-options-container').addClass('d-none');
+            modalEl.find('#confirm-add-and-map-btn').addClass('d-none');
+
+            // Afficher le spinner
+            lookupContent.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div><p class="mt-2">Recherche des correspondances...</p></div>');
+
+            // Lancer la recherche de correspondance
+            fetch('/search/api/search/lookup', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ term: referenceTitle, media_type: mediaType })
+            })
+            .then(response => response.json())
+            .then(data => {
+                const idPlaceholder = mediaType === 'tv' ? 'ID TVDB...' : 'ID TMDb...';
+
+                // Construire le résumé des releases sélectionnées
+                let releasesSummaryHtml = '<div class="alert alert-secondary mb-3"><h6>Releases sélectionnées :</h6><ul class="list-unstyled mb-0 small">';
+                selectedItems.forEach(item => {
+                    releasesSummaryHtml += `<li><i class="fas fa-file-video me-2"></i>${item.title}</li>`;
+                });
+                releasesSummaryHtml += '</ul></div>';
+
+                const modalHtml = `
+                    ${releasesSummaryHtml}
+                    <div data-media-type="${mediaType}">
+                        <p class="text-muted small">Le meilleur résultat pour le lot est surligné. Si ce n'est pas le bon, utilisez la recherche manuelle.</p>
+                        <h6>Recherche manuelle par Titre</h6>
+                        <div class="input-group mb-2"><input type="text" id="manual-search-input" class="form-control" value="${data.cleaned_query}"></div>
+                        <div class="text-center text-muted my-2 small">OU</div>
+                        <h6>Recherche manuelle par ID</h6>
+                        <div class="input-group mb-3"><input type="number" id="manual-id-input" class="form-control" placeholder="${idPlaceholder}"></div>
+                        <button id="unified-search-button" class="btn btn-primary w-100 mb-3">Rechercher manuellement</button>
+                        <hr>
+                        <div id="lookup-results-container"></div>
+                    </div>`;
+                lookupContent.html(modalHtml);
+                displayResults(data.results, mediaType);
+            })
+            .catch(error => {
+                console.error("Erreur lors du lookup pour le lot:", error);
+                lookupContent.html('<div class="alert alert-danger">Erreur lors de la recherche des correspondances.</div>');
+            });
+        }
+    });
 });

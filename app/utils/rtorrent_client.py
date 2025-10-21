@@ -615,17 +615,29 @@ def _sftp_delete_recursive(sftp_client, remote_path, logger):
     try:
         item_stat = sftp_client.stat(remote_path)
         if stat.S_ISDIR(item_stat.st_mode):
+            # Itérer sur les éléments du dossier
             for item_name in sftp_client.listdir(remote_path):
-                child_path = str(Path(remote_path) / item_name)
+                # Construire le chemin complet en utilisant des slashes (/) pour la compatibilité SFTP
+                # au lieu de `os.path.join` ou `pathlib.Path` qui dépendent de l'OS.
+                if remote_path.endswith('/'):
+                    child_path = remote_path + item_name
+                else:
+                    child_path = remote_path + '/' + item_name
+
                 _sftp_delete_recursive(sftp_client, child_path, logger)
+
+            # Une fois le dossier vide, le supprimer
             sftp_client.rmdir(remote_path)
+            logger.info(f"SFTP Directory deletion successful for: {remote_path}")
         else:
+            # Si c'est un fichier, le supprimer directement
             sftp_client.remove(remote_path)
-        logger.info(f"SFTP Deletion successful for: {remote_path}")
+            logger.info(f"SFTP File deletion successful for: {remote_path}")
     except FileNotFoundError:
         logger.warning(f"SFTP Deletion: Item not found (already deleted?): {remote_path}")
     except Exception as e:
-        logger.error(f"SFTP Deletion failed for {remote_path}: {e}")
+        # Remonter l'exception pour que l'appelant sache que la suppression a échoué
+        logger.error(f"SFTP Deletion failed for {remote_path}: {e}", exc_info=True)
         raise
 
 def delete_torrent(torrent_hash, delete_data=False):

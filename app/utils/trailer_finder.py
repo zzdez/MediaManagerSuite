@@ -26,23 +26,26 @@ def find_plex_trailer(plex_item, plex_server):
 
     return None
 
-def find_youtube_trailer(search_query, api_key):
+def find_youtube_trailer(query, api_key, page_token=None, max_results=5):
     """
-    Effectue une seule recherche sur YouTube et retourne une liste de résultats.
+    Effectue une recherche paginée sur YouTube pour une seule requête.
+    Retourne un dictionnaire avec les résultats et le token pour la page suivante.
     """
     if not api_key:
         print("AVERTISSEMENT: Aucune clé API YouTube n'a été fournie.")
-        return [] # Retourne une liste vide
+        return {'results': [], 'nextPageToken': None}
 
     try:
         youtube = build('youtube', 'v3', developerKey=api_key, cache_discovery=False)
 
-        print(f"DEBUG: Recherche YouTube avec la requête : {search_query}")
+        print(f"DEBUG: Recherche YouTube avec la requête : '{query}', page_token: {page_token}, max_results: {max_results}")
         request = youtube.search().list(
-            q=search_query,
+            q=query,
             part='snippet',
             type='video',
-            maxResults=5
+            maxResults=max_results,
+            relevanceLanguage='fr',
+            pageToken=page_token
         )
         response = request.execute()
 
@@ -52,11 +55,37 @@ def find_youtube_trailer(search_query, api_key):
                 results.append({
                     'videoId': item['id']['videoId'],
                     'title': item['snippet']['title'],
-                    'thumbnail': item['snippet']['thumbnails']['high']['url'], # Utiliser une meilleure qualité
+                    'thumbnail': item['snippet']['thumbnails']['high']['url'],
                     'channel': item['snippet']['channelTitle']
                 })
-        return results
+
+        next_page_token = response.get('nextPageToken')
+        return {'results': results, 'nextPageToken': next_page_token}
 
     except Exception as e:
         print(f"ERREUR lors de la recherche sur YouTube : {e}")
-        return [] # Toujours retourner une liste vide en cas d'erreur
+        return {'results': [], 'nextPageToken': None}
+
+def get_videos_details(video_ids, api_key):
+    """
+    Récupère les détails de plusieurs vidéos YouTube en un seul appel batch.
+    """
+    if not api_key or not video_ids:
+        return {}
+
+    try:
+        youtube = build('youtube', 'v3', developerKey=api_key, cache_discovery=False)
+
+        # On peut demander jusqu'à 50 IDs à la fois.
+        request = youtube.videos().list(
+            part="snippet,contentDetails",
+            id=",".join(video_ids)
+        )
+        response = request.execute()
+
+        video_details = {item['id']: item for item in response.get('items', [])}
+        return video_details
+
+    except Exception as e:
+        print(f"ERREUR lors de la récupération des détails des vidéos : {e}")
+        return {}

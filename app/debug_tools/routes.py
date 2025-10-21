@@ -1,6 +1,6 @@
 # app/debug_tools/routes.py
 import os
-from flask import Blueprint, render_template, request, flash, current_app, redirect, url_for
+from flask import Blueprint, render_template, request, flash, current_app, redirect, url_for, jsonify
 from app.auth import login_required
 from app.utils.mapping_manager import add_or_update_torrent_in_map
 from pathlib import Path

@@ -34,39 +34,45 @@ def search_page():
 @search_ui_bp.route('/api/media/search', methods=['POST'])
 @login_required
 def media_search():
-    """Recherche des médias (films ou séries) via les API externes (TMDb/TVDB)."""
+    """Recherche des médias (films ou séries) via les API externes (TMDb/TVDB) et enrichit avec le statut du trailer."""
+    from app.utils import trailer_manager # Import local
+
     data = request.get_json()
     query = data.get('query')
-    media_type = data.get('media_type', 'movie') # 'movie' par défaut
+    media_type_search = data.get('media_type', 'movie')
 
     if not query:
         return jsonify({"error": "La requête de recherche est vide."}), 400
 
     try:
         results = []
-        if media_type == 'movie':
+        if media_type_search == 'movie':
             client = TheMovieDBClient()
             search_results = client.search_movie(query, lang='fr-FR')
-            # Formater pour être cohérent et simple pour le frontend
             for item in search_results:
+                external_id = item.get('id')
+                trailer_status = trailer_manager.get_trailer_status('movie', external_id) if external_id else 'NONE'
                 results.append({
-                    'id': item.get('id'),
+                    'id': external_id,
                     'title': item.get('title'),
                     'year': item.get('release_date', 'N/A')[:4],
                     'overview': item.get('overview'),
-                    'poster': item.get('poster_path')
+                    'poster': item.get('poster_path'),
+                    'trailer_status': trailer_status
                 })
-        elif media_type == 'tv':
+        elif media_type_search == 'tv':
             client = CustomTVDBClient()
             search_results = client.search_and_translate_series(query, lang='fra')
-            # Formater les résultats de notre fonction optimisée
             for item in search_results:
+                external_id = item.get('tvdb_id')
+                trailer_status = trailer_manager.get_trailer_status('tv', external_id) if external_id else 'NONE'
                 results.append({
-                    'id': item.get('tvdb_id'),
+                    'id': external_id,
                     'title': item.get('name'),
                     'year': item.get('year'),
                     'overview': item.get('overview'),
-                    'poster': item.get('poster_url')
+                    'poster': item.get('poster_url'),
+                    'trailer_status': trailer_status
                 })
         else:
             return jsonify({"error": "Type de média non supporté."}), 400
@@ -198,6 +204,13 @@ def api_search_lookup():
     # Déterminer le format de la réponse
     render_as_html = request.args.get('render_html', 'false').lower() == 'true'
 
+    # Enrichir les résultats avec le statut du trailer
+    from app.utils import trailer_manager # Import local
+    for item in final_results:
+        item_media_type = 'tv' if item.get('tvdbId') else 'movie'
+        external_id = item.get('tvdbId') or item.get('tmdbId')
+        item['trailer_status'] = trailer_manager.get_trailer_status(item_media_type, external_id) if external_id else 'NONE'
+
     if render_as_html:
         return render_template(
             'search_ui/_media_result_list.html',
@@ -237,10 +250,10 @@ def enrich_details():
             
             formatted_details = {
                 'id': details.get('id'),
-                'title': details.get('seriesName'),
+                'title': details.get('name') or details.get('seriesName'),
                 'year': details.get('year'),
                 'overview': details.get('overview'),
-                'poster': poster_url, # L'URL est maintenant correcte.
+                'poster': poster_url,
                 'status': details.get('status', {}).get('name', 'Inconnu')
             }
             return jsonify(formatted_details)
@@ -250,8 +263,16 @@ def enrich_details():
             details = client.get_movie_details(media_id, lang='fr-FR')
             if not details: return jsonify({'error': 'Film non trouvé'}), 404
 
-            # La sortie du client TMDB est déjà parfaite, on la transmet.
-            return jsonify(details)
+            # On formate la sortie pour qu'elle soit identique à celle des séries
+            formatted_details = {
+                'id': details.get('id'),
+                'title': details.get('title'),
+                'year': details.get('year'),
+                'overview': details.get('overview'),
+                'poster': details.get('poster'), # Le client construit déjà l'URL complète
+                'status': details.get('status', 'Inconnu')
+            }
+            return jsonify(formatted_details)
 
     except Exception as e:
         current_app.logger.error(f"Erreur dans enrich_details: {e}", exc_info=True)
@@ -362,14 +383,13 @@ def prepare_mapping_details():
     return render_template('search_ui/_mapping_selection_list.html', candidates=candidates)
 
 
-@search_ui_bp.route('/download-and-map', methods=['POST'])
-@login_required
-def download_and_map():
-    # --- Imports (j'ai ajouté les fonctions robustes et enlevé les anciennes) ---
+def _process_single_release(release_details, final_app_type, final_target_id):
+    """
+    Traite une seule release: télécharge, ajoute à rTorrent et mappe.
+    Retourne (True, message) en cas de succès, (False, message) en cas d'échec.
+    """
     import requests
-    import time
     import urllib.parse
-    import base64
     from pathlib import Path
     from app.utils.rtorrent_client import (
         _decode_bencode_name,
@@ -377,47 +397,17 @@ def download_and_map():
         add_torrent_data_and_get_hash_robustly
     )
     from app.utils.mapping_manager import add_or_update_torrent_in_map
-    # --- Fin des imports ---
 
     logger = current_app.logger
-    data = request.get_json()
-    release_name_original = data.get('releaseName')
-    download_link = data.get('downloadLink')
-    indexer_id = data.get('indexerId')
-    guid = data.get('guid')
-    instance_type = data.get('instanceType')
-    media_id = data.get('mediaId')
+    release_name_original = release_details.get('releaseName')
+    download_link = release_details.get('downloadLink')
+    indexer_id = release_details.get('indexerId')
+    guid = release_details.get('guid')
 
-    if not all([release_name_original, download_link, instance_type, media_id]):
-        return jsonify({'status': 'error', 'message': 'Données manquantes.'}), 400
-
-    # --- DÉBUT DE LA LOGIQUE FINALE ---
-    final_app_type = None
-    final_target_id = str(media_id) # Par défaut, on utilise l'ID externe
-
-    # On vérifie d'abord si c'est une série connue
-    series_info = arr_client.get_sonarr_series_by_guid(f"tvdb://{media_id}")
-    if series_info and series_info.get('id'):
-        final_app_type = 'sonarr'
-        final_target_id = str(series_info.get('id')) # On utilise l'ID interne de Sonarr
-        logger.info(f"Média trouvé dans Sonarr. Utilisation de l'ID interne de Sonarr : {final_target_id}")
-    else:
-        # Sinon, on vérifie si c'est un film connu
-        movie_info = arr_client.get_radarr_movie_by_guid(f"tmdb:{media_id}")
-        if movie_info and movie_info.get('id'):
-            final_app_type = 'radarr'
-            final_target_id = str(movie_info.get('id')) # On utilise l'ID interne de Radarr
-            logger.info(f"Média trouvé dans Radarr. Utilisation de l'ID interne de Radarr : {final_target_id}")
-
-    if not final_app_type:
-        logger.warning(f"Le média avec l'ID externe {media_id} n'a été trouvé ni dans Sonarr ni dans Radarr. Utilisation du type '{instance_type}' fourni par le client.")
-        final_app_type = 'sonarr' if instance_type == 'tv' else 'radarr'
-    # --- FIN DE LA LOGIQUE FINALE ---
+    logger.info(f"Début du traitement pour la release: '{release_name_original}'")
 
     try:
-        logger.info(f"Début du traitement pour '{release_name_original}'")
-
-        # 1. Déterminer le label et le chemin de destination (votre code est correct)
+        # 1. Déterminer le label et le chemin de destination
         if final_app_type == 'sonarr':
             rtorrent_label = current_app.config.get('RTORRENT_LABEL_SONARR')
             rtorrent_download_dir = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_SONARR_PATH')
@@ -426,12 +416,11 @@ def download_and_map():
             rtorrent_download_dir = current_app.config.get('SEEDBOX_RTORRENT_INCOMING_RADARR_PATH')
 
         if not rtorrent_label or not rtorrent_download_dir:
-            return jsonify({'status': 'error', 'message': f"Config rTorrent manquante pour {final_app_type}."}), 500
+            return False, f"Config rTorrent manquante pour {final_app_type}."
 
-        # ---- DÉBUT DU BLOC CORRIGÉ ----
-        # 2. Utiliser la méthode ROBUSTE pour ajouter le torrent et obtenir le hash en une seule étape
+        # 2. Ajouter le torrent et obtenir le hash
         actual_hash = None
-        release_name_for_map = release_name_original # Fallback
+        release_name_for_map = release_name_original
 
         if download_link.startswith('magnet:'):
             actual_hash = add_magnet_and_get_hash_robustly(
@@ -439,12 +428,11 @@ def download_and_map():
                 label=rtorrent_label,
                 destination_path=rtorrent_download_dir
             )
-            # Pour les magnets, le nom de la release est plus difficile, on se fie au nom original pour le mapping
             parsed_magnet = urllib.parse.parse_qs(urllib.parse.urlparse(download_link).query)
             display_names = parsed_magnet.get('dn')
-            if display_names and display_names[0]: release_name_for_map = display_names[0].strip()
-
-        else: # C'est un fichier .torrent
+            if display_names and display_names[0]:
+                release_name_for_map = display_names[0].strip()
+        else: # Fichier .torrent
             proxy_url = url_for('search_ui.download_torrent_proxy', _external=True)
             params = {'url': download_link, 'release_name': release_name_original, 'indexer_id': indexer_id, 'guid': guid}
             session_cookie_name = current_app.config.get("SESSION_COOKIE_NAME", "session")
@@ -453,47 +441,122 @@ def download_and_map():
             response.raise_for_status()
             torrent_content_bytes = response.content
             
-            # Utiliser le nom décodé du torrent comme nom de release fiable
             release_name_for_map = _decode_bencode_name(torrent_content_bytes) or release_name_original.replace('.torrent', '').strip()
-
             actual_hash = add_torrent_data_and_get_hash_robustly(
                 torrent_content_bytes=torrent_content_bytes,
                 filename_for_rtorrent=f"{release_name_original}.torrent",
                 label=rtorrent_label,
                 destination_path=rtorrent_download_dir
             )
-        
-    # 3. Gérer le résultat
-            if actual_hash:
-                logger.info(f"Torrent '{release_name_for_map}' ajouté. Hash: {actual_hash}. Sauvegarde de l'association.")
-                
-                # Le chemin sur la seedbox est le dossier de destination + le nom que rTorrent utilisera
-                seedbox_full_path = str(Path(rtorrent_download_dir) / release_name_for_map).replace('\\', '/')
-                # Dans ce flux, le nom du dossier sur la seedbox est le même que le nom de la release
-                folder_name = release_name_for_map
 
-                # APPEL CORRIGÉ AVEC TOUS LES ARGUMENTS NOMMÉS
-                add_or_update_torrent_in_map(
-                    release_name=release_name_for_map,
-                    torrent_hash=actual_hash,
-                    status='pending_download',
-                    seedbox_download_path=None, # C'est la correction cruciale
-                    folder_name=folder_name,
-                    app_type=final_app_type,
-                    target_id=final_target_id,
-                    label=rtorrent_label,
-                    original_torrent_name=release_name_original
-                )
-                return jsonify({'status': 'success', 'message': 'Torrent ajouté et mappé avec succès.'})
-            else:
-                msg = f"Torrent ajouté à rTorrent, mais son hash n'a pas pu être récupéré. Le mapping automatique a échoué."
-                logger.warning(msg)
-                return jsonify({"status": "warning", "message": msg}), 202
-        # ---- FIN DU BLOC CORRIGÉ ----
+        # 3. Gérer le résultat
+        if actual_hash:
+            logger.info(f"Torrent '{release_name_for_map}' ajouté. Hash: {actual_hash}. Sauvegarde de l'association.")
+            folder_name = release_name_for_map
+            add_or_update_torrent_in_map(
+                release_name=release_name_for_map,
+                torrent_hash=actual_hash,
+                status='pending_download',
+                seedbox_download_path=None,
+                folder_name=folder_name,
+                app_type=final_app_type,
+                target_id=final_target_id,
+                label=rtorrent_label,
+                original_torrent_name=release_name_original
+            )
+            return True, f"Torrent '{release_name_original}' ajouté et mappé avec succès."
+        else:
+            msg = f"Torrent '{release_name_original}' ajouté, mais son hash n'a pas pu être récupéré. Mapping échoué."
+            logger.warning(msg)
+            return False, msg
 
     except Exception as e:
-        logger.error(f"Erreur majeure dans /download-and-map pour '{release_name_original}': {e}", exc_info=True)
-        return jsonify({'status': 'error', 'message': f"Erreur serveur inattendue: {str(e)}"}), 500
+        logger.error(f"Erreur dans _process_single_release pour '{release_name_original}': {e}", exc_info=True)
+        return False, f"Erreur serveur inattendue pour '{release_name_original}': {str(e)}"
+
+@search_ui_bp.route('/download-and-map', methods=['POST'])
+@login_required
+def download_and_map():
+    logger = current_app.logger
+    data = request.get_json()
+
+    instance_type = data.get('instanceType')
+    media_id = data.get('mediaId')
+
+    if not all([data.get('releaseName'), data.get('downloadLink'), instance_type, media_id]):
+        return jsonify({'status': 'error', 'message': 'Données manquantes.'}), 400
+
+    # Logique pour déterminer le type final et l'ID interne (inchangée)
+    final_app_type = None
+    final_target_id = str(media_id)
+    series_info = arr_client.get_sonarr_series_by_guid(f"tvdb://{media_id}")
+    if series_info and series_info.get('id'):
+        final_app_type = 'sonarr'
+        final_target_id = str(series_info.get('id'))
+    else:
+        movie_info = arr_client.get_radarr_movie_by_guid(f"tmdb:{media_id}")
+        if movie_info and movie_info.get('id'):
+            final_app_type = 'radarr'
+            final_target_id = str(movie_info.get('id'))
+    if not final_app_type:
+        final_app_type = 'sonarr' if instance_type == 'tv' else 'radarr'
+
+    success, message = _process_single_release(data, final_app_type, final_target_id)
+
+    if success:
+        return jsonify({'status': 'success', 'message': message})
+    else:
+        return jsonify({'status': 'error', 'message': message}), 500
+
+@search_ui_bp.route('/batch-download-and-map', methods=['POST'])
+@login_required
+def batch_download_and_map():
+    logger = current_app.logger
+    data = request.get_json()
+
+    releases = data.get('releases')
+    instance_type = data.get('instanceType')
+    media_id = data.get('mediaId')
+
+    if not all([releases, instance_type, media_id]):
+        return jsonify({'status': 'error', 'message': 'Données manquantes (releases, instanceType ou mediaId).'}), 400
+
+    # Déterminer le type final et l'ID interne une seule fois pour tout le lot
+    final_app_type = None
+    final_target_id = str(media_id)
+    series_info = arr_client.get_sonarr_series_by_guid(f"tvdb://{media_id}")
+    if series_info and series_info.get('id'):
+        final_app_type = 'sonarr'
+        final_target_id = str(series_info.get('id'))
+    else:
+        movie_info = arr_client.get_radarr_movie_by_guid(f"tmdb:{media_id}")
+        if movie_info and movie_info.get('id'):
+            final_app_type = 'radarr'
+            final_target_id = str(movie_info.get('id'))
+    if not final_app_type:
+        final_app_type = 'sonarr' if instance_type == 'tv' else 'radarr'
+
+    processed_count = 0
+    for release in releases:
+        # La fonction _process_single_release attend un dictionnaire avec des clés spécifiques
+        release_details_for_processing = {
+            'releaseName': release.get('releaseName'),
+            'downloadLink': release.get('downloadLink'),
+            'indexerId': release.get('indexerId'),
+            'guid': release.get('guid')
+        }
+        success, message = _process_single_release(release_details_for_processing, final_app_type, final_target_id)
+        if not success:
+            # Arrêt à la première erreur
+            error_message = f"Échec du lot après {processed_count} succès. Erreur sur '{release.get('releaseName')}': {message}"
+            logger.error(error_message)
+            return jsonify({'status': 'error', 'message': error_message}), 500
+        processed_count += 1
+
+    success_message = f"{processed_count} releases ont été ajoutées et mappées avec succès."
+    logger.info(success_message)
+    return jsonify({'status': 'success', 'message': success_message})
+
 # =====================================================================
 # ROUTES DE PROXY DE TÉLÉCHARGEMENT RESTAURÉES
 # =====================================================================

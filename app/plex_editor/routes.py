@@ -27,12 +27,131 @@ from app.utils.arr_client import (
     sonarr_trigger_series_rename,
     search_sonarr_series_by_title_and_year
 )
-from app.utils.trailer_finder import find_plex_trailer
+from app.utils.trailer_finder import find_plex_trailer, get_videos_details
 from app.utils.tmdb_client import TheMovieDBClient
 from app.utils.tvdb_client import CustomTVDBClient
-from app.utils.cache_manager import SimpleCache
+from app.utils.cache_manager import SimpleCache, get_pending_lock, remove_pending_lock
+from app.utils import trailer_manager # Import du nouveau manager
+from app.agent.services import _search_and_score_trailers
+
+from app.utils.move_manager import move_manager
+from app.utils.arr_client import get_sonarr_root_folders, get_radarr_root_folders, move_sonarr_series, move_radarr_movie, get_arr_command_status, radarr_post_command
 
 # --- Routes du Blueprint ---
+
+@plex_editor_bp.route('/api/media/root_folders', methods=['GET'])
+@login_required
+def get_root_folders():
+    media_type = request.args.get('type')
+    if media_type == 'sonarr':
+        folders = get_sonarr_root_folders()
+    elif media_type == 'radarr':
+        folders = get_radarr_root_folders()
+    else:
+        return jsonify({'error': 'Invalid media type specified.'}), 400
+
+    if folders is None:
+        return jsonify({'error': f'Could not fetch root folders from {media_type}.'}), 500
+
+    # Construire explicitement la réponse pour s'assurer que les données formatées sont incluses.
+    response_data = [
+        {
+            'path': folder.get('path'),
+            'freeSpace_formatted': folder.get('freeSpace_formatted', 'N/A')
+        }
+        for folder in folders
+    ]
+    return jsonify(response_data)
+
+@plex_editor_bp.route('/api/media/move', methods=['POST'])
+@login_required
+def move_media_item():
+    data = request.get_json()
+    plex_rating_key = data.get('mediaId')
+    media_type = data.get('mediaType')
+    new_path = data.get('newPath')
+
+    if not all([plex_rating_key, media_type, new_path]):
+        return jsonify({'status': 'error', 'message': 'Données manquantes.'}), 400
+
+    if move_manager.is_move_in_progress():
+        return jsonify({'status': 'error', 'message': 'Un autre déplacement est déjà en cours.'}), 409
+
+    try:
+        plex_server = get_plex_admin_server()
+        if not plex_server:
+            return jsonify({'status': 'error', 'message': 'Connexion au serveur Plex admin échouée.'}), 500
+
+        plex_item = plex_server.fetchItem(int(plex_rating_key))
+
+        arr_item = None
+        if media_type == 'sonarr':
+            guid = next((g.id for g in plex_item.guids if 'tvdb' in g.id), None)
+            if guid: arr_item = get_sonarr_series_by_guid(guid)
+        elif media_type == 'radarr':
+            guid = next((g.id for g in plex_item.guids if 'tmdb' in g.id), None)
+            current_app.logger.info(f"Move '{plex_item.title}': Found Plex GUID for Radarr: {guid}")
+            if guid: arr_item = get_radarr_movie_by_guid(guid)
+
+        if not arr_item or not arr_item.get('id'):
+            current_app.logger.error(f"Move '{plex_item.title}': Could not find corresponding media in {media_type.capitalize()} using GUID {guid}.")
+            return jsonify({'status': 'error', 'message': f"Média non trouvé dans {media_type.capitalize()}."}), 404
+
+        arr_item_id = arr_item.get('id')
+    except Exception as e:
+        current_app.logger.error(f"Erreur lors de la traduction de l'ID Plex {plex_rating_key}: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': "Erreur lors de la recherche du média correspondant."}), 500
+
+    if media_type == 'sonarr':
+        success, error = move_sonarr_series(arr_item_id, new_path)
+        if success:
+            return jsonify({'status': 'success', 'message': 'Déplacement initié dans Sonarr.'})
+        else:
+            return jsonify({'status': 'error', 'message': error or 'Échec du déplacement dans Sonarr.'}), 500
+
+    elif media_type == 'radarr':
+        # La nouvelle fonction move_radarr_movie est synchrone, comme pour Sonarr.
+        # Le système de polling n'est plus nécessaire pour Radarr.
+        success, error = move_radarr_movie(arr_item_id, new_path)
+        if success:
+            return jsonify({'status': 'success', 'message': 'Déplacement initié dans Radarr.'})
+        else:
+            return jsonify({'status': 'error', 'message': error or 'Échec du déplacement dans Radarr.'}), 500
+
+    return jsonify({'status': 'error', 'message': 'Type de média non supporté.'}), 400
+
+@plex_editor_bp.route('/api/media/move_status', methods=['GET'])
+@login_required
+def get_move_status():
+    current_move = move_manager.get_current_move_status()
+    if not current_move:
+        return jsonify({'status': 'idle'})
+
+    task_id = current_move['task_id']
+    command_id = current_move.get('command_id')
+    media_type = current_move['media_type']
+
+    if not command_id:
+        move_manager.end_move(task_id)
+        return jsonify({'status': 'error', 'message': 'Tâche de déplacement invalide sans ID de commande.'})
+
+    command_status = get_arr_command_status(media_type, command_id)
+
+    if not command_status:
+        move_manager.end_move(task_id)
+        return jsonify({'status': 'error', 'message': f'Impossible de récupérer le statut de la commande {command_id}.'})
+
+    status = command_status.get('status')
+    if status == 'completed':
+        move_manager.end_move(task_id)
+        return jsonify({'status': 'completed', 'message': 'Déplacement terminé avec succès.'})
+    elif status in ['failed', 'aborted']:
+        error_message = command_status.get('body', {}).get('exception', 'Erreur inconnue.')
+        move_manager.end_move(task_id)
+        return jsonify({'status': 'failed', 'message': f'Le déplacement a échoué: {error_message}'})
+    else: # 'pending', 'started', 'running'
+        return jsonify({'status': 'running', 'message': f'Déplacement en cours... (Statut: {status})'})
+
 
 @plex_editor_bp.route('/api/users')
 @login_required
@@ -291,6 +410,27 @@ def select_user_route():
 
 # Dans app/plex_editor/routes.py
 
+def _parse_main_external_id(guids):
+    """
+    Parses the list of guids from a Plex item to find the primary external ID.
+    Prefers 'tvdb' for shows and 'tmdb' for movies.
+    """
+    # Priorité des sources
+    priority_order = ['tvdb', 'tmdb', 'imdb']
+
+    for source in priority_order:
+        for guid_obj in guids:
+            if guid_obj.id.startswith(f'{source}://'):
+                try:
+                    # 'tmdb://12345' -> ('tmdb', '12345')
+                    id_val = guid_obj.id.split('//')[1]
+                    # Pour les séries, on veut le type 'tv' pour notre API
+                    media_type = 'tv' if source == 'tvdb' else source
+                    return media_type, id_val
+                except (IndexError, ValueError):
+                    continue
+    return None, None
+
 def get_user_specific_plex_server_from_id(user_id):
     """
     Helper function to get a PlexServer instance for a specific user ID,
@@ -444,6 +584,77 @@ def get_media_items():
             except Exception as e_lib:
                 current_app.logger.error(f"Erreur accès bibliothèque {lib_key}: {e_lib}", exc_info=True)
 
+        # --- NOUVELLE ÉTAPE 3.5: FINALISATION DES VERROUS EN ATTENTE (VERSION DÉFINITIVE) ---
+        for item in all_plex_items.values():
+            if not hasattr(item, 'guids'):
+                continue
+
+            # Extraire tous les IDs externes de l'item Plex (tmdb, tvdb, imdb)
+            plex_external_ids = set()
+            for guid_obj in item.guids:
+                try:
+                    # format 'tvdb://12345' -> '12345'
+                    id_val = guid_obj.id.split('//')[1]
+                    plex_external_ids.add(id_val)
+                except IndexError:
+                    continue
+
+            if not plex_external_ids:
+                continue
+
+            # Chercher un verrou en attente pour n'importe lequel des IDs de l'item
+            pending_lock = None
+            matched_id = None
+            for ext_id in plex_external_ids:
+                pending_lock = get_pending_lock(ext_id)
+                if pending_lock:
+                    matched_id = ext_id
+                    break
+
+            if not pending_lock:
+                continue
+
+            current_app.logger.info(f"FINALIZATION: Pending lock found for '{item.title}' (matched Plex ID {matched_id}). Finalizing...")
+
+            video_id_to_lock = pending_lock['video_id']
+            cache_key = f"trailer_search_{item.title}_{item.year}_{item.ratingKey}"
+
+            # Amélioration: au lieu de créer une entrée minimale, on tente de récupérer les vrais détails de la vidéo.
+            youtube_api_key = current_app.config.get('YOUTUBE_API_KEY')
+            video_details = None
+            if youtube_api_key:
+                video_details = get_videos_details([video_id_to_lock], youtube_api_key)
+
+            if video_details and video_id_to_lock in video_details:
+                details = video_details[video_id_to_lock]['snippet']
+                final_trailer_object = {
+                    'videoId': video_id_to_lock,
+                    'title': details.get('title', f"Bande-annonce pour {item.title}"),
+                    'channel': details.get('channelTitle', "N/A"),
+                    'thumbnail': details.get('thumbnails', {}).get('high', {}).get('url', ''),
+                    'score': 9999 # Maintenir le score élevé pour le verrouillage
+                }
+            else:
+                # Fallback: si l'appel API échoue, on utilise l'ancienne méthode robuste.
+                current_app.logger.warning(f"FINALIZATION: Could not fetch details for videoId {video_id_to_lock}. Using fallback.")
+                final_trailer_object = {
+                    'videoId': video_id_to_lock,
+                    'title': f"Bande-annonce verrouillée pour {item.title}",
+                    'channel': "N/A",
+                    'thumbnail': '',
+                    'score': 9999
+                }
+
+            results_list = [final_trailer_object]
+
+            # Créer l'entrée de cache, directement verrouillée.
+            current_app.logger.info(f"FINALIZATION: Setting permanent locked cache for key '{cache_key}' with videoId '{video_id_to_lock}'.")
+            set_in_cache(cache_key, results_list, is_locked=True, locked_video_id=video_id_to_lock)
+
+            # Supprimer le verrou en attente.
+            remove_pending_lock(matched_id)
+            current_app.logger.info(f"FINALIZATION: Success for '{item.title}'. Pending lock for {matched_id} removed.")
+
         # --- 4. LA DÉCISION : Chercher à l'extérieur ? ---
         final_plex_results_unfiltered = list(all_plex_items.values())
         external_suggestions = []
@@ -524,6 +735,12 @@ def get_media_items():
                 thumb_path = getattr(item, 'thumb', None)
                 item.poster_url = target_plex_server.url(thumb_path, includeToken=True) if thumb_path else None
 
+                # Enrichissement avec l'ID externe pour la recherche de bande-annonce
+                item.external_source, item.external_id = _parse_main_external_id(item.guids)
+                # Correction du type pour correspondre à l'API du trailer_manager ('movie' ou 'tv')
+                item.media_type_for_trailer = 'tv' if item.type == 'show' else 'movie'
+
+
                 if item.type == 'movie':
                     item.file_path = getattr(item.media[0].parts[0], 'file', None) if item.media and item.media[0].parts else None
                     item.total_size = item.media[0].parts[0].size if hasattr(item, 'media') and item.media and item.media[0].parts else 0
@@ -576,6 +793,15 @@ def get_media_items():
                     item.total_size_display = "0 B"
 
                 item.plex_trailer_url = find_plex_trailer(item, target_plex_server)
+
+                # Récupération du statut détaillé du trailer
+                item.trailer_status = 'NONE' # Default
+                if item.external_id:
+                    item.trailer_status = trailer_manager.get_trailer_status(
+                        media_type=item.media_type_for_trailer,
+                        external_id=item.external_id
+                    )
+
                 items_to_render.append(item)
 
         items_to_render.sort(key=lambda x: getattr(x, 'titleSort', x.title).lower())
@@ -1982,11 +2208,27 @@ def get_series_details_for_management(rating_key):
                     'episodes': episodes_list_for_season
                 })
 
+            # Vérification du statut du trailer avec le nouveau manager
+            trailer_status = 'NONE'
+            if tvdb_id:
+                trailer_status = trailer_manager.get_trailer_status(
+                    media_type='tv',
+                    external_id=tvdb_id
+                )
+
             series_data = {
-                'title': series.title, 'ratingKey': series.ratingKey, 'plex_status': getattr(series, 'status', 'unknown'),
-                'total_seasons_plex': series.childCount, 'viewed_seasons_plex': viewed_seasons_count,
-                'is_monitored_global': is_monitored_global_status, 'sonarr_series_id': sonarr_series_id_val,
-                'total_size_on_disk': total_series_size, 'seasons': seasons_list
+                'title': series.title,
+                'year': series.year,
+                'ratingKey': series.ratingKey,
+                'external_id': tvdb_id,
+                'plex_status': getattr(series, 'status', 'unknown'),
+                'total_seasons_plex': series.childCount,
+                'viewed_seasons_plex': viewed_seasons_count,
+                'is_monitored_global': is_monitored_global_status,
+                'sonarr_series_id': sonarr_series_id_val,
+                'total_size_on_disk': total_series_size,
+                'seasons': seasons_list,
+                'trailer_status': trailer_status  # Ajout du statut complet
             }
             return render_template('plex_editor/_series_management_modal_content.html', series=series_data)
 
@@ -2352,6 +2594,7 @@ def update_single_episode_monitoring():
         return jsonify({'status': 'success', 'message': 'Statut de l_épisode mis à jour.'})
 
     return jsonify({'status': 'error', 'message': 'Échec de la mise à jour dans Sonarr.'}), 500
+
 
 @plex_editor_bp.route('/api/series/rename_files', methods=['POST'])
 @login_required

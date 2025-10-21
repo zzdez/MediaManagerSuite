@@ -20,17 +20,46 @@ class CustomTVDBClient:
     def get_series_details_by_id(self, tvdb_id, lang='fra'):
         if not self.client: return None
         try:
-            details = self.client.get_series(tvdb_id)
-            if not details: return None
+            series_data = self.client.get_series(tvdb_id)
+            if not series_data:
+                return None
+
+            # --- DÉBUT DU BLOC DE DÉBOGAGE DÉTAILLÉ ---
+            logger.info(f"--- DÉBUT DÉBOGAGE TVDB ID: {tvdb_id} ---")
+            logger.info(f"Type de l'objet 'series_data': {type(series_data)}")
+            if isinstance(series_data, dict):
+                logger.info(f"Clés du dictionnaire 'series_data': {series_data.keys()}")
+            else:
+                logger.info(f"Attributs de l'objet 'series_data': {dir(series_data)}")
+            logger.info(f"Valeur de 'series_data': {series_data}")
+            logger.info(f"--- FIN DÉBOGAGE TVDB ---")
+            # --- FIN DU BLOC DE DÉBOGAGE DÉTAILLÉ ---
+
+            simple_details = {
+                'id': series_data.get('id'),
+                'name': series_data.get('name'),
+                'year': series_data.get('year'),
+                'overview': series_data.get('overview'),
+                'image': series_data.get('image')
+            }
             try:
                 translation = self.client.get_series_translation(tvdb_id, lang)
-                if translation and translation.get('overview'):
-                    details['seriesName'] = translation.get('name') or details.get('seriesName')
-                    details['overview'] = translation.get('overview') or details.get('overview')
+                if translation:
+                    # On utilise la traduction seulement si elle n'est pas vide ou composée d'espaces
+                    translated_name = translation.get('name')
+                    if translated_name and translated_name.strip():
+                        simple_details['name'] = translated_name
+
+                    translated_overview = translation.get('overview')
+                    if translated_overview and translated_overview.strip():
+                        simple_details['overview'] = translated_overview
             except Exception:
-                pass # On ignore si la traduction échoue
-            return details
-        except Exception:
+                logger.debug(f"Pas de traduction '{lang}' pour la série ID {tvdb_id}.")
+
+            return simple_details
+
+        except Exception as e:
+            logger.error(f"Une erreur inattendue est survenue dans get_series_details_by_id pour {tvdb_id}: {e}")
             return None
 
     def search_series(self, title, lang='fra'):

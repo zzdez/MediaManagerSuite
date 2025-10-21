@@ -123,13 +123,28 @@
                         <i class="bi bi-eye-fill"></i>
                     </button>
 
-                    <button class="btn btn-sm btn-outline-info find-and-play-trailer-btn"
+                    {# --- NOUVELLE LOGIQUE POUR LE BOUTON BANDE-ANNONCE --- #}
+                    {% set status = item.trailer_status or 'NONE' %}
+                    {% if status == 'LOCKED' %}
+                        {% set btn_class = 'btn-outline-success' %}
+                        {% set btn_icon = 'bi-film' %}
+                        {% set btn_title = 'Bande-annonce verrouillée' %}
+                    {% elif status == 'UNLOCKED' %}
+                        {% set btn_class = 'btn-outline-primary' %}
+                        {% set btn_icon = 'bi-film' %}
+                        {% set btn_title = 'Plusieurs bandes-annonces trouvées (non verrouillé)' %}
+                    {% else %} {# 'NONE' #}
+                        {% set btn_class = 'btn-outline-danger' %}
+                        {% set btn_icon = 'bi-film' %}
+                        {% set btn_title = 'Aucune bande-annonce trouvée' %}
+                    {% endif %}
+                    <button class="btn btn-sm {{ btn_class }} find-and-play-trailer-btn"
                             data-title="{{ item.title }}"
                             data-year="{{ item.year }}"
-                            data-media-type="{{ item.type }}"
-                            data-plex-trailer-url="{{ item.plex_trailer_url or '' }}"
-                            title="Chercher et voir la bande-annonce">
-                        <i class="bi bi-film"></i>
+                            data-media-type="{{ item.media_type_for_trailer }}"
+                            data-external-id="{{ item.external_id }}"
+                            title="{{ btn_title }}">
+                        <i class="bi {{ btn_icon }}"></i>
                     </button>
 
                     {% if item.type == 'movie' %}
@@ -173,6 +188,14 @@
                     </button>
                     {% endif %}
 
+                    <button class="btn btn-sm btn-outline-info move-media-btn"
+                            title="Déplacer le média vers un autre dossier"
+                            data-bs-toggle="modal" data-bs-target="#move-media-modal"
+                            data-media-id="{{ item.ratingKey }}"
+                            data-media-title="{{ item.title }}"
+                            data-media-type="{{ 'sonarr' if item.type == 'show' else 'radarr' }}">
+                        <i class="bi bi-folder-symlink"></i>
+                    </button>
                     <button class="btn btn-sm btn-outline-danger delete-item-btn"
                             title="Supprimer définitivement de Plex"
                             data-rating-key="{{ item.ratingKey }}"

@@ -1,7 +1,7 @@
 # app/utils/tmdb_client.py (LA VRAIE CORRECTION)
 import logging
 from flask import current_app
-from tmdbv3api import TMDb, Movie, Search
+from tmdbv3api import TMDb, Movie, Search, TV, Find
 
 logger = logging.getLogger(__name__)
 
@@ -95,4 +95,47 @@ class TheMovieDBClient:
             return []
         finally:
             # 4. Restaurer la langue originale, quoi qu'il arrive
+            self.tmdb.language = original_lang
+
+    def get_series_details(self, tmdb_id, lang='fr-FR'):
+        """
+        Récupère les détails d'une série depuis TMDb, y compris son TVDB ID.
+        """
+        if not self.api_key: return None
+        original_lang = self.tmdb.language
+        try:
+            self.tmdb.language = lang
+            tv_api = TV()
+            series = tv_api.details(tmdb_id)
+            external_ids = tv_api.external_ids(tmdb_id)
+            return {
+                'id': series.id, 'name': series.name, 'overview': series.overview,
+                'poster': f"https://image.tmdb.org/t/p/w500{series.poster_path}" if series.poster_path else "",
+                'year': series.first_air_date.split('-')[0] if hasattr(series, 'first_air_date') and series.first_air_date else 'N/A',
+                'status': series.status, 'tvdb_id': external_ids.get('tvdb_id') if external_ids else None,
+                'number_of_seasons': series.number_of_seasons, 'number_of_episodes': series.number_of_episodes
+            }
+        except Exception as e:
+            logger.error(f"Erreur lors de la récupération des détails de série TMDb pour {tmdb_id}: {e}", exc_info=True)
+            return None
+        finally:
+            self.tmdb.language = original_lang
+
+    def find_series_by_tvdb_id(self, tvdb_id, lang='fr-FR'):
+        """
+        Trouve une série sur TMDb en utilisant son TVDB ID.
+        """
+        if not self.api_key: return None
+        original_lang = self.tmdb.language
+        try:
+            self.tmdb.language = lang
+            find = Find()
+            results = find.find_by_tvdb_id(str(tvdb_id))
+            if results and results['tv_results']:
+                return self.get_series_details(results['tv_results'][0]['id'], lang=lang)
+            return None
+        except Exception as e:
+            logger.error(f"Erreur lors de la recherche TMDb par TVDB ID {tvdb_id}: {e}", exc_info=True)
+            return None
+        finally:
             self.tmdb.language = original_lang

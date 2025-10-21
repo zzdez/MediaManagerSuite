@@ -173,6 +173,12 @@ def get_radarr_movie_by_guid(plex_guid):
 
     movies = _radarr_api_request('GET', 'movie')
     if movies:
+        # --- START DEBUG LOGGING ---
+        if id_key == 'tmdbId':
+            all_tmdb_ids = [m.get('tmdbId') for m in movies if m.get('tmdbId')]
+            current_app.logger.info(f"DEBUG: Searching for tmdbId: {id_value}")
+            current_app.logger.info(f"DEBUG: All tmdbIds found in Radarr: {all_tmdb_ids}")
+        # --- END DEBUG LOGGING ---
         for movie in movies:
             if movie.get(id_key) and str(movie.get(id_key)) == str(id_value):
                 return movie
@@ -460,6 +466,11 @@ def get_all_sonarr_series():
     """Fetches all series from Sonarr."""
     current_app.logger.info("Récupération de toutes les séries depuis l'API Sonarr.")
     return _sonarr_api_request('GET', 'series')
+
+def get_all_radarr_movies():
+    """Fetches all movies from Radarr."""
+    current_app.logger.info("Récupération de tous les films depuis l'API Radarr.")
+    return _radarr_api_request('GET', 'movie')
     
 def find_sonarr_series_by_title(title, retries=3, delay=5):
     """
@@ -768,7 +779,7 @@ def add_new_series_to_sonarr(tvdb_id: int, title: str, quality_profile_id: int, 
         "seasonFolder": season_folder,
         "monitored": monitored,
         "addOptions": {
-            "searchForMissingEpisodes": search_for_missing_episodes,
+            "searchForMissingEpisodes": False,
             # "monitor": "all" or "future" etc. can be specified if needed,
             # but 'monitored' at series level usually suffices.
         }
@@ -817,7 +828,7 @@ def add_new_movie_to_radarr(tmdb_id: int, title: str, quality_profile_id: int, r
         "minimumAvailability": minimum_availability, # e.g., "announced", "inCinemas", "released"
         "monitored": monitored,
         "addOptions": {
-            "searchForMovie": search_for_movie
+            "searchForMovie": False
         }
     }
 
@@ -1284,3 +1295,130 @@ def radarr_trigger_import(download_id):
     """Triggers an import in Radarr for a specific downloadId (torrent hash)."""
     payload = {'name': 'DownloadedMoviesScan', 'downloadId': download_id, 'importMode': 'Move'}
     return radarr_post_command(payload)
+
+def move_sonarr_series(series_id, new_root_folder_path):
+    """
+    Moves a Sonarr series to a new root folder by editing the series object.
+    Returns True on success, False on failure.
+    """
+    logger.info(f"Sonarr: Initiating move for series ID {series_id} to '{new_root_folder_path}'.")
+    try:
+        series_id_int = int(series_id)
+    except (ValueError, TypeError):
+        logger.error(f"L'ID de la série '{series_id}' n'est pas un entier valide.")
+        return False, f"L'ID de la série '{series_id}' est invalide."
+
+    series_data = get_sonarr_series_by_id(series_id_int)
+    if not series_data:
+        logger.error(f"Sonarr: Impossible de récupérer la série {series_id_int} pour la déplacer.")
+        return False, "Série non trouvée."
+
+    series_data['rootFolderPath'] = new_root_folder_path
+    # Mettre à jour le chemin de la série pour refléter le nouveau dossier racine
+    series_folder = os.path.basename(series_data['path'])
+    series_data['path'] = os.path.join(new_root_folder_path, series_folder)
+
+    params = {'moveFiles': 'true'}
+    response = _sonarr_api_request('PUT', f"series/{series_id_int}", params=params, json_data=series_data)
+
+    if response and response.get('id'):
+        logger.info(f"Sonarr: Déplacement pour la série ID {series_id_int} accepté. L'opération se poursuit en arrière-plan.")
+        return True, None
+
+    error_msg = "Échec de l'initiation du déplacement via l'édition de la série."
+    if isinstance(response, list) and response:
+        error_msg = response[0].get('errorMessage', str(response))
+    logger.error(f"Sonarr: Échec du déplacement de la série {series_id_int}. Réponse: {response}")
+    return False, error_msg
+
+def move_radarr_movie(movie_id, new_root_folder_path):
+    """
+    Moves a Radarr movie to a new root folder by editing the movie object.
+    This is the reliable method, mirroring the Sonarr implementation.
+    Returns True on success, False on failure.
+    """
+    logger.info(f"Radarr: Initiating move for movie ID {movie_id} to '{new_root_folder_path}'.")
+    try:
+        movie_id_int = int(movie_id)
+    except (ValueError, TypeError):
+        logger.error(f"L'ID du film '{movie_id}' n'est pas un entier valide.")
+        return False, f"L'ID du film '{movie_id}' est invalide."
+
+    # 1. Get the full movie object from Radarr
+    movie_data = get_radarr_movie_by_id(movie_id_int)
+    if not movie_data:
+        logger.error(f"Radarr: Could not retrieve movie {movie_id_int} to move it.")
+        return False, "Film non trouvé."
+
+    # 2. Update root folder path
+    movie_data['rootFolderPath'] = new_root_folder_path
+
+    # 3. CRUCIAL: Update the full path
+    # Note: Radarr's 'path' field might already be just the folder name, unlike Sonarr.
+    # We build the new path defensively.
+    original_path = movie_data.get('path', '')
+    movie_folder = os.path.basename(original_path)
+    new_path = os.path.join(new_root_folder_path, movie_folder)
+    movie_data['path'] = new_path
+    logger.info(f"Radarr: Updating movie path. Original: '{original_path}', New: '{new_path}'")
+
+    # 4. Send the updated object with moveFiles=true parameter
+    params = {'moveFiles': 'true'}
+    # The endpoint for updating a movie is just PUT /api/v3/movie/{id}
+    # However, Radarr API for this action is PUT /api/v3/movie/editor
+    response = _radarr_api_request('PUT', f"movie/{movie_id_int}", params=params, json_data=movie_data)
+
+    if response and response.get('id'):
+        logger.info(f"Radarr: Move request for movie ID {movie_id_int} accepted. The operation will proceed in the background.")
+        return True, None
+
+    error_msg = "Failed to initiate move by editing the movie."
+    if isinstance(response, list) and response:
+        error_msg = response[0].get('errorMessage', str(response))
+    logger.error(f"Radarr: Failed to move movie {movie_id_int}. Response: {response}")
+    return False, error_msg
+
+def get_arr_command_status(arr_type, command_id):
+    """
+    Fetches the status of a specific command from Sonarr or Radarr.
+    """
+    logger.debug(f"Fetching command status for command ID {command_id} from {arr_type}.")
+    if arr_type == 'sonarr':
+        return _sonarr_api_request('GET', f'command/{command_id}')
+    elif arr_type == 'radarr':
+        return _radarr_api_request('GET', f'command/{command_id}')
+    return None
+
+def _format_bytes(size_bytes):
+    """Converts bytes to a human-readable string (KB, MB, GB, TB)."""
+    if size_bytes is None:
+        return "N/A"
+    if size_bytes == 0:
+        return "0 B"
+    power = 1024
+    n = 0
+    power_labels = {0: '', 1: 'K', 2: 'M', 3: 'G', 4: 'T'}
+    while size_bytes >= power and n < len(power_labels):
+        size_bytes /= power
+        n += 1
+    return f"{size_bytes:.2f} {power_labels[n]}B"
+
+def get_sonarr_root_folders():
+    """Fetches all root folders from Sonarr and adds formatted free space."""
+    logger.info("Sonarr: Fetching root folders.")
+    folders = _sonarr_api_request('GET', 'rootfolder')
+    if folders and isinstance(folders, list):
+        for folder in folders:
+            free_space = folder.get('freeSpace')
+            folder['freeSpace_formatted'] = _format_bytes(free_space)
+    return folders
+
+def get_radarr_root_folders():
+    """Fetches all root folders from Radarr and adds formatted free space."""
+    logger.info("Radarr: Fetching root folders.")
+    folders = _radarr_api_request('GET', 'rootfolder')
+    if folders and isinstance(folders, list):
+        for folder in folders:
+            free_space = folder.get('freeSpace')
+            folder['freeSpace_formatted'] = _format_bytes(free_space)
+    return folders

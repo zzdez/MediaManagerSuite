@@ -16,6 +16,27 @@
     </div>
     {% if series.sonarr_series_id %}
     <div class="d-flex align-items-center">
+        {# --- NOUVELLE LOGIQUE POUR LE BOUTON BANDE-ANNONCE --- #}
+        {% set status = series.trailer_status or 'NONE' %}
+        {% if status == 'LOCKED' %}
+            {% set btn_class = 'btn-outline-success' %}
+            {% set btn_title = 'Bande-annonce verrouillée' %}
+        {% elif status == 'UNLOCKED' %}
+            {% set btn_class = 'btn-outline-primary' %}
+            {% set btn_title = 'Plusieurs bandes-annonces trouvées (non verrouillé)' %}
+        {% else %} {# 'NONE' #}
+            {% set btn_class = 'btn-outline-danger' %}
+            {% set btn_title = 'Aucune bande-annonce trouvée' %}
+        {% endif %}
+        <button class="btn btn-sm {{ btn_class }} find-and-play-trailer-btn me-2"
+                data-title="{{ series.title }}"
+                data-year="{{ series.year }}"
+                data-media-type="tv"
+                data-external-id="{{ series.external_id }}"
+                data-rating-key="{{ series.ratingKey }}"
+                title="{{ btn_title }}">
+            <i class="bi bi-film"></i>
+        </button>
         <button id="rename-series-files-btn"
                 class="btn btn-outline-secondary btn-sm me-3"
                 data-sonarr-id="{{ series.sonarr_series_id }}"
