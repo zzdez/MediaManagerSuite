@@ -35,7 +35,6 @@ from app.utils import trailer_manager # Import du nouveau manager
 from app.agent.services import _search_and_score_trailers
 
 from app.utils.move_manager import move_manager
-from app.utils.bulk_move_manager import bulk_move_manager
 from app.utils.arr_client import get_sonarr_root_folders, get_radarr_root_folders, move_sonarr_series, move_radarr_movie, get_arr_command_status, radarr_post_command
 
 # --- Routes du Blueprint ---
@@ -54,8 +53,15 @@ def get_root_folders():
     if folders is None:
         return jsonify({'error': f'Could not fetch root folders from {media_type}.'}), 500
 
-    # Le tri est maintenant géré côté frontend pour combiner Sonarr et Radarr
-    return jsonify(folders)
+    # Construire explicitement la réponse pour s'assurer que les données formatées sont incluses.
+    response_data = [
+        {
+            'path': folder.get('path'),
+            'freeSpace_formatted': folder.get('freeSpace_formatted', 'N/A')
+        }
+        for folder in folders
+    ]
+    return jsonify(response_data)
 
 @plex_editor_bp.route('/api/media/move', methods=['POST'])
 @login_required
@@ -145,33 +151,6 @@ def get_move_status():
         return jsonify({'status': 'failed', 'message': f'Le déplacement a échoué: {error_message}'})
     else: # 'pending', 'started', 'running'
         return jsonify({'status': 'running', 'message': f'Déplacement en cours... (Statut: {status})'})
-
-@plex_editor_bp.route('/api/media/bulk_move', methods=['POST'])
-@login_required
-def bulk_move_media_items():
-    data = request.get_json()
-    items = data.get('items')
-    sonarr_path = data.get('sonarr_path')
-    radarr_path = data.get('radarr_path')
-
-    if not items:
-        return jsonify({'status': 'error', 'message': 'Aucun élément à déplacer.'}), 400
-    if not sonarr_path and not radarr_path:
-        return jsonify({'status': 'error', 'message': 'Aucun chemin de destination spécifié.'}), 400
-
-    task_id = bulk_move_manager.start_bulk_move(current_app._get_current_object(), items, sonarr_path, radarr_path)
-    if not task_id:
-        return jsonify({'status': 'error', 'message': 'Impossible de démarrer la tâche de déplacement groupé.'}), 500
-
-    return jsonify({'status': 'success', 'task_id': task_id})
-
-@plex_editor_bp.route('/api/media/bulk_move_status/<task_id>', methods=['GET'])
-@login_required
-def get_bulk_move_status(task_id):
-    task = bulk_move_manager.get_task_status(task_id)
-    if not task:
-        return jsonify({'status': 'not_found'}), 404
-    return jsonify(task)
 
 
 @plex_editor_bp.route('/api/users')
@@ -379,63 +358,6 @@ def get_studios_for_libraries():
         current_app.logger.error(f"Erreur API /api/studios: {e}", exc_info=True)
         return jsonify(error=str(e)), 500
 
-@plex_editor_bp.route('/api/libraries_with_paths/<user_id>')
-@login_required
-def get_user_libraries_with_paths(user_id):
-    """Retourne les bibliothèques avec leurs chemins pour un utilisateur Plex donné."""
-    try:
-        plex_url = current_app.config.get('PLEX_URL')
-        admin_token = current_app.config.get('PLEX_TOKEN')
-
-        if not plex_url or not admin_token:
-            return jsonify({'error': "Configuration Plex manquante."}), 500
-
-        main_plex_account = get_main_plex_account_object()
-        if not main_plex_account:
-            return jsonify({'error': "Impossible de récupérer le compte Plex principal."}), 500
-
-        target_plex_server = None
-        if str(main_plex_account.id) == user_id:
-            target_plex_server = PlexServer(plex_url, admin_token)
-        else:
-            admin_plex_server_for_setup = PlexServer(plex_url, admin_token)
-            user_to_impersonate = next((u for u in main_plex_account.users() if str(u.id) == user_id), None)
-            if user_to_impersonate:
-                managed_user_token = user_to_impersonate.get_token(admin_plex_server_for_setup.machineIdentifier)
-                target_plex_server = PlexServer(plex_url, managed_user_token)
-            else:
-                return jsonify({'error': f"Utilisateur avec ID {user_id} non trouvé."}), 404
-
-        if not target_plex_server:
-            return jsonify({'error': f"Impossible d'établir une connexion Plex pour l'utilisateur {user_id}."}), 500
-
-        libraries = target_plex_server.library.sections()
-        ignored_library_names = current_app.config.get('PLEX_LIBRARIES_TO_IGNORE', [])
-
-        filtered_libraries = []
-        for lib in libraries:
-            is_ignored = lib.title in ignored_library_names
-            is_valid_type = lib.type in ['movie', 'show']
-
-            if not is_ignored and is_valid_type:
-                filtered_libraries.append({
-                    'id': lib.key,
-                    'text': lib.title,
-                    'paths': lib.locations
-                })
-
-        return jsonify(filtered_libraries)
-
-    except Unauthorized:
-        current_app.logger.error(f"API get_user_libraries_with_paths: Autorisation refusée pour l'utilisateur {user_id}. Token invalide ?", exc_info=True)
-        return jsonify({'error': "Autorisation refusée par le serveur Plex."}), 401
-    except NotFound:
-        current_app.logger.warning(f"API get_user_libraries_with_paths: Ressource non trouvée pour l'utilisateur {user_id}.", exc_info=True)
-        return jsonify({'error': "Ressource non trouvée sur le serveur Plex."}), 404
-    except Exception as e:
-        current_app.logger.error(f"Erreur API lors de la récupération des bibliothèques avec chemins pour {user_id}: {e}", exc_info=True)
-        return jsonify({'error': str(e)}), 500
-
 @plex_editor_bp.route('/api/scan_libraries', methods=['POST'])
 @login_required
 def scan_libraries():
@@ -546,15 +468,7 @@ def get_media_items():
     # --- 1. Récupération des filtres ---
     data = request.json
     user_id = data.get('userId')
-
-    # --- MODIFICATION CLÉ : Récupération de la nouvelle structure de filtres ---
-    libraries_and_folders = data.get('libraries', [])
-    root_folders_filter = data.get('rootFolders', []) # On le garde pour la rétrocompatibilité / recherche simple
-
-    # Extraire les clés de bibliothèque de la nouvelle structure pour les filtres existants
-    library_keys = [lib['id'] for lib in libraries_and_folders] if libraries_and_folders else data.get('libraryKeys', [])
-
-
+    library_keys = data.get('libraryKeys', [])
     status_filter = data.get('statusFilter', 'all')
     title_filter = data.get('titleFilter', '').strip()
     year_filter = data.get('year')
@@ -585,27 +499,32 @@ def get_media_items():
         series_status_cache = SimpleCache('series_completeness_status', default_lifetime_hours=6)
         # ### FIN MODIFICATION ###
 
-        # --- 3. NOUVELLE LOGIQUE : Recherche unifiée et filtrage par paire ---
+        # --- 3. NOUVELLE LOGIQUE : Recherche unifiée sur Plex d'abord ---
         all_plex_items = {}  # Utilise un dictionnaire pour dédupliquer par ratingKey
-        lib_folder_map = {lib['id']: lib.get('folders', []) for lib in libraries_and_folders}
 
         for lib_key in library_keys:
             try:
                 library = target_plex_server.library.sectionByID(int(lib_key))
 
-                # Construit les arguments de base pour cette bibliothèque (CONSERVÉ)
+                # Construit les arguments de base pour cette bibliothèque
                 search_args = {}
+                # Les filtres suivants sont passés directement à l'API Plex
                 if cleaned_genres and genre_logic == 'or':
                     search_args['genre'] = cleaned_genres
+                # Pour la logique 'AND', on filtre plus tard en Python
                 elif cleaned_genres and genre_logic == 'and':
-                    search_args['genre'] = cleaned_genres[0]
+                    search_args['genre'] = cleaned_genres[0] # Pré-filtre sur le premier
 
                 if year_filter:
-                    try: search_args['year'] = int(year_filter)
+                    try:
+                        search_args['year'] = int(year_filter)
                     except (ValueError, TypeError): pass
-                if cleaned_collections: search_args['collection'] = cleaned_collections
-                if cleaned_resolutions: search_args['resolution'] = cleaned_resolutions
-                if cleaned_studios: search_args['studio'] = cleaned_studios
+                if cleaned_collections:
+                    search_args['collection'] = cleaned_collections
+                if cleaned_resolutions:
+                    search_args['resolution'] = cleaned_resolutions
+                if cleaned_studios:
+                    search_args['studio'] = cleaned_studios
 
                 date_filter = data.get('dateFilter', {})
                 date_type = date_filter.get('type')
@@ -644,60 +563,23 @@ def get_media_items():
                             elif operator == 'eq': search_args['userRating'] = rating_value
                         except (ValueError, TypeError): pass
 
-                # Logique de recherche par titre unifiée (CONSERVÉE)
-                base_results = []
+                # Logique de recherche par titre unifiée
                 if title_filter:
-                    base_results.extend(library.search(title__icontains=title_filter, **search_args))
-                    base_results.extend(library.search(originalTitle__icontains=title_filter, **search_args))
-                else:
-                    base_results.extend(library.search(**search_args))
+                    search_title = library.search(title__icontains=title_filter, **search_args)
+                    search_original = library.search(originalTitle__icontains=title_filter, **search_args)
 
-                # --- DEBUT NOUVEAU LOG DE DEBUG ---
-                current_app.logger.debug(f"DEBUG_SEARCH: Library '{library.title}' ({lib_key})")
-                current_app.logger.debug(f"DEBUG_SEARCH: Search args used: {search_args}")
-                current_app.logger.debug(f"DEBUG_SEARCH: Found {len(base_results)} items BEFORE path filtering.")
-                # --- FIN NOUVEAU LOG DE DEBUG ---
+                    search_sort_smart = []
+                    if title_filter.lower().startswith('the '):
+                        search_term = title_filter[4:]
+                        search_sort_smart = library.search(titleSort__icontains=search_term, **search_args)
+                    else:
+                        search_sort_smart = library.search(titleSort__icontains=title_filter, **search_args)
 
-                # --- NOUVEAU : Post-filtrage par dossier racine ---
-                selected_folders_for_this_lib = lib_folder_map.get(lib_key)
-                if selected_folders_for_this_lib is None: # Si le filtre n'est pas actif
-                     for item in base_results:
+                    for item in search_title + search_original + search_sort_smart:
                         all_plex_items[item.ratingKey] = item
                 else:
-                    for item in base_results:
-                        item_path = None
-                        if item.type == 'movie' and item.media and item.media[0].parts:
-                            item_path = getattr(item.media[0].parts[0], 'file', None)
-                        elif item.type == 'show' and item.locations:
-                            item_path = item.locations[0]
-
-                        if item_path:
-                            # --- DEBUT LOG DE DEBUG GRANULAIRE V2 ---
-                            current_app.logger.debug(f"--- V2_DEBUG: ITEM '{item.title}' ---")
-                            norm_item_path_lower = os.path.normpath(item_path).lower()
-                            current_app.logger.debug(f"V2_DEBUG: Item Path: '{norm_item_path_lower}'")
-
-                            match_found = False
-                            for folder in selected_folders_for_this_lib:
-                                norm_folder_lower = os.path.normpath(folder).lower()
-                                current_app.logger.debug(f"V2_DEBUG: Comparing with Filter Folder: '{norm_folder_lower}'")
-                                # Utilisation de 'in' pour une correspondance plus souple
-                                if norm_folder_lower in norm_item_path_lower:
-                                    match_found = True
-                                    current_app.logger.debug(f"V2_DEBUG: -> MATCH FOUND!")
-                                    break
-
-                            if not match_found:
-                                current_app.logger.debug(f"V2_DEBUG: -> NO MATCH FOUND FOR THIS ITEM.")
-
-                            current_app.logger.debug(f"--- V2_DEBUG: END ITEM ---")
-                            # --- FIN LOG DE DEBUG GRANULAIRE V2 ---
-
-                            if match_found:
-                                all_plex_items[item.ratingKey] = item
-                        elif not selected_folders_for_this_lib: # Si la liste de dossier est vide, on accepte tout
-                            all_plex_items[item.ratingKey] = item
-
+                    for item in library.search(**search_args):
+                        all_plex_items[item.ratingKey] = item
 
             except Exception as e_lib:
                 current_app.logger.error(f"Erreur accès bibliothèque {lib_key}: {e_lib}", exc_info=True)

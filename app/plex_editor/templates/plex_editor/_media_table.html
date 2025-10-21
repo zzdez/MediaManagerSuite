@@ -1,46 +1,58 @@
+<!-- Fichier: app/plex_editor/templates/plex_editor/_media_table.html -->
+
 {% if items %}
-    <table class="table table-dark table-striped table-hover mt-4 align-middle" id="plex-results-table">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <span class="fw-bold">{{ items|length }}</span> élément(s) trouvé(s).
+            <div class="form-check form-switch d-inline-block ms-3">
+                <input class="form-check-input" type="checkbox" role="switch" id="show-incomplete-only-filter">
+                <label class="form-check-label" for="show-incomplete-only-filter">Afficher uniquement les séries incomplètes</label>
+            </div>
+        </div>
+        <div>
+            <button id="sort-by-rating-btn" class="btn btn-sm btn-outline-secondary" data-sort-direction="desc">
+                Trier par Note <i class="bi bi-sort-down"></i>
+            </button>
+        </div>
+    </div>
+    <!-- Conteneur des actions de masse -->
+    <div id="batch-actions-container" class="alert alert-info" style="display: none;">
+        <span id="selected-item-count">0</span> élément(s) sélectionné(s).
+        <button id="batch-delete-btn" class="btn btn-danger btn-sm ms-3">
+            <i class="bi bi-trash-fill"></i> Supprimer la sélection
+        </button>
+    </div>
+    <table class="table table-dark table-striped table-hover" id="plex-results-table">
         <thead>
             <tr>
-                <th scope="col" style="width: 5%;"><input type="checkbox" class="form-check-input" id="select-all-checkbox"></th>
-                <th scope="col" class="sortable-header" data-sort-by="title">Titre</th>
-                <th scope="col" class="sortable-header" data-sort-by="library" style="width: 15%;">Bibliothèque</th>
-                <th scope="col" class="sortable-header" data-sort-by="size" data-sort-type="size" style="width: 10%;">Taille Disque</th>
-                <th scope="col" class="sortable-header" data-sort-by="added" data-sort-type="date" style="width: 10%;">Date d'Ajout</th>
-                <th scope="col" class="sortable-header" data-sort-by="status" data-sort-type="text" style="width: 10%;">Statut</th>
-                <th scope="col" style="width: 15%;">Actions</th>
+                <th><input type="checkbox" id="select-all-checkbox" title="Tout sélectionner"></th>
+                <th class="sortable-header" data-sort-by="title" data-sort-type="text">Titre</th>
+                <th class="sortable-header" data-sort-by="library" data-sort-type="text">Bibliothèque</th>
+                <th class="sortable-header" data-sort-by="size" data-sort-type="size">Taille</th>
+                <th class="sortable-header" data-sort-by="added" data-sort-type="date">Ajouté le</th>
+                <th class="sortable-header" data-sort-by="status" data-sort-type="text">Statut</th>
+                <th>Actions</th>
             </tr>
         </thead>
         <tbody>
             {% for item in items %}
-            <tr data-rating="{{ item.userRating or 0 }}" data-incomplete="{{ 'true' if item.type == 'show' and item.is_incomplete else 'false' }}">
-                <td><input type="checkbox" class="form-check-input item-checkbox" data-rating-key="{{ item.ratingKey }}"></td>
+            <tr data-rating-key="{{ item.ratingKey }}" data-rating="{{ item.rating|default(0) }}" data-incomplete="{{ 'true' if item.is_incomplete else 'false' }}">
+                <td><input type="checkbox" class="item-checkbox" data-rating-key="{{ item.ratingKey }}"></td>
                 <td>
-                    <div class="d-flex align-items-center">
-                        {# --- NOUVEAU BLOC POUR L'IMAGE --- #}
-                        <div class="me-3">
-                            <img src="{{ item.poster_url or url_for('static', filename='img/placeholder.png') }}"
-                                 alt="Poster for {{ item.title }}"
-                                 style="width: 50px; height: 75px; object-fit: cover; border-radius: 4px;">
-                        </div>
-                        {# --- FIN DU BLOC IMAGE --- #}
-
-                        {# Le contenu textuel est maintenant dans sa propre div pour l'alignement #}
+                    <div class="d-flex align-items-start">
+                        {% if item.poster_url %}
+                            <img src="{{ item.poster_url }}" alt="Affiche de {{ item.title }}" class="me-3" style="width: 50px; height: auto; border-radius: 4px;">
+                        {% endif %}
                         <div>
-                            <a href="#" class="text-white item-title-link"
-                               data-bs-toggle="modal"
-                               data-bs-target="#item-details-modal"
-                               data-rating-key="{{ item.ratingKey }}">
+                            <a href="#" class="text-white fw-bold item-title-link" data-bs-toggle="modal" data-bs-target="#item-details-modal" data-rating-key="{{ item.ratingKey }}">
                                 {{ item.title }}
                             </a>
-                            <small class="d-block text-muted">Année: {{ item.year }}</small>
+                            <span class="text-muted">({{ item.year }})</span>
 
-                            {# --- DÉBUT DU BLOC D'ÉTOILES --- #}
-                            {% if item.userRating is not none and item.userRating > 0 %}
-                                <div class="star-rating">
-                                    {# On convertit la note sur 10 en note sur 5 #}
-                                    {% set star_rating = item.userRating / 2 %}
-
+                             {# --- DÉBUT DU BLOC D'ÉTOILES --- #}
+                            {% if item.rating %}
+                                <div class="rating-stars text-warning d-block" title="Note: {{ item.rating|round(1) }}/10">
+                                    {% set star_rating = (item.rating / 2)|round(1) %}
                                     {# Boucle pour les étoiles pleines #}
                                     {% for i in range(star_rating|int) %}
                                         <i class="bi bi-star-fill"></i>

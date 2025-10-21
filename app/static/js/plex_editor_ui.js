@@ -1,4 +1,5 @@
-// Fichier : app/static/js/plex_editor_ui.js (Version Complète et Définitive)
+
+// Fichier : app/static/js/plex_editor_ui.js
 
 $(document).ready(function() {
 
@@ -12,7 +13,6 @@ $(document).ready(function() {
     const loader = $('#plex-items-loader');
     const itemsContainer = $('#plex-items-container');
     const LAST_USER_KEY = 'mms_last_plex_user_id';
-    let librariesWithPaths = []; // Variable globale pour stocker les bibliothèques et leurs chemins
 
     // --- 1. Charger les utilisateurs au démarrage ---
     fetch("/plex/api/users")
@@ -189,19 +189,6 @@ $(document).ready(function() {
         }
     });
 
-    // --- Helper function to reset selection state ---
-    function resetSelectionState() {
-        // Uncheck all checkboxes
-        $('#select-all-checkbox, .item-checkbox').prop('checked', false);
-
-        // Update counts to 0
-        $('#selected-item-count-move').text(0);
-        $('#selected-item-count-delete').text(0);
-
-        // Hide the actions container
-        $('#batch-actions-container').hide();
-    }
-
     // --- 3. Appliquer les filtres pour charger les médias ---
     // Remplace l'ancienne logique de gestion des dates par celle-ci
     $('#date-filter-type').on('change', function() {
@@ -222,6 +209,19 @@ $(document).ready(function() {
         const showValueSelector = ['gte', 'lte', 'eq'].includes(operator);
         $('#rating-value-container').toggle(showValueSelector);
     });
+
+    // --- Helper function to reset selection state ---
+    function resetSelectionState() {
+        // Uncheck all checkboxes
+        $('#select-all-checkbox, .item-checkbox').prop('checked', false);
+
+        // Update counts to 0
+        $('#selected-item-count-move').text(0);
+        $('#selected-item-count-delete').text(0);
+
+        // Hide the actions container
+        $('#batch-actions-container').hide();
+    }
 
     applyBtn.on('click', function() {
         const userId = userSelect.val();
@@ -261,13 +261,24 @@ $(document).ready(function() {
             ? librariesWithPaths.map(lib => lib.id) // Si 'all', on prend toutes les bibliothèques chargées
             : selectedLibraries;
 
+        // Helper pour normaliser les chemins (insensible à la casse, sans slash final)
+        const normalizePath = (path) => {
+            if (!path) return '';
+            return path.toLowerCase().replace(/[\\/]$/, '');
+        };
+
         finalSelectedLibs.forEach(libId => {
             const libraryData = librariesWithPaths.find(lib => lib.id == libId);
             if (libraryData) {
+                const normalizedLibPaths = libraryData.paths.map(normalizePath);
+
                 // Trouver les dossiers sélectionnés qui appartiennent réellement à cette bibliothèque
-                const associatedFolders = selectedRootFolders.filter(folder =>
-                    libraryData.paths.includes(folder)
-                );
+                const associatedFolders = selectedRootFolders.filter(folder => {
+                    const normalizedFolder = normalizePath(folder);
+                    // On vérifie si un des chemins de la bibliothèque commence par le chemin du dossier sélectionné
+                    return normalizedLibPaths.some(libPath => libPath.startsWith(normalizedFolder));
+                });
+
                 librariesPayload.push({
                     id: libId,
                     folders: associatedFolders
@@ -850,9 +861,7 @@ $('#confirmArchiveMovieBtn').on('click', function() {
 
         const selectedCount = $('.item-checkbox:checked').length;
         const batchActionsContainer = $('#batch-actions-container');
-        // Mise à jour des deux compteurs
-        $('#selected-item-count-move').text(selectedCount);
-        $('#selected-item-count-delete').text(selectedCount);
+        $('#selected-item-count').text(selectedCount); // Mettre à jour le compteur
 
         batchActionsContainer.toggle(selectedCount > 0);
     });
@@ -924,9 +933,7 @@ function parseSize(sizeStr) {
 function sortTable(table, sortBy, sortType, direction) {
     const tbody = table.find('tbody');
     const rows = tbody.find('tr').toArray();
-
-    // Correction majeure : On trouve l'index de la colonne PARMI TOUS les <th>
-    const cellIndex = table.find(`th.sortable-header[data-sort-by='${sortBy}']`).index();
+    const cellIndex = table.find(`th[data-sort-by='${sortBy}']`).index();
 
     rows.sort(function(a, b) {
         let valA, valB;
@@ -935,7 +942,6 @@ function sortTable(table, sortBy, sortType, direction) {
             valA = parseFloat($(a).data('rating')) || 0;
             valB = parseFloat($(b).data('rating')) || 0;
         } else {
-            // On utilise maintenant le cellIndex qui est fiable
             const cellA = $(a).children('td').eq(cellIndex);
             const cellB = $(b).children('td').eq(cellIndex);
 
@@ -1118,155 +1124,6 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
     // ### PARTIE 5 : GESTION DU DÉPLACEMENT DE MÉDIAS ###
     // =================================================================
 
-    let activeBulkMoveTaskId = null;
-    let bulkMoveCheckInterval = null;
-
-    // --- C. Lancer le déplacement en masse ---
-    $(document).on('click', '#batch-move-btn', function() {
-        const selectedCheckboxes = $('.item-checkbox:checked');
-        const selectedItems = selectedCheckboxes.map(function() {
-            const row = $(this).closest('tr');
-            return {
-                rating_key: $(this).data('rating-key'),
-                title: row.find('.item-title-link').text().trim(),
-                media_type: row.find('.move-media-btn').data('media-type') // 'sonarr' or 'radarr'
-            };
-        }).get();
-
-        const movies = selectedItems.filter(item => item.media_type === 'radarr');
-        const shows = selectedItems.filter(item => item.media_type === 'sonarr');
-
-        const modal = $('#bulk-move-media-modal');
-        modal.find('#bulk-move-item-count').text(selectedItems.length);
-
-        // Réinitialiser et masquer les conteneurs
-        modal.find('#bulk-move-radarr-container, #bulk-move-sonarr-container').hide();
-        modal.find('#bulk-move-radarr-select, #bulk-move-sonarr-select').html('<option value="">Ne pas déplacer</option>');
-
-        // Charger les dossiers pour Radarr si des films sont sélectionnés
-        if (movies.length > 0) {
-            modal.find('#bulk-move-radarr-count').text(movies.length);
-            modal.find('#bulk-move-radarr-container').show();
-            loadRootFoldersIntoSelect('#bulk-move-radarr-select', 'radarr');
-        }
-
-        // Charger les dossiers pour Sonarr si des séries sont sélectionnées
-        if (shows.length > 0) {
-            modal.find('#bulk-move-sonarr-count').text(shows.length);
-            modal.find('#bulk-move-sonarr-container').show();
-            loadRootFoldersIntoSelect('#bulk-move-sonarr-select', 'sonarr');
-        }
-
-        new bootstrap.Modal(modal[0]).show();
-    });
-
-    function loadRootFoldersIntoSelect(selectId, mediaType) {
-        const select = $(selectId);
-        select.prop('disabled', true);
-        fetch(`/plex/api/media/root_folders?type=${mediaType}`)
-            .then(response => response.json())
-            .then(folders => {
-                // On s'assure de vider le select avant de le remplir (important pour les réutilisations)
-                select.find('option:gt(0)').remove();
-
-                if (folders && folders.length > 0) {
-                    folders.forEach(folder => {
-                        // Correction ici : le texte de l'option doit bien utiliser freeSpace_formatted
-                        const optionText = `${folder.path} (${folder.freeSpace_formatted})`;
-                        select.append(new Option(optionText, folder.path));
-                    });
-                }
-                select.prop('disabled', false);
-            })
-            .catch(error => {
-                console.error(`Erreur de chargement des dossiers pour ${mediaType}:`, error);
-                select.find('option:gt(0)').remove(); // Vider en cas d'erreur aussi
-                select.append('<option value="">Erreur de chargement</option>');
-            });
-    }
-
-    // --- D. Confirmer le déplacement en masse ---
-    $('#confirm-bulk-move-btn').on('click', function() {
-        const btn = $(this);
-        const radarrPath = $('#bulk-move-radarr-select').val();
-        const sonarrPath = $('#bulk-move-sonarr-select').val();
-
-        if (!radarrPath && !sonarrPath) {
-            alert("Veuillez sélectionner au moins un dossier de destination.");
-            return;
-        }
-
-        const selectedItems = $('.item-checkbox:checked').map(function() {
-            const row = $(this).closest('tr');
-            return {
-                rating_key: $(this).data('rating-key'),
-                title: row.find('.item-title-link').text().trim(),
-                media_type: row.find('.move-media-btn').data('media-type')
-            };
-        }).get();
-
-        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Lancement...');
-
-        fetch('/plex/api/media/bulk_move', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                items: selectedItems,
-                sonarr_path: sonarrPath,
-                radarr_path: radarrPath
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            bootstrap.Modal.getInstance(document.getElementById('bulk-move-media-modal')).hide();
-            if (data.status === 'success') {
-                activeBulkMoveTaskId = data.task_id;
-                startBulkMovePolling();
-                // Griser les lignes concernées
-                selectedItems.forEach(item => {
-                    $(`tr[data-rating-key="${item.rating_key}"]`).addClass('opacity-50');
-                });
-                resetSelectionState(); // <-- RÉINITIALISATION IMMÉDIATE
-            } else {
-                alert('Erreur: ' + data.message);
-            }
-        })
-        .finally(() => {
-            btn.prop('disabled', false).html('Lancer le déplacement');
-        });
-    });
-
-    // --- E. Polling pour le statut du déplacement en masse ---
-    function startBulkMovePolling() {
-        if (bulkMoveCheckInterval) clearInterval(bulkMoveCheckInterval);
-
-        bulkMoveCheckInterval = setInterval(() => {
-            if (!activeBulkMoveTaskId) {
-                clearInterval(bulkMoveCheckInterval);
-                return;
-            }
-
-            fetch(`/plex/api/media/bulk_move_status/${activeBulkMoveTaskId}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.status === 'completed') {
-                        clearInterval(bulkMoveCheckInterval);
-                        activeBulkMoveTaskId = null;
-
-                        // Afficher le résumé
-                        let summary = `Déplacement terminé.\n\nSuccès (${data.results.success.length}):\n`;
-                        data.results.success.forEach(s => summary += `- ${s.title}\n`);
-                        summary += `\nÉchecs (${data.results.errors.length}):\n`;
-                        data.results.errors.forEach(e => summary += `- ${e.title}: ${e.message}\n`);
-
-                        alert(summary);
-                        $('#apply-filters-btn').click(); // Rafraîchir
-                    }
-                });
-        }, 5000); // Poll toutes les 5 secondes
-    }
-
-
     let activeMoveTaskId = null;
     let activeMoveMediaId = null;
     let moveCheckInterval = null;
@@ -1297,9 +1154,7 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
                 folderSelect.html('').prop('disabled', false);
                 if (folders && folders.length > 0) {
                     folders.forEach(folder => {
-                        const freeSpace = folder.freeSpace_formatted ? `(Espace libre: ${folder.freeSpace_formatted})` : '';
-                        const optionText = `${folder.path} ${freeSpace}`;
-                        folderSelect.append(new Option(optionText, folder.path));
+                        folderSelect.append(new Option(folder.path, folder.path));
                     });
                 } else {
                     folderSelect.html('<option>Aucun dossier trouvé.</option>').prop('disabled', true);
