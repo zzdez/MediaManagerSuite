@@ -666,8 +666,13 @@ def get_media_items():
                             item_path = item.locations[0]
 
                         if item_path:
-                            norm_item_path = os.path.normpath(item_path)
-                            if any(norm_item_path.startswith(os.path.normpath(folder)) for folder in selected_folders_for_this_lib):
+                            # Comparaison robuste : insensible à la casse et normalisée
+                            norm_item_path_lower = os.path.normpath(item_path).lower()
+                            match_found = any(
+                                norm_item_path_lower.startswith(os.path.normpath(folder).lower())
+                                for folder in selected_folders_for_this_lib
+                            )
+                            if match_found:
                                 all_plex_items[item.ratingKey] = item
                         elif not selected_folders_for_this_lib: # Si la liste de dossier est vide, on accepte tout
                             all_plex_items[item.ratingKey] = item
