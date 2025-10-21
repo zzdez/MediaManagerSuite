@@ -35,6 +35,7 @@ from app.utils import trailer_manager # Import du nouveau manager
 from app.agent.services import _search_and_score_trailers
 
 from app.utils.move_manager import move_manager
+from app.utils.bulk_move_manager import bulk_move_manager
 from app.utils.arr_client import get_sonarr_root_folders, get_radarr_root_folders, move_sonarr_series, move_radarr_movie, get_arr_command_status, radarr_post_command
 
 # --- Routes du Blueprint ---
@@ -151,6 +152,33 @@ def get_move_status():
         return jsonify({'status': 'failed', 'message': f'Le déplacement a échoué: {error_message}'})
     else: # 'pending', 'started', 'running'
         return jsonify({'status': 'running', 'message': f'Déplacement en cours... (Statut: {status})'})
+
+@plex_editor_bp.route('/api/media/bulk_move', methods=['POST'])
+@login_required
+def bulk_move_media_items():
+    data = request.get_json()
+    items = data.get('items')
+    sonarr_path = data.get('sonarr_path')
+    radarr_path = data.get('radarr_path')
+
+    if not items:
+        return jsonify({'status': 'error', 'message': 'Aucun élément à déplacer.'}), 400
+    if not sonarr_path and not radarr_path:
+        return jsonify({'status': 'error', 'message': 'Aucun chemin de destination spécifié.'}), 400
+
+    task_id = bulk_move_manager.start_bulk_move(items, sonarr_path, radarr_path)
+    if not task_id:
+        return jsonify({'status': 'error', 'message': 'Impossible de démarrer la tâche de déplacement groupé.'}), 500
+
+    return jsonify({'status': 'success', 'task_id': task_id})
+
+@plex_editor_bp.route('/api/media/bulk_move_status/<task_id>', methods=['GET'])
+@login_required
+def get_bulk_move_status(task_id):
+    task = bulk_move_manager.get_task_status(task_id)
+    if not task:
+        return jsonify({'status': 'not_found'}), 404
+    return jsonify(task)
 
 
 @plex_editor_bp.route('/api/users')
