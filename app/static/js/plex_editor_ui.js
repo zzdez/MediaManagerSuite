@@ -12,34 +12,9 @@ $(document).ready(function() {
     const loader = $('#plex-items-loader');
     const itemsContainer = $('#plex-items-container');
     const LAST_USER_KEY = 'mms_last_plex_user_id';
+    let librariesWithPaths = []; // Variable globale pour stocker les bibliothèques et leurs chemins
 
-    // --- 1. Charger les utilisateurs et les dossiers racines au démarrage ---
-    function loadRootFolders() {
-        const rootFolderSelect = $('#root-folder-select-main');
-        rootFolderSelect.html('<option selected disabled>Chargement...</option>').prop('disabled', true);
-
-        fetch("/plex/api/media/root_folders")
-            .then(response => response.json())
-            .then(folders => {
-                rootFolderSelect.html(''); // Vider avant de remplir
-                if (folders && folders.length > 0) {
-                    // Ajouter une option "Tous les dossiers" qui sera sélectionnée par défaut
-                    rootFolderSelect.append($('<option>', { value: 'all', text: 'Tous les dossiers' }));
-                    folders.forEach(folder => {
-                        const displayText = `${folder.path} (${folder.freeSpace_formatted})`;
-                        rootFolderSelect.append(new Option(displayText, folder.path));
-                    });
-                    rootFolderSelect.prop('disabled', false);
-                } else {
-                    rootFolderSelect.html('<option selected disabled>Aucun dossier trouvé</option>');
-                }
-            })
-            .catch(error => {
-                console.error('Erreur chargement dossiers racines:', error);
-                rootFolderSelect.html('<option selected disabled>Erreur</option>');
-            });
-    }
-
+    // --- 1. Charger les utilisateurs au démarrage ---
     fetch("/plex/api/users")
         .then(response => response.json())
         .then(users => {
@@ -55,8 +30,6 @@ $(document).ready(function() {
             }
         });
 
-    loadRootFolders(); // On charge les dossiers au démarrage
-
     // --- 2. Gérer la sélection de l'utilisateur ---
     userSelect.on('change', function () {
         const userId = $(this).val();
@@ -65,30 +38,56 @@ $(document).ready(function() {
 
         localStorage.setItem(LAST_USER_KEY, userId);
         librarySelect.html('<option selected disabled>Chargement...</option>').prop('disabled', true);
+        const rootFolderSelect = $('#root-folder-select-main');
+        rootFolderSelect.html('<option selected disabled>Chargement...</option>').prop('disabled', true);
 
-        // On informe le serveur pour mettre la session à jour
         fetch('/plex/select_user', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id: userId, title: userTitle })
-        }).then(response => response.json())
-          .then(data => {
-            if (data.status === 'success') console.log("Utilisateur sauvegardé en session.");
-            else console.error('Erreur sauvegarde session:', data.message);
         });
 
-        fetch(`/plex/api/libraries/${userId}`)
+        // --- NOUVELLE LOGIQUE DE CHARGEMENT UNIFIÉE ---
+        fetch(`/plex/api/libraries_with_paths/${userId}`)
             .then(response => response.json())
-            .then(libraries => {
+            .then(data => {
+                librariesWithPaths = data; // Stocker les données globalement
+
+                // Peupler le sélecteur de bibliothèques
                 librarySelect.html('');
-                if (libraries && libraries.length > 0) {
+                if (librariesWithPaths && librariesWithPaths.length > 0) {
                     librarySelect.append($('<option>', { value: 'all', text: 'Toutes les bibliothèques' }));
-                    libraries.forEach(lib => librarySelect.append(new Option(lib.text, lib.id)));
+                    librariesWithPaths.forEach(lib => {
+                        librarySelect.append(new Option(lib.text, lib.id));
+                    });
                     librarySelect.prop('disabled', false);
                 } else {
                     librarySelect.html('<option selected disabled>Aucune bibliothèque</option>');
                 }
-                librarySelect.trigger('change'); // Trigger change to load genres
+
+                // Peupler le sélecteur de dossiers racines
+                const allPaths = new Set();
+                librariesWithPaths.forEach(lib => {
+                    lib.paths.forEach(path => allPaths.add(path));
+                });
+
+                rootFolderSelect.html('');
+                if (allPaths.size > 0) {
+                    rootFolderSelect.append($('<option>', { value: 'all', text: 'Tous les dossiers' }));
+                    allPaths.forEach(path => {
+                        rootFolderSelect.append(new Option(path, path));
+                    });
+                    rootFolderSelect.prop('disabled', false);
+                } else {
+                    rootFolderSelect.html('<option selected disabled>Aucun dossier racine</option>');
+                }
+
+                librarySelect.trigger('change');
+            })
+            .catch(error => {
+                console.error("Erreur de chargement des bibliothèques/dossiers:", error);
+                librarySelect.html('<option selected disabled>Erreur</option>');
+                rootFolderSelect.html('<option selected disabled>Erreur</option>');
             });
     });
 
@@ -213,17 +212,35 @@ $(document).ready(function() {
         const directorFilter = $('#director-filter').val().trim();
         const writerFilter = $('#writer-filter').val().trim();
         const selectedStudios = $('#studio-filter').val();
-        let selectedRootFolders = $('#root-folder-select-main').val();
-
-        // Si "Tous les dossiers" est sélectionné, on traite la valeur comme une liste vide
-        if (selectedRootFolders && selectedRootFolders.includes('all')) {
-            selectedRootFolders = [];
+        let selectedRootFolders = $('#root-folder-select-main').val() || [];
+        if (selectedRootFolders.includes('all')) {
+            selectedRootFolders = []; // Si 'all' est sélectionné, on ne filtre pas par dossier
         }
 
         if (!userId || !selectedLibraries || selectedLibraries.length === 0) {
-            itemsContainer.html('<p class="text-center text-warning">Veuillez sélectionner un utilisateur et une bibliothèque.</p>');
+            itemsContainer.html('<p class="text-center text-warning">Veuillez sélectionner un utilisateur et au moins une bibliothèque.</p>');
             return;
         }
+
+        // --- NOUVELLE LOGIQUE DE CONSTRUCTION DU PAYLOAD ---
+        let librariesPayload = [];
+        const finalSelectedLibs = selectedLibraries.includes('all')
+            ? librariesWithPaths.map(lib => lib.id) // Si 'all', on prend toutes les bibliothèques chargées
+            : selectedLibraries;
+
+        finalSelectedLibs.forEach(libId => {
+            const libraryData = librariesWithPaths.find(lib => lib.id == libId);
+            if (libraryData) {
+                // Trouver les dossiers sélectionnés qui appartiennent réellement à cette bibliothèque
+                const associatedFolders = selectedRootFolders.filter(folder =>
+                    libraryData.paths.includes(folder)
+                );
+                librariesPayload.push({
+                    id: libId,
+                    folders: associatedFolders
+                });
+            }
+        });
 
         loader.show();
         itemsContainer.html('');
@@ -233,7 +250,8 @@ $(document).ready(function() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 userId: userId,
-                libraryKeys: selectedLibraries,
+                libraries: librariesPayload, // Nouvelle structure
+                rootFolders: selectedRootFolders, // On envoie aussi l'ancienne pour fallback
                 statusFilter: statusFilter,
                 titleFilter: titleFilter,
                 year: yearFilter, // <-- NOUVELLE LIGNE
