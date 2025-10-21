@@ -166,7 +166,7 @@ def bulk_move_media_items():
     if not sonarr_path and not radarr_path:
         return jsonify({'status': 'error', 'message': 'Aucun chemin de destination spécifié.'}), 400
 
-    task_id = bulk_move_manager.start_bulk_move(items, sonarr_path, radarr_path)
+    task_id = bulk_move_manager.start_bulk_move(current_app._get_current_object(), items, sonarr_path, radarr_path)
     if not task_id:
         return jsonify({'status': 'error', 'message': 'Impossible de démarrer la tâche de déplacement groupé.'}), 500
 

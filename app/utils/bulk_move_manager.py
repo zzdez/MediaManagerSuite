@@ -64,39 +64,41 @@ class BulkMoveManager:
     def _run_bulk_move(self, task_id):
         with self.lock:
             task = self.tasks[task_id]
+            app = task['app']
             items_to_move = task['items']
             task['status'] = 'in_progress'
 
-        total_items = len(items_to_move)
+        with app.app_context():
+            total_items = len(items_to_move)
 
-        for i, item in enumerate(items_to_move):
+            for i, item in enumerate(items_to_move):
+                with self.lock:
+                    task['progress'] = {
+                        'current': i + 1,
+                        'total': total_items,
+                        'item_title': item.get('title', 'N/A')
+                    }
+
+                success, message = self._move_item(item['rating_key'], item['media_type'], item['destination_path'])
+
+                with self.lock:
+                    if success:
+                        task['results']['success'].append({'title': item.get('title'), 'message': message})
+                    else:
+                        task['results']['errors'].append({'title': item.get('title'), 'message': message})
+
+                # Petite pause pour ne pas surcharger les API
+                time.sleep(2)
+
             with self.lock:
+                task['status'] = 'completed'
                 task['progress'] = {
-                    'current': i + 1,
+                    'current': total_items,
                     'total': total_items,
-                    'item_title': item.get('title', 'N/A')
+                    'item_title': 'Terminé'
                 }
 
-            success, message = self._move_item(item['rating_key'], item['media_type'], item['destination_path'])
-
-            with self.lock:
-                if success:
-                    task['results']['success'].append({'title': item.get('title'), 'message': message})
-                else:
-                    task['results']['errors'].append({'title': item.get('title'), 'message': message})
-
-            # Petite pause pour ne pas surcharger les API
-            time.sleep(2)
-
-        with self.lock:
-            task['status'] = 'completed'
-            task['progress'] = {
-                'current': total_items,
-                'total': total_items,
-                'item_title': 'Terminé'
-            }
-
-    def start_bulk_move(self, items, sonarr_path, radarr_path):
+    def start_bulk_move(self, app, items, sonarr_path, radarr_path):
         task_id = str(uuid.uuid4())
 
         items_with_dest = []
@@ -121,6 +123,7 @@ class BulkMoveManager:
         with self.lock:
             self.tasks[task_id] = {
                 'id': task_id,
+                'app': app,
                 'status': 'pending',
                 'items': items_with_dest,
                 'progress': {
