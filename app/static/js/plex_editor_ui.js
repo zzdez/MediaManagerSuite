@@ -799,9 +799,10 @@ $('#confirmArchiveMovieBtn').on('click', function() {
 
         const selectedCount = $('.item-checkbox:checked').length;
         const batchActionsContainer = $('#batch-actions-container');
-        const selectedItemCountSpan = $('#selected-item-count');
+        // Mise à jour des deux compteurs
+        $('#selected-item-count-move').text(selectedCount);
+        $('#selected-item-count-delete').text(selectedCount);
 
-        selectedItemCountSpan.text(selectedCount);
         batchActionsContainer.toggle(selectedCount > 0);
     });
 
@@ -1065,6 +1066,143 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
     // =================================================================
     // ### PARTIE 5 : GESTION DU DÉPLACEMENT DE MÉDIAS ###
     // =================================================================
+
+    let activeBulkMoveTaskId = null;
+    let bulkMoveCheckInterval = null;
+
+    // --- C. Lancer le déplacement en masse ---
+    $(document).on('click', '#batch-move-btn', function() {
+        const selectedCheckboxes = $('.item-checkbox:checked');
+        const selectedItems = selectedCheckboxes.map(function() {
+            const row = $(this).closest('tr');
+            return {
+                rating_key: $(this).data('rating-key'),
+                title: row.find('.item-title-link').text().trim(),
+                media_type: row.find('.move-media-btn').data('media-type') // 'sonarr' or 'radarr'
+            };
+        }).get();
+
+        const movies = selectedItems.filter(item => item.media_type === 'radarr');
+        const shows = selectedItems.filter(item => item.media_type === 'sonarr');
+
+        const modal = $('#bulk-move-media-modal');
+        modal.find('#bulk-move-item-count').text(selectedItems.length);
+
+        // Réinitialiser et masquer les conteneurs
+        modal.find('#bulk-move-radarr-container, #bulk-move-sonarr-container').hide();
+        modal.find('#bulk-move-radarr-select, #bulk-move-sonarr-select').html('<option value="">Ne pas déplacer</option>');
+
+        // Charger les dossiers pour Radarr si des films sont sélectionnés
+        if (movies.length > 0) {
+            modal.find('#bulk-move-radarr-count').text(movies.length);
+            modal.find('#bulk-move-radarr-container').show();
+            loadRootFoldersIntoSelect('#bulk-move-radarr-select', 'radarr');
+        }
+
+        // Charger les dossiers pour Sonarr si des séries sont sélectionnées
+        if (shows.length > 0) {
+            modal.find('#bulk-move-sonarr-count').text(shows.length);
+            modal.find('#bulk-move-sonarr-container').show();
+            loadRootFoldersIntoSelect('#bulk-move-sonarr-select', 'sonarr');
+        }
+
+        new bootstrap.Modal(modal[0]).show();
+    });
+
+    function loadRootFoldersIntoSelect(selectId, mediaType) {
+        const select = $(selectId);
+        select.prop('disabled', true);
+        fetch(`/plex/api/media/root_folders?type=${mediaType}`)
+            .then(response => response.json())
+            .then(folders => {
+                folders.forEach(folder => {
+                    const optionText = `${folder.path} (${folder.freeSpace_formatted})`;
+                    select.append(new Option(optionText, folder.path));
+                });
+                select.prop('disabled', false);
+            });
+    }
+
+    // --- D. Confirmer le déplacement en masse ---
+    $('#confirm-bulk-move-btn').on('click', function() {
+        const btn = $(this);
+        const radarrPath = $('#bulk-move-radarr-select').val();
+        const sonarrPath = $('#bulk-move-sonarr-select').val();
+
+        if (!radarrPath && !sonarrPath) {
+            alert("Veuillez sélectionner au moins un dossier de destination.");
+            return;
+        }
+
+        const selectedItems = $('.item-checkbox:checked').map(function() {
+            const row = $(this).closest('tr');
+            return {
+                rating_key: $(this).data('rating-key'),
+                title: row.find('.item-title-link').text().trim(),
+                media_type: row.find('.move-media-btn').data('media-type')
+            };
+        }).get();
+
+        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Lancement...');
+
+        fetch('/plex/api/media/bulk_move', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                items: selectedItems,
+                sonarr_path: sonarrPath,
+                radarr_path: radarrPath
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            bootstrap.Modal.getInstance(document.getElementById('bulk-move-media-modal')).hide();
+            if (data.status === 'success') {
+                activeBulkMoveTaskId = data.task_id;
+                startBulkMovePolling();
+                // Griser les lignes concernées
+                selectedItems.forEach(item => {
+                    $(`tr[data-rating-key="${item.rating_key}"]`).addClass('opacity-50');
+                });
+            } else {
+                alert('Erreur: ' + data.message);
+            }
+        })
+        .finally(() => {
+            btn.prop('disabled', false).html('Lancer le déplacement');
+        });
+    });
+
+    // --- E. Polling pour le statut du déplacement en masse ---
+    function startBulkMovePolling() {
+        if (bulkMoveCheckInterval) clearInterval(bulkMoveCheckInterval);
+
+        bulkMoveCheckInterval = setInterval(() => {
+            if (!activeBulkMoveTaskId) {
+                clearInterval(bulkMoveCheckInterval);
+                return;
+            }
+
+            fetch(`/plex/api/media/bulk_move_status/${activeBulkMoveTaskId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'completed') {
+                        clearInterval(bulkMoveCheckInterval);
+                        activeBulkMoveTaskId = null;
+
+                        // Afficher le résumé
+                        let summary = `Déplacement terminé.\n\nSuccès (${data.results.success.length}):\n`;
+                        data.results.success.forEach(s => summary += `- ${s.title}\n`);
+                        summary += `\nÉchecs (${data.results.errors.length}):\n`;
+                        data.results.errors.forEach(e => summary += `- ${e.title}: ${e.message}\n`);
+
+                        alert(summary);
+                        $('#apply-filters-btn').click(); // Rafraîchir
+                    }
+                });
+        }, 5000); // Poll toutes les 5 secondes
+    }
+
 
     let activeMoveTaskId = null;
     let activeMoveMediaId = null;

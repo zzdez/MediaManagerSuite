@@ -35,6 +35,7 @@ from app.utils import trailer_manager # Import du nouveau manager
 from app.agent.services import _search_and_score_trailers
 
 from app.utils.move_manager import move_manager
+from app.utils.bulk_move_manager import bulk_move_manager
 from app.utils.arr_client import get_sonarr_root_folders, get_radarr_root_folders, move_sonarr_series, move_radarr_movie, get_arr_command_status, radarr_post_command
 
 # --- Routes du Blueprint ---
@@ -42,25 +43,36 @@ from app.utils.arr_client import get_sonarr_root_folders, get_radarr_root_folder
 @plex_editor_bp.route('/api/media/root_folders', methods=['GET'])
 @login_required
 def get_root_folders():
-    sonarr_folders = get_sonarr_root_folders() or []
-    radarr_folders = get_radarr_root_folders() or []
+    media_type = request.args.get('type')
 
-    all_folders = sonarr_folders + radarr_folders
+    folders_to_process = []
 
-    # Utiliser un dictionnaire pour dédoublonner par chemin, au cas où
-    unique_folders_dict = {folder['path']: folder for folder in all_folders if folder.get('path')}
-    unique_folders = list(unique_folders_dict.values())
+    if media_type == 'sonarr':
+        folders_to_process = get_sonarr_root_folders() or []
+    elif media_type == 'radarr':
+        folders_to_process = get_radarr_root_folders() or []
+    elif not media_type:
+        # Aucun type spécifié, on combine les deux pour le filtre de recherche
+        sonarr_folders = get_sonarr_root_folders() or []
+        radarr_folders = get_radarr_root_folders() or []
+        # Dédoublonner en cas de chemins partagés
+        combined_folders_dict = {folder['path']: folder for folder in sonarr_folders + radarr_folders if folder.get('path')}
+        folders_to_process = list(combined_folders_dict.values())
+    else:
+        # Type invalide
+        return jsonify({'error': 'Invalid media type specified.'}), 400
 
-    if not unique_folders:
-        return jsonify([]) # Renvoyer une liste vide est plus simple pour le frontend
+    if not folders_to_process:
+        return jsonify([])
 
     response_data = [
         {
             'path': folder.get('path'),
             'freeSpace_formatted': folder.get('freeSpace_formatted', 'N/A')
         }
-        for folder in unique_folders
+        for folder in folders_to_process
     ]
+
     # Trier pour un affichage cohérent
     response_data.sort(key=lambda x: x['path'])
 
@@ -2640,6 +2652,37 @@ def rename_series_files_endpoint():
         return jsonify({'status': 'success', 'message': message})
     else:
         return jsonify({'status': 'error', 'message': 'Échec de l\'envoi de la commande à Sonarr.'}), 500
+
+# --- NOUVELLES ROUTES POUR LE DÉPLACEMENT EN MASSE ---
+
+@plex_editor_bp.route('/api/media/bulk_move', methods=['POST'])
+@login_required
+def bulk_move_media_items():
+    data = request.get_json()
+    items = data.get('items', [])
+    sonarr_path = data.get('sonarr_path')
+    radarr_path = data.get('radarr_path')
+
+    if not items:
+        return jsonify({'status': 'error', 'message': 'Aucun élément sélectionné.'}), 400
+    if not sonarr_path and not radarr_path:
+        return jsonify({'status': 'error', 'message': 'Aucun chemin de destination spécifié.'}), 400
+
+    task_id = bulk_move_manager.start_bulk_move(items, sonarr_path, radarr_path)
+
+    if task_id:
+        return jsonify({'status': 'success', 'message': 'Le déplacement en masse a commencé.', 'task_id': task_id})
+    else:
+        return jsonify({'status': 'error', 'message': 'Aucun média valide à déplacer.'}), 400
+
+@plex_editor_bp.route('/api/media/bulk_move_status/<task_id>', methods=['GET'])
+@login_required
+def get_bulk_move_status(task_id):
+    status = bulk_move_manager.get_task_status(task_id)
+    if status:
+        return jsonify(status)
+    else:
+        return jsonify({'status': 'not_found', 'message': 'Tâche non trouvée.'}), 404
 
 # --- Gestionnaires d'erreur ---
 #@app.errorhandler(404)

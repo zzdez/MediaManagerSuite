@@ -61,10 +61,12 @@
                     <!-- Conteneur pour les actions de masse -->
                     <div id="batch-actions-container" style="display: none;" class="me-2">
                         <div class="btn-group">
-                            <button id="batch-delete-btn" class="btn btn-sm btn-danger">
-                                Supprimer <span id="selected-item-count" class="badge bg-light text-dark ms-1">0</span>
+                             <button id="batch-move-btn" class="btn btn-sm btn-info">
+                                Déplacer <span id="selected-item-count-move" class="badge bg-light text-dark ms-1">0</span>
                             </button>
-                            <!-- Autres boutons d'action de masse ici -->
+                            <button id="batch-delete-btn" class="btn btn-sm btn-danger">
+                                Supprimer <span id="selected-item-count-delete" class="badge bg-light text-dark ms-1">0</span>
+                            </button>
                         </div>
                     </div>
 
@@ -200,6 +202,45 @@
                 <div id="modal-content-container" class="d-none">
                     <!-- Structure du contenu détaillé -->
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- NOUVELLE MODALE : DÉPLACEMENT EN MASSE -->
+<div class="modal fade" id="bulk-move-media-modal" tabindex="-1" aria-labelledby="bulkMoveMediaModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark text-white">
+            <div class="modal-header">
+                <h5 class="modal-title" id="bulkMoveMediaModalLabel">Déplacer la sélection</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Sélectionnez le(s) nouveau(x) dossier(s) de destination pour les <strong id="bulk-move-item-count">0</strong> élément(s) sélectionné(s).</p>
+
+                <!-- Conteneur pour le sélecteur de films (Radarr) -->
+                <div id="bulk-move-radarr-container" class="mb-3" style="display: none;">
+                    <label for="bulk-move-radarr-select" class="form-label">Destination pour les films (<span id="bulk-move-radarr-count">0</span>)</label>
+                    <select id="bulk-move-radarr-select" class="form-select">
+                        <option value="">Ne pas déplacer</option>
+                    </select>
+                </div>
+
+                <!-- Conteneur pour le sélecteur de séries (Sonarr) -->
+                <div id="bulk-move-sonarr-container" class="mb-3" style="display: none;">
+                    <label for="bulk-move-sonarr-select" class="form-label">Destination pour les séries (<span id="bulk-move-sonarr-count">0</span>)</label>
+                    <select id="bulk-move-sonarr-select" class="form-select">
+                        <option value="">Ne pas déplacer</option>
+                    </select>
+                </div>
+
+                <div class="alert alert-info small">
+                    <strong>Note :</strong> Les déplacements sont mis en file d'attente et traités un par un en arrière-plan.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" id="confirm-bulk-move-btn">Lancer le déplacement</button>
             </div>
         </div>
     </div>
