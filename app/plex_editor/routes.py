@@ -24,7 +24,6 @@ from app.utils.arr_client import (
     get_sonarr_tag_id, get_sonarr_series_by_guid, get_sonarr_series_by_id,
     update_sonarr_series, get_sonarr_episode_files, get_sonarr_episodes_by_series_id,
     get_all_sonarr_series, # <--- AJOUT ICI
-    get_sonarr_series_by_id,
     sonarr_trigger_series_rename,
     search_sonarr_series_by_title_and_year
 )
@@ -35,7 +34,6 @@ from app.utils.cache_manager import SimpleCache, get_pending_lock, remove_pendin
 from app.utils import trailer_manager # Import du nouveau manager
 from app.agent.services import _search_and_score_trailers
 
-import threading
 from app.utils.move_manager import move_manager
 from app.utils.arr_client import get_sonarr_root_folders, get_radarr_root_folders, move_sonarr_series, move_radarr_movie, get_arr_command_status, radarr_post_command
 
@@ -66,6 +64,7 @@ def get_root_folders():
     return jsonify(response_data)
 
 import time
+import threading
 
 def _move_media_in_background(task_id, media_type, arr_item_id, new_path, plex_rating_key, app_context):
     """
@@ -129,7 +128,7 @@ def _move_media_in_background(task_id, media_type, arr_item_id, new_path, plex_r
                 try:
                     plex_server = get_plex_admin_server()
                     plex_item = plex_server.fetchItem(int(plex_rating_key))
-                    library = plex_item.library
+                    library = plex_server.library.sectionByID(plex_item.librarySectionID)
                     current_app.logger.info(f"BG Task {task_id}: Scanning Plex library '{library.title}' to update path for '{plex_item.title}'.")
                     library.update()
                     # C'est seulement ici qu'on déclare le succès final.
