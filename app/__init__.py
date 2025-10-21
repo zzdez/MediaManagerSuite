@@ -53,8 +53,7 @@ def create_app(config_class=Config):
         app.logger.setLevel(logging.INFO)
         app.logger.info('MediaManagerSuite startup in production mode')
     else:
-        # On passe temporairement en DEBUG pour le diagnostic
-        logging.basicConfig(level=logging.DEBUG,
+        logging.basicConfig(level=logging.INFO,
                             format='[%(asctime)s] %(levelname)s in %(module)s: %(message)s')
         logger.info('MediaManagerSuite startup in debug/development mode')
 

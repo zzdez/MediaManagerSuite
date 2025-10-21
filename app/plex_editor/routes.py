@@ -672,25 +672,12 @@ def get_media_items():
                             item_path = item.locations[0]
 
                         if item_path:
-                            # Comparaison robuste : insensible à la casse et normalisée
+                            # Comparaison robuste : insensible à la casse et vérifiant l'inclusion
                             norm_item_path_lower = os.path.normpath(item_path).lower()
-
-                            # --- DEBUT LOG DE DEBUG GRANULAIRE ---
-                            current_app.logger.debug(f"--- GRANULAR_DEBUG for item '{item.title}' ---")
-                            current_app.logger.debug(f"Item Path (lower-norm): '{norm_item_path_lower}'")
-
-                            match_found = False
-                            for folder in selected_folders_for_this_lib:
-                                norm_folder_lower = os.path.normpath(folder).lower()
-                                current_app.logger.debug(f"Comparing with folder (lower-norm): '{norm_folder_lower}'")
-                                is_match = norm_item_path_lower.startswith(norm_folder_lower)
-                                current_app.logger.debug(f" -> Match: {is_match}")
-                                if is_match:
-                                    match_found = True
-                                    break # On a trouvé une correspondance, pas besoin de continuer
-                            current_app.logger.debug(f"--- Final Match for item: {match_found} ---")
-                            # --- FIN LOG DE DEBUG GRANULAIRE ---
-
+                            match_found = any(
+                                os.path.normpath(folder).lower() in norm_item_path_lower
+                                for folder in selected_folders_for_this_lib
+                            )
                             if match_found:
                                 all_plex_items[item.ratingKey] = item
                         elif not selected_folders_for_this_lib: # Si la liste de dossier est vide, on accepte tout
