@@ -146,7 +146,14 @@ class BulkMoveManager:
 
     def get_task_status(self, task_id):
         with self.lock:
-            return self.tasks.get(task_id)
+            task = self.tasks.get(task_id)
+            if not task:
+                return None
+
+            # Créer une copie du dictionnaire de la tâche sans l'objet 'app'
+            # pour éviter les erreurs de sérialisation JSON.
+            task_for_json = {key: value for key, value in task.items() if key != 'app'}
+            return task_for_json
 
 # Instance globale
 bulk_move_manager = BulkMoveManager()
