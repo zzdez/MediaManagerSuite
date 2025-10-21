@@ -13,7 +13,33 @@ $(document).ready(function() {
     const itemsContainer = $('#plex-items-container');
     const LAST_USER_KEY = 'mms_last_plex_user_id';
 
-    // --- 1. Charger les utilisateurs au démarrage ---
+    // --- 1. Charger les utilisateurs et les dossiers racines au démarrage ---
+    function loadRootFolders() {
+        const rootFolderSelect = $('#root-folder-select-main');
+        rootFolderSelect.html('<option selected disabled>Chargement...</option>').prop('disabled', true);
+
+        fetch("/plex/api/media/root_folders")
+            .then(response => response.json())
+            .then(folders => {
+                rootFolderSelect.html(''); // Vider avant de remplir
+                if (folders && folders.length > 0) {
+                    // Ajouter une option "Tous les dossiers" qui sera sélectionnée par défaut
+                    rootFolderSelect.append($('<option>', { value: 'all', text: 'Tous les dossiers' }));
+                    folders.forEach(folder => {
+                        const displayText = `${folder.path} (${folder.freeSpace_formatted})`;
+                        rootFolderSelect.append(new Option(displayText, folder.path));
+                    });
+                    rootFolderSelect.prop('disabled', false);
+                } else {
+                    rootFolderSelect.html('<option selected disabled>Aucun dossier trouvé</option>');
+                }
+            })
+            .catch(error => {
+                console.error('Erreur chargement dossiers racines:', error);
+                rootFolderSelect.html('<option selected disabled>Erreur</option>');
+            });
+    }
+
     fetch("/plex/api/users")
         .then(response => response.json())
         .then(users => {
@@ -28,6 +54,8 @@ $(document).ready(function() {
                 userSelect.val(lastUserId).trigger('change');
             }
         });
+
+    loadRootFolders(); // On charge les dossiers au démarrage
 
     // --- 2. Gérer la sélection de l'utilisateur ---
     userSelect.on('change', function () {
@@ -185,6 +213,12 @@ $(document).ready(function() {
         const directorFilter = $('#director-filter').val().trim();
         const writerFilter = $('#writer-filter').val().trim();
         const selectedStudios = $('#studio-filter').val();
+        let selectedRootFolders = $('#root-folder-select-main').val();
+
+        // Si "Tous les dossiers" est sélectionné, on traite la valeur comme une liste vide
+        if (selectedRootFolders && selectedRootFolders.includes('all')) {
+            selectedRootFolders = [];
+        }
 
         if (!userId || !selectedLibraries || selectedLibraries.length === 0) {
             itemsContainer.html('<p class="text-center text-warning">Veuillez sélectionner un utilisateur et une bibliothèque.</p>');
@@ -220,7 +254,8 @@ $(document).ready(function() {
                 actor: actorFilter,
                 director: directorFilter,
                 writer: writerFilter,
-                studios: selectedStudios
+                studios: selectedStudios,
+                rootFolders: selectedRootFolders // <-- NOUVELLE LIGNE
             })
         })
         .then(response => response.text())

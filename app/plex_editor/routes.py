@@ -42,25 +42,28 @@ from app.utils.arr_client import get_sonarr_root_folders, get_radarr_root_folder
 @plex_editor_bp.route('/api/media/root_folders', methods=['GET'])
 @login_required
 def get_root_folders():
-    media_type = request.args.get('type')
-    if media_type == 'sonarr':
-        folders = get_sonarr_root_folders()
-    elif media_type == 'radarr':
-        folders = get_radarr_root_folders()
-    else:
-        return jsonify({'error': 'Invalid media type specified.'}), 400
+    sonarr_folders = get_sonarr_root_folders() or []
+    radarr_folders = get_radarr_root_folders() or []
 
-    if folders is None:
-        return jsonify({'error': f'Could not fetch root folders from {media_type}.'}), 500
+    all_folders = sonarr_folders + radarr_folders
 
-    # Construire explicitement la réponse pour s'assurer que les données formatées sont incluses.
+    # Utiliser un dictionnaire pour dédoublonner par chemin, au cas où
+    unique_folders_dict = {folder['path']: folder for folder in all_folders if folder.get('path')}
+    unique_folders = list(unique_folders_dict.values())
+
+    if not unique_folders:
+        return jsonify([]) # Renvoyer une liste vide est plus simple pour le frontend
+
     response_data = [
         {
             'path': folder.get('path'),
             'freeSpace_formatted': folder.get('freeSpace_formatted', 'N/A')
         }
-        for folder in folders
+        for folder in unique_folders
     ]
+    # Trier pour un affichage cohérent
+    response_data.sort(key=lambda x: x['path'])
+
     return jsonify(response_data)
 
 @plex_editor_bp.route('/api/media/move', methods=['POST'])
@@ -480,6 +483,7 @@ def get_media_items():
     director_filter = data.get('director')
     writer_filter = data.get('writer')
     studios_filter = data.get('studios', [])
+    root_folders_filter = data.get('rootFolders', []) # <--- NOUVEAU FILTRE
 
     cleaned_genres = [genre for genre in genres_filter if genre]
     cleaned_collections = [c for c in collections_filter if c]
@@ -707,6 +711,29 @@ def get_media_items():
                 items_after_python_filter = [item for item in items_after_python_filter if hasattr(item, 'directors') and any(director_filter.lower() in director.tag.lower() for director in item.directors)]
             if writer_filter:
                 items_after_python_filter = [item for item in items_after_python_filter if hasattr(item, 'writers') and any(writer_filter.lower() in writer.tag.lower() for writer in item.writers)]
+
+            # --- NOUVEAU BLOC : FILTRAGE PAR ROOT FOLDER ---
+            if root_folders_filter:
+                # On normalise les chemins pour des comparaisons robustes
+                normalized_root_paths = [os.path.normpath(p) for p in root_folders_filter]
+
+                def get_item_path(item):
+                    # Cette fonction helper récupère le chemin du fichier pour un film ou une série
+                    if item.type == 'movie':
+                        return getattr(item.media[0].parts[0], 'file', None) if item.media and item.media[0].parts else None
+                    elif item.type == 'show':
+                        return item.locations[0] if item.locations else None
+                    return None
+
+                items_temp = []
+                for item in items_after_python_filter:
+                    item_path_str = get_item_path(item)
+                    if item_path_str:
+                        normalized_item_path = os.path.normpath(item_path_str)
+                        if any(normalized_item_path.startswith(root_path) for root_path in normalized_root_paths):
+                            items_temp.append(item)
+                items_after_python_filter = items_temp
+            # --- FIN DU NOUVEAU BLOC ---
 
             final_filtered_list = []
             if status_filter == 'all':
