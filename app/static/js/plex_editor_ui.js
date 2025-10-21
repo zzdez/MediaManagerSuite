@@ -65,22 +65,40 @@ $(document).ready(function() {
                     librarySelect.html('<option selected disabled>Aucune bibliothèque</option>');
                 }
 
-                // Peupler le sélecteur de dossiers racines
-                const allPaths = new Set();
-                librariesWithPaths.forEach(lib => {
-                    lib.paths.forEach(path => allPaths.add(path));
-                });
+                // Peupler le sélecteur de dossiers racines (NOUVELLE LOGIQUE)
+                const sonarrFoldersPromise = fetch('/plex/api/media/root_folders?type=sonarr').then(res => res.json());
+                const radarrFoldersPromise = fetch('/plex/api/media/root_folders?type=radarr').then(res => res.json());
 
-                rootFolderSelect.html('');
-                if (allPaths.size > 0) {
-                    rootFolderSelect.append($('<option>', { value: 'all', text: 'Tous les dossiers' }));
-                    allPaths.forEach(path => {
-                        rootFolderSelect.append(new Option(path, path));
+                Promise.all([sonarrFoldersPromise, radarrFoldersPromise])
+                    .then(([sonarrFolders, radarrFolders]) => {
+                        const allFolders = new Map(); // Utiliser une Map pour dédupliquer par chemin
+
+                        (sonarrFolders || []).forEach(folder => {
+                            if (folder.path) allFolders.set(folder.path, folder);
+                        });
+                        (radarrFolders || []).forEach(folder => {
+                            if (folder.path) allFolders.set(folder.path, folder);
+                        });
+
+                        // Trier explicitement côté client pour garantir l'ordre
+                        const sortedFolders = Array.from(allFolders.values()).sort((a, b) => a.path.localeCompare(b.path));
+
+                        rootFolderSelect.html('');
+                        if (sortedFolders.length > 0) {
+                            rootFolderSelect.append($('<option>', { value: 'all', text: 'Tous les dossiers' }));
+                            sortedFolders.forEach(folder => {
+                                const optionText = `${folder.path} (${folder.freeSpace_formatted})`;
+                                rootFolderSelect.append(new Option(optionText, folder.path));
+                            });
+                            rootFolderSelect.prop('disabled', false);
+                        } else {
+                             rootFolderSelect.html('<option selected disabled>Aucun dossier racine</option>');
+                        }
+                    })
+                    .catch(error => {
+                        console.error("Erreur de chargement des dossiers racines:", error);
+                        rootFolderSelect.html('<option selected disabled>Erreur de chargement</option>');
                     });
-                    rootFolderSelect.prop('disabled', false);
-                } else {
-                    rootFolderSelect.html('<option selected disabled>Aucun dossier racine</option>');
-                }
 
                 librarySelect.trigger('change');
             })
@@ -171,6 +189,19 @@ $(document).ready(function() {
         }
     });
 
+    // --- Helper function to reset selection state ---
+    function resetSelectionState() {
+        // Uncheck all checkboxes
+        $('#select-all-checkbox, .item-checkbox').prop('checked', false);
+
+        // Update counts to 0
+        $('#selected-item-count-move').text(0);
+        $('#selected-item-count-delete').text(0);
+
+        // Hide the actions container
+        $('#batch-actions-container').hide();
+    }
+
     // --- 3. Appliquer les filtres pour charger les médias ---
     // Remplace l'ancienne logique de gestion des dates par celle-ci
     $('#date-filter-type').on('change', function() {
@@ -221,6 +252,8 @@ $(document).ready(function() {
             itemsContainer.html('<p class="text-center text-warning">Veuillez sélectionner un utilisateur et au moins une bibliothèque.</p>');
             return;
         }
+
+        resetSelectionState(); // <-- RÉINITIALISATION DE LA SÉLECTION
 
         // --- NOUVELLE LOGIQUE DE CONSTRUCTION DU PAYLOAD ---
         let librariesPayload = [];
@@ -1133,11 +1166,22 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
         fetch(`/plex/api/media/root_folders?type=${mediaType}`)
             .then(response => response.json())
             .then(folders => {
-                folders.forEach(folder => {
-                    const optionText = `${folder.path} (${folder.freeSpace_formatted})`;
-                    select.append(new Option(optionText, folder.path));
-                });
+                // On s'assure de vider le select avant de le remplir (important pour les réutilisations)
+                select.find('option:gt(0)').remove();
+
+                if (folders && folders.length > 0) {
+                    folders.forEach(folder => {
+                        // Correction ici : le texte de l'option doit bien utiliser freeSpace_formatted
+                        const optionText = `${folder.path} (${folder.freeSpace_formatted})`;
+                        select.append(new Option(optionText, folder.path));
+                    });
+                }
                 select.prop('disabled', false);
+            })
+            .catch(error => {
+                console.error(`Erreur de chargement des dossiers pour ${mediaType}:`, error);
+                select.find('option:gt(0)').remove(); // Vider en cas d'erreur aussi
+                select.append('<option value="">Erreur de chargement</option>');
             });
     }
 
@@ -1182,6 +1226,7 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
                 selectedItems.forEach(item => {
                     $(`tr[data-rating-key="${item.rating_key}"]`).addClass('opacity-50');
                 });
+                resetSelectionState(); // <-- RÉINITIALISATION IMMÉDIATE
             } else {
                 alert('Erreur: ' + data.message);
             }

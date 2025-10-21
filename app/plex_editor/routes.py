@@ -54,15 +54,8 @@ def get_root_folders():
     if folders is None:
         return jsonify({'error': f'Could not fetch root folders from {media_type}.'}), 500
 
-    # Construire explicitement la réponse pour s'assurer que les données formatées sont incluses.
-    response_data = [
-        {
-            'path': folder.get('path'),
-            'freeSpace_formatted': folder.get('freeSpace_formatted', 'N/A')
-        }
-        for folder in folders
-    ]
-    return jsonify(response_data)
+    # Le tri est maintenant géré côté frontend pour combiner Sonarr et Radarr
+    return jsonify(folders)
 
 @plex_editor_bp.route('/api/media/move', methods=['POST'])
 @login_required
