@@ -652,6 +652,12 @@ def get_media_items():
                 else:
                     base_results.extend(library.search(**search_args))
 
+                # --- DEBUT NOUVEAU LOG DE DEBUG ---
+                current_app.logger.debug(f"DEBUG_SEARCH: Library '{library.title}' ({lib_key})")
+                current_app.logger.debug(f"DEBUG_SEARCH: Search args used: {search_args}")
+                current_app.logger.debug(f"DEBUG_SEARCH: Found {len(base_results)} items BEFORE path filtering.")
+                # --- FIN NOUVEAU LOG DE DEBUG ---
+
                 # --- NOUVEAU : Post-filtrage par dossier racine ---
                 selected_folders_for_this_lib = lib_folder_map.get(lib_key)
                 if selected_folders_for_this_lib is None: # Si le filtre n'est pas actif
