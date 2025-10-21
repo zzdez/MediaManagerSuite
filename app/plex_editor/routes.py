@@ -53,94 +53,7 @@ def get_root_folders():
     if folders is None:
         return jsonify({'error': f'Could not fetch root folders from {media_type}.'}), 500
 
-    # Construire explicitement la réponse pour s'assurer que les données formatées sont incluses.
-    response_data = [
-        {
-            'path': folder.get('path'),
-            'freeSpace_formatted': folder.get('freeSpace_formatted', 'N/A')
-        }
-        for folder in folders
-    ]
-    return jsonify(response_data)
-
-import time
-import threading
-
-def _move_media_in_background(task_id, media_type, arr_item_id, new_path, plex_rating_key, app_context):
-    """
-    Fonction à exécuter en arrière-plan pour le déplacement de média.
-    Utilise le suivi de commande pour Radarr et le polling de l'état pour Sonarr.
-    Déclenche un scan Plex à la fin.
-    """
-    with app_context:
-        current_app.logger.info(f"BG Task {task_id}: Starting move for {media_type} ID {arr_item_id} to '{new_path}'")
-        move_successful = False
-        try:
-            if media_type == 'radarr':
-                command_id, error = move_radarr_movie(arr_item_id, new_path)
-                if error:
-                    move_manager.update_task_status(task_id, success=False, error_message=error)
-                    return
-                if not command_id:
-                    move_manager.update_task_status(task_id, success=False, error_message="Aucun ID de commande retourné par Radarr.")
-                    return
-
-                timeout = time.time() + 60 * 30  # 30 minutes timeout
-                while time.time() < timeout:
-                    time.sleep(15)
-                    status_info = get_arr_command_status('radarr', command_id)
-                    if not status_info: continue
-                    status = status_info.get('status')
-                    current_app.logger.info(f"BG Task {task_id} (Radarr): Polling command {command_id}. Status: {status}")
-                    if status == 'completed':
-                        move_successful = True
-                        break
-                    if status in ['failed', 'aborted']:
-                        error_msg = status_info.get('body', {}).get('exception', 'Échec du déplacement Radarr.')
-                        move_manager.update_task_status(task_id, success=False, error_message=error_msg)
-                        return
-                if not move_successful:
-                    move_manager.update_task_status(task_id, success=False, error_message="Le déplacement Radarr a dépassé le temps maximum.")
-                    return
-
-            elif media_type == 'sonarr':
-                success, error = move_sonarr_series(arr_item_id, new_path)
-                if not success:
-                    move_manager.update_task_status(task_id, success=False, error_message=error)
-                    return
-
-                timeout = time.time() + 60 * 30  # 30 minutes timeout
-                while time.time() < timeout:
-                    time.sleep(15)
-                    series_data = get_sonarr_series_by_id(arr_item_id)
-                    if series_data and series_data.get('rootFolderPath') == new_path:
-                        current_app.logger.info(f"BG Task {task_id} (Sonarr): Move confirmed. Root folder path matches '{new_path}'.")
-                        move_successful = True
-                        break
-                    current_app.logger.info(f"BG Task {task_id} (Sonarr): Polling series {arr_item_id}. Path is still '{series_data.get('rootFolderPath')}'. Waiting...")
-                if not move_successful:
-                    move_manager.update_task_status(task_id, success=False, error_message="Le déplacement Sonarr a dépassé le temps maximum.")
-                    return
-
-            # --- ÉTAPE FINALE : Si le déplacement a réussi, on scanne Plex ---
-            if move_successful:
-                current_app.logger.info(f"BG Task {task_id}: Move successful for {media_type} ID {arr_item_id}. Triggering Plex scan.")
-                try:
-                    plex_server = get_plex_admin_server()
-                    plex_item = plex_server.fetchItem(int(plex_rating_key))
-                    library = plex_server.library.sectionByID(plex_item.librarySectionID)
-                    current_app.logger.info(f"BG Task {task_id}: Scanning Plex library '{library.title}' to update path for '{plex_item.title}'.")
-                    library.update()
-                    # C'est seulement ici qu'on déclare le succès final.
-                    move_manager.update_task_status(task_id, success=True)
-                except Exception as e_plex:
-                    current_app.logger.error(f"BG Task {task_id}: Plex scan failed after successful move: {e_plex}", exc_info=True)
-                    # On signale une réussite partielle
-                    move_manager.update_task_status(task_id, success=False, error_message="Déplacement réussi, mais le scan Plex a échoué.")
-
-        except Exception as e:
-            current_app.logger.error(f"BG Task {task_id}: An exception occurred during the move process: {e}", exc_info=True)
-            move_manager.update_task_status(task_id, success=False, error_message=str(e))
+    return jsonify(folders)
 
 @plex_editor_bp.route('/api/media/move', methods=['POST'])
 @login_required
@@ -169,41 +82,67 @@ def move_media_item():
             if guid: arr_item = get_sonarr_series_by_guid(guid)
         elif media_type == 'radarr':
             guid = next((g.id for g in plex_item.guids if 'tmdb' in g.id), None)
+            current_app.logger.info(f"Move '{plex_item.title}': Found Plex GUID for Radarr: {guid}")
             if guid: arr_item = get_radarr_movie_by_guid(guid)
 
         if not arr_item or not arr_item.get('id'):
+            current_app.logger.error(f"Move '{plex_item.title}': Could not find corresponding media in {media_type.capitalize()} using GUID {guid}.")
             return jsonify({'status': 'error', 'message': f"Média non trouvé dans {media_type.capitalize()}."}), 404
 
         arr_item_id = arr_item.get('id')
     except Exception as e:
-        current_app.logger.error(f"Erreur lors de la recherche du média: {e}", exc_info=True)
+        current_app.logger.error(f"Erreur lors de la traduction de l'ID Plex {plex_rating_key}: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': "Erreur lors de la recherche du média correspondant."}), 500
 
-    task_id = move_manager.start_move(plex_rating_key, media_type)
-    if not task_id:
-        return jsonify({'status': 'error', 'message': 'Impossible de démarrer le déplacement, une autre tâche est en cours.'}), 409
+    if media_type == 'sonarr':
+        success, error = move_sonarr_series(arr_item_id, new_path)
+        if success:
+            return jsonify({'status': 'success', 'message': 'Déplacement initié dans Sonarr.'})
+        else:
+            return jsonify({'status': 'error', 'message': error or 'Échec du déplacement dans Sonarr.'}), 500
 
-    thread = threading.Thread(target=_move_media_in_background, args=(
-        task_id, media_type, arr_item_id, new_path, plex_rating_key, current_app.app_context()
-    ))
-    thread.daemon = True
-    thread.start()
+    elif media_type == 'radarr':
+        # La nouvelle fonction move_radarr_movie est synchrone, comme pour Sonarr.
+        # Le système de polling n'est plus nécessaire pour Radarr.
+        success, error = move_radarr_movie(arr_item_id, new_path)
+        if success:
+            return jsonify({'status': 'success', 'message': 'Déplacement initié dans Radarr.'})
+        else:
+            return jsonify({'status': 'error', 'message': error or 'Échec du déplacement dans Radarr.'}), 500
 
-    return jsonify({'status': 'success', 'message': 'Déplacement initié.', 'task_id': task_id})
+    return jsonify({'status': 'error', 'message': 'Type de média non supporté.'}), 400
 
-@plex_editor_bp.route('/api/media/move_status/<task_id>', methods=['GET'])
+@plex_editor_bp.route('/api/media/move_status', methods=['GET'])
 @login_required
-def get_move_status(task_id):
-    status_info = move_manager.get_task_status(task_id)
-    if not status_info:
-        return jsonify({'status': 'not_found', 'message': 'Tâche non trouvée.'}), 404
+def get_move_status():
+    current_move = move_manager.get_current_move_status()
+    if not current_move:
+        return jsonify({'status': 'idle'})
 
-    response = {
-        'task_id': status_info.get('task_id'),
-        'status': status_info.get('status'),
-        'error_message': status_info.get('error_message')
-    }
-    return jsonify(response)
+    task_id = current_move['task_id']
+    command_id = current_move.get('command_id')
+    media_type = current_move['media_type']
+
+    if not command_id:
+        move_manager.end_move(task_id)
+        return jsonify({'status': 'error', 'message': 'Tâche de déplacement invalide sans ID de commande.'})
+
+    command_status = get_arr_command_status(media_type, command_id)
+
+    if not command_status:
+        move_manager.end_move(task_id)
+        return jsonify({'status': 'error', 'message': f'Impossible de récupérer le statut de la commande {command_id}.'})
+
+    status = command_status.get('status')
+    if status == 'completed':
+        move_manager.end_move(task_id)
+        return jsonify({'status': 'completed', 'message': 'Déplacement terminé avec succès.'})
+    elif status in ['failed', 'aborted']:
+        error_message = command_status.get('body', {}).get('exception', 'Erreur inconnue.')
+        move_manager.end_move(task_id)
+        return jsonify({'status': 'failed', 'message': f'Le déplacement a échoué: {error_message}'})
+    else: # 'pending', 'started', 'running'
+        return jsonify({'status': 'running', 'message': f'Déplacement en cours... (Statut: {status})'})
 
 
 @plex_editor_bp.route('/api/users')
