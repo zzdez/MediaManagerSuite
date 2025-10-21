@@ -672,12 +672,27 @@ def get_media_items():
                             item_path = item.locations[0]
 
                         if item_path:
-                            # Comparaison robuste : insensible à la casse et vérifiant l'inclusion
+                            # --- DEBUT LOG DE DEBUG GRANULAIRE V2 ---
+                            current_app.logger.debug(f"--- V2_DEBUG: ITEM '{item.title}' ---")
                             norm_item_path_lower = os.path.normpath(item_path).lower()
-                            match_found = any(
-                                os.path.normpath(folder).lower() in norm_item_path_lower
-                                for folder in selected_folders_for_this_lib
-                            )
+                            current_app.logger.debug(f"V2_DEBUG: Item Path: '{norm_item_path_lower}'")
+
+                            match_found = False
+                            for folder in selected_folders_for_this_lib:
+                                norm_folder_lower = os.path.normpath(folder).lower()
+                                current_app.logger.debug(f"V2_DEBUG: Comparing with Filter Folder: '{norm_folder_lower}'")
+                                # Utilisation de 'in' pour une correspondance plus souple
+                                if norm_folder_lower in norm_item_path_lower:
+                                    match_found = True
+                                    current_app.logger.debug(f"V2_DEBUG: -> MATCH FOUND!")
+                                    break
+
+                            if not match_found:
+                                current_app.logger.debug(f"V2_DEBUG: -> NO MATCH FOUND FOR THIS ITEM.")
+
+                            current_app.logger.debug(f"--- V2_DEBUG: END ITEM ---")
+                            # --- FIN LOG DE DEBUG GRANULAIRE V2 ---
+
                             if match_found:
                                 all_plex_items[item.ratingKey] = item
                         elif not selected_folders_for_this_lib: # Si la liste de dossier est vide, on accepte tout
