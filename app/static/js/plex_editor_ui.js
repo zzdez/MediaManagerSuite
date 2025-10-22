@@ -892,8 +892,8 @@ $('#confirmArchiveMovieBtn').on('click', function() {
 
         selectedItems.each(function() {
             const item = {
-                id: $(this).data('rating-key'),
-                type: $(this).data('media-type') // 'radarr' ou 'sonarr'
+                id: $(this).attr('data-rating-key'),
+                type: $(this).attr('data-media-type') // Utilisation de .attr() pour plus de fiabilité
             };
             if (item.type === 'radarr') {
                 movies.push(item);
