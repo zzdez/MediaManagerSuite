@@ -887,11 +887,11 @@ $('#confirmArchiveMovieBtn').on('click', function() {
             }
         });
 
-        const modal = $('#move-media-modal-bulk');
-        const destinationsDiv = modal.find('#bulk-move-destinations');
+        const modalJQuery = $('#move-media-modal-bulk'); // Renommage pour éviter le conflit
+        const destinationsDiv = modalJQuery.find('#bulk-move-destinations');
         destinationsDiv.html(''); // Vider les anciens dropdowns
 
-        $('#bulk-move-media-count').text(selectedItems.length);
+        modalJQuery.find('#bulk-move-media-count').text(selectedItems.length);
 
         if (movies.length > 0) {
             destinationsDiv.append(`
