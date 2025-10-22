@@ -110,12 +110,10 @@ def get_ygg_cookie_status():
         "status_message": status_message
     }
 
-import base64
-from urllib.parse import unquote
-
 def check_ygg_cookie_validity():
     """
-    Checks the YGG_COOKIE from the app's configuration for validity and expiration by decoding the JWT-like token.
+    Checks the YGG_COOKIE from the app's configuration for validity and expiration
+    by looking for a standard 'expires=' timestamp.
     Returns a tuple: (is_valid, expires_in_seconds, status_message).
     """
     ygg_cookie_string = current_app.config.get('YGG_COOKIE')
@@ -123,39 +121,22 @@ def check_ygg_cookie_validity():
         return False, 0, "Cookie YGG non configuré."
 
     try:
-        # 1. Isoler la valeur du cookie 'ygg_'
-        match = re.search(r'ygg_=([^;]+)', ygg_cookie_string)
-        if not match:
-            return False, 0, "Jeton 'ygg_' introuvable dans le cookie."
+        # Chercher un timestamp d'expiration, ex: expires=1735689600
+        expires_match = re.search(r'expires=(\d+)', ygg_cookie_string)
 
-        token_value = match.group(1)
-
-        # 2. Le token est souvent URL-encodé
-        decoded_token = unquote(token_value)
-
-        # 3. Le token ressemble à un JWT, on décode le payload (la partie du milieu)
-        parts = decoded_token.split('.')
-        if len(parts) != 3:
-            logger.warning("Le cookie ygg_ n'a pas le format d'un JWT. La vérification de l'expiration est impossible.")
-            return True, 3600, "Valide (format inconnu)"
-
-        payload_b64 = parts[1]
-
-        # 4. Ajouter le padding Base64 manquant si nécessaire
-        payload_b64 += '=' * (-len(payload_b64) % 4)
-
-        # 5. Décoder et parser le JSON
-        payload_json = base64.b64decode(payload_b64).decode('utf-8')
-        payload = json.loads(payload_json)
-
-        # 6. Vérifier le timestamp d'expiration 'exp'
-        if 'exp' not in payload:
-            logger.warning("Le payload du cookie ygg_ ne contient pas de champ 'exp'. La vérification de l'expiration est impossible.")
+        if not expires_match:
+            # S'il n'y a pas de date d'expiration, on ne peut pas vérifier.
+            # On considère le cookie comme "valide" mais on l'indique.
+            logger.warning("Aucun timestamp 'expires=' trouvé dans le cookie YGG. Expiration non vérifiable.")
             return True, 3600, "Valide (exp. inconnue)"
 
-        exp_timestamp = payload['exp']
-        now_timestamp = int(time.time())
+        exp_timestamp = int(expires_match.group(1))
 
+        # Le timestamp peut être en millisecondes, on le normalise en secondes
+        if exp_timestamp > time.time() * 1000:
+            exp_timestamp //= 1000
+
+        now_timestamp = int(time.time())
         expires_in_seconds = exp_timestamp - now_timestamp
 
         if expires_in_seconds <= 0:
