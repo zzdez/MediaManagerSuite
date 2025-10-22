@@ -19,6 +19,7 @@ from app.utils.plex_client import get_main_plex_account_object, get_plex_admin_s
 # Importer les utils spécifiques à plex_editor
 from .utils import cleanup_parent_directory_recursively, get_media_filepath, _is_dry_run_mode
 # Importer les utils globaux/partagés
+from app.utils.plex_mapping_manager import load_plex_mappings
 from app.utils.arr_client import (
     get_radarr_tag_id, get_radarr_movie_by_guid, update_radarr_movie,
     get_sonarr_tag_id, get_sonarr_series_by_guid, get_sonarr_series_by_id,
@@ -855,33 +856,47 @@ def get_media_items():
 
         items_to_render.sort(key=lambda x: getattr(x, 'titleSort', x.title).lower())
 
-        # --- NOUVELLE ÉTAPE : FILTRAGE FINAL PAR DOSSIER RACINE ---
-        # On ne filtre que si au moins un dossier a été spécifié dans la requête
+        # --- ÉTAPE 5.5 : ENRICHISSEMENT AVEC LE MAPPING MANUEL ---
+        plex_mappings = load_plex_mappings()
+
+        def normalize_path(path):
+            if not path: return ''
+            return os.path.normpath(path).lower()
+
+        for item in items_to_render:
+            item.media_type_from_mapping = 'UNKNOWN'
+            item_path_normalized = normalize_path(getattr(item, 'file_path', ''))
+
+            if not item_path_normalized:
+                continue
+
+            # On cherche dans toutes les bibliothèques du mapping
+            for lib_name, mappings in plex_mappings.items():
+                for mapping in mappings:
+                    mapped_path_normalized = normalize_path(mapping.get('path'))
+                    if item_path_normalized.startswith(mapped_path_normalized):
+                        item.media_type_from_mapping = mapping.get('type', 'UNKNOWN')
+                        break # On a trouvé, on passe au média suivant
+                if item.media_type_from_mapping != 'UNKNOWN':
+                    break
+
+        # --- ÉTAPE 6 : FILTRAGE FINAL PAR DOSSIER RACINE (LOGIQUE REFAITE) ---
         if any(folders for folders in folders_by_library.values()):
-
-            def normalize_path(path):
-                if not path: return ''
-                return os.path.normpath(path).lower()
-
             final_items_after_folder_filter = []
             for item in items_to_render:
                 item_library_id_str = str(item.librarySectionID)
 
-                # Vérifier si on a une liste de dossiers pour la bibliothèque de cet item
                 if item_library_id_str in folders_by_library:
                     required_folders = folders_by_library[item_library_id_str]
-
-                    # Si la liste est vide pour cette bib, on inclut l'item (aucun filtre de dossier spécifique)
                     if not required_folders:
                         final_items_after_folder_filter.append(item)
                         continue
 
-                    # Sinon, on vérifie si le chemin de l'item correspond
                     item_path_normalized = normalize_path(getattr(item, 'file_path', ''))
                     if any(item_path_normalized.startswith(normalize_path(folder)) for folder in required_folders):
                         final_items_after_folder_filter.append(item)
 
-            items_to_render = final_items_after_folder_filter # On remplace la liste par la liste filtrée
+            items_to_render = final_items_after_folder_filter
 
         return render_template(
             'plex_editor/_media_table.html',

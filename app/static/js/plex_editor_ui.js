@@ -73,48 +73,15 @@ $(document).ready(function() {
                 if (librariesWithPaths && librariesWithPaths.length > 0) {
                     librarySelect.append($('<option>', { value: 'all', text: 'Toutes les bibliothèques' }));
                     librariesWithPaths.forEach(lib => {
-                        librarySelect.append(new Option(lib.text, lib.id));
+                        // On stocke le nom de la bibliothèque dans un data attribute
+                        librarySelect.append($('<option>', { value: lib.id, text: lib.text }).data('library-name', lib.text));
                     });
                     librarySelect.prop('disabled', false);
                 } else {
                     librarySelect.html('<option selected disabled>Aucune bibliothèque</option>');
                 }
 
-                // Peupler le sélecteur de dossiers racines (NOUVELLE LOGIQUE)
-                const sonarrFoldersPromise = fetch('/plex/api/media/root_folders?type=sonarr').then(res => res.json());
-                const radarrFoldersPromise = fetch('/plex/api/media/root_folders?type=radarr').then(res => res.json());
-
-                Promise.all([sonarrFoldersPromise, radarrFoldersPromise])
-                    .then(([sonarrFolders, radarrFolders]) => {
-                        const allFolders = new Map(); // Utiliser une Map pour dédupliquer par chemin
-
-                        (sonarrFolders || []).forEach(folder => {
-                            if (folder.path) allFolders.set(folder.path, folder);
-                        });
-                        (radarrFolders || []).forEach(folder => {
-                            if (folder.path) allFolders.set(folder.path, folder);
-                        });
-
-                        // Trier explicitement côté client pour garantir l'ordre
-                        const sortedFolders = Array.from(allFolders.values()).sort((a, b) => a.path.localeCompare(b.path));
-
-                        rootFolderSelect.html('');
-                        if (sortedFolders.length > 0) {
-                            rootFolderSelect.append($('<option>', { value: 'all', text: 'Tous les dossiers' }));
-                            sortedFolders.forEach(folder => {
-                                const optionText = `${folder.path} (${folder.freeSpace_formatted})`;
-                                rootFolderSelect.append(new Option(optionText, folder.path));
-                            });
-                            rootFolderSelect.prop('disabled', false);
-                        } else {
-                             rootFolderSelect.html('<option selected disabled>Aucun dossier racine</option>');
-                        }
-                    })
-                    .catch(error => {
-                        console.error("Erreur de chargement des dossiers racines:", error);
-                        rootFolderSelect.html('<option selected disabled>Erreur de chargement</option>');
-                    });
-
+                // On déclenche le change pour charger les dossiers racines et autres filtres
                 librarySelect.trigger('change');
             })
             .catch(error => {
@@ -124,7 +91,67 @@ $(document).ready(function() {
             });
     });
 
+    // --- Nouvelle fonction pour mettre à jour le filtre des dossiers racines ---
+    function updateRootFolderFilter() {
+        const rootFolderSelect = $('#root-folder-filter-select');
+        const selectedLibraryOptions = librarySelect.find('option:selected');
+
+        // Si 'all' est sélectionné, on prend toutes les options sauf la première (qui est 'all')
+        const targetLibraries = selectedLibraryOptions.val().includes('all')
+            ? librarySelect.find('option').not(':first')
+            : selectedLibraryOptions;
+
+        const selectedLibraryNames = new Set(targetLibraries.map(function() {
+            return $(this).data('library-name');
+        }).get());
+
+        rootFolderSelect.html('<option selected disabled>Chargement...</option>').prop('disabled', true);
+
+        // On a besoin de la liste de tous les dossiers racines pour l'espace disque
+        const sonarrFoldersPromise = fetch('/plex/api/media/root_folders?type=sonarr').then(res => res.json());
+        const radarrFoldersPromise = fetch('/plex/api/media/root_folders?type=radarr').then(res => res.json());
+        const mappingsPromise = fetch('/api/mappings').then(res => res.json());
+
+        Promise.all([mappingsPromise, sonarrFoldersPromise, radarrFoldersPromise])
+            .then(([mappings, sonarrFolders, radarrFolders]) => {
+                const allFoldersInfo = new Map();
+                (sonarrFolders || []).forEach(f => allFoldersInfo.set(f.path, f));
+                (radarrFolders || []).forEach(f => allFoldersInfo.set(f.path, f));
+
+                const relevantFolders = new Set();
+                for (const libName in mappings) {
+                    if (selectedLibraryNames.has(libName)) {
+                        mappings[libName].forEach(mapping => {
+                            relevantFolders.add(mapping.path);
+                        });
+                    }
+                }
+
+                const sortedFolders = Array.from(relevantFolders).sort((a, b) => a.localeCompare(b));
+
+                rootFolderSelect.html('');
+                if (sortedFolders.length > 0) {
+                    rootFolderSelect.append($('<option>', { value: 'all', text: 'Tous les dossiers' }));
+                    sortedFolders.forEach(path => {
+                        const folderInfo = allFoldersInfo.get(path);
+                        const freeSpace = folderInfo ? folderInfo.freeSpace_formatted : 'N/A';
+                        const optionText = `${path} (${freeSpace})`;
+                        rootFolderSelect.append(new Option(optionText, path));
+                    });
+                    rootFolderSelect.prop('disabled', false);
+                } else {
+                     rootFolderSelect.html('<option selected disabled>Aucun dossier mappé</option>');
+                }
+            })
+            .catch(error => {
+                console.error("Erreur de chargement des dossiers racines mappés:", error);
+                rootFolderSelect.html('<option selected disabled>Erreur de chargement</option>');
+            });
+    }
+
     librarySelect.on('change', function () {
+        updateRootFolderFilter(); // <-- APPEL DE LA NOUVELLE FONCTION
+
         const selectedLibraries = $(this).val();
         const userId = userSelect.val();
 
@@ -270,35 +297,19 @@ $(document).ready(function() {
 
         resetSelectionState(); // <-- RÉINITIALISATION DE LA SÉLECTION
 
-        // --- NOUVELLE LOGIQUE DE CONSTRUCTION DU PAYLOAD ---
+        // --- NOUVELLE LOGIQUE DE CONSTRUCTION DU PAYLOAD (SIMPLIFIÉE) ---
         let librariesPayload = [];
         const finalSelectedLibs = selectedLibraries.includes('all')
-            ? librariesWithPaths.map(lib => lib.id) // Si 'all', on prend toutes les bibliothèques chargées
+            ? librarySelect.find('option').not(':first').map(function() { return $(this).val(); }).get()
             : selectedLibraries;
 
-        // Helper pour normaliser les chemins (insensible à la casse, sans slash final)
-        const normalizePath = (path) => {
-            if (!path) return '';
-            return path.toLowerCase().replace(/[\\/]$/, '');
-        };
-
         finalSelectedLibs.forEach(libId => {
-            const libraryData = librariesWithPaths.find(lib => lib.id == libId);
-            if (libraryData) {
-                const normalizedLibPaths = libraryData.paths.map(normalizePath);
-
-                // Trouver les dossiers sélectionnés qui appartiennent réellement à cette bibliothèque
-                const associatedFolders = selectedRootFolders.filter(folder => {
-                    const normalizedFolder = normalizePath(folder);
-                    // On vérifie si un des chemins de la bibliothèque commence par le chemin du dossier sélectionné
-                    return normalizedLibPaths.some(libPath => libPath.startsWith(normalizedFolder));
-                });
-
-                librariesPayload.push({
-                    id: libId,
-                    folders: associatedFolders
-                });
-            }
+            librariesPayload.push({
+                id: libId,
+                // On envoie la liste complète des dossiers sélectionnés pour CHAQUE bibliothèque.
+                // Le backend se chargera de filtrer les médias qui sont dans la bonne bibliothèque ET dans l'un des dossiers.
+                folders: selectedRootFolders
+            });
         });
 
         loader.show();
@@ -310,7 +321,6 @@ $(document).ready(function() {
             body: JSON.stringify({
                 userId: userId,
                 libraries: librariesPayload, // Nouvelle structure
-                rootFolders: selectedRootFolders, // On envoie aussi l'ancienne pour fallback
                 statusFilter: statusFilter,
                 titleFilter: titleFilter,
                 year: yearFilter, // <-- NOUVELLE LIGNE
@@ -917,13 +927,27 @@ $('#confirmArchiveMovieBtn').on('click', function() {
                     </select>
                 </div>
             `);
-            fetch('/plex/api/media/root_folders?type=radarr')
-                .then(response => response.json())
-                .then(folders => {
-                    const select = $('#bulk-root-folder-select-radarr');
-                    select.html('');
-                    folders.forEach(folder => select.append(new Option(folder.path, folder.path)));
+            // On charge à la fois les dossiers et les mappings pour enrichir les options
+            Promise.all([
+                fetch('/plex/api/media/root_folders?type=radarr').then(res => res.json()),
+                fetch('/api/mappings').then(res => res.json())
+            ]).then(([folders, mappings]) => {
+                const select = $('#bulk-root-folder-select-radarr');
+                select.html('');
+                folders.forEach(folder => {
+                    let folderType = 'UNKNOWN';
+                    // Trouver le type du dossier dans les mappings
+                    for (const lib in mappings) {
+                        const found = mappings[lib].find(m => m.path === folder.path);
+                        if (found) {
+                            folderType = found.type;
+                            break;
+                        }
+                    }
+                    // On stocke le type dans un data attribute de l'option
+                    select.append($('<option>', { value: folder.path, text: folder.path }).data('folder-type', folderType));
                 });
+            });
         }
         if (series.length > 0) {
             destinationsDiv.append(`
@@ -934,13 +958,24 @@ $('#confirmArchiveMovieBtn').on('click', function() {
                     </select>
                 </div>
             `);
-            fetch('/plex/api/media/root_folders?type=sonarr')
-                .then(response => response.json())
-                .then(folders => {
-                    const select = $('#bulk-root-folder-select-sonarr');
-                    select.html('');
-                    folders.forEach(folder => select.append(new Option(folder.path, folder.path)));
+            Promise.all([
+                fetch('/plex/api/media/root_folders?type=sonarr').then(res => res.json()),
+                fetch('/api/mappings').then(res => res.json())
+            ]).then(([folders, mappings]) => {
+                const select = $('#bulk-root-folder-select-sonarr');
+                select.html('');
+                folders.forEach(folder => {
+                    let folderType = 'UNKNOWN';
+                    for (const lib in mappings) {
+                        const found = mappings[lib].find(m => m.path === folder.path);
+                        if (found) {
+                            folderType = found.type;
+                            break;
+                        }
+                    }
+                    select.append($('<option>', { value: folder.path, text: folder.path }).data('folder-type', folderType));
                 });
+            });
         }
 
         const modalElement = document.getElementById('move-media-modal-bulk');
@@ -953,24 +988,63 @@ $('#confirmArchiveMovieBtn').on('click', function() {
     let bulkMoveInterval = null;
 
     $('#confirm-bulk-move-btn').on('click', function() {
-        const movies = [];
-        const series = [];
-        const selectedRows = $('.item-checkbox:checked').closest('tr');
+        const moviesToMove = [];
+        const seriesToMove = [];
 
-        selectedRows.each(function() {
-            const checkbox = $(this).find('.item-checkbox');
-            const item = {
-                id: checkbox.data('rating-key'),
-                type: checkbox.data('media-type')
-            };
-            if (item.type === 'radarr') movies.push(item.id);
-            else if (item.type === 'sonarr') series.push(item.id);
+        const selectedCheckboxes = $('.item-checkbox:checked');
+
+        const radarrSelect = $('#bulk-root-folder-select-radarr');
+        const sonarrSelect = $('#bulk-root-folder-select-sonarr');
+
+        const radarrPath = radarrSelect.val();
+        const sonarrPath = sonarrSelect.val();
+
+        const radarrDestType = radarrSelect.find('option:selected').data('folder-type');
+        const sonarrDestType = sonarrSelect.find('option:selected').data('folder-type');
+
+        let confirmationNeeded = false;
+        let nonBlockingConfirm = true; // Flag pour suivre si l'utilisateur annule
+
+        selectedCheckboxes.each(function() {
+            if (!nonBlockingConfirm) return; // Arrête la boucle si l'utilisateur a annulé
+
+            const checkbox = $(this);
+            const mediaId = checkbox.data('rating-key');
+            const mediaSystemType = checkbox.data('media-type'); // 'radarr' or 'sonarr'
+            const mediaMappingType = checkbox.data('media-type-from-mapping');
+
+            if (mediaSystemType === 'radarr') {
+                if (mediaMappingType !== radarrDestType) {
+                    confirmationNeeded = true;
+                    if (!confirm(`Avertissement : Le film que vous déplacez est de type "${mediaMappingType}", mais la destination est de type "${radarrDestType}". Voulez-vous continuer ?`)) {
+                        nonBlockingConfirm = false;
+                        return; // Ne pas ajouter ce film et arrêter
+                    }
+                }
+                moviesToMove.push(mediaId);
+            } else if (mediaSystemType === 'sonarr') {
+                if (mediaMappingType !== sonarrDestType) {
+                    confirmationNeeded = true;
+                    if (!confirm(`Avertissement : La série que vous déplacez est de type "${mediaMappingType}", mais la destination est de type "${sonarrDestType}". Voulez-vous continuer ?`)) {
+                        nonBlockingConfirm = false;
+                        return; // Ne pas ajouter cette série et arrêter
+                    }
+                }
+                seriesToMove.push(mediaId);
+            }
         });
 
-        const radarrPath = $('#bulk-root-folder-select-radarr').val();
-        const sonarrPath = $('#bulk-root-folder-select-sonarr').val();
+        if (!nonBlockingConfirm) {
+            alert("Déplacement annulé par l'utilisateur.");
+            return;
+        }
 
-        if (!confirm("Êtes-vous sûr de vouloir lancer le déplacement en masse ? Cette opération peut prendre beaucoup de temps.")) {
+        if (moviesToMove.length === 0 && seriesToMove.length === 0) {
+            alert("Aucun média à déplacer après validation.");
+            return;
+        }
+
+        if (!confirmationNeeded && !confirm("Êtes-vous sûr de vouloir lancer le déplacement en masse ? Cette opération peut prendre beaucoup de temps.")) {
             return;
         }
 
@@ -984,9 +1058,9 @@ $('#confirmArchiveMovieBtn').on('click', function() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                movies: movies,
+                movies: moviesToMove,
                 radarr_path: radarrPath,
-                series: series,
+                series: seriesToMove,
                 sonarr_path: sonarrPath
             })
         })

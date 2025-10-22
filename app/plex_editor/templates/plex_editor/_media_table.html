@@ -37,7 +37,13 @@
         <tbody>
             {% for item in items %}
             <tr data-rating-key="{{ item.ratingKey }}" data-rating="{{ item.rating|default(0) }}" data-incomplete="{{ 'true' if item.is_incomplete else 'false' }}">
-                <td><input type="checkbox" class="item-checkbox" data-rating-key="{{ item.ratingKey }}"></td>
+                <td>
+                    <input type="checkbox"
+                           class="item-checkbox"
+                           data-rating-key="{{ item.ratingKey }}"
+                           data-media-type="{{ 'sonarr' if item.type == 'show' else 'radarr' }}"
+                           data-media-type-from-mapping="{{ item.media_type_from_mapping }}">
+                </td>
                 <td>
                     <div class="d-flex align-items-start">
                         {% if item.poster_url %}

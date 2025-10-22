@@ -104,6 +104,46 @@
     </div>
 </div>
 
+<hr class="my-5">
+
+<h3 class="mt-4 mb-3">Mapping des Bibliothèques Plex et Types</h3>
+<p class="text-muted">
+    Définissez ici le mapping entre vos bibliothèques Plex et vos dossiers racines Sonarr/Radarr.
+    Cette configuration est essentielle pour le filtrage et le déplacement des médias dans l'éditeur Plex.
+    Assignez un type à chaque dossier pour garantir que les déplacements sont logiques (ex: un film ne peut être déplacé que vers un dossier de type "FILM").
+</p>
+<div class="mb-3">
+    <label for="plex_mappings" class="form-label">Configuration du Mapping (format JSON)</label>
+    <textarea class="form-control" id="plex_mappings" name="plex_mappings" rows="15">{{ plex_mappings_json }}</textarea>
+</div>
+
+<div class="accordion" id="jsonExampleAccordion">
+    <div class="accordion-item">
+        <h2 class="accordion-header" id="headingOne">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseExample" aria-expanded="false" aria-controls="collapseExample">
+                Voir un exemple de structure JSON
+            </button>
+        </h2>
+        <div id="collapseExample" class="accordion-collapse collapse" aria-labelledby="headingOne" data-bs-parent="#jsonExampleAccordion">
+            <div class="accordion-body">
+<pre><code>{
+    "Films": [
+        {"path": "D:\\Plex\\Films", "type": "FILM"},
+        {"path": "E:\\Plex\\Films 4K", "type": "FILM"}
+    ],
+    "Séries TV": [
+        {"path": "D:\\Plex\\Series", "type": "SERIE"}
+    ],
+    "Documentaires": [
+        {"path": "F:\\Plex\\Docs Films", "type": "DOCUMENTAIRE_FILM"},
+        {"path": "F:\\Plex\\Docs Series", "type": "DOCUMENTAIRE_SERIE"}
+    ]
+}</code></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
         <button type="submit" class="btn btn-primary mt-4 w-100">Sauvegarder Toute la Configuration</button>
     </form>
 </div>

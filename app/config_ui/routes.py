@@ -1,6 +1,7 @@
 # app/config_ui/routes.py (Version Finale et Complète)
 
 import os
+import json
 import logging
 from flask import render_template, request, redirect, url_for, flash, current_app
 from . import config_ui_bp
@@ -9,6 +10,7 @@ from dotenv import dotenv_values, set_key
 # Imports depuis nos modules utilitaires
 from app.utils.prowlarr_client import get_prowlarr_categories
 from app.utils.config_manager import load_search_categories, save_search_categories
+from app.utils.plex_mapping_manager import load_plex_mappings, save_plex_mappings
 from app.auth import login_required # Utilisation du bon décorateur d'authentification
 
 logger = logging.getLogger(__name__)
@@ -17,8 +19,8 @@ logger = logging.getLogger(__name__)
 @login_required
 def show_config():
     """
-    Affiche la page de configuration, incluant les variables .env
-    et LA LISTE COMPLÈTE des catégories Prowlarr.
+    Affiche la page de configuration, incluant les variables .env,
+    les catégories Prowlarr et le mapping des bibliothèques Plex.
     """
     
     # --- PARTIE .ENV (INCHANGÉE) ---
@@ -55,39 +57,50 @@ def show_config():
         flash(f"Erreur lors de la lecture des fichiers de configuration : {e}", "danger")
 
     # --- PARTIE CATÉGORIES (SANS FILTRE) ---
-    # On récupère toutes les catégories et on les envoie directement au template.
     all_prowlarr_categories = get_prowlarr_categories()
     search_config = load_search_categories()
+
+    # --- PARTIE MAPPING BIBLIOTHÈQUES PLEX ---
+    plex_mappings = load_plex_mappings()
+    # On formate en JSON pour l'affichage dans le textarea
+    plex_mappings_json = json.dumps(plex_mappings, indent=4)
     
     return render_template('config_ui/index.html',
                            title="Configuration de l'Application",
                            config_items=config_items,
-                           all_categories=all_prowlarr_categories, # On passe la liste complète
-                           search_config=search_config)
+                           all_categories=all_prowlarr_categories,
+                           search_config=search_config,
+                           plex_mappings_json=plex_mappings_json)
 
 
 @config_ui_bp.route('/save', methods=['POST'])
 @login_required
 def save_config():
-    """Sauvegarde les modifications du .env ET des catégories de recherche."""
+    """Sauvegarde les modifications du .env, des catégories et du mapping Plex."""
     try:
         dotenv_path = os.path.join(current_app.root_path, '..', '.env')
         
-        # --- LOGIQUE DE SAUVEGARDE DES CATÉGORIES CORRIGÉE ---
-        # Utilise getlist pour récupérer toutes les valeurs des checkboxes
+        # --- SAUVEGARDE DU MAPPING PLEX ---
+        plex_mappings_str = request.form.get('plex_mappings', '{}')
+        try:
+            plex_mappings_data = json.loads(plex_mappings_str)
+            success, message = save_plex_mappings(plex_mappings_data)
+            if not success:
+                flash(f"Erreur lors de la sauvegarde du mapping Plex : {message}", "danger")
+        except json.JSONDecodeError:
+            flash("Erreur : Le format JSON du mapping des bibliothèques Plex est invalide.", "danger")
+
+        # --- SAUVEGARDE DES CATÉGORIES ---
         sonarr_cats_to_save = request.form.getlist('sonarr_categories', type=int)
         radarr_cats_to_save = request.form.getlist('radarr_categories', type=int)
-
         search_settings = {
             'sonarr_categories': sonarr_cats_to_save,
             'radarr_categories': radarr_cats_to_save
         }
         save_search_categories(search_settings)
-        logging.info(f"Catégories de recherche sauvegardées : Sonarr={sonarr_cats_to_save}, Radarr={radarr_cats_to_save}")
 
-        # --- LOGIQUE DE SAUVEGARDE DU .ENV (INCHANGÉE) ---
-        # On ignore les clés de catégories pour ne pas les écrire dans le .env
-        env_keys_to_ignore = ['sonarr_categories', 'radarr_categories']
+        # --- SAUVEGARDE DU .ENV ---
+        env_keys_to_ignore = ['sonarr_categories', 'radarr_categories', 'plex_mappings']
         for key, value in request.form.items():
             if key not in env_keys_to_ignore:
                 set_key(dotenv_path, key, value)

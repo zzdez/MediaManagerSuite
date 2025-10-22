@@ -1,13 +1,14 @@
+# app/api/routes.py
 from flask import jsonify
 from . import api_bp
-from app.utils.cookie_manager import get_ygg_cookie_status
+from app.utils.plex_mapping_manager import load_plex_mappings
 from app.auth import login_required
 
-@api_bp.route('/cookie/status')
+@api_bp.route('/mappings', methods=['GET'])
 @login_required
-def cookie_status():
+def get_mappings():
     """
-    Returns the current status of the YGG cookie.
+    Endpoint API pour récupérer la configuration du mapping des bibliothèques Plex.
     """
-    status = get_ygg_cookie_status()
-    return jsonify(status)
+    mappings = load_plex_mappings()
+    return jsonify(mappings)
