@@ -863,10 +863,106 @@ $('#confirmArchiveMovieBtn').on('click', function() {
         const batchActionsContainer = $('#batch-actions-container');
         $('#selected-item-count').text(selectedCount); // Mettre à jour le compteur
 
+        const selectedCount = $('.item-checkbox:checked').length;
+        const batchActionsContainer = $('#batch-actions-container');
+        $('#selected-item-count-move').text(selectedCount);
+        $('#selected-item-count-delete').text(selectedCount);
+
         batchActionsContainer.toggle(selectedCount > 0);
     });
 
-    // --- B. Action de suppression en masse ---
+    // --- B. Action de déplacement en masse ---
+    $(document).on('click', '#batch-move-btn', function() {
+        const selectedItems = $('.item-checkbox:checked');
+        const movies = [];
+        const series = [];
+
+        selectedItems.each(function() {
+            const item = {
+                id: $(this).data('rating-key'),
+                type: $(this).data('media-type') // 'radarr' ou 'sonarr'
+            };
+            if (item.type === 'radarr') {
+                movies.push(item);
+            } else if (item.type === 'sonarr') {
+                series.push(item);
+            }
+        });
+
+        const modal = $('#move-media-modal-bulk');
+        const destinationsDiv = modal.find('#bulk-move-destinations');
+        destinationsDiv.html(''); // Vider les anciens dropdowns
+
+        $('#bulk-move-media-count').text(selectedItems.length);
+
+        if (movies.length > 0) {
+            destinationsDiv.append(`
+                <div class="mb-3">
+                    <label for="bulk-root-folder-select-radarr" class="form-label">Destination pour les ${movies.length} film(s)</label>
+                    <select id="bulk-root-folder-select-radarr" class="form-select">
+                        <option>Chargement...</option>
+                    </select>
+                </div>
+            `);
+            fetch('/plex/api/media/root_folders?type=radarr')
+                .then(response => response.json())
+                .then(folders => {
+                    const select = $('#bulk-root-folder-select-radarr');
+                    select.html('');
+                    folders.forEach(folder => select.append(new Option(folder.path, folder.path)));
+                });
+        }
+        if (series.length > 0) {
+            destinationsDiv.append(`
+                <div class="mb-3">
+                    <label for="bulk-root-folder-select-sonarr" class="form-label">Destination pour les ${series.length} série(s)</label>
+                    <select id="bulk-root-folder-select-sonarr" class="form-select">
+                        <option>Chargement...</option>
+                    </select>
+                </div>
+            `);
+            fetch('/plex/api/media/root_folders?type=sonarr')
+                .then(response => response.json())
+                .then(folders => {
+                    const select = $('#bulk-root-folder-select-sonarr');
+                    select.html('');
+                    folders.forEach(folder => select.append(new Option(folder.path, folder.path)));
+                });
+        }
+
+        modal.modal('show');
+    });
+
+    $('#confirm-bulk-move-btn').on('click', function() {
+        // Logique de confirmation à implémenter
+        const movies = [];
+        const series = [];
+        $('.item-checkbox:checked').each(function() {
+            const item = {
+                id: $(this).data('rating-key'),
+                type: $(this).data('media-type')
+            };
+            if (item.type === 'radarr') movies.push(item.id);
+            else if (item.type === 'sonarr') series.push(item.id);
+        });
+
+        const radarrPath = $('#bulk-root-folder-select-radarr').val();
+        const sonarrPath = $('#bulk-root-folder-select-sonarr').val();
+
+        // Afficher un message de confirmation
+        if (!confirm("Êtes-vous sûr de vouloir lancer le déplacement en masse ? Cette opération peut prendre beaucoup de temps.")) {
+            return;
+        }
+
+        // TODO: Lancer la requête vers le backend
+        console.log("Déplacement lancé !", { movies, radarrPath, series, sonarrPath });
+         $('#move-media-modal-bulk').modal('hide');
+         // Optionnel : griser les lignes et afficher un spinner
+         $('.item-checkbox:checked').closest('tr').addClass('opacity-50');
+
+    });
+
+    // --- C. Action de suppression en masse ---
     $(document).on('click', '#batch-delete-btn', function() {
         const selectedItems = $('.item-checkbox:checked');
         const selectedItemKeys = selectedItems.map(function() {

@@ -64,10 +64,12 @@
                     <!-- Conteneur pour les actions de masse -->
                     <div id="batch-actions-container" style="display: none;" class="me-2">
                         <div class="btn-group">
-                            <button id="batch-delete-btn" class="btn btn-sm btn-danger">
-                                Supprimer <span id="selected-item-count" class="badge bg-light text-dark ms-1">0</span>
+                            <button id="batch-move-btn" class="btn btn-sm btn-info">
+                                Déplacer <span id="selected-item-count-move" class="badge bg-light text-dark ms-1">0</span>
                             </button>
-                            <!-- Autres boutons d'action de masse ici -->
+                             <button id="batch-delete-btn" class="btn btn-sm btn-danger">
+                                Supprimer <span id="selected-item-count-delete" class="badge bg-light text-dark ms-1">0</span>
+                            </button>
                         </div>
                     </div>
 
@@ -235,6 +237,33 @@
         </div>
     </div>
 </div>
+
+<!-- MODALE DE DÉPLACEMENT EN MASSE -->
+<div class="modal fade" id="move-media-modal-bulk" tabindex="-1" aria-labelledby="moveMediaModalBulkLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark text-white">
+            <div class="modal-header">
+                <h5 class="modal-title" id="moveMediaModalBulkLabel">Déplacer la sélection</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Sélectionnez le nouveau dossier de destination pour les <strong id="bulk-move-media-count"></strong> médias sélectionnés.</p>
+                <!-- Conteneur pour les dropdowns de destination -->
+                <div id="bulk-move-destinations">
+                    <!-- Les dropdowns pour Sonarr et Radarr seront injectés ici -->
+                </div>
+                <div class="alert alert-warning small mt-3">
+                    <strong>Attention :</strong> Les déplacements sont mis en file d'attente et peuvent prendre du temps. Vous pouvez suivre la progression dans la console.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" id="confirm-bulk-move-btn">Valider le déplacement</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 
 <!-- Les modales de bande-annonce sont maintenant dans layout.html -->
 
