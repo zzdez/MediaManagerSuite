@@ -861,10 +861,8 @@ $('#confirmArchiveMovieBtn').on('click', function() {
 
         const selectedCount = $('.item-checkbox:checked').length;
         const batchActionsContainer = $('#batch-actions-container');
-        $('#selected-item-count').text(selectedCount); // Mettre à jour le compteur
 
-        const selectedCount = $('.item-checkbox:checked').length;
-        const batchActionsContainer = $('#batch-actions-container');
+        // Mettre à jour les deux compteurs
         $('#selected-item-count-move').text(selectedCount);
         $('#selected-item-count-delete').text(selectedCount);
 
