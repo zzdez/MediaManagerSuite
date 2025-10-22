@@ -110,43 +110,59 @@ def get_ygg_cookie_status():
         "status_message": status_message
     }
 
+import base64
+from urllib.parse import unquote
+
 def check_ygg_cookie_validity():
     """
     Checks the YGG_COOKIE from the app's configuration for validity and expiration
-    by looking for a standard 'expires=' timestamp.
+    using multiple methods (JWT-like and expires timestamp).
     Returns a tuple: (is_valid, expires_in_seconds, status_message).
     """
     ygg_cookie_string = current_app.config.get('YGG_COOKIE')
     if not ygg_cookie_string:
         return False, 0, "Cookie YGG non configuré."
 
+    # --- Méthode 1: Décoder le jeton JWT-like ---
     try:
-        # Chercher un timestamp d'expiration, ex: expires=1735689600
+        match = re.search(r'ygg_=([^;]+)', ygg_cookie_string)
+        if match:
+            token_value = unquote(match.group(1))
+            parts = token_value.split('.')
+            if len(parts) == 3:
+                payload_b64 = parts[1] + '=' * (-len(parts[1]) % 4)
+                payload = json.loads(base64.b64decode(payload_b64).decode('utf-8'))
+                if 'exp' in payload:
+                    exp_timestamp = payload['exp']
+                    now_timestamp = int(time.time())
+                    expires_in_seconds = exp_timestamp - now_timestamp
+                    if expires_in_seconds <= 0:
+                        return False, 0, f"Expiré (~{abs(expires_in_seconds) // 60} min)"
+                    minutes_left = expires_in_seconds // 60
+                    return True, expires_in_seconds, f"Valide (~{minutes_left} min)"
+    except Exception:
+        logger.debug("Échec du décodage du cookie comme un JWT, tentative avec la méthode 'expires'.")
+
+    # --- Méthode 2: Chercher un timestamp 'expires=' ---
+    try:
         expires_match = re.search(r'expires=(\d+)', ygg_cookie_string)
+        if expires_match:
+            exp_timestamp = int(expires_match.group(1))
+            if exp_timestamp > time.time() * 1000:  # Normaliser si en millisecondes
+                exp_timestamp //= 1000
 
-        if not expires_match:
-            # S'il n'y a pas de date d'expiration, on ne peut pas vérifier.
-            # On considère le cookie comme "valide" mais on l'indique.
-            logger.warning("Aucun timestamp 'expires=' trouvé dans le cookie YGG. Expiration non vérifiable.")
-            return True, 3600, "Valide (exp. inconnue)"
+            now_timestamp = int(time.time())
+            expires_in_seconds = exp_timestamp - now_timestamp
 
-        exp_timestamp = int(expires_match.group(1))
+            if expires_in_seconds <= 0:
+                return False, 0, f"Expiré (~{abs(expires_in_seconds) // 60} min)"
 
-        # Le timestamp peut être en millisecondes, on le normalise en secondes
-        if exp_timestamp > time.time() * 1000:
-            exp_timestamp //= 1000
-
-        now_timestamp = int(time.time())
-        expires_in_seconds = exp_timestamp - now_timestamp
-
-        if expires_in_seconds <= 0:
-            minutes_ago = abs(expires_in_seconds) // 60
-            return False, 0, f"Expiré (~{minutes_ago} min)"
-
-        minutes_left = expires_in_seconds // 60
-        status_message = f"Valide (~{minutes_left} min)" if minutes_left > 0 else "Valide (< 1 min)"
-        return True, expires_in_seconds, status_message
-
+            minutes_left = expires_in_seconds // 60
+            return True, expires_in_seconds, f"Valide (~{minutes_left} min)"
     except Exception as e:
-        logger.error(f"Erreur lors de la validation du cookie YGG : {e}", exc_info=True)
+        logger.error(f"Erreur lors de la validation du cookie YGG (méthode expires) : {e}", exc_info=True)
         return False, 0, "Erreur validation"
+
+    # --- Fallback ---
+    logger.warning("Aucune méthode de validation de l'expiration n'a fonctionné. Le cookie est considéré comme valide mais non vérifiable.")
+    return True, 3600, "Valide (exp. inconnue)"
