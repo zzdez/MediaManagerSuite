@@ -117,3 +117,14 @@ response = _sonarr_api_request('PUT', f"series/{series_id}", params=params, json
 ```
 
 Toute autre approche (utilisation de l'endpoint `/series/editor` ou de la commande `MoveSeries`) a échoué car elle n'était pas adaptée à ce cas d'usage ou était mal interprétée par l'API de Sonarr, provoquant des erreurs ou des déplacements incorrects.
+
+### Leçon sur le Filtrage par Dossier Racine ("Root Folder")
+
+La tentative d'implémentation d'un filtre par dossier racine a mis en lumière plusieurs défis critiques liés à la comparaison de chemins de fichiers, en particulier dans un environnement hétérogène (serveur Linux, utilisateur Windows).
+
+1.  **Fragilité du Mapping Automatique** : Tenter de faire correspondre dynamiquement les bibliothèques Plex à des "root folders" de Sonarr/Radarr en se basant sur les chemins de fichiers est une opération fragile. Des différences mineures (majuscules/minuscules, `\` vs `/`, slashes finaux) peuvent faire échouer la correspondance et entraîner des résultats de recherche vides ou incorrects.
+2.  **Nécessité d'une Normalisation Robuste** : Toute comparaison de chemins doit impérativement être précédée d'une étape de normalisation.
+    *   **Backend (Python)** : Utiliser `os.path.normpath(path).lower()` pour uniformiser les séparateurs et la casse.
+    *   **Frontend (JavaScript)** : Créer une fonction de normalisation qui convertit en minuscules et supprime les slashes finaux (ex: `path.toLowerCase().replace(/[\\/]$/, '')`).
+    *   Cette normalisation doit être appliquée **des deux côtés** de la comparaison (sur le chemin du média et sur le chemin du dossier sélectionné) pour garantir une correspondance fiable.
+3.  **Stratégie Future : Mapping Manuel** : Pour éliminer complètement la fragilité du mapping automatique, la stratégie à privilégier pour l'avenir est de permettre à l'utilisateur de configurer manuellement l'association entre une bibliothèque Plex et un ou plusieurs dossiers racines via l'interface de configuration. Cette configuration serait stockée dans le fichier `.env` ou un fichier de configuration dédié.
