@@ -506,7 +506,12 @@ def get_media_items():
     # --- 1. Récupération des filtres ---
     data = request.json
     user_id = data.get('userId')
-    library_keys = data.get('libraryKeys', [])
+
+    # On parse la nouvelle structure {id, folders} envoyée par le frontend
+    libraries_payload = data.get('libraries', [])
+    library_keys = [lib['id'] for lib in libraries_payload]
+    folders_by_library = {lib['id']: lib['folders'] for lib in libraries_payload}
+
     status_filter = data.get('statusFilter', 'all')
     title_filter = data.get('titleFilter', '').strip()
     year_filter = data.get('year')
@@ -843,6 +848,34 @@ def get_media_items():
                 items_to_render.append(item)
 
         items_to_render.sort(key=lambda x: getattr(x, 'titleSort', x.title).lower())
+
+        # --- NOUVELLE ÉTAPE : FILTRAGE FINAL PAR DOSSIER RACINE ---
+        # On ne filtre que si au moins un dossier a été spécifié dans la requête
+        if any(folders for folders in folders_by_library.values()):
+
+            def normalize_path(path):
+                if not path: return ''
+                return os.path.normpath(path).lower()
+
+            final_items_after_folder_filter = []
+            for item in items_to_render:
+                item_library_id_str = str(item.librarySectionID)
+
+                # Vérifier si on a une liste de dossiers pour la bibliothèque de cet item
+                if item_library_id_str in folders_by_library:
+                    required_folders = folders_by_library[item_library_id_str]
+
+                    # Si la liste est vide pour cette bib, on inclut l'item (aucun filtre de dossier spécifique)
+                    if not required_folders:
+                        final_items_after_folder_filter.append(item)
+                        continue
+
+                    # Sinon, on vérifie si le chemin de l'item correspond
+                    item_path_normalized = normalize_path(getattr(item, 'file_path', ''))
+                    if any(item_path_normalized.startswith(normalize_path(folder)) for folder in required_folders):
+                        final_items_after_folder_filter.append(item)
+
+            items_to_render = final_items_after_folder_filter # On remplace la liste par la liste filtrée
 
         return render_template(
             'plex_editor/_media_table.html',
