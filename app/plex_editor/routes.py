@@ -162,7 +162,8 @@ def get_plex_users():
         users_list = []
         main_plex_account = get_main_plex_account_object()
         if not main_plex_account:
-            current_app.logger.error("API get_plex_users: Impossible de récupérer le compte Plex principal.")
+            # Ce cas est géré par l'exception ci-dessous si get_main_plex_account_object renvoie None
+            # mais on le garde comme filet de sécurité.
             return jsonify({'error': "Impossible de récupérer le compte Plex principal."}), 500
 
         # Ajouter l'utilisateur principal
@@ -171,13 +172,17 @@ def get_plex_users():
 
         # Ajouter les utilisateurs gérés
         for user in main_plex_account.users():
-            managed_title = user.title or f"Géré (ID: {user.id})" # Utiliser user.title comme source principale
+            managed_title = user.title or f"Géré (ID: {user.id})"
             users_list.append({'id': str(user.id), 'text': managed_title})
 
         return jsonify(users_list)
+    except BadRequest as e:
+        # Intercepte spécifiquement l'erreur 500 de Plex.tv
+        current_app.logger.error(f"Erreur API lors de la récupération des utilisateurs Plex (BadRequest de plex.tv): {e}", exc_info=True)
+        return jsonify({'error': "Erreur de communication avec les serveurs Plex.tv. Veuillez réessayer plus tard."}), 502 # 502 Bad Gateway
     except Exception as e:
         current_app.logger.error(f"Erreur API lors de la récupération des utilisateurs Plex : {e}", exc_info=True)
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': "Une erreur interne est survenue."}), 500
 
 @plex_editor_bp.route('/api/libraries/<user_id>')
 @login_required

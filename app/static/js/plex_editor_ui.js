@@ -16,18 +16,33 @@ $(document).ready(function() {
 
     // --- 1. Charger les utilisateurs au démarrage ---
     fetch("/plex/api/users")
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                // Si la réponse HTTP n'est pas OK (ex: 500, 502), on traite l'erreur
+                return response.json().then(errData => {
+                    throw new Error(errData.error || `Erreur ${response.status}`);
+                });
+            }
+            return response.json();
+        })
         .then(users => {
             userSelect.html('<option value="" selected disabled>Choisir un utilisateur...</option>');
             if (users && users.length > 0) {
                 users.forEach(user => {
                     userSelect.append(new Option(user.text, user.id));
                 });
+                userSelect.prop('disabled', false); // Activer le sélecteur
             }
             const lastUserId = localStorage.getItem(LAST_USER_KEY);
             if (lastUserId && userSelect.find(`option[value="${lastUserId}"]`).length) {
                 userSelect.val(lastUserId).trigger('change');
             }
+        })
+        .catch(error => {
+            console.error("Erreur lors du chargement des utilisateurs Plex:", error);
+            // Afficher le message d'erreur dans le sélecteur désactivé
+            userSelect.html(`<option value="" selected disabled>${error.message}</option>`);
+            userSelect.prop('disabled', true);
         });
 
     // --- 2. Gérer la sélection de l'utilisateur ---
