@@ -108,43 +108,112 @@
 
 <h3 class="mt-4 mb-3">Mapping des Bibliothèques Plex et Types</h3>
 <p class="text-muted">
-    Définissez ici le mapping entre vos bibliothèques Plex et vos dossiers racines Sonarr/Radarr.
+    Associez chaque chemin de bibliothèque Plex à un dossier racine Sonarr/Radarr et assignez-lui un type.
     Cette configuration est essentielle pour le filtrage et le déplacement des médias dans l'éditeur Plex.
-    Assignez un type à chaque dossier pour garantir que les déplacements sont logiques (ex: un film ne peut être déplacé que vers un dossier de type "FILM").
 </p>
-<div class="mb-3">
-    <label for="plex_mappings" class="form-label">Configuration du Mapping (format JSON)</label>
-    <textarea class="form-control" id="plex_mappings" name="plex_mappings" rows="15">{{ plex_mappings_json }}</textarea>
-</div>
-
-<div class="accordion" id="jsonExampleAccordion">
-    <div class="accordion-item">
-        <h2 class="accordion-header" id="headingOne">
-            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseExample" aria-expanded="false" aria-controls="collapseExample">
-                Voir un exemple de structure JSON
-            </button>
-        </h2>
-        <div id="collapseExample" class="accordion-collapse collapse" aria-labelledby="headingOne" data-bs-parent="#jsonExampleAccordion">
-            <div class="accordion-body">
-<pre><code>{
-    "Films": [
-        {"path": "D:\\Plex\\Films", "type": "FILM"},
-        {"path": "E:\\Plex\\Films 4K", "type": "FILM"}
-    ],
-    "Séries TV": [
-        {"path": "D:\\Plex\\Series", "type": "SERIE"}
-    ],
-    "Documentaires": [
-        {"path": "F:\\Plex\\Docs Films", "type": "DOCUMENTAIRE_FILM"},
-        {"path": "F:\\Plex\\Docs Series", "type": "DOCUMENTAIRE_SERIE"}
-    ]
-}</code></pre>
-            </div>
+<!-- Conteneur pour l'interface de mapping dynamique -->
+<div id="dynamic-mapping-container" class="mb-3">
+    <div class="text-center">
+        <div class="spinner-border" role="status">
+            <span class="visually-hidden">Chargement...</span>
         </div>
+        <p>Chargement des données de mapping...</p>
     </div>
 </div>
+
+<!-- Textarea cachée qui contiendra le JSON final -->
+<textarea id="plex_mappings" name="plex_mappings" style="display: none;"></textarea>
 
         <button type="submit" class="btn btn-primary mt-4 w-100">Sauvegarder Toute la Configuration</button>
     </form>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    // --- GESTION DU MAPPING DYNAMIQUE ---
+    const container = $('#dynamic-mapping-container');
+    const hiddenTextarea = $('#plex_mappings');
+
+    fetch('/api/mapping-data')
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(err => { throw new Error(err.error); });
+            }
+            return response.json();
+        })
+        .then(data => {
+            container.html(''); // Vider le spinner
+            const allRootFolders = [...data.sonarr_root_folders, ...data.radarr_root_folders].sort();
+
+            data.plex_libraries.forEach(lib => {
+                let libraryHtml = `<div class="card mb-3"><div class="card-header"><h4>${lib.name}</h4></div><div class="card-body">`;
+
+                // On s'assure qu'on a un mapping pour la bibliothèque actuelle
+                const libraryMapping = data.current_mapping[lib.name] || [];
+
+                lib.paths.forEach((path, index) => {
+                    // On cherche si un mapping existe pour ce chemin Plex spécifique
+                    const mapping = libraryMapping.find(m => m.path === path);
+                    const selectedRootFolder = mapping ? mapping.path : '';
+                    const assignedType = mapping ? mapping.type : '';
+
+                    let optionsHtml = '<option value="">Non mappé</option>';
+                    allRootFolders.forEach(folder => {
+                        optionsHtml += `<option value="${folder}" ${folder === selectedRootFolder ? 'selected' : ''}>${folder}</option>`;
+                    });
+
+                    libraryHtml += `
+                        <div class="row align-items-center mb-2" data-library-name="${lib.name}">
+                            <div class="col-md-5">
+                                <label class="form-label">Chemin Plex</label>
+                                <input type="text" class="form-control" value="${path}" readonly data-plex-path>
+                            </div>
+                            <div class="col-md-5">
+                                <label class="form-label">Dossier Racine Sonarr/Radarr</label>
+                                <select class="form-select" data-root-folder>${optionsHtml}</select>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Type</label>
+                                <input type="text" class="form-control" placeholder="ex: FILM" value="${assignedType}" data-mapping-type>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                libraryHtml += '</div></div>';
+                container.append(libraryHtml);
+            });
+        })
+        .catch(error => {
+            container.html(`<div class="alert alert-danger">Erreur lors du chargement des données de mapping : ${error.message}</div>`);
+        });
+
+    // --- Logique de sauvegarde ---
+    $('form').on('submit', function() {
+        const newMapping = {};
+        $('.card').each(function() {
+            const libraryName = $(this).find('.card-header h4').text();
+            const mappings = [];
+            $(this).find('.row').each(function() {
+                const rootFolder = $(this).find('[data-root-folder]').val();
+                const mappingType = $(this).find('[data-mapping-type]').val().trim();
+
+                if (rootFolder && mappingType) {
+                    // On ne sauvegarde que le root folder et le type.
+                    mappings.push({
+                        path: rootFolder,
+                        type: mappingType
+                    });
+                }
+            });
+            if (mappings.length > 0) {
+                newMapping[libraryName] = mappings;
+            }
+        });
+        hiddenTextarea.val(JSON.stringify(newMapping, null, 4));
+    });
+});
+</script>
 {% endblock %}

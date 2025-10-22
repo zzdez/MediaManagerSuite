@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import time
 import glob
@@ -108,3 +109,27 @@ def get_ygg_cookie_status():
         "expires_in_seconds": expires_in_seconds,
         "status_message": status_message
     }
+
+def check_ygg_cookie_validity():
+    """
+    Checks the YGG_COOKIE from the app's configuration for validity and expiration.
+    Returns a tuple: (is_valid, expires_in_seconds, status_message).
+    """
+    ygg_cookie = current_app.config.get('YGG_COOKIE')
+    if not ygg_cookie:
+        return False, 0, "Cookie YGG non configuré."
+
+    # Tenter de trouver le timestamp d'expiration.
+    # Le format attendu est "ygg_=...; expires=..."
+    match = re.search(r'ygg_=(\w+)', ygg_cookie)
+    if not match:
+        return False, 0, "Format de cookie invalide (jeton ygg_ manquant)."
+
+    # Placeholder pour l'expiration - l'ancien cookie n'a pas de date d'expiration claire
+    # On va considérer le cookie comme valide s'il est présent.
+    # Pour une future amélioration, il faudrait un vrai parsing de date d'expiration.
+    is_valid = True
+    expires_in_seconds = 3600 # On assume 1h de validité par défaut
+    status_message = "Valide (expiration non vérifiable)"
+
+    return is_valid, expires_in_seconds, status_message
