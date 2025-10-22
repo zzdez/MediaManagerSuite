@@ -1,157 +1,170 @@
 {% extends "layout.html" %}
 
-{% block title %}Éditeur Plex{% endblock %}
-
 {% block content %}
-<div class="container-fluid mt-4">
-    <div class="card bg-darker text-white shadow-sm">
+<div class="container-fluid">
+    <h1 class="mb-4">Gestionnaire de Bibliothèque Plex</h1>
+
+    <!-- Zone des Filtres -->
+    <div class="card bg-dark text-white mb-4">
         <div class="card-body">
-            <h2 class="card-title text-primary"><i class="bi bi-search"></i> Recherche et Édition Plex</h2>
-            <p class="card-text text-muted">
-                Sélectionnez un utilisateur et une ou plusieurs bibliothèques pour afficher et gérer les médias.
-            </p>
-
-            <!-- Section des Filtres Principaux -->
-            <div class="row g-3 align-items-end mb-4 p-3 bg-dark rounded">
-                <!-- Colonne Utilisateurs et Bibliothèques -->
-                <div class="col-md-4">
-                    <label for="user-select" class="form-label">Utilisateur Plex</label>
-                    <select id="user-select" class="form-select" data-placeholder="Choisir un utilisateur..."></select>
+            <h5 class="card-title">Filtres</h5>
+            <div class="row g-2 align-items-end">
+                <div class="col-md-auto mb-2 mb-md-0">
+                    <label for="user-select" class="form-label small">Utilisateur</label>
+                    <select id="user-select" class="form-select form-select-sm">
+                        <option selected>Chargement...</option>
+                    </select>
                 </div>
-                <div class="col-md-5">
-                    <label for="library-select" class="form-label">Bibliothèques</label>
-                    <select id="library-select" class="form-select" multiple data-placeholder="Choisir des bibliothèques..."></select>
-                </div>
-
-                <!-- Boutons d'Action Principaux -->
-                <div class="col-md-3 d-flex align-items-end">
-                    <div class="btn-group w-100">
-                        <button id="apply-filters-btn" class="btn btn-primary w-75"><i class="bi bi-funnel-fill"></i> Appliquer</button>
-                        <button type="button" class="btn btn-secondary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
-                            <span class="visually-hidden">Autres actions</span>
+                <!-- NOUVEAU GROUPE POUR BIBLIOTHÈQUES + SCAN -->
+                <div class="col-md-auto mb-2 mb-md-0">
+                    <label for="library-select" class="form-label small">Bibliothèque(s)</label>
+                    <div class="input-group input-group-sm">
+                        <select id="library-select" class="form-select form-select-sm" multiple disabled></select>
+                        <button id="scan-libraries-btn" class="btn btn-secondary" type="button" title="Scanner les bibliothèques Plex sélectionnées">
+                            <i class="bi bi-arrow-repeat"></i> Scan
                         </button>
-                        <ul class="dropdown-menu dropdown-menu-dark">
-                             <li><a class="dropdown-item" href="#" id="scan-libraries-btn"><i class="bi bi-arrow-clockwise"></i> Scanner les bibliothèques</a></li>
-                        </ul>
+                    </div>
+                </div>
+                <div class="col-md-5 mb-2 mb-md-0">
+                    <div class="row g-2">
+                        <div class="col-sm-7">
+                            <label for="title-filter-input" class="form-label small">Titre contient</label>
+                            <input type="text" id="title-filter-input" class="form-control form-control-sm" placeholder="Rechercher par titre...">
+                        </div>
+                        <div class="col-sm-5">
+                            <label for="root-folder-filter-select" class="form-label small">Dossiers racines</label>
+                            <select id="root-folder-filter-select" class="form-select form-select-sm" multiple disabled></select>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-auto mb-2 mb-md-0">
+                    <label for="status-filter" class="form-label small">Statut</label>
+                    <select id="status-filter" class="form-select form-select-sm">
+                        <option value="all" selected>Tous</option>
+                        <option value="unwatched">Non commencé</option>
+                        <option value="in_progress">En cours</option>
+                        <option value="watched">Vu</option>
+                    </select>
+                </div>
+                <!-- Filtre pour les séries incomplètes -->
+                <div class="col-md-auto mb-2 mb-md-0">
+                    <label for="show-incomplete-only-filter" class="form-label small" style="opacity: 0;">Incomplètes</label> <!-- Hidden label for alignment -->
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" role="switch" id="show-incomplete-only-filter">
+                        <label class="form-check-label" for="show-incomplete-only-filter">
+                            Séries Incomplètes
+                        </label>
+                    </div>
+                </div>
+                <div class="col-md-auto mb-2 mb-md-0" style="max-width: 120px;">
+                    <label for="year-filter" class="form-label small">Année</label>
+                    <input type="number" id="year-filter" class="form-control form-control-sm" placeholder="Ex: 2023">
+                </div>
+                <div class="col-md-auto d-flex justify-content-end align-items-end">
+                    <!-- Conteneur pour les actions de masse -->
+                    <div id="batch-actions-container" style="display: none;" class="me-2">
+                        <div class="btn-group">
+                            <button id="batch-delete-btn" class="btn btn-sm btn-danger">
+                                Supprimer <span id="selected-item-count" class="badge bg-light text-dark ms-1">0</span>
+                            </button>
+                            <!-- Autres boutons d'action de masse ici -->
+                        </div>
+                    </div>
+
+                    <!-- Conteneur pour les boutons de filtre -->
+                    <div class="btn-group">
+                        <button id="sort-by-rating-btn" class="btn btn-outline-secondary btn-sm">Trier par Note <i class="bi bi-sort-down"></i></button>
+                         <button class="btn btn-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#advanced-filters" aria-expanded="false" aria-controls="advanced-filters">
+                            Avancés
+                        </button>
+                        <button id="apply-filters-btn" class="btn btn-primary btn-sm">Appliquer</button>
                     </div>
                 </div>
             </div>
 
-            <!-- Section "Plus de filtres" (Accordion) -->
-            <div class="accordion" id="more-filters-accordion">
-                <div class="accordion-item bg-dark">
-                    <h2 class="accordion-header" id="headingOne">
-                        <button class="accordion-button bg-dark text-white collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne" aria-expanded="false" aria-controls="collapseOne">
-                            Plus de filtres...
-                        </button>
-                    </h2>
-                    <div id="collapseOne" class="accordion-collapse collapse" aria-labelledby="headingOne" data-bs-parent="#more-filters-accordion">
-                        <div class="accordion-body">
-                            <div class="row g-3">
-                                <!-- Filtre par Titre -->
-                                <div class="col-md-4">
-                                    <label for="title-filter-input" class="form-label">Le Titre contient</label>
-                                    <input type="text" id="title-filter-input" class="form-control" placeholder="ex: a good day to die hard">
+            <div class="collapse mt-3" id="advanced-filters">
+                <div class="card card-body bg-secondary">
+                    <div class="row g-2 mb-2">
+                        <div class="col-md-4">
+                            <label for="genre-filter" class="form-label small">Genre(s)</label>
+                            <div class="input-group input-group-sm">
+                                <select id="genre-filter" class="form-select form-select-sm" multiple disabled></select>
+                                <div class="btn-group" role="group">
+                                    <input type="radio" class="btn-check" name="genre-logic" id="genre-logic-or" value="or" autocomplete="off" checked>
+                                    <label class="btn btn-outline-primary" for="genre-logic-or">OU</label>
+                                    <input type="radio" class="btn-check" name="genre-logic" id="genre-logic-and" value="and" autocomplete="off">
+                                    <label class="btn btn-outline-primary" for="genre-logic-and">ET</label>
                                 </div>
-                                <!-- Filtre par Statut -->
-                                <div class="col-md-2">
-                                    <label for="status-filter" class="form-label">Statut</label>
-                                    <select id="status-filter" class="form-select">
-                                        <option value="all" selected>Tous</option>
-                                        <option value="watched">Vus</option>
-                                        <option value="unwatched">Non vus</option>
-                                        <option value="in_progress">En cours (séries)</option>
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <label for="collection-filter" class="form-label small">Collection(s)</label>
+                            <select id="collection-filter" class="form-select form-select-sm" multiple></select>
+                        </div>
+                        <div class="col-md-2">
+                            <label for="studio-filter" class="form-label small">Studio(s)</label>
+                            <select id="studio-filter" class="form-select form-select-sm" multiple></select>
+                        </div>
+                        <div class="col-md-2">
+                            <label for="director-filter" class="form-label small">Réalisateur</label>
+                            <input type="text" id="director-filter" class="form-control form-control-sm" placeholder="Nolan">
+                        </div>
+                         <div class="col-md-2">
+                            <label for="resolution-filter" class="form-label small">Résolution(s)</label>
+                            <select id="resolution-filter" class="form-select form-select-sm" multiple></select>
+                        </div>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-md-3">
+                            <label for="actor-filter" class="form-label small">Acteur</label>
+                            <input type="text" id="actor-filter" class="form-control form-control-sm" placeholder="Tom Hanks">
+                        </div>
+                        <div class="col-md-3">
+                            <label for="writer-filter" class="form-label small">Scénariste</label>
+                            <input type="text" id="writer-filter" class="form-control form-control-sm" placeholder="Sorkin">
+                        </div>
+                        <div class="col-md-3">
+                            <label for="date-filter-type" class="form-label small">Type de Date</label>
+                             <div class="input-group input-group-sm">
+                                <select id="date-filter-type" class="form-select form-select-sm">
+                                    <option value="">Aucun</option>
+                                    <option value="lastViewedAt">Visionnage</option>
+                                    <option value="addedAt">Ajout</option>
+                                </select>
+                                <select id="date-filter-preset" class="form-select form-select-sm" disabled>
+                                    <option value="today">Aujourd'hui</option>
+                                    <option value="last7days">7 jours</option>
+                                    <option value="last30days">30 jours</option>
+                                    <option value="thisMonth">Ce mois-ci</option>
+                                    <option value="lastMonth">Mois dernier</option>
+                                    <option value="custom">Personnalisé</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-3" id="custom-date-fields-container" style="display: none;">
+                               <label class="form-label small invisible">Dates Personnalisées</label>
+                                <div class="input-group input-group-sm">
+                                <input type="date" id="date-filter-start" class="form-control form-control-sm" title="Date de début">
+                                <input type="date" id="date-filter-end" class="form-control form-control-sm" title="Date de fin">
+                            </div>
+                        </div>
+                         <div class="col-md-3">
+                            <label for="rating-filter-operator" class="form-label small">Note Personnelle</label>
+                            <div class="input-group input-group-sm">
+                                <select id="rating-filter-operator" class="form-select form-select-sm">
+                                    <option value="">Aucun</option>
+                                    <option value="is_rated">Est Noté</option>
+                                    <option value="is_not_rated">N'est Pas Noté</option>
+                                    <option value="gte">Note >=</option>
+                                    <option value="lte">Note <=</option>
+                                    <option value="eq">Note =</option>
+                                </select>
+                                <div id="rating-value-container" style="display: none;">
+                                    <select id="rating-filter-value" class="form-select form-select-sm">
+                                        {% for i in range(10, 0, -1) %}
+                                        <option value="{{ i }}">{{ i }}</option>
+                                        {% endfor %}
                                     </select>
-                                </div>
-                                 <!-- Filtre par Année -->
-                                <div class="col-md-2">
-                                    <label for="year-filter" class="form-label">Année de sortie</label>
-                                    <input type="number" id="year-filter" class="form-control" placeholder="ex: 2023">
-                                </div>
-                                <!-- Filtre par Genre -->
-                                <div class="col-md-4">
-                                    <label for="genre-filter" class="form-label">Genre</label>
-                                    <div class="input-group">
-                                        <select id="genre-filter" class="form-select" multiple data-placeholder="Choisir des genres..."></select>
-                                        <div class="btn-group ms-2" role="group" aria-label="Logique des genres">
-                                            <input type="radio" class="btn-check" name="genre-logic" id="genre-or" value="or" autocomplete="off" checked>
-                                            <label class="btn btn-outline-secondary btn-sm" for="genre-or">OU</label>
-                                            <input type="radio" class="btn-check" name="genre-logic" id="genre-and" value="and" autocomplete="off">
-                                            <label class="btn btn-outline-secondary btn-sm" for="genre-and">ET</label>
-                                        </div>
-                                    </div>
-                                </div>
-                                <!-- Filtre par Date -->
-                                <div class="col-md-6">
-                                    <label class="form-label">Filtrer par Date</label>
-                                    <div class="input-group">
-                                        <select id="date-filter-type" class="form-select" style="max-width: 150px;">
-                                            <option value="" selected>Type de date...</option>
-                                            <option value="addedAt">Date d'ajout</option>
-                                            <option value="originallyAvailableAt">Date de sortie</option>
-                                            <option value="lastViewedAt">Date de visionnage</option>
-                                        </select>
-                                        <select id="date-filter-preset" class="form-select" disabled>
-                                            <option value="" selected>Choisir un preset...</option>
-                                            <option value="today">Aujourd'hui</option>
-                                            <option value="last7days">7 derniers jours</option>
-                                            <option value="last30days">30 derniers jours</option>
-                                            <option value="thisMonth">Ce mois-ci</option>
-                                            <option value="lastMonth">Le mois dernier</option>
-                                            <option value="custom">Personnalisé</option>
-                                        </select>
-                                    </div>
-                                    <div id="custom-date-fields-container" class="mt-2" style="display: none;">
-                                        <div class="input-group">
-                                            <span class="input-group-text">De</span>
-                                            <input type="date" id="date-filter-start" class="form-control">
-                                            <span class="input-group-text">à</span>
-                                            <input type="date" id="date-filter-end" class="form-control">
-                                        </div>
-                                    </div>
-                                </div>
-                                <!-- Filtre par Note -->
-                                <div class="col-md-6">
-                                    <label class="form-label">Filtrer par Note Utilisateur</label>
-                                    <div class="input-group">
-                                        <select id="rating-filter-operator" class="form-select" style="max-width: 180px;">
-                                            <option value="" selected>Type de filtre...</option>
-                                            <option value="is_rated">Est noté</option>
-                                            <option value="is_not_rated">N'est pas noté</option>
-                                            <option value="gte">Note >= à</option>
-                                            <option value="lte">Note <= à</option>
-                                            <option value="eq">Note = à</option>
-                                        </select>
-                                        <div id="rating-value-container" style="display: none;">
-                                            <input type="number" id="rating-filter-value" class="form-control" step="0.1" min="0" max="10" placeholder="Note">
-                                        </div>
-                                    </div>
-                                </div>
-                                <!-- Filtres additionnels (Collections, Résolutions, Studios) -->
-                                <div class="col-md-4">
-                                    <label for="collection-filter" class="form-label">Collections</label>
-                                    <select id="collection-filter" class="form-select" multiple data-placeholder="Choisir collections..."></select>
-                                </div>
-                                <div class="col-md-2">
-                                    <label for="resolution-filter" class="form-label">Résolutions</label>
-                                    <select id="resolution-filter" class="form-select" multiple data-placeholder="Choisir résolutions..."></select>
-                                </div>
-                                <div class="col-md-2">
-                                    <label for="studio-filter" class="form-label">Studios</label>
-                                    <select id="studio-filter" class="form-select" multiple data-placeholder="Choisir studios..."></select>
-                                </div>
-                                <!-- Filtres par Personnes (Acteur, Réalisateur, Scénariste) -->
-                                <div class="col-md-4">
-                                    <label for="actor-filter" class="form-label">Acteur</label>
-                                    <input type="text" id="actor-filter" class="form-control" placeholder="ex: Bruce Willis">
-                                </div>
-                                <div class="col-md-4">
-                                    <label for="director-filter" class="form-label">Réalisateur</label>
-                                    <input type="text" id="director-filter" class="form-control" placeholder="ex: Quentin Tarantino">
-                                </div>
-                                <div class="col-md-4">
-                                    <label for="writer-filter" class="form-label">Scénariste</label>
-                                    <input type="text" id="writer-filter" class="form-control" placeholder="ex: Aaron Sorkin">
                                 </div>
                             </div>
                         </div>
@@ -161,22 +174,20 @@
         </div>
     </div>
 
-    <!-- Conteneur pour les résultats -->
-    <div id="plex-items-loader" class="text-center my-5" style="display: none;">
+    <!-- Zone des Résultats -->
+    <div id="plex-items-loader" class="text-center mt-5" style="display: none;">
         <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status">
-            <span class="visually-hidden">Chargement...</span>
+            <span class="visually-hidden">Loading...</span>
         </div>
         <p class="mt-2">Chargement des médias...</p>
     </div>
-
-    <div id="plex-items-container" class="mt-4">
-        <!-- Les résultats de la recherche (le tableau) seront injectés ici -->
+    <div id="plex-items-container">
+        <p class="text-center text-muted">Veuillez sélectionner un utilisateur et une bibliothèque pour afficher les médias.</p>
     </div>
+
 </div>
 
-<!-- Zone des Modales -->
-
-<!-- Modale de Détails du Média -->
+<!-- Modale d'Information -->
 <div class="modal fade" id="item-details-modal" tabindex="-1" aria-labelledby="itemDetailsModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
         <div class="modal-content bg-dark text-white">

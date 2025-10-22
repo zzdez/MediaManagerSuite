@@ -38,7 +38,7 @@ $(document).ready(function() {
 
         localStorage.setItem(LAST_USER_KEY, userId);
         librarySelect.html('<option selected disabled>Chargement...</option>').prop('disabled', true);
-        const rootFolderSelect = $('#root-folder-select-main');
+        const rootFolderSelect = $('#root-folder-filter-select');
         rootFolderSelect.html('<option selected disabled>Chargement...</option>').prop('disabled', true);
 
         fetch('/plex/select_user', {
@@ -243,7 +243,7 @@ $(document).ready(function() {
         const directorFilter = $('#director-filter').val().trim();
         const writerFilter = $('#writer-filter').val().trim();
         const selectedStudios = $('#studio-filter').val();
-        let selectedRootFolders = $('#root-folder-select-main').val() || [];
+        let selectedRootFolders = $('#root-folder-filter-select').val() || [];
         if (selectedRootFolders.includes('all')) {
             selectedRootFolders = []; // Si 'all' est sélectionné, on ne filtre pas par dossier
         }
