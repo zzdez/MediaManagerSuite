@@ -928,17 +928,25 @@ $('#confirmArchiveMovieBtn').on('click', function() {
                 });
         }
 
-        modal.modal('show');
+        const modalElement = document.getElementById('move-media-modal-bulk');
+        const modal = new bootstrap.Modal(modalElement);
+        modal.show();
     });
 
+    // --- NOUVELLE LOGIQUE COMPLÈTE POUR LE DÉPLACEMENT EN MASSE ---
+    let bulkMoveTaskId = null;
+    let bulkMoveInterval = null;
+
     $('#confirm-bulk-move-btn').on('click', function() {
-        // Logique de confirmation à implémenter
         const movies = [];
         const series = [];
-        $('.item-checkbox:checked').each(function() {
+        const selectedRows = $('.item-checkbox:checked').closest('tr');
+
+        selectedRows.each(function() {
+            const checkbox = $(this).find('.item-checkbox');
             const item = {
-                id: $(this).data('rating-key'),
-                type: $(this).data('media-type')
+                id: checkbox.data('rating-key'),
+                type: checkbox.data('media-type')
             };
             if (item.type === 'radarr') movies.push(item.id);
             else if (item.type === 'sonarr') series.push(item.id);
@@ -947,18 +955,80 @@ $('#confirmArchiveMovieBtn').on('click', function() {
         const radarrPath = $('#bulk-root-folder-select-radarr').val();
         const sonarrPath = $('#bulk-root-folder-select-sonarr').val();
 
-        // Afficher un message de confirmation
         if (!confirm("Êtes-vous sûr de vouloir lancer le déplacement en masse ? Cette opération peut prendre beaucoup de temps.")) {
             return;
         }
 
-        // TODO: Lancer la requête vers le backend
-        console.log("Déplacement lancé !", { movies, radarrPath, series, sonarrPath });
-         $('#move-media-modal-bulk').modal('hide');
-         // Optionnel : griser les lignes et afficher un spinner
-         $('.item-checkbox:checked').closest('tr').addClass('opacity-50');
+        // Fermer la modale
+        bootstrap.Modal.getInstance(document.getElementById('move-media-modal-bulk')).hide();
 
+        // Geler l'UI pour les éléments sélectionnés
+        selectedRows.addClass('opacity-50').find('input, button').prop('disabled', true);
+
+        fetch('/plex/api/media/bulk_move', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                movies: movies,
+                radarr_path: radarrPath,
+                series: series,
+                sonarr_path: sonarrPath
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                bulkMoveTaskId = data.task_id;
+                startBulkMovePolling();
+            } else {
+                alert('Erreur: ' + data.message);
+                selectedRows.removeClass('opacity-50').find('input, button').prop('disabled', false); // Restaurer l'UI
+            }
+        })
+        .catch(error => {
+            console.error('Erreur lancement déplacement en masse:', error);
+            alert('Erreur de communication.');
+            selectedRows.removeClass('opacity-50').find('input, button').prop('disabled', false);
+        });
     });
+
+    function startBulkMovePolling() {
+        if (bulkMoveInterval) clearInterval(bulkMoveInterval);
+
+        bulkMoveInterval = setInterval(() => {
+            if (!bulkMoveTaskId) {
+                clearInterval(bulkMoveInterval);
+                return;
+            }
+            fetch(`/plex/api/media/bulk_move_status/${bulkMoveTaskId}`)
+                .then(response => response.json())
+                .then(data => {
+                    // Mettre à jour la progression (exemple simple, peut être amélioré)
+                    const progress = data.progress || 0;
+                    const message = data.message || `Traitement en cours... ${progress.toFixed(1)}%`;
+                    // Vous pouvez afficher ça dans une barre de progression ou un toast
+
+                    if (data.status === 'completed' || data.status === 'failed') {
+                        clearInterval(bulkMoveInterval);
+                        bulkMoveInterval = null;
+                        bulkMoveTaskId = null;
+
+                        // Afficher le rapport final
+                        alert(`Opération de déplacement terminée.\n\n${data.report}`);
+
+                        // Rafraîchir la liste complète pour voir les changements
+                        $('#apply-filters-btn').click();
+                    }
+                })
+                .catch(err => {
+                    console.error("Erreur polling statut déplacement en masse:", err);
+                    clearInterval(bulkMoveInterval);
+                    bulkMoveTaskId = null;
+                    alert("Erreur de communication lors du suivi du déplacement. Veuillez rafraîchir la page.");
+                    $('#apply-filters-btn').click();
+                });
+        }, 5000); // Poll toutes les 5 secondes
+    }
 
     // --- C. Action de suppression en masse ---
     $(document).on('click', '#batch-delete-btn', function() {
@@ -1248,7 +1318,9 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
                 folderSelect.html('').prop('disabled', false);
                 if (folders && folders.length > 0) {
                     folders.forEach(folder => {
-                        folderSelect.append(new Option(folder.path, folder.path));
+                        // CORRECTION : Ajouter l'espace libre formaté
+                        const optionText = `${folder.path} (${folder.freeSpace_formatted})`;
+                        folderSelect.append(new Option(optionText, folder.path));
                     });
                 } else {
                     folderSelect.html('<option>Aucun dossier trouvé.</option>').prop('disabled', true);

@@ -35,6 +35,7 @@ from app.utils import trailer_manager # Import du nouveau manager
 from app.agent.services import _search_and_score_trailers
 
 from app.utils.move_manager import move_manager
+from app.utils.bulk_move_manager import BulkMoveManager
 from app.utils.arr_client import get_sonarr_root_folders, get_radarr_root_folders, move_sonarr_series, move_radarr_movie, get_arr_command_status, radarr_post_command
 
 # --- Routes du Blueprint ---
@@ -2698,3 +2699,29 @@ def rename_series_files_endpoint():
 #    current_app.logger.error(f"Erreur 500: {request.url}, Erreur: {e}, User: {user_title}", exc_info=True)
 #    flash("Une erreur interne imprévue est survenue. L'administrateur a été notifié.", "danger")
 #    return render_template('plex_editor/500.html', error=e, user_title=user_title), 500
+
+# --- NOUVELLES ROUTES POUR LE DÉPLACEMENT EN MASSE ---
+@plex_editor_bp.route('/api/media/bulk_move', methods=['POST'])
+@login_required
+def bulk_move_media():
+    data = request.get_json()
+    movie_ids = data.get('movies', [])
+    radarr_path = data.get('radarr_path')
+    series_ids = data.get('series', [])
+    sonarr_path = data.get('sonarr_path')
+
+    if not movie_ids and not series_ids:
+        return jsonify({'status': 'error', 'message': 'Aucun média sélectionné.'}), 400
+
+    bulk_move_manager = BulkMoveManager()
+    # On doit passer le contexte de l'application au manager pour le thread
+    task_id = bulk_move_manager.start_bulk_move(movie_ids, radarr_path, series_ids, sonarr_path, current_app._get_current_object())
+
+    return jsonify({'status': 'success', 'message': 'Tâche de déplacement en masse démarrée.', 'task_id': task_id})
+
+@plex_editor_bp.route('/api/media/bulk_move_status/<task_id>', methods=['GET'])
+@login_required
+def get_bulk_move_status(task_id):
+    bulk_move_manager = BulkMoveManager()
+    status = bulk_move_manager.get_task_status(task_id)
+    return jsonify(status)
