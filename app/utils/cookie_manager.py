@@ -110,26 +110,62 @@ def get_ygg_cookie_status():
         "status_message": status_message
     }
 
+import base64
+from urllib.parse import unquote
+
 def check_ygg_cookie_validity():
     """
-    Checks the YGG_COOKIE from the app's configuration for validity and expiration.
+    Checks the YGG_COOKIE from the app's configuration for validity and expiration by decoding the JWT-like token.
     Returns a tuple: (is_valid, expires_in_seconds, status_message).
     """
-    ygg_cookie = current_app.config.get('YGG_COOKIE')
-    if not ygg_cookie:
+    ygg_cookie_string = current_app.config.get('YGG_COOKIE')
+    if not ygg_cookie_string:
         return False, 0, "Cookie YGG non configuré."
 
-    # Tenter de trouver le timestamp d'expiration.
-    # Le format attendu est "ygg_=...; expires=..."
-    match = re.search(r'ygg_=(\w+)', ygg_cookie)
-    if not match:
-        return False, 0, "Format de cookie invalide (jeton ygg_ manquant)."
+    try:
+        # 1. Isoler la valeur du cookie 'ygg_'
+        match = re.search(r'ygg_=([^;]+)', ygg_cookie_string)
+        if not match:
+            return False, 0, "Jeton 'ygg_' introuvable dans le cookie."
 
-    # Placeholder pour l'expiration - l'ancien cookie n'a pas de date d'expiration claire
-    # On va considérer le cookie comme valide s'il est présent.
-    # Pour une future amélioration, il faudrait un vrai parsing de date d'expiration.
-    is_valid = True
-    expires_in_seconds = 3600 # On assume 1h de validité par défaut
-    status_message = "Valide (expiration non vérifiable)"
+        token_value = match.group(1)
 
-    return is_valid, expires_in_seconds, status_message
+        # 2. Le token est souvent URL-encodé
+        decoded_token = unquote(token_value)
+
+        # 3. Le token ressemble à un JWT, on décode le payload (la partie du milieu)
+        parts = decoded_token.split('.')
+        if len(parts) != 3:
+            logger.warning("Le cookie ygg_ n'a pas le format d'un JWT. La vérification de l'expiration est impossible.")
+            return True, 3600, "Valide (format inconnu)"
+
+        payload_b64 = parts[1]
+
+        # 4. Ajouter le padding Base64 manquant si nécessaire
+        payload_b64 += '=' * (-len(payload_b64) % 4)
+
+        # 5. Décoder et parser le JSON
+        payload_json = base64.b64decode(payload_b64).decode('utf-8')
+        payload = json.loads(payload_json)
+
+        # 6. Vérifier le timestamp d'expiration 'exp'
+        if 'exp' not in payload:
+            logger.warning("Le payload du cookie ygg_ ne contient pas de champ 'exp'. La vérification de l'expiration est impossible.")
+            return True, 3600, "Valide (exp. inconnue)"
+
+        exp_timestamp = payload['exp']
+        now_timestamp = int(time.time())
+
+        expires_in_seconds = exp_timestamp - now_timestamp
+
+        if expires_in_seconds <= 0:
+            minutes_ago = abs(expires_in_seconds) // 60
+            return False, 0, f"Expiré (~{minutes_ago} min)"
+
+        minutes_left = expires_in_seconds // 60
+        status_message = f"Valide (~{minutes_left} min)" if minutes_left > 0 else "Valide (< 1 min)"
+        return True, expires_in_seconds, status_message
+
+    except Exception as e:
+        logger.error(f"Erreur lors de la validation du cookie YGG : {e}", exc_info=True)
+        return False, 0, "Erreur validation"

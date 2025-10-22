@@ -135,6 +135,7 @@ $(document).ready(function() {
     // --- GESTION DU MAPPING DYNAMIQUE ---
     const container = $('#dynamic-mapping-container');
     const hiddenTextarea = $('#plex_mappings');
+    const suggestedTypes = ['FILM', 'SERIE', 'DOCUMENTAIRE_FILM', 'DOCUMENTAIRE_SERIE', 'CONCERT', 'SPECTACLE'];
 
     fetch('/api/mapping-data')
         .then(response => {
@@ -145,6 +146,15 @@ $(document).ready(function() {
         })
         .then(data => {
             container.html(''); // Vider le spinner
+
+            // Créer le datalist une seule fois
+            let dataListHtml = '<datalist id="suggested-types">';
+            suggestedTypes.forEach(type => {
+                dataListHtml += `<option value="${type}">`;
+            });
+            dataListHtml += '</datalist>';
+            container.append(dataListHtml);
+
             const allRootFolders = [...data.sonarr_root_folders, ...data.radarr_root_folders].sort();
 
             data.plex_libraries.forEach(lib => {
@@ -156,7 +166,7 @@ $(document).ready(function() {
                 lib.paths.forEach((path, index) => {
                     // On cherche si un mapping existe pour ce chemin Plex spécifique
                     const mapping = libraryMapping.find(m => m.path === path);
-                    const selectedRootFolder = mapping ? mapping.path : '';
+                    const selectedRootFolder = mapping ? mapping.root_folder : '';
                     const assignedType = mapping ? mapping.type : '';
 
                     let optionsHtml = '<option value="">Non mappé</option>';
@@ -176,7 +186,7 @@ $(document).ready(function() {
                             </div>
                             <div class="col-md-2">
                                 <label class="form-label">Type</label>
-                                <input type="text" class="form-control" placeholder="ex: FILM" value="${assignedType}" data-mapping-type>
+                                <input type="text" class="form-control" placeholder="ex: FILM" value="${assignedType}" data-mapping-type list="suggested-types">
                             </div>
                         </div>
                     `;
@@ -197,13 +207,14 @@ $(document).ready(function() {
             const libraryName = $(this).find('.card-header h4').text();
             const mappings = [];
             $(this).find('.row').each(function() {
+                const plexPath = $(this).find('[data-plex-path]').val(); // Correction : Récupérer plexPath ici
                 const rootFolder = $(this).find('[data-root-folder]').val();
                 const mappingType = $(this).find('[data-mapping-type]').val().trim();
 
                 if (rootFolder && mappingType) {
-                    // On ne sauvegarde que le root folder et le type.
                     mappings.push({
-                        path: rootFolder,
+                        path: plexPath,
+                        root_folder: rootFolder,
                         type: mappingType
                     });
                 }

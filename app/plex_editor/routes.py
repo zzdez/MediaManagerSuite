@@ -873,7 +873,7 @@ def get_media_items():
             # On cherche dans toutes les bibliothèques du mapping
             for lib_name, mappings in plex_mappings.items():
                 for mapping in mappings:
-                    mapped_path_normalized = normalize_path(mapping.get('path'))
+                    mapped_path_normalized = normalize_path(mapping.get('root_folder'))
                     if item_path_normalized.startswith(mapped_path_normalized):
                         item.media_type_from_mapping = mapping.get('type', 'UNKNOWN')
                         break # On a trouvé, on passe au média suivant
