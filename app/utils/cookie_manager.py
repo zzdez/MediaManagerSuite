@@ -116,53 +116,48 @@ from urllib.parse import unquote
 def check_ygg_cookie_validity():
     """
     Checks the YGG_COOKIE from the app's configuration for validity and expiration
-    using multiple methods (JWT-like and expires timestamp).
+    by parsing the a3_promo_details field.
     Returns a tuple: (is_valid, expires_in_seconds, status_message).
     """
     ygg_cookie_string = current_app.config.get('YGG_COOKIE')
     if not ygg_cookie_string:
         return False, 0, "Cookie YGG non configuré."
 
-    # --- Méthode 1: Décoder le jeton JWT-like ---
     try:
-        match = re.search(r'ygg_=([^;]+)', ygg_cookie_string)
-        if match:
-            token_value = unquote(match.group(1))
-            parts = token_value.split('.')
-            if len(parts) == 3:
-                payload_b64 = parts[1] + '=' * (-len(parts[1]) % 4)
-                payload = json.loads(base64.b64decode(payload_b64).decode('utf-8'))
-                if 'exp' in payload:
-                    exp_timestamp = payload['exp']
-                    now_timestamp = int(time.time())
-                    expires_in_seconds = exp_timestamp - now_timestamp
-                    if expires_in_seconds <= 0:
-                        return False, 0, f"Expiré (~{abs(expires_in_seconds) // 60} min)"
-                    minutes_left = expires_in_seconds // 60
-                    return True, expires_in_seconds, f"Valide (~{minutes_left} min)"
-    except Exception:
-        logger.debug("Échec du décodage du cookie comme un JWT, tentative avec la méthode 'expires'.")
+        # Extraire la valeur de a3_promo_details
+        promo_match = re.search(r'a3_promo_details=([^;]+)', ygg_cookie_string)
+        if not promo_match:
+            logger.warning("Le champ 'a3_promo_details' est introuvable dans le cookie YGG.")
+            return True, 3600, "Valide (exp. inconnue)"
 
-    # --- Méthode 2: Chercher un timestamp 'expires=' ---
-    try:
-        expires_match = re.search(r'expires=(\d+)', ygg_cookie_string)
-        if expires_match:
-            exp_timestamp = int(expires_match.group(1))
-            if exp_timestamp > time.time() * 1000:  # Normaliser si en millisecondes
-                exp_timestamp //= 1000
+        promo_b64 = promo_match.group(1)
 
-            now_timestamp = int(time.time())
-            expires_in_seconds = exp_timestamp - now_timestamp
+        # Le contenu est doublement encodé (URL encoding + Base64)
+        promo_b64_decoded = unquote(promo_b64)
 
-            if expires_in_seconds <= 0:
-                return False, 0, f"Expiré (~{abs(expires_in_seconds) // 60} min)"
+        # Ajouter le padding Base64 manquant
+        promo_b64_decoded += '=' * (-len(promo_b64_decoded) % 4)
 
-            minutes_left = expires_in_seconds // 60
-            return True, expires_in_seconds, f"Valide (~{minutes_left} min)"
+        # Décoder et parser le JSON
+        promo_json = base64.b64decode(promo_b64_decoded).decode('utf-8')
+        promo_data = json.loads(promo_json)
+
+        if 'ts' not in promo_data:
+            logger.warning("Le champ 'ts' (timestamp) est introuvable dans a3_promo_details.")
+            return True, 3600, "Valide (exp. inconnue)"
+
+        exp_timestamp = promo_data['ts']
+        now_timestamp = int(time.time())
+        expires_in_seconds = exp_timestamp - now_timestamp
+
+        if expires_in_seconds <= 0:
+            minutes_ago = abs(expires_in_seconds) // 60
+            return False, 0, f"Expiré (~{minutes_ago} min)"
+
+        minutes_left = expires_in_seconds // 60
+        status_message = f"Valide (~{minutes_left} min)" if minutes_left > 0 else "Valide (< 1 min)"
+        return True, expires_in_seconds, status_message
+
     except Exception as e:
-        logger.error(f"Erreur lors de la validation du cookie YGG (méthode expires) : {e}", exc_info=True)
+        logger.error(f"Erreur lors de la validation du cookie YGG : {e}", exc_info=True)
         return False, 0, "Erreur validation"
-
-    # --- Fallback ---
-    logger.warning("Aucune méthode de validation de l'expiration n'a fonctionné. Le cookie est considéré comme valide mais non vérifiable.")
-    return True, 3600, "Valide (exp. inconnue)"
