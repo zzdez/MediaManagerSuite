@@ -252,6 +252,44 @@ def get_user_libraries(user_id):
         current_app.logger.error(f"Erreur API lors de la récupération des bibliothèques pour l'utilisateur {user_id} : {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
+
+@plex_editor_bp.route('/api/libraries_with_paths/<user_id>')
+@login_required
+def get_user_libraries_with_paths(user_id):
+    """
+    Retourne les bibliothèques d'un utilisateur avec leurs chemins de dossiers racines.
+    """
+    try:
+        # On utilise le helper existant pour obtenir le serveur Plex pour l'utilisateur
+        plex_server = get_user_specific_plex_server_from_id(user_id)
+        if not plex_server:
+            return jsonify({'error': "Impossible d'établir une connexion Plex pour l'utilisateur."}), 500
+
+        libraries = plex_server.library.sections()
+        ignored_library_names = current_app.config.get('PLEX_LIBRARIES_TO_IGNORE', [])
+
+        libraries_with_paths = []
+        for lib in libraries:
+            if lib.title in ignored_library_names or lib.type not in ['movie', 'show']:
+                continue
+
+            # Pour chaque bibliothèque, on récupère ses emplacements (chemins)
+            # On normalise les chemins pour la cohérence (ex: D:\ vs D:/)
+            locations = [os.path.normpath(loc) for loc in lib.locations]
+
+            libraries_with_paths.append({
+                'id': lib.key,
+                'text': lib.title,
+                'paths': locations
+            })
+
+        return jsonify(libraries_with_paths)
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur API /api/libraries_with_paths/{user_id}: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
 @plex_editor_bp.route('/api/genres', methods=['POST'])
 @login_required
 def get_genres_for_libraries():
