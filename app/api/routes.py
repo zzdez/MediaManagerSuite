@@ -28,22 +28,27 @@ def get_mapping_data():
         if not plex_server:
             return jsonify({"error": "Plex server not available or configured"}), 503
 
-        plex_libraries = []
+        plex_libs_aggregated = {}
         current_app.logger.info("--- Début de l'inspection des bibliothèques Plex ---")
         for section in plex_server.library.sections():
             current_app.logger.info(f"Bibliothèque trouvée: '{section.title}' (Type: {section.type})")
             locations = getattr(section, 'locations', [])
             current_app.logger.info(f"  -> Chemins bruts: {locations}")
             if section.type in ['movie', 'show']:
-                # Pour chaque chemin de dossier, créer une entrée de "bibliothèque" distincte
-                # Cela aplatit la structure pour que le frontend puisse facilement l'afficher
-                for location in locations:
-                    plex_libraries.append({
+                # On utilise le nom de la bibliothèque comme clé pour regrouper les chemins
+                if section.title not in plex_libs_aggregated:
+                    plex_libs_aggregated[section.title] = {
                         "name": section.title,
                         "type": section.type,
-                        "locations": [location] # Important: location est maintenant une liste avec un seul élément
-                    })
-        current_app.logger.info("--- Fin de l'inspection des bibliothèques Plex ---")
+                        "locations": []
+                    }
+                # On ajoute les chemins à la liste existante
+                plex_libs_aggregated[section.title]["locations"].extend(locations)
+
+        # On transforme le dictionnaire de bibliothèques agrégées en une liste,
+        # qui est le format attendu par le frontend.
+        plex_libraries = list(plex_libs_aggregated.values())
+        current_app.logger.info(f"--- Fin de l'inspection des bibliothèques Plex, données agrégées: {plex_libraries} ---")
 
         # Récupérer les root folders de Sonarr et Radarr
         sonarr_folders = get_sonarr_root_folders()
