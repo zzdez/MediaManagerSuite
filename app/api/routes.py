@@ -2,7 +2,7 @@ from flask import jsonify, request, current_app
 from . import api_bp
 from app.utils.cookie_manager import get_ygg_cookie_status
 from app.auth import login_required
-from app.utils.plex_client import get_user_specific_plex_server
+from app.utils.plex_client import get_plex_admin_server
 from app.utils.arr_client import get_sonarr_root_folders, get_radarr_root_folders
 from app.utils.plex_mapping_manager import get_plex_mappings, save_plex_mappings
 
