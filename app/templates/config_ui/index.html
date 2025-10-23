@@ -1,5 +1,10 @@
 {% extends "layout.html" %}
 
+{% block head_styles %}
+    {{ super() }}
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css">
+{% endblock %}
+
 {% block content %}
 <div class="container">
     <h1>Configuration de l'Application</h1>
@@ -110,7 +115,7 @@
     <hr class="my-5">
 
     <!-- Section dédiée au mapping Plex -->
-    <form id="plex-mapping-form">
+    <div>
         <h3 class="mt-4 mb-3">Mapping des Dossiers Plex <i class="fas fa-project-diagram"></i></h3>
         <p class="text-muted">Associez chaque chemin de dossier de vos bibliothèques Plex à un dossier racine Sonarr ou Radarr correspondant, et assignez-lui un type. Ce mapping est essentiel pour la fonctionnalité de déplacement de médias.</p>
 
@@ -133,14 +138,23 @@
             </div>
         </div>
         <button type="button" id="save-plex-mappings-btn" class="btn btn-secondary w-100">Sauvegarder les Mappings Plex</button>
-    </form>
+    </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 {{ super() }}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
 <script>
 $(document).ready(function() {
+    // Configuration de Toastr
+    toastr.options = {
+        "closeButton": true,
+        "progressBar": true,
+        "positionClass": "toast-top-right",
+        "timeOut": "5000",
+    };
+
     const container = $('#plex-mapping-container');
     const saveBtn = $('#save-plex-mappings-btn');
     let plexLibraries = [];
