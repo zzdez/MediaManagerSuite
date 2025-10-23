@@ -64,7 +64,9 @@
                             <button id="batch-delete-btn" class="btn btn-sm btn-danger">
                                 Supprimer <span id="selected-item-count" class="badge bg-light text-dark ms-1">0</span>
                             </button>
-                            <!-- Autres boutons d'action de masse ici -->
+                            <button id="batch-move-btn" class="btn btn-sm btn-primary">
+                                Déplacer <span class="badge bg-light text-dark ms-1">0</span>
+                            </button>
                         </div>
                     </div>
 
@@ -228,6 +230,51 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
                 <button type="button" class="btn btn-primary" id="confirm-move-btn">Valider le déplacement</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modale de Déplacement EN MASSE -->
+<div class="modal fade" id="bulk-move-media-modal" tabindex="-1" aria-labelledby="bulkMoveMediaModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark text-white">
+            <div class="modal-header">
+                <h5 class="modal-title" id="bulkMoveMediaModalLabel">Déplacer la sélection</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Sélectionnez les nouveaux dossiers de destination pour les <span id="bulk-move-item-count">0</span> médias sélectionnés.</p>
+
+                <!-- Section pour les séries (Sonarr) -->
+                <div id="bulk-move-sonarr-section" class="mb-3" style="display: none;">
+                    <label for="bulk-root-folder-select-sonarr" class="form-label">
+                        Destination pour <strong id="bulk-move-sonarr-count">0</strong> série(s)
+                    </label>
+                    <select id="bulk-root-folder-select-sonarr" class="form-select"></select>
+                </div>
+
+                <!-- Section pour les films (Radarr) -->
+                <div id="bulk-move-radarr-section" class="mb-3" style="display: none;">
+                    <label for="bulk-root-folder-select-radarr" class="form-label">
+                        Destination pour <strong id="bulk-move-radarr-count">0</strong> film(s)
+                    </label>
+                    <select id="bulk-root-folder-select-radarr" class="form-select"></select>
+                </div>
+
+                <div id="bulk-move-progress-section" style="display: none;">
+                    <p>Déplacement en cours...</p>
+                    <div class="progress">
+                        <div id="bulk-move-progress-bar" class="progress-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                    </div>
+                    <ul id="bulk-move-status-list" class="list-group mt-2" style="font-size: 0.8em; max-height: 150px; overflow-y: auto;">
+                        <!-- Les statuts des items seront ajoutés ici -->
+                    </ul>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" id="confirm-bulk-move-btn">Valider le déplacement</button>
             </div>
         </div>
     </div>

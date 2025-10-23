@@ -799,13 +799,146 @@ $('#confirmArchiveMovieBtn').on('click', function() {
 
         const selectedCount = $('.item-checkbox:checked').length;
         const batchActionsContainer = $('#batch-actions-container');
-        const selectedItemCountSpan = $('#selected-item-count');
 
-        selectedItemCountSpan.text(selectedCount);
+        // Mettre à jour tous les compteurs
+        batchActionsContainer.find('.badge').text(selectedCount);
         batchActionsContainer.toggle(selectedCount > 0);
     });
 
-    // --- B. Action de suppression en masse ---
+    // --- B. Action de déplacement en masse ---
+    $('#batch-move-btn').on('click', function() {
+        const selectedItems = $('.item-checkbox:checked');
+        const sonarrItems = [];
+        const radarrItems = [];
+
+        selectedItems.each(function() {
+            const row = $(this).closest('tr');
+            const item = {
+                plex_id: $(this).data('rating-key'),
+                media_type: row.data('media-type-from-mapping')
+            };
+            if (item.media_type === 'sonarr') {
+                sonarrItems.push(item);
+            } else if (item.media_type === 'radarr') {
+                radarrItems.push(item);
+            }
+        });
+
+        const modal = $('#bulk-move-media-modal');
+        modal.find('#bulk-move-item-count').text(selectedItems.length);
+
+        // Réinitialiser la modale
+        modal.find('#bulk-move-sonarr-section, #bulk-move-radarr-section').hide();
+        modal.find('#bulk-move-progress-section').hide();
+        modal.find('#confirm-bulk-move-btn').show();
+
+        if (sonarrItems.length > 0) {
+            modal.find('#bulk-move-sonarr-count').text(sonarrItems.length);
+            loadRootFoldersForBulkMove('sonarr', '#bulk-root-folder-select-sonarr');
+            modal.find('#bulk-move-sonarr-section').show();
+        }
+        if (radarrItems.length > 0) {
+            modal.find('#bulk-move-radarr-count').text(radarrItems.length);
+            loadRootFoldersForBulkMove('radarr', '#bulk-root-folder-select-radarr');
+            modal.find('#bulk-move-radarr-section').show();
+        }
+
+        new bootstrap.Modal(modal[0]).show();
+    });
+
+    function loadRootFoldersForBulkMove(type, selectId) {
+        const select = $(selectId);
+        select.html('<option>Chargement...</option>').prop('disabled', true);
+        fetch(`/plex/api/media/root_folders?type=${type}`)
+            .then(response => response.json())
+            .then(folders => {
+                select.html('').prop('disabled', false);
+                if (folders && folders.length > 0) {
+                    folders.forEach(folder => {
+                        const freeSpace = folder.freeSpace_formatted ? `(Espace: ${folder.freeSpace_formatted})` : '';
+                        select.append(new Option(`${folder.path} ${freeSpace}`, folder.path));
+                    });
+                } else {
+                    select.html('<option>Aucun dossier.</option>').prop('disabled', true);
+                }
+            });
+    }
+
+    $('#confirm-bulk-move-btn').on('click', function() {
+        const btn = $(this);
+        const modal = $('#bulk-move-media-modal');
+        const sonarrDest = $('#bulk-root-folder-select-sonarr').val();
+        const radarrDest = $('#bulk-root-folder-select-radarr').val();
+
+        const itemsToMove = [];
+        $('.item-checkbox:checked').each(function() {
+            const row = $(this).closest('tr');
+            const mediaType = row.data('media-type-from-mapping');
+            const destination = (mediaType === 'sonarr') ? sonarrDest : radarrDest;
+
+            if (destination) {
+                itemsToMove.push({
+                    plex_id: $(this).data('rating-key'),
+                    media_type: mediaType,
+                    destination: destination
+                });
+            }
+        });
+
+        if (itemsToMove.length === 0) {
+            alert("Aucune destination valide sélectionnée pour les médias.");
+            return;
+        }
+
+        if (!confirm(`Êtes-vous sûr de vouloir déplacer ${itemsToMove.length} média(s) ?`)) {
+            return;
+        }
+
+        btn.hide();
+        modal.find('#bulk-move-progress-section').show();
+
+        fetch('/plex/api/media/bulk_move', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: itemsToMove })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success' && data.task_id) {
+                pollBulkMoveStatus(data.task_id);
+            } else {
+                alert('Erreur: ' + data.message);
+                btn.show();
+                modal.find('#bulk-move-progress-section').hide();
+            }
+        });
+    });
+
+    function pollBulkMoveStatus(taskId) {
+        const interval = setInterval(() => {
+            fetch(`/plex/api/media/bulk_move_status/${taskId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (!data) {
+                        clearInterval(interval);
+                        return;
+                    }
+
+                    const progressBar = $('#bulk-move-progress-bar');
+                    progressBar.css('width', data.progress + '%').text(Math.round(data.progress) + '%');
+
+                    if (data.status === 'completed') {
+                        clearInterval(interval);
+                        progressBar.addClass('bg-success');
+                        alert('Déplacement en masse terminé !');
+                        bootstrap.Modal.getInstance($('#bulk-move-media-modal')[0]).hide();
+                        $('#apply-filters-btn').click(); // Rafraîchir
+                    }
+                });
+        }, 5000); // Poll every 5 seconds
+    }
+
+    // --- C. Action de suppression en masse ---
     $(document).on('click', '#batch-delete-btn', function() {
         const selectedItems = $('.item-checkbox:checked');
         const selectedItemKeys = selectedItems.map(function() {

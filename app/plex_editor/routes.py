@@ -36,6 +36,7 @@ from app.agent.services import _search_and_score_trailers
 
 from app.utils.move_manager import move_manager
 from app.utils.arr_client import get_sonarr_root_folders, get_radarr_root_folders, move_sonarr_series, move_radarr_movie, get_arr_command_status, radarr_post_command
+from app.utils.bulk_move_manager import bulk_move_manager # Import du nouveau manager
 
 # --- Routes du Blueprint ---
 
@@ -154,6 +155,76 @@ def get_move_status():
         return jsonify({'status': 'failed', 'message': f'Le déplacement a échoué: {error_message}'})
     else: # 'pending', 'started', 'running'
         return jsonify({'status': 'running', 'message': f'Déplacement en cours... (Statut: {status})'})
+
+@plex_editor_bp.route('/api/media/bulk_move', methods=['POST'])
+@login_required
+def bulk_move_media_items():
+    data = request.get_json()
+    items_to_move = data.get('items', []) # ex: [{'plex_id': key, 'media_type': type, 'destination': path}]
+
+    if not items_to_move:
+        return jsonify({'status': 'error', 'message': 'Aucun élément à déplacer fourni.'}), 400
+
+    # Traduire les IDs Plex en IDs Sonarr/Radarr
+    # C'est une étape cruciale qui nécessite un appel à Plex puis à Sonarr/Radarr
+    # Pour l'instant, nous allons simuler cette logique en supposant que l'ID Sonarr/Radarr est le même que Plex.
+    # Dans une implémentation réelle, il faudrait faire la conversion ici.
+
+    # NOTE: La logique de conversion d'ID est complexe et répliquée de `move_media_item`.
+    # Idéalement, elle devrait être centralisée. Pour ce développement, nous la gardons ici.
+
+    processed_items_for_manager = []
+    try:
+        plex_server = get_plex_admin_server()
+        if not plex_server:
+            return jsonify({'status': 'error', 'message': 'Connexion au serveur Plex admin échouée.'}), 500
+
+        for item_data in items_to_move:
+            plex_rating_key = item_data.get('plex_id')
+            media_type = item_data.get('media_type') # 'sonarr' ou 'radarr'
+            destination = item_data.get('destination')
+
+            plex_item = plex_server.fetchItem(int(plex_rating_key))
+
+            arr_item = None
+            if media_type == 'sonarr':
+                guid = next((g.id for g in plex_item.guids if 'tvdb' in g.id), None)
+                if guid: arr_item = get_sonarr_series_by_guid(guid)
+            elif media_type == 'radarr':
+                guid = next((g.id for g in plex_item.guids if 'tmdb' in g.id), None)
+                if guid: arr_item = get_radarr_movie_by_guid(guid)
+
+            if not arr_item or not arr_item.get('id'):
+                current_app.logger.error(f"BulkMove: Could not find media in {media_type} for Plex ID {plex_rating_key} (GUID: {guid})")
+                continue # On ignore cet item
+
+            processed_items_for_manager.append({
+                'media_id': arr_item.get('id'),
+                'media_type': media_type, # Ajout du type de média
+                'destination': destination
+            })
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur lors de la préparation du déplacement en masse: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': "Erreur lors de la préparation des médias pour le déplacement."}), 500
+
+    if not processed_items_for_manager:
+        return jsonify({'status': 'error', 'message': 'Aucun média n\'a pu être trouvé dans Sonarr/Radarr pour le déplacement.'}), 404
+
+    # Démarrer la tâche de fond
+    app_context = current_app._get_current_object()
+    task_id = bulk_move_manager.start_bulk_move(processed_items_for_manager, app_context)
+
+    return jsonify({'status': 'success', 'message': 'Déplacement en masse démarré.', 'task_id': task_id})
+
+@plex_editor_bp.route('/api/media/bulk_move_status/<task_id>', methods=['GET'])
+@login_required
+def get_bulk_move_status(task_id):
+    status = bulk_move_manager.get_task_status(task_id)
+    if not status:
+        return jsonify({'status': 'error', 'message': 'Tâche non trouvée.'}), 404
+
+    return jsonify(status)
 
 
 @plex_editor_bp.route('/api/users')
@@ -503,6 +574,10 @@ def get_media_items():
         series_status_cache = SimpleCache('series_completeness_status', default_lifetime_hours=6)
         # ### FIN MODIFICATION ###
 
+        # Charger les mappings pour l'enrichissement
+        from app.utils.plex_mapping_manager import get_plex_mappings
+        plex_mappings = get_plex_mappings()
+
         # --- 3. NOUVELLE LOGIQUE : Recherche unifiée sur Plex d'abord ---
         all_plex_items = {}  # Utilise un dictionnaire pour dédupliquer par ratingKey
 
@@ -828,6 +903,19 @@ def get_media_items():
                         media_type=item.media_type_for_trailer,
                         external_id=item.external_id
                     )
+
+                # Enrichissement avec le type de média depuis le mapping
+                item.media_type_from_mapping = None
+                if item.file_path:
+                    normalized_item_path = os.path.normpath(item.file_path.lower())
+                    for lib_name, mappings in plex_mappings.items():
+                        for mapping in mappings:
+                            normalized_plex_path = os.path.normpath(mapping['plex_path'].lower())
+                            if normalized_item_path.startswith(normalized_plex_path):
+                                item.media_type_from_mapping = mapping['arr_type']
+                                break
+                        if item.media_type_from_mapping:
+                            break
 
                 items_to_render.append(item)
 
