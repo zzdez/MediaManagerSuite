@@ -584,6 +584,9 @@ def get_media_items():
         for lib_key in library_keys:
             try:
                 library = target_plex_server.library.sectionByID(int(lib_key))
+                current_app.logger.info(f"--- DIAGNOSTIC: Traitement de la bibliothèque '{library.title}' (Clé: {lib_key}) ---")
+                current_app.logger.info(f"--- DIAGNOSTIC: Chemins pour '{library.title}': {library.locations} ---")
+
 
                 # Construit les arguments de base pour cette bibliothèque
                 search_args = {}
@@ -654,10 +657,15 @@ def get_media_items():
                     else:
                         search_sort_smart = library.search(titleSort__icontains=title_filter, **search_args)
 
+                    initial_item_count = len(all_plex_items)
                     for item in search_title + search_original + search_sort_smart:
                         all_plex_items[item.ratingKey] = item
+                    current_app.logger.info(f"--- DIAGNOSTIC: {len(all_plex_items) - initial_item_count} item(s) ajouté(s) depuis la recherche par titre pour '{library.title}'.")
                 else:
-                    for item in library.search(**search_args):
+                    initial_item_count = len(all_plex_items)
+                    search_results = library.search(**search_args)
+                    current_app.logger.info(f"--- DIAGNOSTIC: Recherche sans filtre de titre pour '{library.title}' a retourné {len(search_results)} item(s).")
+                    for item in search_results:
                         all_plex_items[item.ratingKey] = item
 
             except Exception as e_lib:
@@ -846,6 +854,7 @@ def get_media_items():
                 if item.type == 'movie':
                     item.file_path = getattr(item.media[0].parts[0], 'file', None) if item.media and item.media[0].parts else None
                     item.total_size = item.media[0].parts[0].size if hasattr(item, 'media') and item.media and item.media[0].parts else 0
+                    current_app.logger.info(f"--- DIAGNOSTIC: Film trouvé: '{item.title}', Chemin: {item.file_path}")
                 elif item.type == 'show':
                     item.file_path = item.locations[0] if item.locations else None
                     item.total_size = sum(getattr(part, 'size', 0) for ep in item.episodes() for part in (ep.media[0].parts if ep.media and ep.media[0].parts else []))
