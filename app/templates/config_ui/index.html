@@ -109,18 +109,20 @@
 
     <hr class="my-5">
 
-    <h3 class="mt-4 mb-3">Mapping des Dossiers Plex</h3>
-    <p class="text-muted">Associez chaque chemin de dossier de vos bibliothèques Plex à un dossier racine Sonarr ou Radarr correspondant. Ce mapping est essentiel pour la fonctionnalité de déplacement de médias.</p>
+    <form id="plex-mapping-form">
+        <h3 class="mt-4 mb-3">Mapping des Dossiers Plex</h3>
+        <p class="text-muted">Associez chaque chemin de dossier de vos bibliothèques Plex à un dossier racine Sonarr ou Radarr correspondant. Ce mapping est essentiel pour la fonctionnalité de déplacement de médias.</p>
 
-    <div id="plex-mapping-container" class="mb-4">
-        <!-- Le contenu sera généré dynamiquement par JavaScript -->
-        <div class="text-center">
-            <div class="spinner-border" role="status">
-                <span class="visually-hidden">Chargement...</span>
+        <div id="plex-mapping-container" class="mb-4">
+            <!-- Le contenu sera généré dynamiquement par JavaScript -->
+            <div class="text-center">
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">Chargement...</span>
+                </div>
             </div>
         </div>
-    </div>
-    <button type="button" id="save-plex-mappings-btn" class="btn btn-secondary w-100">Sauvegarder les Mappings Plex</button>
+        <button type="button" id="save-plex-mappings-btn" class="btn btn-secondary w-100">Sauvegarder les Mappings Plex</button>
+    </form>
 </div>
 
 {% endblock %}
