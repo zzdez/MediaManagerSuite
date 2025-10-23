@@ -109,9 +109,20 @@
 
     <hr class="my-5">
 
+    <!-- Section dédiée au mapping Plex -->
     <form id="plex-mapping-form">
-        <h3 class="mt-4 mb-3">Mapping des Dossiers Plex</h3>
-        <p class="text-muted">Associez chaque chemin de dossier de vos bibliothèques Plex à un dossier racine Sonarr ou Radarr correspondant. Ce mapping est essentiel pour la fonctionnalité de déplacement de médias.</p>
+        <h3 class="mt-4 mb-3">Mapping des Dossiers Plex <i class="fas fa-project-diagram"></i></h3>
+        <p class="text-muted">Associez chaque chemin de dossier de vos bibliothèques Plex à un dossier racine Sonarr ou Radarr correspondant, et assignez-lui un type. Ce mapping est essentiel pour la fonctionnalité de déplacement de médias.</p>
+
+        <!-- Datalist pour les suggestions de type -->
+        <datalist id="media-types-suggestions">
+            <option value="FILM"></option>
+            <option value="SÉRIE"></option>
+            <option value="DOCUMENTAIRE_FILM"></option>
+            <option value="DOCUMENTAIRE_SÉRIE"></option>
+            <option value="ANIME_FILM"></option>
+            <option value="ANIME_SÉRIE"></option>
+        </datalist>
 
         <div id="plex-mapping-container" class="mb-4">
             <!-- Le contenu sera généré dynamiquement par JavaScript -->
@@ -124,7 +135,6 @@
         <button type="button" id="save-plex-mappings-btn" class="btn btn-secondary w-100">Sauvegarder les Mappings Plex</button>
     </form>
 </div>
-
 {% endblock %}
 
 {% block scripts %}
@@ -140,7 +150,7 @@ $(document).ready(function() {
 
     function renderMappings() {
         container.empty();
-        if (plexLibraries.length === 0) {
+        if (!plexLibraries || plexLibraries.length === 0) {
             container.html('<div class="alert alert-warning">Aucune bibliothèque Plex de type film ou série n\'a été trouvée.</div>');
             return;
         }
@@ -150,41 +160,51 @@ $(document).ready(function() {
                 <div class="card mb-3">
                     <div class="card-header">
                         <i class="fas fa-${lib.type === 'show' ? 'tv' : 'film'}"></i>
-                        <strong>${lib.name}</strong> <span class="text-muted">(${lib.type})</span>
+                        <strong>${lib.name}</strong>
                     </div>
-                    <ul class="list-group list-group-flush" id="lib-${lib.name.replace(/\\s+/g, '')}"></ul>
+                    <ul class="list-group list-group-flush"></ul>
                 </div>
             `);
-            container.append(libCard);
+            const locationList = libCard.find('ul');
 
-            const locationList = $(`#lib-${lib.name.replace(/\\s+/g, '')}`);
             lib.locations.forEach(location => {
-                const arrOptions = (lib.type === 'show' ? sonarrFolders : radarrFolders).map(folder => {
-                    const selectedMapping = currentMappings[lib.name]?.find(m => m.plex_path === location);
-                    const isSelected = selectedMapping && selectedMapping.arr_root_folder === folder.path;
+                const arrFolders = lib.type === 'show' ? sonarrFolders : radarrFolders;
+                const arrType = lib.type === 'show' ? 'Sonarr' : 'Radarr';
+
+                // Trouver le mapping existant pour ce chemin spécifique
+                const existingMapping = currentMappings[lib.name]?.find(m => m.path === location);
+
+                const arrOptions = arrFolders.map(folder => {
+                    const isSelected = existingMapping && existingMapping.root_folder === folder.path;
                     return `<option value="${folder.path}" ${isSelected ? 'selected' : ''}>${folder.path} (${folder.freeSpace_formatted})</option>`;
                 }).join('');
 
+                const mediaType = existingMapping?.type || (lib.type === 'show' ? 'SÉRIE' : 'FILM');
+
                 const listItem = $(`
-                    <li class="list-group-item">
+                    <li class="list-group-item" data-plex-lib-name="${lib.name}" data-plex-path="${location}">
                         <div class="row align-items-center">
-                            <div class="col-md-5">
-                                <label class="form-label mb-0">Chemin Plex:</label>
-                                <input type="text" class="form-control-plaintext" value="${location}" readonly data-plex-path>
+                            <div class="col-md-4">
+                                <label class="form-label mb-0 small text-muted">Chemin Plex</label>
+                                <p class="form-control-plaintext py-1">${location}</p>
                             </div>
-                            <div class="col-md-1 text-center"><i class="fas fa-arrow-right"></i></div>
-                            <div class="col-md-6">
-                                <label class="form-label mb-0">Dossier ${lib.type === 'show' ? 'Sonarr' : 'Radarr'}:</label>
-                                <select class="form-select" data-plex-lib-name="${lib.name}" data-plex-lib-type="${lib.type}">
+                            <div class="col-md-4">
+                                <label class="form-label mb-0 small text-muted">Dossier ${arrType}</label>
+                                <select class="form-select form-select-sm" data-mapping="root_folder">
                                     <option value="">-- Non mappé --</option>
                                     ${arrOptions}
                                 </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label mb-0 small text-muted">Type de Média</label>
+                                <input type="text" class="form-control form-control-sm" list="media-types-suggestions" value="${mediaType}" data-mapping="type">
                             </div>
                         </div>
                     </li>
                 `);
                 locationList.append(listItem);
             });
+            container.append(libCard);
         });
     }
 
@@ -209,40 +229,38 @@ $(document).ready(function() {
     saveBtn.on('click', function() {
         const newMappings = {};
 
-        container.find('select').each(function() {
-            const select = $(this);
-            const selectedValue = select.val();
-            if (!selectedValue) return;
+        container.find('li[data-plex-lib-name]').each(function() {
+            const item = $(this);
+            const libName = item.data('plex-lib-name');
+            const plexPath = item.data('plex-path');
+            const rootFolder = item.find('[data-mapping="root_folder"]').val();
+            const mediaType = item.find('[data-mapping="type"]').val();
 
-            const plexLibName = select.data('plex-lib-name');
-            const plexLibType = select.data('plex-lib-type');
-            const plexPath = select.closest('li').find('input[data-plex-path]').val();
+            if (!rootFolder) return; // Ne pas sauvegarder les non-mappés
 
-            if (!newMappings[plexLibName]) {
-                newMappings[plexLibName] = [];
+            if (!newMappings[libName]) {
+                newMappings[libName] = [];
             }
 
-            newMappings[plexLibName].push({
-                plex_path: plexPath,
-                arr_root_folder: selectedValue,
-                arr_type: plexLibType === 'show' ? 'sonarr' : 'radarr'
+            newMappings[libName].push({
+                path: plexPath,
+                root_folder: rootFolder,
+                type: mediaType
             });
         });
 
-        saveBtn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Sauvegarde...');
+        saveBtn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Sauvegarde...');
 
         fetch('{{ url_for("api.save_mapping_data") }}', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(newMappings),
         })
         .then(response => response.json())
         .then(data => {
             if (data.success) {
                 toastr.success('Mappings sauvegardés avec succès !');
-                currentMappings = newMappings; // Update local state
+                currentMappings = newMappings;
             } else {
                 toastr.error('Erreur lors de la sauvegarde : ' + (data.error || 'Erreur inconnue'));
             }

@@ -905,17 +905,34 @@ def get_media_items():
                     )
 
                 # Enrichissement avec le type de média depuis le mapping
-                item.media_type_from_mapping = None
+                item.media_type_from_mapping = None # Sera 'sonarr' ou 'radarr'
+                item.custom_media_type = None       # Sera 'FILM', 'SÉRIE', etc.
+
+                # 1. Déterminer le type d'*Arr* de base (sonarr/radarr) à partir du type Plex
+                if item.type == 'show':
+                    item.media_type_from_mapping = 'sonarr'
+                elif item.type == 'movie':
+                    item.media_type_from_mapping = 'radarr'
+
+                # 2. Chercher le "type" personnalisé dans le mapping JSON
                 if item.file_path:
                     normalized_item_path = os.path.normpath(item.file_path.lower())
+                    mapping_found = False
                     for lib_name, mappings in plex_mappings.items():
                         for mapping in mappings:
-                            normalized_plex_path = os.path.normpath(mapping['plex_path'].lower())
-                            if normalized_item_path.startswith(normalized_plex_path):
-                                item.media_type_from_mapping = mapping['arr_type']
+                            # Utiliser la nouvelle structure de clé : 'path'
+                            normalized_mapped_path = os.path.normpath(mapping['path'].lower())
+                            if normalized_item_path.startswith(normalized_mapped_path):
+                                # Utiliser la nouvelle structure de clé : 'type'
+                                item.custom_media_type = mapping.get('type')
+                                mapping_found = True
                                 break
-                        if item.media_type_from_mapping:
+                        if mapping_found:
                             break
+
+                # 3. Fallback : si aucun type personnalisé n'est trouvé, utiliser un type par défaut
+                if not item.custom_media_type:
+                    item.custom_media_type = 'SÉRIE' if item.type == 'show' else 'FILM'
 
                 items_to_render.append(item)
 

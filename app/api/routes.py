@@ -23,38 +23,25 @@ def get_mapping_data():
     y compris les mappings actuellement sauvegardés.
     """
     try:
-        # Récupérer les bibliothèques Plex via la connexion admin
         plex_server = get_plex_admin_server()
         if not plex_server:
             return jsonify({"error": "Plex server not available or configured"}), 503
 
         plex_libs_aggregated = {}
-        current_app.logger.info("--- Début de l'inspection des bibliothèques Plex ---")
         for section in plex_server.library.sections():
-            current_app.logger.info(f"Bibliothèque trouvée: '{section.title}' (Type: {section.type})")
-            locations = getattr(section, 'locations', [])
-            current_app.logger.info(f"  -> Chemins bruts: {locations}")
             if section.type in ['movie', 'show']:
-                # On utilise le nom de la bibliothèque comme clé pour regrouper les chemins
                 if section.title not in plex_libs_aggregated:
                     plex_libs_aggregated[section.title] = {
                         "name": section.title,
                         "type": section.type,
                         "locations": []
                     }
-                # On ajoute les chemins à la liste existante
-                plex_libs_aggregated[section.title]["locations"].extend(locations)
+                plex_libs_aggregated[section.title]["locations"].extend(section.locations)
 
-        # On transforme le dictionnaire de bibliothèques agrégées en une liste,
-        # qui est le format attendu par le frontend.
         plex_libraries = list(plex_libs_aggregated.values())
-        current_app.logger.info(f"--- Fin de l'inspection des bibliothèques Plex, données agrégées: {plex_libraries} ---")
 
-        # Récupérer les root folders de Sonarr et Radarr
         sonarr_folders = get_sonarr_root_folders()
         radarr_folders = get_radarr_root_folders()
-
-        # Charger les mappings existants
         current_mappings = get_plex_mappings()
 
         return jsonify({
@@ -64,7 +51,7 @@ def get_mapping_data():
             "current_mappings": current_mappings
         })
     except Exception as e:
-        current_app.logger.error(f"Erreur lors de la récupération des données de mapping : {e}")
+        current_app.logger.error(f"Erreur lors de la récupération des données de mapping : {e}", exc_info=True)
         return jsonify({"error": "An internal error occurred while fetching mapping data"}), 500
 
 @api_bp.route('/mapping-data', methods=['POST'])
@@ -75,12 +62,8 @@ def save_mapping_data():
     """
     try:
         data = request.json
-        if not isinstance(data, dict):
-            return jsonify({"error": "Invalid data format: expected a JSON object"}), 400
-
         save_plex_mappings(data)
-
         return jsonify({"success": True, "message": "Mappings saved successfully."})
     except Exception as e:
-        current_app.logger.error(f"Erreur lors de la sauvegarde des données de mapping : {e}")
+        current_app.logger.error(f"Erreur lors de la sauvegarde des données de mapping : {e}", exc_info=True)
         return jsonify({"error": "An internal error occurred while saving mapping data"}), 500
