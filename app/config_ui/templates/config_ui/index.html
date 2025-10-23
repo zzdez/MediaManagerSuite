@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2 class="mb-4">{{ title }}</h2>
+
+    <!-- Section pour le Mapping -->
+    <div class="card mb-4">
+        <div class="card-header">
+            Configuration Avancée
+        </div>
+        <div class="card-body">
+            <p>Configurez les associations entre vos bibliothèques Plex et vos dossiers racines pour améliorer le filtrage et la sécurité des déplacements de médias.</p>
+            <a href="{{ url_for('config_ui.mapping_config') }}" class="btn btn-primary">
+                <i class="bi bi-diagram-3"></i> Gérer le Mapping des Dossiers
+            </a>
+        </div>
+    </div>
+
+    <form action="{{ url_for('config_ui.save_config') }}" method="post">
+        <!-- Section pour les Catégories Prowlarr -->
+        <div class="card mb-4">
+            <div class="card-header">
+                Catégories de Recherche Prowlarr
+            </div>
+            <div class="card-body">
+                <p>Sélectionnez les catégories que l'application doit utiliser lors des recherches automatiques.</p>
+                <div class="row">
+                    <div class="col-md-6">
+                        <h5>Sonarr (Séries)</h5>
+                        {% for category in all_categories.sonarr %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="sonarr_categories" value="{{ category.id }}" id="sonarr-cat-{{ category.id }}" {% if category.id in search_config.sonarr_categories %}checked{% endif %}>
+                            <label class="form-check-label" for="sonarr-cat-{{ category.id }}">
+                                {{ category.name }}
+                            </label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div class="col-md-6">
+                        <h5>Radarr (Films)</h5>
+                        {% for category in all_categories.radarr %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="radarr_categories" value="{{ category.id }}" id="radarr-cat-{{ category.id }}" {% if category.id in search_config.radarr_categories %}checked{% endif %}>
+                            <label class="form-check-label" for="radarr-cat-{{ category.id }}">
+                                {{ category.name }}
+                            </label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section pour les variables .env -->
+        <div class="card">
+            <div class="card-header">
+                Variables d'Environnement (.env)
+            </div>
+            <div class="card-body">
+                {% for item in config_items %}
+                    {% if item.type == 'header' %}
+                        <h4 class="mt-4">{{ item.text }}</h4>
+                    {% elif item.type == 'comment' %}
+                        <p class="text-muted">{{ item.text }}</p>
+                    {% elif item.type == 'variable' or item.type == 'textarea' %}
+                        <div class="mb-3">
+                            <label for="{{ item.key }}" class="form-label">{{ item.key }}</label>
+                            {% if item.type == 'textarea' %}
+                                <textarea class="form-control" id="{{ item.key }}" name="{{ item.key }}" rows="3">{{ item.value }}</textarea>
+                            {% else %}
+                                <input type="{{ 'password' if item.is_password else 'text' }}" class="form-control" id="{{ item.key }}" name="{{ item.key }}" value="{{ item.value }}">
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+            <div class="card-footer text-end">
+                <button type="submit" class="btn btn-success">
+                    <i class="bi bi-save"></i> Sauvegarder Toute la Configuration
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}

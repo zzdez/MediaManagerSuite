@@ -14,7 +14,7 @@ from plexapi.exceptions import NotFound, Unauthorized, BadRequest
 from . import plex_editor_bp
 
 # Importer les fonctions utilitaires Plex depuis le nouveau module
-from app.utils.plex_client import get_main_plex_account_object, get_plex_admin_server, get_user_specific_plex_server
+from app.utils.plex_client import get_main_plex_account_object, get_plex_admin_server, get_user_specific_plex_server, get_all_plex_libraries
 
 # Importer les utils spécifiques à plex_editor
 from .utils import cleanup_parent_directory_recursively, get_media_filepath, _is_dry_run_mode
@@ -37,8 +37,41 @@ from app.agent.services import _search_and_score_trailers
 from app.utils.move_manager import move_manager
 from app.utils.bulk_move_manager import BulkMoveManager
 from app.utils.arr_client import get_sonarr_root_folders, get_radarr_root_folders, move_sonarr_series, move_radarr_movie, get_arr_command_status, radarr_post_command
+from app.utils.mapping_config_manager import mapping_config_manager
 
 # --- Routes du Blueprint ---
+
+@plex_editor_bp.route('/api/media/destinations_for_types', methods=['POST'])
+@login_required
+def get_destinations_for_types():
+    """
+    Pour une liste de types de média, retourne les dossiers de destination valides
+    basé sur la configuration de mapping manuelle.
+    """
+    data = request.get_json()
+    media_types = data.get('media_types', [])
+    if not media_types:
+        return jsonify({})
+
+    try:
+        mappings = mapping_config_manager.get_mappings()
+        sonarr_folders = get_sonarr_root_folders() or []
+        radarr_folders = get_radarr_root_folders() or []
+        all_root_folders = {folder['path']: folder for folder in sonarr_folders + radarr_folders}
+
+        destinations_map = {}
+        for m_type in media_types:
+            destinations_map[m_type] = []
+            for rule in mappings:
+                if rule['media_type'] == m_type:
+                    folder_path = rule['root_folder']
+                    if folder_path in all_root_folders:
+                        destinations_map[m_type].append(all_root_folders[folder_path])
+
+        return jsonify(destinations_map)
+    except Exception as e:
+        current_app.logger.error(f"Erreur API /api/media/destinations_for_types: {e}", exc_info=True)
+        return jsonify({'error': 'Erreur serveur lors de la récupération des destinations.'}), 500
 
 @plex_editor_bp.route('/api/media/root_folders', methods=['GET'])
 @login_required
@@ -513,10 +546,15 @@ def get_media_items():
     data = request.json
     user_id = data.get('userId')
 
-    # On parse la nouvelle structure {id, folders} envoyée par le frontend
-    libraries_payload = data.get('libraries', [])
-    library_keys = [lib['id'] for lib in libraries_payload]
-    folders_by_library = {lib['id']: lib['folders'] for lib in libraries_payload}
+    # NOUVELLE LECTURE DU PAYLOAD SIMPLIFIÉ
+    library_keys = data.get('libraryKeys', [])
+    root_folders_filter = data.get('rootFolders', []) # Dossiers sélectionnés par l'utilisateur
+
+    if 'all' in library_keys:
+        # Si 'all' est sélectionné, on récupère toutes les bibliothèques visibles par l'admin
+        # Cela évite de dépendre de `librariesWithPaths` qui n'est pas disponible ici.
+        all_libs = get_all_plex_libraries()
+        library_keys = [lib['key'] for lib in all_libs]
 
     status_filter = data.get('statusFilter', 'all')
     title_filter = data.get('titleFilter', '').strip()
@@ -855,33 +893,33 @@ def get_media_items():
 
         items_to_render.sort(key=lambda x: getattr(x, 'titleSort', x.title).lower())
 
-        # --- NOUVELLE ÉTAPE : FILTRAGE FINAL PAR DOSSIER RACINE ---
-        # On ne filtre que si au moins un dossier a été spécifié dans la requête
-        if any(folders for folders in folders_by_library.values()):
+        # --- NOUVELLE ÉTAPE : FILTRAGE ET TAGGING VIA MAPPING MANUEL ---
+        manual_mappings = mapping_config_manager.get_mappings()
 
-            def normalize_path(path):
-                if not path: return ''
-                return os.path.normpath(path).lower()
+        def normalize_path(path):
+            if not path: return ''
+            return os.path.normpath(path).lower()
 
-            final_items_after_folder_filter = []
-            for item in items_to_render:
-                item_library_id_str = str(item.librarySectionID)
+        final_items_after_mapping = []
+        for item in items_to_render:
+            item_library_name = item.librarySectionTitle
+            item_path_normalized = normalize_path(getattr(item, 'file_path', ''))
 
-                # Vérifier si on a une liste de dossiers pour la bibliothèque de cet item
-                if item_library_id_str in folders_by_library:
-                    required_folders = folders_by_library[item_library_id_str]
+            # Attribuer le type de média custom
+            item.custom_media_type = None
+            for mapping in manual_mappings:
+                if mapping['library_name'] == item_library_name and item_path_normalized.startswith(normalize_path(mapping['root_folder'])):
+                    item.custom_media_type = mapping['media_type']
+                    break # On a trouvé la règle, on arrête
 
-                    # Si la liste est vide pour cette bib, on inclut l'item (aucun filtre de dossier spécifique)
-                    if not required_folders:
-                        final_items_after_folder_filter.append(item)
-                        continue
+            # Appliquer le filtre de dossier si l'utilisateur en a sélectionné
+            if root_folders_filter:
+                if not any(item_path_normalized.startswith(normalize_path(selected_folder)) for selected_folder in root_folders_filter):
+                    continue # Ne pas inclure cet item s'il ne correspond pas au filtre
 
-                    # Sinon, on vérifie si le chemin de l'item correspond
-                    item_path_normalized = normalize_path(getattr(item, 'file_path', ''))
-                    if any(item_path_normalized.startswith(normalize_path(folder)) for folder in required_folders):
-                        final_items_after_folder_filter.append(item)
+            final_items_after_mapping.append(item)
 
-            items_to_render = final_items_after_folder_filter # On remplace la liste par la liste filtrée
+        items_to_render = final_items_after_mapping
 
         return render_template(
             'plex_editor/_media_table.html',
@@ -2710,17 +2748,13 @@ def rename_series_files_endpoint():
 @login_required
 def bulk_move_media():
     data = request.get_json()
-    movie_ids = data.get('movies', [])
-    radarr_path = data.get('radarr_path')
-    series_ids = data.get('series', [])
-    sonarr_path = data.get('sonarr_path')
+    move_groups = data.get('move_groups', [])
 
-    if not movie_ids and not series_ids:
-        return jsonify({'status': 'error', 'message': 'Aucun média sélectionné.'}), 400
+    if not move_groups:
+        return jsonify({'status': 'error', 'message': 'Aucun groupe de déplacement fourni.'}), 400
 
     bulk_move_manager = BulkMoveManager()
-    # On doit passer le contexte de l'application au manager pour le thread
-    task_id = bulk_move_manager.start_bulk_move(movie_ids, radarr_path, series_ids, sonarr_path, current_app._get_current_object())
+    task_id = bulk_move_manager.start_bulk_move(move_groups, current_app._get_current_object())
 
     return jsonify({'status': 'success', 'message': 'Tâche de déplacement en masse démarrée.', 'task_id': task_id})
 

@@ -270,36 +270,12 @@ $(document).ready(function() {
 
         resetSelectionState(); // <-- RÉINITIALISATION DE LA SÉLECTION
 
-        // --- NOUVELLE LOGIQUE DE CONSTRUCTION DU PAYLOAD ---
-        let librariesPayload = [];
+        // --- LOGIQUE DE PAYLOAD SIMPLIFIÉE ---
+        // On envoie juste les clés de bibliothèques et les chemins de dossiers.
+        // Le backend gérera la logique de mapping.
         const finalSelectedLibs = selectedLibraries.includes('all')
-            ? librariesWithPaths.map(lib => lib.id) // Si 'all', on prend toutes les bibliothèques chargées
+            ? ['all'] // Le backend interprétera 'all'
             : selectedLibraries;
-
-        // Helper pour normaliser les chemins (insensible à la casse, sans slash final)
-        const normalizePath = (path) => {
-            if (!path) return '';
-            return path.toLowerCase().replace(/[\\/]$/, '');
-        };
-
-        finalSelectedLibs.forEach(libId => {
-            const libraryData = librariesWithPaths.find(lib => lib.id == libId);
-            if (libraryData) {
-                const normalizedLibPaths = libraryData.paths.map(normalizePath);
-
-                // Trouver les dossiers sélectionnés qui appartiennent réellement à cette bibliothèque
-                const associatedFolders = selectedRootFolders.filter(folder => {
-                    const normalizedFolder = normalizePath(folder);
-                    // On vérifie si un des chemins de la bibliothèque commence par le chemin du dossier sélectionné
-                    return normalizedLibPaths.some(libPath => libPath.startsWith(normalizedFolder));
-                });
-
-                librariesPayload.push({
-                    id: libId,
-                    folders: associatedFolders
-                });
-            }
-        });
 
         loader.show();
         itemsContainer.html('');
@@ -309,8 +285,8 @@ $(document).ready(function() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 userId: userId,
-                libraries: librariesPayload, // Nouvelle structure
-                rootFolders: selectedRootFolders, // On envoie aussi l'ancienne pour fallback
+                libraryKeys: finalSelectedLibs,
+                rootFolders: selectedRootFolders,
                 statusFilter: statusFilter,
                 titleFilter: titleFilter,
                 year: yearFilter, // <-- NOUVELLE LIGNE
@@ -884,111 +860,123 @@ $('#confirmArchiveMovieBtn').on('click', function() {
         batchActionsContainer.toggle(selectedCount > 0);
     });
 
-    // --- B. Action de déplacement en masse ---
+    // --- B. Action de déplacement en masse (REFAITE) ---
     $(document).on('click', '#batch-move-btn', function() {
         const selectedItems = $('.item-checkbox:checked');
-        const movies = [];
-        const series = [];
+        const groupedByMediaType = {};
 
         selectedItems.each(function() {
-            const item = {
-                id: $(this).attr('data-rating-key'),
-                type: $(this).attr('data-media-type') // Utilisation de .attr() pour plus de fiabilité
-            };
-            if (item.type === 'radarr') {
-                movies.push(item);
-            } else if (item.type === 'sonarr') {
-                series.push(item);
+            const mediaType = $(this).attr('data-custom-media-type');
+            if (!mediaType) return; // Ignorer les éléments sans type (ne devrait pas arriver)
+
+            if (!groupedByMediaType[mediaType]) {
+                groupedByMediaType[mediaType] = [];
             }
+            groupedByMediaType[mediaType].push($(this).attr('data-rating-key'));
         });
 
-        const modalJQuery = $('#move-media-modal-bulk'); // Renommage pour éviter le conflit
-        const destinationsDiv = modalJQuery.find('#bulk-move-destinations');
-        destinationsDiv.html(''); // Vider les anciens dropdowns
+        const destinationsDiv = $('#bulk-move-destinations');
+        destinationsDiv.html('<div class="text-center"><div class="spinner-border" role="status"></div></div>');
+        $('#bulk-move-media-count').text(selectedItems.length);
 
-        modalJQuery.find('#bulk-move-media-count').text(selectedItems.length);
-
-        if (movies.length > 0) {
-            destinationsDiv.append(`
-                <div class="mb-3">
-                    <label for="bulk-root-folder-select-radarr" class="form-label">Destination pour les ${movies.length} film(s)</label>
-                    <select id="bulk-root-folder-select-radarr" class="form-select">
-                        <option>Chargement...</option>
-                    </select>
-                </div>
-            `);
-            fetch('/plex/api/media/root_folders?type=radarr')
-                .then(response => response.json())
-                .then(folders => {
-                    const select = $('#bulk-root-folder-select-radarr');
-                    select.html('');
-                    folders.forEach(folder => select.append(new Option(folder.path, folder.path)));
-                });
-        }
-        if (series.length > 0) {
-            destinationsDiv.append(`
-                <div class="mb-3">
-                    <label for="bulk-root-folder-select-sonarr" class="form-label">Destination pour les ${series.length} série(s)</label>
-                    <select id="bulk-root-folder-select-sonarr" class="form-select">
-                        <option>Chargement...</option>
-                    </select>
-                </div>
-            `);
-            fetch('/plex/api/media/root_folders?type=sonarr')
-                .then(response => response.json())
-                .then(folders => {
-                    const select = $('#bulk-root-folder-select-sonarr');
-                    select.html('');
-                    folders.forEach(folder => select.append(new Option(folder.path, folder.path)));
-                });
-        }
-
+        // On lance la modale immédiatement pour le feedback utilisateur
         const modalElement = document.getElementById('move-media-modal-bulk');
         const modal = new bootstrap.Modal(modalElement);
         modal.show();
+
+        // On va chercher les destinations valides pour les types sélectionnés
+        fetch('/plex/api/media/destinations_for_types', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ media_types: Object.keys(groupedByMediaType) })
+        })
+        .then(response => response.json())
+        .then(destinationsMap => {
+            destinationsDiv.html(''); // Vider le spinner
+            if (destinationsMap.error) {
+                destinationsDiv.html(`<div class="alert alert-danger">${destinationsMap.error}</div>`);
+                return;
+            }
+
+            for (const mediaType in groupedByMediaType) {
+                const validFolders = destinationsMap[mediaType] || [];
+                const itemIds = groupedByMediaType[mediaType];
+                const selectId = `bulk-destination-select-${mediaType.replace(/\s/g, '-')}`;
+
+                let optionsHtml = '<option value="" selected>Ne pas déplacer</option>';
+                validFolders.forEach(folder => {
+                    optionsHtml += `<option value="${folder.path}">${folder.path} (${folder.freeSpace_formatted})</option>`;
+                });
+
+                destinationsDiv.append(`
+                    <div class="mb-3" data-media-type-group="${mediaType}">
+                        <label for="${selectId}" class="form-label">
+                            Destination pour les <strong>${itemIds.length}</strong> média(s) de type <strong>${mediaType}</strong>
+                        </label>
+                        <select id="${selectId}" class="form-select destination-select">
+                            ${optionsHtml}
+                        </select>
+                    </div>
+                `);
+            }
+        })
+        .catch(error => {
+            console.error("Erreur lors de la récupération des destinations :", error);
+            destinationsDiv.html(`<div class="alert alert-danger">Erreur de communication pour charger les dossiers de destination.</div>`);
+        });
     });
 
-    // --- NOUVELLE LOGIQUE COMPLÈTE POUR LE DÉPLACEMENT EN MASSE ---
+    // --- NOUVELLE LOGIQUE COMPLÈTE POUR LE DÉPLACEMENT EN MASSE (REFAITE) ---
     let bulkMoveTaskId = null;
     let bulkMoveInterval = null;
 
     $('#confirm-bulk-move-btn').on('click', function() {
-        const movies = [];
-        const series = [];
+        const moveGroups = [];
         const selectedRows = $('.item-checkbox:checked').closest('tr');
 
+        // Re-créer les groupes pour avoir les IDs sous la main
+        const groupedByMediaType = {};
         selectedRows.each(function() {
             const checkbox = $(this).find('.item-checkbox');
-            const item = {
-                id: checkbox.data('rating-key'),
-                type: checkbox.data('media-type')
-            };
-            if (item.type === 'radarr') movies.push(item.id);
-            else if (item.type === 'sonarr') series.push(item.id);
+            const mediaType = checkbox.attr('data-custom-media-type');
+            if (!mediaType) return;
+            if (!groupedByMediaType[mediaType]) {
+                groupedByMediaType[mediaType] = [];
+            }
+            groupedByMediaType[mediaType].push(checkbox.attr('data-rating-key'));
         });
 
-        const radarrPath = $('#bulk-root-folder-select-radarr').val();
-        const sonarrPath = $('#bulk-root-folder-select-sonarr').val();
+        // Collecter les destinations choisies
+        $('#bulk-move-destinations .mb-3').each(function() {
+            const groupDiv = $(this);
+            const mediaType = groupDiv.attr('data-media-type-group');
+            const destinationPath = groupDiv.find('.destination-select').val();
 
-        if (!confirm("Êtes-vous sûr de vouloir lancer le déplacement en masse ? Cette opération peut prendre beaucoup de temps.")) {
+            if (mediaType && destinationPath) {
+                moveGroups.push({
+                    media_type: mediaType,
+                    item_ids: groupedByMediaType[mediaType],
+                    destination_path: destinationPath
+                });
+            }
+        });
+
+        if (moveGroups.length === 0) {
+            alert("Aucun déplacement n'a été configuré. Veuillez choisir une destination pour au moins un groupe.");
             return;
         }
 
-        // Fermer la modale
-        bootstrap.Modal.getInstance(document.getElementById('move-media-modal-bulk')).hide();
+        if (!confirm("Êtes-vous sûr de vouloir lancer le déplacement en masse ? Cette opération peut prendre du temps.")) {
+            return;
+        }
 
-        // Geler l'UI pour les éléments sélectionnés
+        bootstrap.Modal.getInstance(document.getElementById('move-media-modal-bulk')).hide();
         selectedRows.addClass('opacity-50').find('input, button').prop('disabled', true);
 
         fetch('/plex/api/media/bulk_move', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                movies: movies,
-                radarr_path: radarrPath,
-                series: series,
-                sonarr_path: sonarrPath
-            })
+            body: JSON.stringify({ move_groups: moveGroups })
         })
         .then(response => response.json())
         .then(data => {

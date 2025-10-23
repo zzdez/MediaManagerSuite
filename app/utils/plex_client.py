@@ -271,3 +271,27 @@ def find_plex_media_by_titles(plex_server, titles_list: list, year: int, media_t
 
     logger.warn(f"Plex Client: Could not find Plex media by any of the titles: {titles_list} (Year: {year}).")
     return None
+
+def get_all_plex_libraries():
+    """
+    Récupère toutes les bibliothèques Plex (films et séries) visibles par le compte admin.
+    Retourne une liste de dictionnaires {'key', 'title'} ou une liste vide en cas d'erreur.
+    """
+    try:
+        plex_server = get_plex_admin_server()
+        if not plex_server:
+            logger.error("get_all_plex_libraries: Impossible d'obtenir une connexion admin à Plex.")
+            return []
+
+        libraries = plex_server.library.sections()
+
+        # Filtrer pour ne garder que les bibliothèques de films et de séries
+        filtered_libraries = [
+            {'key': lib.key, 'title': lib.title}
+            for lib in libraries if lib.type in ['movie', 'show']
+        ]
+
+        return sorted(filtered_libraries, key=lambda x: x['title'])
+    except Exception as e:
+        logger.error(f"Erreur inattendue dans get_all_plex_libraries: {e}", exc_info=True)
+        return []

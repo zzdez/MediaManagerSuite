@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2 class="mb-4">{{ title }}</h2>
+    <p class="text-muted">Créez des règles pour associer vos bibliothèques Plex à des dossiers racines spécifiques et leur attribuer un type. Ce mapping sera utilisé dans l'Éditeur Plex pour le filtrage et le déplacement sécurisé des médias.</p>
+
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            Règles de Mapping
+            <button id="add-mapping-btn" class="btn btn-sm btn-primary">
+                <i class="bi bi-plus-circle"></i> Ajouter une règle
+            </button>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th scope="col">Bibliothèque Plex</th>
+                            <th scope="col">Dossier Racine</th>
+                            <th scope="col">Type de Média</th>
+                            <th scope="col" style="width: 5%;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="mappings-table-body">
+                        {% for mapping in current_mappings %}
+                        <tr>
+                            <td>
+                                <select class="form-select form-select-sm mapping-library">
+                                    <option value="" {% if not mapping.library_name %}selected{% endif %} disabled>Choisir...</option>
+                                    {% for lib in plex_libraries %}
+                                    <option value="{{ lib.title }}" {% if lib.title == mapping.library_name %}selected{% endif %}>{{ lib.title }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td>
+                                <select class="form-select form-select-sm mapping-root-folder">
+                                    <option value="" {% if not mapping.root_folder %}selected{% endif %} disabled>Choisir...</option>
+                                    {% for folder in root_folders %}
+                                    <option value="{{ folder.path }}" {% if folder.path == mapping.root_folder %}selected{% endif %}>{{ folder.path }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td>
+                                <input type="text" class="form-control form-control-sm mapping-media-type" value="{{ mapping.media_type }}" placeholder="Ex: FILM, SERIE, DOCU_FILM...">
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-danger delete-mapping-btn"><i class="bi bi-trash"></i></button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card-footer text-end">
+            <a href="{{ url_for('config_ui.show_config') }}" class="btn btn-secondary">Annuler</a>
+            <button id="save-mappings-btn" class="btn btn-success">
+                <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                Sauvegarder les Mappings
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Template pour les nouvelles lignes -->
+<template id="mapping-row-template">
+    <tr>
+        <td>
+            <select class="form-select form-select-sm mapping-library">
+                <option value="" selected disabled>Choisir...</option>
+                {% for lib in plex_libraries %}
+                <option value="{{ lib.title }}">{{ lib.title }}</option>
+                {% endfor %}
+            </select>
+        </td>
+        <td>
+            <select class="form-select form-select-sm mapping-root-folder">
+                <option value="" selected disabled>Choisir...</option>
+                {% for folder in root_folders %}
+                <option value="{{ folder.path }}">{{ folder.path }}</option>
+                {% endfor %}
+            </select>
+        </td>
+        <td>
+            <input type="text" class="form-control form-control-sm mapping-media-type" placeholder="Ex: FILM, SERIE, DOCU_FILM...">
+        </td>
+        <td>
+            <button class="btn btn-sm btn-outline-danger delete-mapping-btn"><i class="bi bi-trash"></i></button>
+        </td>
+    </tr>
+</template>
+
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="{{ url_for('config_ui.static', filename='js/mapping_config.js') }}"></script>
+{% endblock %}

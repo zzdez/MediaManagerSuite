@@ -9,7 +9,10 @@ from dotenv import dotenv_values, set_key
 # Imports depuis nos modules utilitaires
 from app.utils.prowlarr_client import get_prowlarr_categories
 from app.utils.config_manager import load_search_categories, save_search_categories
-from app.auth import login_required # Utilisation du bon décorateur d'authentification
+from app.auth import login_required
+from app.utils.plex_client import get_all_plex_libraries
+from app.utils.arr_client import get_sonarr_root_folders, get_radarr_root_folders
+from app.utils.mapping_config_manager import mapping_config_manager
 
 logger = logging.getLogger(__name__)
 
@@ -98,3 +101,44 @@ def save_config():
         flash(f"Une erreur est survenue lors de la sauvegarde : {e}", "danger")
     
     return redirect(url_for('config_ui.show_config'))
+
+@config_ui_bp.route('/mappings', methods=['GET'])
+@login_required
+def mapping_config():
+    """Affiche la page de configuration du mapping Bibliothèques/Dossiers."""
+    try:
+        plex_libs = get_all_plex_libraries()
+        sonarr_folders = get_sonarr_root_folders() or []
+        radarr_folders = get_radarr_root_folders() or []
+        all_root_folders = sorted(sonarr_folders + radarr_folders, key=lambda x: x['path'])
+
+        current_mappings = mapping_config_manager.get_mappings()
+
+        return render_template('config_ui/mapping_config.html',
+                               title="Configuration du Mapping",
+                               plex_libraries=plex_libs,
+                               root_folders=all_root_folders,
+                               current_mappings=current_mappings)
+    except Exception as e:
+        logger.error(f"Erreur lors du chargement de la page de mapping : {e}", exc_info=True)
+        flash("Une erreur critique est survenue lors du chargement des données pour le mapping.", "danger")
+        return redirect(url_for('config_ui.show_config'))
+
+@config_ui_bp.route('/api/mappings', methods=['POST'])
+@login_required
+def save_mapping_config():
+    """Endpoint API pour sauvegarder la configuration du mapping."""
+    try:
+        data = request.get_json()
+        mappings = data.get('mappings')
+        if mappings is None:
+            return jsonify({'status': 'error', 'message': 'Données de mapping manquantes.'}), 400
+
+        mapping_config_manager.save_mappings(mappings)
+        return jsonify({'status': 'success', 'message': 'Configuration du mapping sauvegardée.'})
+    except ValueError as ve:
+        logger.warning(f"Tentative de sauvegarde de mappings invalides : {ve}")
+        return jsonify({'status': 'error', 'message': str(ve)}), 400
+    except Exception as e:
+        logger.error(f"Erreur lors de la sauvegarde du mapping : {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': 'Une erreur serveur est survenue.'}), 500
