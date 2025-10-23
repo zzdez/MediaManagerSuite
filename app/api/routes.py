@@ -23,10 +23,10 @@ def get_mapping_data():
     y compris les mappings actuellement sauvegardés.
     """
     try:
-        # Récupérer les bibliothèques Plex
-        plex_server = get_user_specific_plex_server(silent=True)
+        # Récupérer les bibliothèques Plex via la connexion admin
+        plex_server = get_plex_admin_server()
         if not plex_server:
-            return jsonify({"error": "Plex server not available"}), 503
+            return jsonify({"error": "Plex server not available or configured"}), 503
 
         plex_libraries = []
         for section in plex_server.library.sections():
