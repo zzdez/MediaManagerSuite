@@ -1348,8 +1348,7 @@ def move_radarr_movie(movie_id, new_root_folder_path):
     command_payload = {
         "name": "MoveMovies",
         "movieIds": [movie_id_int],
-        "rootFolderPath": new_root_folder_path,
-        "moveFiles": True # S'assurer que les fichiers sont bien déplacés
+        "rootFolderPath": new_root_folder_path
     }
 
     command_response = radarr_post_command(command_payload)
