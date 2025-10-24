@@ -4,7 +4,6 @@ import requests
 from flask import current_app
 import re
 import logging
-import json
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -1351,18 +1350,18 @@ def move_radarr_movie(movie_id, new_root_folder_path):
         logger.error(f"Radarr: {error_msg}")
         return False, error_msg
 
-    # --- JOURNALISATION DE DIAGNOSTIC ---
-    logger.info(f"Radarr Move Debug: Données originales du film ID {movie_id_int}:\n{json.dumps(movie_data, indent=2)}")
-    # --- FIN JOURNALISATION ---
-
     # Mettre à jour le chemin racine et le chemin complet
     # Utiliser 'folderName' est plus robuste que de se baser sur le titre ou l'ancien chemin
-    movie_folder = movie_data.get('folderName')
-    if not movie_folder:
-        # Fallback si folderName n'est pas disponible, bien que ce soit peu probable
+    folder_path_from_radarr = movie_data.get('folderName')
+    if not folder_path_from_radarr:
+        # Fallback si folderName n'est pas disponible
         original_path = movie_data.get('path', '')
         movie_folder = os.path.basename(original_path) if original_path else movie_data.get('title', '')
         logger.warning(f"Radarr: 'folderName' non trouvé pour le film ID {movie_id_int}. Utilisation du fallback : '{movie_folder}'")
+    else:
+        # CORRECTION : Extraire uniquement le nom du dossier du chemin complet fourni par Radarr
+        movie_folder = os.path.basename(os.path.normpath(folder_path_from_radarr))
+        logger.info(f"Radarr: Nom de dossier extrait de 'folderName' : '{movie_folder}'")
 
     new_path = os.path.join(new_root_folder_path, movie_folder)
 
@@ -1381,10 +1380,6 @@ def move_radarr_movie(movie_id, new_root_folder_path):
     # --- FIN DE LA CORRECTION ---
 
     params = {'moveFiles': 'true'}
-
-    # --- JOURNALISATION DE DIAGNOSTIC ---
-    logger.info(f"Radarr Move Debug: Données envoyées à l'API pour le film ID {movie_id_int}:\n{json.dumps(movie_data, indent=2)}")
-    # --- FIN JOURNALISATION ---
 
     response = _radarr_api_request('PUT', f"movie/{movie_id_int}", params=params, json_data=movie_data)
 
