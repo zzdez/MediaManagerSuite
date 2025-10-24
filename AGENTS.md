@@ -1,119 +1,31 @@
-# MediaManagerSuite (MMS) - Guide pour l'Agent de Développement
+# AGENTS.md - Base de Connaissances pour les Agents IA
 
-Ce document sert de guide pour toute intervention sur le projet MediaManagerSuite. Il a pour but de préserver la cohérence, la stabilité et la vision à long terme de l'application.
+Ce fichier documente les leçons apprises, les décisions architecturales et les points techniques importants découverts lors du développement de l'application. Le but est d'assurer la continuité, d'éviter les régressions et d'accélérer les futurs développements.
 
-## Mission Principale
+## Leçons Apprises et Points Techniques Clés
 
-MediaManagerSuite (MMS) est une application web conçue pour rationaliser et automatiser la gestion d'une médiathèque personnelle. Sa mission est de faire le pont entre la recherche de contenu (films et séries), son téléchargement via une seedbox (rTorrent), et son organisation finale dans les bibliothèques gérées par Sonarr et Radarr, en vue d'une lecture sur Plex.
+### 1. Déplacement de Média via l'API Radarr
 
-## Architecture Globale
+**Problème :** Lors d'une tentative de déplacement d'un film, l'API de Radarr semblait ignorer le nouveau dossier de destination et tentait de déplacer le fichier vers son propre emplacement, provoquant une erreur.
 
-- **Backend**: Python avec le micro-framework Flask.
-- **Frontend**: HTML, CSS (Bootstrap), et JavaScript (jQuery).
-- **Structure**: L'application est une monolithique modulaire qui suit le pattern "Application Factory". Le code est organisé par fonctionnalités dans des **Blueprints** (ex: `search_ui`, `seedbox_ui`).
-- **Logique Métier**: La logique réutilisable (clients API, processeurs de tâches) est centralisée dans le répertoire `app/utils`.
-- **Interaction Frontend/Backend**: Le frontend communique principalement avec le backend via des requêtes **AJAX** vers les points de terminaison de l'API Flask (souvent préfixés par `/api/...`).
+**Cause Racine :** L'objet "film" envoyé à l'API de Radarr (`PUT /api/v3/movie/{id}`) contient plusieurs champs liés au chemin. Une simple mise à jour du champ `rootFolderPath` est insuffisante si d'autres champs de chemin entrent en conflit. Il a été découvert que le champ `folderName` renvoyé par Radarr contenait le chemin complet du dossier du film (ex: `D:\Movies\Titre (2023)`), et non juste le nom du dossier.
 
-## Règles d'Or (Non Négociables)
+**Solution et Règle d'Or :**
+Pour construire un nouveau chemin de destination valide pour Radarr, il faut :
+1.  Prendre la valeur de `folderName` (ou `path` comme fallback) de l'objet film original.
+2.  Utiliser `os.path.basename()` pour en extraire **uniquement** le nom du dossier final (ex: `Titre (2023)`).
+3.  Utiliser `os.path.join()` pour combiner le nouveau dossier racine de destination avec ce nom de dossier.
+4.  Mettre à jour de manière cohérente **tous** les champs de chemin pertinents dans l'objet film avant de l'envoyer à l'API :
+    *   `rootFolderPath` (le nouveau dossier racine)
+    *   `path` (le chemin complet du dossier dans la nouvelle destination)
+    *   `movieFile.path` (le chemin complet du fichier vidéo lui-même dans la nouvelle destination)
 
-Ces règles doivent être respectées scrupuleusement lors de toute modification du code.
+### 2. Suivi de la Progression des Tâches en Arrière-Plan
 
-1.  **PAS DE SUPPOSITIONS** : Toute modification doit se baser sur le code existant et fonctionnel. En cas de doute, il est impératif de demander des clarifications plutôt que d'interpréter.
-2.  **NE PAS RÉINVENTER LA ROUE** : L'application est riche en fonctionnalités. La priorité est de réutiliser, d'adapter et d'étendre le code existant avant d'écrire une nouvelle logique. Cherchez d'abord dans `app/utils` et les Blueprints existants.
-3.  **ÉVITER LES RÉGRESSIONS À TOUT PRIX** : Chaque nouvelle fonctionnalité doit être implémentée de la manière la moins intrusive possible pour ne pas casser ce qui fonctionne déjà. Une phase d'investigation et d'analyse d'impact doit toujours précéder une phase de modification.
+**Problème :** L'interface utilisateur affiche une notification de succès immédiatement après le lancement d'une tâche de longue durée (comme un déplacement de masse), alors que l'opération est toujours en cours en arrière-plan.
 
-## Composants Clés et Concepts
-
-- **`pending_torrents_map.json`**: Le "cerveau" de l'application. Ce fichier est la source de vérité unique pour toutes les opérations de téléchargement et d'importation en cours. Il fonctionne comme une machine à états.
-- **`mapping_manager.py`**: Le gardien du `pending_torrents_map.json`. Toute interaction avec ce fichier DOIT passer par ce manager pour garantir l'intégrité des données (notamment via `FileLock`).
-- **Workers Asynchrones (`sftp_scanner`, `staging_processor`)**: Scripts exécutés en arrière-plan (via APScheduler) qui gèrent la détection, le rapatriement (SFTP) et l'importation des fichiers. Ils sont coordonnés via les statuts dans `pending_torrents_map.json`.
-- **Identifiants Externes (`tmdb_id`, `tvdb_id`)**: La source de vérité pour l'identification des médias. Toute nouvelle fonctionnalité de cache ou de mapping doit utiliser ces identifiants comme clés primaires pour garantir la cohérence et la fiabilité.
-- **`trailer_database.json`**: La base de données centralisée pour toutes les informations relatives aux bandes-annonces. Elle stocke les résultats de recherche mis en cache et, surtout, les bandes-annonces verrouillées par l'utilisateur.
-- **`trailer_manager.py`**: Le gardien du `trailer_database.json`. Toute interaction avec les données des bandes-annonces (recherche, verrouillage, nettoyage du cache) doit passer par ce manager.
-
-### **Logique de Gestion des Bandes-Annonces : La Recette**
-
-Pour garantir la performance et la cohérence, toute fonctionnalité liée aux bandes-annonces doit suivre cette logique :
-
-1.  **Pour Afficher le Statut d'un Verrou (ex: bouton vert dans une liste)** :
-    *   **Utiliser `trailer_manager.is_trailer_locked(media_type, external_id)`**.
-    *   Cette fonction est "légère" : elle ne fait qu'une lecture rapide du fichier JSON et ne déclenche **jamais** d'appel API. C'est la méthode à privilégier pour les vues de liste pour ne pas impacter les performances.
-
-2.  **Pour Lancer une Recherche de Bande-Annonce (ex: clic sur le bouton "Bande-annonce")** :
-    *   **Utiliser `trailer_manager.get_trailer_info(media_type, external_id, title, year)`**.
-    *   Cette fonction est "lourde" : elle vérifie d'abord le cache. Si les résultats sont présents et récents, elle les retourne. Sinon, elle lance une recherche sur YouTube et met en cache la liste complète des résultats.
-    *   **Ne jamais appeler cette fonction en boucle sur une liste de médias.**
-
-3.  **Pour Verrouiller une Bande-Annonce** :
-    *   **Utiliser `trailer_manager.lock_trailer(media_type, external_id, video_data)`**.
-    *   Cette fonction sauvegarde les données de la vidéo choisie et, pour garder la base de données propre, **purge automatiquement tous les autres résultats de recherche** qui étaient en cache pour ce média.
-
-En respectant cette "recette", nous assurons une expérience utilisateur fluide, une consommation d'API maîtrisée et une base de données pertinente.
-
-### **Logique de Suppression rTorrent**
-
-En raison de restrictions imposées par le fournisseur de la seedbox, la suppression des données de torrents ne peut pas se faire via l'API XML-RPC de rTorrent (`d.delete_tied`). Par conséquent, **toute suppression de données doit impérativement passer par SFTP**.
-
-- **Fonction Clé** : `_sftp_delete_recursive` dans `app/utils/rtorrent_client.py`.
-- **Compatibilité des Chemins** : Le serveur SFTP attend des chemins avec des **slashes (`/`)** comme séparateurs. Lors de la construction de chemins pour les opérations SFTP, il est crucial de ne pas utiliser `os.path.join` ou `pathlib.Path` qui dépendent de l'OS, mais de forcer l'utilisation de slashes pour garantir la compatibilité.
-
-## Session du 2025-10-12 : Finalisation de la Gestion des Bandes-Annonces Cette session a permis de finaliser l'implémentation d'un système de gestion de bandes-annonces complet et visuellement cohérent. ### Architecture et Logique Backend 1. **Centralisation du Statut :** La logique de statut a été centralisée dans `app/utils/trailer_manager.py` via une nouvelle fonction `get_trailer_status(media_type, external_id)`. Elle retourne un des trois états : `'LOCKED'`, `'UNLOCKED'`, ou `'NONE'`. Cette fonction est maintenant la méthode de référence pour vérifier l'état d'une bande-annonce. 2. **Enrichissement des API :** Toutes les routes API retournant des listes de médias ont été mises à jour pour inclure le champ `trailer_status`. Cela concerne : * `/api/media/search` (Recherche Média) * `/api/search/lookup` (Modale de Mapping) * `/api/media_items` (Éditeur Plex) * `/api/series_details` (Modale de gestion des séries) 3. **Lecture Directe :** Une nouvelle route `/api/agent/get_locked_trailer_id` a été créée pour récupérer directement l'ID d'une vidéo verrouillée, permettant une lecture instantanée sans passer par la modale de sélection. ### Interface et Expérience Utilisateur 1. **Système de Couleurs :** Un système de couleurs `btn-outline-*` a été appliqué de manière cohérente : * `btn-outline-success` (Vert) pour `LOCKED`. * `btn-outline-primary` (Bleu) pour `UNLOCKED`. * `btn-outline-danger` (Rouge) pour `NONE`. 2. **Icônes Unifiées :** L'icône `bi-film` est maintenant utilisée sur tous les boutons de bande-annonce pour une meilleure cohérence visuelle. 3. **Recherche Autonome :** Le bouton "Bandes-annonces" du menu latéral est désormais fonctionnel. Il ouvre une modale de recherche dédiée (`#standalone-trailer-search-modal`) gérée par `global_trailer_search.js`. Cette fonctionnalité réutilise l'API `/search_ui/api/media/search` et le système d'événements globaux (`openTrailerSearch`) pour une intégration transparente. 4. **Nettoyage :** L'ancienne fonctionnalité de résumé des bandes-annonces, son template (`_trailer_summary_modal.html`) et sa route API (`/api/plex_editor/trailers/summary`) ont été entièrement supprimés. 
-
-
-Client TVDB (app/utils/tvdb_client.py)
-Gestion des traductions : La fonction get_series_details_by_id doit gérer les traductions manquantes ou incomplètes de manière robuste. Si une traduction est demandée (par ex. en français) mais que les champs name ou overview de cette traduction sont vides ou ne contiennent que des espaces, le système doit utiliser les données de la langue originale (anglais) comme solution de secours. Cela évite d'envoyer des données vides au frontend.
-Intégrité des données : Le dictionnaire retourné par get_series_details_by_id doit toujours contenir la clé id correspondant à l'ID TVDB de la série. Cet identifiant est crucial pour les opérations en aval, notamment pour le mappage et le téléchargement de médias. Son absence a déjà provoqué des régressions (erreur HTTP 400).
-Communication rTorrent (app/utils/rtorrent_client.py)
-Ne pas mélanger les protocoles : Le client rTorrent de l'utilisateur fonctionne de manière fiable avec des commandes httprpc pour l'ajout de torrents, mais xmlrpc pour lister les torrents. Toute tentative de modifier ou de "moderniser" la méthode d'ajout en utilisant xmlrpc a provoqué des comportements instables (torrents en pause, échecs d'ajout silencieux). Leçon : Si une méthode de communication fonctionne, ne pas la changer. Isoler les nouvelles fonctionnalités (comme la récupération de hash par comparaison) de manière à ce qu'elles utilisent le protocole xmlrpc uniquement pour la lecture, sans interférer avec l'écriture (httprpc).
-Vérifier les dépendances d'import : Lors de la restauration ou de la modification de fichiers utilitaires comme rtorrent_client.py, il est impératif de vérifier tous les autres modules qui l'importent (seedbox_ui, search_ui, etc.) pour s'assurer qu'aucune fonction renommée ou supprimée ne provoque une ImportError. Une recherche globale (grep) des noms de fonction est obligatoire avant de valider une telle modification.
-Recherche & Téléchargement (app/search_ui/)
-Téléchargement par lots : La page de recherche libre (/search/) permet désormais le téléchargement de plusieurs releases en une seule fois.
-Frontend (app/static/js/search_logic.js) :
-Des cases à cocher (.release-checkbox) sont ajoutées à chaque ligne de résultat.
-La fonction updateBatchActions() gère l'affichage d'un bouton de lot (#batch-map-btn) lorsque 2 releases ou plus sont sélectionnées. Elle désactive aussi les boutons de mappage individuels pour éviter les confusions.
-Lors du clic, le bouton de lot collecte les informations des releases sélectionnées et ouvre la modale de mappage.
-Backend (app/search_ui/__init__.py) :
-Une nouvelle route /batch-download-and-map a été créée pour gérer les requêtes de lot.
-La logique de traitement d'une release unique a été refactorisée dans une fonction _process_single_release pour être réutilisée.
-La route de lot boucle sur les releases et appelle _process_single_release pour chacune.
-Conformément à la demande, le processus s'arrête à la première erreur rencontrée.
-
-### Déplacement de Média Asynchrone
-
-Pour permettre le déplacement de médias (films, séries) entre différents dossiers racines sans bloquer l'interface, une approche asynchrone a été mise en place.
-
-1.  **Initiation (Backend)**: Une route API (`/api/media/move`) reçoit la demande de déplacement. Elle utilise un `move_manager` pour s'assurer qu'une seule opération de ce type est en cours. Si la voie est libre, elle envoie une commande de déplacement (ex: `MoveMovies`) à Sonarr/Radarr, qui retourne un ID de tâche.
-2.  **Suivi (Frontend)**: Le client JavaScript, après avoir reçu la confirmation que la tâche est lancée, commence une interrogation (polling) à intervalle régulier (toutes les 15 secondes) vers une autre route API (`/api/media/move_status`).
-3.  **Mise à jour de l'état (Backend)**: La route de statut interroge l'API de Sonarr/Radarr avec l'ID de la tâche pour connaître son état (`pending`, `running`, `completed`, `failed`).
-4.  **Finalisation (Frontend)**: Lorsque le client reçoit un statut final (`completed` ou `failed`), il arrête le polling, met à jour l'interface (restaure les boutons, affiche une notification) et rafraîchit la vue pour refléter le nouvel emplacement du média.
-
-Cette architecture permet de gérer des opérations potentiellement longues de manière transparente pour l'utilisateur.
-
-### Déplacement de Séries Sonarr : Une Leçon de Précision
-
-Le déplacement de séries via l'API Sonarr v3 s'est avéré plus complexe qu'il n'y paraît et a nécessité un débogage approfondi. La méthode la plus fiable, identifiée en analysant les propres appels de l'interface web de Sonarr, est la suivante :
-
-- **Endpoint**: `PUT /api/v3/series/{id}`
-- **Paramètre d'URL**: `moveFiles=true` (essentiel pour déclencher le déplacement physique des fichiers).
-- **Corps de la requête (Payload)**: L'objet JSON complet de la série, modifié avec les nouvelles informations de chemin.
-
-**Leçon Apprise Clé :** Il ne suffit pas de mettre à jour le `rootFolderPath`. Il est **impératif** de mettre à jour également le champ `path` de la série. Le nouveau `path` doit être une combinaison du nouveau `rootFolderPath` et du nom du dossier de la série.
-
-**Exemple de logique correcte :**
-```python
-# 1. Récupérer l'objet série complet
-series_data = get_sonarr_series_by_id(series_id)
-
-# 2. Mettre à jour le dossier racine
-series_data['rootFolderPath'] = new_root_folder_path
-
-# 3. Mettre à jour le chemin complet (CRUCIAL)
-series_folder_name = os.path.basename(series_data['path'])
-series_data['path'] = os.path.join(new_root_folder_path, series_folder_name)
-
-# 4. Envoyer la requête avec le paramètre moveFiles
-params = {'moveFiles': 'true'}
-response = _sonarr_api_request('PUT', f"series/{series_id}", params=params, json_data=series_data)
-```
-
-Toute autre approche (utilisation de l'endpoint `/series/editor` ou de la commande `MoveSeries`) a échoué car elle n'était pas adaptée à ce cas d'usage ou était mal interprétée par l'API de Sonarr, provoquant des erreurs ou des déplacements incorrects.
+**Architecture Validée :**
+*   Le backend doit gérer les tâches longues dans un thread séparé (ex: via un `BulkMoveManager`).
+*   Le backend doit exposer une API de statut (ex: `GET /api/task_status/<task_id>`) qui retourne l'état actuel de la tâche (ex: 'running', 'completed', 'failed') et un message de progression.
+*   Le frontend **ne doit pas** considérer la tâche comme terminée après l'appel initial. Il doit lancer une boucle de *polling* (ex: avec `setInterval`) qui interroge régulièrement l'API de statut.
+*   L'interface doit être mise à jour dynamiquement en fonction de la réponse de l'API de statut (ex: afficher un indicateur de progression). La notification finale (succès/échec) et le rafraîchissement des données ne doivent être déclenchés que lorsque l'API de statut renvoie un état final ('completed' ou 'failed').
