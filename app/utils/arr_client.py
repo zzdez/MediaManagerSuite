@@ -1333,52 +1333,39 @@ def move_sonarr_series(series_id, new_root_folder_path):
 
 def move_radarr_movie(movie_id, new_root_folder_path):
     """
-    Déplace un film Radarr vers un nouveau dossier racine en utilisant l'API 'movie.editor'.
+    Déplace un film Radarr en utilisant la commande 'MoveMovies'.
     Cette méthode retourne un ID de commande pour le suivi.
     Retourne (True, command_id) en cas de succès, (False, error_message) en cas d'échec.
     """
-    logger.info(f"Radarr: Initiating move for movie ID {movie_id} to '{new_root_folder_path}'.")
+    logger.info(f"Radarr: Initiating 'MoveMovies' command for movie ID {movie_id} to '{new_root_folder_path}'.")
     try:
         movie_id_int = int(movie_id)
     except (ValueError, TypeError):
-        logger.error(f"L'ID du film '{movie_id}' n'est pas un entier valide.")
-        return False, f"L'ID du film '{movie_id}' est invalide."
+        error_msg = f"L'ID du film '{movie_id}' est invalide."
+        logger.error(error_msg)
+        return False, error_msg
 
-    payload = {
+    command_payload = {
+        "name": "MoveMovies",
         "movieIds": [movie_id_int],
         "rootFolderPath": new_root_folder_path,
-        "moveFiles": True
+        "moveFiles": True # S'assurer que les fichiers sont bien déplacés
     }
 
-    response = _radarr_api_request('POST', 'movie/editor', json_data=payload)
+    command_response = radarr_post_command(command_payload)
 
-    # Une réponse réussie pour cette commande est une liste de films affectés
-    if response and isinstance(response, list) and len(response) > 0:
-        # Malheureusement, cet endpoint ne retourne pas de commandId.
-        # Nous devons changer de stratégie et utiliser 'MoveFiles' pour obtenir un commandId.
-        logger.warning("Radarr: L'endpoint 'movie/editor' ne retourne pas de commandId. Passage à la commande 'MoveMovies'.")
-
-        command_payload = {
-            "name": "MoveMovies",
-            "movieIds": [movie_id_int],
-            "rootFolderPath": new_root_folder_path
-        }
-        command_response = radarr_post_command(command_payload)
-
-        if command_response and command_response.get('id'):
-            command_id = command_response['id']
-            logger.info(f"Radarr: Commande 'MoveMovies' envoyée avec succès. Command ID: {command_id}")
-            return True, command_id
-        else:
-            error_msg = "Échec de l'envoi de la commande 'MoveMovies' à Radarr."
-            logger.error(f"Radarr: {error_msg} Réponse: {command_response}")
-            return False, error_msg
-
-    error_msg = "Échec de l'initiation du déplacement via l'API Radarr."
-    if isinstance(response, list) and response:
-        error_msg = response[0].get('errorMessage', str(response))
-    logger.error(f"Radarr: Échec de la commande 'movie/editor'. Réponse: {response}")
-    return False, error_msg
+    if command_response and command_response.get('id'):
+        command_id = command_response['id']
+        logger.info(f"Radarr: Commande 'MoveMovies' envoyée avec succès. Command ID: {command_id}")
+        return True, command_id
+    else:
+        error_msg = "Échec de l'envoi de la commande 'MoveMovies' à Radarr."
+        logger.error(f"Radarr: {error_msg} Réponse: {command_response}")
+        # Essayer de trouver un message d'erreur plus précis dans la réponse
+        if isinstance(command_response, list) and command_response:
+             error_details = command_response[0].get('errorMessage', str(command_response))
+             error_msg = f"Radarr a retourné une erreur : {error_details}"
+        return False, error_msg
 
 def get_arr_command_status(arr_type, command_id):
     """
