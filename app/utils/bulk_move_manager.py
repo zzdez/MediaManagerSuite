@@ -112,10 +112,10 @@ class BulkMoveManager:
             if not movie_data:
                 return "Impossible de récupérer les informations du film depuis Radarr pendant la vérification."
 
-            current_path = os.path.normpath(movie_data.get('rootFolderPath', '')).lower()
-            target_path = os.path.normpath(expected_path).lower()
+            current_path_full = os.path.normpath(movie_data.get('path', '')).lower()
+            target_root_path = os.path.normpath(expected_path).lower()
 
-            if current_path == target_path:
+            if current_path_full.startswith(target_root_path):
                 return None # Succès
 
             time.sleep(POLL_INTERVAL)
