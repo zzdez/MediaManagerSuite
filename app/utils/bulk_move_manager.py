@@ -5,7 +5,7 @@ import uuid
 import time
 import os
 from flask import current_app
-from app.utils.arr_client import move_sonarr_series, move_radarr_movie
+from app.utils.arr_client import move_sonarr_series, move_radarr_movie, get_sonarr_queue, get_radarr_queue
 from app.utils.plex_client import get_plex_admin_server
 
 class BulkMoveManager:
@@ -76,20 +76,21 @@ class BulkMoveManager:
                     if media_type == 'sonarr':
                         success, error_message = move_sonarr_series(media_id, destination_folder)
                         if success:
-                            error_message = self._poll_sonarr_path(task_id, media_id, destination_folder)
+                            # Poll the queue for completion
+                            error_message = self._poll_arr_queue_for_completion(task_id, 'sonarr', media_id)
                             if error_message:
                                 success = False
 
                     elif media_type == 'radarr':
                         success, error_message = move_radarr_movie(media_id, destination_folder)
                         if success:
-                            # Succès de l'initiation, on commence le polling du chemin
-                            error_message = self._poll_radarr_path(task_id, media_id, destination_folder)
+                            # Poll the queue for completion
+                            error_message = self._poll_arr_queue_for_completion(task_id, 'radarr', media_id)
                             if error_message:
                                 success = False
 
                     if not success:
-                        # ÉCHEC: On arrête tout
+                        # FAILURE: Stop everything
                         with self._lock:
                             task = self._tasks[task_id]
                             task['status'] = 'failed'
@@ -128,52 +129,47 @@ class BulkMoveManager:
 
             self._trigger_plex_scan(library_keys_to_scan)
 
-    def _poll_radarr_path(self, task_id, movie_id, expected_path):
-        """Vérifie que le chemin d'un film Radarr a bien été mis à jour."""
-        from app.utils.arr_client import get_radarr_movie_by_id
-
-        POLL_INTERVAL = 5
-        MAX_WAIT_TIME = 300
+    def _poll_arr_queue_for_completion(self, task_id, arr_type, media_id):
+        """
+        Polls the Sonarr/Radarr queue to wait for a move operation to complete.
+        Completion is defined as the item disappearing from the queue.
+        """
+        POLL_INTERVAL = 5  # seconds
+        # Set a generous timeout, e.g., 30 minutes, as file transfers can be long
+        MAX_WAIT_TIME = 1800  # seconds
         start_time = time.time()
 
+        id_key = 'seriesId' if arr_type == 'sonarr' else 'movieId'
+        get_queue_func = get_sonarr_queue if arr_type == 'sonarr' else get_radarr_queue
+
         while time.time() - start_time < MAX_WAIT_TIME:
-            movie_data = get_radarr_movie_by_id(movie_id)
-            if not movie_data:
-                return "Impossible de récupérer les informations du film depuis Radarr pendant la vérification."
+            queue = get_queue_func()
 
-            current_path_full = os.path.normpath(movie_data.get('path', '')).lower()
-            target_root_path = os.path.normpath(expected_path).lower()
+            # Find the specific move item in the queue
+            move_in_progress = False
+            for item in queue:
+                # The ID of the media being moved should be present in the queue item
+                if item.get(id_key) == int(media_id):
+                    move_in_progress = True
+                    break # Found it, continue polling
 
-            if current_path_full.startswith(target_root_path):
-                return None # Succès
+            if not move_in_progress:
+                current_app.logger.info(f"[{arr_type.capitalize()}] Move for media ID {media_id} is no longer in the queue. Assuming completion.")
+                return None  # Success: item is no longer in the queue
+
+            # Update task message to show it's waiting
+            with self._lock:
+                task = self._tasks[task_id]
+                # Keep the main message but add a polling indicator
+                base_message = task['message'].split(' - ')[0]
+                task['message'] = f"{base_message} - Vérification de la fin du transfert..."
 
             time.sleep(POLL_INTERVAL)
 
-        return f"La vérification du changement de chemin pour Radarr a dépassé le temps maximum d'attente ({MAX_WAIT_TIME}s)."
+        timeout_message = f"Le suivi du déplacement pour {arr_type} a dépassé le temps maximum d'attente ({MAX_WAIT_TIME}s)."
+        current_app.logger.error(f"[BulkMoveTask:{task_id}] {timeout_message}")
+        return timeout_message
 
-    def _poll_sonarr_path(self, task_id, series_id, expected_path):
-        """Vérifie que le chemin d'une série Sonarr a bien été mis à jour."""
-        from app.utils.arr_client import get_sonarr_series_by_id
-
-        POLL_INTERVAL = 5
-        MAX_WAIT_TIME = 300
-        start_time = time.time()
-
-        while time.time() - start_time < MAX_WAIT_TIME:
-            series_data = get_sonarr_series_by_id(series_id)
-            if not series_data:
-                return "Impossible de récupérer les informations de la série depuis Sonarr pendant la vérification."
-
-            # Comparaison insensible à la casse et normalisée
-            current_path = os.path.normpath(series_data.get('rootFolderPath', '')).lower()
-            target_path = os.path.normpath(expected_path).lower()
-
-            if current_path == target_path:
-                return None # Succès, le chemin a été mis à jour
-
-            time.sleep(POLL_INTERVAL)
-
-        return f"La vérification du changement de chemin a dépassé le temps maximum d'attente ({MAX_WAIT_TIME}s)."
 
     def is_task_running(self):
         """Vérifie si une tâche est déjà en cours."""

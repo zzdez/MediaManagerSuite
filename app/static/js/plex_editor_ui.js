@@ -919,14 +919,25 @@ $('#confirmArchiveMovieBtn').on('click', function() {
         });
     });
 
+    function resetSelectionState() {
+        // Décocher toutes les cases
+        $('.item-checkbox, #select-all-checkbox').prop('checked', false);
+
+        // Masquer le conteneur des actions de masse
+        const batchActionsContainer = $('#batch-actions-container');
+        batchActionsContainer.hide();
+
+        // Réinitialiser le compteur sur les boutons
+        batchActionsContainer.find('.badge').text('0');
+    }
+
     function pollBulkMoveStatus(taskId) {
         const statusIndicator = $('#bulk-move-status-indicator');
         const statusSpinner = $('#bulk-move-status-spinner');
         const statusText = $('#bulk-move-status-text');
         const statusCloseBtn = $('#bulk-move-status-close-btn');
 
-        // --- 1. Initialiser l'UI pour une nouvelle tâche ---
-        statusSpinner.html('<div class="spinner-border spinner-border-sm text-primary" role="status"></div>'); // Spinner initial
+        statusSpinner.html('<div class="spinner-border spinner-border-sm text-primary" role="status"></div>');
         statusIndicator.removeClass('bg-success-soft bg-danger-soft').addClass('bg-light').show();
         statusCloseBtn.hide();
 
@@ -935,7 +946,6 @@ $('#confirmArchiveMovieBtn').on('click', function() {
                 .then(response => response.json())
                 .then(data => {
                     if (!data || !data.status) {
-                        // Erreur inattendue de l'API
                         clearInterval(interval);
                         statusSpinner.html('<i class="bi bi-exclamation-triangle-fill text-danger"></i>');
                         statusText.text("Erreur: réponse invalide du serveur.");
@@ -944,25 +954,31 @@ $('#confirmArchiveMovieBtn').on('click', function() {
                         return;
                     }
 
-                    // --- 2. Mettre à jour le message pendant le traitement ---
                     statusText.text(data.message || 'Chargement...');
 
-                    // --- 3. Gérer la fin de la tâche (succès ou échec) ---
                     if (data.status === 'completed' || data.status === 'failed') {
                         clearInterval(interval);
 
                         if (data.status === 'completed') {
                             statusSpinner.html('<i class="bi bi-check-circle-fill text-success"></i>');
                             statusIndicator.removeClass('bg-light').addClass('bg-success-soft');
-                            // Comportement en cas de succès : on rafraîchit la page pour tout nettoyer
-                            $('#apply-filters-btn').click();
+
+                            // Faire disparaître les lignes des éléments déplacés avec succès
+                            if (data.successes && data.successes.length > 0) {
+                                data.successes.forEach(mediaId => {
+                                    $(`.item-checkbox[data-rating-key='${mediaId}']`).closest('tr').fadeOut(500, function() {
+                                        $(this).remove();
+                                    });
+                                });
+                            }
+                            // Réinitialiser l'état de la sélection
+                            resetSelectionState();
+
                         } else { // 'failed'
                             statusSpinner.html('<i class="bi bi-x-circle-fill text-danger"></i>');
                             statusIndicator.removeClass('bg-light').addClass('bg-danger-soft');
-                            // Comportement en cas d'échec : on ne fait rien pour que l'utilisateur voie la sélection
                         }
 
-                        // Afficher le bouton OK dans les deux cas
                         statusCloseBtn.show();
                     }
                 })
@@ -974,7 +990,7 @@ $('#confirmArchiveMovieBtn').on('click', function() {
                     statusCloseBtn.show();
                     console.error("Erreur polling statut:", err);
                 });
-        }, 3000); // Interroger toutes les 3 secondes
+        }, 3000);
     }
 
     // --- NOUVEL ÉCOUTEUR POUR LE BOUTON "OK" DE L'INDICATEUR ---
