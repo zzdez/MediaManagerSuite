@@ -1364,6 +1364,17 @@ def move_radarr_movie(movie_id, new_root_folder_path):
     movie_data['rootFolderPath'] = new_root_folder_path
     movie_data['path'] = new_path
 
+    # --- DÉBUT DE LA CORRECTION ---
+    # Il est crucial de mettre aussi à jour le chemin dans l'objet 'movieFile'
+    if movie_data.get('movieFile') and 'path' in movie_data['movieFile']:
+        original_filename = os.path.basename(movie_data['movieFile']['path'])
+        new_file_path = os.path.join(new_path, original_filename)
+        movie_data['movieFile']['path'] = new_file_path
+        logger.info(f"Radarr: Le chemin du fichier vidéo a été mis à jour dans la requête : '{new_file_path}'")
+    else:
+        logger.warning(f"Radarr: 'movieFile' non trouvé dans les données du film ID {movie_id_int}. Le déplacement pourrait échouer si le fichier n'est pas trouvé par Radarr.")
+    # --- FIN DE LA CORRECTION ---
+
     params = {'moveFiles': 'true'}
     response = _radarr_api_request('PUT', f"movie/{movie_id_int}", params=params, json_data=movie_data)
 
