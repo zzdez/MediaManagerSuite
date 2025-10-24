@@ -54,16 +54,12 @@ class BulkMoveManager:
                                 success = False
 
                     elif media_type == 'radarr':
-                        # La fonction retourne maintenant (success, command_id_or_error)
-                        success, command_id_or_error = move_radarr_movie(media_id, destination_folder)
+                        success, error_message = move_radarr_movie(media_id, destination_folder)
                         if success:
-                            # On a un command_id, on commence le polling
-                            command_id = command_id_or_error
-                            error_message = self._poll_radarr_command(task_id, command_id)
+                            # Succès de l'initiation, on commence le polling du chemin
+                            error_message = self._poll_radarr_path(task_id, media_id, destination_folder)
                             if error_message:
                                 success = False
-                        else:
-                            error_message = command_id_or_error
 
                     if not success:
                         # ÉCHEC: On arrête tout
@@ -103,28 +99,28 @@ class BulkMoveManager:
                 task['progress'] = 100
                 current_app.logger.info(f"[BulkMoveTask:{task_id}] Completed successfully for all {total_items} items.")
 
-    def _poll_radarr_command(self, task_id, command_id):
-        """Interroge le statut d'une commande Radarr jusqu'à sa complétion."""
-        from app.utils.arr_client import get_arr_command_status
+    def _poll_radarr_path(self, task_id, movie_id, expected_path):
+        """Vérifie que le chemin d'un film Radarr a bien été mis à jour."""
+        from app.utils.arr_client import get_radarr_movie_by_id
 
         POLL_INTERVAL = 5
         MAX_WAIT_TIME = 300
         start_time = time.time()
 
         while time.time() - start_time < MAX_WAIT_TIME:
-            status = get_arr_command_status('radarr', command_id)
-            if not status: return "Impossible de récupérer le statut de la commande depuis Radarr."
+            movie_data = get_radarr_movie_by_id(movie_id)
+            if not movie_data:
+                return "Impossible de récupérer les informations du film depuis Radarr pendant la vérification."
 
-            command_status = status.get('status')
-            if command_status == 'completed': return None
-            elif command_status in ['failed', 'aborted']:
-                error_message = "Commande Radarr échouée ou annulée."
-                if status.get('body') and status['body'].get('exception'):
-                    error_message = status['body']['exception']
-                return error_message
+            current_path = os.path.normpath(movie_data.get('rootFolderPath', '')).lower()
+            target_path = os.path.normpath(expected_path).lower()
+
+            if current_path == target_path:
+                return None # Succès
 
             time.sleep(POLL_INTERVAL)
-        return f"Le déplacement a dépassé le temps maximum d'attente ({MAX_WAIT_TIME}s)."
+
+        return f"La vérification du changement de chemin pour Radarr a dépassé le temps maximum d'attente ({MAX_WAIT_TIME}s)."
 
     def _poll_sonarr_path(self, task_id, series_id, expected_path):
         """Vérifie que le chemin d'une série Sonarr a bien été mis à jour."""

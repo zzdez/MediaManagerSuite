@@ -1333,11 +1333,10 @@ def move_sonarr_series(series_id, new_root_folder_path):
 
 def move_radarr_movie(movie_id, new_root_folder_path):
     """
-    Déplace un film Radarr en utilisant la commande 'MoveMovies'.
-    Cette méthode retourne un ID de commande pour le suivi.
-    Retourne (True, command_id) en cas de succès, (False, error_message) en cas d'échec.
+    Déplace un film Radarr vers un nouveau dossier racine en éditant l'objet film.
+    Retourne (True, None) en cas de succès de l'initiation, (False, error_message) en cas d'échec.
     """
-    logger.info(f"Radarr: Initiating 'MoveMovies' command for movie ID {movie_id} to '{new_root_folder_path}'.")
+    logger.info(f"Radarr: Initiating move for movie ID {movie_id} to '{new_root_folder_path}' by editing the movie object.")
     try:
         movie_id_int = int(movie_id)
     except (ValueError, TypeError):
@@ -1345,26 +1344,32 @@ def move_radarr_movie(movie_id, new_root_folder_path):
         logger.error(error_msg)
         return False, error_msg
 
-    command_payload = {
-        "name": "MoveMovies",
-        "movieIds": [movie_id_int],
-        "rootFolderPath": new_root_folder_path
-    }
-
-    command_response = radarr_post_command(command_payload)
-
-    if command_response and command_response.get('id'):
-        command_id = command_response['id']
-        logger.info(f"Radarr: Commande 'MoveMovies' envoyée avec succès. Command ID: {command_id}")
-        return True, command_id
-    else:
-        error_msg = "Échec de l'envoi de la commande 'MoveMovies' à Radarr."
-        logger.error(f"Radarr: {error_msg} Réponse: {command_response}")
-        # Essayer de trouver un message d'erreur plus précis dans la réponse
-        if isinstance(command_response, list) and command_response:
-             error_details = command_response[0].get('errorMessage', str(command_response))
-             error_msg = f"Radarr a retourné une erreur : {error_details}"
+    movie_data = get_radarr_movie_by_id(movie_id_int)
+    if not movie_data:
+        error_msg = f"Film non trouvé dans Radarr avec l'ID {movie_id_int}."
+        logger.error(f"Radarr: {error_msg}")
         return False, error_msg
+
+    # Mettre à jour le chemin racine et le chemin complet
+    original_path = movie_data.get('path', '')
+    movie_folder = os.path.basename(original_path) if original_path else movie_data.get('title', '')
+    new_path = os.path.join(new_root_folder_path, movie_folder)
+
+    movie_data['rootFolderPath'] = new_root_folder_path
+    movie_data['path'] = new_path
+
+    params = {'moveFiles': 'true'}
+    response = _radarr_api_request('PUT', f"movie/{movie_id_int}", params=params, json_data=movie_data)
+
+    if response and response.get('id'):
+        logger.info(f"Radarr: Move request for movie ID {movie_id_int} accepted. The operation will proceed in the background.")
+        return True, None
+
+    error_msg = "Échec de l'initiation du déplacement via l'API Radarr."
+    if isinstance(response, list) and response:
+        error_msg = response[0].get('errorMessage', str(response))
+    logger.error(f"Radarr: Failed to move movie {movie_id_int}. Response: {response}")
+    return False, error_msg
 
 def get_arr_command_status(arr_type, command_id):
     """
