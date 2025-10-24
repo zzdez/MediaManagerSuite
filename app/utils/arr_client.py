@@ -1351,8 +1351,14 @@ def move_radarr_movie(movie_id, new_root_folder_path):
         return False, error_msg
 
     # Mettre à jour le chemin racine et le chemin complet
-    original_path = movie_data.get('path', '')
-    movie_folder = os.path.basename(original_path) if original_path else movie_data.get('title', '')
+    # Utiliser 'folderName' est plus robuste que de se baser sur le titre ou l'ancien chemin
+    movie_folder = movie_data.get('folderName')
+    if not movie_folder:
+        # Fallback si folderName n'est pas disponible, bien que ce soit peu probable
+        original_path = movie_data.get('path', '')
+        movie_folder = os.path.basename(original_path) if original_path else movie_data.get('title', '')
+        logger.warning(f"Radarr: 'folderName' non trouvé pour le film ID {movie_id_int}. Utilisation du fallback : '{movie_folder}'")
+
     new_path = os.path.join(new_root_folder_path, movie_folder)
 
     movie_data['rootFolderPath'] = new_root_folder_path
