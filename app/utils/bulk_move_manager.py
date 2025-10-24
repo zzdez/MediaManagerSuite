@@ -3,6 +3,7 @@
 import threading
 import uuid
 import time
+import os
 from flask import current_app
 from app.utils.arr_client import move_sonarr_series, move_radarr_movie
 
@@ -21,58 +22,141 @@ class BulkMoveManager:
     def _process_move_queue(self, task_id, media_items, app):
         """
         Méthode exécutée en arrière-plan pour traiter la file de déplacement.
-        Nécessite l'objet 'app' pour le contexte d'application.
+        Traite les items séquentiellement et s'arrête au premier échec.
         """
         with app.app_context():
             total_items = len(media_items)
-            processed_count = 0
 
-            for item in media_items:
+            for i, item in enumerate(media_items):
+                processed_count = i + 1
                 media_id = item.get('media_id')
+                media_title = item.get('title', f"Item ID: {media_id}") # Fallback au cas où
                 media_type = item.get('media_type')
                 destination_folder = item.get('destination')
+
+                # Mettre à jour le statut pour indiquer ce qu'on fait
+                with self._lock:
+                    task = self._tasks[task_id]
+                    task['status'] = 'running'
+                    task['message'] = f"Déplacement de '{media_title}' ({processed_count}/{total_items})..."
+                    task['progress'] = ((processed_count -1) / total_items) * 100
+                    task['processed'] = processed_count - 1
+
                 success = False
                 error_message = "Type de média non supporté"
 
                 try:
                     if media_type == 'sonarr':
                         success, error_message = move_sonarr_series(media_id, destination_folder)
-                    elif media_type == 'radarr':
-                        success, error_message = move_radarr_movie(media_id, destination_folder)
+                        if success:
+                            error_message = self._poll_sonarr_path(task_id, media_id, destination_folder)
+                            if error_message:
+                                success = False
 
+                    elif media_type == 'radarr':
+                        # La fonction retourne maintenant (success, command_id_or_error)
+                        success, command_id_or_error = move_radarr_movie(media_id, destination_folder)
+                        if success:
+                            # On a un command_id, on commence le polling
+                            command_id = command_id_or_error
+                            error_message = self._poll_radarr_command(task_id, command_id)
+                            if error_message:
+                                success = False
+                        else:
+                            error_message = command_id_or_error
+
+                    if not success:
+                        # ÉCHEC: On arrête tout
+                        with self._lock:
+                            task = self._tasks[task_id]
+                            task['status'] = 'failed'
+                            task['message'] = f"Échec du déplacement de '{media_title}'. Erreur: {error_message}"
+                            task['failures'].append({"media_id": media_id, "error": error_message})
+                        current_app.logger.error(f"[BulkMoveTask:{task_id}] Task failed on item {media_id} ('{media_title}'). Reason: {error_message}")
+                        return # Arrête le thread
+
+                    # SUCCÈS pour cet item
                     with self._lock:
                         task = self._tasks[task_id]
-                        if success:
-                            task['successes'].append(media_id)
-                        else:
-                            task['failures'].append({"media_id": media_id, "error": "Move command failed"})
+                        task['successes'].append(media_id)
+                        task['processed'] = processed_count
+                        task['progress'] = (processed_count / total_items) * 100
 
                 except Exception as e:
-                    current_app.logger.error(f"[BulkMoveTask:{task_id}] Failed to move media ID {media_id}: {e}")
+                    # ÉCHEC CRITIQUE: On arrête tout
+                    error_str = str(e)
+                    current_app.logger.error(f"[BulkMoveTask:{task_id}] Task failed critically on item {media_id} ('{media_title}'): {error_str}", exc_info=True)
                     with self._lock:
                         task = self._tasks[task_id]
-                        task['failures'].append({"media_id": media_id, "error": str(e)})
+                        task['status'] = 'failed'
+                        task['message'] = f"Erreur critique sur '{media_title}': {error_str}"
+                        task['failures'].append({"media_id": media_id, "error": error_str})
+                    return # Arrête le thread
 
-                finally:
-                    processed_count += 1
-                    with self._lock:
-                        task = self._tasks[task_id]
-                        task['progress'] = (processed_count / total_items) * 100
-                        task['processed'] = processed_count
+                time.sleep(1) # Petite pause pour ne pas surcharger les APIs
 
-                    time.sleep(1) # Petite pause pour ne pas surcharger les APIs
-
+            # Si on arrive ici, tout a réussi
             with self._lock:
-                self._tasks[task_id]['status'] = 'completed'
-                current_app.logger.info(f"[BulkMoveTask:{task_id}] Completed. Success: {len(self._tasks[task_id]['successes'])}, Failures: {len(self._tasks[task_id]['failures'])}.")
+                task = self._tasks[task_id]
+                task['status'] = 'completed'
+                task['message'] = f"Déplacement terminé avec succès pour {total_items} élément(s)."
+                task['progress'] = 100
+                current_app.logger.info(f"[BulkMoveTask:{task_id}] Completed successfully for all {total_items} items.")
+
+    def _poll_radarr_command(self, task_id, command_id):
+        """Interroge le statut d'une commande Radarr jusqu'à sa complétion."""
+        from app.utils.arr_client import get_arr_command_status
+
+        POLL_INTERVAL = 5
+        MAX_WAIT_TIME = 300
+        start_time = time.time()
+
+        while time.time() - start_time < MAX_WAIT_TIME:
+            status = get_arr_command_status('radarr', command_id)
+            if not status: return "Impossible de récupérer le statut de la commande depuis Radarr."
+
+            command_status = status.get('status')
+            if command_status == 'completed': return None
+            elif command_status in ['failed', 'aborted']:
+                error_message = "Commande Radarr échouée ou annulée."
+                if status.get('body') and status['body'].get('exception'):
+                    error_message = status['body']['exception']
+                return error_message
+
+            time.sleep(POLL_INTERVAL)
+        return f"Le déplacement a dépassé le temps maximum d'attente ({MAX_WAIT_TIME}s)."
+
+    def _poll_sonarr_path(self, task_id, series_id, expected_path):
+        """Vérifie que le chemin d'une série Sonarr a bien été mis à jour."""
+        from app.utils.arr_client import get_sonarr_series_by_id
+
+        POLL_INTERVAL = 5
+        MAX_WAIT_TIME = 300
+        start_time = time.time()
+
+        while time.time() - start_time < MAX_WAIT_TIME:
+            series_data = get_sonarr_series_by_id(series_id)
+            if not series_data:
+                return "Impossible de récupérer les informations de la série depuis Sonarr pendant la vérification."
+
+            # Comparaison insensible à la casse et normalisée
+            current_path = os.path.normpath(series_data.get('rootFolderPath', '')).lower()
+            target_path = os.path.normpath(expected_path).lower()
+
+            if current_path == target_path:
+                return None # Succès, le chemin a été mis à jour
+
+            time.sleep(POLL_INTERVAL)
+
+        return f"La vérification du changement de chemin a dépassé le temps maximum d'attente ({MAX_WAIT_TIME}s)."
 
     def start_bulk_move(self, media_items, app):
         """
         Démarre une nouvelle tâche de déplacement en masse.
 
         Args:
-            media_items (list): Une liste de dictionnaires, ex: [{'media_id': 123, 'destination': '/path/to/dest'}]
-            app: L'objet application Flask (nécessaire pour le contexte).
+            media_items (list): Liste de dicts, ex: [{'media_id': 123, 'title': 'Titre', 'destination': '/path'}]
+            app: L'objet application Flask.
 
         Returns:
             str: L'ID de la tâche.
@@ -80,12 +164,14 @@ class BulkMoveManager:
         task_id = str(uuid.uuid4())
         with self._lock:
             self._tasks[task_id] = {
-                'status': 'running',
+                'status': 'starting',
+                'message': 'Initialisation de la tâche de déplacement en masse...',
                 'total': len(media_items),
                 'processed': 0,
                 'progress': 0,
                 'successes': [],
                 'failures': [],
+                'start_time': time.time(),
                 'app': app # Stocker l'app pour le thread
             }
 

@@ -6,6 +6,7 @@
     <title>{% block title %}MediaManagerSuite{% endblock %}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
     {% block head_styles %}{% endblock %} <!-- Pour les styles CSS spécifiques à une page -->
 </head>
@@ -39,6 +40,12 @@
                     <span id="ygg-cookie-status-badge" class="badge rounded-pill bg-secondary ms-1">Chargement...</span>
                 </span>
             </li>
+            <!-- Indicateur de progression pour les tâches de fond -->
+            <li class="nav-item" id="bulk-move-status-indicator" style="display: none;">
+                <span class="nav-link text-info">
+                    <i class="bi bi-arrow-repeat spin"></i> <span id="bulk-move-status-text">Tâche en cours...</span>
+                </span>
+            </li>
         </ul>
         <div class="sidebar-footer">
             <!-- Vérifier si la route 'main.logout' existe, sinon l'adapter -->
@@ -65,6 +72,7 @@
     </main>
 
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="{{ url_for('static', filename='js/global_trailer_search.js') }}?v=1.2"></script>
     {% block scripts %}{% endblock %} <!-- Pour les scripts JS spécifiques à une page -->

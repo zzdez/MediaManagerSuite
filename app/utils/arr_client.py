@@ -1333,9 +1333,9 @@ def move_sonarr_series(series_id, new_root_folder_path):
 
 def move_radarr_movie(movie_id, new_root_folder_path):
     """
-    Moves a Radarr movie to a new root folder by editing the movie object.
-    This is the reliable method, mirroring the Sonarr implementation.
-    Returns True on success, False on failure.
+    Déplace un film Radarr vers un nouveau dossier racine en utilisant l'API 'movie.editor'.
+    Cette méthode retourne un ID de commande pour le suivi.
+    Retourne (True, command_id) en cas de succès, (False, error_message) en cas d'échec.
     """
     logger.info(f"Radarr: Initiating move for movie ID {movie_id} to '{new_root_folder_path}'.")
     try:
@@ -1344,38 +1344,40 @@ def move_radarr_movie(movie_id, new_root_folder_path):
         logger.error(f"L'ID du film '{movie_id}' n'est pas un entier valide.")
         return False, f"L'ID du film '{movie_id}' est invalide."
 
-    # 1. Get the full movie object from Radarr
-    movie_data = get_radarr_movie_by_id(movie_id_int)
-    if not movie_data:
-        logger.error(f"Radarr: Could not retrieve movie {movie_id_int} to move it.")
-        return False, "Film non trouvé."
+    payload = {
+        "movieIds": [movie_id_int],
+        "rootFolderPath": new_root_folder_path,
+        "moveFiles": True
+    }
 
-    # 2. Update root folder path
-    movie_data['rootFolderPath'] = new_root_folder_path
+    response = _radarr_api_request('POST', 'movie/editor', json_data=payload)
 
-    # 3. CRUCIAL: Update the full path
-    # Note: Radarr's 'path' field might already be just the folder name, unlike Sonarr.
-    # We build the new path defensively.
-    original_path = movie_data.get('path', '')
-    movie_folder = os.path.basename(original_path)
-    new_path = os.path.join(new_root_folder_path, movie_folder)
-    movie_data['path'] = new_path
-    logger.info(f"Radarr: Updating movie path. Original: '{original_path}', New: '{new_path}'")
+    # Une réponse réussie pour cette commande est une liste de films affectés
+    if response and isinstance(response, list) and len(response) > 0:
+        # Malheureusement, cet endpoint ne retourne pas de commandId.
+        # Nous devons changer de stratégie et utiliser 'MoveFiles' pour obtenir un commandId.
+        logger.warning("Radarr: L'endpoint 'movie/editor' ne retourne pas de commandId. Passage à la commande 'MoveMovies'.")
 
-    # 4. Send the updated object with moveFiles=true parameter
-    params = {'moveFiles': 'true'}
-    # The endpoint for updating a movie is just PUT /api/v3/movie/{id}
-    # However, Radarr API for this action is PUT /api/v3/movie/editor
-    response = _radarr_api_request('PUT', f"movie/{movie_id_int}", params=params, json_data=movie_data)
+        command_payload = {
+            "name": "MoveMovies",
+            "movieIds": [movie_id_int],
+            "rootFolderPath": new_root_folder_path
+        }
+        command_response = radarr_post_command(command_payload)
 
-    if response and response.get('id'):
-        logger.info(f"Radarr: Move request for movie ID {movie_id_int} accepted. The operation will proceed in the background.")
-        return True, None
+        if command_response and command_response.get('id'):
+            command_id = command_response['id']
+            logger.info(f"Radarr: Commande 'MoveMovies' envoyée avec succès. Command ID: {command_id}")
+            return True, command_id
+        else:
+            error_msg = "Échec de l'envoi de la commande 'MoveMovies' à Radarr."
+            logger.error(f"Radarr: {error_msg} Réponse: {command_response}")
+            return False, error_msg
 
-    error_msg = "Failed to initiate move by editing the movie."
+    error_msg = "Échec de l'initiation du déplacement via l'API Radarr."
     if isinstance(response, list) and response:
         error_msg = response[0].get('errorMessage', str(response))
-    logger.error(f"Radarr: Failed to move movie {movie_id_int}. Response: {response}")
+    logger.error(f"Radarr: Échec de la commande 'movie/editor'. Réponse: {response}")
     return False, error_msg
 
 def get_arr_command_status(arr_type, command_id):

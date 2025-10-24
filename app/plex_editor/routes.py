@@ -200,7 +200,8 @@ def bulk_move_media_items():
 
             processed_items_for_manager.append({
                 'media_id': arr_item.get('id'),
-                'media_type': media_type, # Ajout du type de média
+                'title': plex_item.title,  # <-- AJOUT DU TITRE ICI
+                'media_type': media_type,
                 'destination': destination
             })
 

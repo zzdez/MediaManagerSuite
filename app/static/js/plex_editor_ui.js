@@ -904,38 +904,68 @@ $('#confirmArchiveMovieBtn').on('click', function() {
         })
         .then(response => response.json())
         .then(data => {
+            // On ferme la modale immédiatement
+            bootstrap.Modal.getInstance(modal[0]).hide();
+
             if (data.status === 'success' && data.task_id) {
+                // On lance le polling en arrière-plan
                 pollBulkMoveStatus(data.task_id);
             } else {
-                alert('Erreur: ' + data.message);
-                btn.show();
-                modal.find('#bulk-move-progress-section').hide();
+                // S'il y a une erreur au lancement, on l'affiche
+                alert('Erreur au lancement de la tâche : ' + data.message);
+                // Pas besoin de gérer les boutons car la modale est fermée
             }
+        })
+        .catch(error => {
+            bootstrap.Modal.getInstance(modal[0]).hide();
+            alert('Erreur de communication avec le serveur.');
+            console.error(error);
         });
     });
 
     function pollBulkMoveStatus(taskId) {
+        const statusIndicator = $('#bulk-move-status-indicator');
+        const statusText = $('#bulk-move-status-text');
+
+        // Afficher l'indicateur
+        statusIndicator.show();
+
         const interval = setInterval(() => {
             fetch(`/plex/api/media/bulk_move_status/${taskId}`)
                 .then(response => response.json())
                 .then(data => {
-                    if (!data) {
+                    if (!data || !data.status) {
                         clearInterval(interval);
+                        statusIndicator.hide();
+                        // Potentiellement afficher une notification d'erreur ici
                         return;
                     }
 
-                    const progressBar = $('#bulk-move-progress-bar');
-                    progressBar.css('width', data.progress + '%').text(Math.round(data.progress) + '%');
+                    // Mettre à jour le texte du statut
+                    statusText.text(data.message || 'Chargement...');
 
-                    if (data.status === 'completed') {
+                    if (data.status === 'completed' || data.status === 'failed') {
                         clearInterval(interval);
-                        progressBar.addClass('bg-success');
-                        alert('Déplacement en masse terminé !');
-                        bootstrap.Modal.getInstance($('#bulk-move-media-modal')[0]).hide();
-                        $('#apply-filters-btn').click(); // Rafraîchir
+                        statusIndicator.hide();
+
+                        // Afficher une notification Toastr finale
+                        if (data.status === 'completed') {
+                            toastr.success(data.message || 'Tâche terminée avec succès !');
+                        } else {
+                            toastr.error(data.message || 'La tâche a échoué.');
+                        }
+
+                        // Rafraîchir la table pour refléter les changements
+                        $('#apply-filters-btn').click();
                     }
+                })
+                .catch(err => {
+                    clearInterval(interval);
+                    statusIndicator.hide();
+                    toastr.error('Erreur de communication pendant le suivi de la tâche.');
+                    console.error("Erreur polling statut:", err);
                 });
-        }, 5000); // Poll every 5 seconds
+        }, 2000); // Interroger toutes les 2 secondes pour plus de réactivité
     }
 
     // --- C. Action de suppression en masse ---
