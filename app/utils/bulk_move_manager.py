@@ -6,6 +6,7 @@ import time
 import os
 from flask import current_app
 from app.utils.arr_client import move_sonarr_series, move_radarr_movie
+from app.utils.plex_client import get_plex_admin_server
 
 class BulkMoveManager:
     _instance = None
@@ -19,6 +20,31 @@ class BulkMoveManager:
                     cls._instance = super(BulkMoveManager, cls).__new__(cls)
         return cls._instance
 
+    def _trigger_plex_scan(self, library_keys):
+        """Déclenche un scan pour une liste de clés de bibliothèque Plex."""
+        if not library_keys:
+            current_app.logger.info("[BulkMoveTask] No library keys provided for scanning.")
+            return
+
+        try:
+            plex_server = get_plex_admin_server()
+            if not plex_server:
+                current_app.logger.error("[BulkMoveTask] Could not get Plex admin server to trigger scan.")
+                return
+
+            scanned_libs = []
+            for key in library_keys:
+                if key:
+                    try:
+                        library = plex_server.library.sectionByID(int(key))
+                        library.update()
+                        scanned_libs.append(library.title)
+                    except Exception as e_lib:
+                        current_app.logger.error(f"[BulkMoveTask] Failed to scan library key {key}: {e_lib}")
+            current_app.logger.info(f"[BulkMoveTask] Triggered Plex scan for libraries: {', '.join(scanned_libs)}")
+        except Exception as e:
+            current_app.logger.error(f"[BulkMoveTask] An error occurred during Plex scan initiation: {e}", exc_info=True)
+
     def _process_move_queue(self, task_id, media_items, app):
         """
         Méthode exécutée en arrière-plan pour traiter la file de déplacement.
@@ -26,6 +52,7 @@ class BulkMoveManager:
         """
         with app.app_context():
             total_items = len(media_items)
+            library_keys_to_scan = {item.get('library_key') for item in media_items}
 
             for i, item in enumerate(media_items):
                 processed_count = i + 1
@@ -99,6 +126,8 @@ class BulkMoveManager:
                 task['progress'] = 100
                 current_app.logger.info(f"[BulkMoveTask:{task_id}] Completed successfully for all {total_items} items.")
 
+            self._trigger_plex_scan(library_keys_to_scan)
+
     def _poll_radarr_path(self, task_id, movie_id, expected_path):
         """Vérifie que le chemin d'un film Radarr a bien été mis à jour."""
         from app.utils.arr_client import get_radarr_movie_by_id
@@ -146,6 +175,14 @@ class BulkMoveManager:
 
         return f"La vérification du changement de chemin a dépassé le temps maximum d'attente ({MAX_WAIT_TIME}s)."
 
+    def is_task_running(self):
+        """Vérifie si une tâche est déjà en cours."""
+        with self._lock:
+            for task_id, task_details in self._tasks.items():
+                if task_details.get('status') in ['starting', 'running']:
+                    return True
+        return False
+
     def start_bulk_move(self, media_items, app):
         """
         Démarre une nouvelle tâche de déplacement en masse.
@@ -155,8 +192,12 @@ class BulkMoveManager:
             app: L'objet application Flask.
 
         Returns:
-            str: L'ID de la tâche.
+            tuple: (task_id, error_message). L'un des deux sera None.
         """
+        if self.is_task_running():
+            current_app.logger.warning("Attempted to start a new bulk move while another is already running.")
+            return None, "Une tâche de déplacement est déjà en cours. Veuillez attendre sa fin."
+
         task_id = str(uuid.uuid4())
         with self._lock:
             self._tasks[task_id] = {
@@ -176,7 +217,7 @@ class BulkMoveManager:
         thread.start()
 
         current_app.logger.info(f"Started bulk move task {task_id} for {len(media_items)} items.")
-        return task_id
+        return task_id, None
 
     def get_task_status(self, task_id):
         """

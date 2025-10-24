@@ -165,13 +165,8 @@ def bulk_move_media_items():
     if not items_to_move:
         return jsonify({'status': 'error', 'message': 'Aucun élément à déplacer fourni.'}), 400
 
-    # Traduire les IDs Plex en IDs Sonarr/Radarr
-    # C'est une étape cruciale qui nécessite un appel à Plex puis à Sonarr/Radarr
-    # Pour l'instant, nous allons simuler cette logique en supposant que l'ID Sonarr/Radarr est le même que Plex.
-    # Dans une implémentation réelle, il faudrait faire la conversion ici.
-
-    # NOTE: La logique de conversion d'ID est complexe et répliquée de `move_media_item`.
-    # Idéalement, elle devrait être centralisée. Pour ce développement, nous la gardons ici.
+    if bulk_move_manager.is_task_running():
+        return jsonify({'status': 'error', 'message': 'Une autre tâche de déplacement est déjà en cours.'}), 409
 
     processed_items_for_manager = []
     try:
@@ -200,9 +195,10 @@ def bulk_move_media_items():
 
             processed_items_for_manager.append({
                 'media_id': arr_item.get('id'),
-                'title': plex_item.title,  # <-- AJOUT DU TITRE ICI
+                'title': plex_item.title,
                 'media_type': media_type,
-                'destination': destination
+                'destination': destination,
+                'library_key': plex_item.librarySectionID
             })
 
     except Exception as e:
@@ -214,7 +210,10 @@ def bulk_move_media_items():
 
     # Démarrer la tâche de fond
     app_context = current_app._get_current_object()
-    task_id = bulk_move_manager.start_bulk_move(processed_items_for_manager, app_context)
+    task_id, error_message = bulk_move_manager.start_bulk_move(processed_items_for_manager, app_context)
+
+    if error_message:
+        return jsonify({'status': 'error', 'message': error_message}), 409
 
     return jsonify({'status': 'success', 'message': 'Déplacement en masse démarré.', 'task_id': task_id})
 

@@ -42,9 +42,15 @@
             </li>
             <!-- Indicateur de progression pour les tâches de fond -->
             <li class="nav-item" id="bulk-move-status-indicator" style="display: none;">
-                <span class="nav-link text-info">
-                    <i class="bi bi-arrow-repeat spin"></i> <span id="bulk-move-status-text">Tâche en cours...</span>
-                </span>
+                <div class="nav-link d-flex align-items-center justify-content-between p-2 rounded bg-light">
+                    <div class="d-flex align-items-center text-dark">
+                        <span id="bulk-move-status-spinner" class="me-2">
+                            <!-- Le spinner ou l'icône sera injecté ici -->
+                        </span>
+                        <small id="bulk-move-status-text" style="line-height: 1.2;">Tâche en cours...</small>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="bulk-move-status-close-btn" style="display: none;">OK</button>
+                </div>
             </li>
         </ul>
         <div class="sidebar-footer">

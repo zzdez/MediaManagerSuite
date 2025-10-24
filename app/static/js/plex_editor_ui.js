@@ -890,10 +890,6 @@ $('#confirmArchiveMovieBtn').on('click', function() {
             return;
         }
 
-        if (!confirm(`Êtes-vous sûr de vouloir déplacer ${itemsToMove.length} média(s) ?`)) {
-            return;
-        }
-
         btn.hide();
         modal.find('#bulk-move-progress-section').show();
 
@@ -925,48 +921,66 @@ $('#confirmArchiveMovieBtn').on('click', function() {
 
     function pollBulkMoveStatus(taskId) {
         const statusIndicator = $('#bulk-move-status-indicator');
+        const statusSpinner = $('#bulk-move-status-spinner');
         const statusText = $('#bulk-move-status-text');
+        const statusCloseBtn = $('#bulk-move-status-close-btn');
 
-        // Afficher l'indicateur
-        statusIndicator.show();
+        // --- 1. Initialiser l'UI pour une nouvelle tâche ---
+        statusSpinner.html('<div class="spinner-border spinner-border-sm text-primary" role="status"></div>'); // Spinner initial
+        statusIndicator.removeClass('bg-success-soft bg-danger-soft').addClass('bg-light').show();
+        statusCloseBtn.hide();
 
         const interval = setInterval(() => {
             fetch(`/plex/api/media/bulk_move_status/${taskId}`)
                 .then(response => response.json())
                 .then(data => {
                     if (!data || !data.status) {
+                        // Erreur inattendue de l'API
                         clearInterval(interval);
-                        statusIndicator.hide();
-                        // Potentiellement afficher une notification d'erreur ici
+                        statusSpinner.html('<i class="bi bi-exclamation-triangle-fill text-danger"></i>');
+                        statusText.text("Erreur: réponse invalide du serveur.");
+                        statusIndicator.removeClass('bg-light').addClass('bg-danger-soft');
+                        statusCloseBtn.show();
                         return;
                     }
 
-                    // Mettre à jour le texte du statut
+                    // --- 2. Mettre à jour le message pendant le traitement ---
                     statusText.text(data.message || 'Chargement...');
 
+                    // --- 3. Gérer la fin de la tâche (succès ou échec) ---
                     if (data.status === 'completed' || data.status === 'failed') {
                         clearInterval(interval);
-                        statusIndicator.hide();
 
-                        // Afficher une notification Toastr finale
                         if (data.status === 'completed') {
-                            toastr.success(data.message || 'Tâche terminée avec succès !');
-                        } else {
-                            toastr.error(data.message || 'La tâche a échoué.');
+                            statusSpinner.html('<i class="bi bi-check-circle-fill text-success"></i>');
+                            statusIndicator.removeClass('bg-light').addClass('bg-success-soft');
+                            // Comportement en cas de succès : on rafraîchit la page pour tout nettoyer
+                            $('#apply-filters-btn').click();
+                        } else { // 'failed'
+                            statusSpinner.html('<i class="bi bi-x-circle-fill text-danger"></i>');
+                            statusIndicator.removeClass('bg-light').addClass('bg-danger-soft');
+                            // Comportement en cas d'échec : on ne fait rien pour que l'utilisateur voie la sélection
                         }
 
-                        // Rafraîchir la table pour refléter les changements
-                        $('#apply-filters-btn').click();
+                        // Afficher le bouton OK dans les deux cas
+                        statusCloseBtn.show();
                     }
                 })
                 .catch(err => {
                     clearInterval(interval);
-                    statusIndicator.hide();
-                    toastr.error('Erreur de communication pendant le suivi de la tâche.');
+                    statusSpinner.html('<i class="bi bi-exclamation-triangle-fill text-danger"></i>');
+                    statusText.text("Erreur de communication.");
+                    statusIndicator.removeClass('bg-light').addClass('bg-danger-soft');
+                    statusCloseBtn.show();
                     console.error("Erreur polling statut:", err);
                 });
-        }, 2000); // Interroger toutes les 2 secondes pour plus de réactivité
+        }, 3000); // Interroger toutes les 3 secondes
     }
+
+    // --- NOUVEL ÉCOUTEUR POUR LE BOUTON "OK" DE L'INDICATEUR ---
+    $('#bulk-move-status-close-btn').on('click', function() {
+        $('#bulk-move-status-indicator').hide();
+    });
 
     // --- C. Action de suppression en masse ---
     $(document).on('click', '#batch-delete-btn', function() {
