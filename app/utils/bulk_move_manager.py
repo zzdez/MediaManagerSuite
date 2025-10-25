@@ -4,9 +4,8 @@ import threading
 import uuid
 import time
 import os
-from datetime import datetime, timezone
 from flask import current_app
-from app.utils.arr_client import move_sonarr_series, move_radarr_movie, check_media_path_matches_root, check_import_event_in_history
+from app.utils.arr_client import move_sonarr_series, move_radarr_movie, get_sonarr_series_by_id, get_radarr_movie_by_id
 from app.utils.plex_client import get_plex_admin_server
 
 class BulkMoveManager:
@@ -74,18 +73,30 @@ class BulkMoveManager:
                 error_message = "Type de média non supporté"
 
                 try:
-                    start_time_utc = datetime.now(timezone.utc)
+                    # --- Get source path BEFORE the move ---
+                    source_path = None
+                    if media_type == 'sonarr':
+                        media_details = get_sonarr_series_by_id(media_id)
+                        source_path = media_details.get('path') if media_details else None
+                    elif media_type == 'radarr':
+                        media_details = get_radarr_movie_by_id(media_id)
+                        source_path = media_details.get('path') if media_details else None
+
+                    if not source_path:
+                        raise Exception(f"Impossible de récupérer le chemin source pour {media_type} ID {media_id}.")
+
+                    # --- Initiate the move ---
                     if media_type == 'sonarr':
                         success, error_message = move_sonarr_series(media_id, destination_folder)
                         if success:
-                            error_message = self._poll_for_full_move_completion(task_id, 'sonarr', media_id, destination_folder, start_time_utc)
+                            error_message = self._poll_for_source_path_disappearance(task_id, source_path)
                             if error_message:
                                 success = False
 
                     elif media_type == 'radarr':
                         success, error_message = move_radarr_movie(media_id, destination_folder)
                         if success:
-                            error_message = self._poll_for_full_move_completion(task_id, 'radarr', media_id, destination_folder, start_time_utc)
+                            error_message = self._poll_for_source_path_disappearance(task_id, source_path)
                             if error_message:
                                 success = False
 
@@ -129,64 +140,33 @@ class BulkMoveManager:
 
             self._trigger_plex_scan(library_keys_to_scan)
 
-    def _poll_for_full_move_completion(self, task_id, arr_type, media_id, destination_folder, start_time_utc):
+    def _poll_for_source_path_disappearance(self, task_id, source_path):
         """
-        Polls in a two-stage process to reliably confirm a move is complete.
-        Stage 1: Waits for the path to be updated in the media object.
-        Stage 2: Waits for a file import event in the history.
+        Polls the filesystem to wait for the source path to be deleted.
+        This is the definitive signal that a 'move' operation has completed.
         """
-        POLL_INTERVAL = 15  # seconds
-        MAX_WAIT_TIME = 3600  # seconds (1 hour)
+        POLL_INTERVAL = 5  # seconds
+        # Set a very generous timeout, e.g., 2 hours, for massive files on slow disks.
+        MAX_WAIT_TIME = 7200  # seconds
         start_time_poll = time.time()
 
-        # --- Stage 1: Wait for path to update ---
-        current_app.logger.info(f"[BulkMoveTask:{task_id}] Stage 1: Waiting for path update for {arr_type} ID {media_id}.")
+        current_app.logger.info(f"[BulkMoveTask:{task_id}] Waiting for source path '{source_path}' to disappear...")
+
         while time.time() - start_time_poll < MAX_WAIT_TIME:
-            path_updated = False
-            try:
-                path_updated = check_media_path_matches_root(arr_type, media_id, destination_folder)
-            except Exception as e:
-                current_app.logger.error(f"[BulkMoveTask:{task_id}] Error in Stage 1 polling for {arr_type} ID {media_id}: {e}", exc_info=True)
-
-            if path_updated:
-                current_app.logger.info(f"[BulkMoveTask:{task_id}] Stage 1 PASSED: Path updated for {arr_type} ID {media_id}.")
-                break  # Move to Stage 2
-
-            with self._lock:
-                task = self._tasks.get(task_id)
-                if task:
-                    base_message = task['message'].split(' - ')[0]
-                    task['message'] = f"{base_message} - Initialisation du transfert..."
-            time.sleep(POLL_INTERVAL)
-        else: # Loop finished without break
-            timeout_message = f"Stage 1 Timeout: La mise à jour du chemin pour {arr_type} ID {media_id} n'a pas été détectée."
-            current_app.logger.error(f"[BulkMoveTask:{task_id}] {timeout_message}")
-            return timeout_message
-
-        # --- Stage 2: Wait for import event ---
-        current_app.logger.info(f"[BulkMoveTask:{task_id}] Stage 2: Waiting for file import confirmation for {arr_type} ID {media_id}.")
-        stage2_start_time = time.time()
-        while time.time() - stage2_start_time < MAX_WAIT_TIME:
-            import_confirmed = False
-            try:
-                import_confirmed = check_import_event_in_history(arr_type, media_id, start_time_utc)
-            except Exception as e:
-                current_app.logger.error(f"[BulkMoveTask:{task_id}] Error in Stage 2 polling for {arr_type} ID {media_id}: {e}", exc_info=True)
-
-            if import_confirmed:
-                current_app.logger.info(f"[BulkMoveTask:{task_id}] Stage 2 PASSED: Import event confirmed for {arr_type} ID {media_id}.")
+            if not os.path.exists(source_path):
+                current_app.logger.info(f"[BulkMoveTask:{task_id}] Source path '{source_path}' has disappeared. Move confirmed.")
                 return None  # SUCCESS
 
             with self._lock:
                 task = self._tasks.get(task_id)
                 if task:
                     base_message = task['message'].split(' - ')[0]
-                    task['message'] = f"{base_message} - Finalisation du transfert..."
+                    task['message'] = f"{base_message} - Transfert physique en cours..."
             time.sleep(POLL_INTERVAL)
-        else: # Loop finished without break
-            timeout_message = f"Stage 2 Timeout: La confirmation de l'importation pour {arr_type} ID {media_id} n'a pas été détectée."
-            current_app.logger.error(f"[BulkMoveTask:{task_id}] {timeout_message}")
-            return timeout_message
+
+        timeout_message = f"Le suivi du déplacement pour le chemin '{source_path}' a dépassé le temps maximum d'attente ({MAX_WAIT_TIME}s)."
+        current_app.logger.error(f"[BulkMoveTask:{task_id}] {timeout_message}")
+        return timeout_message
 
 
     def is_task_running(self):
