@@ -29,14 +29,3 @@ Pour construire un nouveau chemin de destination valide pour Radarr, il faut :
 *   Le backend doit exposer une API de statut (ex: `GET /api/task_status/<task_id>`) qui retourne l'état actuel de la tâche (ex: 'running', 'completed', 'failed') et un message de progression.
 *   Le frontend **ne doit pas** considérer la tâche comme terminée après l'appel initial. Il doit lancer une boucle de *polling* (ex: avec `setInterval`) qui interroge régulièrement l'API de statut.
 *   L'interface doit être mise à jour dynamiquement en fonction de la réponse de l'API de statut (ex: afficher un indicateur de progression). La notification finale (succès/échec) et le rafraîchissement des données ne doivent être déclenchés que lorsque l'API de statut renvoie un état final ('completed' ou 'failed').
-
-### 3. Suivi Fiable des Déplacements de Fichiers Sonarr/Radarr (Problème en cours)
-
-**Problème :** Trouver un signal API fiable pour confirmer la fin **réelle** d'un déplacement de fichier initié par la modification d'un objet média (`PUT /api/v3/series/{id}` ou `PUT /api/v3/movie/{id}`). Les indicateurs de statut dans l'interface utilisateur sont prématurés car le backend ne détecte pas correctement la fin du transfert.
-
-**Stratégies Explorées et Leçons Apprises :**
-1.  **Polling du Chemin (Non fiable) :** Surveiller le champ `path` ou `rootFolderPath` de l'objet média est sujet à des délais et des incohérences.
-2.  **Polling des Commandes (`/api/v3/command`) (Incorrect) :** La méthode de déplacement par édition d'objet **ne crée pas** de commande nommée (`MoveSeries`, `MoveMovie`) traçable via cet endpoint. Cette approche est donc invalide pour ce cas d'usage.
-3.  **Polling de la File d'Attente (`/api/v3/queue`) (Non fiable) :** Il a été observé que l'élément en cours de déplacement disparaît de la file d'attente d'activité **avant** la fin réelle du transfert physique des fichiers, menant à des notifications de succès prématurées.
-
-**État Actuel et Piste pour la Suite :** Les logs de Sonarr/Radarr montrent un message clair lorsque le déplacement est terminé (ex: `Info|MoveSeriesService|... moved successfully`). Le défi est de trouver comment capter ce signal via l'API. La prochaine étape d'investigation devrait se concentrer sur l'analyse de tous les événements ou notifications disponibles via l'API (potentiellement via des WebSockets ou d'autres endpoints de statut) qui pourraient correspondre à cet événement de log.
