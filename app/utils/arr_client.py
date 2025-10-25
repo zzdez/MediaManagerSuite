@@ -1431,8 +1431,6 @@ def get_sonarr_root_folders():
 def get_sonarr_queue():
     """Fetches the current activity queue from Sonarr."""
     logger.info("Sonarr: Fetching activity queue.")
-    # The 'page' and 'pageSize' might be useful for very long queues, but default should be fine for now.
-    # includeUnknownSeriesItems=false is a good default to avoid clutter.
     queue_response = _sonarr_api_request('GET', 'queue', params={'page': '1', 'pageSize': 100, 'includeUnknownSeriesItems': 'false'})
     if queue_response and 'records' in queue_response:
         return queue_response['records']
