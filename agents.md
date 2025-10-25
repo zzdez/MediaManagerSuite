@@ -29,3 +29,21 @@ Pour construire un nouveau chemin de destination valide pour Radarr, il faut :
 *   Le backend doit exposer une API de statut (ex: `GET /api/task_status/<task_id>`) qui retourne l'état actuel de la tâche (ex: 'running', 'completed', 'failed') et un message de progression.
 *   Le frontend **ne doit pas** considérer la tâche comme terminée après l'appel initial. Il doit lancer une boucle de *polling* (ex: avec `setInterval`) qui interroge régulièrement l'API de statut.
 *   L'interface doit être mise à jour dynamiquement en fonction de la réponse de l'API de statut (ex: afficher un indicateur de progression). La notification finale (succès/échec) et le rafraîchissement des données ne doivent être déclenchés que lorsque l'API de statut renvoie un état final ('completed' ou 'failed').
+
+### 3. Confirmation Fiable d'un Déplacement de Fichier Sonarr/Radarr
+
+**Problème :** Après avoir initié un déplacement de média via l'API (`PUT /api/v3/[series|movie]/{id}?moveFiles=true`), il est impossible d'obtenir un signal fiable de l'API pour savoir quand le transfert physique du fichier est terminé.
+
+**Analyses des Méthodes Non Fiables :**
+Au cours d'un long processus de débogage, les stratégies suivantes se sont avérées **inefficaces et ne doivent pas être utilisées** :
+1.  **Polling de la file d'attente (`/api/v3/queue`) :** L'élément disparaît de la file d'attente dès que le transfert *commence*, pas quand il se termine.
+2.  **Polling de l'historique global (`/api/v3/history`) :** Sur un serveur actif, le volume d'événements est tel que l'événement de déplacement pertinent est "noyé" et poussé hors de la première page de résultats avant d'être détecté.
+3.  **Vérification du `path` du média :** L'API met à jour le champ `path` dans sa base de données dès que le déplacement est *initié*, pas quand il est physiquement terminé.
+4.  **Polling de l'historique spécifique au média (`/history/series` ou `/history/movie`) :** Il a été confirmé que l'API **ne génère aucun événement** de type `seriesMoved` ou `movieFileImported` pour les déplacements initiés via l'API.
+
+**Solution et Règle d'Or :**
+La seule source de vérité fiable pour confirmer la fin d'un déplacement de fichier est le **système de fichiers lui-même**. La stratégie correcte et définitive est la suivante :
+1.  **Avant** d'initier le déplacement, récupérer et stocker le chemin source complet du média (ex: `D:\Series\Nom de la Série`).
+2.  Lancer la commande de déplacement via l'API.
+3.  Implémenter une boucle de polling qui vérifie à intervalles réguliers si le chemin source existe toujours en utilisant `os.path.exists(source_path)`.
+4.  La tâche est considérée comme terminée uniquement lorsque `os.path.exists()` renvoie `False`, indiquant que le dossier/fichier source a été supprimé/déplacé.
