@@ -1463,28 +1463,28 @@ def check_arr_move_completion_in_history(arr_type, media_id, start_time_utc):
         record_event_type = record.get('eventType')
         record_media_id = record.get(media_id_key)
 
-        # Stop if we see an older event
+        # Check for the relevant move event that occurred AFTER the task started
         try:
             record_date_str = record.get('date')
-            if record_date_str:
-                # Handle both 'Z' and '+00:00' timezone formats
-                if record_date_str.endswith('Z'):
-                    record_date = datetime.fromisoformat(record_date_str.replace('Z', '+00:00'))
-                else:
-                    record_date = datetime.fromisoformat(record_date_str)
+            if not record_date_str:
+                continue
 
-                if record_date < start_time_utc:
-                    # We've gone back in time before the move started.
-                    logger.debug(f"{arr_type.capitalize()}: History event at {record_date} is older than start time {start_time_utc}. Stopping search.")
-                    return False
+            # Handle both 'Z' and '+00:00' timezone formats for robust parsing
+            if record_date_str.endswith('Z'):
+                record_date = datetime.fromisoformat(record_date_str.replace('Z', '+00:00'))
+            else:
+                record_date = datetime.fromisoformat(record_date_str)
+
+            # The core logic check: correct event, correct media, and recent enough
+            if (record_event_type == event_type and
+                str(record_media_id) == str(media_id) and
+                record_date >= start_time_utc):
+                logger.info(f"{arr_type.capitalize()}: Found '{event_type}' event for media ID {media_id} at {record.get('date')} which is after the start time.")
+                return True
+
         except (ValueError, TypeError) as e:
             logger.error(f"Error parsing date from history record: {record.get('date')}. Error: {e}")
             continue
-
-        # Check for the relevant move event
-        if record_event_type == event_type and str(record_media_id) == str(media_id):
-            logger.info(f"{arr_type.capitalize()}: Found '{event_type}' event for media ID {media_id} at {record.get('date')}.")
-            return True
 
     logger.debug(f"{arr_type.capitalize()}: No '{event_type}' event found yet for media ID {media_id}.")
     return False
