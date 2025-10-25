@@ -1429,12 +1429,53 @@ def get_sonarr_root_folders():
             folder['freeSpace_formatted'] = _format_bytes(free_space)
     return folders
 
-def check_media_move_completion_in_history(arr_type, media_id, start_time_utc):
+def check_media_path_matches_root(arr_type, media_id, expected_root_folder):
     """
-    Checks Sonarr/Radarr history for a 'seriesMoved' or 'movieMoved' event using the specific media history endpoint.
-    Returns True if a relevant event is found after start_time_utc.
+    Checks if the media item's path in Sonarr/Radarr matches the expected new root folder.
+    This provides a definitive confirmation that the move operation is complete from the Arr perspective.
+    Returns True if the path matches, False otherwise.
     """
-    logger.info(f"{arr_type.capitalize()}: Checking filtered history for move completion for media ID {media_id} since {start_time_utc}.")
+    logger.info(f"{arr_type.capitalize()}: Verifying path for media ID {media_id}. Expecting root: '{expected_root_folder}'")
+
+    media_data = None
+    if arr_type == 'sonarr':
+        media_data = get_sonarr_series_by_id(media_id)
+    elif arr_type == 'radarr':
+        media_data = get_radarr_movie_by_id(media_id)
+    else:
+        logger.error(f"Unknown arr_type '{arr_type}' for path check.")
+        return False
+
+    if not media_data:
+        logger.warning(f"{arr_type.capitalize()}: Could not fetch media data for ID {media_id} to verify path.")
+        return False
+
+    current_path = media_data.get('path')
+    if not current_path:
+        logger.warning(f"{arr_type.capitalize()}: Media item ID {media_id} has no path attribute.")
+        return False
+
+    # Normalize paths for robust comparison (handles mixed slashes, case variations)
+    normalized_current_path = os.path.normpath(current_path).lower()
+    normalized_expected_root = os.path.normpath(expected_root_folder).lower()
+
+    logger.debug(f"Normalized current path: '{normalized_current_path}'")
+    logger.debug(f"Normalized expected root: '{normalized_expected_root}'")
+
+    # A move is complete when the media's path is now located *inside* the new root folder.
+    if normalized_current_path.startswith(normalized_expected_root):
+        logger.info(f"{arr_type.capitalize()}: Path for media ID {media_id} has been successfully updated to '{current_path}'. Move confirmed.")
+        return True
+    else:
+        logger.info(f"{arr_type.capitalize()}: Path for media ID {media_id} ('{current_path}') does not yet match destination '{expected_root_folder}'.")
+        return False
+
+def check_import_event_in_history(arr_type, media_id, start_time_utc):
+    """
+    Checks the media-specific history for an 'episodeFileImported' or 'movieFileImported' event.
+    This confirms that the files have been recognized by Sonarr/Radarr at the new location.
+    """
+    logger.info(f"{arr_type.capitalize()}: Checking for import event for media ID {media_id} since {start_time_utc}.")
 
     api_request_func = None
     event_type = None
@@ -1443,16 +1484,18 @@ def check_media_move_completion_in_history(arr_type, media_id, start_time_utc):
 
     if arr_type == 'sonarr':
         api_request_func = _sonarr_api_request
-        event_type = 'seriesMoved'
+        # For Sonarr, the key event after a move is the re-importation of episode files.
+        event_type = 'episodeFileImported'
         endpoint = 'history/series'
         media_id_param_key = 'seriesId'
     elif arr_type == 'radarr':
         api_request_func = _radarr_api_request
-        event_type = 'movieMoved'
+        # For Radarr, a similar logic applies.
+        event_type = 'movieFileImported'
         endpoint = 'history/movie'
         media_id_param_key = 'movieId'
     else:
-        logger.error(f"Unknown arr_type '{arr_type}' for history check.")
+        logger.error(f"Unknown arr_type '{arr_type}' for import event check.")
         return False
 
     params = {
@@ -1462,8 +1505,8 @@ def check_media_move_completion_in_history(arr_type, media_id, start_time_utc):
     }
     history_records = api_request_func('GET', endpoint, params=params)
 
-    if not history_records: # API returns a list directly, not a dict with 'records'
-        logger.debug(f"{arr_type.capitalize()}: No history records found for media ID {media_id}.")
+    if not history_records:
+        logger.debug(f"{arr_type.capitalize()}: No history records found for media ID {media_id} to check for import.")
         return False
 
     for record in history_records:
@@ -1479,11 +1522,10 @@ def check_media_move_completion_in_history(arr_type, media_id, start_time_utc):
                     record_date = datetime.fromisoformat(record_date_str)
 
                 if record_date >= start_time_utc:
-                    logger.info(f"{arr_type.capitalize()}: Found '{event_type}' event for media ID {media_id} at {record.get('date')} which is after the start time.")
+                    logger.info(f"{arr_type.capitalize()}: Found '{event_type}' event for media ID {media_id} at {record.get('date')}. Move is considered complete.")
                     return True
-
             except (ValueError, TypeError) as e:
-                logger.error(f"Error parsing date from history record: {record.get('date')}. Error: {e}")
+                logger.error(f"Error parsing date from import history record: {record.get('date')}. Error: {e}")
                 continue
 
     logger.debug(f"{arr_type.capitalize()}: No '{event_type}' event found yet for media ID {media_id}.")

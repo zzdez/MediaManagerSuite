@@ -6,7 +6,7 @@ import time
 import os
 from datetime import datetime, timezone
 from flask import current_app
-from app.utils.arr_client import move_sonarr_series, move_radarr_movie, check_media_move_completion_in_history
+from app.utils.arr_client import move_sonarr_series, move_radarr_movie, check_media_path_matches_root, check_import_event_in_history
 from app.utils.plex_client import get_plex_admin_server
 
 class BulkMoveManager:
@@ -78,14 +78,14 @@ class BulkMoveManager:
                     if media_type == 'sonarr':
                         success, error_message = move_sonarr_series(media_id, destination_folder)
                         if success:
-                            error_message = self._poll_arr_history_for_completion(task_id, 'sonarr', media_id, start_time_utc)
+                            error_message = self._poll_for_full_move_completion(task_id, 'sonarr', media_id, destination_folder, start_time_utc)
                             if error_message:
                                 success = False
 
                     elif media_type == 'radarr':
                         success, error_message = move_radarr_movie(media_id, destination_folder)
                         if success:
-                            error_message = self._poll_arr_history_for_completion(task_id, 'radarr', media_id, start_time_utc)
+                            error_message = self._poll_for_full_move_completion(task_id, 'radarr', media_id, destination_folder, start_time_utc)
                             if error_message:
                                 success = False
 
@@ -129,35 +129,64 @@ class BulkMoveManager:
 
             self._trigger_plex_scan(library_keys_to_scan)
 
-    def _poll_arr_history_for_completion(self, task_id, arr_type, media_id, start_time_utc):
+    def _poll_for_full_move_completion(self, task_id, arr_type, media_id, destination_folder, start_time_utc):
         """
-        Polls the Sonarr/Radarr history to wait for a move operation to complete.
-        Completion is defined as a 'seriesMoved' or 'movieMoved' event appearing in the history.
+        Polls in a two-stage process to reliably confirm a move is complete.
+        Stage 1: Waits for the path to be updated in the media object.
+        Stage 2: Waits for a file import event in the history.
         """
-        POLL_INTERVAL = 10  # seconds
+        POLL_INTERVAL = 15  # seconds
         MAX_WAIT_TIME = 3600  # seconds (1 hour)
         start_time_poll = time.time()
 
+        # --- Stage 1: Wait for path to update ---
+        current_app.logger.info(f"[BulkMoveTask:{task_id}] Stage 1: Waiting for path update for {arr_type} ID {media_id}.")
         while time.time() - start_time_poll < MAX_WAIT_TIME:
+            path_updated = False
             try:
-                if check_media_move_completion_in_history(arr_type, media_id, start_time_utc):
-                    current_app.logger.info(f"[{arr_type.capitalize()}] Move for media ID {media_id} confirmed via history event.")
-                    return None  # Success
+                path_updated = check_media_path_matches_root(arr_type, media_id, destination_folder)
             except Exception as e:
-                current_app.logger.error(f"[BulkMoveTask:{task_id}] Error while polling history for {arr_type} media ID {media_id}: {e}", exc_info=True)
+                current_app.logger.error(f"[BulkMoveTask:{task_id}] Error in Stage 1 polling for {arr_type} ID {media_id}: {e}", exc_info=True)
 
-            # Update task message to show it's waiting
+            if path_updated:
+                current_app.logger.info(f"[BulkMoveTask:{task_id}] Stage 1 PASSED: Path updated for {arr_type} ID {media_id}.")
+                break  # Move to Stage 2
+
             with self._lock:
                 task = self._tasks.get(task_id)
                 if task:
                     base_message = task['message'].split(' - ')[0]
-                    task['message'] = f"{base_message} - En attente de la confirmation du transfert..."
-
+                    task['message'] = f"{base_message} - Initialisation du transfert..."
             time.sleep(POLL_INTERVAL)
+        else: # Loop finished without break
+            timeout_message = f"Stage 1 Timeout: La mise à jour du chemin pour {arr_type} ID {media_id} n'a pas été détectée."
+            current_app.logger.error(f"[BulkMoveTask:{task_id}] {timeout_message}")
+            return timeout_message
 
-        timeout_message = f"Le suivi du déplacement pour {arr_type} ID {media_id} a dépassé le temps maximum d'attente ({MAX_WAIT_TIME}s)."
-        current_app.logger.error(f"[BulkMoveTask:{task_id}] {timeout_message}")
-        return timeout_message
+        # --- Stage 2: Wait for import event ---
+        current_app.logger.info(f"[BulkMoveTask:{task_id}] Stage 2: Waiting for file import confirmation for {arr_type} ID {media_id}.")
+        stage2_start_time = time.time()
+        while time.time() - stage2_start_time < MAX_WAIT_TIME:
+            import_confirmed = False
+            try:
+                import_confirmed = check_import_event_in_history(arr_type, media_id, start_time_utc)
+            except Exception as e:
+                current_app.logger.error(f"[BulkMoveTask:{task_id}] Error in Stage 2 polling for {arr_type} ID {media_id}: {e}", exc_info=True)
+
+            if import_confirmed:
+                current_app.logger.info(f"[BulkMoveTask:{task_id}] Stage 2 PASSED: Import event confirmed for {arr_type} ID {media_id}.")
+                return None  # SUCCESS
+
+            with self._lock:
+                task = self._tasks.get(task_id)
+                if task:
+                    base_message = task['message'].split(' - ')[0]
+                    task['message'] = f"{base_message} - Finalisation du transfert..."
+            time.sleep(POLL_INTERVAL)
+        else: # Loop finished without break
+            timeout_message = f"Stage 2 Timeout: La confirmation de l'importation pour {arr_type} ID {media_id} n'a pas été détectée."
+            current_app.logger.error(f"[BulkMoveTask:{task_id}] {timeout_message}")
+            return timeout_message
 
 
     def is_task_running(self):
