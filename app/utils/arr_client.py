@@ -1452,8 +1452,8 @@ def check_arr_move_completion_in_history(arr_type, media_id, start_time_utc):
         logger.error(f"Unknown arr_type '{arr_type}' for history check.")
         return False
 
-    # Fetch history (sorted by date descending by default)
-    history_response = api_request_func('GET', 'history', params={'sortKey': 'date', 'sortDir': 'desc'})
+    # Fetch history (sorted by date descending by default, with a larger page size)
+    history_response = api_request_func('GET', 'history', params={'sortKey': 'date', 'sortDir': 'desc', 'pageSize': 100})
 
     if not history_response or 'records' not in history_response:
         logger.warning(f"{arr_type.capitalize()}: Could not fetch history or history is empty.")
