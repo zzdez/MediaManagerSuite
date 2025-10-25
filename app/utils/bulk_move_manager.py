@@ -6,7 +6,7 @@ import time
 import os
 from datetime import datetime, timezone
 from flask import current_app
-from app.utils.arr_client import move_sonarr_series, move_radarr_movie, check_media_path_matches_root
+from app.utils.arr_client import move_sonarr_series, move_radarr_movie, check_media_move_completion_in_history
 from app.utils.plex_client import get_plex_admin_server
 
 class BulkMoveManager:
@@ -74,19 +74,18 @@ class BulkMoveManager:
                 error_message = "Type de média non supporté"
 
                 try:
+                    start_time_utc = datetime.now(timezone.utc)
                     if media_type == 'sonarr':
                         success, error_message = move_sonarr_series(media_id, destination_folder)
                         if success:
-                            # Poll for path change
-                            error_message = self._poll_media_for_path_change(task_id, 'sonarr', media_id, destination_folder)
+                            error_message = self._poll_arr_history_for_completion(task_id, 'sonarr', media_id, start_time_utc)
                             if error_message:
                                 success = False
 
                     elif media_type == 'radarr':
                         success, error_message = move_radarr_movie(media_id, destination_folder)
                         if success:
-                            # Poll for path change
-                            error_message = self._poll_media_for_path_change(task_id, 'radarr', media_id, destination_folder)
+                            error_message = self._poll_arr_history_for_completion(task_id, 'radarr', media_id, start_time_utc)
                             if error_message:
                                 success = False
 
@@ -130,32 +129,33 @@ class BulkMoveManager:
 
             self._trigger_plex_scan(library_keys_to_scan)
 
-    def _poll_media_for_path_change(self, task_id, arr_type, media_id, destination_folder):
+    def _poll_arr_history_for_completion(self, task_id, arr_type, media_id, start_time_utc):
         """
-        Polls the Sonarr/Radarr media item to wait for its path to be updated.
-        This is the most reliable way to confirm a move is complete.
+        Polls the Sonarr/Radarr history to wait for a move operation to complete.
+        Completion is defined as a 'seriesMoved' or 'movieMoved' event appearing in the history.
         """
-        POLL_INTERVAL = 15  # seconds; path updates are not instant.
+        POLL_INTERVAL = 10  # seconds
         MAX_WAIT_TIME = 3600  # seconds (1 hour)
         start_time_poll = time.time()
 
         while time.time() - start_time_poll < MAX_WAIT_TIME:
             try:
-                if check_media_path_matches_root(arr_type, media_id, destination_folder):
+                if check_media_move_completion_in_history(arr_type, media_id, start_time_utc):
+                    current_app.logger.info(f"[{arr_type.capitalize()}] Move for media ID {media_id} confirmed via history event.")
                     return None  # Success
             except Exception as e:
-                current_app.logger.error(f"[BulkMoveTask:{task_id}] Error while polling media path for {arr_type} ID {media_id}: {e}", exc_info=True)
+                current_app.logger.error(f"[BulkMoveTask:{task_id}] Error while polling history for {arr_type} media ID {media_id}: {e}", exc_info=True)
 
             # Update task message to show it's waiting
             with self._lock:
                 task = self._tasks.get(task_id)
                 if task:
                     base_message = task['message'].split(' - ')[0]
-                    task['message'] = f"{base_message} - Confirmation du déplacement en cours..."
+                    task['message'] = f"{base_message} - En attente de la confirmation du transfert..."
 
             time.sleep(POLL_INTERVAL)
 
-        timeout_message = f"La vérification du déplacement pour {arr_type} ID {media_id} a dépassé le temps maximum d'attente ({MAX_WAIT_TIME}s)."
+        timeout_message = f"Le suivi du déplacement pour {arr_type} ID {media_id} a dépassé le temps maximum d'attente ({MAX_WAIT_TIME}s)."
         current_app.logger.error(f"[BulkMoveTask:{task_id}] {timeout_message}")
         return timeout_message
 
