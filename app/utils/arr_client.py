@@ -4,6 +4,7 @@ import requests
 from flask import current_app
 import re
 import logging
+from datetime import datetime, timezone
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -1427,6 +1428,66 @@ def get_sonarr_root_folders():
             free_space = folder.get('freeSpace')
             folder['freeSpace_formatted'] = _format_bytes(free_space)
     return folders
+
+def check_arr_move_completion_in_history(arr_type, media_id, start_time_utc):
+    """
+    Checks Sonarr/Radarr history for a 'seriesMoved' or 'movieMoved' event.
+    Returns True if a relevant event is found after start_time_utc.
+    """
+    logger.info(f"{arr_type.capitalize()}: Checking history for move completion for media ID {media_id} since {start_time_utc}.")
+
+    api_request_func = None
+    media_id_key = None
+    event_type = None
+
+    if arr_type == 'sonarr':
+        api_request_func = _sonarr_api_request
+        media_id_key = 'seriesId'
+        event_type = 'seriesMoved'
+    elif arr_type == 'radarr':
+        api_request_func = _radarr_api_request
+        media_id_key = 'movieId'
+        event_type = 'movieMoved'
+    else:
+        logger.error(f"Unknown arr_type '{arr_type}' for history check.")
+        return False
+
+    # Fetch history (sorted by date descending by default)
+    history_response = api_request_func('GET', 'history', params={'sortKey': 'date', 'sortDir': 'desc'})
+
+    if not history_response or 'records' not in history_response:
+        logger.warning(f"{arr_type.capitalize()}: Could not fetch history or history is empty.")
+        return False
+
+    for record in history_response['records']:
+        record_event_type = record.get('eventType')
+        record_media_id = record.get(media_id_key)
+
+        # Stop if we see an older event
+        try:
+            record_date_str = record.get('date')
+            if record_date_str:
+                # Handle both 'Z' and '+00:00' timezone formats
+                if record_date_str.endswith('Z'):
+                    record_date = datetime.fromisoformat(record_date_str.replace('Z', '+00:00'))
+                else:
+                    record_date = datetime.fromisoformat(record_date_str)
+
+                if record_date < start_time_utc:
+                    # We've gone back in time before the move started.
+                    logger.debug(f"{arr_type.capitalize()}: History event at {record_date} is older than start time {start_time_utc}. Stopping search.")
+                    return False
+        except (ValueError, TypeError) as e:
+            logger.error(f"Error parsing date from history record: {record.get('date')}. Error: {e}")
+            continue
+
+        # Check for the relevant move event
+        if record_event_type == event_type and str(record_media_id) == str(media_id):
+            logger.info(f"{arr_type.capitalize()}: Found '{event_type}' event for media ID {media_id} at {record.get('date')}.")
+            return True
+
+    logger.debug(f"{arr_type.capitalize()}: No '{event_type}' event found yet for media ID {media_id}.")
+    return False
 
 def get_sonarr_queue():
     """Fetches the current activity queue from Sonarr."""

@@ -4,8 +4,9 @@ import threading
 import uuid
 import time
 import os
+from datetime import datetime, timezone
 from flask import current_app
-from app.utils.arr_client import move_sonarr_series, move_radarr_movie, get_sonarr_queue, get_radarr_queue
+from app.utils.arr_client import move_sonarr_series, move_radarr_movie, check_arr_move_completion_in_history
 from app.utils.plex_client import get_plex_admin_server
 
 class BulkMoveManager:
@@ -73,19 +74,20 @@ class BulkMoveManager:
                 error_message = "Type de média non supporté"
 
                 try:
+                    start_time_utc = datetime.now(timezone.utc)
                     if media_type == 'sonarr':
                         success, error_message = move_sonarr_series(media_id, destination_folder)
                         if success:
-                            # Poll the queue for completion
-                            error_message = self._poll_arr_queue_for_completion(task_id, 'sonarr', media_id)
+                            # Poll the history for completion
+                            error_message = self._poll_arr_history_for_completion(task_id, 'sonarr', media_id, start_time_utc)
                             if error_message:
                                 success = False
 
                     elif media_type == 'radarr':
                         success, error_message = move_radarr_movie(media_id, destination_folder)
                         if success:
-                            # Poll the queue for completion
-                            error_message = self._poll_arr_queue_for_completion(task_id, 'radarr', media_id)
+                            # Poll the history for completion
+                            error_message = self._poll_arr_history_for_completion(task_id, 'radarr', media_id, start_time_utc)
                             if error_message:
                                 success = False
 
@@ -129,44 +131,34 @@ class BulkMoveManager:
 
             self._trigger_plex_scan(library_keys_to_scan)
 
-    def _poll_arr_queue_for_completion(self, task_id, arr_type, media_id):
+    def _poll_arr_history_for_completion(self, task_id, arr_type, media_id, start_time_utc):
         """
-        Polls the Sonarr/Radarr queue to wait for a move operation to complete.
-        Completion is defined as the item disappearing from the queue.
+        Polls the Sonarr/Radarr history to wait for a move operation to complete.
+        Completion is defined as a 'seriesMoved' or 'movieMoved' event appearing in the history.
         """
-        POLL_INTERVAL = 5  # seconds
-        # Set a generous timeout, e.g., 30 minutes, as file transfers can be long
-        MAX_WAIT_TIME = 1800  # seconds
-        start_time = time.time()
+        POLL_INTERVAL = 10  # seconds, history is less critical to poll so fast
+        MAX_WAIT_TIME = 3600  # seconds (1 hour), increased for very large files
+        start_time_poll = time.time()
 
-        id_key = 'seriesId' if arr_type == 'sonarr' else 'movieId'
-        get_queue_func = get_sonarr_queue if arr_type == 'sonarr' else get_radarr_queue
-
-        while time.time() - start_time < MAX_WAIT_TIME:
-            queue = get_queue_func()
-
-            # Find the specific move item in the queue
-            move_in_progress = False
-            for item in queue:
-                # The ID of the media being moved should be present in the queue item
-                if item.get(id_key) == int(media_id):
-                    move_in_progress = True
-                    break # Found it, continue polling
-
-            if not move_in_progress:
-                current_app.logger.info(f"[{arr_type.capitalize()}] Move for media ID {media_id} is no longer in the queue. Assuming completion.")
-                return None  # Success: item is no longer in the queue
+        while time.time() - start_time_poll < MAX_WAIT_TIME:
+            try:
+                if check_arr_move_completion_in_history(arr_type, media_id, start_time_utc):
+                    current_app.logger.info(f"[{arr_type.capitalize()}] Move for media ID {media_id} confirmed via history event.")
+                    return None  # Success
+            except Exception as e:
+                current_app.logger.error(f"[BulkMoveTask:{task_id}] Error while polling history for {arr_type} media ID {media_id}: {e}", exc_info=True)
+                # We don't want to fail the whole task for a polling error, so we just log and continue polling.
 
             # Update task message to show it's waiting
             with self._lock:
-                task = self._tasks[task_id]
-                # Keep the main message but add a polling indicator
-                base_message = task['message'].split(' - ')[0]
-                task['message'] = f"{base_message} - Vérification de la fin du transfert..."
+                task = self._tasks.get(task_id)
+                if task:
+                    base_message = task['message'].split(' - ')[0]
+                    task['message'] = f"{base_message} - En attente de la confirmation du transfert..."
 
             time.sleep(POLL_INTERVAL)
 
-        timeout_message = f"Le suivi du déplacement pour {arr_type} a dépassé le temps maximum d'attente ({MAX_WAIT_TIME}s)."
+        timeout_message = f"Le suivi du déplacement pour {arr_type} ID {media_id} a dépassé le temps maximum d'attente ({MAX_WAIT_TIME}s)."
         current_app.logger.error(f"[BulkMoveTask:{task_id}] {timeout_message}")
         return timeout_message
 
