@@ -880,7 +880,8 @@ $('#confirmArchiveMovieBtn').on('click', function() {
                 itemsToMove.push({
                     plex_id: $(this).data('rating-key'),
                     media_type: mediaType,
-                    destination: destination
+                    destination: destination,
+                    library_key: row.data('library-key') // Ajout de la clé de la bibliothèque
                 });
             }
         });

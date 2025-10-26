@@ -271,3 +271,40 @@ def find_plex_media_by_titles(plex_server, titles_list: list, year: int, media_t
 
     logger.warn(f"Plex Client: Could not find Plex media by any of the titles: {titles_list} (Year: {year}).")
     return None
+
+def trigger_plex_scan(*library_keys: int):
+    """
+    Triggers a library scan on the Plex server for the given library keys.
+    Uses an admin connection to ensure permissions. Logs successes and failures.
+    """
+    if not library_keys:
+        logger.warning("trigger_plex_scan called with no library keys.")
+        return
+
+    plex_server = get_plex_admin_server()
+    if not plex_server:
+        logger.error("trigger_plex_scan: Could not get Plex admin server to trigger scan.")
+        return
+
+    scanned_libs = []
+    failed_libs = []
+    unique_keys = set(library_keys) # Ensure we don't scan the same library multiple times
+
+    logger.info(f"Triggering Plex scan for library keys: {unique_keys}")
+    for key in unique_keys:
+        try:
+            library = plex_server.library.sectionByID(key)
+            logger.info(f"Scanning library: '{library.title}' (Key: {key})")
+            library.update()
+            scanned_libs.append(library.title)
+        except NotFound:
+            logger.error(f"trigger_plex_scan: Library with key {key} not found.")
+            failed_libs.append(str(key))
+        except Exception as e:
+            logger.error(f"trigger_plex_scan: Failed to scan library key {key}: {e}", exc_info=True)
+            failed_libs.append(str(key))
+
+    if scanned_libs:
+        logger.info(f"Successfully triggered scan for libraries: {', '.join(scanned_libs)}")
+    if failed_libs:
+        logger.error(f"Failed to trigger scan for library keys: {', '.join(failed_libs)}")

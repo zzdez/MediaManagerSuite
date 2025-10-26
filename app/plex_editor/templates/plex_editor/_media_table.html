@@ -17,7 +17,8 @@
             <tr data-rating-key="{{ item.ratingKey }}" data-rating="{{ item.userRating or 0 }}"
                 data-incomplete="{{ 'true' if item.type == 'show' and item.is_incomplete else 'false' }}"
                 data-media-type-from-mapping="{{ item.media_type_from_mapping }}"
-                data-custom-media-type="{{ item.custom_media_type }}">
+                data-custom-media-type="{{ item.custom_media_type }}"
+                data-library-key="{{ item.librarySectionID }}">
                 <td><input type="checkbox" class="form-check-input item-checkbox" data-rating-key="{{ item.ratingKey }}"></td>
                 <td> {# <-- CELLULE TITRE SIMPLIFIÉE #}
                     <div class="d-flex align-items-center">

@@ -178,6 +178,7 @@ def bulk_move_media_items():
             plex_rating_key = item_data.get('plex_id')
             media_type = item_data.get('media_type') # 'sonarr' ou 'radarr'
             destination = item_data.get('destination')
+            library_key = item_data.get('library_key') # Récupérer la clé de la bibliothèque
 
             plex_item = plex_server.fetchItem(int(plex_rating_key))
 
@@ -198,8 +199,8 @@ def bulk_move_media_items():
                 'title': plex_item.title,
                 'media_type': media_type,
                 'destination': destination,
-                'library_key': plex_item.librarySectionID,
-                'plex_rating_key': plex_rating_key # Ajout de la clé Plex
+                'library_key': library_key,
+                'plex_rating_key': plex_rating_key
             })
 
     except Exception as e:

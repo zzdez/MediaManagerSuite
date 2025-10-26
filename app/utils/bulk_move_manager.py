@@ -6,7 +6,7 @@ import time
 import os
 from flask import current_app
 from app.utils.arr_client import move_sonarr_series, move_radarr_movie, get_sonarr_series_by_id, get_radarr_movie_by_id
-from app.utils.plex_client import get_plex_admin_server
+from app.utils.plex_client import trigger_plex_scan
 
 class BulkMoveManager:
     _instance = None
@@ -21,29 +21,17 @@ class BulkMoveManager:
         return cls._instance
 
     def _trigger_plex_scan(self, library_keys):
-        """Déclenche un scan pour une liste de clés de bibliothèque Plex."""
-        if not library_keys:
-            current_app.logger.info("[BulkMoveTask] No library keys provided for scanning.")
+        """
+        Wrapper to call the centralized Plex scan utility.
+        Filters out None values from library_keys.
+        """
+        valid_keys = {int(key) for key in library_keys if key is not None}
+        if not valid_keys:
+            current_app.logger.info("[BulkMoveTask] No valid library keys provided for scanning.")
             return
 
-        try:
-            plex_server = get_plex_admin_server()
-            if not plex_server:
-                current_app.logger.error("[BulkMoveTask] Could not get Plex admin server to trigger scan.")
-                return
-
-            scanned_libs = []
-            for key in library_keys:
-                if key:
-                    try:
-                        library = plex_server.library.sectionByID(int(key))
-                        library.update()
-                        scanned_libs.append(library.title)
-                    except Exception as e_lib:
-                        current_app.logger.error(f"[BulkMoveTask] Failed to scan library key {key}: {e_lib}")
-            current_app.logger.info(f"[BulkMoveTask] Triggered Plex scan for libraries: {', '.join(scanned_libs)}")
-        except Exception as e:
-            current_app.logger.error(f"[BulkMoveTask] An error occurred during Plex scan initiation: {e}", exc_info=True)
+        current_app.logger.info(f"[BulkMoveTask] Requesting Plex scan for library keys: {valid_keys}")
+        trigger_plex_scan(*valid_keys)
 
     def _process_move_queue(self, task_id, media_items, app):
         """
