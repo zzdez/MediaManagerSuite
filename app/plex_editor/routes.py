@@ -198,7 +198,8 @@ def bulk_move_media_items():
                 'title': plex_item.title,
                 'media_type': media_type,
                 'destination': destination,
-                'library_key': plex_item.librarySectionID
+                'library_key': plex_item.librarySectionID,
+                'plex_rating_key': plex_rating_key # Ajout de la clé Plex
             })
 
     except Exception as e:

@@ -108,7 +108,7 @@ class BulkMoveManager:
                             task['message'] = f"Échec du déplacement de '{media_title}'. Erreur: {error_message}"
                             task['failures'].append({
                                 "media_id": media_id,
-                                "ratingKey": item.get('ratingKey'),
+                                "ratingKey": item.get('plex_rating_key'), # Utiliser la bonne clé
                                 "error": error_message
                             })
                         current_app.logger.error(f"[BulkMoveTask:{task_id}] Task failed on item {media_id} ('{media_title}'). Reason: {error_message}")
@@ -131,7 +131,7 @@ class BulkMoveManager:
                         task = self._tasks[task_id]
                         task['successes'].append(media_id)
                         task['completed_for_ui'].append({
-                            'ratingKey': item.get('ratingKey'),
+                            'ratingKey': item.get('plex_rating_key'), # Utiliser la bonne clé
                             'newPath': new_path
                         })
                         task['processed'] = processed_count

@@ -961,22 +961,42 @@ $('#confirmArchiveMovieBtn').on('click', function() {
                         data.updates_for_ui.forEach(update => {
                             const row = $(`tr[data-rating-key="${update.ratingKey}"]`);
                             if (row.length > 0) {
-                                // Mettre à jour le chemin dans le code
-                                row.find('.filepath-cell code').text(update.newPath);
-                                // Mettre à jour le bouton de copie
-                                row.find('.filepath-cell .copy-path-btn').attr('data-path', update.newPath);
+                                const filepathCell = row.find('.filepath-cell');
+                                const newPathHtml = `
+                                    <div style="font-size: 0.8em;">
+                                        <code class="text-muted">${update.newPath}</code>
+                                        <button class="btn btn-outline-secondary btn-sm ms-2 py-0 copy-path-btn"
+                                                title="Copier le chemin"
+                                                data-path="${update.newPath}">
+                                            <i class="bi bi-clipboard"></i>
+                                        </button>
+                                    </div>
+                                `;
+                                filepathCell.html(newPathHtml);
 
-                                // Griser la ligne et la décocher
-                                row.addClass('table-success', 250).removeClass('table-success', 1000);
+                                // Animation visuelle et décochage
+                                row.addClass('table-success', 250).removeClass('table-success', 1500);
                                 row.find('.item-checkbox').prop('checked', false);
                             }
                         });
-                         // Mettre à jour le compteur de sélection après avoir décoché les cases
-                         const selectedCount = $('.item-checkbox:checked').length;
-                         $('#batch-actions-container .badge').text(selectedCount);
-                         if (selectedCount === 0) {
+                        // Mettre à jour le compteur global une seule fois après la boucle
+                        const selectedCount = $('.item-checkbox:checked').length;
+                        $('#batch-actions-container .badge').text(selectedCount);
+                        if (selectedCount === 0) {
                             resetSelectionState();
-                         }
+                        }
+                    }
+
+                    // Logique pour les échecs (ajoutée ici pour être gérée à chaque polling)
+                    if (data.failures_for_ui && data.failures_for_ui.length > 0) {
+                        data.failures_for_ui.forEach(failure => {
+                            if (failure.ratingKey) {
+                                const row = $(`tr[data-rating-key="${failure.ratingKey}"]`);
+                                if (row.length > 0) {
+                                    row.addClass('table-danger');
+                                }
+                            }
+                        });
                     }
 
                     if (data.status === 'completed' || data.status === 'failed') {
@@ -985,19 +1005,11 @@ $('#confirmArchiveMovieBtn').on('click', function() {
                         if (data.status === 'completed') {
                             statusSpinner.html('<i class="bi bi-check-circle-fill text-success"></i>');
                             statusIndicator.removeClass('bg-light').addClass('bg-success-soft');
-                            resetSelectionState();
+                            resetSelectionState(); // Assure que tout est propre à la fin
                         } else { // 'failed'
                             statusSpinner.html('<i class="bi bi-x-circle-fill text-danger"></i>');
                             statusIndicator.removeClass('bg-light').addClass('bg-danger-soft');
-
-                            // Surligner la ligne qui a échoué
-                            if (data.failures_for_ui && data.failures_for_ui.length > 0) {
-                                data.failures_for_ui.forEach(failure => {
-                                    if (failure.ratingKey) {
-                                         $(`tr[data-rating-key="${failure.ratingKey}"]`).addClass('table-danger');
-                                    }
-                                });
-                            }
+                            // La logique de surlignage des échecs est déjà ci-dessus, pas besoin de la répéter
                         }
 
                         statusCloseBtn.show();
