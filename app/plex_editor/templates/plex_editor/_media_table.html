@@ -13,12 +13,12 @@
         </thead>
         <tbody>
             {% for item in items %}
-            <tr data-rating="{{ item.userRating or 0 }}"
+            <tr data-rating-key="{{ item.ratingKey }}" data-rating="{{ item.userRating or 0 }}"
                 data-incomplete="{{ 'true' if item.type == 'show' and item.is_incomplete else 'false' }}"
                 data-media-type-from-mapping="{{ item.media_type_from_mapping }}"
                 data-custom-media-type="{{ item.custom_media_type }}">
                 <td><input type="checkbox" class="form-check-input item-checkbox" data-rating-key="{{ item.ratingKey }}"></td>
-                <td>
+                <td class="filepath-cell">
                     <div class="d-flex align-items-center">
                         {# --- NOUVEAU BLOC POUR L'IMAGE --- #}
                         <div class="me-3">

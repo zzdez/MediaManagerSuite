@@ -106,14 +106,34 @@ class BulkMoveManager:
                             task = self._tasks[task_id]
                             task['status'] = 'failed'
                             task['message'] = f"Échec du déplacement de '{media_title}'. Erreur: {error_message}"
-                            task['failures'].append({"media_id": media_id, "error": error_message})
+                            task['failures'].append({
+                                "media_id": media_id,
+                                "ratingKey": item.get('ratingKey'),
+                                "error": error_message
+                            })
                         current_app.logger.error(f"[BulkMoveTask:{task_id}] Task failed on item {media_id} ('{media_title}'). Reason: {error_message}")
                         return # Arrête le thread
 
-                    # SUCCÈS pour cet item
+                    # SUCCÈS pour cet item : récupérer le nouveau chemin
+                    new_path = "Non trouvé"
+                    try:
+                        if media_type == 'sonarr':
+                            media_details = get_sonarr_series_by_id(media_id)
+                            new_path = media_details.get('path') if media_details else "N/A"
+                        elif media_type == 'radarr':
+                            media_details = get_radarr_movie_by_id(media_id)
+                            new_path = media_details.get('path') if media_details else "N/A"
+                    except Exception as e_path:
+                        current_app.logger.warning(f"[BulkMoveTask:{task_id}] Could not fetch new path for {media_type} ID {media_id}: {e_path}")
+                        new_path = "Erreur de récupération"
+
                     with self._lock:
                         task = self._tasks[task_id]
                         task['successes'].append(media_id)
+                        task['completed_for_ui'].append({
+                            'ratingKey': item.get('ratingKey'),
+                            'newPath': new_path
+                        })
                         task['processed'] = processed_count
                         task['progress'] = (processed_count / total_items) * 100
 
@@ -202,6 +222,7 @@ class BulkMoveManager:
                 'progress': 0,
                 'successes': [],
                 'failures': [],
+                'completed_for_ui': [],
                 'start_time': time.time(),
                 'app': app # Stocker l'app pour le thread
             }
@@ -226,6 +247,33 @@ class BulkMoveManager:
             status_copy = task.copy()
             status_copy.pop('app', None)
             return status_copy
+
+    def get_task_status_with_updates(self, task_id):
+        """
+        Récupère l'état d'une tâche et la liste des items récemment complétés,
+        puis vide la liste des complétés pour éviter les renvois multiples.
+        """
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if not task:
+                return None
+
+            # 1. Copier les mises à jour et les échecs
+            updates_for_ui = list(task.get('completed_for_ui', []))
+            failures_for_ui = list(task.get('failures', [])) # On renvoie toujours tous les échecs
+
+            # 2. Vider la liste des mises à jour UI dans l'objet de tâche
+            task['completed_for_ui'] = []
+
+            # 3. Préparer une copie du statut à renvoyer
+            status_to_return = task.copy()
+            status_to_return.pop('app', None)
+
+            # 4. Ajouter les listes copiées à la réponse
+            status_to_return['updates_for_ui'] = updates_for_ui
+            status_to_return['failures_for_ui'] = failures_for_ui
+
+            return status_to_return
 
 # Instance singleton
 bulk_move_manager = BulkMoveManager()

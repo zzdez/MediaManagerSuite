@@ -956,27 +956,48 @@ $('#confirmArchiveMovieBtn').on('click', function() {
 
                     statusText.text(data.message || 'Chargement...');
 
+                    // --- NOUVELLE LOGIQUE DE MISE À JOUR DE L'UI ---
+                    if (data.updates_for_ui && data.updates_for_ui.length > 0) {
+                        data.updates_for_ui.forEach(update => {
+                            const row = $(`tr[data-rating-key="${update.ratingKey}"]`);
+                            if (row.length > 0) {
+                                // Mettre à jour le chemin dans le code
+                                row.find('.filepath-cell code').text(update.newPath);
+                                // Mettre à jour le bouton de copie
+                                row.find('.filepath-cell .copy-path-btn').attr('data-path', update.newPath);
+
+                                // Griser la ligne et la décocher
+                                row.addClass('table-success', 250).removeClass('table-success', 1000);
+                                row.find('.item-checkbox').prop('checked', false);
+                            }
+                        });
+                         // Mettre à jour le compteur de sélection après avoir décoché les cases
+                         const selectedCount = $('.item-checkbox:checked').length;
+                         $('#batch-actions-container .badge').text(selectedCount);
+                         if (selectedCount === 0) {
+                            resetSelectionState();
+                         }
+                    }
+
                     if (data.status === 'completed' || data.status === 'failed') {
                         clearInterval(interval);
 
                         if (data.status === 'completed') {
                             statusSpinner.html('<i class="bi bi-check-circle-fill text-success"></i>');
                             statusIndicator.removeClass('bg-light').addClass('bg-success-soft');
-
-                            // Faire disparaître les lignes des éléments déplacés avec succès
-                            if (data.successes && data.successes.length > 0) {
-                                data.successes.forEach(mediaId => {
-                                    $(`.item-checkbox[data-rating-key='${mediaId}']`).closest('tr').fadeOut(500, function() {
-                                        $(this).remove();
-                                    });
-                                });
-                            }
-                            // Réinitialiser l'état de la sélection
                             resetSelectionState();
-
                         } else { // 'failed'
                             statusSpinner.html('<i class="bi bi-x-circle-fill text-danger"></i>');
                             statusIndicator.removeClass('bg-light').addClass('bg-danger-soft');
+
+                            // Surligner la ligne qui a échoué
+                            if (data.failures_for_ui && data.failures_for_ui.length > 0) {
+                                data.failures_for_ui.forEach(failure => {
+                                    if (failure.ratingKey) {
+                                         $(`tr[data-rating-key="${failure.ratingKey}"]`).addClass('table-danger');
+                                    }
+                                });
+                            }
                         }
 
                         statusCloseBtn.show();

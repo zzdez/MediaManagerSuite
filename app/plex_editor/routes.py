@@ -220,7 +220,7 @@ def bulk_move_media_items():
 @plex_editor_bp.route('/api/media/bulk_move_status/<task_id>', methods=['GET'])
 @login_required
 def get_bulk_move_status(task_id):
-    status = bulk_move_manager.get_task_status(task_id)
+    status = bulk_move_manager.get_task_status_with_updates(task_id)
     if not status:
         return jsonify({'status': 'error', 'message': 'Tâche non trouvée.'}), 404
 
