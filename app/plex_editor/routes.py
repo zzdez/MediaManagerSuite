@@ -807,8 +807,14 @@ def get_media_items():
                     item_path_str = get_item_path(item)
                     if item_path_str:
                         normalized_item_path = os.path.normpath(item_path_str).lower()
-                        if any(normalized_item_path.startswith(root_path) for root_path in normalized_root_paths):
-                            items_temp.append(item)
+                        for root_path in normalized_root_paths:
+                            # Condition 1: Le chemin de l'item commence bien par le root_path
+                            if normalized_item_path.startswith(root_path):
+                                # Condition 2: Soit les chemins sont identiques, soit le caractère
+                                # suivant est un séparateur de dossier.
+                                if len(normalized_item_path) == len(root_path) or normalized_item_path[len(root_path)] == os.sep:
+                                    items_temp.append(item)
+                                    break # On a trouvé une correspondance, on passe à l'item suivant
                 items_after_python_filter = items_temp
             # --- FIN DU NOUVEAU BLOC ---
 
