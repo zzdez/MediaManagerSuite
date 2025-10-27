@@ -3,14 +3,13 @@
         <thead>
             <tr>
                 <th scope="col" style="width: 3%;"><input type="checkbox" class="form-check-input" id="select-all-checkbox"></th>
-                <th scope="col" class="sortable-header" data-sort-by="title" style="width: 25%;">Titre</th>
-                <th scope="col" style="width: 25%;">Chemin d'accès</th>
+                <th scope="col" class="sortable-header" data-sort-by="title" style="width: 35%;">Titre</th>
                 <th scope="col" class="sortable-header" data-sort-by="library" style="width: 12%;">Bibliothèque</th>
                 <th scope="col" class="sortable-header" data-sort-by="size" data-sort-type="size" style="width: 8%;">Taille</th>
-                <th scope="col" class="sortable-header" data-sort-by="added" data-sort-type="date" style="width: 7%;">Ajout</th>
+                <th scope="col" class="sortable-header" data-sort-by="added" data-sort-type="date" style="width: 8%;">Ajout</th>
                 <th scope="col" class="sortable-header" data-sort-by="view_status" data-sort-type="text" style="width: 8%;">Statut Visionnage</th>
                 <th scope="col" class="sortable-header" data-sort-by="production_status" data-sort-type="text" style="width: 8%;">Statut Production</th>
-                <th scope="col" style="width: 12%;">Actions</th>
+                <th scope="col" style="width: 18%;">Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -53,10 +52,8 @@
                             {% endif %}
                         </div>
                     </div>
-                </td>
-                <td class="filepath-cell">
                     {% if item.file_path %}
-                    <div style="font-size: 0.8em;">
+                    <div class="mt-2 filepath-cell" style="font-size: 0.8em;">
                         <code class="text-muted">{{ item.file_path }}</code>
                         <button class="btn btn-outline-secondary btn-sm ms-2 py-0 copy-path-btn"
                                 title="Copier le chemin"
