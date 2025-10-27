@@ -23,9 +23,16 @@ class BulkMoveManager:
     def _trigger_plex_scan(self, library_keys):
         """
         Wrapper to call the centralized Plex scan utility.
-        Filters out None values from library_keys.
+        Safely filters and converts library_keys to integers.
         """
-        valid_keys = {int(key) for key in library_keys if key is not None}
+        valid_keys = set()
+        for key in library_keys:
+            if key is not None:
+                try:
+                    valid_keys.add(int(key))
+                except (ValueError, TypeError):
+                    current_app.logger.warning(f"[BulkMoveTask] Invalid library key '{key}' found. Skipping.")
+
         if not valid_keys:
             current_app.logger.info("[BulkMoveTask] No valid library keys provided for scanning.")
             return
