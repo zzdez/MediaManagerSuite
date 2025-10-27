@@ -148,12 +148,21 @@ class BulkMoveManager:
             # Si on arrive ici, tout a réussi
             with self._lock:
                 task = self._tasks[task_id]
-                task['status'] = 'completed'
-                task['message'] = f"Déplacement terminé avec succès pour {total_items} élément(s)."
+                task['status'] = 'scanning'
+                task['message'] = "Déplacements terminés. Lancement du scan Plex..."
                 task['progress'] = 100
-                current_app.logger.info(f"[BulkMoveTask:{task_id}] Completed successfully for all {total_items} items.")
+                current_app.logger.info(f"[BulkMoveTask:{task_id}] All moves completed. Triggering Plex scan.")
 
             self._trigger_plex_scan(library_keys_to_scan)
+
+            # Pause pour laisser le temps à l'UI de récupérer le statut "scanning"
+            time.sleep(4)
+
+            with self._lock:
+                task = self._tasks[task_id]
+                task['status'] = 'completed'
+                task['message'] = "Scan Plex lancé. Tâche terminée."
+                current_app.logger.info(f"[BulkMoveTast:{task_id}] Task marked as completed.")
 
     def _poll_for_source_path_disappearance(self, task_id, source_path):
         """
