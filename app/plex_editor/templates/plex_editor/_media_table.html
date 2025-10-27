@@ -4,23 +4,24 @@
             <tr>
                 <th scope="col" style="width: 3%;"><input type="checkbox" class="form-check-input" id="select-all-checkbox"></th>
                 <th scope="col" class="sortable-header" data-sort-by="title" style="width: 25%;">Titre</th>
-                <th scope="col" style="width: 25%;">Chemin d'accès</th> {# <-- NOUVELLE COLONNE #}
+                <th scope="col" style="width: 25%;">Chemin d'accès</th>
                 <th scope="col" class="sortable-header" data-sort-by="library" style="width: 12%;">Bibliothèque</th>
                 <th scope="col" class="sortable-header" data-sort-by="size" data-sort-type="size" style="width: 8%;">Taille</th>
-                <th scope="col" class="sortable-header" data-sort-by="added" data-sort-type="date" style="width: 8%;">Ajout</th>
-                <th scope="col" class="sortable-header" data-sort-by="status" data-sort-type="text" style="width: 8%;">Statut</th>
-                <th scope="col" style="width: 11%;">Actions</th>
+                <th scope="col" class="sortable-header" data-sort-by="added" data-sort-type="date" style="width: 7%;">Ajout</th>
+                <th scope="col" class="sortable-header" data-sort-by="view_status" data-sort-type="text" style="width: 8%;">Statut Visionnage</th>
+                <th scope="col" class="sortable-header" data-sort-by="production_status" data-sort-type="text" style="width: 8%;">Statut Production</th>
+                <th scope="col" style="width: 12%;">Actions</th>
             </tr>
         </thead>
         <tbody>
             {% for item in items %}
-            <tr data-rating-key="{{ item.ratingKey }}" data-rating="{{ item.userRating or 0 }}"
+            <tr data-rating="{{ item.userRating or 0 }}"
                 data-incomplete="{{ 'true' if item.type == 'show' and item.is_incomplete else 'false' }}"
                 data-media-type-from-mapping="{{ item.media_type_from_mapping }}"
                 data-custom-media-type="{{ item.custom_media_type }}"
-                data-library-key="{{ item.librarySectionID }}">
+                data-rating-key="{{ item.ratingKey }}">
                 <td><input type="checkbox" class="form-check-input item-checkbox" data-rating-key="{{ item.ratingKey }}"></td>
-                <td> {# <-- CELLULE TITRE SIMPLIFIÉE #}
+                <td>
                     <div class="d-flex align-items-center">
                         <div class="me-3">
                             <img src="{{ item.poster_url or url_for('static', filename='img/placeholder.png') }}"
@@ -53,7 +54,7 @@
                         </div>
                     </div>
                 </td>
-                <td class="filepath-cell"> {# <-- NOUVELLE CELLULE DÉDIÉE AU CHEMIN #}
+                <td class="filepath-cell">
                     {% if item.file_path %}
                     <div style="font-size: 0.8em;">
                         <code class="text-muted">{{ item.file_path }}</code>
@@ -66,11 +67,10 @@
                     {% endif %}
                 </td>
                 <td><span class="badge bg-secondary">{{ item.library_name }}</span></td>
-                <td>{{ item.total_size_display if item.total_size_display else 'N/A' }}</td> {# MODIFIED CELLULE #}
+                <td>{{ item.total_size_display if item.total_size_display else 'N/A' }}</td>
                 <td>{{ item.addedAt.strftime('%Y-%m-%d') if item.addedAt else 'N/A' }}</td>
-                <td class="media-status-cell" data-rating-key="{{ item.ratingKey }}">
+                <td class="view-status-cell" data-rating-key="{{ item.ratingKey }}">
                     {% if item.type == 'show' %}
-                        {# Statut de visionnage #}
                         {% if item.viewed_episodes == 0 and item.total_episodes > 0 %}
                             <span class="badge bg-warning text-dark">Non vue</span>
                         {% elif item.viewed_episodes == item.total_episodes and item.total_episodes > 0 %}
@@ -80,18 +80,6 @@
                         {% else %}
                             <span class="badge bg-secondary">Inconnu</span>
                         {% endif %}
-
-                        {# Statut de production (de Sonarr) #}
-                        {% if item.production_status %}
-                            {% if item.production_status == 'En Production' %}
-                                <span class="badge bg-primary mt-1">{{ item.production_status }}</span>
-                            {% elif item.production_status == 'Terminée' %}
-                                <span class="badge bg-secondary mt-1">{{ item.production_status }}</span>
-                            {% elif item.production_status == 'À venir' %}
-                                <span class="badge bg-info-subtle text-dark mt-1">{{ item.production_status }}</span>
-                            {% endif %}
-                        {% endif %}
-
                         {% if item.total_episodes > 0 %}
                         <small class="d-block text-muted mt-1">
                             {{ item.viewed_episodes }} / {{ item.total_episodes }} ép.
@@ -106,6 +94,17 @@
                         <span class="badge bg-success">Vu</span>
                     {% else %}
                         <span class="badge bg-warning text-dark">Non Vu</span>
+                    {% endif %}
+                </td>
+                <td class="production-status-cell">
+                    {% if item.type == 'show' and item.production_status %}
+                        {% if item.production_status == 'En Production' %}
+                            <span class="badge bg-primary">{{ item.production_status }}</span>
+                        {% elif item.production_status == 'Terminée' %}
+                            <span class="badge bg-secondary">{{ item.production_status }}</span>
+                        {% elif item.production_status == 'À venir' %}
+                            <span class="badge bg-info-subtle text-dark">{{ item.production_status }}</span>
+                        {% endif %}
                     {% endif %}
                 </td>
                 <td>

@@ -880,8 +880,7 @@ $('#confirmArchiveMovieBtn').on('click', function() {
                 itemsToMove.push({
                     plex_id: $(this).data('rating-key'),
                     media_type: mediaType,
-                    destination: destination,
-                    library_key: row.data('library-key') // Ajout de la clé de la bibliothèque
+                    destination: destination
                 });
             }
         });
@@ -957,60 +956,27 @@ $('#confirmArchiveMovieBtn').on('click', function() {
 
                     statusText.text(data.message || 'Chargement...');
 
-                    // --- NOUVELLE LOGIQUE DE MISE À JOUR DE L'UI ---
-                    if (data.updates_for_ui && data.updates_for_ui.length > 0) {
-                        data.updates_for_ui.forEach(update => {
-                            const row = $(`tr[data-rating-key="${update.ratingKey}"]`);
-                            if (row.length > 0) {
-                                const filepathCell = row.find('.filepath-cell');
-                                const newPathHtml = `
-                                    <div style="font-size: 0.8em;">
-                                        <code class="text-muted">${update.newPath}</code>
-                                        <button class="btn btn-outline-secondary btn-sm ms-2 py-0 copy-path-btn"
-                                                title="Copier le chemin"
-                                                data-path="${update.newPath}">
-                                            <i class="bi bi-clipboard"></i>
-                                        </button>
-                                    </div>
-                                `;
-                                filepathCell.html(newPathHtml);
-
-                                // Animation visuelle et décochage
-                                row.addClass('table-success', 250).removeClass('table-success', 1500);
-                                row.find('.item-checkbox').prop('checked', false);
-                            }
-                        });
-                        // Mettre à jour le compteur global une seule fois après la boucle
-                        const selectedCount = $('.item-checkbox:checked').length;
-                        $('#batch-actions-container .badge').text(selectedCount);
-                        if (selectedCount === 0) {
-                            resetSelectionState();
-                        }
-                    }
-
-                    // Logique pour les échecs (ajoutée ici pour être gérée à chaque polling)
-                    if (data.failures_for_ui && data.failures_for_ui.length > 0) {
-                        data.failures_for_ui.forEach(failure => {
-                            if (failure.ratingKey) {
-                                const row = $(`tr[data-rating-key="${failure.ratingKey}"]`);
-                                if (row.length > 0) {
-                                    row.addClass('table-danger');
-                                }
-                            }
-                        });
-                    }
-
                     if (data.status === 'completed' || data.status === 'failed') {
                         clearInterval(interval);
 
                         if (data.status === 'completed') {
                             statusSpinner.html('<i class="bi bi-check-circle-fill text-success"></i>');
                             statusIndicator.removeClass('bg-light').addClass('bg-success-soft');
-                            resetSelectionState(); // Assure que tout est propre à la fin
+
+                            // Faire disparaître les lignes des éléments déplacés avec succès
+                            if (data.successes && data.successes.length > 0) {
+                                data.successes.forEach(mediaId => {
+                                    $(`.item-checkbox[data-rating-key='${mediaId}']`).closest('tr').fadeOut(500, function() {
+                                        $(this).remove();
+                                    });
+                                });
+                            }
+                            // Réinitialiser l'état de la sélection
+                            resetSelectionState();
+
                         } else { // 'failed'
                             statusSpinner.html('<i class="bi bi-x-circle-fill text-danger"></i>');
                             statusIndicator.removeClass('bg-light').addClass('bg-danger-soft');
-                            // La logique de surlignage des échecs est déjà ci-dessus, pas besoin de la répéter
                         }
 
                         statusCloseBtn.show();
@@ -1100,38 +1066,45 @@ function sortTable(table, sortBy, sortType, direction) {
     const tbody = table.find('tbody');
     const rows = tbody.find('tr').toArray();
 
-    // Correction majeure : On trouve l'index de la colonne PARMI TOUS les <th>
     const cellIndex = table.find(`th.sortable-header[data-sort-by='${sortBy}']`).index();
 
     rows.sort(function(a, b) {
         let valA, valB;
 
-        if (sortBy === 'rating') {
+        const cellA = $(a).children('td').eq(cellIndex);
+        const cellB = $(b).children('td').eq(cellIndex);
+
+        if (sortBy === 'production_status') {
+            // Ordre personnalisé : "À venir" < "En Production" < "Terminée"
+            const statusOrder = { 'À venir': 0, 'En Production': 1, 'Terminée': 2 };
+            const textA = cellA.text().trim();
+            const textB = cellB.text().trim();
+            valA = statusOrder[textA] !== undefined ? statusOrder[textA] : 3;
+            valB = statusOrder[textB] !== undefined ? statusOrder[textB] : 3;
+        } else if (sortBy === 'rating') {
             valA = parseFloat($(a).data('rating')) || 0;
             valB = parseFloat($(b).data('rating')) || 0;
         } else {
-            // On utilise maintenant le cellIndex qui est fiable
-            const cellA = $(a).children('td').eq(cellIndex);
-            const cellB = $(b).children('td').eq(cellIndex);
-
+            // Extraction générique
             if (sortBy === 'title') {
-                valA = cellA.find('.item-title-link').text().trim().toLowerCase();
-                valB = cellB.find('.item-title-link').text().trim().toLowerCase();
+                valA = cellA.find('.item-title-link').text().trim();
+                valB = cellB.find('.item-title-link').text().trim();
             } else {
                 valA = cellA.text().trim();
                 valB = cellB.text().trim();
             }
-        }
 
-        if (sortType === 'size') {
-            valA = parseSize(valA);
-            valB = parseSize(valB);
-        } else if (sortType === 'date') {
-            valA = new Date(valA).getTime() || 0;
-            valB = new Date(valB).getTime() || 0;
-        } else if (sortType === 'text') {
-            valA = valA.toLowerCase();
-            valB = valB.toLowerCase();
+            // Conversion de type
+            if (sortType === 'size') {
+                valA = parseSize(valA);
+                valB = parseSize(valB);
+            } else if (sortType === 'date') {
+                valA = new Date(valA).getTime() || 0;
+                valB = new Date(valB).getTime() || 0;
+            } else if (sortType === 'text') {
+                valA = valA.toLowerCase();
+                valB = valB.toLowerCase();
+            }
         }
 
         if (valA < valB) return -1 * direction;

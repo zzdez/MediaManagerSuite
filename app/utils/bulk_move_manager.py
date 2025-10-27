@@ -6,7 +6,7 @@ import time
 import os
 from flask import current_app
 from app.utils.arr_client import move_sonarr_series, move_radarr_movie, get_sonarr_series_by_id, get_radarr_movie_by_id
-from app.utils.plex_client import trigger_plex_scan
+from app.utils.plex_client import get_plex_admin_server
 
 class BulkMoveManager:
     _instance = None
@@ -21,24 +21,29 @@ class BulkMoveManager:
         return cls._instance
 
     def _trigger_plex_scan(self, library_keys):
-        """
-        Wrapper to call the centralized Plex scan utility.
-        Safely filters and converts library_keys to integers.
-        """
-        valid_keys = set()
-        for key in library_keys:
-            if key is not None:
-                try:
-                    valid_keys.add(int(key))
-                except (ValueError, TypeError):
-                    current_app.logger.warning(f"[BulkMoveTask] Invalid library key '{key}' found. Skipping.")
-
-        if not valid_keys:
-            current_app.logger.info("[BulkMoveTask] No valid library keys provided for scanning.")
+        """Déclenche un scan pour une liste de clés de bibliothèque Plex."""
+        if not library_keys:
+            current_app.logger.info("[BulkMoveTask] No library keys provided for scanning.")
             return
 
-        current_app.logger.info(f"[BulkMoveTask] Requesting Plex scan for library keys: {valid_keys}")
-        trigger_plex_scan(*valid_keys)
+        try:
+            plex_server = get_plex_admin_server()
+            if not plex_server:
+                current_app.logger.error("[BulkMoveTask] Could not get Plex admin server to trigger scan.")
+                return
+
+            scanned_libs = []
+            for key in library_keys:
+                if key:
+                    try:
+                        library = plex_server.library.sectionByID(int(key))
+                        library.update()
+                        scanned_libs.append(library.title)
+                    except Exception as e_lib:
+                        current_app.logger.error(f"[BulkMoveTask] Failed to scan library key {key}: {e_lib}")
+            current_app.logger.info(f"[BulkMoveTask] Triggered Plex scan for libraries: {', '.join(scanned_libs)}")
+        except Exception as e:
+            current_app.logger.error(f"[BulkMoveTask] An error occurred during Plex scan initiation: {e}", exc_info=True)
 
     def _process_move_queue(self, task_id, media_items, app):
         """
@@ -101,34 +106,14 @@ class BulkMoveManager:
                             task = self._tasks[task_id]
                             task['status'] = 'failed'
                             task['message'] = f"Échec du déplacement de '{media_title}'. Erreur: {error_message}"
-                            task['failures'].append({
-                                "media_id": media_id,
-                                "ratingKey": item.get('plex_rating_key'), # Utiliser la bonne clé
-                                "error": error_message
-                            })
+                            task['failures'].append({"media_id": media_id, "error": error_message})
                         current_app.logger.error(f"[BulkMoveTask:{task_id}] Task failed on item {media_id} ('{media_title}'). Reason: {error_message}")
                         return # Arrête le thread
 
-                    # SUCCÈS pour cet item : récupérer le nouveau chemin
-                    new_path = "Non trouvé"
-                    try:
-                        if media_type == 'sonarr':
-                            media_details = get_sonarr_series_by_id(media_id)
-                            new_path = media_details.get('path') if media_details else "N/A"
-                        elif media_type == 'radarr':
-                            media_details = get_radarr_movie_by_id(media_id)
-                            new_path = media_details.get('path') if media_details else "N/A"
-                    except Exception as e_path:
-                        current_app.logger.warning(f"[BulkMoveTask:{task_id}] Could not fetch new path for {media_type} ID {media_id}: {e_path}")
-                        new_path = "Erreur de récupération"
-
+                    # SUCCÈS pour cet item
                     with self._lock:
                         task = self._tasks[task_id]
                         task['successes'].append(media_id)
-                        task['completed_for_ui'].append({
-                            'ratingKey': item.get('plex_rating_key'), # Utiliser la bonne clé
-                            'newPath': new_path
-                        })
                         task['processed'] = processed_count
                         task['progress'] = (processed_count / total_items) * 100
 
@@ -148,21 +133,12 @@ class BulkMoveManager:
             # Si on arrive ici, tout a réussi
             with self._lock:
                 task = self._tasks[task_id]
-                task['status'] = 'scanning'
-                task['message'] = "Déplacements terminés. Lancement du scan Plex..."
+                task['status'] = 'completed'
+                task['message'] = f"Déplacement terminé avec succès pour {total_items} élément(s)."
                 task['progress'] = 100
-                current_app.logger.info(f"[BulkMoveTask:{task_id}] All moves completed. Triggering Plex scan.")
+                current_app.logger.info(f"[BulkMoveTask:{task_id}] Completed successfully for all {total_items} items.")
 
             self._trigger_plex_scan(library_keys_to_scan)
-
-            # Pause pour laisser le temps à l'UI de récupérer le statut "scanning"
-            time.sleep(4)
-
-            with self._lock:
-                task = self._tasks[task_id]
-                task['status'] = 'completed'
-                task['message'] = "Scan Plex lancé. Tâche terminée."
-                current_app.logger.info(f"[BulkMoveTast:{task_id}] Task marked as completed.")
 
     def _poll_for_source_path_disappearance(self, task_id, source_path):
         """
@@ -226,7 +202,6 @@ class BulkMoveManager:
                 'progress': 0,
                 'successes': [],
                 'failures': [],
-                'completed_for_ui': [],
                 'start_time': time.time(),
                 'app': app # Stocker l'app pour le thread
             }
@@ -251,33 +226,6 @@ class BulkMoveManager:
             status_copy = task.copy()
             status_copy.pop('app', None)
             return status_copy
-
-    def get_task_status_with_updates(self, task_id):
-        """
-        Récupère l'état d'une tâche et la liste des items récemment complétés,
-        puis vide la liste des complétés pour éviter les renvois multiples.
-        """
-        with self._lock:
-            task = self._tasks.get(task_id)
-            if not task:
-                return None
-
-            # 1. Copier les mises à jour et les échecs
-            updates_for_ui = list(task.get('completed_for_ui', []))
-            failures_for_ui = list(task.get('failures', [])) # On renvoie toujours tous les échecs
-
-            # 2. Vider la liste des mises à jour UI dans l'objet de tâche
-            task['completed_for_ui'] = []
-
-            # 3. Préparer une copie du statut à renvoyer
-            status_to_return = task.copy()
-            status_to_return.pop('app', None)
-
-            # 4. Ajouter les listes copiées à la réponse
-            status_to_return['updates_for_ui'] = updates_for_ui
-            status_to_return['failures_for_ui'] = failures_for_ui
-
-            return status_to_return
 
 # Instance singleton
 bulk_move_manager = BulkMoveManager()

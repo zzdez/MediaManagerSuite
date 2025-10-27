@@ -178,7 +178,6 @@ def bulk_move_media_items():
             plex_rating_key = item_data.get('plex_id')
             media_type = item_data.get('media_type') # 'sonarr' ou 'radarr'
             destination = item_data.get('destination')
-            library_key = item_data.get('library_key') # Récupérer la clé de la bibliothèque
 
             plex_item = plex_server.fetchItem(int(plex_rating_key))
 
@@ -199,8 +198,7 @@ def bulk_move_media_items():
                 'title': plex_item.title,
                 'media_type': media_type,
                 'destination': destination,
-                'library_key': library_key,
-                'plex_rating_key': plex_rating_key
+                'library_key': plex_item.librarySectionID
             })
 
     except Exception as e:
@@ -222,7 +220,7 @@ def bulk_move_media_items():
 @plex_editor_bp.route('/api/media/bulk_move_status/<task_id>', methods=['GET'])
 @login_required
 def get_bulk_move_status(task_id):
-    status = bulk_move_manager.get_task_status_with_updates(task_id)
+    status = bulk_move_manager.get_task_status(task_id)
     if not status:
         return jsonify({'status': 'error', 'message': 'Tâche non trouvée.'}), 404
 
@@ -808,14 +806,8 @@ def get_media_items():
                     item_path_str = get_item_path(item)
                     if item_path_str:
                         normalized_item_path = os.path.normpath(item_path_str).lower()
-                        for root_path in normalized_root_paths:
-                            # Condition 1: Le chemin de l'item commence bien par le root_path
-                            if normalized_item_path.startswith(root_path):
-                                # Condition 2: Soit les chemins sont identiques, soit le caractère
-                                # suivant est un séparateur de dossier.
-                                if len(normalized_item_path) == len(root_path) or normalized_item_path[len(root_path)] == os.sep:
-                                    items_temp.append(item)
-                                    break # On a trouvé une correspondance, on passe à l'item suivant
+                        if any(normalized_item_path.startswith(root_path) for root_path in normalized_root_paths):
+                            items_temp.append(item)
                 items_after_python_filter = items_temp
             # --- FIN DU NOUVEAU BLOC ---
 
@@ -861,55 +853,46 @@ def get_media_items():
                     item.viewed_episodes = item.viewedLeafCount
                     item.total_episodes = item.leafCount
 
-                    # ### DÉBUT MODIFICATION : Logique de cache pour les statuts Sonarr ###
-                    item.is_incomplete = False
-                    item.production_status = None
-
                     cache_key = item.ratingKey
                     cached_data = series_status_cache.get(cache_key)
 
-                    if cached_data is not None:
+                    if cached_data:
                         item.is_incomplete = cached_data.get('is_incomplete', False)
                         item.production_status = cached_data.get('production_status')
-                        current_app.logger.debug(f"Cache HIT for '{item.title}' (ratingKey: {cache_key}). Incomplete: {item.is_incomplete}, Production: {item.production_status}")
+                        current_app.logger.debug(f"Cache HIT for '{item.title}' (ratingKey: {cache_key}).")
                     else:
                         current_app.logger.debug(f"Cache MISS for '{item.title}' (ratingKey: {cache_key}). Fetching from Sonarr.")
                         try:
                             is_incomplete_status = False
-                            sonarr_prod_status = None
+                            production_status = None
 
                             sonarr_series = get_sonarr_series_by_guid(next((g.id for g in item.guids if 'tvdb' in g.id), None))
                             if sonarr_series:
                                 full_sonarr_series = get_sonarr_series_by_id(sonarr_series['id'])
                                 if full_sonarr_series:
-                                    # Statut de complétude
-                                    if 'statistics' in full_sonarr_series:
-                                        stats = full_sonarr_series['statistics']
-                                        file_count = stats.get('episodeFileCount', 0)
-                                        total_aired_count = stats.get('episodeCount', 0) - stats.get('futureEpisodeCount', 0)
-                                        if file_count < total_aired_count:
-                                            is_incomplete_status = True
+                                    stats = full_sonarr_series.get('statistics', {})
+                                    file_count = stats.get('episodeFileCount', 0)
+                                    total_aired_count = stats.get('episodeCount', 0) - stats.get('futureEpisodeCount', 0)
+                                    if file_count < total_aired_count:
+                                        is_incomplete_status = True
 
-                                    # Statut de production
-                                    raw_status = full_sonarr_series.get('status')
-                                    if raw_status == 'continuing':
-                                        sonarr_prod_status = 'En Production'
-                                    elif raw_status == 'ended':
-                                        sonarr_prod_status = 'Terminée'
-                                    elif raw_status == 'upcoming':
-                                        sonarr_prod_status = 'À venir'
+                                    sonarr_status = full_sonarr_series.get('status')
+                                    if sonarr_status == 'continuing':
+                                        production_status = 'En Production'
+                                    elif sonarr_status == 'ended':
+                                        production_status = 'Terminée'
+                                    elif sonarr_status == 'upcoming':
+                                        production_status = 'À venir'
 
                             item.is_incomplete = is_incomplete_status
-                            item.production_status = sonarr_prod_status
+                            item.production_status = production_status
 
                             series_status_cache.set(cache_key, {
-                                'is_incomplete': is_incomplete_status,
-                                'production_status': sonarr_prod_status
+                                'is_incomplete': item.is_incomplete,
+                                'production_status': item.production_status
                             })
-
                         except Exception as e_sonarr:
-                            current_app.logger.warning(f"Impossible de vérifier les statuts Sonarr pour '{item.title}': {e_sonarr}")
-                    # ### FIN MODIFICATION ###
+                            current_app.logger.warning(f"Impossible de vérifier l'état Sonarr pour '{item.title}': {e_sonarr}")
 
                 if getattr(item, 'total_size', 0) > 0:
                     size_name = ("B", "KB", "MB", "GB", "TB"); i = 0
