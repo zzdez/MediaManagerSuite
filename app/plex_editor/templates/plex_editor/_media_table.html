@@ -70,27 +70,36 @@
                 <td>{{ item.addedAt.strftime('%Y-%m-%d') if item.addedAt else 'N/A' }}</td>
                 <td class="media-status-cell" data-rating-key="{{ item.ratingKey }}">
                     {% if item.type == 'show' %}
+                        {# Statut de visionnage #}
                         {% if item.viewed_episodes == 0 and item.total_episodes > 0 %}
-                            <span class="badge bg-warning text-dark">Non commencé</span>
+                            <span class="badge bg-warning text-dark">Non vue</span>
                         {% elif item.viewed_episodes == item.total_episodes and item.total_episodes > 0 %}
-                            <span class="badge bg-success">Terminé</span>
+                            <span class="badge bg-success">Vue</span>
                         {% elif item.total_episodes > 0 %}
-                            <span class="badge bg-info">En cours</span>
+                            <span class="badge bg-info">Commencée</span>
                         {% else %}
                             <span class="badge bg-secondary">Inconnu</span>
                         {% endif %}
 
-                        {% if item.total_episodes > 0 %}
-                        <small class="d-block text-muted">
-                            {{ item.viewed_episodes }} / {{ item.total_episodes }} ép.
+                        {# Statut de production (de Sonarr) #}
+                        {% if item.production_status %}
+                            {% if item.production_status == 'En Production' %}
+                                <span class="badge bg-primary mt-1">{{ item.production_status }}</span>
+                            {% elif item.production_status == 'Terminée' %}
+                                <span class="badge bg-secondary mt-1">{{ item.production_status }}</span>
+                            {% elif item.production_status == 'À venir' %}
+                                <span class="badge bg-info-subtle text-dark mt-1">{{ item.production_status }}</span>
+                            {% endif %}
+                        {% endif %}
 
-                            {# ### DÉBUT DE L'AJOUT ### #}
+                        {% if item.total_episodes > 0 %}
+                        <small class="d-block text-muted mt-1">
+                            {{ item.viewed_episodes }} / {{ item.total_episodes }} ép.
                             {% if item.is_incomplete %}
                                 <span class="badge bg-danger ms-1" title="Des épisodes diffusés sont manquants selon Sonarr.">
                                     <i class="bi bi-exclamation-triangle-fill"></i>
                                 </span>
                             {% endif %}
-                            {# ### FIN DE L'AJOUT ### #}
                         </small>
                         {% endif %}
                     {% elif item.isWatched %}

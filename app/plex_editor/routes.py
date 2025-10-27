@@ -861,38 +861,54 @@ def get_media_items():
                     item.viewed_episodes = item.viewedLeafCount
                     item.total_episodes = item.leafCount
 
-                    # ### DÉBUT MODIFICATION : Logique de cache pour le badge "manquant" ###
-                    item.is_incomplete = False # Initialisation
+                    # ### DÉBUT MODIFICATION : Logique de cache pour les statuts Sonarr ###
+                    item.is_incomplete = False
+                    item.production_status = None
 
-                    # On utilise le ratingKey de Plex comme clé de cache unique et stable
                     cache_key = item.ratingKey
-                    cached_status = series_status_cache.get(cache_key)
+                    cached_data = series_status_cache.get(cache_key)
 
-                    if cached_status is not None:
-                        # Cas 1: La valeur est dans le cache et est valide
-                        item.is_incomplete = cached_status
-                        current_app.logger.debug(f"Cache HIT for '{item.title}' (ratingKey: {cache_key}). Status: {item.is_incomplete}")
+                    if cached_data is not None:
+                        item.is_incomplete = cached_data.get('is_incomplete', False)
+                        item.production_status = cached_data.get('production_status')
+                        current_app.logger.debug(f"Cache HIT for '{item.title}' (ratingKey: {cache_key}). Incomplete: {item.is_incomplete}, Production: {item.production_status}")
                     else:
-                        # Cas 2: Pas dans le cache ou expiré, on fait le vrai calcul
                         current_app.logger.debug(f"Cache MISS for '{item.title}' (ratingKey: {cache_key}). Fetching from Sonarr.")
                         try:
-                            is_incomplete_status = False # Valeur par défaut
+                            is_incomplete_status = False
+                            sonarr_prod_status = None
+
                             sonarr_series = get_sonarr_series_by_guid(next((g.id for g in item.guids if 'tvdb' in g.id), None))
                             if sonarr_series:
                                 full_sonarr_series = get_sonarr_series_by_id(sonarr_series['id'])
-                                if full_sonarr_series and 'statistics' in full_sonarr_series:
-                                    stats = full_sonarr_series['statistics']
-                                    file_count = stats.get('episodeFileCount', 0)
-                                    total_aired_count = stats.get('episodeCount', 0) - stats.get('futureEpisodeCount', 0)
-                                    if file_count < total_aired_count:
-                                        is_incomplete_status = True
+                                if full_sonarr_series:
+                                    # Statut de complétude
+                                    if 'statistics' in full_sonarr_series:
+                                        stats = full_sonarr_series['statistics']
+                                        file_count = stats.get('episodeFileCount', 0)
+                                        total_aired_count = stats.get('episodeCount', 0) - stats.get('futureEpisodeCount', 0)
+                                        if file_count < total_aired_count:
+                                            is_incomplete_status = True
+
+                                    # Statut de production
+                                    raw_status = full_sonarr_series.get('status')
+                                    if raw_status == 'continuing':
+                                        sonarr_prod_status = 'En Production'
+                                    elif raw_status == 'ended':
+                                        sonarr_prod_status = 'Terminée'
+                                    elif raw_status == 'upcoming':
+                                        sonarr_prod_status = 'À venir'
 
                             item.is_incomplete = is_incomplete_status
-                            # On met à jour le cache pour la prochaine fois
-                            series_status_cache.set(cache_key, is_incomplete_status)
+                            item.production_status = sonarr_prod_status
+
+                            series_status_cache.set(cache_key, {
+                                'is_incomplete': is_incomplete_status,
+                                'production_status': sonarr_prod_status
+                            })
 
                         except Exception as e_sonarr:
-                            current_app.logger.warning(f"Impossible de vérifier l'état de complétude pour '{item.title}': {e_sonarr}")
+                            current_app.logger.warning(f"Impossible de vérifier les statuts Sonarr pour '{item.title}': {e_sonarr}")
                     # ### FIN MODIFICATION ###
 
                 if getattr(item, 'total_size', 0) > 0:
