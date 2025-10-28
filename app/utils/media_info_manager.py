@@ -52,11 +52,17 @@ class MediaInfoManager:
         }
 
         if media_type == 'tv':
-            details['sonarr_status'] = self._get_sonarr_status(tmdb_id)
+            sonarr_status = self._get_sonarr_status(tmdb_id)
+            details['sonarr_status'] = sonarr_status
             details['radarr_status'] = {"present": False}
+            # Prioriser la date de Sonarr, sinon prendre celle de TMDB
+            details['release_date'] = sonarr_status.get('release_date') or tmdb_details.get('first_air_date')
         else: # movie
-            details['radarr_status'] = self._get_radarr_status(tmdb_id)
+            radarr_status = self._get_radarr_status(tmdb_id)
+            details['radarr_status'] = radarr_status
             details['sonarr_status'] = {"present": False}
+            # Prioriser la date de Radarr, sinon prendre celle de TMDB
+            details['release_date'] = radarr_status.get('release_date') or tmdb_details.get('release_date')
 
         logger.info(f"Détails finaux pour {media_type}_{external_id}: {details}")
         return details
@@ -83,7 +89,13 @@ class MediaInfoManager:
         for series in self._sonarr_series:
             if series.get('tmdbId') == tmdb_id:
                 stats = series.get('statistics', {})
-                return {"present": True, "monitored": series.get('monitored', False), "episodes_file_count": stats.get('episodeFileCount', 0), "episodes_count": stats.get('episodeCount', 0)}
+                return {
+                    "present": True,
+                    "monitored": series.get('monitored', False),
+                    "episodes_file_count": stats.get('episodeFileCount', 0),
+                    "episodes_count": stats.get('episodeCount', 0),
+                    "release_date": series.get('firstAired')
+                }
         return {"present": False}
 
     def _get_radarr_status(self, tmdb_id):
@@ -91,7 +103,12 @@ class MediaInfoManager:
         if not tmdb_id: return {"present": False}
         for movie in self._radarr_movies:
             if movie.get('tmdbId') == tmdb_id:
-                return {"present": True, "monitored": movie.get('monitored', False), "has_file": movie.get('hasFile', False)}
+                return {
+                    "present": True,
+                    "monitored": movie.get('monitored', False),
+                    "has_file": movie.get('hasFile', False),
+                    "release_date": movie.get('inCinemas')
+                }
         return {"present": False}
 
     def _get_plex_status(self, media_type, tmdb_id, tvdb_id):

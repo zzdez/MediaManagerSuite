@@ -103,6 +103,18 @@ $(document).ready(function() {
 
             // --- FIN DE LA NOUVELLE LOGIQUE ---
 
+            // --- NOUVEAU : Logique pour la date de sortie ---
+            let releaseDateHtml = '';
+            const releaseDate = details.release_date;
+            if (releaseDate) {
+                const date = new Date(releaseDate);
+                // Vérifier si la date est dans le futur
+                if (date > new Date()) {
+                    const formattedDate = date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }).replace('.', '');
+                    releaseDateHtml = `<p class="mb-1 text-info"><small><strong>Sortie le :</strong> ${formattedDate}</small></p>`;
+                }
+            }
+
             const cardHtml = `
                 <div class="list-group-item list-group-item-action" data-media-type="${mediaType}">
                     <div class="row g-3">
@@ -111,6 +123,7 @@ $(document).ready(function() {
                         </div>
                         <div class="col-md-10 col-sm-9">
                             <h5 class="mb-1">${item.title} <span class="text-muted">(${item.year || 'N/A'})</span></h5>
+                            ${releaseDateHtml}
                             <p class="mb-1 small">${item.overview ? item.overview.substring(0, 280) + (item.overview.length > 280 ? '...' : '') : 'Pas de synopsis disponible.'}</p>
                             <div class="mt-2 mb-2">
                                 ${badgesHtml}
@@ -330,10 +343,34 @@ $(document).ready(function() {
             if (data.success) {
                 // Fermer la modale
                 bootstrap.Modal.getInstance(modal[0]).hide();
-                // Rafraîchir la recherche pour mettre à jour les badges
-                performMediaSearch();
-                // Afficher une notification de succès
                 toastr.success(data.message);
+
+                // --- NOUVELLE LOGIQUE DE RAFRAÎCHISSEMENT ---
+                // 1. Trouver l'index de l'élément à mettre à jour
+                const itemIndex = mediaSearchResults.findIndex(item => item.id == mediaData.id);
+
+                // 2. Appeler le nouvel endpoint pour obtenir les détails frais
+                if (itemIndex !== -1) {
+                    fetch(`/search/api/media/get_details?media_type=${mediaType}&external_id=${mediaData.id}`)
+                        .then(res => res.json())
+                        .then(newDetails => {
+                            // 3. Mettre à jour les détails de l'élément dans notre cache local
+                            mediaSearchResults[itemIndex].details = newDetails;
+
+                            // 4. Redessiner toute la liste avec les données à jour
+                            const currentMediaType = $('input[name="media_type"]:checked').val();
+                            renderMediaResults(mediaSearchResults, currentMediaType);
+                        })
+                        .catch(err => {
+                            console.error("Erreur lors du rafraîchissement de la fiche.", err);
+                            // En cas d'erreur, on recharge toute la recherche comme avant
+                            performMediaSearch();
+                        });
+                } else {
+                    // Fallback si on ne trouve pas l'item, ce qui ne devrait pas arriver
+                    performMediaSearch();
+                }
+
             } else {
                 errorContainer.text(data.message || "Une erreur est survenue.");
             }

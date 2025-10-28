@@ -755,6 +755,26 @@ def add_to_arr():
         current_app.logger.error(f"Erreur dans add_to_arr: {e}", exc_info=True)
         return jsonify({'success': False, 'message': str(e)}), 500
 
+@search_ui_bp.route('/api/media/get_details', methods=['GET'])
+@login_required
+def get_media_details():
+    """Récupère les détails enrichis pour un seul média."""
+    from app.utils.media_info_manager import media_info_manager
+
+    media_type = request.args.get('media_type')
+    external_id = request.args.get('external_id')
+
+    if not media_type or not external_id:
+        return jsonify({"error": "Paramètres media_type et external_id requis."}), 400
+
+    try:
+        details = media_info_manager.get_media_details(media_type, int(external_id))
+        return jsonify(details)
+    except Exception as e:
+        current_app.logger.error(f"Erreur dans /api/media/get_details: {e}", exc_info=True)
+        return jsonify({"error": f"Erreur serveur : {e}"}), 500
+
+
 @search_ui_bp.route('/api/media/add_direct', methods=['POST'])
 @login_required
 def add_media_direct():
