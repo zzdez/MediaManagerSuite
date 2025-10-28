@@ -36,6 +36,7 @@ def search_page():
 def media_search():
     """Recherche des médias (films ou séries) via les API externes (TMDb/TVDB) et enrichit avec le statut du trailer."""
     from app.utils import trailer_manager # Import local
+    from app.utils.media_info_manager import media_info_manager
 
     data = request.get_json()
     query = data.get('query')
@@ -52,13 +53,15 @@ def media_search():
             for item in search_results:
                 external_id = item.get('id')
                 trailer_status = trailer_manager.get_trailer_status('movie', external_id) if external_id else 'NONE'
+                media_details = media_info_manager.get_media_details('movie', external_id) if external_id else {}
                 results.append({
                     'id': external_id,
                     'title': item.get('title'),
                     'year': item.get('release_date', 'N/A')[:4],
                     'overview': item.get('overview'),
                     'poster': item.get('poster_path'),
-                    'trailer_status': trailer_status
+                    'trailer_status': trailer_status,
+                    'details': media_details
                 })
         elif media_type_search == 'tv':
             client = CustomTVDBClient()
@@ -66,13 +69,15 @@ def media_search():
             for item in search_results:
                 external_id = item.get('tvdb_id')
                 trailer_status = trailer_manager.get_trailer_status('tv', external_id) if external_id else 'NONE'
+                media_details = media_info_manager.get_media_details('tv', external_id) if external_id else {}
                 results.append({
                     'id': external_id,
                     'title': item.get('name'),
                     'year': item.get('year'),
                     'overview': item.get('overview'),
                     'poster': item.get('poster_url'),
-                    'trailer_status': trailer_status
+                    'trailer_status': trailer_status,
+                    'details': media_details
                 })
         else:
             return jsonify({"error": "Type de média non supporté."}), 400
@@ -749,3 +754,69 @@ def add_to_arr():
     except Exception as e:
         current_app.logger.error(f"Erreur dans add_to_arr: {e}", exc_info=True)
         return jsonify({'success': False, 'message': str(e)}), 500
+
+@search_ui_bp.route('/api/media/add_direct', methods=['POST'])
+@login_required
+def add_media_direct():
+    """Ajoute un média à Sonarr/Radarr sans déclencher de recherche de torrent."""
+    data = request.get_json()
+    media_type = data.get('media_type')
+    external_id = data.get('external_id')
+    root_folder_path = data.get('root_folder_path')
+    quality_profile_id = data.get('quality_profile_id')
+    language_profile_id = data.get('language_profile_id') # Spécifique à Sonarr
+
+    if not all([media_type, external_id, root_folder_path, quality_profile_id]):
+        return jsonify({'success': False, 'message': 'Données manquantes.'}), 400
+
+    try:
+        item_title = "N/A"
+        if media_type == 'tv':
+            if not language_profile_id:
+                return jsonify({'success': False, 'message': 'Profil de langue manquant pour Sonarr.'}), 400
+
+            # Récupérer le titre canonique depuis TVDB pour la cohérence
+            client = CustomTVDBClient()
+            series_details = client.get_series_details_by_id(external_id, lang='fra')
+            item_title = series_details.get('name') if series_details else 'Titre inconnu'
+
+            added_item = arr_client.add_new_series_to_sonarr(
+                tvdb_id=int(external_id),
+                title=item_title,
+                quality_profile_id=int(quality_profile_id),
+                language_profile_id=int(language_profile_id),
+                root_folder_path=root_folder_path,
+                search_for_missing_episodes=False # Exigence clé
+            )
+
+        elif media_type == 'movie':
+            # Récupérer le titre canonique depuis TMDB
+            client = TheMovieDBClient()
+            movie_details = client.get_movie_details(external_id, lang='fr-FR')
+            item_title = movie_details.get('title') if movie_details else 'Titre inconnu'
+
+            added_item = arr_client.add_new_movie_to_radarr(
+                tmdb_id=int(external_id),
+                title=item_title,
+                quality_profile_id=int(quality_profile_id),
+                root_folder_path=root_folder_path,
+                search_for_movie=False # Exigence clé
+            )
+
+        else:
+            return jsonify({'success': False, 'message': 'Type de média non supporté.'}), 400
+
+        if added_item and added_item.get('id'):
+            return jsonify({
+                'success': True,
+                'message': f"'{item_title}' a été ajouté avec succès à {media_type.capitalize()}."
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': f"Échec de l'ajout de '{item_title}' à {media_type.capitalize()}. Vérifiez les logs."
+            }), 500
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur dans /api/media/add_direct: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': f"Erreur serveur: {str(e)}"}), 500

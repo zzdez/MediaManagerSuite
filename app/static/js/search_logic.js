@@ -31,13 +31,77 @@ $(document).ready(function() {
                 ? `${TMDB_POSTER_BASE_URL}${item.poster}`
                 : (item.poster || 'https://via.placeholder.com/185x278.png?text=No+Poster');
 
-            // Logique pour déterminer la classe du bouton de bande-annonce
-            let trailerBtnClass = 'btn-outline-danger'; // Rouge par défaut (NONE)
-            if (item.trailer_status === 'LOCKED') {
-                trailerBtnClass = 'btn-outline-success'; // Vert
-            } else if (item.trailer_status === 'UNLOCKED') {
-                trailerBtnClass = 'btn-outline-primary'; // Bleu
+            // --- NOUVELLE LOGIQUE POUR LES BADGES ET BOUTONS ---
+            const details = item.details || {};
+            let badgesHtml = '';
+
+            // 1. Badges Sonarr/Radarr
+            const sonarrStatus = details.sonarr_status || {};
+            const radarrStatus = details.radarr_status || {};
+            if (sonarrStatus.present) {
+                badgesHtml += `<span class="badge bg-info me-1">Sonarr</span>`;
+                badgesHtml += sonarrStatus.monitored ? `<span class="badge bg-success me-1">Surveillé</span>` : `<span class="badge bg-secondary me-1">Non surveillé</span>`;
+            } else if (radarrStatus.present) {
+                badgesHtml += `<span class="badge bg-info me-1">Radarr</span>`;
+                badgesHtml += radarrStatus.monitored ? `<span class="badge bg-success me-1">Surveillé</span>` : `<span class="badge bg-secondary me-1">Non surveillé</span>`;
             }
+
+            // 2. Badge de Statut de Production (Séries seulement)
+            const prodStatus = details.production_status || {};
+            if (mediaType === 'tv' && prodStatus.status) {
+                let statusText = prodStatus.status;
+                let statusClass = 'bg-secondary';
+                switch (prodStatus.status.toLowerCase()) {
+                    case 'ended': statusText = 'Terminée'; statusClass = 'bg-dark'; break;
+                    case 'continuing': statusText = 'En Production'; statusClass = 'bg-success'; break;
+                    case 'upcoming': statusText = 'À venir'; statusClass = 'bg-info text-dark'; break;
+                }
+                badgesHtml += `<span class="badge ${statusClass} me-1">${statusText}</span>`;
+            }
+
+            // 3. Badge de Visionnage Plex
+            const plexStatus = details.plex_status || {};
+            if (plexStatus.present) {
+                if (mediaType === 'tv') {
+                    if (plexStatus.is_watched) {
+                        badgesHtml += `<span class="badge bg-primary me-1">Série Vue</span>`;
+                    } else if (plexStatus.watched_episodes && !plexStatus.watched_episodes.startsWith('0/')) {
+                        badgesHtml += `<span class="badge bg-primary me-1">Commencée (${plexStatus.watched_episodes})</span>`;
+                    }
+                } else { // Film
+                    if (plexStatus.is_watched) {
+                        badgesHtml += `<span class="badge bg-primary me-1">Vu</span>`;
+                    }
+                }
+            }
+
+            // 4. Logique pour les boutons
+            let trailerBtnClass = 'btn-outline-danger';
+            if (item.trailer_status === 'LOCKED') trailerBtnClass = 'btn-outline-success';
+            else if (item.trailer_status === 'UNLOCKED') trailerBtnClass = 'btn-outline-primary';
+
+            let buttonsHtml = `
+                <button class="btn btn-sm ${trailerBtnClass} search-trailer-btn"
+                        data-result-index="${index}"
+                        data-title="${item.title}"
+                        data-year="${item.year || ''}"
+                        data-media-type="${mediaType}">
+                    <i class="fas fa-video"></i> Bande-annonce
+                </button>`;
+
+            if (!sonarrStatus.present && !radarrStatus.present) {
+                buttonsHtml += `
+                    <button class="btn btn-sm btn-outline-success add-to-arr-btn" data-result-index="${index}">
+                        <i class="fas fa-plus"></i> Ajouter
+                    </button>`;
+            }
+
+            buttonsHtml += `
+                <button class="btn btn-sm btn-primary search-torrents-btn" data-result-index="${index}">
+                    <i class="fas fa-download"></i> Chercher les Torrents
+                </button>`;
+
+            // --- FIN DE LA NOUVELLE LOGIQUE ---
 
             const cardHtml = `
                 <div class="list-group-item list-group-item-action" data-media-type="${mediaType}">
@@ -48,17 +112,11 @@ $(document).ready(function() {
                         <div class="col-md-10 col-sm-9">
                             <h5 class="mb-1">${item.title} <span class="text-muted">(${item.year || 'N/A'})</span></h5>
                             <p class="mb-1 small">${item.overview ? item.overview.substring(0, 280) + (item.overview.length > 280 ? '...' : '') : 'Pas de synopsis disponible.'}</p>
+                            <div class="mt-2 mb-2">
+                                ${badgesHtml}
+                            </div>
                             <div class="mt-2">
-                                <button class="btn btn-sm ${trailerBtnClass} search-trailer-btn"
-                                        data-result-index="${index}"
-                                        data-title="${item.title}"
-                                        data-year="${item.year || ''}"
-                                        data-media-type="${mediaType}">
-                                    <i class="fas fa-video"></i> Bande-annonce
-                                </button>
-                                <button class="btn btn-sm btn-primary search-torrents-btn" data-result-index="${index}">
-                                    <i class="fas fa-download"></i> Chercher les Torrents
-                                </button>
+                                ${buttonsHtml}
                             </div>
                         </div>
                     </div>
@@ -178,6 +236,115 @@ $(document).ready(function() {
         };
 
         executeProwlarrSearch(payload); // Appel direct de la fonction partagée
+    });
+
+    // --- NOUVELLE LOGIQUE POUR L'AJOUT DIRECT SANS TORRENT ---
+    $('#media-results-container').on('click', '.add-to-arr-btn', function() {
+        const resultIndex = $(this).data('result-index');
+        const mediaData = mediaSearchResults[resultIndex];
+        const mediaType = $(this).closest('[data-media-type]').data('media-type');
+        const modal = $('#add-to-arr-direct-modal');
+
+        // Stocker les données nécessaires dans la modale
+        modal.data('media-data', mediaData);
+        modal.data('media-type', mediaType);
+
+        // Mettre à jour le titre de la modale
+        modal.find('#add-direct-media-title').text(mediaData.title);
+
+        // Afficher/cacher le conteneur du profil de langue pour Sonarr
+        modal.find('#add-direct-language-profile-container').toggle(mediaType === 'tv');
+
+        // Réinitialiser et désactiver les sélecteurs et le bouton de confirmation
+        modal.find('select').empty().prop('disabled', true).html('<option>Chargement...</option>');
+        modal.find('#confirm-add-direct-btn').prop('disabled', true);
+        modal.find('#add-direct-error-container').empty();
+
+        // Afficher la modale
+        new bootstrap.Modal(modal[0]).show();
+
+        // Définir les URLs des API en fonction du type de média
+        const rootFolderUrl = mediaType === 'tv' ? '/seedbox/api/get-sonarr-rootfolders' : '/seedbox/api/get-radarr-rootfolders';
+        const qualityProfileUrl = mediaType === 'tv' ? '/seedbox/api/get-sonarr-qualityprofiles' : '/seedbox/api/get-radarr-qualityprofiles';
+        const languageProfileUrl = mediaType === 'tv' ? '/seedbox/api/get-sonarr-language-profiles' : null;
+
+        // Lancer les appels API
+        const promises = [
+            fetch(rootFolderUrl).then(res => res.json()),
+            fetch(qualityProfileUrl).then(res => res.json())
+        ];
+        if (languageProfileUrl) {
+            promises.push(fetch(languageProfileUrl).then(res => res.json()));
+        }
+
+        Promise.all(promises).then(([rootFolders, qualityProfiles, languageProfiles]) => {
+            // Peupler le sélecteur de dossier racine
+            const rootFolderSelect = modal.find('#add-direct-root-folder-select').empty().prop('disabled', false);
+            rootFolders.forEach(folder => rootFolderSelect.append(new Option(folder.path, folder.path)));
+
+            // Peupler le sélecteur de profil de qualité
+            const qualityProfileSelect = modal.find('#add-direct-quality-profile-select').empty().prop('disabled', false);
+            qualityProfiles.forEach(profile => qualityProfileSelect.append(new Option(profile.name, profile.id)));
+
+            // Peupler le sélecteur de profil de langue si nécessaire
+            if (languageProfiles) {
+                const languageProfileSelect = modal.find('#add-direct-language-profile-select').empty().prop('disabled', false);
+                languageProfiles.forEach(profile => languageProfileSelect.append(new Option(profile.name, profile.id)));
+            }
+
+            // Activer le bouton de confirmation
+            modal.find('#confirm-add-direct-btn').prop('disabled', false);
+        }).catch(error => {
+            modal.find('#add-direct-error-container').text("Erreur lors du chargement des options depuis Sonarr/Radarr.");
+            console.error("Erreur API pour la modale d'ajout:", error);
+        });
+    });
+
+    $('#confirm-add-direct-btn').on('click', function() {
+        const btn = $(this);
+        const modal = $('#add-to-arr-direct-modal');
+        const mediaData = modal.data('media-data');
+        const mediaType = modal.data('media-type');
+        const errorContainer = modal.find('#add-direct-error-container');
+
+        const payload = {
+            media_type: mediaType,
+            external_id: mediaData.id,
+            root_folder_path: modal.find('#add-direct-root-folder-select').val(),
+            quality_profile_id: modal.find('#add-direct-quality-profile-select').val()
+        };
+        if (mediaType === 'tv') {
+            payload.language_profile_id = modal.find('#add-direct-language-profile-select').val();
+        }
+
+        btn.prop('disabled', true).find('.spinner-border').removeClass('d-none');
+        errorContainer.empty();
+
+        fetch('/search/api/media/add_direct', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Fermer la modale
+                bootstrap.Modal.getInstance(modal[0]).hide();
+                // Rafraîchir la recherche pour mettre à jour les badges
+                performMediaSearch();
+                // Afficher une notification de succès
+                toastr.success(data.message);
+            } else {
+                errorContainer.text(data.message || "Une erreur est survenue.");
+            }
+        })
+        .catch(error => {
+            errorContainer.text("Erreur de communication avec le serveur.");
+            console.error("Erreur lors de l'ajout direct:", error);
+        })
+        .finally(() => {
+            btn.prop('disabled', false).find('.spinner-border').addClass('d-none');
+        });
     });
 
     // =================================================================

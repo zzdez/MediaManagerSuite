@@ -156,6 +156,51 @@
         </div>
     </div>
 </div>
+
+<!-- Add to Arr Direct Modal -->
+<div class="modal fade" id="add-to-arr-direct-modal" tabindex="-1" aria-labelledby="addToArrDirectModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-dark text-white">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addToArrDirectModalLabel">Ajouter à...</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Veuillez sélectionner les options pour ajouter <strong id="add-direct-media-title">ce média</strong>.</p>
+
+                <div class="mb-3">
+                    <label for="add-direct-root-folder-select" class="form-label">Dossier Racine</label>
+                    <select class="form-select" id="add-direct-root-folder-select" disabled>
+                        <option>Chargement...</option>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label for="add-direct-quality-profile-select" class="form-label">Profil de Qualité</label>
+                    <select class="form-select" id="add-direct-quality-profile-select" disabled>
+                        <option>Chargement...</option>
+                    </select>
+                </div>
+
+                <div class="mb-3" id="add-direct-language-profile-container" style="display: none;">
+                    <label for="add-direct-language-profile-select" class="form-label">Profil de Langue (Sonarr)</label>
+                    <select class="form-select" id="add-direct-language-profile-select" disabled>
+                        <option>Chargement...</option>
+                    </select>
+                </div>
+
+                <div id="add-direct-error-container" class="text-danger mt-2"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" id="confirm-add-direct-btn" disabled>
+                    <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                    Ajouter et Surveiller
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 <script>
 document.addEventListener('DOMContentLoaded', function () {

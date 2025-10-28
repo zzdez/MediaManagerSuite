@@ -1951,6 +1951,32 @@ def get_sonarr_qualityprofiles_api():
     else:
         logger.warning("API Get Sonarr Quality Profiles: Aucune donnée ou format inattendu reçu de Sonarr pour les profils.")
         return jsonify([]), 200
+
+@seedbox_ui_bp.route('/api/get-sonarr-language-profiles', methods=['GET'])
+@login_required
+def get_sonarr_language_profiles_api():
+    """Récupère les profils de langue depuis l'API Sonarr."""
+    logger = current_app.logger
+    logger.info("API: Demande de récupération des profils de langue Sonarr.")
+
+    sonarr_url = current_app.config.get('SONARR_URL')
+    sonarr_api_key = current_app.config.get('SONARR_API_KEY')
+
+    if not sonarr_url or not sonarr_api_key:
+        return jsonify({"error": "Sonarr non configuré."}), 500
+
+    api_endpoint = f"{sonarr_url.rstrip('/')}/api/v3/languageprofile"
+    profiles_data, error_msg = _make_arr_request('GET', api_endpoint, sonarr_api_key)
+
+    if error_msg:
+        return jsonify({"error": f"Erreur Sonarr: {error_msg}"}), 502
+
+    if profiles_data and isinstance(profiles_data, list):
+        formatted_profiles = [{"id": profile.get("id"), "name": profile.get("name")} for profile in profiles_data if profile.get("id") is not None and profile.get("name")]
+        return jsonify(formatted_profiles), 200
+    else:
+        return jsonify([]), 200
+
 # ==============================================================================
 # ROUTES API POUR RÉCUPÉRER LES CONFIGURATIONS DE RADARR (Root Folders, Profiles)
 # ==============================================================================
