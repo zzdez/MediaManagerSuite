@@ -80,10 +80,12 @@ def search_prowlarr(query, categories=None, lang=None):
         'type': 'search'
     }
 
-    # Le filtrage par catégorie est intentionnellement retiré.
-    # Il a été constaté que cela filtrait des résultats pertinents (ex: 'MULTI')
-    # car les catégories configurées n'étaient pas exhaustives.
-    # L'application récupère maintenant tous les résultats et se fie à son propre
-    # parsing et filtrage côté client.
+    # Si des catégories sont fournies, les ajouter à la requête.
+    # Le paramètre API correct est 'cat' et il attend une chaîne de caractères séparée par des virgules.
+    if categories and isinstance(categories, list) and len(categories) > 0:
+        params['cat'] = ','.join(map(str, categories))
+        current_app.logger.info(f"Prowlarr search: Using categories {params['cat']}")
+
+    # La gestion de la langue est retirée ici, car elle sera gérée par le filtrage guessit.
 
     return _make_prowlarr_request('search', params)

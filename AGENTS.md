@@ -79,3 +79,27 @@ Améliorer l'onglet **"Recherche par Média"** de la page de recherche.
 *   **3. Empêcher les téléchargements en double :**
     *   Modifier le comportement d'ajout via MMS (quand un torrent est choisi depuis la "Recherche Libre").
     *   Il faut configurer l'ajout à Sonarr/Radarr de manière à ce que leur fonction de recherche automatique de releases soit désactivée pour ce nouvel ajout. MMS doit être le seul à gérer le téléchargement initial pour éviter les doublons.
+
+### 4. Investigation du Bug des Releases "MULTI" (Session du 2025-10-28)
+
+**Problème :** Les releases de torrents contenant la langue "MULTI" (ex: `The.Lowdown.S01E01.MULTi.720p.WEB.H264-TFA`) n'apparaissent pas dans les résultats de la "Recherche Libre", même lorsque le filtre de langue est sur "Tous". La configuration de l'application définit pourtant "MULTI" comme un alias de "FRENCH".
+
+**Investigation et Leçons Apprises :**
+1.  **Hypothèse 1 (Incorrecte) : Problème de parsing de langue.**
+    *   **Action :** Modification de `app/utils/release_parser.py` pour mieux gérer les alias et normaliser "multi" en "french".
+    *   **Résultat :** Échec. Le problème persistait, indiquant que les releases "MULTI" n'arrivaient même pas jusqu'à l'étape de parsing.
+
+2.  **Hypothèse 2 (Incorrecte) : Suppression complète du filtrage.**
+    *   **Action :** Suppression du paramètre `cat` lors de l'appel à l'API Prowlarr dans `app/utils/prowlarr_client.py`.
+    *   **Résultat :** Échec et retour utilisateur confirmant que le filtrage par catégorie est une fonctionnalité essentielle pour exclure les types de contenu non désirés (musique, livres, etc.).
+
+3.  **Hypothèse 3 (Correcte) : Filtrage par catégorie trop restrictif.**
+    *   **Analyse :** Les logs de Prowlarr, fournis par l'utilisateur, ont montré l'appel API exact effectué par l'application : `...&cat=5000,5030,5040,...`. Cet appel demande explicitement à Prowlarr de ne retourner que les résultats appartenant à une liste de catégories prédéfinies.
+    *   **Cause Racine :** La release "MULTI" (`The.Lowdown.S01E01.MULTi...`) se trouve sur l'indexeur dans une catégorie qui **n'est pas incluse** dans la liste envoyée à Prowlarr. Le problème n'est ni la langue, ni le parsing, mais bien la sélection des catégories en amont.
+
+**Objectif pour la Prochaine Session :**
+La solution ne consiste pas à supprimer le filtrage par catégorie, mais à le rendre correct. Il faudra :
+1.  Identifier la ou les catégories Prowlarr exactes contenant les releases "MULTI" souhaitées. La liste complète des catégories a été fournie par l'utilisateur.
+2.  S'assurer que ces catégories sont correctement sélectionnées dans l'interface de configuration de l'application (page `/configuration`).
+3.  Vérifier que la logique qui charge ces catégories (`load_search_categories` dans `app/utils/config_manager.py`) et les applique dans `app/search_ui/__init__.py` fonctionne comme prévu.
+4.  Si nécessaire, modifier l'interface de configuration pour rendre la sélection des catégories plus claire ou plus robuste.
