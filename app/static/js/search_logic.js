@@ -115,6 +115,29 @@ $(document).ready(function() {
                 }
             }
 
+            // --- NOUVEAU : Logique pour le statut de téléchargement ---
+            let downloadStatusHtml = '';
+            if (radarrStatus.present) {
+                const statusClass = radarrStatus.has_file ? 'bg-success' : 'bg-warning text-dark';
+                const statusText = radarrStatus.has_file ? `Téléchargé (${radarrStatus.size_on_disk_gb})` : 'Manquant';
+                downloadStatusHtml = `<span class="badge ${statusClass} me-1">${statusText}</span>`;
+            } else if (sonarrStatus.present) {
+                const statusClass = sonarrStatus.episodes_file_count > 0 ? 'bg-success' : 'bg-warning text-dark';
+                const statusText = sonarrStatus.episodes_file_count > 0 ? 'Téléchargé' : 'Manquant';
+                downloadStatusHtml = `
+                    <div>
+                        <span class="badge ${statusClass} me-1">${statusText}</span>
+                    </div>
+                    <div class="mt-1">
+                        <small class="text-muted">
+                            ${sonarrStatus.seasons_complete}/${sonarrStatus.seasons_total} Saisons -
+                            (${sonarrStatus.episodes_file_count}/${sonarrStatus.episodes_count} ép.) -
+                            ${sonarrStatus.size_on_disk_gb}
+                        </small>
+                    </div>`;
+            }
+
+
             const cardHtml = `
                 <div class="list-group-item list-group-item-action" data-media-type="${mediaType}">
                     <div class="row g-3">
@@ -127,6 +150,7 @@ $(document).ready(function() {
                             <p class="mb-1 small">${item.overview ? item.overview.substring(0, 280) + (item.overview.length > 280 ? '...' : '') : 'Pas de synopsis disponible.'}</p>
                             <div class="mt-2 mb-2">
                                 ${badgesHtml}
+                                ${downloadStatusHtml}
                             </div>
                             <div class="mt-2">
                                 ${buttonsHtml}
