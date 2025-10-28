@@ -104,12 +104,6 @@ def prowlarr_search():
     if raw_results is None:
         return jsonify({"error": "Erreur de communication avec Prowlarr."}), 500
 
-    # --- LOG DE DIAGNOSTIC ---
-    current_app.logger.debug(f"Résultats bruts de Prowlarr ({len(raw_results)} items):")
-    # Ne logger que les titres pour éviter de surcharger les logs
-    for res in raw_results[:20]: # Limiter à 20 pour la lisibilité
-        current_app.logger.debug(f"  - {res.get('title')}")
-
     # 3. Enrichir les résultats en utilisant le nouveau parseur centralisé
     enriched_results = []
     for result in raw_results:
@@ -143,12 +137,6 @@ def prowlarr_search():
         'results': enriched_results,
         'filter_options': filter_options
     }
-
-    # --- LOG DE DIAGNOSTIC ---
-    current_app.logger.debug(f"Résultats enrichis envoyés au client ({len(enriched_results)} items):")
-    for res in enriched_results[:20]: # Limiter à 20
-        lang = res.get('language', 'N/A')
-        current_app.logger.debug(f"  - Lang: {lang}, Titre: {res.get('title')}")
 
     return jsonify(response_data)
 
