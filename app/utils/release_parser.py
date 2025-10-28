@@ -1,11 +1,13 @@
 # Fichier : app/utils/release_parser.py
 
 from guessit import guessit
-from unidecode import unidecode # Import de la nouvelle bibliothèque
+from unidecode import unidecode
 import re
+from flask import current_app
+from app.utils.config_manager import load_search_filter_aliases
 
 # --- LISTE DE MOTS-CLÉS COMPLÈTE ---
-# Basée sur les recherches de l'utilisateur. Normalisée (lowercase, sans accents).
+# ... (inchangé)
 COLLECTION_KEYWORDS = [
     'integrale', 'integral', 'the complete series', 'collection',
     'boxset', 'box set', 'saga', 'pack', 'duo', 'duology', 'trilogie',
@@ -20,7 +22,8 @@ def _normalize_string(text):
 
 def parse_release_data(release_name):
     """
-    Analyse un nom de release avec guessit et le nettoie pour le filtrage.
+    Analyse un nom de release avec guessit, le nettoie et normalise les langues
+    en utilisant les alias de la configuration.
     Retourne un dictionnaire structuré et fiable.
     """
     guess = guessit(release_name)
@@ -41,14 +44,29 @@ def parse_release_data(release_name):
         'is_collection': False
     }
 
-    # --- Logique de Langue Améliorée ---
+    # --- NOUVELLE LOGIQUE DE LANGUE AVEC ALIAS ---
+    # 1. Charger les alias de langue depuis la configuration
+    # Doit être dans un contexte d'application pour fonctionner
+    with current_app.app_context():
+        lang_aliases = load_search_filter_aliases().get('lang', {})
+
+    # 2. Extraire la langue de guessit
+    detected_lang = None
     if 'language' in guess:
-        # 'language' peut être un objet ou une liste, on le traite
         lang_obj = guess['language']
         if isinstance(lang_obj, list):
-            # Prend la première langue de la liste pour simplifier
             lang_obj = lang_obj[0]
-        parsed_data['language'] = str(lang_obj).lower()
+        detected_lang = str(lang_obj).lower()
+
+    # 3. Normaliser la langue en utilisant les alias
+    if detected_lang:
+        normalized_lang = None
+        for canonical_lang, aliases in lang_aliases.items():
+            if detected_lang in aliases:
+                normalized_lang = canonical_lang
+                break
+        # Si aucune correspondance n'est trouvée, utiliser la langue détectée telle quelle
+        parsed_data['language'] = normalized_lang or detected_lang
 
     # --- Logique de Release Group Améliorée (Nettoyage) ---
     if 'release_group' in guess:
