@@ -79,3 +79,57 @@ Améliorer l'onglet **"Recherche par Média"** de la page de recherche.
 *   **3. Empêcher les téléchargements en double :**
     *   Modifier le comportement d'ajout via MMS (quand un torrent est choisi depuis la "Recherche Libre").
     *   Il faut configurer l'ajout à Sonarr/Radarr de manière à ce que leur fonction de recherche automatique de releases soit désactivée pour ce nouvel ajout. MMS doit être le seul à gérer le téléchargement initial pour éviter les doublons.
+Session du 2025-10-27 : Amélioration de l'onglet "Recherche par Média"
+Résumé de la session précédente :
+
+Nous avons finalisé avec succès une série d'améliorations majeures pour l'interface de l'Éditeur Plex, en nous concentrant sur le feedback utilisateur après les déplacements de médias et l'enrichissement de l'information présentée.
+
+Ce qui a fonctionné :
+
+Mise à jour en temps réel : Le chemin d'accès d'un média est maintenant mis à jour instantanément dans le tableau après un déplacement réussi, éliminant le besoin de recharger la page.
+Scan Plex automatique : Un scan des bibliothèques Plex concernées est automatiquement lancé à la fin d'un déplacement en masse, assurant que Plex reflète rapidement les changements.
+Statuts de Production : Les fiches des séries affichent désormais leur statut de production depuis Sonarr ("Terminée", "En Production", etc.) à côté de leur statut de visionnage Plex.
+Interface améliorée : Les statuts de visionnage et de production ont été séparés en deux colonnes distinctes et sont maintenant triables indépendamment, avec une logique de tri personnalisée pour le statut de production.
+Correction de régression et de layout : Nous avons identifié et corrigé une régression critique dans la logique de filtrage par dossier racine pour garantir des correspondances strictes. Le layout a également été restauré à son état compact d'origine.
+Processus itératif : Le développement a été très collaboratif. La séparation des colonnes a initialement affecté le layout, et une réorganisation du code a malencontreusement réintroduit un ancien bug de filtrage. Ces deux points ont été rapidement identifiés et corrigés grâce à vos retours précis.
+
+Objectif pour la nouvelle session :
+
+Améliorer l'onglet "Recherche par Média" de la page de recherche.
+
+1. Enrichir les fiches de résultats : L'objectif est de fournir plus de contexte sur chaque film ou série présenté.
+
+Ajouter un indicateur visuel pour savoir si le média est déjà présent dans Sonarr ou Radarr.
+Afficher son statut de surveillance (Monitored / Unmonitored).
+Réutiliser les badges de statut de visionnage (depuis Plex) et de statut de production (depuis Sonarr) que nous avons développés pour l'Éditeur Plex.
+2. Ajouter un média sans recherche de torrent :
+
+Implémenter une nouvelle fonctionnalité pour ajouter un film ou une série à la liste de surveillance de Sonarr/Radarr directement depuis les résultats de recherche.
+Cette action ne doit pas déclencher de recherche de torrents. C'est une fonctionnalité cruciale pour ajouter des médias qui ne sont pas encore sortis.
+3. Empêcher les téléchargements en double :
+
+Modifier le comportement d'ajout via MMS (quand un torrent est choisi depuis la "Recherche Libre").
+Il faut configurer l'ajout à Sonarr/Radarr de manière à ce que leur fonction de recherche automatique de releases soit désactivée pour ce nouvel ajout. MMS doit être le seul à gérer le téléchargement initial pour éviter les doublons.
+4. Investigation du Bug des Releases "MULTI" (Session du 2025-10-28)
+Problème : Les releases de torrents contenant la langue "MULTI" (ex: The.Lowdown.S01E01.MULTi.720p.WEB.H264-TFA) n'apparaissent pas dans les résultats de la "Recherche Libre", même lorsque le filtre de langue est sur "Tous". La configuration de l'application définit pourtant "MULTI" comme un alias de "FRENCH".
+
+Investigation et Leçons Apprises :
+
+Hypothèse 1 (Incorrecte) : Problème de parsing de langue.
+
+Action : Modification de app/utils/release_parser.py pour mieux gérer les alias et normaliser "multi" en "french".
+Résultat : Échec. Le problème persistait, indiquant que les releases "MULTI" n'arrivaient même pas jusqu'à l'étape de parsing.
+Hypothèse 2 (Incorrecte) : Suppression complète du filtrage.
+
+Action : Suppression du paramètre cat lors de l'appel à l'API Prowlarr dans app/utils/prowlarr_client.py.
+Résultat : Échec et retour utilisateur confirmant que le filtrage par catégorie est une fonctionnalité essentielle pour exclure les types de contenu non désirés (musique, livres, etc.).
+Hypothèse 3 (Correcte) : Filtrage par catégorie trop restrictif.
+
+Analyse : Les logs de Prowlarr, fournis par l'utilisateur, ont montré l'appel API exact effectué par l'application : ...&cat=5000,5030,5040,.... Cet appel demande explicitement à Prowlarr de ne retourner que les résultats appartenant à une liste de catégories prédéfinies.
+Cause Racine : La release "MULTI" (The.Lowdown.S01E01.MULTi...) se trouve sur l'indexeur dans une catégorie qui n'est pas incluse dans la liste envoyée à Prowlarr. Le problème n'est ni la langue, ni le parsing, mais bien la sélection des catégories en amont.
+Objectif pour la Prochaine Session : La solution ne consiste pas à supprimer le filtrage par catégorie, mais à le rendre correct. Il faudra :
+
+Identifier la ou les catégories Prowlarr exactes contenant les releases "MULTI" souhaitées. La liste complète des catégories a été fournie par l'utilisateur.
+S'assurer que ces catégories sont correctement sélectionnées dans l'interface de configuration de l'application (page /configuration).
+Vérifier que la logique qui charge ces catégories (load_search_categories dans app/utils/config_manager.py) et les applique dans app/search_ui/__init__.py fonctionne comme prévu.
+Si nécessaire, modifier l'interface de configuration pour rendre la sélection des catégories plus claire ou plus robuste.
