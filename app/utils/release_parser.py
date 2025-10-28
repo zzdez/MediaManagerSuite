@@ -44,13 +44,10 @@ def parse_release_data(release_name):
         'is_collection': False
     }
 
-    # --- NOUVELLE LOGIQUE DE LANGUE AVEC ALIAS ---
-    # 1. Charger les alias de langue depuis la configuration
-    # Doit être dans un contexte d'application pour fonctionner
+    # --- NOUVELLE LOGIQUE DE LANGUE AMÉLIORÉE AVEC PRIORITÉ ---
     with current_app.app_context():
-        lang_aliases = load_search_filter_aliases().get('lang', {})
+        lang_aliases_config = load_search_filter_aliases().get('lang', {})
 
-    # 2. Extraire la langue de guessit
     detected_lang = None
     if 'language' in guess:
         lang_obj = guess['language']
@@ -58,15 +55,20 @@ def parse_release_data(release_name):
             lang_obj = lang_obj[0]
         detected_lang = str(lang_obj).lower()
 
-    # 3. Normaliser la langue en utilisant les alias
     if detected_lang:
-        normalized_lang = None
-        for canonical_lang, aliases in lang_aliases.items():
-            if detected_lang in aliases:
-                normalized_lang = canonical_lang
-                break
-        # Si aucune correspondance n'est trouvée, utiliser la langue détectée telle quelle
-        parsed_data['language'] = normalized_lang or detected_lang
+        # Priorité 1: Est-ce un alias de 'french'?
+        french_aliases = lang_aliases_config.get('french', [])
+        if detected_lang in french_aliases:
+            parsed_data['language'] = 'french'
+        else:
+            # Priorité 2: Est-ce un alias d'une autre langue canonique?
+            normalized_lang = None
+            for canonical_lang, aliases in lang_aliases_config.items():
+                if canonical_lang == 'french': continue # Déjà vérifié
+                if detected_lang in aliases:
+                    normalized_lang = canonical_lang
+                    break
+            parsed_data['language'] = normalized_lang or detected_lang
 
     # --- Logique de Release Group Améliorée (Nettoyage) ---
     if 'release_group' in guess:
