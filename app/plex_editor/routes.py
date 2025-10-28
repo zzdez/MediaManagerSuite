@@ -790,11 +790,9 @@ def get_media_items():
 
             # --- NOUVEAU BLOC : FILTRAGE PAR ROOT FOLDER ---
             if root_folders_filter:
-                # On normalise les chemins pour des comparaisons robustes (et insensible à la casse)
                 normalized_root_paths = [os.path.normpath(p).lower() for p in root_folders_filter]
 
                 def get_item_path(item):
-                    # Cette fonction helper récupère le chemin du fichier pour un film ou une série
                     if item.type == 'movie':
                         return getattr(item.media[0].parts[0], 'file', None) if item.media and item.media[0].parts else None
                     elif item.type == 'show':
@@ -806,8 +804,13 @@ def get_media_items():
                     item_path_str = get_item_path(item)
                     if item_path_str:
                         normalized_item_path = os.path.normpath(item_path_str).lower()
-                        if any(normalized_item_path.startswith(root_path) for root_path in normalized_root_paths):
-                            items_temp.append(item)
+                        for root_path in normalized_root_paths:
+                            # CORRECTION: La vérification doit être stricte.
+                            # Le chemin de l'item doit soit être identique au chemin racine,
+                            # soit commencer par le chemin racine suivi d'un séparateur.
+                            if normalized_item_path == root_path or normalized_item_path.startswith(root_path + os.sep):
+                                items_temp.append(item)
+                                break
                 items_after_python_filter = items_temp
             # --- FIN DU NOUVEAU BLOC ---
 
