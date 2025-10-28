@@ -47,3 +47,35 @@ La seule source de vérité fiable pour confirmer la fin d'un déplacement de fi
 2.  Lancer la commande de déplacement via l'API.
 3.  Implémenter une boucle de polling qui vérifie à intervalles réguliers si le chemin source existe toujours en utilisant `os.path.exists(source_path)`.
 4.  La tâche est considérée comme terminée uniquement lorsque `os.path.exists()` renvoie `False`, indiquant que le dossier/fichier source a été supprimé/déplacé.
+
+### Session du 2025-10-27 : Amélioration de l'onglet "Recherche par Média"
+
+**Résumé de la session précédente :**
+
+Nous avons finalisé avec succès une série d'améliorations majeures pour l'interface de l'Éditeur Plex, en nous concentrant sur le feedback utilisateur après les déplacements de médias et l'enrichissement de l'information présentée.
+
+*   **Ce qui a fonctionné :**
+    1.  **Mise à jour en temps réel :** Le chemin d'accès d'un média est maintenant mis à jour instantanément dans le tableau après un déplacement réussi, éliminant le besoin de recharger la page.
+    2.  **Scan Plex automatique :** Un scan des bibliothèques Plex concernées est automatiquement lancé à la fin d'un déplacement en masse, assurant que Plex reflète rapidement les changements.
+    3.  **Statuts de Production :** Les fiches des séries affichent désormais leur statut de production depuis Sonarr ("Terminée", "En Production", etc.) à côté de leur statut de visionnage Plex.
+    4.  **Interface améliorée :** Les statuts de visionnage et de production ont été séparés en deux colonnes distinctes et sont maintenant triables indépendamment, avec une logique de tri personnalisée pour le statut de production.
+    5.  **Correction de régression et de layout :** Nous avons identifié et corrigé une régression critique dans la logique de filtrage par dossier racine pour garantir des correspondances strictes. Le layout a également été restauré à son état compact d'origine.
+
+*   **Processus itératif :** Le développement a été très collaboratif. La séparation des colonnes a initialement affecté le layout, et une réorganisation du code a malencontreusement réintroduit un ancien bug de filtrage. Ces deux points ont été rapidement identifiés et corrigés grâce à vos retours précis.
+
+**Objectif pour la nouvelle session :**
+
+Améliorer l'onglet **"Recherche par Média"** de la page de recherche.
+
+*   **1. Enrichir les fiches de résultats :** L'objectif est de fournir plus de contexte sur chaque film ou série présenté.
+    *   Ajouter un indicateur visuel pour savoir si le média est déjà présent dans Sonarr ou Radarr.
+    *   Afficher son statut de surveillance (*Monitored* / *Unmonitored*).
+    *   Réutiliser les badges de statut de visionnage (depuis Plex) et de statut de production (depuis Sonarr) que nous avons développés pour l'Éditeur Plex.
+
+*   **2. Ajouter un média sans recherche de torrent :**
+    *   Implémenter une nouvelle fonctionnalité pour ajouter un film ou une série à la liste de surveillance de Sonarr/Radarr directement depuis les résultats de recherche.
+    *   Cette action ne doit **pas** déclencher de recherche de torrents. C'est une fonctionnalité cruciale pour ajouter des médias qui ne sont pas encore sortis.
+
+*   **3. Empêcher les téléchargements en double :**
+    *   Modifier le comportement d'ajout via MMS (quand un torrent est choisi depuis la "Recherche Libre").
+    *   Il faut configurer l'ajout à Sonarr/Radarr de manière à ce que leur fonction de recherche automatique de releases soit désactivée pour ce nouvel ajout. MMS doit être le seul à gérer le téléchargement initial pour éviter les doublons.
