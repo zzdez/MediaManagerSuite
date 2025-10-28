@@ -991,7 +991,7 @@ $(document).ready(function() {
             title: optionsContainer.data('title'),
             root_folder_path: $('#root-folder-select').find('option:selected').text(),
             quality_profile_id: $('#quality-profile-select').val(),
-            searchForMovie: $('#search-on-add-check').is(':checked')
+            searchForMovie: false
         };
         fetch('/seedbox/api/add-arr-item-and-get-id', {
             method: 'POST',

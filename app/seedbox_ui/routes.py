@@ -2102,7 +2102,7 @@ def add_arr_item_and_get_id():
         # Paramètres spécifiques à Sonarr depuis le payload JS
         language_profile_id = int(data.get('language_profile_id', 1)) # Default à 1 si non fourni
         season_folder = data.get('use_season_folder', True) # Default
-        search_for_missing_episodes = data.get('search_for_missing_episodes', False) # Default
+        search_for_missing_episodes = False # ON FORCE À FALSE
 
         logger.debug(f"API Add *Arr Item (Sonarr): LangID={language_profile_id}, SeasonFolder={season_folder}, SearchMissing={search_for_missing_episodes}")
 
@@ -2124,7 +2124,7 @@ def add_arr_item_and_get_id():
     elif app_type == 'radarr':
         # Paramètres spécifiques à Radarr
         minimum_availability = data.get('minimum_availability', 'announced') # Default
-        search_for_movie = data.get('search_for_movie', False) # Default
+        search_for_movie = False # ON FORCE À FALSE
 
         logger.debug(f"API Add *Arr Item (Radarr): MinAvail={minimum_availability}, SearchMovie={search_for_movie}")
 
