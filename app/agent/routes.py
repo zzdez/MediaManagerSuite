@@ -2,6 +2,62 @@ from flask import request, jsonify, current_app
 from . import agent_bp
 from app.utils import trailer_manager
 from app.utils.media_info_manager import media_info_manager
+from app.utils.trailer_finder import get_videos_details
+
+@agent_bp.route('/get_youtube_video_details', methods=['GET'])
+def get_youtube_video_details_route():
+    """
+    Récupère les détails d'une vidéo YouTube spécifique par son ID.
+    """
+    video_id = request.args.get('video_id')
+    if not video_id:
+        return jsonify({'status': 'error', 'message': 'Le paramètre video_id est requis.'}), 400
+
+    api_key = current_app.config.get('YOUTUBE_API_KEY')
+    if not api_key:
+        return jsonify({'status': 'error', 'message': 'Clé API YouTube non configurée.'}), 500
+
+    try:
+        # La fonction get_videos_details attend une liste d'IDs
+        video_details_map = get_videos_details([video_id], api_key)
+        if video_id in video_details_map:
+            video_info = video_details_map[video_id]
+            # On reformate pour correspondre à ce que le JS attend
+            formatted_details = {
+                'videoId': video_info.get('id'),
+                'title': video_info.get('snippet', {}).get('title'),
+                'channel': video_info.get('snippet', {}).get('channelTitle'),
+                'thumbnail': video_info.get('snippet', {}).get('thumbnails', {}).get('default', {}).get('url')
+            }
+            return jsonify({'status': 'success', 'details': formatted_details})
+        else:
+            return jsonify({'status': 'error', 'message': 'Vidéo non trouvée sur YouTube.'}), 404
+    except Exception as e:
+        current_app.logger.error(f"Erreur lors de la récupération des détails de la vidéo YouTube {video_id}: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': 'Une erreur interne est survenue.'}), 500
+
+@agent_bp.route('/clear_trailer_cache', methods=['POST'])
+def clear_trailer_cache_route():
+    """
+    Supprime les résultats de recherche de bande-annonce mis en cache pour un média.
+    """
+    data = request.json
+    media_type = data.get('media_type')
+    external_id = data.get('external_id')
+
+    if not all([media_type, external_id]):
+        return jsonify({'status': 'error', 'message': 'Les paramètres media_type et external_id sont requis.'}), 400
+
+    try:
+        success = trailer_manager.clear_trailer_cache(media_type, external_id)
+        if success:
+            return jsonify({'status': 'success', 'message': 'Cache de la bande-annonce effacé avec succès.'})
+        else:
+            # Ce cas peut se produire si l'entrée n'a jamais existé, ce qui n'est pas une erreur.
+            return jsonify({'status': 'success', 'message': 'Aucun cache à effacer.'})
+    except Exception as e:
+        current_app.logger.error(f"Erreur inattendue dans clear_trailer_cache_route pour {media_type}_{external_id}: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': 'Une erreur interne est survenue.'}), 500
 
 @agent_bp.route('/get_trailer_info', methods=['GET'])
 def get_trailer_info_route():

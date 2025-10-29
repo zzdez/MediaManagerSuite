@@ -52,18 +52,11 @@
 
                     {# Section pour la recherche de bande-annonce #}
                     <div id="trailer-search-panel" class="mt-3 pt-3 border-top" style="display: none;">
-                        <h5><i class="fas fa-film"></i> Bande-annonce (Optionnel)</h5>
-                        <p class="small text-muted">Une fois le média sélectionné, vous pouvez chercher et verrouiller une bande-annonce ici.</p>
-                        <div class="input-group mb-3">
-                            <input type="text" class="form-control form-control-sm" id="trailer-search-query" placeholder="Rechercher une bande-annonce...">
-                            <button class="btn btn-outline-info btn-sm" type="button" id="execute-trailer-search-btn">
-                                <i class="fas fa-search"></i> Rechercher
-                            </button>
-                        </div>
-                        <div id="trailer-results-container" style="max-height: 300px; overflow-y: auto;">
-                            {/* Les résultats de la recherche de bande-annonce s'afficheront ici */}
-                        </div>
-                        <div id="trailer-search-feedback" class="mt-2"></div>
+                        <h5><i class="bi bi-film"></i> Bande-annonce (Optionnel)</h5>
+                        <p class="small text-muted">Une fois le média sélectionné, vous pouvez utiliser la recherche globale de bandes-annonces.</p>
+                        <button class="btn btn-outline-info" type="button" id="add-torrent-open-trailer-search-btn" disabled>
+                            <i class="bi bi-film"></i> Gérer les Bandes-Annonces
+                        </button>
                     </div>
 
                     {# Options pour l'ajout de NOUVELLE SÉRIE SONARR (UNIQUEMENT DANS addTorrentModal) #}

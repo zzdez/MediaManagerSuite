@@ -303,3 +303,21 @@ def clean_stale_entries(max_age_days=30):
 
     logger.info("Aucune entrée obsolète à nettoyer dans la base de données des bandes-annonces.")
     return 0
+
+def clear_trailer_cache(media_type, external_id):
+    """
+    Supprime complètement une entrée de la base de données des bandes-annonces,
+    qu'elle soit verrouillée ou non.
+    """
+    db_key = _get_key(media_type, external_id)
+    database = _load_database()
+    _, logger = _get_db_path_and_logger()
+
+    if db_key in database:
+        del database[db_key]
+        _save_database(database)
+        logger.info(f"Cache de bande-annonce effacé pour {db_key}.")
+        return True
+
+    logger.warning(f"Tentative d'effacement de cache pour une entrée inexistante : {db_key}")
+    return False

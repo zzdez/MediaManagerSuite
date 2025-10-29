@@ -699,6 +699,40 @@ $('#confirmArchiveMovieBtn').on('click', function() {
             });
         });
 
+        // --- NOUVELLE GESTION : RECHERCHE DES ÉPISODES MANQUANTS POUR UNE SAISON ---
+        $(seriesModalElement).on('click', '.search-missing-season-btn', function() {
+            const btn = $(this);
+            const sonarrSeriesId = btn.data('sonarr-id');
+            const seasonNumber = btn.data('season-number');
+
+            btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+            toastr.info(`Lancement de la recherche pour la saison ${seasonNumber}...`);
+
+            fetch('/plex/api/series/search_missing', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sonarrSeriesId: sonarrSeriesId, seasonNumber: seasonNumber })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    toastr.success(data.message + " Redirection en cours...");
+                    // On attend un court instant pour que l'utilisateur voie le message
+                    setTimeout(() => {
+                        window.location.href = data.redirect_url;
+                    }, 1000);
+                } else {
+                    toastr.warning(data.message);
+                    btn.prop('disabled', false).html('<i class="bi bi-search"></i>');
+                }
+            })
+            .catch(error => {
+                console.error("Erreur recherche épisodes manquants:", error);
+                toastr.error("Une erreur de communication est survenue.");
+                btn.prop('disabled', false).html('<i class="bi bi-search"></i>');
+            });
+        });
+
         // --- GESTION DU CLIC SUR L'ICÔNE VU/NON VU D'UN ÉPISODE ---
         $(seriesModalElement).on('click', '.toggle-episode-watched-btn', function(event) {
             event.preventDefault();

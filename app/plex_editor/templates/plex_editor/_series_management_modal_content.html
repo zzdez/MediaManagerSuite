@@ -61,7 +61,10 @@
 <!-- NOUVEAU : Formulaire et Boutons d'Action Globaux -->
 <form id="manage-episodes-form">
     <div class="d-flex justify-content-end mb-3">
-        <button type="button" class="btn btn-danger" id="delete-selected-episodes-btn">
+        <button type="button" class="btn btn-info" id="search-selected-episodes-btn" title="Non implémenté">
+            <i class="bi bi-search"></i> Rechercher la Sélection
+        </button>
+        <button type="button" class="btn btn-danger ms-2" id="delete-selected-episodes-btn">
             <i class="bi bi-trash"></i> Supprimer la Sélection
         </button>
     </div>
@@ -79,6 +82,7 @@
                     <strong>{{ season.title }}</strong>
                     {% if season.total_episodes > 0 %}
                         <small class="d-block text-muted">
+                            Vu :
                             {% if season.viewed_episodes == 0 %}
                                 Non commencée
                             {% elif season.viewed_episodes == season.total_episodes %}
@@ -87,7 +91,9 @@
                                 En cours
                             {% endif %}
                             ({{ season.viewed_episodes }} / {{ season.total_episodes }} ép.)
-                            | Taille: {{ (season.total_size_on_disk / (1024*1024)) | round(2) }} MB
+                        </small>
+                        <small class="d-block text-muted">
+                            Disponibles : {{ season.files_episodes }} / {{ season.total_episodes }} ép. | Taille: {{ (season.total_size_on_disk / (1024*1024)) | round(2) }} MB
                         </small>
                     {% else %}
                          <small class="d-block text-muted">Aucun épisode listé dans Plex. (Taille: {{ (season.total_size_on_disk / (1024*1024)) | round(2) }} MB)</small>
@@ -129,6 +135,14 @@
                             title="Renommer les fichiers de la Saison {{ season.seasonNumber }}">
                         <i class="bi bi-pencil-square"></i>
                     </button>
+                    {% if season.files_episodes < season.total_episodes %}
+                    <button class="btn btn-outline-info btn-sm search-missing-season-btn ms-1"
+                            data-sonarr-id="{{ series.sonarr_series_id }}"
+                            data-season-number="{{ season.seasonNumber }}"
+                            title="Rechercher les épisodes manquants pour la Saison {{ season.seasonNumber }}">
+                        <i class="bi bi-search"></i>
+                    </button>
+                    {% endif %}
                     {% endif %}
                 </div>
             </div>

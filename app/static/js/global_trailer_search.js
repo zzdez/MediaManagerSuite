@@ -115,13 +115,136 @@ $(document).ready(function() {
     $(document).on('click', '#load-more-trailers-btn', function() {
         const button = $(this);
         const selectionModal = $('#trailer-selection-modal');
-        const { mediaType, externalId } = selectionModal.data();
+        // On récupère toutes les données nécessaires
+        const { mediaType, externalId, title, year } = selectionModal.data();
         const pageToken = button.data('page-token');
 
-        if (!mediaType || !externalId || !pageToken) return;
+        if (!mediaType || !externalId || !pageToken || !title) return;
 
         button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
-        fetchAndRenderTrailers(mediaType, externalId, pageToken);
+        // On appelle la fonction avec les bons arguments dans le bon ordre
+        fetchAndRenderTrailers(mediaType, externalId, title, year, pageToken);
+    });
+
+    // Gère la recherche personnalisée dans la modale
+    $(document).on('click', '#trailer-custom-search-btn', function() {
+        const selectionModal = $('#trailer-selection-modal');
+        let { mediaType, externalId, year } = selectionModal.data(); // Garde le year original
+        const newTitle = $('#trailer-custom-search-input').val().trim();
+
+        if (!mediaType || !externalId || !newTitle) {
+            alert("Le nouveau titre ne peut pas être vide.");
+            return;
+        }
+
+        // Lance une nouvelle recherche avec le nouveau titre
+        fetchAndRenderTrailers(mediaType, externalId, newTitle, year, null); // pageToken est null pour une nouvelle recherche
+    });
+
+    // --- NOUVELLE LOGIQUE POUR L'AJOUT MANUEL ---
+
+    // Affiche/cache le champ de saisie manuelle
+    $(document).on('click', '#toggle-manual-trailer-btn', function() {
+        $('#manual-trailer-input-container').slideToggle();
+    });
+
+    // Gère la prévisualisation de l'URL manuelle
+    $(document).on('click', '#preview-manual-trailer-btn', function() {
+        const url = $('#manual-trailer-url-input').val().trim();
+        if (!url) return;
+
+        // Expression régulière pour extraire l'ID de différentes formes d'URL YouTube
+        const videoIdMatch = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
+        const videoId = videoIdMatch ? videoIdMatch[1] : null;
+
+        if (!videoId) {
+            alert("URL YouTube invalide. Veuillez coller l'URL complète de la vidéo.");
+            return;
+        }
+
+        const button = $(this);
+        const resultsContainer = $('#trailer-results-container');
+        const originalButtonHtml = button.html();
+        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+        // On appelle une nouvelle route pour obtenir les détails de la vidéo
+        fetch(`/api/agent/get_youtube_video_details?video_id=${videoId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    // On efface les anciens résultats et on affiche celui-ci avec un bouton de verrouillage
+                    resultsContainer.empty();
+                    const result = data.details;
+                    const resultHtml = `
+                        <div class="trailer-result-item d-flex align-items-center justify-content-between mb-2 p-2 rounded" style="background-color: #343a40;">
+                            <div class="play-trailer-area d-flex align-items-center" style="cursor: pointer; flex-grow: 1;"
+                                 data-video-id="${result.videoId}" data-video-title="${result.title}">
+                                <img src="${result.thumbnail}" width="120" class="me-3 rounded">
+                                <div>
+                                    <p class="mb-0 text-white font-weight-bold">${result.title}</p>
+                                    <small class="text-muted">${result.channel}</small>
+                                </div>
+                            </div>
+                            <button class="btn btn-sm btn-outline-success lock-trailer-btn" title="Verrouiller cette bande-annonce"
+                                    data-video-id="${result.videoId}"
+                                    data-is-locked="false"
+                                    data-video-title="${result.title}"
+                                    data-video-thumbnail="${result.thumbnail}"
+                                    data-video-channel="${result.channel}">
+                                <i class="bi bi-unlock-fill"></i> Verrouiller
+                            </button>
+                        </div>
+                    `;
+                    resultsContainer.html(resultHtml);
+                } else {
+                    alert('Erreur: ' + (data.message || 'Impossible de récupérer les détails de la vidéo.'));
+                }
+            })
+            .catch(error => {
+                console.error("Erreur lors de la prévisualisation manuelle:", error);
+                alert("Une erreur de communication est survenue.");
+            })
+            .finally(() => {
+                button.prop('disabled', false).html(originalButtonHtml);
+            });
+    });
+
+    // Gère le clic sur le bouton pour effacer le cache
+    $(document).on('click', '#clear-trailer-cache-btn', function() {
+        const button = $(this);
+        const selectionModal = $('#trailer-selection-modal');
+        const { mediaType, externalId, title, year } = selectionModal.data();
+
+        if (!mediaType || !externalId) return;
+
+        if (!confirm("Êtes-vous sûr de vouloir effacer tous les résultats de recherche et le verrouillage pour ce média ?")) {
+            return;
+        }
+
+        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+        fetch('/api/agent/clear_trailer_cache', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ media_type: mediaType, external_id: externalId })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                toastr.success("Cache effacé. Lancement d'une nouvelle recherche...");
+                // On relance une recherche propre pour ce média
+                fetchAndRenderTrailers(mediaType, externalId, title, year, null);
+            } else {
+                toastr.error('Erreur: ' + (data.message || 'Une erreur inconnue est survenue.'));
+            }
+        })
+        .catch(error => {
+            console.error('Erreur technique lors de l_effacement du cache:', error);
+            toastr.error('Une erreur technique est survenue.');
+        })
+        .finally(() => {
+            button.prop('disabled', false).html('<i class="bi bi-trash"></i>');
+        });
     });
 
     // Gère le clic sur le bouton de verrouillage/déverrouillage

@@ -109,10 +109,26 @@
             <div class="modal-body">
                 <div class="input-group mb-3">
                     <input type="text" id="trailer-custom-search-input" class="form-control" placeholder="Affiner la recherche...">
-                    <button class="btn btn-primary" type="button" id="trailer-custom-search-btn">
+                    <button class="btn btn-primary" type="button" id="trailer-custom-search-btn" title="Lancer une nouvelle recherche avec ce texte">
                         <i class="bi bi-search"></i>
                     </button>
+                    <button class="btn btn-outline-danger" type="button" id="clear-trailer-cache-btn" title="Effacer les résultats de recherche et le verrouillage pour ce média">
+                        <i class="bi bi-trash"></i>
+                    </button>
                 </div>
+
+                <!-- Section pour l'ajout manuel -->
+                <div class="manual-add-section">
+                    <button class="btn btn-outline-secondary btn-sm w-100" type="button" id="toggle-manual-trailer-btn">
+                        <i class="bi bi-plus-circle"></i> Ajouter manuellement un lien YouTube
+                    </button>
+                    <div id="manual-trailer-input-container" class="input-group mt-2" style="display: none;">
+                        <input type="text" id="manual-trailer-url-input" class="form-control" placeholder="Collez l'URL complète de la vidéo YouTube ici...">
+                        <button class="btn btn-info" type="button" id="preview-manual-trailer-btn">Prévisualiser</button>
+                    </div>
+                </div>
+                <hr>
+
                 <div id="trailer-results-container">
                     <!-- Les résultats de la recherche seront injectés ici -->
                 </div>
