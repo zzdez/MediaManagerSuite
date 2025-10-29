@@ -460,13 +460,19 @@ def _process_single_release(release_details, final_app_type, final_target_id):
             if display_names and display_names[0]:
                 release_name_for_map = display_names[0].strip()
         else: # Fichier .torrent
-            proxy_url = url_for('search_ui.download_torrent_proxy', _external=True)
-            params = {'url': download_link, 'release_name': release_name_original, 'indexer_id': indexer_id, 'guid': guid}
-            session_cookie_name = current_app.config.get("SESSION_COOKIE_NAME", "session")
-            cookies = {session_cookie_name: request.cookies.get(session_cookie_name)}
-            response = requests.get(proxy_url, params=params, cookies=cookies, timeout=60)
-            response.raise_for_status()
-            torrent_content_bytes = response.content
+            try:
+                proxy_url = url_for('search_ui.download_torrent_proxy', _external=True)
+                params = {'url': download_link, 'release_name': release_name_original, 'indexer_id': indexer_id, 'guid': guid}
+                session_cookie_name = current_app.config.get("SESSION_COOKIE_NAME", "session")
+                cookies = {session_cookie_name: request.cookies.get(session_cookie_name)}
+                response = requests.get(proxy_url, params=params, cookies=cookies, timeout=60)
+                response.raise_for_status()
+                torrent_content_bytes = response.content
+            except requests.exceptions.HTTPError as e:
+                # Si le proxy a renvoyé une erreur (ex: cookie invalide), on la propage
+                error_message_from_proxy = e.response.text
+                logger.error(f"Erreur du proxy de téléchargement pour '{release_name_original}': {error_message_from_proxy}")
+                return False, error_message_from_proxy
             
             release_name_for_map = _decode_bencode_name(torrent_content_bytes) or release_name_original.replace('.torrent', '').strip()
             actual_hash = add_torrent_data_and_get_hash_robustly(
@@ -612,7 +618,9 @@ def download_torrent_proxy():
             cookie_status = get_ygg_cookie_status()
 
             if not cookie_status["is_valid"]:
-                raise ValueError(f"Cookie YGG invalide ou expiré. Message : {cookie_status.get('status_message', 'Veuillez le mettre à jour.')}")
+                error_message = f"Cookie YGG invalide ou expiré. Message : {cookie_status.get('status_message', 'Veuillez le mettre à jour.')}"
+                current_app.logger.warning(f"Proxy download: {error_message}")
+                return Response(error_message, status=400)
 
             ygg_user_agent = current_app.config.get('YGG_USER_AGENT')
             ygg_base_url = current_app.config.get('YGG_BASE_URL')
