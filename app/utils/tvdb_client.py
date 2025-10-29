@@ -40,7 +40,7 @@ class CustomTVDBClient:
                 'name': series_data.get('name'),
                 'year': series_data.get('year'),
                 'overview': series_data.get('overview'),
-                'image': series_data.get('image')
+                'image': series_data.get('image') or ''
             }
             try:
                 translation = self.client.get_series_translation(tvdb_id, lang)
