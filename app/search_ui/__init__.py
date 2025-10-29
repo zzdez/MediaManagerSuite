@@ -95,6 +95,12 @@ def media_search():
 def prowlarr_search():
     data = request.get_json()
     queries = data.get('queries')
+    query = data.get('query')
+
+    # Unifier les deux types de requêtes en s'assurant que 'queries' est toujours une liste
+    if query:
+        queries = [query]
+
     if not queries:
         return jsonify({"error": "La requête est vide."}), 400
 
