@@ -108,9 +108,14 @@ class CustomTVDBClient:
                     continue
 
                 # On commence avec les données de base
+                # On récupère les détails complets pour avoir le nom original non traduit
+                full_series_details = self.client.get_series(tvdb_id)
+                original_name = full_series_details.get('name') if full_series_details else series_summary.get('name')
+
                 series_data = {
                     'tvdb_id': tvdb_id,
                     'name': series_summary.get('name'),
+                    'original_name': original_name,
                     'year': series_summary.get('year'),
                     'overview': series_summary.get('overview'),
                     'poster_url': series_summary.get('image_url'),

@@ -260,19 +260,47 @@ $(document).ready(function() {
 
         window.currentMediaContext = { ...mediaData, media_type: mediaType };
 
-        // Pré-remplir le champ de recherche de l'autre onglet
-        $('#search-form input[name="query"]').val(mediaData.title);
+        // --- NOUVELLE LOGIQUE DE RECHERCHE MULTI-TITRES ---
+        const title = mediaData.title;
+        const originalTitle = mediaData.original_title;
+        const year = mediaData.year;
 
-        // Basculer vers l'onglet de recherche libre
+        // --- NOUVELLE LOGIQUE DE RECHERCHE MULTI-TITRES (Corrigée) ---
+        const title = mediaData.title;
+        const originalTitle = mediaData.original_title;
+        const year = mediaData.year;
+
+        // 1. Nettoyer les titres de base pour enlever l'année potentielle
+        const cleanedTitle = title ? title.replace(/\(\d{4}\)/, '').trim() : '';
+        const cleanedOriginalTitle = originalTitle ? originalTitle.replace(/\(\d{4}\)/, '').trim() : '';
+
+        // 2. Créer les variations de titres à partir des versions nettoyées
+        let finalQueries = new Set();
+        if (cleanedTitle) {
+            finalQueries.add(cleanedTitle); // Titre traduit sans année
+            if (year && year !== 'N/A') {
+                finalQueries.add(`${cleanedTitle} ${year}`); // Titre traduit avec année
+            }
+        }
+        if (cleanedOriginalTitle && cleanedOriginalTitle !== cleanedTitle) {
+            finalQueries.add(cleanedOriginalTitle); // Titre original sans année
+            if (year && year !== 'N/A') {
+                finalQueries.add(`${cleanedOriginalTitle} ${year}`); // Titre original avec année
+            }
+        }
+
+        // 3. Pré-remplir le champ de recherche avec le titre principal et lancer la recherche
+        $('#search-form input[name="query"]').val(cleanedTitle);
+
         const freeSearchTab = new bootstrap.Tab($('#torrent-search-tab')[0]);
         freeSearchTab.show();
 
         const payload = {
-            query: mediaData.title,
+            queries: [...finalQueries], // Convertir le Set en Array
             search_type: mediaType === 'movie' ? 'radarr' : 'sonarr'
         };
 
-        executeProwlarrSearch(payload); // Appel direct de la fonction partagée
+        executeProwlarrSearch(payload);
     });
 
     // --- NOUVELLE LOGIQUE POUR L'AJOUT DIRECT SANS TORRENT ---

@@ -57,6 +57,7 @@ def media_search():
                 results.append({
                     'id': external_id,
                     'title': item.get('title'),
+                    'original_title': item.get('original_title'),
                     'year': item.get('release_date', 'N/A')[:4],
                     'overview': item.get('overview'),
                     'poster': item.get('poster_path'),
@@ -73,6 +74,7 @@ def media_search():
                 results.append({
                     'id': external_id,
                     'title': item.get('name'),
+                    'original_title': item.get('original_name'),
                     'year': item.get('year'),
                     'overview': item.get('overview'),
                     'poster': item.get('poster_url'),
@@ -92,8 +94,8 @@ def media_search():
 @login_required
 def prowlarr_search():
     data = request.get_json()
-    query = data.get('query')
-    if not query:
+    queries = data.get('queries')
+    if not queries:
         return jsonify({"error": "La requête est vide."}), 400
 
     search_type = data.get('search_type', 'sonarr')
@@ -104,14 +106,28 @@ def prowlarr_search():
     category_ids = search_config.get(f"{search_type}_categories", [])
 
     # 2. On envoie la requête de base à Prowlarr
-    raw_results = search_prowlarr(query=query, categories=category_ids)
+    all_raw_results = []
+    for query in queries:
+        raw_results = search_prowlarr(query=query, categories=category_ids)
+        if raw_results:
+            all_raw_results.extend(raw_results)
 
-    if raw_results is None:
-        return jsonify({"error": "Erreur de communication avec Prowlarr."}), 500
+    if not all_raw_results:
+        return jsonify({"error": "Erreur de communication avec Prowlarr ou aucun résultat."}), 500
+
+    # Dédoublonnage des résultats basé sur le GUID
+    unique_results = []
+    seen_guids = set()
+    for result in all_raw_results:
+        guid = result.get('guid')
+        if guid and guid not in seen_guids:
+            unique_results.append(result)
+            seen_guids.add(guid)
+    all_raw_results = unique_results
 
     # 3. Enrichir les résultats en utilisant le nouveau parseur centralisé
     enriched_results = []
-    for result in raw_results:
+    for result in all_raw_results:
         release_title = result.get('title', '')
         parsed_data = parse_release_data(release_title)
 

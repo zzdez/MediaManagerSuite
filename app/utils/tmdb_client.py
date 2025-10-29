@@ -39,6 +39,7 @@ class TheMovieDBClient:
             details = {
                 'id': movie.id,
                 'title': movie.title,
+                'original_title': movie.original_title,
                 'overview': movie.overview,
                 'poster': f"https://image.tmdb.org/t/p/w500{movie.poster_path}" if movie.poster_path else "",
                 'year': movie.release_date.split('-')[0] if hasattr(movie, 'release_date') and movie.release_date else 'N/A',
@@ -82,6 +83,7 @@ class TheMovieDBClient:
                 formatted_results.append({
                     'id': getattr(res, 'id', None),
                     'title': str(getattr(res, 'title', 'Titre non disponible')),
+                    'original_title': str(getattr(res, 'original_title', '')),
                     'overview': str(getattr(res, 'overview', '')),
                     'poster_path': str(getattr(res, 'poster_path', '')),
                     'release_date': release_date,
