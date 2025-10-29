@@ -260,11 +260,6 @@ $(document).ready(function() {
 
         window.currentMediaContext = { ...mediaData, media_type: mediaType };
 
-        // --- NOUVELLE LOGIQUE DE RECHERCHE MULTI-TITRES ---
-        const title = mediaData.title;
-        const originalTitle = mediaData.original_title;
-        const year = mediaData.year;
-
         // --- NOUVELLE LOGIQUE DE RECHERCHE MULTI-TITRES (Corrigée) ---
         const title = mediaData.title;
         const originalTitle = mediaData.original_title;
