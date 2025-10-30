@@ -90,10 +90,11 @@ def _get_key(media_type, external_id):
     """Construit la clé de base de données standardisée."""
     return f"{media_type.lower()}_{external_id}"
 
-def get_trailer_info(media_type, external_id, title, year=None, page_token=None):
+def get_trailer_info(media_type, external_id, title, year=None, page_token=None, force_refresh=False):
     """
     Fonction principale pour obtenir les informations sur la bande-annonce d'un média.
     Implémente la logique de cache, de verrouillage et de recherche externe.
+    :param force_refresh: Si True, ignore le cache et effectue une nouvelle recherche.
     """
     db_key = _get_key(media_type, external_id)
     database = _load_database()
@@ -103,39 +104,34 @@ def get_trailer_info(media_type, external_id, title, year=None, page_token=None)
 
     # Cas 1: La bande-annonce est verrouillée
     if entry.get('is_locked'):
-        # Rétrocompatibilité : si on trouve un ancien format, on le migre
-        if entry.get('locked_video_id') and not entry.get('locked_video_data'):
-            logger.info(f"Migration de l'ancien format de verrouillage pour {db_key}.")
-            entry['locked_video_data'] = {
-                'videoId': entry['locked_video_id'],
-                'title': 'Bande-annonce verrouillée (données à rafraîchir)',
-                'thumbnail': '/static/img/placeholder.png',
-                'channel': ''
-            }
-            entry.pop('locked_video_id', None)
-            database[db_key] = entry # Met à jour la base de données en mémoire
-            _save_database(database) # Sauvegarde la migration sur le disque
-
         if entry.get('locked_video_data'):
             logger.info(f"Retourne la bande-annonce verrouillée pour {db_key}.")
             return {'status': 'locked', 'locked_video_data': entry['locked_video_data']}
 
-    # Cas 2: Il y a une recherche en cache et on ne demande pas une autre page
-    cache_age_days = current_app.config.get('TRAILER_CACHE_AGE_DAYS', 7)
-    if not page_token and entry.get('search_results'):
+    # Cas 2: Vérifier le cache (uniquement si on ne force pas le rafraîchissement et qu'on ne pagine pas)
+    if not force_refresh and not page_token and entry.get('search_results'):
+        cache_age_days = current_app.config.get('TRAILER_CACHE_AGE_DAYS', 7)
         last_search_str = entry.get('last_search_timestamp')
         if last_search_str:
-            last_search_date = datetime.fromisoformat(last_search_str)
-            if datetime.utcnow() - last_search_date < timedelta(days=cache_age_days):
-                logger.info(f"Retourne les résultats de recherche en cache pour {db_key}.")
-                return {
-                    'status': 'success',
-                    'results': entry['search_results'],
-                    'next_page_token': entry.get('next_page_token')
-                }
+            try:
+                last_search_date = datetime.fromisoformat(last_search_str)
+                if datetime.utcnow() - last_search_date < timedelta(days=cache_age_days):
+                    logger.info(f"Retourne les résultats de recherche en cache pour {db_key}.")
+                    return {
+                        'status': 'success',
+                        'results': entry['search_results'],
+                        'next_page_token': entry.get('next_page_token')
+                    }
+            except ValueError:
+                logger.warning(f"Timestamp malformé pour {db_key}, on ignore le cache.")
 
-    # Cas 3: Le cache est expiré, inexistant, ou on demande une nouvelle page -> Recherche externe
-    logger.info(f"Cache expiré ou inexistant pour {db_key}. Lancement d'une nouvelle recherche.")
+    # Cas 3: Le cache est ignoré, expiré, inexistant, ou on demande une nouvelle page -> Recherche externe
+    if force_refresh:
+        logger.info(f"Forçage du rafraîchissement pour {db_key}. Lancement d'une nouvelle recherche.")
+    elif page_token:
+        logger.info(f"Pagination demandée pour {db_key}. Recherche de la page suivante.")
+    else:
+        logger.info(f"Cache expiré ou inexistant pour {db_key}. Lancement d'une nouvelle recherche.")
 
     # Étape A: Vérifier que le titre a été fourni par l'appelant.
     if not title:

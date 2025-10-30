@@ -2376,6 +2376,9 @@ def get_series_details_for_management(rating_key):
             }
             return render_template('plex_editor/_series_management_modal_content.html', series=series_data)
 
+    except BadRequest as e:
+        current_app.logger.error(f"Erreur API (series_details): Erreur de communication avec Plex.tv (BadRequest): {e}", exc_info=True)
+        return ('<div class="alert alert-warning">Erreur de communication avec les serveurs Plex.tv. Le service est peut-être temporairement indisponible. Veuillez réessayer plus tard.</div>', 502)
     except Exception as e:
         current_app.logger.error(f"Erreur API (series_details): {e}", exc_info=True)
         return (f'<div class="alert alert-danger">Erreur serveur: {str(e)}</div>', 500)

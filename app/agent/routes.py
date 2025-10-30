@@ -70,12 +70,21 @@ def get_trailer_info_route():
     title = request.args.get('title')
     year = request.args.get('year')
     page_token = request.args.get('page_token')
+    # Ajout du paramètre force_refresh pour ignorer le cache
+    force_refresh = request.args.get('force_refresh', 'false').lower() == 'true'
 
     if not all([media_type, external_id, title]):
         return jsonify({'status': 'error', 'message': 'Les paramètres media_type, external_id et title sont requis.'}), 400
 
     try:
-        result = trailer_manager.get_trailer_info(media_type, external_id, title=title, year=year, page_token=page_token)
+        result = trailer_manager.get_trailer_info(
+            media_type,
+            external_id,
+            title=title,
+            year=year,
+            page_token=page_token,
+            force_refresh=force_refresh
+        )
         return jsonify(result)
     except Exception as e:
         current_app.logger.error(f"Erreur inattendue dans get_trailer_info_route pour {media_type}_{external_id}: {e}", exc_info=True)

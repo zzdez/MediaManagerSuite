@@ -4,8 +4,8 @@
 /**
  * Affiche les résultats de la recherche de bande-annonce dans le conteneur.
  * @param {Array} results - La liste des vidéos YouTube à afficher.
- *param {Object} options - Options d'affichage.
- * @param {string|null} options.lockedVideoId - L'ID de la vidéo actuellement verrouillée.
+ * @param {Object} options - Options d'affichage.
+ * @param {Object|null} options.lockedVideoData - Les données de la vidéo actuellement verrouillée.
  */
 function renderTrailerResults(results, options = {}) {
     const { lockedVideoData = null } = options;
@@ -19,9 +19,11 @@ function renderTrailerResults(results, options = {}) {
 
     results.forEach(result => {
         const isLocked = result.videoId === lockedVideoId;
-        const btnClass = isLocked ? 'btn-danger' : 'btn-outline-secondary';
+        // Si verrouillé: bouton vert (état actuel) avec icone "unlock" (action possible).
+        // Si non verrouillé: bouton rouge (action possible) avec icone "lock".
+        const btnClass = isLocked ? 'btn-success' : 'btn-outline-danger';
         const btnTitle = isLocked ? 'Déverrouiller cette bande-annonce' : 'Verrouiller cette bande-annonce';
-        const iconClass = isLocked ? 'bi-lock-fill' : 'bi-unlock-fill'; // Correct: lock-fill for locked state
+        const iconClass = isLocked ? 'bi-unlock-fill' : 'bi-lock-fill';
 
         const resultHtml = `
             <div class="trailer-result-item d-flex align-items-center justify-content-between mb-2 p-2 rounded" style="background-color: #343a40;">
@@ -54,40 +56,32 @@ function renderTrailerResults(results, options = {}) {
  * @param {string} title - Le titre du média.
  * @param {string|null} year - L'année du média.
  * @param {string|null} pageToken - Le token pour la pagination.
+ * @param {boolean} forceRefresh - Si true, ignore le cache du backend.
  */
-function fetchAndRenderTrailers(mediaType, externalId, title, year = null, pageToken = null) {
+function fetchAndRenderTrailers(mediaType, externalId, title, year = null, pageToken = null, forceRefresh = false) {
     const resultsContainer = $('#trailer-results-container');
     const loadMoreContainer = $('#trailer-load-more-container');
     const loadMoreBtn = $('#load-more-trailers-btn');
     const selectionModal = $('#trailer-selection-modal');
 
-    // Stocke le contexte pour les actions futures (verrouillage, pagination)
     selectionModal.data({ mediaType, externalId, title, year });
 
-    // Affiche un spinner seulement pour la première charge
     if (!pageToken) {
         resultsContainer.html('<div class="text-center"><div class="spinner-border"></div></div>');
     }
     loadMoreContainer.hide();
 
     let apiUrl = `/api/agent/get_trailer_info?media_type=${mediaType}&external_id=${externalId}&title=${encodeURIComponent(title)}`;
-    if (year) {
-        apiUrl += `&year=${year}`;
-    }
-    if (pageToken) {
-        apiUrl += `&page_token=${pageToken}`;
-    }
+    if (year) apiUrl += `&year=${year}`;
+    if (pageToken) apiUrl += `&page_token=${pageToken}`;
+    if (forceRefresh) apiUrl += `&force_refresh=true`;
 
     fetch(apiUrl)
         .then(response => response.json())
         .then(data => {
-            // Efface le contenu seulement pour la première page
-            if (!pageToken) {
-                resultsContainer.empty();
-            }
+            if (!pageToken) resultsContainer.empty();
 
             if (data.status === 'locked') {
-                // Si c'est verrouillé, on affiche juste les données de la vidéo verrouillée
                 renderTrailerResults([data.locked_video_data], { lockedVideoData: data.locked_video_data });
             } else if (data.status === 'success' && data.results) {
                 renderTrailerResults(data.results, { lockedVideoData: null });
@@ -109,111 +103,37 @@ function fetchAndRenderTrailers(mediaType, externalId, title, year = null, pageT
 }
 
 $(document).ready(function() {
-    // --- GESTIONNAIRES D'ÉVÉNEMENTS GLOBAUX ---
-
     // Gère le clic sur "Afficher plus"
     $(document).on('click', '#load-more-trailers-btn', function() {
         const button = $(this);
         const selectionModal = $('#trailer-selection-modal');
-        // On récupère toutes les données nécessaires
         const { mediaType, externalId, title, year } = selectionModal.data();
         const pageToken = button.data('page-token');
 
         if (!mediaType || !externalId || !pageToken || !title) return;
 
         button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
-        // On appelle la fonction avec les bons arguments dans le bon ordre
-        fetchAndRenderTrailers(mediaType, externalId, title, year, pageToken);
+        fetchAndRenderTrailers(mediaType, externalId, title, year, pageToken, false);
     });
 
     // Gère la recherche personnalisée dans la modale
     $(document).on('click', '#trailer-custom-search-btn', function() {
         const selectionModal = $('#trailer-selection-modal');
-        let { mediaType, externalId, year } = selectionModal.data(); // Garde le year original
+        let { mediaType, externalId, year } = selectionModal.data();
         const newTitle = $('#trailer-custom-search-input').val().trim();
 
         if (!mediaType || !externalId || !newTitle) {
             alert("Le nouveau titre ne peut pas être vide.");
             return;
         }
-
-        // Lance une nouvelle recherche avec le nouveau titre
-        fetchAndRenderTrailers(mediaType, externalId, newTitle, year, null); // pageToken est null pour une nouvelle recherche
-    });
-
-    // --- NOUVELLE LOGIQUE POUR L'AJOUT MANUEL ---
-
-    // Affiche/cache le champ de saisie manuelle
-    $(document).on('click', '#toggle-manual-trailer-btn', function() {
-        $('#manual-trailer-input-container').slideToggle();
-    });
-
-    // Gère la prévisualisation de l'URL manuelle
-    $(document).on('click', '#preview-manual-trailer-btn', function() {
-        const url = $('#manual-trailer-url-input').val().trim();
-        if (!url) return;
-
-        // Expression régulière pour extraire l'ID de différentes formes d'URL YouTube
-        const videoIdMatch = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
-        const videoId = videoIdMatch ? videoIdMatch[1] : null;
-
-        if (!videoId) {
-            alert("URL YouTube invalide. Veuillez coller l'URL complète de la vidéo.");
-            return;
-        }
-
-        const button = $(this);
-        const resultsContainer = $('#trailer-results-container');
-        const originalButtonHtml = button.html();
-        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
-
-        // On appelle une nouvelle route pour obtenir les détails de la vidéo
-        fetch(`/api/agent/get_youtube_video_details?video_id=${videoId}`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    // On efface les anciens résultats et on affiche celui-ci avec un bouton de verrouillage
-                    resultsContainer.empty();
-                    const result = data.details;
-                    const resultHtml = `
-                        <div class="trailer-result-item d-flex align-items-center justify-content-between mb-2 p-2 rounded" style="background-color: #343a40;">
-                            <div class="play-trailer-area d-flex align-items-center" style="cursor: pointer; flex-grow: 1;"
-                                 data-video-id="${result.videoId}" data-video-title="${result.title}">
-                                <img src="${result.thumbnail}" width="120" class="me-3 rounded">
-                                <div>
-                                    <p class="mb-0 text-white font-weight-bold">${result.title}</p>
-                                    <small class="text-muted">${result.channel}</small>
-                                </div>
-                            </div>
-                            <button class="btn btn-sm btn-outline-success lock-trailer-btn" title="Verrouiller cette bande-annonce"
-                                    data-video-id="${result.videoId}"
-                                    data-is-locked="false"
-                                    data-video-title="${result.title}"
-                                    data-video-thumbnail="${result.thumbnail}"
-                                    data-video-channel="${result.channel}">
-                                <i class="bi bi-unlock-fill"></i> Verrouiller
-                            </button>
-                        </div>
-                    `;
-                    resultsContainer.html(resultHtml);
-                } else {
-                    alert('Erreur: ' + (data.message || 'Impossible de récupérer les détails de la vidéo.'));
-                }
-            })
-            .catch(error => {
-                console.error("Erreur lors de la prévisualisation manuelle:", error);
-                alert("Une erreur de communication est survenue.");
-            })
-            .finally(() => {
-                button.prop('disabled', false).html(originalButtonHtml);
-            });
+        fetchAndRenderTrailers(mediaType, externalId, newTitle, year, null, true);
     });
 
     // Gère le clic sur le bouton pour effacer le cache
     $(document).on('click', '#clear-trailer-cache-btn', function() {
         const button = $(this);
         const selectionModal = $('#trailer-selection-modal');
-        const { mediaType, externalId, title, year } = selectionModal.data();
+        const { mediaType, externalId } = selectionModal.data();
 
         if (!mediaType || !externalId) return;
 
@@ -231,9 +151,9 @@ $(document).ready(function() {
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success') {
-                toastr.success("Cache effacé. Lancement d'une nouvelle recherche...");
-                // On relance une recherche propre pour ce média
-                fetchAndRenderTrailers(mediaType, externalId, title, year, null);
+                toastr.success("Cache effacé.");
+                $('#trailer-results-container').html('<p class="text-center text-muted">Les résultats ont été effacés. Vous pouvez lancer une nouvelle recherche.</p>');
+                $('#trailer-load-more-container').hide();
             } else {
                 toastr.error('Erreur: ' + (data.message || 'Une erreur inconnue est survenue.'));
             }
@@ -271,13 +191,9 @@ $(document).ready(function() {
         const payload = {
             media_type: mediaType,
             external_id: externalId,
-            video_data: videoData // On envoie l'objet complet
+            video_data: videoData
         };
-
-        // Pour le déverrouillage, seul media_type et external_id sont nécessaires
-        if (isLocked) {
-            delete payload.video_data;
-        }
+        if (isLocked) delete payload.video_data;
 
         button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
 
@@ -289,21 +205,86 @@ $(document).ready(function() {
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success') {
-                // Rafraîchit toute la modale pour obtenir le nouvel état du backend
                 fetchAndRenderTrailers(mediaType, externalId, title, year);
             } else {
                 alert('Erreur: ' + (data.message || 'Une erreur inconnue est survenue.'));
-                button.prop('disabled', false).html(`<i class="bi ${isLocked ? 'bi-unlock-fill' : 'bi-lock-fill'}"></i>`);
+                const iconClass = isLocked ? 'bi-unlock-fill' : 'bi-lock-fill';
+                button.prop('disabled', false).html(`<i class="bi ${iconClass}"></i>`);
             }
         })
         .catch(error => {
             console.error('Erreur technique lors du (dé)verrouillage:', error);
             alert('Une erreur technique est survenue.');
-            button.prop('disabled', false).html(`<i class="bi ${isLocked ? 'bi-unlock-fill' : 'bi-lock-fill'}"></i>`);
+            const iconClass = isLocked ? 'bi-unlock-fill' : 'bi-lock-fill';
+            button.prop('disabled', false).html(`<i class="bi ${iconClass}"></i>`);
         });
     });
 
-    // Gère le clic pour jouer une vidéo
+    // --- LOGIQUE POUR L'AJOUT MANUEL ---
+    $(document).on('click', '#toggle-manual-trailer-btn', function() {
+        $('#manual-trailer-input-container').slideToggle();
+    });
+
+    $(document).on('click', '#preview-manual-trailer-btn', function() {
+        const url = $('#manual-trailer-url-input').val().trim();
+        if (!url) return;
+
+        const videoIdMatch = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
+        const videoId = videoIdMatch ? videoIdMatch[1] : null;
+
+        if (!videoId) {
+            alert("URL YouTube invalide. Veuillez coller l'URL complète de la vidéo.");
+            return;
+        }
+
+        const button = $(this);
+        const resultsContainer = $('#trailer-results-container');
+        const originalButtonHtml = button.html();
+        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+        fetch(`/api/agent/get_youtube_video_details?video_id=${videoId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    resultsContainer.empty();
+                    const result = data.details;
+                    const resultHtml = `
+                        <div class="trailer-result-item d-flex align-items-center justify-content-between mb-2 p-2 rounded" style="background-color: #343a40;">
+                            <div class="play-trailer-area d-flex align-items-center" style="cursor: pointer; flex-grow: 1;"
+                                 data-video-id="${result.videoId}" data-video-title="${result.title}">
+                                <img src="${result.thumbnail}" width="120" class="me-3 rounded">
+                                <div>
+                                    <p class="mb-0 text-white font-weight-bold">${result.title}</p>
+                                    <small class="text-muted">${result.channel}</small>
+                                </div>
+                            </div>
+                            <button class="btn btn-sm btn-outline-danger lock-trailer-btn" title="Verrouiller cette bande-annonce"
+                                    data-video-id="${result.videoId}"
+                                    data-is-locked="false"
+                                    data-video-title="${result.title}"
+                                    data-video-thumbnail="${result.thumbnail}"
+                                    data-video-channel="${result.channel}">
+                                <i class="bi bi-lock-fill"></i> Verrouiller
+                            </button>
+                        </div>
+                    `;
+                    resultsContainer.html(resultHtml);
+                } else {
+                    alert('Erreur: ' + (data.message || 'Impossible de récupérer les détails de la vidéo.'));
+                }
+            })
+            .catch(error => {
+                console.error("Erreur lors de la prévisualisation manuelle:", error);
+                alert("Une erreur de communication est survenue.");
+            })
+            .finally(() => {
+                button.prop('disabled', false).html(originalButtonHtml);
+            });
+    });
+
+    // --- LE RESTE DU FICHIER (LECTEUR VIDÉO, DÉCLENCHEURS GLOBAUX, MODALE AUTONOME) ---
+    // (Cette partie reste inchangée)
+
     $(document).on('click', '.play-trailer-area', function() {
         const videoId = $(this).data('video-id');
         const videoTitle = $(this).data('video-title');
@@ -320,67 +301,48 @@ $(document).ready(function() {
         bootstrap.Modal.getOrCreateInstance(playerModal[0]).show();
     });
 
-    // Gère la fermeture du lecteur vidéo
     $('#trailer-modal').on('hidden.bs.modal', function () {
         const playerModal = $(this);
         playerModal.find('.modal-body').empty();
         const sourceModalId = playerModal.data('source-modal');
         if (sourceModalId) {
             const sourceModal = bootstrap.Modal.getInstance(document.getElementById(sourceModalId));
-            if (sourceModal) {
-                sourceModal.show();
-            }
+            if (sourceModal) sourceModal.show();
             playerModal.removeData('source-modal');
         }
     });
 
-    // Déclencheur global pour ouvrir la modale de recherche de BA
     $(document).on('openTrailerSearch', function(event, { mediaType, externalId, title, year, sourceModalId }) {
         const selectionModal = $('#trailer-selection-modal');
         const modalInstance = bootstrap.Modal.getOrCreateInstance(selectionModal[0]);
 
-        // Stocke l'ID de la modale source pour y revenir plus tard
-        if (sourceModalId) {
-            selectionModal.data('source-modal-id', sourceModalId);
-        }
+        if (sourceModalId) selectionModal.data('source-modal-id', sourceModalId);
 
-        // Nettoyage de l'état précédent
         $('#trailer-results-container').empty();
         $('#trailer-load-more-container').hide();
         $('#trailer-selection-modal-label').text(`Bande-annonce pour : ${title}`);
 
-        // Lance la recherche
         fetchAndRenderTrailers(mediaType, externalId, title, year);
-
         modalInstance.show();
     });
 
-    // --- GESTION DU MENU LATÉRAL "BANDES-ANNONCES" (NOUVELLE VERSION) ---
-
-    // Gère la fermeture de la modale de sélection pour potentiellement rouvrir la modale source
     $('#trailer-selection-modal').on('hidden.bs.modal', function () {
         const selectionModal = $(this);
         const sourceModalId = selectionModal.data('source-modal-id');
-
         if (sourceModalId) {
             const sourceModalEl = document.getElementById(sourceModalId);
             const sourceModalInstance = bootstrap.Modal.getInstance(sourceModalEl);
-            if (sourceModalInstance) {
-                sourceModalInstance.show();
-            }
-            // Nettoie la donnée pour éviter les réouvertures non désirées
+            if (sourceModalInstance) sourceModalInstance.show();
             selectionModal.removeData('source-modal-id');
         }
     });
 
-    // Ouvre la nouvelle modale de recherche autonome
     $('#standalone-trailer-search-btn').on('click', function(e) {
         e.preventDefault();
         const searchModal = new bootstrap.Modal(document.getElementById('standalone-trailer-search-modal'));
         searchModal.show();
     });
 
-    // Gère la soumission du formulaire de recherche dans la modale
     $('#standalone-trailer-search-form').on('submit', function(e) {
         e.preventDefault();
         const query = $('#standalone-trailer-search-input').val().trim();
@@ -400,16 +362,13 @@ $(document).ready(function() {
             body: JSON.stringify({ query: query, media_type: mediaType })
         })
         .then(response => response.json())
-        .then(data => {
-            renderStandaloneResults(data, mediaType);
-        })
+        .then(data => renderStandaloneResults(data, mediaType))
         .catch(error => {
             console.error('Erreur lors de la recherche de média autonome:', error);
             resultsContainer.html('<p class="text-danger">Erreur de communication.</p>');
         });
     });
 
-    // Affiche les résultats dans la modale de recherche autonome (version enrichie)
     function renderStandaloneResults(results, mediaType) {
         const resultsContainer = $('#standalone-trailer-search-results-container');
         resultsContainer.empty();
@@ -422,7 +381,6 @@ $(document).ready(function() {
         const TMDB_POSTER_BASE_URL = 'https://image.tmdb.org/t/p/w185';
         const listGroup = $('<div class="list-group list-group-flush"></div>');
 
-        // Étape 1: Construire et ajouter tous les éléments HTML au fragment de document (listGroup)
         results.forEach(item => {
             const posterUrl = (mediaType === 'movie' && item.poster)
                 ? `${TMDB_POSTER_BASE_URL}${item.poster}`
@@ -465,11 +423,8 @@ $(document).ready(function() {
             `;
             listGroup.append(itemHtml);
         });
-
-        // Étape 2: Insérer tous les éléments dans le DOM en une seule fois
         resultsContainer.append(listGroup);
 
-        // Étape 3: Maintenant que les éléments sont dans le DOM, lancer les chargements des tableaux de bord
         results.forEach(item => {
             const placeholderId = `dashboard-placeholder-${mediaType}-${item.id}`;
             fetchAndRenderDashboard(placeholderId, mediaType, item.id);
@@ -498,8 +453,6 @@ $(document).ready(function() {
 
     function formatDashboard(details, mediaType) {
         let content = '<ul class="list-unstyled mb-0 small text-white-50">';
-
-        // Statut de Production
         const prod = details.production_status;
         if (prod && prod.status) {
             let statusText = prod.status === 'Ended' ? 'Terminée' : (prod.status === 'Returning Series' ? 'En cours' : prod.status);
@@ -510,30 +463,21 @@ $(document).ready(function() {
             }
             content += `</li>`;
         }
-
-        // Statuts Sonarr/Radarr
         const arr = mediaType === 'tv' ? details.sonarr_status : details.radarr_status;
         if (arr && arr.present) {
             let arrName = mediaType === 'tv' ? 'Sonarr' : 'Radarr';
             let fileInfo = '';
-            if (mediaType === 'tv') {
-                fileInfo = `(${arr.episodes_file_count}/${arr.episodes_count} fichiers)`;
-            } else if (arr.has_file) {
-                fileInfo = '(avec fichier)';
-            }
+            if (mediaType === 'tv') fileInfo = `(${arr.episodes_file_count}/${arr.episodes_count} fichiers)`;
+            else if (arr.has_file) fileInfo = '(avec fichier)';
             content += `<li><strong>${arrName}:</strong> <span class="text-success">Présent</span> <small class="text-muted">${fileInfo}</small></li>`;
         }
-
-        // Statut Plex
         const plex = details.plex_status;
         if (plex && plex.present) {
             let plexText = `<strong>Plex:</strong> <span class="text-info">Présent</span>`;
             if (plex.physical_presence) {
                 let watchStatus = [];
                 if (plex.is_watched) watchStatus.push('Vu Intégralement');
-                else if (plex.watched_episodes && plex.watched_episodes !== '0/0') {
-                    watchStatus.push(`Vus: ${plex.watched_episodes}`);
-                }
+                else if (plex.watched_episodes && plex.watched_episodes !== '0/0') watchStatus.push(`Vus: ${plex.watched_episodes}`);
                 if (plex.seen_via_tag) watchStatus.push('Archivé');
                 if (watchStatus.length > 0) plexText += ` <small class="text-warning">(${watchStatus.join(', ')})</small>`;
             } else {
@@ -541,23 +485,16 @@ $(document).ready(function() {
             }
             content += `<li>${plexText}</li>`;
         }
-
         content += '</ul>';
         return content;
     }
 
-    // Gère le clic sur un bouton de trailer DANS la modale de recherche autonome
     $(document).on('click', '.open-trailer-search-from-standalone', function() {
         const data = $(this).data();
-
-        // On cache la modale de recherche avant d'ouvrir la suivante
         const standaloneModalEl = document.getElementById('standalone-trailer-search-modal');
         const standaloneModalInstance = bootstrap.Modal.getInstance(standaloneModalEl);
-        if (standaloneModalInstance) {
-            standaloneModalInstance.hide();
-        }
+        if (standaloneModalInstance) standaloneModalInstance.hide();
 
-        // On déclenche l'événement global en passant l'ID de la modale source pour pouvoir y revenir
         $(document).trigger('openTrailerSearch', {
             mediaType: data.mediaType,
             externalId: data.externalId,

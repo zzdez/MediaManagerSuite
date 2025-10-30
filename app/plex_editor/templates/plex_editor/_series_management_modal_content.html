@@ -163,7 +163,7 @@
         <input class="form-check-input episode-delete-checkbox" type="checkbox"
                value="{{ episode.sonarr_episodeFileId }}"
                id="delete-ep-{{ episode.sonarr_episodeFileId }}"
-               {% if not episode.isPresentInPlex or not episode.sonarr_episodeFileId %}disabled{% endif %}>
+               {% if not episode.sonarr_episodeFileId %}disabled{% endif %}>
         <label class="form-check-label" for="delete-ep-{{ episode.sonarr_episodeFileId }}">
             <small>E{{ '%02d'|format(episode.episodeNumber) }} - {{ episode.title }}</small>
 
