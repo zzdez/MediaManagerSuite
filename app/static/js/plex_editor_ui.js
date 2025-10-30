@@ -699,44 +699,47 @@ $('#confirmArchiveMovieBtn').on('click', function() {
             });
         });
 
-        // --- NOUVELLE GESTION : RECHERCHE DES ÉPISODES MANQUANTS POUR UNE SAISON ---
-        $(seriesModalElement).on('click', '.search-missing-season-btn', function() {
-            const btn = $(this);
-            const sonarrSeriesId = btn.data('sonarr-id');
-            const seasonNumber = btn.data('season-number');
-
-            btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
-            toastr.info(`Lancement de la recherche pour la saison ${seasonNumber}...`);
-
-            fetch('/plex/api/series/search_missing', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sonarrSeriesId: sonarrSeriesId, seasonNumber: seasonNumber })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    toastr.success(data.message + " Redirection en cours...");
-                    // On attend un court instant pour que l'utilisateur voie le message
-                    setTimeout(() => {
-                        window.location.href = data.redirect_url;
-                    }, 1000);
-                } else {
-                    toastr.warning(data.message);
-                    btn.prop('disabled', false).html('<i class="bi bi-search"></i>');
-                }
-            })
-            .catch(error => {
-                console.error("Erreur recherche épisodes manquants:", error);
-                toastr.error("Une erreur de communication est survenue.");
-                btn.prop('disabled', false).html('<i class="bi bi-search"></i>');
-            });
-        });
-
         // --- GESTION DU CLIC SUR L'ICÔNE VU/NON VU D'UN ÉPISODE ---
         $(seriesModalElement).on('click', '.toggle-episode-watched-btn', function(event) {
             event.preventDefault();
             const link = $(this);
+        });
+
+        // --- NOUVELLE FONCTION : RECHERCHER LES ÉPISODES MANQUANTS ---
+        $(seriesModalElement).on('click', '#find-missing-episodes-btn', function() {
+            const btn = $(this);
+            const ratingKey = btn.data('rating-key');
+            const originalHtml = btn.html();
+
+            // Récupérer les IDs des épisodes cochés (uniquement ceux qui ne sont pas désactivés)
+            const selectedEpisodeIds = $('.episode-checkbox:checked:not(:disabled)').map(function() {
+                return $(this).val();
+            }).get();
+
+            btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Recherche...');
+
+            fetch(`/plex/api/series/${ratingKey}/find_missing`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sonarr_episode_ids: selectedEpisodeIds }) // Envoyer les IDs
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message); // Affiche le message (succès, info ou erreur)
+                if (data.status === 'success') {
+                    // Fermer la modale et rediriger
+                    bootstrap.Modal.getInstance(seriesModalElement).hide();
+                    window.location.href = data.redirect_url;
+                }
+            })
+            .catch(error => {
+                console.error('Erreur:', error);
+                alert('Une erreur de communication est survenue.');
+            })
+            .finally(() => {
+                btn.prop('disabled', false).html(originalHtml);
+            });
+        });
             const ratingKey = link.data('ratingKey');
             const userId = userSelect.val(); // On a besoin de l'utilisateur
 
@@ -1191,20 +1194,17 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
         bootstrap.Modal.getOrCreateInstance(document.getElementById('trailer-modal')).show();
     } else {
         // Cas 2: Pas de bande-annonce Plex, on utilise notre nouveau système de recherche.
-        // On récupère toutes les informations nécessaires directement depuis le bouton.
-        const mediaType = button.data('media-type');
-        const externalId = button.data('external-id');
         const title = button.data('title');
-        const year = button.data('year'); // On récupère aussi l'année
+        const year = button.data('year');
+        const trailerIdKey = button.data('trailer-id-key'); // *** MODIFIÉ ICI ***
 
-        if (mediaType && externalId && title) {
-            // On déclenche l'événement global avec toutes les données.
-            $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
+        if (trailerIdKey && title) {
+            // On déclenche l'événement global avec la clé unifiée.
+            $(document).trigger('openTrailerSearch', { trailerIdKey, title, year });
         } else {
-            alert('Erreur: Informations manquantes pour rechercher la bande-annonce (mediaType, externalId, title).');
+            alert('Erreur: Informations manquantes pour rechercher la bande-annonce (trailerIdKey, title).');
             console.error('Attributs de données manquants sur le bouton de bande-annonce:', {
-                mediaType: mediaType,
-                externalId: externalId,
+                trailerIdKey: trailerIdKey,
                 title: title
             });
         }

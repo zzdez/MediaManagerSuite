@@ -1,6 +1,28 @@
 // Fichier : app/static/js/search_logic.js
 
 $(document).ready(function() {
+    // --- NOUVELLE LOGIQUE : DÉCLENCHEMENT DE RECHERCHE AUTOMATIQUE ---
+    fetch('/search/api/search/get_session_queries')
+        .then(response => response.json())
+        .then(data => {
+            if (data.queries && data.queries.length > 0) {
+                // 1. Activer l'onglet Recherche Libre
+                const freeSearchTab = new bootstrap.Tab($('#torrent-search-tab')[0]);
+                freeSearchTab.show();
+
+                // 2. Remplir le champ de recherche (surtout pour l'info visuelle)
+                $('#search-form input[name="query"]').val(data.queries.join(', '));
+
+                // 3. Lancer la recherche avec le payload complet
+                const payload = {
+                    queries: data.queries,
+                    search_type: 'sonarr' // La recherche d'épisodes manquants est toujours pour Sonarr
+                };
+                executeProwlarrSearch(payload);
+            }
+        })
+        .catch(error => console.error("Erreur lors de la récupération des requêtes de session:", error));
+
     // CONTEXTE GLOBAL POUR LE PRE-MAPPING
     window.currentMediaContext = null;
 
@@ -559,7 +581,6 @@ $(document).ready(function() {
             return response.json();
         })
         .then(data => {
-            // Correction: Utiliser un fallback `{}` pour éviter les erreurs si filter_options est manquant.
             const results = data.results || [];
             const filterOptions = data.filter_options || {};
             prowlarrResultsCache = results;
@@ -587,7 +608,11 @@ $(document).ready(function() {
             `);
             resultsContainer.append(batchActionsContainer);
 
-            const header = $(`<hr><h4 class="mb-3">Résultats pour "${payload.query}" (<span id="results-count">${results.length}</span> / <span>${results.length}</span>)</h4>`);
+            // Gérer l'affichage du titre en fonction du nombre de requêtes
+            const queryTitle = (payload.queries && payload.queries.length > 1)
+                ? `${payload.queries.length} requêtes (épisodes manquants)`
+                : `"${payload.query || (payload.queries && payload.queries[0])}"`;
+            const header = $(`<hr><h4 class="mb-3">Résultats pour ${queryTitle} (<span id="results-count">${results.length}</span> / <span>${results.length}</span>)</h4>`);
             resultsContainer.append(header);
 
             const listGroup = $('<ul class="list-group"></ul>');
@@ -1183,24 +1208,6 @@ $(document).ready(function() {
 
     // Appel initial pour définir le bon état au chargement de la page
     updateFilterVisibility();
-
-    // --- NOUVEAU : GESTION DE LA RECHERCHE AUTOMATIQUE AU CHARGEMENT DE LA PAGE ---
-    // Cette variable `initialQueries` est injectée par le template Flask
-    if (typeof initialQueries !== 'undefined' && initialQueries && initialQueries.length > 0) {
-        // 1. Activer l'onglet "Recherche Libre"
-        const freeSearchTab = new bootstrap.Tab($('#torrent-search-tab')[0]);
-        freeSearchTab.show();
-
-        // 2. Pré-remplir le champ de recherche avec la première requête (pour le contexte visuel)
-        $('#search-form input[name="query"]').val(initialQueries[0]);
-
-        // 3. Lancer la recherche avec toutes les requêtes
-        const payload = {
-            queries: initialQueries,
-            search_type: 'sonarr' // La recherche d'épisodes manquants est toujours pour Sonarr
-        };
-        executeProwlarrSearch(payload);
-    }
 
     // --- GESTION DES BANDES-ANNONCES DEPUIS LA MODALE DE MAPPING (NOUVELLE VERSION) ---
     $('body').on('click', '.find-trailer-from-map-btn', function(e) {

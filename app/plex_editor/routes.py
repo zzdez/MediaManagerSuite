@@ -2345,14 +2345,19 @@ def get_series_details_for_management(rating_key):
                     episodes_list_for_season.append(episode_dict)
 
                 total_series_size += total_season_size
+                # Récupérer les statistiques de la saison Sonarr
+                season_stats = sonarr_season_info.get('statistics', {})
                 seasons_list.append({
                     'title': f"Saison {season_number}" if season_number > 0 else "Specials",
-                    'ratingKey': plex_season.ratingKey if plex_season else f"sonarr-season-{season_number}", 'seasonNumber': season_number,
-                    'total_episodes': sonarr_season_info.get('statistics', {}).get('episodeCount', 0),
-                    'files_episodes': sonarr_season_info.get('statistics', {}).get('episodeFileCount', 0),
+                    'ratingKey': plex_season.ratingKey if plex_season else f"sonarr-season-{season_number}",
+                    'seasonNumber': season_number,
+                    'total_episodes': season_stats.get('episodeCount', 0),
                     'viewed_episodes': plex_season.viewedLeafCount if plex_season else 0,
-                    'is_monitored_season': sonarr_season_info.get('monitored', False), 'total_size_on_disk': total_season_size,
-                    'episodes': episodes_list_for_season
+                    'is_monitored_season': sonarr_season_info.get('monitored', False),
+                    'total_size_on_disk': total_season_size,
+                    'episodes': episodes_list_for_season,
+                    'file_count': season_stats.get('episodeFileCount', 0),
+                    'total_episode_count': season_stats.get('totalEpisodeCount', season_stats.get('episodeCount', 0)) # Fallback pour totalEpisodeCount
                 })
 
             # Vérification du statut du trailer avec le nouveau manager
@@ -2375,13 +2380,11 @@ def get_series_details_for_management(rating_key):
                 'sonarr_series_id': sonarr_series_id_val,
                 'total_size_on_disk': total_series_size,
                 'seasons': seasons_list,
-                'trailer_status': trailer_status  # Ajout du statut complet
+                'trailer_status': trailer_status,
+                'trailer_id_key': f"tv_{tvdb_id}" if tvdb_id else None
             }
             return render_template('plex_editor/_series_management_modal_content.html', series=series_data)
 
-    except BadRequest as e:
-        current_app.logger.error(f"Erreur API (series_details): Erreur de communication avec Plex.tv (BadRequest): {e}", exc_info=True)
-        return ('<div class="alert alert-warning">Erreur de communication avec les serveurs Plex.tv. Le service est peut-être temporairement indisponible. Veuillez réessayer plus tard.</div>', 502)
     except Exception as e:
         current_app.logger.error(f"Erreur API (series_details): {e}", exc_info=True)
         return (f'<div class="alert alert-danger">Erreur serveur: {str(e)}</div>', 500)
@@ -2764,103 +2767,84 @@ def rename_series_files_endpoint():
     else:
         return jsonify({'status': 'error', 'message': 'Échec de l\'envoi de la commande à Sonarr.'}), 500
 
-# --- Nouvelle route pour la recherche d'épisodes manquants ---
-@plex_editor_bp.route('/api/series/search_missing', methods=['POST'])
+@plex_editor_bp.route('/api/series/<int:rating_key>/find_missing', methods=['POST'])
 @login_required
-def search_missing_episodes():
-    data = request.get_json()
-    sonarr_series_id = data.get('sonarrSeriesId')
-    season_number = data.get('seasonNumber') # Peut être un entier
-    episode_ids = data.get('episodeIds')     # Peut être une liste d'entiers
-
-    if not sonarr_series_id:
-        return jsonify({'status': 'error', 'message': 'ID de série Sonarr manquant.'}), 400
-    if not season_number and not episode_ids:
-        return jsonify({'status': 'error', 'message': 'Numéro de saison ou IDs d\'épisodes manquants.'}), 400
-
+def find_missing_episodes(rating_key):
     try:
-        # --- 1. Récupérer les informations sur la série ---
-        series = get_sonarr_series_by_id(sonarr_series_id)
-        if not series:
+        data = request.get_json() or {}
+        selected_episode_ids = data.get('sonarr_episode_ids', [])
+
+        admin_plex_server = get_plex_admin_server()
+        series = admin_plex_server.fetchItem(rating_key)
+
+        tvdb_id = next((g.id.replace('tvdb://', '') for g in series.guids if g.id.startswith('tvdb://')), None)
+        if not tvdb_id:
+            return jsonify({'status': 'error', 'message': 'ID TVDB non trouvé pour cette série.'}), 404
+
+        sonarr_series_info = get_sonarr_series_by_guid(f"tvdb://{tvdb_id}")
+        if not sonarr_series_info:
             return jsonify({'status': 'error', 'message': 'Série non trouvée dans Sonarr.'}), 404
 
-        all_episodes_in_series = get_sonarr_episodes_by_series_id(sonarr_series_id)
-        if not all_episodes_in_series:
-            return jsonify({'status': 'error', 'message': 'Impossible de récupérer les épisodes pour cette série.'}), 500
+        sonarr_series_id = sonarr_series_info.get('id')
+        all_sonarr_episodes = get_sonarr_episodes_by_series_id(sonarr_series_id)
 
-        # --- 2. Identifier les épisodes à rechercher ---
-        episodes_to_search = []
-        now_utc = datetime.now(pytz.utc)
+        target_episodes = []
+        if selected_episode_ids:
+            # Mode 1: L'utilisateur a fourni une liste d'épisodes spécifiques
+            selected_ids_set = set(map(int, selected_episode_ids))
+            target_episodes = [ep for ep in all_sonarr_episodes if ep.get('id') in selected_ids_set]
+            if not target_episodes:
+                return jsonify({'status': 'info', 'message': 'Les épisodes sélectionnés n\'ont pas pu être trouvés dans Sonarr.'})
+        else:
+            # Mode 2: Comportement par défaut - trouver tous les épisodes manquants
+            now_utc = datetime.now(pytz.utc)
+            for episode in all_sonarr_episodes:
+                air_date_str = episode.get('airDateUtc')
+                has_file = episode.get('hasFile', False)
+                is_monitored = episode.get('monitored', False)
 
-        if season_number is not None:
-            # Recherche pour une saison entière
-            episodes_to_search = [
-                ep for ep in all_episodes_in_series
-                if ep.get('seasonNumber') == season_number and not ep.get('hasFile') and ep.get('monitored')
-            ]
-        else: # Recherche pour des épisodes spécifiques (non implémenté car on utilise les checkboxes pour la suppression)
-            # Cette logique est mise de côté pour l'instant car l'UI se concentre sur la recherche par saison.
-            # On pourrait l'activer plus tard si on ajoute un bouton "Rechercher la sélection".
-            pass
+                if not has_file and is_monitored and air_date_str:
+                    try:
+                        air_date = datetime.fromisoformat(air_date_str.replace('Z', '+00:00'))
+                        if air_date < now_utc:
+                            target_episodes.append(episode)
+                    except (ValueError, TypeError):
+                        continue
 
-        # Filtrer les épisodes non encore diffusés
-        episodes_to_search = [
-            ep for ep in episodes_to_search
-            if ep.get('airDateUtc') and datetime.fromisoformat(ep['airDateUtc'].replace('Z', '+00:00')) < now_utc
-        ]
+        if not target_episodes:
+            return jsonify({'status': 'info', 'message': 'Aucun épisode manquant, surveillé et déjà diffusé n\'a été trouvé.'})
 
-        if not episodes_to_search:
-            return jsonify({'status': 'info', 'message': 'Aucun épisode manquant et diffusé trouvé pour cette sélection.'})
+        queries = set()
+        series_title = series.title
+        series_year = series.year
+        original_title = series.originalTitle
 
-        # --- 3. Générer les requêtes de recherche "intelligentes" ---
+        for ep in target_episodes:
+            season_num_int = ep.get('seasonNumber')
+            episode_num_int = ep.get('episodeNumber')
+            if season_num_int is None or episode_num_int is None: continue
 
-        # Récupérer les titres alternatifs pour des recherches plus riches
-        tvdb_client = CustomTVDBClient()
-        tvdb_id = series.get('tvdbId')
-        series_titles = {series.get('title')} # Utiliser un set pour déduplication
-        if tvdb_id:
-            try:
-                # La fonction search_and_translate_series peut aussi nous donner des titres alternatifs
-                tvdb_data = tvdb_client.get_series_details_by_id(tvdb_id, lang='fr')
-                if tvdb_data and tvdb_data.get('name'):
-                    series_titles.add(tvdb_data['name'])
-                if tvdb_data and tvdb_data.get('original_name'):
-                    series_titles.add(tvdb_data['original_name'])
-            except Exception as e:
-                current_app.logger.warning(f"Impossible de récupérer les titres alternatifs depuis TVDB pour la série {series.get('title')}: {e}")
+            season_num = f"S{str(season_num_int).zfill(2)}"
+            episode_num = f"E{str(episode_num_int).zfill(2)}"
 
-        queries = []
-        # Ajouter la recherche pour le pack de saison si applicable
-        if season_number is not None:
-            for title in series_titles:
-                queries.append(f"{title} S{season_number:02d}")
+            queries.add(f"{series_title} {season_num}{episode_num}")
+            if original_title and original_title.lower() != series_title.lower():
+                queries.add(f"{original_title} {season_num}{episode_num}")
+            queries.add(f"{series_title} {series_year} {season_num}{episode_num}")
+            if original_title and original_title.lower() != series_title.lower():
+                queries.add(f"{original_title} {series_year} {season_num}{episode_num}")
 
-        # Ajouter les recherches pour chaque épisode individuel
-        for episode in episodes_to_search:
-            s_num = episode['seasonNumber']
-            ep_num = episode['episodeNumber']
-            for title in series_titles:
-                queries.append(f"{title} S{s_num:02d}E{ep_num:02d}")
-
-        # Dédoublonner la liste finale
-        final_queries = sorted(list(set(queries)))
-
-        # --- 4. Préparer la redirection via la session ---
-        # On stocke les requêtes dans la session pour éviter une URL trop longue et des erreurs.
-        session['search_queries'] = final_queries
-
-        # On renvoie simplement l'URL de la page de recherche. Le JS redirigera.
-        redirect_url = url_for('search_ui.index', _external=False)
+        session['missing_episodes_queries'] = list(queries)
 
         return jsonify({
             'status': 'success',
-            'message': f"{len(final_queries)} requêtes de recherche générées.",
-            'redirect_url': redirect_url
+            'message': f"{len(queries)} requêtes de recherche générées pour {len(target_episodes)} épisode(s) manquant(s).",
+            'redirect_url': url_for('search_ui.search') + '?tab=free-search'
         })
 
     except Exception as e:
-        current_app.logger.error(f"Erreur lors de la génération des recherches d'épisodes manquants: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'message': 'Erreur serveur interne.'}), 500
+        current_app.logger.error(f"Erreur lors de la recherche d'épisodes manquants pour {rating_key}: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': 'Une erreur serveur est survenue.'}), 500
 
 # --- Gestionnaires d'erreur ---
 #@app.errorhandler(404)

@@ -909,16 +909,6 @@ function initializeAddTorrentModal() {
     modalElement.removeAttribute('data-selected-media-type');
     modalElement.removeAttribute('data-selected-media-year');
     modalElement.removeAttribute('data-locked-trailer-id');
-
-    // --- NOUVELLE LOGIQUE POUR LA BANDE-ANNONCE ---
-    const trailerPanel = document.getElementById('trailer-search-panel');
-    if (trailerPanel) {
-        trailerPanel.style.display = 'none';
-        const trailerButton = document.getElementById('add-torrent-open-trailer-search-btn');
-        if (trailerButton) {
-            trailerButton.disabled = true;
-        }
-    }
 }
 
 function handleAddTorrentAppTypeChange() {
@@ -1044,21 +1034,19 @@ function selectArrItemForAddTorrent(itemId, itemTitle, appType, isAddedBoolean, 
             ${!isAddedBoolean ? 'Veuillez choisir les options d\'ajout ci-dessous.' : 'Vous pouvez maintenant chercher une bande-annonce ou lancer l\'ajout.'}</p>`;
     }
 
-    // Affiche et configure le nouveau bouton pour la recherche de bande-annonce globale
-    const trailerPanel = document.getElementById('trailer-search-panel');
-    if (trailerPanel) {
-        trailerPanel.style.display = 'block';
-        const trailerButton = document.getElementById('add-torrent-open-trailer-search-btn');
-        if (trailerButton) {
-            trailerButton.disabled = false;
-            // L'API attend 'tv' ou 'movie'
-            const apiMediaType = appType === 'sonarr' ? 'tv' : 'movie';
-            trailerButton.setAttribute('data-media-type', apiMediaType);
-            trailerButton.setAttribute('data-external-id', itemId);
-            trailerButton.setAttribute('data-title', itemTitle);
-            trailerButton.setAttribute('data-year', itemYear || '');
-        }
+    // --- NOUVELLE LOGIQUE POUR LE BOUTON DE BANDE-ANNONCE GLOBAL ---
+    const trailerSection = document.getElementById('add-torrent-trailer-section');
+    const trailerButton = document.getElementById('add-torrent-trailer-btn');
+
+    if (trailerSection && trailerButton) {
+        trailerSection.style.display = 'block';
+        const trailerIdKey = `${appType === 'sonarr' ? 'tv' : 'movie'}_${itemId}`;
+        trailerButton.setAttribute('data-trailer-id-key', trailerIdKey);
+        trailerButton.setAttribute('data-title', itemTitle);
+        trailerButton.setAttribute('data-year', itemYear);
+        trailerButton.disabled = false;
     }
+    // --- FIN DE LA NOUVELLE LOGIQUE ---
 
     const sonarrOptionsDiv = document.getElementById('addTorrentSonarrNewSeriesOptions');
     const radarrOptionsDiv = document.getElementById('addTorrentRadarrNewMovieOptions');
@@ -1586,7 +1574,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 // [end of app/static/js/seedbox_ui_modals.js]
-
 // --- NOUVELLE LOGIQUE POUR LES ACTIONS MANUELLES DE LA VUE RTORRENT ---
 // ==============================================================================
 
@@ -1644,32 +1631,4 @@ $(document).on('click', '.mark-processed-btn', function() {
         alert("Une erreur technique est survenue.");
         button.prop('disabled', false).html('<i class="bi bi-check-circle"></i> Traité');
     });
-});
-
-// --- NOUVELLE LOGIQUE POUR INTÉGRER LA RECHERCHE DE BANDE-ANNONCE GLOBALE ---
-$(document).on('click', '#add-torrent-open-trailer-search-btn', function() {
-    const button = $(this);
-    const mediaType = button.data('media-type'); // 'tv' or 'movie'
-    const externalId = button.data('external-id');
-    const title = button.data('title');
-    const year = button.data('year');
-
-    if (mediaType && externalId && title) {
-        // On cache la modale actuelle avant d'ouvrir la nouvelle
-        const addTorrentModal = bootstrap.Modal.getInstance(document.getElementById('addTorrentModal'));
-        if (addTorrentModal) {
-            addTorrentModal.hide();
-        }
-
-        // On déclenche l'événement global
-        $(document).trigger('openTrailerSearch', {
-            mediaType: mediaType,
-            externalId: externalId,
-            title: title,
-            year: year,
-            sourceModalId: 'addTorrentModal' // Pour pouvoir y revenir
-        });
-    } else {
-        alert('Erreur: Les informations du média (type, id, titre) sont manquantes.');
-    }
 });

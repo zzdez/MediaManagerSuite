@@ -23,14 +23,20 @@ search_ui_bp = Blueprint(
 
 # 2. Toutes les routes. Les imports "à risque" sont maintenant DANS les fonctions.
 
+@search_ui_bp.route('/api/search/get_session_queries', methods=['GET'])
+@login_required
+def get_session_queries():
+    """Récupère et supprime les requêtes de recherche stockées dans la session."""
+    queries = session.pop('missing_episodes_queries', None)
+    if queries:
+        return jsonify({'queries': queries})
+    return jsonify({'queries': []})
+
 @search_ui_bp.route('/', methods=['GET'])
 @login_required
 def search_page():
     """Affiche la page de recherche principale."""
-    # Récupérer les requêtes depuis la session, s'il y en a.
-    # .pop() lit la valeur et la supprime en même temps pour éviter une réutilisation.
-    initial_queries = session.pop('search_queries', None)
-    return render_template('search_ui/search.html', initial_queries=initial_queries)
+    return render_template('search_ui/search.html')
 
 # --- API Routes ---
 
