@@ -703,6 +703,39 @@ $('#confirmArchiveMovieBtn').on('click', function() {
         $(seriesModalElement).on('click', '.toggle-episode-watched-btn', function(event) {
             event.preventDefault();
             const link = $(this);
+            const ratingKey = link.data('ratingKey');
+            const userId = userSelect.val(); // On a besoin de l'utilisateur
+
+            // Feedback visuel
+            link.html('<span class="spinner-border spinner-border-sm"></span>');
+
+            fetch('/plex/toggle_watched_status', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ratingKey: ratingKey, userId: userId })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    // On remplace juste l'icône, sans recharger toute la modale
+                    const isNowWatched = data.new_status === 'Vu';
+                    const newIcon = isNowWatched
+                        ? '<i class="bi bi-check-circle-fill text-success"></i>'
+                        : '<i class="bi bi-circle"></i>';
+                    link.html(newIcon);
+
+                    // On met aussi à jour le style de la ligne
+                    const listItem = link.closest('li');
+                    if (isNowWatched) {
+                        listItem.removeClass('list-group-item-secondary').addClass('list-group-item-light text-muted');
+                    } else {
+                        listItem.removeClass('list-group-item-light text-muted').addClass('list-group-item-secondary');
+                    }
+                } else {
+                    alert('Erreur: ' + data.message);
+                }
+            })
+            .catch(error => { console.error(error); alert("Erreur de communication."); });
         });
 
         // --- NOUVELLE FONCTION : RECHERCHER LES ÉPISODES MANQUANTS ---
@@ -739,40 +772,6 @@ $('#confirmArchiveMovieBtn').on('click', function() {
             .finally(() => {
                 btn.prop('disabled', false).html(originalHtml);
             });
-        });
-            const ratingKey = link.data('ratingKey');
-            const userId = userSelect.val(); // On a besoin de l'utilisateur
-
-            // Feedback visuel
-            link.html('<span class="spinner-border spinner-border-sm"></span>');
-
-            fetch('/plex/toggle_watched_status', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ratingKey: ratingKey, userId: userId })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    // On remplace juste l'icône, sans recharger toute la modale
-                    const isNowWatched = data.new_status === 'Vu';
-                    const newIcon = isNowWatched
-                        ? '<i class="bi bi-check-circle-fill text-success"></i>'
-                        : '<i class="bi bi-circle"></i>';
-                    link.html(newIcon);
-
-                    // On met aussi à jour le style de la ligne
-                    const listItem = link.closest('li');
-                    if (isNowWatched) {
-                        listItem.removeClass('list-group-item-secondary').addClass('list-group-item-light text-muted');
-                    } else {
-                        listItem.removeClass('list-group-item-light text-muted').addClass('list-group-item-secondary');
-                    }
-                } else {
-                    alert('Erreur: ' + data.message);
-                }
-            })
-            .catch(error => { console.error(error); alert("Erreur de communication."); });
         });
     }
     // =================================================================
