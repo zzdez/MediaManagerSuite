@@ -123,9 +123,15 @@ def prowlarr_search():
 
     # 2. On envoie les requêtes à Prowlarr en parallèle pour améliorer les performances
     all_raw_results = []
+    app = current_app._get_current_object() # Nécessaire pour passer le contexte aux threads
+
+    def search_prowlarr_with_context(query, categories):
+        with app.app_context():
+            return search_prowlarr(query=query, categories=categories)
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        # Crée un future pour chaque requête de recherche
-        future_to_query = {executor.submit(search_prowlarr, query=q, categories=category_ids): q for q in queries}
+        # Crée un future pour chaque requête de recherche, en utilisant le wrapper de contexte
+        future_to_query = {executor.submit(search_prowlarr_with_context, q, category_ids): q for q in queries}
 
         for future in concurrent.futures.as_completed(future_to_query):
             query_origin = future_to_query[future]
