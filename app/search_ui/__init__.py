@@ -1,7 +1,6 @@
 # app/search_ui/__init__.py
 
 import logging
-import concurrent.futures
 from flask import Blueprint, render_template, request, flash, jsonify, Response, stream_with_context, current_app, url_for, session
 from app.auth import login_required
 from config import Config
@@ -121,31 +120,15 @@ def prowlarr_search():
     search_config = load_search_categories()
     category_ids = search_config.get(f"{search_type}_categories", [])
 
-    # 2. On envoie les requêtes à Prowlarr en parallèle pour améliorer les performances
+    # 2. On envoie la requête de base à Prowlarr
     all_raw_results = []
-    app = current_app._get_current_object() # Nécessaire pour passer le contexte aux threads
-
-    def search_prowlarr_with_context(query, categories):
-        with app.app_context():
-            return search_prowlarr(query=query, categories=categories)
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        # Crée un future pour chaque requête de recherche, en utilisant le wrapper de contexte
-        future_to_query = {executor.submit(search_prowlarr_with_context, q, category_ids): q for q in queries}
-
-        for future in concurrent.futures.as_completed(future_to_query):
-            query_origin = future_to_query[future]
-            try:
-                raw_results = future.result()
-                if raw_results:
-                    all_raw_results.extend(raw_results)
-            except Exception as exc:
-                current_app.logger.error(f"La recherche Prowlarr pour la requête '{query_origin}' a généré une exception: {exc}", exc_info=True)
+    for query in queries:
+        raw_results = search_prowlarr(query=query, categories=category_ids)
+        if raw_results:
+            all_raw_results.extend(raw_results)
 
     if not all_raw_results:
-        # S'il n'y a aucun résultat après toutes les recherches, on renvoie une liste vide au lieu d'une erreur 500.
-        # Le frontend est capable de gérer une liste de résultats vide.
-        return jsonify(results=[], filter_options=load_filter_options())
+        return jsonify({"error": "Erreur de communication avec Prowlarr ou aucun résultat."}), 500
 
     # Dédoublonnage des résultats basé sur le GUID
     unique_results = []

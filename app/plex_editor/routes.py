@@ -2814,31 +2814,30 @@ def find_missing_episodes(rating_key):
         if not target_episodes:
             return jsonify({'status': 'info', 'message': 'Aucun épisode manquant, surveillé et déjà diffusé n\'a été trouvé.'})
 
+        # Nouvelle logique : générer des requêtes par SAISON
+        seasons_to_search = {ep.get('seasonNumber') for ep in target_episodes if ep.get('seasonNumber') is not None}
+
         queries = set()
         series_title = series.title
         series_year = series.year
         original_title = series.originalTitle
 
-        for ep in target_episodes:
-            season_num_int = ep.get('seasonNumber')
-            episode_num_int = ep.get('episodeNumber')
-            if season_num_int is None or episode_num_int is None: continue
+        for season_num_int in seasons_to_search:
+            season_str = f"S{str(season_num_int).zfill(2)}"
 
-            season_num = f"S{str(season_num_int).zfill(2)}"
-            episode_num = f"E{str(episode_num_int).zfill(2)}"
-
-            queries.add(f"{series_title} {season_num}{episode_num}")
+            # Générer les variations de requêtes pour la saison entière
+            queries.add(f"{series_title} {season_str}")
             if original_title and original_title.lower() != series_title.lower():
-                queries.add(f"{original_title} {season_num}{episode_num}")
-            queries.add(f"{series_title} {series_year} {season_num}{episode_num}")
+                queries.add(f"{original_title} {season_str}")
+            queries.add(f"{series_title} {series_year} {season_str}")
             if original_title and original_title.lower() != series_title.lower():
-                queries.add(f"{original_title} {series_year} {season_num}{episode_num}")
+                queries.add(f"{original_title} {series_year} {season_str}")
 
         session['missing_episodes_queries'] = list(queries)
 
         return jsonify({
             'status': 'success',
-            'message': f"{len(queries)} requêtes de recherche générées pour {len(target_episodes)} épisode(s) manquant(s).",
+            'message': f"{len(queries)} requêtes de recherche générées pour {len(seasons_to_search)} saison(s) contenant des épisodes manquants.",
             'redirect_url': url_for('search_ui.search_page') + '?tab=free-search'
         })
 
