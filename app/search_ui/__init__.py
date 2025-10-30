@@ -1,7 +1,7 @@
 # app/search_ui/__init__.py
 
 import logging
-from flask import Blueprint, render_template, request, flash, jsonify, Response, stream_with_context, current_app, url_for
+from flask import Blueprint, render_template, request, flash, jsonify, Response, stream_with_context, current_app, url_for, session
 from app.auth import login_required
 from config import Config
 from app.utils import arr_client
