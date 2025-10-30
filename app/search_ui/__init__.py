@@ -27,7 +27,10 @@ search_ui_bp = Blueprint(
 @login_required
 def search_page():
     """Affiche la page de recherche principale."""
-    return render_template('search_ui/search.html')
+    # Récupérer les requêtes depuis la session, s'il y en a.
+    # .pop() lit la valeur et la supprime en même temps pour éviter une réutilisation.
+    initial_queries = session.pop('search_queries', None)
+    return render_template('search_ui/search.html', initial_queries=initial_queries)
 
 # --- API Routes ---
 

@@ -1184,6 +1184,24 @@ $(document).ready(function() {
     // Appel initial pour définir le bon état au chargement de la page
     updateFilterVisibility();
 
+    // --- NOUVEAU : GESTION DE LA RECHERCHE AUTOMATIQUE AU CHARGEMENT DE LA PAGE ---
+    // Cette variable `initialQueries` est injectée par le template Flask
+    if (typeof initialQueries !== 'undefined' && initialQueries && initialQueries.length > 0) {
+        // 1. Activer l'onglet "Recherche Libre"
+        const freeSearchTab = new bootstrap.Tab($('#torrent-search-tab')[0]);
+        freeSearchTab.show();
+
+        // 2. Pré-remplir le champ de recherche avec la première requête (pour le contexte visuel)
+        $('#search-form input[name="query"]').val(initialQueries[0]);
+
+        // 3. Lancer la recherche avec toutes les requêtes
+        const payload = {
+            queries: initialQueries,
+            search_type: 'sonarr' // La recherche d'épisodes manquants est toujours pour Sonarr
+        };
+        executeProwlarrSearch(payload);
+    }
+
     // --- GESTION DES BANDES-ANNONCES DEPUIS LA MODALE DE MAPPING (NOUVELLE VERSION) ---
     $('body').on('click', '.find-trailer-from-map-btn', function(e) {
         e.stopPropagation(); // Empêche d'autres clics de se déclencher

@@ -909,7 +909,10 @@ def get_media_items():
 
                 # Récupération du statut détaillé du trailer
                 item.trailer_status = 'NONE' # Default
+                item.trailer_id_key = None # Initialiser l'attribut
                 if item.external_id:
+                    # Construire la clé complète que le manager et le JS attendent
+                    item.trailer_id_key = f"{item.media_type_for_trailer}_{item.external_id}"
                     item.trailer_status = trailer_manager.get_trailer_status(
                         media_type=item.media_type_for_trailer,
                         external_id=item.external_id
@@ -2842,10 +2845,12 @@ def search_missing_episodes():
         # Dédoublonner la liste finale
         final_queries = sorted(list(set(queries)))
 
-        # --- 4. Préparer la redirection ---
-        # On utilise url_for pour construire l'URL proprement
-        # Le JavaScript côté client s'attend à recevoir une liste de queries
-        redirect_url = url_for('search_ui.index', queries=final_queries, _external=False)
+        # --- 4. Préparer la redirection via la session ---
+        # On stocke les requêtes dans la session pour éviter une URL trop longue et des erreurs.
+        session['search_queries'] = final_queries
+
+        # On renvoie simplement l'URL de la page de recherche. Le JS redirigera.
+        redirect_url = url_for('search_ui.index', _external=False)
 
         return jsonify({
             'status': 'success',
