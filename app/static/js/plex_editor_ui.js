@@ -738,29 +738,23 @@ $('#confirmArchiveMovieBtn').on('click', function() {
             .catch(error => { console.error(error); alert("Erreur de communication."); });
         });
 
-        // --- NOUVELLE FONCTION : RECHERCHER LES ÉPISODES MANQUANTS ---
-        $(seriesModalElement).on('click', '#find-missing-episodes-btn', function() {
-            const btn = $(this);
-            const ratingKey = btn.data('rating-key');
-            const originalHtml = btn.html();
+        // --- FONCTIONNALITÉ DE RECHERCHE D'ÉPISODES MANQUANTS ---
 
-            // Récupérer les IDs des épisodes cochés (uniquement ceux qui ne sont pas désactivés)
-            const selectedEpisodeIds = $('.episode-checkbox:checked:not(:disabled)').map(function() {
-                return $(this).val();
-            }).get();
-
-            btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Recherche...');
+        // Fonction helper pour éviter la duplication
+        function triggerMissingEpisodeSearch(button, episodeIds) {
+            const ratingKey = button.data('rating-key');
+            const originalHtml = button.html();
+            button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
 
             fetch(`/plex/api/series/${ratingKey}/find_missing`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sonarr_episode_ids: selectedEpisodeIds }) // Envoyer les IDs
+                body: JSON.stringify({ sonarr_episode_ids: episodeIds })
             })
             .then(response => response.json())
             .then(data => {
-                alert(data.message); // Affiche le message (succès, info ou erreur)
+                alert(data.message);
                 if (data.status === 'success') {
-                    // Fermer la modale et rediriger
                     bootstrap.Modal.getInstance(seriesModalElement).hide();
                     window.location.href = data.redirect_url;
                 }
@@ -770,8 +764,27 @@ $('#confirmArchiveMovieBtn').on('click', function() {
                 alert('Une erreur de communication est survenue.');
             })
             .finally(() => {
-                btn.prop('disabled', false).html(originalHtml);
+                button.prop('disabled', false).html(originalHtml);
             });
+        }
+
+        // Handler pour le bouton GLOBAL
+        $(seriesModalElement).on('click', '#find-missing-episodes-btn', function() {
+            const selectedEpisodeIds = $('.episode-checkbox:checked:not(:disabled)').map(function() {
+                return $(this).val();
+            }).get();
+            triggerMissingEpisodeSearch($(this), selectedEpisodeIds);
+        });
+
+        // Handler pour les boutons PAR SAISON
+        $(seriesModalElement).on('click', '.find-missing-episodes-by-season-btn', function() {
+            const seasonContainerSelector = $(this).data('season-container');
+            const seasonContainer = $(seasonContainerSelector);
+            const episodeIdsForSeason = seasonContainer.find('.episode-checkbox:not(:disabled)').map(function() {
+                return $(this).val();
+            }).get();
+
+            triggerMissingEpisodeSearch($(this), episodeIdsForSeason);
         });
     }
     // =================================================================

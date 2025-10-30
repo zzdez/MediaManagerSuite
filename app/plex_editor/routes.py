@@ -2839,7 +2839,7 @@ def find_missing_episodes(rating_key):
         return jsonify({
             'status': 'success',
             'message': f"{len(queries)} requêtes de recherche générées pour {len(target_episodes)} épisode(s) manquant(s).",
-            'redirect_url': url_for('search_ui.search') + '?tab=free-search'
+            'redirect_url': url_for('search_ui.search_page') + '?tab=free-search'
         })
 
     except Exception as e:
