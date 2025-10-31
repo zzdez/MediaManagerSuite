@@ -1,446 +1,273 @@
 // Fichier : app/static/js/global_trailer_search.js
-// Nouvelle version simplifiée utilisant le TrailerManager et les API unifiées.
-
-/**
- * Affiche les résultats de la recherche de bande-annonce dans le conteneur.
- * @param {Array} results - La liste des vidéos YouTube à afficher.
- *param {Object} options - Options d'affichage.
- * @param {string|null} options.lockedVideoId - L'ID de la vidéo actuellement verrouillée.
- */
-function renderTrailerResults(results, options = {}) {
-    const { lockedVideoData = null } = options;
-    const resultsContainer = $('#trailer-results-container');
-    const lockedVideoId = lockedVideoData ? lockedVideoData.videoId : null;
-
-    if (!results || results.length === 0) {
-        resultsContainer.html('<p class="text-center text-muted">Aucun résultat trouvé.</p>');
-        return;
-    }
-
-    results.forEach(result => {
-        const isLocked = result.videoId === lockedVideoId;
-        const btnClass = isLocked ? 'btn-danger' : 'btn-outline-secondary';
-        const btnTitle = isLocked ? 'Déverrouiller cette bande-annonce' : 'Verrouiller cette bande-annonce';
-        const iconClass = isLocked ? 'bi-lock-fill' : 'bi-unlock-fill'; // Correct: lock-fill for locked state
-
-        const resultHtml = `
-            <div class="trailer-result-item d-flex align-items-center justify-content-between mb-2 p-2 rounded" style="background-color: #343a40;">
-                <div class="play-trailer-area d-flex align-items-center" style="cursor: pointer; flex-grow: 1;"
-                     data-video-id="${result.videoId}" data-video-title="${result.title}">
-                    <img src="${result.thumbnail}" width="120" class="me-3 rounded">
-                    <div>
-                        <p class="mb-0 text-white font-weight-bold">${result.title}</p>
-                        <small class="text-muted">${result.channel}</small>
-                    </div>
-                </div>
-                <button class="btn btn-sm ${btnClass} lock-trailer-btn" title="${btnTitle}"
-                        data-video-id="${result.videoId}"
-                        data-is-locked="${isLocked}"
-                        data-video-title="${result.title}"
-                        data-video-thumbnail="${result.thumbnail}"
-                        data-video-channel="${result.channel}">
-                    <i class="bi ${iconClass}"></i>
-                </button>
-            </div>
-        `;
-        resultsContainer.append(resultHtml);
-    });
-}
-
-/**
- * Fonction centrale pour récupérer et afficher les bandes-annonces.
- * @param {string} mediaType - 'tmdb' ou 'tvdb'.
- * @param {string} externalId - L'ID du média.
- * @param {string} title - Le titre du média.
- * @param {string|null} year - L'année du média.
- * @param {string|null} pageToken - Le token pour la pagination.
- */
-function fetchAndRenderTrailers(mediaType, externalId, title, year = null, pageToken = null) {
-    const resultsContainer = $('#trailer-results-container');
-    const loadMoreContainer = $('#trailer-load-more-container');
-    const loadMoreBtn = $('#load-more-trailers-btn');
-    const selectionModal = $('#trailer-selection-modal');
-
-    // Stocke le contexte pour les actions futures (verrouillage, pagination)
-    selectionModal.data({ mediaType, externalId, title, year });
-
-    // Affiche un spinner seulement pour la première charge
-    if (!pageToken) {
-        resultsContainer.html('<div class="text-center"><div class="spinner-border"></div></div>');
-    }
-    loadMoreContainer.hide();
-
-    let apiUrl = `/api/agent/get_trailer_info?media_type=${mediaType}&external_id=${externalId}&title=${encodeURIComponent(title)}`;
-    if (year) {
-        apiUrl += `&year=${year}`;
-    }
-    if (pageToken) {
-        apiUrl += `&page_token=${pageToken}`;
-    }
-
-    fetch(apiUrl)
-        .then(response => response.json())
-        .then(data => {
-            // Efface le contenu seulement pour la première page
-            if (!pageToken) {
-                resultsContainer.empty();
-            }
-
-            if (data.status === 'locked') {
-                // Si c'est verrouillé, on affiche juste les données de la vidéo verrouillée
-                renderTrailerResults([data.locked_video_data], { lockedVideoData: data.locked_video_data });
-            } else if (data.status === 'success' && data.results) {
-                renderTrailerResults(data.results, { lockedVideoData: null });
-                if (data.next_page_token) {
-                    loadMoreBtn.data('page-token', data.next_page_token);
-                    loadMoreContainer.show();
-                }
-            } else {
-                resultsContainer.html(`<p class="text-danger text-center">${data.message || 'Une erreur est survenue.'}</p>`);
-            }
-        })
-        .catch(error => {
-            console.error('Erreur lors de la récupération des bandes-annonces:', error);
-            resultsContainer.html('<p class="text-danger text-center">Une erreur de communication est survenue.</p>');
-        })
-        .finally(() => {
-            loadMoreBtn.prop('disabled', false).html('Afficher plus');
-        });
-}
 
 $(document).ready(function() {
-    // --- GESTIONNAIRES D'ÉVÉNEMENTS GLOBAUX ---
+    const trailerSearchModal = new bootstrap.Modal(document.getElementById('trailer-search-modal'));
+    let currentMediaType = null;
+    let currentExternalId = null;
+    let currentTitle = null;
+    let currentYear = null;
+    let nextPageToken = null;
 
-    // Gère le clic sur "Afficher plus"
-    $(document).on('click', '#load-more-trailers-btn', function() {
-        const button = $(this);
-        const selectionModal = $('#trailer-selection-modal');
-        const { mediaType, externalId } = selectionModal.data();
-        const pageToken = button.data('page-token');
+    // --- FONCTIONS UTILITAIRES ---
+    function renderTrailerResults(results, append = false) {
+        const container = $('#trailer-results-container');
+        if (!append) container.empty();
 
-        if (!mediaType || !externalId || !pageToken) return;
-
-        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
-        fetchAndRenderTrailers(mediaType, externalId, pageToken);
-    });
-
-    // Gère le clic sur le bouton de verrouillage/déverrouillage
-    $(document).on('click', '.lock-trailer-btn', function(e) {
-        e.stopPropagation();
-
-        const button = $(this);
-        const isLocked = button.data('is-locked') === true;
-        const selectionModal = $('#trailer-selection-modal');
-        const { mediaType, externalId, title, year } = selectionModal.data();
-
-        if (!mediaType || !externalId) return;
-
-        const videoData = {
-            videoId: button.data('video-id'),
-            title: button.data('video-title'),
-            thumbnail: button.data('video-thumbnail'),
-            channel: button.data('video-channel')
-        };
-
-        if (!videoData.videoId) return;
-
-        const endpoint = isLocked ? '/api/agent/unlock_trailer' : '/api/agent/lock_trailer';
-        const payload = {
-            media_type: mediaType,
-            external_id: externalId,
-            video_data: videoData // On envoie l'objet complet
-        };
-
-        // Pour le déverrouillage, seul media_type et external_id sont nécessaires
-        if (isLocked) {
-            delete payload.video_data;
+        if (results.length === 0 && !append) {
+            container.html('<p class="text-center text-muted">Aucun résultat trouvé.</p>');
+            return;
         }
 
-        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+        results.forEach(item => {
+            const resultHtml = `
+                <div class="trailer-result-item d-flex align-items-center justify-content-between mb-2 p-2 rounded" style="background-color: #343a40;">
+                    <div class="d-flex align-items-center" style="cursor: pointer;" onclick="playTrailer('${item.video_id}', '${item.title.replace(/'/g, "\\'")}')">
+                        <img src="${item.thumbnail}" width="120" class="me-3 rounded">
+                        <div>
+                            <p class="mb-0 text-white font-weight-bold">${item.title}</p>
+                            <small class="text-muted">${item.channel}</small>
+                        </div>
+                    </div>
+                    <button class="btn btn-sm btn-outline-success lock-trailer-btn" title="Verrouiller cette bande-annonce"
+                            data-video-id="${item.video_id}"
+                            data-video-title="${item.title}"
+                            data-video-thumbnail="${item.thumbnail}"
+                            data-video-channel="${item.channel}">
+                        <i class="bi bi-lock-fill"></i>
+                    </button>
+                </div>`;
+            container.append(resultHtml);
+        });
+    }
 
-        fetch(endpoint, {
+    function showSpinner(inContainer = false) {
+        const spinner = '<div class="text-center my-3"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></div>';
+        if (inContainer) $('#trailer-results-container').html(spinner);
+        else $('#trailer-results-container').append(spinner);
+    }
+
+    // --- LOGIQUE DE RECHERCHE ---
+    function searchTrailers(query, forceRefresh = false, token = null) {
+        if (!currentMediaType || !currentExternalId) return;
+
+        showSpinner(!token);
+        $('#load-more-trailers-btn').hide();
+
+        let url = `/api/agent/get_trailer_info/${currentMediaType}/${currentExternalId}?force_refresh=${forceRefresh}`;
+        if (query) url += `&query=${encodeURIComponent(query)}`;
+        if (token) url += `&page_token=${token}`;
+
+        fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                if (!token) $('#trailer-results-container').empty();
+                else $('#trailer-results-container .spinner-border').parent().remove();
+
+                if (data.status === 'locked' && data.locked_video_data) {
+                     $('#trailer-results-container').html('<p class="text-center text-success">Une bande-annonce est déjà verrouillée pour ce média.</p>');
+                } else if (data.search_results) {
+                    renderTrailerResults(data.search_results, !!token);
+                    nextPageToken = data.next_page_token;
+                    if (nextPageToken) $('#load-more-trailers-btn').show();
+                } else {
+                     $('#trailer-results-container').html(`<p class="text-center text-warning">${data.message || 'Aucun résultat ou erreur.'}</p>`);
+                }
+            })
+            .catch(error => {
+                console.error('Erreur de recherche de bande-annonce:', error);
+                $('#trailer-results-container').html('<p class="text-center text-danger">Erreur de communication.</p>');
+            });
+    }
+
+    // --- ÉVÉNEMENTS GLOBAUX ---
+    $(document).on('openTrailerSearch', function(event, data) {
+        currentMediaType = data.mediaType;
+        currentExternalId = data.externalId;
+        currentTitle = data.title;
+        currentYear = data.year;
+
+        $('#trailerSearchModalLabel').text(`Bande-annonce pour : ${currentTitle}`);
+        $('#trailer-search-input').val('');
+        $('#manual-trailer-preview').hide();
+        $('#manual-trailer-url').val('');
+
+        searchTrailers(`${currentTitle} ${currentYear || ''} trailer`);
+        trailerSearchModal.show();
+    });
+
+    // --- ÉVÉNEMENTS DE LA MODALE ---
+    $('#trailer-search-button').on('click', function() {
+        const query = $('#trailer-search-input').val().trim();
+        if (query) searchTrailers(query, true);
+    });
+
+    $('#load-more-trailers-btn').on('click', function() {
+        const query = $('#trailer-search-input').val().trim();
+        if (nextPageToken) searchTrailers(query || `${currentTitle} ${currentYear || ''} trailer`, false, nextPageToken);
+    });
+
+    $('#clear-trailer-cache-btn').on('click', function() {
+        if (!confirm("Êtes-vous sûr de vouloir effacer les résultats de recherche pour ce média ?")) return;
+
+        fetch(`/api/agent/clear_trailer_cache/${currentMediaType}/${currentExternalId}`, { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'Cache cleared') {
+                    toastr.success('Résultats effacés. Une nouvelle recherche sera effectuée.');
+                    $('#trailer-results-container').empty();
+                    searchTrailers(`${currentTitle} ${currentYear || ''} trailer`, true);
+                } else {
+                    toastr.error(data.message || 'Erreur lors du nettoyage du cache.');
+                }
+            });
+    });
+
+    // Verrouiller une bande-annonce (depuis les résultats)
+    $('#trailer-results-container').on('click', '.lock-trailer-btn', function() {
+        const videoData = {
+            videoId: $(this).data('video-id'),
+            title: $(this).data('video-title'),
+            thumbnail: $(this).data('video-thumbnail'),
+            channel: $(this).data('video-channel')
+        };
+        lockTrailer(videoData);
+    });
+
+    // Logique d'ajout manuel
+    $('#add-manual-trailer-btn').on('click', function() {
+        const url = $('#manual-trailer-url').val().trim();
+        if (!url) return;
+
+        fetch(`/api/agent/get_youtube_video_details?url=${encodeURIComponent(url)}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    $('#manual-trailer-preview').html(`<p class="text-danger">${data.error}</p>`).show();
+                } else {
+                    const previewHtml = `
+                        <div class="d-flex align-items-center">
+                            <img src="${data.thumbnail}" width="80" class="me-2 rounded">
+                            <p class="mb-0 flex-grow-1">${data.title}</p>
+                            <button class="btn btn-sm btn-success" id="lock-manual-trailer-btn" data-video-id="${data.videoId}" data-video-title="${data.title}" data-video-thumbnail="${data.thumbnail}" data-video-channel="${data.channel}">
+                                <i class="bi bi-lock-fill"></i> Verrouiller
+                            </button>
+                        </div>`;
+                    $('#manual-trailer-preview').html(previewHtml).show();
+                }
+            });
+    });
+
+    // Verrouiller une bande-annonce (depuis l'aperçu manuel)
+    $('#manual-trailer-preview').on('click', '#lock-manual-trailer-btn', function() {
+        const videoData = {
+            videoId: $(this).data('video-id'),
+            title: $(this).data('video-title'),
+            thumbnail: $(this).data('video-thumbnail'),
+            channel: $(this).data('video-channel')
+        };
+        lockTrailer(videoData);
+    });
+
+    function lockTrailer(videoData) {
+        fetch(`/api/agent/lock_trailer/${currentMediaType}/${currentExternalId}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify({ video_data: videoData })
         })
         .then(response => response.json())
         .then(data => {
-            if (data.status === 'success') {
-                // Rafraîchit toute la modale pour obtenir le nouvel état du backend
-                fetchAndRenderTrailers(mediaType, externalId, title, year);
+            if (data.status === 'Trailer locked') {
+                toastr.success('Bande-annonce verrouillée !');
+                trailerSearchModal.hide();
+                // Optionnel : rafraîchir l'icône du bouton qui a ouvert la modale
+                 $(`.trailer-btn[data-trailer-id-key='${currentMediaType}_${currentExternalId}']`)
+                    .removeClass('btn-danger btn-info')
+                    .addClass('btn-success');
             } else {
-                alert('Erreur: ' + (data.message || 'Une erreur inconnue est survenue.'));
-                button.prop('disabled', false).html(`<i class="bi ${isLocked ? 'bi-unlock-fill' : 'bi-lock-fill'}"></i>`);
+                toastr.error(data.message || 'Erreur lors du verrouillage.');
             }
-        })
-        .catch(error => {
-            console.error('Erreur technique lors du (dé)verrouillage:', error);
-            alert('Une erreur technique est survenue.');
-            button.prop('disabled', false).html(`<i class="bi ${isLocked ? 'bi-unlock-fill' : 'bi-lock-fill'}"></i>`);
         });
-    });
+    }
 
-    // Gère le clic pour jouer une vidéo
-    $(document).on('click', '.play-trailer-area', function() {
-        const videoId = $(this).data('video-id');
-        const videoTitle = $(this).data('video-title');
-        const selectionModal = $('#trailer-selection-modal');
-        const playerModal = $('#trailer-modal');
-
-        if (!videoId) return;
-
-        bootstrap.Modal.getInstance(selectionModal[0]).hide();
-        playerModal.data('source-modal', 'trailer-selection-modal');
-
-        $('#trailerModalLabel').text('Bande-Annonce: ' + videoTitle);
-        playerModal.find('.modal-body').html(`<div class="ratio ratio-16x9"><iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1&cc_lang=fr&cc_load_policy=1" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe></div>`);
-        bootstrap.Modal.getOrCreateInstance(playerModal[0]).show();
-    });
-
-    // Gère la fermeture du lecteur vidéo
-    $('#trailer-modal').on('hidden.bs.modal', function () {
-        const playerModal = $(this);
-        playerModal.find('.modal-body').empty();
-        const sourceModalId = playerModal.data('source-modal');
-        if (sourceModalId) {
-            const sourceModal = bootstrap.Modal.getInstance(document.getElementById(sourceModalId));
-            if (sourceModal) {
-                sourceModal.show();
-            }
-            playerModal.removeData('source-modal');
-        }
-    });
-
-    // Déclencheur global pour ouvrir la modale de recherche de BA
-    $(document).on('openTrailerSearch', function(event, { mediaType, externalId, title, year, sourceModalId }) {
-        const selectionModal = $('#trailer-selection-modal');
-        const modalInstance = bootstrap.Modal.getOrCreateInstance(selectionModal[0]);
-
-        // Stocke l'ID de la modale source pour y revenir plus tard
-        if (sourceModalId) {
-            selectionModal.data('source-modal-id', sourceModalId);
-        }
-
-        // Nettoyage de l'état précédent
-        $('#trailer-results-container').empty();
-        $('#trailer-load-more-container').hide();
-        $('#trailer-selection-modal-label').text(`Bande-annonce pour : ${title}`);
-
-        // Lance la recherche
-        fetchAndRenderTrailers(mediaType, externalId, title, year);
-
-        modalInstance.show();
-    });
-
-    // --- GESTION DU MENU LATÉRAL "BANDES-ANNONCES" (NOUVELLE VERSION) ---
-
-    // Gère la fermeture de la modale de sélection pour potentiellement rouvrir la modale source
-    $('#trailer-selection-modal').on('hidden.bs.modal', function () {
-        const selectionModal = $(this);
-        const sourceModalId = selectionModal.data('source-modal-id');
-
-        if (sourceModalId) {
-            const sourceModalEl = document.getElementById(sourceModalId);
-            const sourceModalInstance = bootstrap.Modal.getInstance(sourceModalEl);
-            if (sourceModalInstance) {
-                sourceModalInstance.show();
-            }
-            // Nettoie la donnée pour éviter les réouvertures non désirées
-            selectionModal.removeData('source-modal-id');
-        }
-    });
-
-    // Ouvre la nouvelle modale de recherche autonome
+    // Ouvre la recherche autonome depuis le menu latéral
     $('#standalone-trailer-search-btn').on('click', function(e) {
         e.preventDefault();
-        const searchModal = new bootstrap.Modal(document.getElementById('standalone-trailer-search-modal'));
-        searchModal.show();
+        // Le HTML de cette modale existe déjà dans layout.html
+        new bootstrap.Modal(document.getElementById('standalone-trailer-search-modal')).show();
     });
 
-    // Gère la soumission du formulaire de recherche dans la modale
+    // Gère la soumission du formulaire de recherche autonome
     $('#standalone-trailer-search-form').on('submit', function(e) {
         e.preventDefault();
         const query = $('#standalone-trailer-search-input').val().trim();
         const mediaType = $('input[name="standalone_media_type"]:checked').val();
         const resultsContainer = $('#standalone-trailer-search-results-container');
+        if (!query) return;
 
-        if (!query) {
-            resultsContainer.html('<div class="alert alert-warning">Veuillez entrer un titre.</div>');
-            return;
-        }
+        resultsContainer.html('<div class="text-center my-3"><div class="spinner-border"></div></div>');
 
-        resultsContainer.html('<div class="text-center"><div class="spinner-border"></div></div>');
-
-        fetch(`/search/api/media/search`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query: query, media_type: mediaType })
-        })
-        .then(response => response.json())
-        .then(data => {
-            renderStandaloneResults(data, mediaType);
-        })
-        .catch(error => {
-            console.error('Erreur lors de la recherche de média autonome:', error);
-            resultsContainer.html('<p class="text-danger">Erreur de communication.</p>');
-        });
+        fetch(`/api/media/search?query=${encodeURIComponent(query)}&media_type=${mediaType}`)
+            .then(response => response.json())
+            .then(results => {
+                resultsContainer.empty();
+                if (results.length === 0) {
+                    resultsContainer.html('<p class="text-center text-muted">Aucun résultat.</p>');
+                    return;
+                }
+                results.forEach(item => {
+                    const poster = item.poster_path ? `https://image.tmdb.org/t/p/w92${item.poster_path}` : 'https://via.placeholder.com/92x138.png?text=N/A';
+                    const resultHtml = `
+                        <div class="list-group-item bg-transparent text-white d-flex justify-content-between align-items-center">
+                            <div class="d-flex align-items-center">
+                                <img src="${poster}" class="me-3 rounded">
+                                <div>
+                                    <strong>${item.title}</strong> (${item.year})
+                                </div>
+                            </div>
+                            <button class="btn btn-sm btn-outline-info open-trailer-search-from-standalone"
+                                data-media-type="${mediaType}"
+                                data-external-id="${item.external_ids.tmdb || item.external_ids.tvdb}"
+                                data-title="${item.title}"
+                                data-year="${item.year}">
+                                <i class="bi bi-film"></i> Chercher BA
+                            </button>
+                        </div>`;
+                    resultsContainer.append(resultHtml);
+                });
+            });
     });
 
-    // Affiche les résultats dans la modale de recherche autonome (version enrichie)
-    function renderStandaloneResults(results, mediaType) {
-        const resultsContainer = $('#standalone-trailer-search-results-container');
-        resultsContainer.empty();
-
-        if (!results || results.length === 0) {
-            resultsContainer.html('<p class="text-muted text-center">Aucun résultat trouvé.</p>');
-            return;
-        }
-
-        const TMDB_POSTER_BASE_URL = 'https://image.tmdb.org/t/p/w185';
-        const listGroup = $('<div class="list-group list-group-flush"></div>');
-
-        // Étape 1: Construire et ajouter tous les éléments HTML au fragment de document (listGroup)
-        results.forEach(item => {
-            const posterUrl = (mediaType === 'movie' && item.poster)
-                ? `${TMDB_POSTER_BASE_URL}${item.poster}`
-                : (item.poster || 'https://via.placeholder.com/185x278.png?text=Affiche+non+disponible');
-
-            let trailerBtnClass = 'btn-outline-danger';
-            if (item.trailer_status === 'LOCKED') trailerBtnClass = 'btn-outline-success';
-            else if (item.trailer_status === 'UNLOCKED') trailerBtnClass = 'btn-outline-primary';
-
-            const placeholderId = `dashboard-placeholder-${mediaType}-${item.id}`;
-
-            const itemHtml = `
-                <div class="list-group-item bg-dark text-white p-3">
-                    <div class="row g-3">
-                        <div class="col-3">
-                            <img src="${posterUrl}" class="img-fluid rounded" alt="Poster de ${item.title}">
-                        </div>
-                        <div class="col-9 d-flex flex-column">
-                            <div>
-                                <h6 class="mb-1">${item.title} <span class="text-white-50">(${item.year || 'N/A'})</span></h6>
-                                <p class="mb-2 small text-white-50" style="max-height: 80px; overflow-y: auto;">
-                                    ${item.overview ? item.overview.substring(0, 150) + (item.overview.length > 150 ? '...' : '') : 'Pas de synopsis.'}
-                                </p>
-                            </div>
-                            <div id="${placeholderId}" class="mt-auto mb-2 dashboard-container">
-                                <div class="text-center text-muted small"><div class="spinner-border spinner-border-sm"></div></div>
-                            </div>
-                            <div class="mt-auto">
-                                 <button class="btn btn-sm ${trailerBtnClass} open-trailer-search-from-standalone"
-                                        data-media-type="${mediaType}"
-                                        data-external-id="${item.id}"
-                                        data-title="${item.title}"
-                                        data-year="${item.year || ''}">
-                                    <i class="bi bi-film"></i> Voir les bandes-annonces
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
-            listGroup.append(itemHtml);
-        });
-
-        // Étape 2: Insérer tous les éléments dans le DOM en une seule fois
-        resultsContainer.append(listGroup);
-
-        // Étape 3: Maintenant que les éléments sont dans le DOM, lancer les chargements des tableaux de bord
-        results.forEach(item => {
-            const placeholderId = `dashboard-placeholder-${mediaType}-${item.id}`;
-            fetchAndRenderDashboard(placeholderId, mediaType, item.id);
-        });
-    }
-
-    function fetchAndRenderDashboard(placeholderId, mediaType, externalId) {
-        const placeholder = $(`#${placeholderId}`);
-        fetch(`/api/agent/media/details/${mediaType}/${externalId}`)
-            .then(response => {
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                return response.json();
-            })
-            .then(data => {
-                if (data.status === 'success') {
-                    placeholder.html(formatDashboard(data.details, mediaType));
-                } else {
-                    placeholder.html('<p class="text-warning small text-center mb-0">Détails indisponibles.</p>');
-                }
-            })
-            .catch(error => {
-                console.error('Error fetching dashboard:', error);
-                placeholder.html('<p class="text-danger small text-center mb-0">Erreur.</p>');
-            });
-    }
-
-    function formatDashboard(details, mediaType) {
-        let content = '<ul class="list-unstyled mb-0 small text-white-50">';
-
-        // Statut de Production
-        const prod = details.production_status;
-        if (prod && prod.status) {
-            let statusText = prod.status === 'Ended' ? 'Terminée' : (prod.status === 'Returning Series' ? 'En cours' : prod.status);
-            let badgeClass = prod.status === 'Ended' ? 'bg-danger' : 'bg-success';
-            content += `<li><strong>Statut:</strong> <span class="badge ${badgeClass}">${statusText}</span>`;
-            if (mediaType === 'tv' && prod.total_seasons) {
-                content += ` <small>(${prod.total_seasons} S / ${prod.total_episodes} Ep)</small>`;
-            }
-            content += `</li>`;
-        }
-
-        // Statuts Sonarr/Radarr
-        const arr = mediaType === 'tv' ? details.sonarr_status : details.radarr_status;
-        if (arr && arr.present) {
-            let arrName = mediaType === 'tv' ? 'Sonarr' : 'Radarr';
-            let fileInfo = '';
-            if (mediaType === 'tv') {
-                fileInfo = `(${arr.episodes_file_count}/${arr.episodes_count} fichiers)`;
-            } else if (arr.has_file) {
-                fileInfo = '(avec fichier)';
-            }
-            content += `<li><strong>${arrName}:</strong> <span class="text-success">Présent</span> <small class="text-muted">${fileInfo}</small></li>`;
-        }
-
-        // Statut Plex
-        const plex = details.plex_status;
-        if (plex && plex.present) {
-            let plexText = `<strong>Plex:</strong> <span class="text-info">Présent</span>`;
-            if (plex.physical_presence) {
-                let watchStatus = [];
-                if (plex.is_watched) watchStatus.push('Vu Intégralement');
-                else if (plex.watched_episodes && plex.watched_episodes !== '0/0') {
-                    watchStatus.push(`Vus: ${plex.watched_episodes}`);
-                }
-                if (plex.seen_via_tag) watchStatus.push('Archivé');
-                if (watchStatus.length > 0) plexText += ` <small class="text-warning">(${watchStatus.join(', ')})</small>`;
-            } else {
-                plexText += ' <small class="text-muted">(métadonnées)</small>';
-            }
-            content += `<li>${plexText}</li>`;
-        }
-
-        content += '</ul>';
-        return content;
-    }
-
-    // Gère le clic sur un bouton de trailer DANS la modale de recherche autonome
+     // Gère le clic pour ouvrir la recherche de BA depuis la recherche autonome
     $(document).on('click', '.open-trailer-search-from-standalone', function() {
         const data = $(this).data();
-
-        // On cache la modale de recherche avant d'ouvrir la suivante
-        const standaloneModalEl = document.getElementById('standalone-trailer-search-modal');
-        const standaloneModalInstance = bootstrap.Modal.getInstance(standaloneModalEl);
-        if (standaloneModalInstance) {
-            standaloneModalInstance.hide();
-        }
-
-        // On déclenche l'événement global en passant l'ID de la modale source pour pouvoir y revenir
         $(document).trigger('openTrailerSearch', {
             mediaType: data.mediaType,
             externalId: data.externalId,
             title: data.title,
-            year: data.year,
-            sourceModalId: 'standalone-trailer-search-modal'
+            year: data.year
         });
+        bootstrap.Modal.getInstance(document.getElementById('standalone-trailer-search-modal')).hide();
     });
+
 });
+
+function playTrailer(videoId, title) {
+    const playerModal = new bootstrap.Modal(document.getElementById('trailer-modal'));
+    $('#trailerModalLabel').text('Bande-Annonce: ' + title);
+    $('#trailer-modal .modal-body').html(`<div class="ratio ratio-16x9"><iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>`);
+
+    // Empêche la modale de recherche de se fermer en arrière-plan
+    const searchModalEl = document.getElementById('trailer-search-modal');
+    if (searchModalEl.classList.contains('show')) {
+        $(searchModalEl).css('opacity', 0);
+    }
+
+    $('#trailer-modal').on('hidden.bs.modal', function () {
+        $(this).find('.modal-body').empty(); // Vide l'iframe pour arrêter la vidéo
+        if (searchModalEl.classList.contains('show')) {
+            $(searchModalEl).css('opacity', 1);
+        }
+    });
+
+    playerModal.show();
+}

@@ -98,27 +98,46 @@
     </div>
 </div>
 
-<!-- Trailer Selection Modal -->
-<div class="modal fade" id="trailer-selection-modal" tabindex="-1" aria-labelledby="trailerSelectionModalLabel" aria-hidden="true">
+<!-- Trailer Search/Selection Modal -->
+<div class="modal fade" id="trailer-search-modal" tabindex="-1" aria-labelledby="trailerSearchModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content bg-dark text-white">
             <div class="modal-header">
-                <h5 class="modal-title" id="trailerSelectionModalLabel">Choisissez une bande-annonce</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                <h5 class="modal-title" id="trailerSearchModalLabel">Rechercher une bande-annonce</h5>
+                <button type="button" class="btn btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
+                <!-- Barre de recherche interne -->
                 <div class="input-group mb-3">
-                    <input type="text" id="trailer-custom-search-input" class="form-control" placeholder="Affiner la recherche...">
-                    <button class="btn btn-primary" type="button" id="trailer-custom-search-btn">
-                        <i class="bi bi-search"></i>
-                    </button>
+                    <input type="text" id="trailer-search-input" class="form-control" placeholder="Affiner la recherche ou nouveau titre...">
+                    <button class="btn btn-primary" id="trailer-search-button"><i class="bi bi-search"></i></button>
                 </div>
-                <div id="trailer-results-container">
-                    <!-- Les résultats de la recherche seront injectés ici -->
+
+                <!-- Conteneur pour les résultats -->
+                <div id="trailer-results-container"></div>
+
+                <!-- Bouton "Plus de résultats" -->
+                <div class="text-center mt-3">
+                    <button class="btn btn-secondary" id="load-more-trailers-btn" style="display: none;">Plus de résultats</button>
                 </div>
-                <div id="trailer-load-more-container" class="text-center mt-3" style="display: none;">
-                    <button class="btn btn-primary" id="load-more-trailers-btn">Afficher 5 de plus</button>
+
+                <hr>
+
+                <!-- Section pour l'ajout manuel -->
+                <h6>Ajouter manuellement</h6>
+                <div class="input-group mb-2">
+                    <input type="text" id="manual-trailer-url" class="form-control" placeholder="Coller une URL YouTube...">
+                    <button class="btn btn-info" id="add-manual-trailer-btn">Prévisualiser</button>
                 </div>
+                <div id="manual-trailer-preview" class="mt-2 p-2 rounded" style="background-color: #2c3034; display: none;">
+                    <!-- La prévisualisation s'affichera ici -->
+                </div>
+            </div>
+            <div class="modal-footer justify-content-between">
+                <button type="button" class="btn btn-danger" id="clear-trailer-cache-btn">
+                    <i class="bi bi-trash"></i> Effacer les résultats
+                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
             </div>
         </div>
     </div>
