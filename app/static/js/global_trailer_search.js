@@ -59,7 +59,7 @@ function fetchAndRenderTrailers(mediaType, externalId, title, year = null, pageT
     const resultsContainer = $('#trailer-results-container');
     const loadMoreContainer = $('#trailer-load-more-container');
     const loadMoreBtn = $('#load-more-trailers-btn');
-    const selectionModal = $('#trailer-selection-modal');
+    const selectionModal = $('#trailer-search-modal');
 
     // Stocke le contexte pour les actions futures (verrouillage, pagination)
     selectionModal.data({ mediaType, externalId, title, year });
@@ -114,7 +114,7 @@ $(document).ready(function() {
     // Gère le clic sur "Afficher plus"
     $(document).on('click', '#load-more-trailers-btn', function() {
         const button = $(this);
-        const selectionModal = $('#trailer-selection-modal');
+        const selectionModal = $('#trailer-search-modal');
         const { mediaType, externalId } = selectionModal.data();
         const pageToken = button.data('page-token');
 
@@ -130,7 +130,7 @@ $(document).ready(function() {
 
         const button = $(this);
         const isLocked = button.data('is-locked') === true;
-        const selectionModal = $('#trailer-selection-modal');
+        const selectionModal = $('#trailer-search-modal');
         const { mediaType, externalId, title, year } = selectionModal.data();
 
         if (!mediaType || !externalId) return;
@@ -184,13 +184,13 @@ $(document).ready(function() {
     $(document).on('click', '.play-trailer-area', function() {
         const videoId = $(this).data('video-id');
         const videoTitle = $(this).data('video-title');
-        const selectionModal = $('#trailer-selection-modal');
+        const selectionModal = $('#trailer-search-modal');
         const playerModal = $('#trailer-modal');
 
         if (!videoId) return;
 
         bootstrap.Modal.getInstance(selectionModal[0]).hide();
-        playerModal.data('source-modal', 'trailer-selection-modal');
+        playerModal.data('source-modal', 'trailer-search-modal');
 
         $('#trailerModalLabel').text('Bande-Annonce: ' + videoTitle);
         playerModal.find('.modal-body').html(`<div class="ratio ratio-16x9"><iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1&cc_lang=fr&cc_load_policy=1" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe></div>`);
@@ -213,7 +213,7 @@ $(document).ready(function() {
 
     // Déclencheur global pour ouvrir la modale de recherche de BA
     $(document).on('openTrailerSearch', function(event, { mediaType, externalId, title, year, sourceModalId }) {
-        const selectionModal = $('#trailer-selection-modal');
+        const selectionModal = $('#trailer-search-modal');
         const modalInstance = bootstrap.Modal.getOrCreateInstance(selectionModal[0]);
 
         // Stocke l'ID de la modale source pour y revenir plus tard
@@ -224,7 +224,7 @@ $(document).ready(function() {
         // Nettoyage de l'état précédent
         $('#trailer-results-container').empty();
         $('#trailer-load-more-container').hide();
-        $('#trailer-selection-modal-label').text(`Bande-annonce pour : ${title}`);
+        $('#trailerSearchModalLabel').text(`Bande-annonce pour : ${title}`);
 
         // Lance la recherche
         fetchAndRenderTrailers(mediaType, externalId, title, year);
@@ -235,7 +235,7 @@ $(document).ready(function() {
     // --- GESTION DU MENU LATÉRAL "BANDES-ANNONCES" (NOUVELLE VERSION) ---
 
     // Gère la fermeture de la modale de sélection pour potentiellement rouvrir la modale source
-    $('#trailer-selection-modal').on('hidden.bs.modal', function () {
+    $('#trailer-search-modal').on('hidden.bs.modal', function () {
         const selectionModal = $(this);
         const sourceModalId = selectionModal.data('source-modal-id');
 
