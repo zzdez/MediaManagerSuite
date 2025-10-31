@@ -53,12 +53,17 @@ $(document).ready(function() {
         showSpinner(!token);
         $('#load-more-trailers-btn').hide();
 
-        let url = `/api/agent/get_trailer_info/${currentMediaType}/${currentExternalId}?force_refresh=${forceRefresh}`;
+        let url = `/api/agent/get_trailer_info?media_type=${currentMediaType}&external_id=${currentExternalId}&force_refresh=${forceRefresh}`;
         if (query) url += `&query=${encodeURIComponent(query)}`;
         if (token) url += `&page_token=${token}`;
 
         fetch(url)
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    return response.text().then(text => { throw new Error('Réponse du serveur non valide: ' + text) });
+                }
+                return response.json();
+            })
             .then(data => {
                 if (!token) $('#trailer-results-container').empty();
                 else $('#trailer-results-container .spinner-border').parent().remove();
