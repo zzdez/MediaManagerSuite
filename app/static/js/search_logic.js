@@ -80,11 +80,13 @@ $(document).ready(function() {
             if (item.trailer_status === 'LOCKED') trailerBtnClass = 'btn-outline-success';
             else if (item.trailer_status === 'UNLOCKED') trailerBtnClass = 'btn-outline-primary';
 
-            // On s'assure que les données pour le bouton de bande-annonce sont correctes.
+            // ### CORRECTION ICI ###
+            // On construit la clé d'ID unifiée, comme sur la page Plex Editor.
+            const trailerIdKey = `${mediaType}_${item.id}`;
+
             let buttonsHtml = `
                 <button class="btn btn-sm ${trailerBtnClass} search-trailer-btn"
-                        data-media-type="${mediaType}"
-                        data-external-id="${item.id}"
+                        data-trailer-id-key="${trailerIdKey}"
                         data-title="${item.title}"
                         data-year="${item.year || ''}">
                     <i class="fas fa-video"></i> Bande-annonce
@@ -212,15 +214,17 @@ $(document).ready(function() {
     });
 
     // --- GESTION DES BANDES-ANNONCES DE LA PAGE DE RECHERCHE (NOUVELLE VERSION) ---
+    // Le code a été simplifié. Le gestionnaire d'événements global `global_trailer_search.js`
+    // s'occupe maintenant de toute la logique, car le bouton a le bon `data-trailer-id-key`.
     $('#media-results-container').on('click', '.search-trailer-btn', function() {
         const button = $(this);
-        const mediaType = button.data('media-type');
-        const externalId = button.data('external-id');
+        const trailerIdKey = button.data('trailer-id-key');
         const title = button.data('title');
         const year = button.data('year');
 
-        // Déclencher l'événement global avec les données correctes.
-        $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
+        // Déclencher l'événement global avec les données du bouton.
+        // Le script global s'occupera du reste.
+        $(document).trigger('openTrailerSearch', { trailerIdKey, title, year });
     });
 
     $('#media-results-container').on('click', '.search-torrents-btn', function() {

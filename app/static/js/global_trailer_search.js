@@ -211,6 +211,45 @@ $(document).ready(function() {
         }
     });
 
+    // Gère le clic sur "Effacer les résultats"
+    $(document).on('click', '#clear-trailer-cache-btn', function() {
+        const button = $(this);
+        const selectionModal = $('#trailer-search-modal');
+        const { mediaType, externalId } = selectionModal.data();
+
+        if (!mediaType || !externalId) {
+            alert("Erreur: Contexte du média non trouvé.");
+            return;
+        }
+
+        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+        fetch('/api/agent/clear_trailer_cache', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                media_type: mediaType,
+                external_id: externalId
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                $('#trailer-results-container').html('<p class="text-center text-success">Résultats effacés. Vous pouvez fermer cette fenêtre ou lancer une nouvelle recherche.</p>');
+                $('#trailer-load-more-container').hide();
+            } else {
+                alert('Erreur: ' + (data.message || 'Une erreur inconnue est survenue.'));
+            }
+        })
+        .catch(error => {
+            console.error('Erreur technique lors de l\'effacement du cache:', error);
+            alert('Une erreur technique est survenue.');
+        })
+        .finally(() => {
+            button.prop('disabled', false).html('<i class="bi bi-trash"></i> Effacer les résultats');
+        });
+    });
+
     // Déclencheur global pour ouvrir la modale de recherche de BA
     $(document).on('openTrailerSearch', function(event, { mediaType, externalId, title, year, sourceModalId }) {
         const selectionModal = $('#trailer-search-modal');
