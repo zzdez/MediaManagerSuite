@@ -2749,7 +2749,7 @@ def update_single_episode_monitoring():
 def search_missing_episodes():
     data = request.json
     rating_key = data.get('ratingKey')
-    season_number = data.get('seasonNumber')
+    season_numbers = data.get('seasonNumber')  # Peut être un nombre unique ou une liste
 
     try:
         plex_server = get_plex_admin_server()
@@ -2771,8 +2771,18 @@ def search_missing_episodes():
             if not ep.get('hasFile') and ep.get('monitored')
         ]
 
-        if season_number is not None:
-            missing_episodes = [ep for ep in missing_episodes if ep.get('seasonNumber') == int(season_number)]
+        if season_numbers is not None:
+            # S'assurer que season_numbers est une liste pour un traitement uniforme
+            if not isinstance(season_numbers, list):
+                season_numbers = [season_numbers]
+
+            # Convertir tous les numéros de saison en entiers pour une comparaison sûre
+            target_seasons = {int(s) for s in season_numbers}
+
+            missing_episodes = [
+                ep for ep in missing_episodes
+                if ep.get('seasonNumber') in target_seasons
+            ]
 
         queries = set()
         for ep in missing_episodes:

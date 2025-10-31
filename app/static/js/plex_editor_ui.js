@@ -766,7 +766,14 @@ $('#confirmArchiveMovieBtn').on('click', function() {
         // Bouton global
         $(seriesModalElement).on('click', '#find-missing-episodes-btn', function() {
             const ratingKey = $('#series-management-modal .modal-body [data-rating-key]').first().data('ratingKey');
-            handleFindMissing($(this), ratingKey);
+            const selectedSeasons = $('.season-search-checkbox:checked').map(function() {
+                return $(this).val();
+            }).get();
+
+            // Si aucune saison n'est cochée, on ne passe pas de numéro de saison (comportement par défaut)
+            // Sinon, on passe un tableau de numéros de saison
+            const seasonNumber = selectedSeasons.length > 0 ? selectedSeasons : null;
+            handleFindMissing($(this), ratingKey, seasonNumber);
         });
 
         // Bouton par saison

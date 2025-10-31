@@ -78,10 +78,14 @@
             <div class="d-flex justify-content-between align-items-center p-2 season-row"
      data-sonarr-series-id="{{ series.sonarr_series_id }}"
      data-season-number="{{ season.seasonNumber }}">
-                <div class="flex-grow-1">
-                    <strong>{{ season.title }}</strong>
-                    {% if season.total_episodes > 0 %}
-                        <small class="d-block text-muted">
+                <div class="flex-grow-1 d-flex align-items-center">
+                    <div class="form-check me-2">
+                        <input class="form-check-input season-search-checkbox" type="checkbox" value="{{ season.seasonNumber }}" id="search-season-{{ season.seasonNumber }}">
+                    </div>
+                    <div>
+                        <strong>{{ season.title }}</strong>
+                        {% if season.total_episodes > 0 %}
+                            <small class="d-block text-muted">
                             {% if season.viewed_episodes == 0 %}
                                 Non commencée
                             {% elif season.viewed_episodes == season.total_episodes %}
@@ -95,9 +99,10 @@
                         <small class="d-block text-info">
                             Disponibles : {{ season.file_count }} / {{ season.total_episodes }} ép.
                         </small>
-                    {% else %}
-                         <small class="d-block text-muted">Aucun épisode listé dans Plex. (Taille: {{ (season.total_size_on_disk / (1024*1024)) | round(2) }} MB)</small>
-                    {% endif %}
+                        {% else %}
+                            <small class="d-block text-muted">Aucun épisode listé dans Plex. (Taille: {{ (season.total_size_on_disk / (1024*1024)) | round(2) }} MB)</small>
+                        {% endif %}
+                    </div>
                 </div>
                 <div class="d-flex align-items-center ms-2">
                     <!-- Bouton pour afficher/cacher les épisodes -->
