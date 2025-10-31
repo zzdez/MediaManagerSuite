@@ -9,8 +9,10 @@ $(document).ready(function() {
     let nextPageToken = null;
 
     // --- FONCTIONS UTILITAIRES ---
-    function renderTrailerResults(results, append = false) {
+    function renderTrailerResults(data, append = false) {
         const container = $('#trailer-results-container');
+        const results = data.results || (data.locked_video_data ? [data.locked_video_data] : []);
+
         if (!append) container.empty();
 
         if (results.length === 0 && !append) {
@@ -19,21 +21,29 @@ $(document).ready(function() {
         }
 
         results.forEach(item => {
+            const videoId = item.videoId || item.video_id; // Gérer les deux formats de clé
+            const isLocked = videoId === (data.locked_video_data ? data.locked_video_data.videoId : null);
+
+            const btnClass = isLocked ? 'btn-success' : 'btn-outline-success';
+            const btnIcon = isLocked ? 'bi-unlock-fill' : 'bi-lock-fill';
+            const btnTitle = isLocked ? 'Déverrouiller cette bande-annonce' : 'Verrouiller cette bande-annonce';
+
             const resultHtml = `
                 <div class="trailer-result-item d-flex align-items-center justify-content-between mb-2 p-2 rounded" style="background-color: #343a40;">
-                    <div class="d-flex align-items-center" style="cursor: pointer;" onclick="playTrailer('${item.video_id}', '${item.title.replace(/'/g, "\\'")}')">
+                    <div class="d-flex align-items-center" style="cursor: pointer;" onclick="playTrailer('${videoId}', '${item.title.replace(/'/g, "\\'")}')">
                         <img src="${item.thumbnail}" width="120" class="me-3 rounded">
                         <div>
                             <p class="mb-0 text-white font-weight-bold">${item.title}</p>
                             <small class="text-muted">${item.channel}</small>
                         </div>
                     </div>
-                    <button class="btn btn-sm btn-outline-success lock-trailer-btn" title="Verrouiller cette bande-annonce"
-                            data-video-id="${item.video_id}"
+                    <button class="btn btn-sm ${btnClass} lock-unlock-trailer-btn" title="${btnTitle}"
+                            data-video-id="${videoId}"
                             data-video-title="${item.title}"
                             data-video-thumbnail="${item.thumbnail}"
-                            data-video-channel="${item.channel}">
-                        <i class="bi bi-lock-fill"></i>
+                            data-video-channel="${item.channel}"
+                            data-is-locked="${isLocked}">
+                        <i class="bi ${btnIcon}"></i>
                     </button>
                 </div>`;
             container.append(resultHtml);
@@ -65,17 +75,13 @@ $(document).ready(function() {
                 return response.json();
             })
             .then(data => {
-                if (!token) $('#trailer-results-container').empty();
-                else $('#trailer-results-container .spinner-border').parent().remove();
+                renderTrailerResults(data, !!token); // La nouvelle fonction gère tous les cas
 
-                if (data.status === 'locked' && data.locked_video_data) {
-                     $('#trailer-results-container').html('<p class="text-center text-success">Une bande-annonce est déjà verrouillée pour ce média.</p>');
-                } else if (data.search_results) {
-                    renderTrailerResults(data.search_results, !!token);
+                if (data.status === 'success') {
                     nextPageToken = data.next_page_token;
-                    if (nextPageToken) $('#load-more-trailers-btn').show();
-                } else {
-                     $('#trailer-results-container').html(`<p class="text-center text-warning">${data.message || 'Aucun résultat ou erreur.'}</p>`);
+                    if (nextPageToken) {
+                        $('#load-more-trailers-btn').show();
+                    }
                 }
             })
             .catch(error => {
@@ -127,15 +133,23 @@ $(document).ready(function() {
             });
     });
 
-    // Verrouiller une bande-annonce (depuis les résultats)
-    $('#trailer-results-container').on('click', '.lock-trailer-btn', function() {
+    // Gère le clic sur le bouton de verrouillage/déverrouillage
+    $('#trailer-results-container').on('click', '.lock-unlock-trailer-btn', function() {
+        const button = $(this);
+        const isLocked = button.data('is-locked');
+
         const videoData = {
-            videoId: $(this).data('video-id'),
-            title: $(this).data('video-title'),
-            thumbnail: $(this).data('video-thumbnail'),
-            channel: $(this).data('video-channel')
+            videoId: button.data('video-id'),
+            title: button.data('video-title'),
+            thumbnail: button.data('video-thumbnail'),
+            channel: button.data('video-channel')
         };
-        lockTrailer(videoData);
+
+        if (isLocked) {
+            unlockTrailer();
+        } else {
+            lockTrailer(videoData);
+        }
     });
 
     // Logique d'ajout manuel
@@ -174,22 +188,44 @@ $(document).ready(function() {
     });
 
     function lockTrailer(videoData) {
-        fetch(`/api/agent/lock_trailer/${currentMediaType}/${currentExternalId}`, {
+        fetch(`/api/agent/lock_trailer`, { // URL corrigée pour correspondre aux routes
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ video_data: videoData })
+            body: JSON.stringify({
+                media_type: currentMediaType,
+                external_id: currentExternalId,
+                video_data: videoData
+            })
         })
         .then(response => response.json())
         .then(data => {
-            if (data.status === 'Trailer locked') {
-                toastr.success('Bande-annonce verrouillée !');
-                trailerSearchModal.hide();
-                // Optionnel : rafraîchir l'icône du bouton qui a ouvert la modale
-                 $(`.trailer-btn[data-trailer-id-key='${currentMediaType}_${currentExternalId}']`)
-                    .removeClass('btn-danger btn-info')
-                    .addClass('btn-success');
+            if (data.status === 'success') {
+                toastr.success(data.message || 'Bande-annonce verrouillée !');
+                // Rafraîchir la modale pour montrer le nouvel état
+                searchTrailers(currentTitle + (currentYear ? ' ' + currentYear : '') + ' trailer');
             } else {
                 toastr.error(data.message || 'Erreur lors du verrouillage.');
+            }
+        });
+    }
+
+    function unlockTrailer() {
+        fetch(`/api/agent/unlock_trailer`, { // URL corrigée pour correspondre aux routes
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                media_type: currentMediaType,
+                external_id: currentExternalId
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                toastr.info(data.message || 'Bande-annonce déverrouillée.');
+                // Rafraîchir en forçant une nouvelle recherche
+                searchTrailers(currentTitle + (currentYear ? ' ' + currentYear : '') + ' trailer', true);
+            } else {
+                toastr.error(data.message || 'Erreur lors du déverrouillage.');
             }
         });
     }
