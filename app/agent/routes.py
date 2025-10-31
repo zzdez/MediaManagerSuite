@@ -7,7 +7,6 @@ from app.utils.media_info_manager import media_info_manager
 def get_trailer_info_route():
     """
     Point de terminaison unifié pour obtenir les informations sur une bande-annonce.
-    Prend les paramètres (media_type, external_id, etc.) depuis la query string de l'URL.
     Utilise le TrailerManager pour gérer la logique de cache, de verrouillage et de recherche.
     """
     media_type = request.args.get('media_type')

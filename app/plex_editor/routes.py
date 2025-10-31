@@ -484,18 +484,13 @@ def select_user_route():
 
 # Dans app/plex_editor/routes.py
 
-def _parse_main_external_id(guids, item_type):
+def _parse_main_external_id(guids):
     """
     Parses the list of guids from a Plex item to find the primary external ID.
-    Dynamically prefers 'tvdb' for shows and 'tmdb' for movies.
+    Prefers 'tvdb' for shows and 'tmdb' for movies.
     """
-    # Priorité des sources, ajustée dynamiquement
-    if item_type == 'show':
-        priority_order = ['tvdb', 'tmdb', 'imdb']
-    elif item_type == 'movie':
-        priority_order = ['tmdb', 'tvdb', 'imdb']
-    else:
-        priority_order = ['tvdb', 'tmdb', 'imdb']  # Fallback
+    # Priorité des sources
+    priority_order = ['tvdb', 'tmdb', 'imdb']
 
     for source in priority_order:
         for guid_obj in guids:
@@ -847,7 +842,7 @@ def get_media_items():
                 item.poster_url = target_plex_server.url(thumb_path, includeToken=True) if thumb_path else None
 
                 # Enrichissement avec l'ID externe pour la recherche de bande-annonce
-                item.external_source, item.external_id = _parse_main_external_id(item.guids, item.type)
+                item.external_source, item.external_id = _parse_main_external_id(item.guids)
                 # Correction du type pour correspondre à l'API du trailer_manager ('movie' ou 'tv')
                 item.media_type_for_trailer = 'tv' if item.type == 'show' else 'movie'
 

@@ -133,3 +133,42 @@ Identifier la ou les catégories Prowlarr exactes contenant les releases "MULTI"
 S'assurer que ces catégories sont correctement sélectionnées dans l'interface de configuration de l'application (page /configuration).
 Vérifier que la logique qui charge ces catégories (load_search_categories dans app/utils/config_manager.py) et les applique dans app/search_ui/__init__.py fonctionne comme prévu.
 Si nécessaire, modifier l'interface de configuration pour rendre la sélection des catégories plus claire ou plus robuste.
+
+---
+### Résumé de Session (Fin Octobre 2025) - Correction des Bandes-Annonces
+
+**Objectif :** Corriger les régressions critiques de la modale de recherche de bande-annonce (fonctionnalités manquantes, erreurs 404).
+
+**Progrès :**
+- L'architecture a été refactorisée avec succès pour utiliser une seule modale et un système d'événement global (), ce qui est une base solide.
+- Le bug 404 principal sur la recherche initiale () a été corrigé en alignant le format de l'URL du frontend avec la route du backend (utilisation de paramètres de requête).
+- L'interface visuelle de la modale a été restaurée.
+
+**Échec Final et État Actuel :**
+- La session s'est terminée sur une nouvelle erreur 404, cette fois lors du clic sur le bouton "Effacer les résultats".
+- **Cause :** Le même type de bug que précédemment. Le JS appelle une URL avec des paramètres dans le chemin (), alors que la route backend attend une URL simple () avec les données envoyées dans le corps d'une requête POST.
+
+**Plan d'Action Impératif pour la Prochaine Session :**
+1.  **Corriger l'appel  :** Dans , modifier l'appel  pour envoyer  et  dans le corps de la requête .
+2.  **AUDITER TOUS LES APPELS API :** Vérifier systématiquement **tous** les appels  dans  (, , etc.) pour s'assurer qu'ils sont conformes à leurs routes backend respectives (chemin vs. corps de la requête).
+3.  **Tester exhaustivement** chaque bouton de la modale.
+
+
+---
+### Résumé de Session (Fin Octobre 2025) - Correction des Bandes-Annonces
+
+**Objectif :** Corriger les régressions critiques de la modale de recherche de bande-annonce (fonctionnalités manquantes, erreurs 404).
+
+**Progrès :**
+- L'architecture a été refactorisée avec succès pour utiliser une seule modale et un système d'événement global (`openTrailerSearch`), ce qui est une base solide.
+- Le bug 404 principal sur la recherche initiale (`get_trailer_info`) a été corrigé en alignant le format de l'URL du frontend avec la route du backend (utilisation de paramètres de requête).
+- L'interface visuelle de la modale a été restaurée.
+
+**Échec Final et État Actuel :**
+- La session s'est terminée sur une nouvelle erreur 404, cette fois lors du clic sur le bouton "Effacer les résultats".
+- **Cause :** Le même type de bug que précédemment. Le JS appelle une URL avec des paramètres dans le chemin (`/api/agent/clear_trailer_cache/tv/123`), alors que la route backend attend une URL simple (`/api/agent/clear_trailer_cache`) avec les données envoyées dans le corps d'une requête POST.
+
+**Plan d'Action Impératif pour la Prochaine Session :**
+1.  **Corriger l'appel `clear_trailer_cache` :** Dans `app/static/js/global_trailer_search.js`, modifier l'appel `fetch` pour envoyer `media_type` et `external_id` dans le corps de la requête `POST`.
+2.  **AUDITER TOUS LES APPELS API :** Vérifier systématiquement **tous** les appels `fetch` dans `global_trailer_search.js` (`lock_trailer`, `unlock_trailer`, etc.) pour s'assurer qu'ils sont conformes à leurs routes backend respectives (chemin vs. corps de la requête).
+3.  **Tester exhaustivement** chaque bouton de la modale.
