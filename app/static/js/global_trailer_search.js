@@ -250,6 +250,36 @@ $(document).ready(function() {
         });
     });
 
+    // --- NOUVEAU : Gère le clic sur le bouton "Affiner la recherche" ---
+    $(document).on('click', '#trailer-search-button', function() {
+        const button = $(this);
+        const searchInput = $('#trailer-search-input');
+        const query = searchInput.val().trim();
+
+        const selectionModal = $('#trailer-search-modal');
+        const { mediaType, externalId, title, year } = selectionModal.data();
+
+        if (!mediaType || !externalId) {
+            alert("Erreur: Contexte du média non trouvé pour la recherche.");
+            return;
+        }
+
+        // Construire le nouveau titre de recherche
+        // Si l'utilisateur a entré du texte, on l'utilise. Sinon, on reprend le titre original.
+        const finalSearchTitle = query ? `${title} ${query}` : title;
+
+        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+        // On appelle la fonction existante avec le nouveau titre de recherche
+        // Le `false` pour pageToken assure que les résultats actuels sont remplacés.
+        fetchAndRenderTrailers(mediaType, externalId, finalSearchTitle, year, null);
+
+        // Réactiver le bouton après un court délai pour éviter le spam
+        setTimeout(() => {
+            button.prop('disabled', false).html('<i class="bi bi-search"></i>');
+        }, 1000);
+    });
+
     // Déclencheur global pour ouvrir la modale de recherche de BA
     $(document).on('openTrailerSearch', function(event, { mediaType, externalId, title, year, sourceModalId }) {
         const selectionModal = $('#trailer-search-modal');
