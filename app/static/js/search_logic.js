@@ -81,12 +81,10 @@ $(document).ready(function() {
             else if (item.trailer_status === 'UNLOCKED') trailerBtnClass = 'btn-outline-primary';
 
             // ### CORRECTION ICI ###
-            // On construit la clé d'ID unifiée, comme sur la page Plex Editor.
-            const trailerIdKey = `${mediaType}_${item.id}`;
-
             let buttonsHtml = `
                 <button class="btn btn-sm ${trailerBtnClass} search-trailer-btn"
-                        data-trailer-id-key="${trailerIdKey}"
+                        data-media-type="${mediaType}"
+                        data-external-id="${item.id}"
                         data-title="${item.title}"
                         data-year="${item.year || ''}">
                     <i class="fas fa-video"></i> Bande-annonce
@@ -218,13 +216,14 @@ $(document).ready(function() {
     // s'occupe maintenant de toute la logique, car le bouton a le bon `data-trailer-id-key`.
     $('#media-results-container').on('click', '.search-trailer-btn', function() {
         const button = $(this);
-        const trailerIdKey = button.data('trailer-id-key');
+        const mediaType = button.data('media-type');
+        const externalId = button.data('external-id');
         const title = button.data('title');
         const year = button.data('year');
 
         // Déclencher l'événement global avec les données du bouton.
         // Le script global s'occupera du reste.
-        $(document).trigger('openTrailerSearch', { trailerIdKey, title, year });
+        $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
     });
 
     $('#media-results-container').on('click', '.search-torrents-btn', function() {
