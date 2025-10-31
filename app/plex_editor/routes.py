@@ -484,23 +484,27 @@ def select_user_route():
 
 # Dans app/plex_editor/routes.py
 
-def _parse_main_external_id(guids):
+def _parse_main_external_id(guids, item_type):
     """
     Parses the list of guids from a Plex item to find the primary external ID.
-    Prefers 'tvdb' for shows and 'tmdb' for movies.
+    - For 'show', it prioritizes 'tvdb'.
+    - For 'movie', it prioritizes 'tmdb'.
     """
-    # Priorité des sources
-    priority_order = ['tvdb', 'tmdb', 'imdb']
+    if item_type == 'show':
+        priority_order = ['tvdb', 'tmdb', 'imdb']
+    elif item_type == 'movie':
+        priority_order = ['tmdb', 'tvdb', 'imdb']
+    else:
+        priority_order = ['tmdb', 'tvdb', 'imdb'] # Fallback default
 
     for source in priority_order:
         for guid_obj in guids:
             if guid_obj.id.startswith(f'{source}://'):
                 try:
-                    # 'tmdb://12345' -> ('tmdb', '12345')
                     id_val = guid_obj.id.split('//')[1]
-                    # Pour les séries, on veut le type 'tv' pour notre API
-                    media_type = 'tv' if source == 'tvdb' else source
-                    return media_type, id_val
+                    # Le 'media_type' pour le trailer manager est 'tv' pour les séries, 'movie' pour les films.
+                    api_media_type = 'tv' if item_type == 'show' else 'movie'
+                    return api_media_type, id_val
                 except (IndexError, ValueError):
                     continue
     return None, None
@@ -842,7 +846,7 @@ def get_media_items():
                 item.poster_url = target_plex_server.url(thumb_path, includeToken=True) if thumb_path else None
 
                 # Enrichissement avec l'ID externe pour la recherche de bande-annonce
-                item.external_source, item.external_id = _parse_main_external_id(item.guids)
+                item.external_source, item.external_id = _parse_main_external_id(item.guids, item.type)
                 # Correction du type pour correspondre à l'API du trailer_manager ('movie' ou 'tv')
                 item.media_type_for_trailer = 'tv' if item.type == 'show' else 'movie'
 
