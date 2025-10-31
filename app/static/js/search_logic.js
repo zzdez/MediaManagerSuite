@@ -1,6 +1,20 @@
 // Fichier : app/static/js/search_logic.js
 
 $(document).ready(function() {
+    // Si des requêtes initiales sont injectées par Flask, on les exécute.
+    if (typeof initialQueries !== 'undefined' && initialQueries && initialQueries.length > 0) {
+        // 1. Activer l'onglet "Recherche Libre"
+        const freeSearchTab = new bootstrap.Tab($('#torrent-search-tab')[0]);
+        freeSearchTab.show();
+
+        // 2. Lancer la recherche avec les requêtes
+        const payload = {
+            queries: initialQueries,
+            search_type: 'sonarr' // Par défaut, la recherche d'épisodes manquants est pour les séries
+        };
+        executeProwlarrSearch(payload);
+    }
+
     // CONTEXTE GLOBAL POUR LE PRE-MAPPING
     window.currentMediaContext = null;
 

@@ -2341,14 +2341,19 @@ def get_series_details_for_management(rating_key):
 
                     episodes_list_for_season.append(episode_dict)
 
+                stats = sonarr_season_info.get('statistics', {})
+                file_count = stats.get('episodeFileCount', 0)
+                total_episode_count = stats.get('episodeCount', 0)
+
                 total_series_size += total_season_size
                 seasons_list.append({
                     'title': f"Saison {season_number}" if season_number > 0 else "Specials",
                     'ratingKey': plex_season.ratingKey if plex_season else f"sonarr-season-{season_number}", 'seasonNumber': season_number,
-                    'total_episodes': sonarr_season_info.get('statistics', {}).get('episodeCount', 0),
+                    'total_episodes': total_episode_count,
                     'viewed_episodes': plex_season.viewedLeafCount if plex_season else 0,
                     'is_monitored_season': sonarr_season_info.get('monitored', False), 'total_size_on_disk': total_season_size,
-                    'episodes': episodes_list_for_season
+                    'episodes': episodes_list_for_season,
+                    'file_count': file_count
                 })
 
             # Vérification du statut du trailer avec le nouveau manager
@@ -2738,6 +2743,54 @@ def update_single_episode_monitoring():
 
     return jsonify({'status': 'error', 'message': 'Échec de la mise à jour dans Sonarr.'}), 500
 
+
+@plex_editor_bp.route('/api/series/search_missing', methods=['POST'])
+@login_required
+def search_missing_episodes():
+    data = request.json
+    rating_key = data.get('ratingKey')
+    season_number = data.get('seasonNumber')
+
+    try:
+        plex_server = get_plex_admin_server()
+        series = plex_server.fetchItem(int(rating_key))
+
+        sonarr_series_info = None
+        tvdb_id = next((g.id.replace('tvdb://', '') for g in series.guids if g.id.startswith('tvdb://')), None)
+        if tvdb_id:
+            sonarr_series_info = get_sonarr_series_by_guid(f"tvdb://{tvdb_id}")
+
+        if not sonarr_series_info:
+            return jsonify({'status': 'error', 'message': 'Série non trouvée dans Sonarr.'}), 404
+
+        sonarr_series_id = sonarr_series_info.get('id')
+        all_sonarr_episodes = get_sonarr_episodes_by_series_id(sonarr_series_id)
+
+        missing_episodes = [
+            ep for ep in all_sonarr_episodes
+            if not ep.get('hasFile') and ep.get('monitored')
+        ]
+
+        if season_number is not None:
+            missing_episodes = [ep for ep in missing_episodes if ep.get('seasonNumber') == int(season_number)]
+
+        queries = set()
+        for ep in missing_episodes:
+            season_num = f"S{ep.get('seasonNumber'):02d}"
+            # Requête pour le pack saison
+            queries.add(f"{series.title} {season_num}")
+            if series.originalTitle and series.originalTitle != series.title:
+                queries.add(f"{series.originalTitle} {season_num}")
+
+        session['missing_episodes_queries'] = list(queries)
+        return jsonify({
+            'status': 'success',
+            'redirect_url': url_for('search_ui.search_page', tab='free-search')
+        })
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur lors de la recherche d'épisodes manquants: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @plex_editor_bp.route('/api/series/rename_files', methods=['POST'])
 @login_required

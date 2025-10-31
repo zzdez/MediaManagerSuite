@@ -739,41 +739,41 @@ $('#confirmArchiveMovieBtn').on('click', function() {
         });
 
         // --- NOUVEAU : GESTION DE LA RECHERCHE D'ÉPISODES MANQUANTS ---
-        $(seriesModalElement).on('click', '.search-missing-episodes-btn', function() {
-            const btn = $(this);
-            const ratingKey = btn.data('rating-key');
-            const seasonNumber = btn.data('season-number');
-            const episodeIds = btn.data('episode-ids'); // Peut être undefined
+        function handleFindMissing(button, ratingKey, seasonNumber = null) {
+            button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
 
-            const url = `/plex/api/series/search_missing/${ratingKey}/${seasonNumber}`;
-
-            btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Recherche...');
-
-            fetch(url, {
+            fetch('/plex/api/series/search_missing', {
                 method: 'POST',
-                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ episode_ids: episodeIds || [] })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ratingKey: ratingKey, seasonNumber: seasonNumber })
             })
             .then(response => response.json())
             .then(data => {
-                if (data.status === 'success') {
-                    // Fermer la modale actuelle
-                    const modalInstance = bootstrap.Modal.getInstance(seriesModalElement);
-                    if (modalInstance) {
-                        modalInstance.hide();
-                    }
-                    // Rediriger vers la page de recherche
-                    window.location.href = '/search/';
+                if (data.status === 'success' && data.redirect_url) {
+                    window.location.href = data.redirect_url;
                 } else {
                     alert('Erreur: ' + data.message);
-                    btn.prop('disabled', false).text('Rechercher les épisodes manquants');
+                    button.prop('disabled', false).html('<i class="bi bi-search"></i>');
                 }
             })
             .catch(error => {
                 console.error('Erreur:', error);
                 alert('Une erreur de communication est survenue.');
-                btn.prop('disabled', false).text('Rechercher les épisodes manquants');
+                button.prop('disabled', false).html('<i class="bi bi-search"></i>');
             });
+        }
+
+        // Bouton global
+        $(seriesModalElement).on('click', '#find-missing-episodes-btn', function() {
+            const ratingKey = $('#series-management-modal .modal-body [data-rating-key]').first().data('ratingKey');
+            handleFindMissing($(this), ratingKey);
+        });
+
+        // Bouton par saison
+        $(seriesModalElement).on('click', '.find-missing-season-episodes-btn', function() {
+            const ratingKey = $('#series-management-modal .modal-body [data-rating-key]').first().data('ratingKey');
+            const seasonNumber = $(this).data('season-number');
+            handleFindMissing($(this), ratingKey, seasonNumber);
         });
     }
     // =================================================================

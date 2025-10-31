@@ -61,6 +61,9 @@
 <!-- NOUVEAU : Formulaire et Boutons d'Action Globaux -->
 <form id="manage-episodes-form">
     <div class="d-flex justify-content-end mb-3">
+        <button type="button" class="btn btn-info" id="find-missing-episodes-btn">
+            <i class="bi bi-search"></i> Rechercher les Épisodes Manquants
+        </button>
         <button type="button" class="btn btn-danger" id="delete-selected-episodes-btn">
             <i class="bi bi-trash"></i> Supprimer la Sélection
         </button>
@@ -88,6 +91,9 @@
                             {% endif %}
                             ({{ season.viewed_episodes }} / {{ season.total_episodes }} ép.)
                             | Taille: {{ (season.total_size_on_disk / (1024*1024)) | round(2) }} MB
+                        </small>
+                        <small class="d-block text-info">
+                            Disponibles : {{ season.file_count }} / {{ season.total_episodes }} ép.
                         </small>
                     {% else %}
                          <small class="d-block text-muted">Aucun épisode listé dans Plex. (Taille: {{ (season.total_size_on_disk / (1024*1024)) | round(2) }} MB)</small>
@@ -129,6 +135,11 @@
                             title="Renommer les fichiers de la Saison {{ season.seasonNumber }}">
                         <i class="bi bi-pencil-square"></i>
                     </button>
+                    <button class="btn btn-sm btn-outline-info find-missing-season-episodes-btn ms-1"
+                            data-season-number="{{ season.seasonNumber }}"
+                            title="Rechercher les épisodes manquants pour la Saison {{ season.seasonNumber }}">
+                        <i class="bi bi-search"></i>
+                    </button>
                     {% endif %}
                 </div>
             </div>
@@ -149,7 +160,7 @@
         <input class="form-check-input episode-delete-checkbox" type="checkbox"
                value="{{ episode.sonarr_episodeFileId }}"
                id="delete-ep-{{ episode.sonarr_episodeFileId }}"
-               {% if not episode.isPresentInPlex or not episode.sonarr_episodeFileId %}disabled{% endif %}>
+               {% if not episode.sonarr_episodeFileId %}disabled{% endif %}>
         <label class="form-check-label" for="delete-ep-{{ episode.sonarr_episodeFileId }}">
             <small>E{{ '%02d'|format(episode.episodeNumber) }} - {{ episode.title }}</small>
 
