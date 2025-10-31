@@ -67,23 +67,6 @@ def unlock_trailer_route():
         current_app.logger.error(f"Erreur inattendue dans unlock_trailer_route pour {media_type}_{external_id}: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': 'Une erreur interne est survenue.'}), 500
 
-@agent_bp.route('/clear_trailer_cache', methods=['POST'])
-def clear_trailer_cache_route():
-    """Efface le cache de bande-annonce pour un média spécifique."""
-    data = request.json
-    media_type = data.get('media_type')
-    external_id = data.get('external_id')
-
-    if not all([media_type, external_id]):
-        return jsonify({'status': 'error', 'message': 'Données manquantes.'}), 400
-
-    try:
-        trailer_manager.clear_trailer_cache(media_type, external_id)
-        return jsonify({'status': 'success', 'message': 'Cache de la bande-annonce effacé.'})
-    except Exception as e:
-        current_app.logger.error(f"Erreur lors de l'effacement du cache de la BA: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
 @agent_bp.route('/get_locked_trailer_id', methods=['GET'])
 def get_locked_trailer_id_route():
     """

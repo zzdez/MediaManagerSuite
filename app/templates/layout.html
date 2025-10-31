@@ -107,32 +107,17 @@
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <form id="trailer-search-form">
-                    <div class="input-group mb-3">
-                        <input type="text" id="trailer-search-input" class="form-control" placeholder="Affiner ou modifier la recherche...">
-                        <button class="btn btn-primary" type="submit">
-                            <i class="bi bi-search"></i>
-                        </button>
-                    </div>
-                </form>
+                <div class="input-group mb-3">
+                    <input type="text" id="trailer-custom-search-input" class="form-control" placeholder="Affiner la recherche...">
+                    <button class="btn btn-primary" type="button" id="trailer-custom-search-btn">
+                        <i class="bi bi-search"></i>
+                    </button>
+                </div>
                 <div id="trailer-results-container">
                     <!-- Les résultats de la recherche seront injectés ici -->
                 </div>
                 <div id="trailer-load-more-container" class="text-center mt-3" style="display: none;">
-                    <button class="btn btn-outline-secondary" id="load-more-trailers-btn">Afficher plus</button>
-                </div>
-            </div>
-            <div class="modal-footer justify-content-between">
-                <div>
-                    <button class="btn btn-sm btn-outline-danger" id="clear-trailer-cache-btn" title="Effacer les résultats de recherche pour ce média">
-                        <i class="bi bi-eraser-fill"></i> Effacer les résultats
-                    </button>
-                </div>
-                <div class="input-group w-50">
-                    <input type="text" id="manual-trailer-url-input" class="form-control form-control-sm" placeholder="Coller une URL YouTube ici...">
-                    <button class="btn btn-sm btn-success" type="button" id="manual-lock-trailer-btn">
-                        <i class="bi bi-lock-fill"></i> Verrouiller
-                    </button>
+                    <button class="btn btn-primary" id="load-more-trailers-btn">Afficher 5 de plus</button>
                 </div>
             </div>
         </div>

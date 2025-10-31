@@ -1,28 +1,6 @@
 // Fichier : app/static/js/search_logic.js
 
 $(document).ready(function() {
-    // --- NOUVELLE LOGIQUE : DÉCLENCHEMENT DE RECHERCHE AUTOMATIQUE ---
-    fetch('/search/api/search/get_session_queries')
-        .then(response => response.json())
-        .then(data => {
-            if (data.queries && data.queries.length > 0) {
-                // 1. Activer l'onglet Recherche Libre
-                const freeSearchTab = new bootstrap.Tab($('#torrent-search-tab')[0]);
-                freeSearchTab.show();
-
-                // 2. Remplir le champ de recherche (surtout pour l'info visuelle)
-                $('#search-form input[name="query"]').val(data.queries.join(', '));
-
-                // 3. Lancer la recherche avec le payload complet
-                const payload = {
-                    queries: data.queries,
-                    search_type: 'sonarr' // La recherche d'épisodes manquants est toujours pour Sonarr
-                };
-                executeProwlarrSearch(payload);
-            }
-        })
-        .catch(error => console.error("Erreur lors de la récupération des requêtes de session:", error));
-
     // CONTEXTE GLOBAL POUR LE PRE-MAPPING
     window.currentMediaContext = null;
 
@@ -102,12 +80,15 @@ $(document).ready(function() {
             if (item.trailer_status === 'LOCKED') trailerBtnClass = 'btn-outline-success';
             else if (item.trailer_status === 'UNLOCKED') trailerBtnClass = 'btn-outline-primary';
 
+            // ### CORRECTION ICI ###
+            // On construit la clé d'ID unifiée, comme sur la page Plex Editor.
+            const trailerIdKey = `${mediaType}_${item.id}`;
+
             let buttonsHtml = `
                 <button class="btn btn-sm ${trailerBtnClass} search-trailer-btn"
-                        data-result-index="${index}"
+                        data-trailer-id-key="${trailerIdKey}"
                         data-title="${item.title}"
-                        data-year="${item.year || ''}"
-                        data-media-type="${mediaType}">
+                        data-year="${item.year || ''}">
                     <i class="fas fa-video"></i> Bande-annonce
                 </button>`;
 
@@ -233,45 +214,17 @@ $(document).ready(function() {
     });
 
     // --- GESTION DES BANDES-ANNONCES DE LA PAGE DE RECHERCHE (NOUVELLE VERSION) ---
+    // Le code a été simplifié. Le gestionnaire d'événements global `global_trailer_search.js`
+    // s'occupe maintenant de toute la logique, car le bouton a le bon `data-trailer-id-key`.
     $('#media-results-container').on('click', '.search-trailer-btn', function() {
         const button = $(this);
-        const resultIndex = button.data('result-index');
-        const mediaData = mediaSearchResults[resultIndex];
+        const trailerIdKey = button.data('trailer-id-key');
+        const title = button.data('title');
+        const year = button.data('year');
 
-        const mediaType = button.data('media-type');
-        const externalId = mediaData.id;
-        const title = mediaData.title;
-        const year = mediaData.year;
-        const trailerStatus = mediaData.trailer_status;
-
-        if (!mediaType || !externalId || !title) {
-            alert('Erreur: Informations de base manquantes pour la bande-annonce.');
-            return;
-        }
-
-        if (trailerStatus === 'LOCKED') {
-            // Si la bande-annonce est verrouillée, on récupère son ID et on la joue directement.
-            fetch(`/api/agent/get_locked_trailer_id?media_type=${mediaType}&external_id=${externalId}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.status === 'success' && data.video_id) {
-                        const playerModal = $('#trailer-modal');
-                        $('#trailerModalLabel').text('Bande-Annonce: ' + title);
-                        playerModal.find('.modal-body').html(`<div class="ratio ratio-16x9"><iframe src="https://www.youtube.com/embed/${data.video_id}?autoplay=1&cc_lang=fr&cc_load_policy=1" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe></div>`);
-                        bootstrap.Modal.getOrCreateInstance(playerModal[0]).show();
-                    } else {
-                        // Fallback au cas où l'ID ne serait pas trouvé (ne devrait pas arriver)
-                        $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
-                    }
-                })
-                .catch(() => {
-                    // En cas d'erreur de communication, on ouvre la recherche standard
-                    $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
-                });
-        } else {
-            // Pour 'UNLOCKED' ou 'NONE', on ouvre la modale de recherche/sélection.
-            $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
-        }
+        // Déclencher l'événement global avec les données du bouton.
+        // Le script global s'occupera du reste.
+        $(document).trigger('openTrailerSearch', { trailerIdKey, title, year });
     });
 
     $('#media-results-container').on('click', '.search-torrents-btn', function() {
@@ -581,6 +534,7 @@ $(document).ready(function() {
             return response.json();
         })
         .then(data => {
+            // Correction: Utiliser un fallback `{}` pour éviter les erreurs si filter_options est manquant.
             const results = data.results || [];
             const filterOptions = data.filter_options || {};
             prowlarrResultsCache = results;
@@ -608,11 +562,7 @@ $(document).ready(function() {
             `);
             resultsContainer.append(batchActionsContainer);
 
-            // Gérer l'affichage du titre en fonction du nombre de requêtes
-            const queryTitle = (payload.queries && payload.queries.length > 1)
-                ? `${payload.queries.length} requêtes (épisodes manquants)`
-                : `"${payload.query || (payload.queries && payload.queries[0])}"`;
-            const header = $(`<hr><h4 class="mb-3">Résultats pour ${queryTitle} (<span id="results-count">${results.length}</span> / <span>${results.length}</span>)</h4>`);
+            const header = $(`<hr><h4 class="mb-3">Résultats pour "${payload.query}" (<span id="results-count">${results.length}</span> / <span>${results.length}</span>)</h4>`);
             resultsContainer.append(header);
 
             const listGroup = $('<ul class="list-group"></ul>');

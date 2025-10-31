@@ -738,53 +738,42 @@ $('#confirmArchiveMovieBtn').on('click', function() {
             .catch(error => { console.error(error); alert("Erreur de communication."); });
         });
 
-        // --- FONCTIONNALITÉ DE RECHERCHE D'ÉPISODES MANQUANTS ---
+        // --- NOUVEAU : GESTION DE LA RECHERCHE D'ÉPISODES MANQUANTS ---
+        $(seriesModalElement).on('click', '.search-missing-episodes-btn', function() {
+            const btn = $(this);
+            const ratingKey = btn.data('rating-key');
+            const seasonNumber = btn.data('season-number');
+            const episodeIds = btn.data('episode-ids'); // Peut être undefined
 
-        // Fonction helper pour éviter la duplication
-        function triggerMissingEpisodeSearch(button, episodeIds) {
-            const ratingKey = button.data('rating-key');
-            const originalHtml = button.html();
-            button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+            const url = `/plex/api/series/search_missing/${ratingKey}/${seasonNumber}`;
 
-            fetch(`/plex/api/series/${ratingKey}/find_missing`, {
+            btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Recherche...');
+
+            fetch(url, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sonarr_episode_ids: episodeIds })
+                 headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ episode_ids: episodeIds || [] })
             })
             .then(response => response.json())
             .then(data => {
-                alert(data.message);
                 if (data.status === 'success') {
-                    bootstrap.Modal.getInstance(seriesModalElement).hide();
-                    window.location.href = data.redirect_url;
+                    // Fermer la modale actuelle
+                    const modalInstance = bootstrap.Modal.getInstance(seriesModalElement);
+                    if (modalInstance) {
+                        modalInstance.hide();
+                    }
+                    // Rediriger vers la page de recherche
+                    window.location.href = '/search/';
+                } else {
+                    alert('Erreur: ' + data.message);
+                    btn.prop('disabled', false).text('Rechercher les épisodes manquants');
                 }
             })
             .catch(error => {
                 console.error('Erreur:', error);
                 alert('Une erreur de communication est survenue.');
-            })
-            .finally(() => {
-                button.prop('disabled', false).html(originalHtml);
+                btn.prop('disabled', false).text('Rechercher les épisodes manquants');
             });
-        }
-
-        // Handler pour le bouton GLOBAL
-        $(seriesModalElement).on('click', '#find-missing-episodes-btn', function() {
-            const selectedEpisodeIds = $('.episode-checkbox:checked:not(:disabled)').map(function() {
-                return $(this).val();
-            }).get();
-            triggerMissingEpisodeSearch($(this), selectedEpisodeIds);
-        });
-
-        // Handler pour les boutons PAR SAISON
-        $(seriesModalElement).on('click', '.find-missing-episodes-by-season-btn', function() {
-            const seasonContainerSelector = $(this).data('season-container');
-            const seasonContainer = $(seasonContainerSelector);
-            const episodeIdsForSeason = seasonContainer.find('.episode-checkbox:not(:disabled)').map(function() {
-                return $(this).val();
-            }).get();
-
-            triggerMissingEpisodeSearch($(this), episodeIdsForSeason);
         });
     }
     // =================================================================
@@ -1206,17 +1195,20 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
         bootstrap.Modal.getOrCreateInstance(document.getElementById('trailer-modal')).show();
     } else {
         // Cas 2: Pas de bande-annonce Plex, on utilise notre nouveau système de recherche.
+        // On récupère toutes les informations nécessaires directement depuis le bouton.
+        const mediaType = button.data('media-type');
+        const externalId = button.data('external-id');
         const title = button.data('title');
-        const year = button.data('year');
-        const trailerIdKey = button.data('trailer-id-key'); // *** MODIFIÉ ICI ***
+        const year = button.data('year'); // On récupère aussi l'année
 
-        if (trailerIdKey && title) {
-            // On déclenche l'événement global avec la clé unifiée.
-            $(document).trigger('openTrailerSearch', { trailerIdKey, title, year });
+        if (mediaType && externalId && title) {
+            // On déclenche l'événement global avec toutes les données.
+            $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
         } else {
-            alert('Erreur: Informations manquantes pour rechercher la bande-annonce (trailerIdKey, title).');
+            alert('Erreur: Informations manquantes pour rechercher la bande-annonce (mediaType, externalId, title).');
             console.error('Attributs de données manquants sur le bouton de bande-annonce:', {
-                trailerIdKey: trailerIdKey,
+                mediaType: mediaType,
+                externalId: externalId,
                 title: title
             });
         }

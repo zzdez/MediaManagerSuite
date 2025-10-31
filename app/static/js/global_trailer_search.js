@@ -115,120 +115,17 @@ $(document).ready(function() {
     $(document).on('click', '#load-more-trailers-btn', function() {
         const button = $(this);
         const selectionModal = $('#trailer-selection-modal');
-        // On récupère TOUT le contexte
-        const { mediaType, externalId, title, year } = selectionModal.data();
+        const { mediaType, externalId } = selectionModal.data();
         const pageToken = button.data('page-token');
 
-        if (!mediaType || !externalId || !pageToken || !title) return;
+        if (!mediaType || !externalId || !pageToken) return;
 
         button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
-        // On passe toutes les données à la fonction
-        fetchAndRenderTrailers(mediaType, externalId, title, year, pageToken);
+        fetchAndRenderTrailers(mediaType, externalId, pageToken);
     });
-
-    // Gère la soumission du formulaire de recherche DANS la modale
-    $(document).on('submit', '#trailer-search-form', function(e) {
-        e.preventDefault();
-        const selectionModal = $('#trailer-selection-modal');
-        const { mediaType, externalId, year } = selectionModal.data();
-        const newTitle = $('#trailer-search-input').val().trim();
-
-        if (!mediaType || !externalId || !newTitle) {
-            alert("Impossible de lancer une nouvelle recherche, le contexte est manquant.");
-            return;
-        }
-
-        // On met à jour le titre dans le contexte de la modale pour les futures paginations
-        selectionModal.data('title', newTitle);
-
-        // On lance une nouvelle recherche à partir de la première page
-        fetchAndRenderTrailers(mediaType, externalId, newTitle, year, null);
-    });
-
-    // Gère le clic sur "Effacer les résultats"
-    $(document).on('click', '#clear-trailer-cache-btn', function() {
-        if (!confirm("Êtes-vous sûr de vouloir effacer tous les résultats de recherche pour ce média ?")) {
-            return;
-        }
-
-        const button = $(this);
-        const selectionModal = $('#trailer-selection-modal');
-        const { mediaType, externalId, title, year } = selectionModal.data();
-
-        if (!mediaType || !externalId) return;
-
-        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
-
-        fetch('/api/agent/clear_trailer_cache', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ media_type: mediaType, external_id: externalId })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === 'success') {
-                // Vider l'affichage au lieu de rafraîchir
-                const resultsContainer = $('#trailer-results-container');
-                const loadMoreContainer = $('#trailer-load-more-container');
-                resultsContainer.html('<p class="text-center text-muted small">Les résultats ont été effacés. Vous pouvez lancer une nouvelle recherche.</p>');
-                loadMoreContainer.hide();
-                $('#load-more-trailers-btn').data('page-token', '');
-                 alert('Le cache de la bande-annonce a été vidé avec succès.');
-            } else {
-                alert('Erreur: ' + (data.message || 'Impossible d\'effacer le cache.'));
-            }
-        })
-        .catch(error => {
-            console.error('Erreur technique lors de l\'effacement du cache:', error);
-            alert('Une erreur technique est survenue.');
-        })
-        .finally(() => {
-            button.prop('disabled', false).html('<i class="bi bi-eraser-fill"></i> Effacer les résultats');
-        });
-    });
-
-    // Gère le clic sur le bouton de verrouillage manuel
-    $(document).on('click', '#manual-lock-trailer-btn', function() {
-        const url = $('#manual-trailer-url-input').val().trim();
-        if (!url) {
-            alert("Veuillez entrer une URL YouTube.");
-            return;
-        }
-
-        const videoId = getYoutubeVideoId(url);
-        if (!videoId) {
-            alert("URL YouTube invalide ou ID de vidéo non trouvé.");
-            return;
-        }
-
-        // Simuler un clic sur un bouton de verrouillage normal, mais avec des données manuelles
-        const fakeButton = $('<button>');
-        fakeButton.data('is-locked', false); // On veut toujours verrouiller
-        fakeButton.data('video-id', videoId);
-        // On met des données de base, le backend pourra les enrichir plus tard si besoin
-        fakeButton.data('video-title', `Bande-annonce manuelle : ${videoId}`);
-        fakeButton.data('video-thumbnail', '');
-        fakeButton.data('video-channel', 'Manuel');
-
-        // Déclencher la logique de verrouillage existante
-        fakeButton.trigger('click.manualLock');
-    });
-
-    // Helper pour extraire l'ID d'une URL YouTube
-    function getYoutubeVideoId(url) {
-        let ID = '';
-        url = url.replace(/(>|<)/gi, '').split(/(vi\/|v=|\/v\/|youtu\.be\/|\/embed\/)/);
-        if (url[2] !== undefined) {
-            ID = url[2].split(/[^0-9a-z_\-]/i);
-            ID = ID[0];
-        } else {
-            ID = url;
-        }
-        return ID;
-    }
 
     // Gère le clic sur le bouton de verrouillage/déverrouillage
-    $(document).on('click.manualLock', '.lock-trailer-btn', function(e) {
+    $(document).on('click', '.lock-trailer-btn', function(e) {
         e.stopPropagation();
 
         const button = $(this);

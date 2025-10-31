@@ -1,7 +1,7 @@
 # app/search_ui/__init__.py
 
 import logging
-from flask import Blueprint, render_template, request, flash, jsonify, Response, stream_with_context, current_app, url_for, session
+from flask import Blueprint, render_template, request, flash, jsonify, Response, stream_with_context, current_app, url_for
 from app.auth import login_required
 from config import Config
 from app.utils import arr_client
@@ -22,15 +22,6 @@ search_ui_bp = Blueprint(
 )
 
 # 2. Toutes les routes. Les imports "à risque" sont maintenant DANS les fonctions.
-
-@search_ui_bp.route('/api/search/get_session_queries', methods=['GET'])
-@login_required
-def get_session_queries():
-    """Récupère et supprime les requêtes de recherche stockées dans la session."""
-    queries = session.pop('missing_episodes_queries', None)
-    if queries:
-        return jsonify({'queries': queries})
-    return jsonify({'queries': []})
 
 @search_ui_bp.route('/', methods=['GET'])
 @login_required

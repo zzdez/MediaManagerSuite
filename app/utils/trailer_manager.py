@@ -265,21 +265,6 @@ def unlock_trailer(media_type, external_id):
     logger.warning(f"Tentative de déverrouillage pour une entrée inexistante : {db_key}")
     return False
 
-def clear_trailer_cache(media_type, external_id):
-    """Supprime complètement une entrée de la base de données des bandes-annonces."""
-    db_key = _get_key(media_type, external_id)
-    database = _load_database()
-    _, logger = _get_db_path_and_logger()
-
-    if db_key in database:
-        del database[db_key]
-        _save_database(database)
-        logger.info(f"Cache effacé pour {db_key}.")
-        return True
-
-    logger.warning(f"Tentative d'effacement de cache pour une entrée inexistante : {db_key}")
-    return False
-
 def clean_stale_entries(max_age_days=30):
     """
     Nettoie les anciennes entrées non verrouillées de la base de données des bandes-annonces.
