@@ -47,14 +47,14 @@ $(document).ready(function() {
     }
 
     // --- LOGIQUE DE RECHERCHE ---
-    function searchTrailers(query, forceRefresh = false, token = null) {
+    function searchTrailers(title, forceRefresh = false, token = null) {
         if (!currentMediaType || !currentExternalId) return;
 
         showSpinner(!token);
         $('#load-more-trailers-btn').hide();
 
         let url = `/api/agent/get_trailer_info?media_type=${currentMediaType}&external_id=${currentExternalId}&force_refresh=${forceRefresh}`;
-        if (query) url += `&query=${encodeURIComponent(query)}`;
+        if (title) url += `&title=${encodeURIComponent(title)}`;
         if (token) url += `&page_token=${token}`;
 
         fetch(url)
@@ -102,13 +102,13 @@ $(document).ready(function() {
 
     // --- ÉVÉNEMENTS DE LA MODALE ---
     $('#trailer-search-button').on('click', function() {
-        const query = $('#trailer-search-input').val().trim();
-        if (query) searchTrailers(query, true);
+        const title = $('#trailer-search-input').val().trim();
+        if (title) searchTrailers(title, true);
     });
 
     $('#load-more-trailers-btn').on('click', function() {
-        const query = $('#trailer-search-input').val().trim();
-        if (nextPageToken) searchTrailers(query || `${currentTitle} ${currentYear || ''} trailer`, false, nextPageToken);
+        const title = $('#trailer-search-input').val().trim();
+        if (nextPageToken) searchTrailers(title || `${currentTitle} ${currentYear || ''} trailer`, false, nextPageToken);
     });
 
     $('#clear-trailer-cache-btn').on('click', function() {
