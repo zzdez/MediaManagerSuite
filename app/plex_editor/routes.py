@@ -2802,6 +2802,7 @@ def search_missing_episodes():
                     queries.add(f"{original_title} Saison {season_num:02d}")
 
         session['missing_episodes_queries'] = list(queries)
+        session['search_mode_intent'] = search_mode
         return jsonify({
             'status': 'success',
             'redirect_url': url_for('search_ui.search_page', tab='free-search')

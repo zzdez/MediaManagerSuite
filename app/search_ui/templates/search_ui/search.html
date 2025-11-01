@@ -252,6 +252,7 @@
     <script>
         // Injecte les requêtes de recherche depuis la session Flask, si elles existent.
         var initialQueries = {{ session.pop('missing_episodes_queries', 'null') | tojson }};
+        var searchModeIntent = {{ session.pop('search_mode_intent', 'null') | tojson }};
 
         document.addEventListener('DOMContentLoaded', function() {
             const mediaTypeRadios = document.querySelectorAll('input[name="media_type"]');

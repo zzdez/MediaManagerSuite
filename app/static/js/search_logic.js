@@ -12,7 +12,7 @@ $(document).ready(function() {
             queries: initialQueries,
             search_type: 'sonarr' // Par défaut, la recherche d'épisodes manquants est pour les séries
         };
-        executeProwlarrSearch(payload);
+        executeProwlarrSearch(payload, searchModeIntent); // Passer l'intention de recherche
     }
 
     // CONTEXTE GLOBAL POUR LE PRE-MAPPING
@@ -531,7 +531,7 @@ $(document).ready(function() {
     }
 
 
-    function executeProwlarrSearch(payload) {
+    function executeProwlarrSearch(payload, searchIntent = null) {
         const resultsContainer = $('#search-results-container');
         resultsContainer.html('<div class="text-center p-5"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Recherche en cours...</p></div>');
 
@@ -547,9 +547,16 @@ $(document).ready(function() {
             return response.json();
         })
         .then(data => {
-            // Correction: Utiliser un fallback `{}` pour éviter les erreurs si filter_options est manquant.
-            const results = data.results || [];
+            let results = data.results || [];
             const filterOptions = data.filter_options || {};
+
+            // Appliquer le filtrage par intention si spécifié
+            if (searchIntent === 'packs') {
+                results = results.filter(r => r.is_season_pack);
+            } else if (searchIntent === 'episodes') {
+                results = results.filter(r => r.is_episode);
+            }
+
             prowlarrResultsCache = results;
 
             if (data.error) {
