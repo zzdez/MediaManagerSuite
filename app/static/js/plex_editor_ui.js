@@ -739,13 +739,17 @@ $('#confirmArchiveMovieBtn').on('click', function() {
         });
 
         // --- NOUVEAU : GESTION DE LA RECHERCHE D'ÉPISODES MANQUANTS ---
-        function handleFindMissing(button, ratingKey, seasonNumber = null) {
+        function handleFindMissing(button, ratingKey, seasonNumber = null, search_mode = 'packs') {
             button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
 
             fetch('/plex/api/series/search_missing', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ratingKey: ratingKey, seasonNumber: seasonNumber })
+                body: JSON.stringify({
+                    ratingKey: ratingKey,
+                    seasonNumber: seasonNumber,
+                    search_mode: search_mode
+                })
             })
             .then(response => response.json())
             .then(data => {
@@ -770,17 +774,15 @@ $('#confirmArchiveMovieBtn').on('click', function() {
                 return $(this).val();
             }).get();
 
-            // Si aucune saison n'est cochée, on ne passe pas de numéro de saison (comportement par défaut)
-            // Sinon, on passe un tableau de numéros de saison
             const seasonNumber = selectedSeasons.length > 0 ? selectedSeasons : null;
-            handleFindMissing($(this), ratingKey, seasonNumber);
+            handleFindMissing($(this), ratingKey, seasonNumber, 'packs');
         });
 
         // Bouton par saison
         $(seriesModalElement).on('click', '.find-missing-season-episodes-btn', function() {
             const ratingKey = $('#series-management-modal .modal-body [data-rating-key]').first().data('ratingKey');
             const seasonNumber = $(this).data('season-number');
-            handleFindMissing($(this), ratingKey, seasonNumber);
+            handleFindMissing($(this), ratingKey, seasonNumber, 'episodes');
         });
     }
     // =================================================================

@@ -2749,7 +2749,8 @@ def update_single_episode_monitoring():
 def search_missing_episodes():
     data = request.json
     rating_key = data.get('ratingKey')
-    season_numbers = data.get('seasonNumber')  # Peut être un nombre unique ou une liste
+    season_numbers = data.get('seasonNumber')
+    search_mode = data.get('search_mode', 'packs')  # 'packs' par défaut
 
     try:
         plex_server = get_plex_admin_server()
@@ -2771,26 +2772,34 @@ def search_missing_episodes():
             if not ep.get('hasFile') and ep.get('monitored')
         ]
 
+        target_seasons = set()
         if season_numbers is not None:
-            # S'assurer que season_numbers est une liste pour un traitement uniforme
             if not isinstance(season_numbers, list):
                 season_numbers = [season_numbers]
-
-            # Convertir tous les numéros de saison en entiers pour une comparaison sûre
             target_seasons = {int(s) for s in season_numbers}
-
-            missing_episodes = [
-                ep for ep in missing_episodes
-                if ep.get('seasonNumber') in target_seasons
-            ]
+            missing_episodes = [ep for ep in missing_episodes if ep.get('seasonNumber') in target_seasons]
+        else:
+            # Si aucune saison n'est spécifiée, on cible toutes les saisons qui ont des manques
+            target_seasons = {ep.get('seasonNumber') for ep in missing_episodes}
 
         queries = set()
-        for ep in missing_episodes:
-            season_num = f"S{ep.get('seasonNumber'):02d}"
-            # Requête pour le pack saison
-            queries.add(f"{series.title} {season_num}")
-            if series.originalTitle and series.originalTitle != series.title:
-                queries.add(f"{series.originalTitle} {season_num}")
+        original_title = series.originalTitle if series.originalTitle and series.originalTitle != series.title else None
+
+        if search_mode == 'episodes':
+            # Recherche par épisode (ex: "Nom Série S05E")
+            for season_num in target_seasons:
+                query = f"{series.title} S{season_num:02d}E"
+                queries.add(query)
+                if original_title:
+                    queries.add(f"{original_title} S{season_num:02d}E")
+        else:  # 'packs'
+            # Recherche par pack saison (ex: "Nom Série S05", "Nom Série Saison 05")
+            for season_num in target_seasons:
+                queries.add(f"{series.title} S{season_num:02d}")
+                queries.add(f"{series.title} Saison {season_num:02d}")
+                if original_title:
+                    queries.add(f"{original_title} S{season_num:02d}")
+                    queries.add(f"{original_title} Saison {season_num:02d}")
 
         session['missing_episodes_queries'] = list(queries)
         return jsonify({

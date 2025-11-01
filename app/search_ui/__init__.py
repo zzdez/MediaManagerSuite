@@ -29,12 +29,6 @@ def search_page():
     """Affiche la page de recherche principale."""
     return render_template('search_ui/search.html')
 
-@search_ui_bp.route('/api/search/get_session_queries', methods=['GET'])
-@login_required
-def get_session_queries():
-    queries = session.pop('missing_episodes_queries', None)
-    return jsonify(queries=queries)
-
 # --- API Routes ---
 
 @search_ui_bp.route('/api/media/search', methods=['POST'])
