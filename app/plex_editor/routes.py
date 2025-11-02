@@ -949,11 +949,18 @@ def get_media_items():
 
         items_to_render.sort(key=lambda x: getattr(x, 'titleSort', x.title).lower())
 
-        return render_template(
+        # Mise en cache des résultats et des filtres
+        results_html = render_template(
             'plex_editor/_media_table.html',
             items=items_to_render,
             external_suggestions=external_suggestions
         )
+        session['plex_editor_last_search'] = {
+            'filters': data,
+            'results_html': results_html
+        }
+
+        return results_html
 
     except Exception as e:
         current_app.logger.error(f"Erreur API get_media_items: {e}", exc_info=True)
@@ -2838,6 +2845,15 @@ def rename_series_files_endpoint():
         return jsonify({'status': 'success', 'message': message})
     else:
         return jsonify({'status': 'error', 'message': 'Échec de l\'envoi de la commande à Sonarr.'}), 500
+
+@plex_editor_bp.route('/api/clear_last_search', methods=['POST'])
+@login_required
+def clear_last_search():
+    """Vide le cache de la dernière recherche de l'éditeur Plex de la session."""
+    if 'plex_editor_last_search' in session:
+        session.pop('plex_editor_last_search')
+        current_app.logger.info("Cache de la dernière recherche de l'éditeur Plex vidé.")
+    return jsonify({'status': 'success'})
 
 # --- Gestionnaires d'erreur ---
 #@app.errorhandler(404)

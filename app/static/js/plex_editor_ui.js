@@ -148,60 +148,69 @@ $(document).ready(function() {
         loadSubFilters(userId, selectedLibraries);
     });
 
-    // --- LOGIQUE DE RESTAURATION DES FILTRES (ROBUSTE) ---
+    // --- NOUVELLE LOGIQUE DE RESTAURATION ---
 
-    async function applyReturnFilters() {
-        if (typeof plexEditorReturnFilters !== 'undefined' && plexEditorReturnFilters && plexEditorReturnFilters.userId) {
-            console.log("Application des filtres de retour...", plexEditorReturnFilters);
+    async function restoreFiltersState(filters) {
+        if (!filters || !filters.userId) return;
+        console.log("Restauration de l'état des filtres...", filters);
 
-            // 1. Définir l'utilisateur et attendre le chargement des bibliothèques
-            userSelect.val(plexEditorReturnFilters.userId);
-            await loadLibrariesForUser(plexEditorReturnFilters.userId);
+        // Désactiver le bouton Appliquer pour éviter les clics accidentels
+        applyBtn.prop('disabled', true);
 
-            // 2. Définir la bibliothèque et attendre le chargement des sous-filtres
-            librarySelect.val(plexEditorReturnFilters.libraryKeys);
-            await loadSubFilters(plexEditorReturnFilters.userId, plexEditorReturnFilters.libraryKeys);
+        // 1. Définir l'utilisateur et attendre le chargement des bibliothèques
+        userSelect.val(filters.userId);
+        await loadLibrariesForUser(filters.userId);
 
-            // 3. Maintenant que tous les menus sont peuplés, on peut définir leurs valeurs
-            $('#status-filter').val(plexEditorReturnFilters.statusFilter);
-            $('#title-filter-input').val(plexEditorReturnFilters.titleFilter);
-            $('#year-filter').val(plexEditorReturnFilters.year);
-            $('input[name="genre-logic"][value="' + plexEditorReturnFilters.genreLogic + '"]').prop('checked', true);
-            $('#actor-filter').val(plexEditorReturnFilters.actor);
-            $('#director-filter').val(plexEditorReturnFilters.director);
-            $('#writer-filter').val(plexEditorReturnFilters.writer);
-            genreSelect.val(plexEditorReturnFilters.genres);
-            collectionSelect.val(plexEditorReturnFilters.collections);
-            resolutionSelect.val(plexEditorReturnFilters.resolutions);
-            studioSelect.val(plexEditorReturnFilters.studios);
-            rootFolderSelect.val(plexEditorReturnFilters.rootFolders);
+        // 2. Définir la bibliothèque et attendre le chargement des sous-filtres
+        librarySelect.val(filters.libraryKeys);
+        await loadSubFilters(filters.userId, filters.libraryKeys);
 
-            if (plexEditorReturnFilters.dateFilter) {
-                $('#date-filter-type').val(plexEditorReturnFilters.dateFilter.type).trigger('change');
-                $('#date-filter-preset').val(plexEditorReturnFilters.dateFilter.preset).trigger('change');
-                $('#date-filter-start').val(plexEditorReturnFilters.dateFilter.start);
-                $('#date-filter-end').val(plexEditorReturnFilters.dateFilter.end);
-            }
-            if (plexEditorReturnFilters.ratingFilter) {
-                $('#rating-filter-operator').val(plexEditorReturnFilters.ratingFilter.operator).trigger('change');
-                $('#rating-filter-value').val(plexEditorReturnFilters.ratingFilter.value);
-            }
+        // 3. Maintenant que tous les menus sont peuplés, on peut définir leurs valeurs
+        $('#status-filter').val(filters.statusFilter);
+        $('#title-filter-input').val(filters.titleFilter);
+        $('#year-filter').val(filters.year);
+        $('input[name="genre-logic"][value="' + filters.genreLogic + '"]').prop('checked', true);
+        $('#actor-filter').val(filters.actor);
+        $('#director-filter').val(filters.director);
+        $('#writer-filter').val(filters.writer);
+        genreSelect.val(filters.genres);
+        collectionSelect.val(filters.collections);
+        resolutionSelect.val(filters.resolutions);
+        studioSelect.val(filters.studios);
+        rootFolderSelect.val(filters.rootFolders);
 
-            // 4. Déclencher la recherche
-            console.log("Tous les filtres sont restaurés. Lancement de la recherche.");
-            applyBtn.click();
+        if (filters.dateFilter) {
+            $('#date-filter-type').val(filters.dateFilter.type).trigger('change');
+            $('#date-filter-preset').val(filters.dateFilter.preset).trigger('change');
+            $('#date-filter-start').val(filters.dateFilter.start);
+            $('#date-filter-end').val(filters.dateFilter.end);
+        }
+        if (filters.ratingFilter) {
+            $('#rating-filter-operator').val(filters.ratingFilter.operator).trigger('change');
+            $('#rating-filter-value').val(filters.ratingFilter.value);
+        }
+
+        // Réactiver le bouton
+        applyBtn.prop('disabled', false);
+        console.log("Restauration des filtres terminée.");
+
+        // Vider le cache de la session pour que le rechargement normal fonctionne
+        fetch('/plex/api/clear_last_search', { method: 'POST' });
+    }
+
+    // --- INITIALISATION DE LA PAGE ---
+    Promise.all([loadUsers(), loadRootFolders()]).then(() => {
+        if (typeof plexEditorReturnState !== 'undefined' && plexEditorReturnState && plexEditorReturnState.filters) {
+            // On est dans un retour intelligent, on restaure l'état des filtres
+            // Les résultats HTML sont déjà dans la page via Jinja2
+            restoreFiltersState(plexEditorReturnState.filters);
         } else {
-            // Comportement normal : charger les utilisateurs et sélectionner le dernier utilisé
+            // Comportement normal : charger le dernier utilisateur utilisé
             const lastUserId = localStorage.getItem(LAST_USER_KEY);
             if (lastUserId && userSelect.find(`option[value="${lastUserId}"]`).length) {
                 userSelect.val(lastUserId).trigger('change');
             }
         }
-    }
-
-    // --- INITIALISATION DE LA PAGE ---
-    Promise.all([loadUsers(), loadRootFolders()]).then(() => {
-        applyReturnFilters();
     });
 
     // --- 3. Appliquer les filtres pour charger les médias ---

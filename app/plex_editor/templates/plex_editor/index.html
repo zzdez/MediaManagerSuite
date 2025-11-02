@@ -181,9 +181,12 @@
         <p class="mt-2">Chargement des médias...</p>
     </div>
     <div id="plex-items-container">
-        <p class="text-center text-muted">Veuillez sélectionner un utilisateur et une bibliothèque pour afficher les médias.</p>
+        {% if session.get('plex_editor_last_search') and session['plex_editor_last_search']['results_html'] %}
+            {{ session['plex_editor_last_search']['results_html'] | safe }}
+        {% else %}
+            <p class="text-center text-muted">Veuillez sélectionner un utilisateur et une bibliothèque pour afficher les médias.</p>
+        {% endif %}
     </div>
-
 </div>
 
 <!-- Modale d'Information -->
@@ -416,7 +419,7 @@
 {% block scripts %}
 <script>
     // Injecte l'état des filtres de retour dans une variable globale JS, s'il existe
-    var plexEditorReturnFilters = {{ return_filters | tojson | safe }};
+    var plexEditorReturnState = {{ session.get('plex_editor_last_search', {}) | tojson | safe }};
 </script>
 <script src="{{ url_for('static', filename='js/plex_editor_ui.js') }}"></script>
 {% endblock %}
