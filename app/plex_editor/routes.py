@@ -1087,9 +1087,9 @@ def toggle_watched_status_api(rating_key): # Nom de fonction unique
 @login_required
 def index():
     """Affiche le nouveau tableau de bord unifié."""
-    # Récupère l'état des filtres depuis la session et le supprime en une seule fois
-    return_filters = session.pop('plex_editor_filters_return_state', None)
-    return render_template('plex_editor/index.html', return_filters=return_filters)
+    # Toute la logique de restauration est maintenant gérée par le cache `plex_editor_last_search`
+    # directement dans le template et le JavaScript. Cette route n'a plus besoin de passer de variables.
+    return render_template('plex_editor/index.html')
 
 @plex_editor_bp.route('/toggle_watched_status', methods=['POST'])
 @login_required
@@ -2760,13 +2760,9 @@ def search_missing_episodes():
     rating_key = data.get('ratingKey')
     season_numbers = data.get('seasonNumber')
     search_mode = data.get('search_mode', 'packs')  # 'packs' par défaut
-    filters_state = data.get('filtersState')
 
-    if filters_state:
-        session['plex_editor_filters_return_state'] = filters_state
-    else:
-        # S'il n'y a pas d'état de filtre, on s'assure de nettoyer un ancien état potentiel
-        session.pop('plex_editor_filters_return_state', None)
+    # L'état des filtres est maintenant géré par le cache global `plex_editor_last_search`,
+    # donc la gestion de `plex_editor_filters_return_state` est supprimée.
 
     try:
         plex_server = get_plex_admin_server()
