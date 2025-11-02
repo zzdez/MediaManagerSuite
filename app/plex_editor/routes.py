@@ -959,6 +959,7 @@ def get_media_items():
             'filters': data,
             'results_html': results_html
         }
+        session.modified = True
 
         return results_html
 
@@ -2760,9 +2761,17 @@ def search_missing_episodes():
     rating_key = data.get('ratingKey')
     season_numbers = data.get('seasonNumber')
     search_mode = data.get('search_mode', 'packs')  # 'packs' par défaut
+    filters_state = data.get('filtersState')
 
-    # L'état des filtres est maintenant géré par le cache global `plex_editor_last_search`,
-    # donc la gestion de `plex_editor_filters_return_state` est supprimée.
+    # Si l'état des filtres est fourni, on met à jour le cache en session.
+    # On vérifie si la clé 'results_html' existe pour ne pas la supprimer si elle est déjà là.
+    if filters_state:
+        if 'plex_editor_last_search' in session and 'results_html' in session['plex_editor_last_search']:
+            session['plex_editor_last_search']['filters'] = filters_state
+        else:
+            # Si le cache n'existe pas, on le crée avec les filtres mais sans résultats.
+            session['plex_editor_last_search'] = {'filters': filters_state, 'results_html': ''}
+        session.modified = True
 
     try:
         plex_server = get_plex_admin_server()
