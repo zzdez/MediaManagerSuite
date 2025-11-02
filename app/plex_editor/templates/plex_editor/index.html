@@ -414,5 +414,9 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
+    // Injecte l'état des filtres de retour dans une variable globale JS, s'il existe
+    var plexEditorReturnFilters = {{ return_filters | tojson | safe }};
+</script>
 <script src="{{ url_for('static', filename='js/plex_editor_ui.js') }}"></script>
 {% endblock %}

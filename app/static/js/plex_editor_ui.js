@@ -1,4 +1,4 @@
-// Fichier : app/static/js/plex_editor_ui.js (Version Complète et Définitive)
+// Fichier : app/static/js/plex_editor_ui.js
 
 $(document).ready(function() {
 
@@ -8,76 +8,33 @@ $(document).ready(function() {
     const userSelect = $('#user-select');
     const librarySelect = $('#library-select');
     const genreSelect = $('#genre-filter');
+    const collectionSelect = $('#collection-filter');
+    const resolutionSelect = $('#resolution-filter');
+    const studioSelect = $('#studio-filter');
+    const rootFolderSelect = $('#root-folder-select-main');
     const applyBtn = $('#apply-filters-btn');
     const loader = $('#plex-items-loader');
     const itemsContainer = $('#plex-items-container');
     const LAST_USER_KEY = 'mms_last_plex_user_id';
 
-    // --- 1. Charger les utilisateurs et les dossiers racines au démarrage ---
-    function loadRootFolders() {
-        const rootFolderSelect = $('#root-folder-select-main');
-        rootFolderSelect.html('<option selected disabled>Chargement...</option>').prop('disabled', true);
+    // --- NOUVELLES FONCTIONS DE CHARGEMENT BASÉES SUR LES PROMESSES ---
 
-        fetch("/plex/api/media/root_folders")
+    function loadUsers() {
+        return fetch("/plex/api/users")
             .then(response => response.json())
-            .then(folders => {
-                rootFolderSelect.html(''); // Vider avant de remplir
-                if (folders && folders.length > 0) {
-                    // Ajouter une option "Tous les dossiers" qui sera sélectionnée par défaut
-                    rootFolderSelect.append($('<option>', { value: 'all', text: 'Tous les dossiers' }));
-                    folders.forEach(folder => {
-                        const displayText = `${folder.path} (${folder.freeSpace_formatted})`;
-                        rootFolderSelect.append(new Option(displayText, folder.path));
+            .then(users => {
+                userSelect.html('<option value="" selected disabled>Choisir un utilisateur...</option>');
+                if (users && users.length > 0) {
+                    users.forEach(user => {
+                        userSelect.append(new Option(user.text, user.id));
                     });
-                    rootFolderSelect.prop('disabled', false);
-                } else {
-                    rootFolderSelect.html('<option selected disabled>Aucun dossier trouvé</option>');
                 }
-            })
-            .catch(error => {
-                console.error('Erreur chargement dossiers racines:', error);
-                rootFolderSelect.html('<option selected disabled>Erreur</option>');
             });
     }
 
-    fetch("/plex/api/users")
-        .then(response => response.json())
-        .then(users => {
-            userSelect.html('<option value="" selected disabled>Choisir un utilisateur...</option>');
-            if (users && users.length > 0) {
-                users.forEach(user => {
-                    userSelect.append(new Option(user.text, user.id));
-                });
-            }
-            const lastUserId = localStorage.getItem(LAST_USER_KEY);
-            if (lastUserId && userSelect.find(`option[value="${lastUserId}"]`).length) {
-                userSelect.val(lastUserId).trigger('change');
-            }
-        });
-
-    loadRootFolders(); // On charge les dossiers au démarrage
-
-    // --- 2. Gérer la sélection de l'utilisateur ---
-    userSelect.on('change', function () {
-        const userId = $(this).val();
-        const userTitle = $(this).find('option:selected').text();
-        if (!userId) return;
-
-        localStorage.setItem(LAST_USER_KEY, userId);
+    function loadLibrariesForUser(userId) {
         librarySelect.html('<option selected disabled>Chargement...</option>').prop('disabled', true);
-
-        // On informe le serveur pour mettre la session à jour
-        fetch('/plex/select_user', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: userId, title: userTitle })
-        }).then(response => response.json())
-          .then(data => {
-            if (data.status === 'success') console.log("Utilisateur sauvegardé en session.");
-            else console.error('Erreur sauvegarde session:', data.message);
-        });
-
-        fetch(`/plex/api/libraries/${userId}`)
+        return fetch(`/plex/api/libraries/${userId}`)
             .then(response => response.json())
             .then(libraries => {
                 librarySelect.html('');
@@ -88,29 +45,34 @@ $(document).ready(function() {
                 } else {
                     librarySelect.html('<option selected disabled>Aucune bibliothèque</option>');
                 }
-                librarySelect.trigger('change'); // Trigger change to load genres
             });
-    });
+    }
 
-    librarySelect.on('change', function () {
-        const selectedLibraries = $(this).val();
-        const userId = userSelect.val();
-
+    function loadSubFilters(userId, libraryKeys) {
+        // Reset sub-filters
         genreSelect.html('<option value="" selected>Tous les genres</option>').prop('disabled', true);
-        $('#collection-filter').html('').prop('disabled', true);
-        $('#resolution-filter').html('').prop('disabled', true);
-        $('#studio-filter').html('').prop('disabled', true);
+        collectionSelect.html('').prop('disabled', true);
+        resolutionSelect.html('').prop('disabled', true);
+        studioSelect.html('').prop('disabled', true);
 
-        if (selectedLibraries && selectedLibraries.length > 0) {
-            const payload = { userId: userId, libraryKeys: selectedLibraries };
+        if (!libraryKeys || libraryKeys.length === 0 || libraryKeys.includes('all')) {
+            // Enable empty selects if 'all' is chosen, but don't fetch.
+            genreSelect.prop('disabled', false);
+            collectionSelect.prop('disabled', false);
+            resolutionSelect.prop('disabled', false);
+            studioSelect.prop('disabled', false);
+            return Promise.resolve();
+        }
 
-            // Fetch Genres
-            fetch('/plex/api/genres', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            })
-            .then(response => response.json())
+        const payload = { userId: userId, libraryKeys: libraryKeys };
+        const fetchOptions = {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        };
+
+        const genresPromise = fetch('/plex/api/genres', fetchOptions)
+            .then(res => res.json())
             .then(genres => {
                 if (genres && genres.length > 0) {
                     genres.forEach(genre => genreSelect.append(new Option(genre, genre)));
@@ -118,62 +80,131 @@ $(document).ready(function() {
                 }
             });
 
-            // **LOGIQUE MANQUANTE À AJOUTER CI-DESSOUS**
-            const collectionSelect = $('#collection-filter');
-            fetch('/plex/api/collections', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: userId, libraryKeys: selectedLibraries })
-            })
-            .then(response => response.json())
+        const collectionsPromise = fetch('/plex/api/collections', fetchOptions)
+            .then(res => res.json())
             .then(collections => {
-                collectionSelect.empty(); // Vider le sélecteur
-                collections.forEach(collection => {
-                    collectionSelect.append($('<option>', {
-                        value: collection,
-                        text: collection
-                    }));
-                });
+                collections.forEach(c => collectionSelect.append(new Option(c, c)));
                 collectionSelect.prop('disabled', false);
-            })
-            .catch(error => console.error('Error fetching collections:', error));
+            });
 
-            // Fetch Resolutions
-            fetch('/plex/api/resolutions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            })
-            .then(response => response.json())
+        const resolutionsPromise = fetch('/plex/api/resolutions', fetchOptions)
+            .then(res => res.json())
             .then(resolutions => {
-                const resolutionSelect = $('#resolution-filter');
-                resolutionSelect.empty();
-                if (resolutions && resolutions.length > 0) {
-                    resolutions.forEach(resolution => resolutionSelect.append(new Option(resolution, resolution)));
-                    resolutionSelect.prop('disabled', false);
-                }
+                resolutions.forEach(r => resolutionSelect.append(new Option(r, r)));
+                resolutionSelect.prop('disabled', false);
             });
 
-            // Fetch Studios
-            fetch('/plex/api/studios', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            })
-            .then(response => response.json())
+        const studiosPromise = fetch('/plex/api/studios', fetchOptions)
+            .then(res => res.json())
             .then(studios => {
-                const studioSelect = $('#studio-filter');
-                studioSelect.empty();
-                if (studios && studios.length > 0) {
-                    studios.forEach(studio => studioSelect.append(new Option(studio, studio)));
-                    studioSelect.prop('disabled', false);
+                studios.forEach(s => studioSelect.append(new Option(s, s)));
+                studioSelect.prop('disabled', false);
+            });
+
+        return Promise.all([genresPromise, collectionsPromise, resolutionsPromise, studiosPromise]);
+    }
+
+    function loadRootFolders() {
+        rootFolderSelect.html('<option selected disabled>Chargement...</option>').prop('disabled', true);
+        return fetch("/plex/api/media/root_folders")
+            .then(response => response.json())
+            .then(folders => {
+                rootFolderSelect.html('');
+                if (folders && folders.length > 0) {
+                    rootFolderSelect.append($('<option>', { value: 'all', text: 'Tous les dossiers' }));
+                    folders.forEach(folder => {
+                        const displayText = `${folder.path} (${folder.freeSpace_formatted})`;
+                        rootFolderSelect.append(new Option(displayText, folder.path));
+                    });
+                    rootFolderSelect.prop('disabled', false);
+                } else {
+                    rootFolderSelect.html('<option selected disabled>Aucun dossier trouvé</option>');
                 }
             });
+    }
+
+    // --- GESTION DES ÉVÉNEMENTS DE CHANGEMENT ---
+
+    userSelect.on('change', function () {
+        const userId = $(this).val();
+        const userTitle = $(this).find('option:selected').text();
+        if (!userId) return;
+
+        localStorage.setItem(LAST_USER_KEY, userId);
+        fetch('/plex/select_user', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: userId, title: userTitle })
+        });
+
+        loadLibrariesForUser(userId).then(() => {
+            librarySelect.trigger('change');
+        });
+    });
+
+    librarySelect.on('change', function () {
+        const selectedLibraries = $(this).val();
+        const userId = userSelect.val();
+        loadSubFilters(userId, selectedLibraries);
+    });
+
+    // --- LOGIQUE DE RESTAURATION DES FILTRES (ROBUSTE) ---
+
+    async function applyReturnFilters() {
+        if (typeof plexEditorReturnFilters !== 'undefined' && plexEditorReturnFilters && plexEditorReturnFilters.userId) {
+            console.log("Application des filtres de retour...", plexEditorReturnFilters);
+
+            // 1. Définir l'utilisateur et attendre le chargement des bibliothèques
+            userSelect.val(plexEditorReturnFilters.userId);
+            await loadLibrariesForUser(plexEditorReturnFilters.userId);
+
+            // 2. Définir la bibliothèque et attendre le chargement des sous-filtres
+            librarySelect.val(plexEditorReturnFilters.libraryKeys);
+            await loadSubFilters(plexEditorReturnFilters.userId, plexEditorReturnFilters.libraryKeys);
+
+            // 3. Maintenant que tous les menus sont peuplés, on peut définir leurs valeurs
+            $('#status-filter').val(plexEditorReturnFilters.statusFilter);
+            $('#title-filter-input').val(plexEditorReturnFilters.titleFilter);
+            $('#year-filter').val(plexEditorReturnFilters.year);
+            $('input[name="genre-logic"][value="' + plexEditorReturnFilters.genreLogic + '"]').prop('checked', true);
+            $('#actor-filter').val(plexEditorReturnFilters.actor);
+            $('#director-filter').val(plexEditorReturnFilters.director);
+            $('#writer-filter').val(plexEditorReturnFilters.writer);
+            genreSelect.val(plexEditorReturnFilters.genres);
+            collectionSelect.val(plexEditorReturnFilters.collections);
+            resolutionSelect.val(plexEditorReturnFilters.resolutions);
+            studioSelect.val(plexEditorReturnFilters.studios);
+            rootFolderSelect.val(plexEditorReturnFilters.rootFolders);
+
+            if (plexEditorReturnFilters.dateFilter) {
+                $('#date-filter-type').val(plexEditorReturnFilters.dateFilter.type).trigger('change');
+                $('#date-filter-preset').val(plexEditorReturnFilters.dateFilter.preset).trigger('change');
+                $('#date-filter-start').val(plexEditorReturnFilters.dateFilter.start);
+                $('#date-filter-end').val(plexEditorReturnFilters.dateFilter.end);
+            }
+            if (plexEditorReturnFilters.ratingFilter) {
+                $('#rating-filter-operator').val(plexEditorReturnFilters.ratingFilter.operator).trigger('change');
+                $('#rating-filter-value').val(plexEditorReturnFilters.ratingFilter.value);
+            }
+
+            // 4. Déclencher la recherche
+            console.log("Tous les filtres sont restaurés. Lancement de la recherche.");
+            applyBtn.click();
+        } else {
+            // Comportement normal : charger les utilisateurs et sélectionner le dernier utilisé
+            const lastUserId = localStorage.getItem(LAST_USER_KEY);
+            if (lastUserId && userSelect.find(`option[value="${lastUserId}"]`).length) {
+                userSelect.val(lastUserId).trigger('change');
+            }
         }
+    }
+
+    // --- INITIALISATION DE LA PAGE ---
+    Promise.all([loadUsers(), loadRootFolders()]).then(() => {
+        applyReturnFilters();
     });
 
     // --- 3. Appliquer les filtres pour charger les médias ---
-    // Remplace l'ancienne logique de gestion des dates par celle-ci
     $('#date-filter-type').on('change', function() {
         const type = $(this).val();
         $('#date-filter-preset').prop('disabled', !type);
@@ -186,7 +217,6 @@ $(document).ready(function() {
         $('#custom-date-fields-container').toggle($(this).val() === 'custom');
     });
 
-    // Logique pour gérer l'affichage dynamique du filtre de note
     $('#rating-filter-operator').on('change', function() {
         const operator = $(this).val();
         const showValueSelector = ['gte', 'lte', 'eq'].includes(operator);
@@ -198,7 +228,7 @@ $(document).ready(function() {
         const selectedLibraries = librarySelect.val();
         const statusFilter = $('#status-filter').val();
         const titleFilter = $('#title-filter-input').val().trim();
-        const yearFilter = $('#year-filter').val(); // <-- NOUVELLE LIGNE
+        const yearFilter = $('#year-filter').val();
         const selectedGenres = genreSelect.val();
         const genreLogic = $('input[name="genre-logic"]:checked').val();
         const dateFilterType = $('#date-filter-type').val();
@@ -215,7 +245,6 @@ $(document).ready(function() {
         const selectedStudios = $('#studio-filter').val();
         let selectedRootFolders = $('#root-folder-select-main').val();
 
-        // Si "Tous les dossiers" est sélectionné, on traite la valeur comme une liste vide
         if (selectedRootFolders && selectedRootFolders.includes('all')) {
             selectedRootFolders = [];
         }
@@ -236,7 +265,7 @@ $(document).ready(function() {
                 libraryKeys: selectedLibraries,
                 statusFilter: statusFilter,
                 titleFilter: titleFilter,
-                year: yearFilter, // <-- NOUVELLE LIGNE
+                year: yearFilter,
                 genres: selectedGenres,
                 genreLogic: genreLogic,
                 dateFilter: {
@@ -255,7 +284,7 @@ $(document).ready(function() {
                 director: directorFilter,
                 writer: writerFilter,
                 studios: selectedStudios,
-                rootFolders: selectedRootFolders // <-- NOUVELLE LIGNE
+                rootFolders: selectedRootFolders
             })
         })
         .then(response => response.text())
@@ -265,18 +294,13 @@ $(document).ready(function() {
         });
     });
 
-    // --- FILTRE POUR AFFICHER UNIQUEMENT LES SÉRIES INCOMPLÈTES ---
     $(document).on('change', '#show-incomplete-only-filter', function() {
         const showOnlyIncomplete = $(this).is(':checked');
         const tableRows = $('#plex-results-table tbody tr');
-
         if (!showOnlyIncomplete) {
-            // Si la case est décochée, on affiche tout
             tableRows.show();
             return;
         }
-
-        // Sinon, on boucle et on affiche/cache en fonction de l'attribut data
         tableRows.each(function() {
             const row = $(this);
             const isIncomplete = row.data('incomplete') === true;
@@ -289,7 +313,6 @@ $(document).ready(function() {
     // =================================================================
 
     // --- A. Écouteur d'événements délégué pour SETUP les modales ---
-    // Cet unique écouteur gère les clics sur les boutons qui ouvrent les modales
     itemsContainer.on('click', function(event) {
         const target = $(event.target);
 
@@ -316,33 +339,29 @@ $(document).ready(function() {
             $('#confirmRejectShowBtn').data('ratingKey', ratingKey);
         }
 
-// --- ACTION : COPIER LE CHEMIN DU FICHIER ---
         const copyPathBtn = event.target.closest('.copy-path-btn');
         if (copyPathBtn) {
             const path = $(copyPathBtn).data('path');
             navigator.clipboard.writeText(path).then(() => {
-                // Succès ! On change l'icône temporairement pour donner un feedback.
                 const originalIcon = $(copyPathBtn).html();
                 $(copyPathBtn).html('<i class="bi bi-check-lg text-success"></i>');
                 setTimeout(() => {
                     $(copyPathBtn).html(originalIcon);
-                }, 1500); // Rétablir l'icône après 1.5 secondes
+                }, 1500);
             }).catch(err => {
                 console.error('Erreur de copie dans le presse-papiers:', err);
                 alert("La copie a échoué. Vérifiez les permissions de votre navigateur.");
             });
         }
 
-        // --- ACTION : SETUP MODALE DÉTAILS DU MÉDIA ---
         const titleLink = event.target.closest('.item-title-link');
         if (titleLink) {
-            event.preventDefault(); // Empêche le lien de remonter en haut de la page
+            event.preventDefault();
             const ratingKey = $(titleLink).data('ratingKey');
             const modalElement = document.getElementById('item-details-modal');
             const modalTitle = modalElement.querySelector('#itemDetailsModalLabel');
             const modalBody = modalElement.querySelector('.modal-body');
 
-            // Affiche le loader et réinitialise le contenu
             modalTitle.textContent = 'Chargement des détails...';
             modalBody.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>';
 
@@ -380,7 +399,6 @@ $(document).ready(function() {
                 });
         }
 
-        // --- ACTION : SETUP MODALE GÉRER SÉRIE ---
         const manageSeriesBtn = event.target.closest('.manage-series-btn');
         if (manageSeriesBtn) {
             const ratingKey = $(manageSeriesBtn).data('ratingKey');
@@ -390,11 +408,10 @@ $(document).ready(function() {
             $('#seriesManagementModalLabel').text(`Gestion de la Série : ${seriesTitle}`);
             modalBody.html('<div class="text-center my-5"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Chargement...</p></div>');
 
-            // On lance la requête pour obtenir le contenu de la modale
             fetch(`/plex/api/series_details/${ratingKey}`, {
-                method: 'POST', // On passe à POST pour envoyer le userId
+                method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: userSelect.val() }) // On envoie l'ID de l'utilisateur
+                body: JSON.stringify({ userId: userSelect.val() })
             })
             .then(response => response.text())
             .then(html => modalBody.html(html))
@@ -406,52 +423,48 @@ $(document).ready(function() {
     });
 
     // --- B. Écouteurs d'événements pour les boutons de CONFIRMATION des modales ---
+    $('#archiveMovieModal').on('show.bs.modal', function () {
+        $('#archiveMovieDeleteFiles').prop('checked', true);
+        $('#archiveMovieUnmonitor').prop('checked', true);
+        $('#archiveMovieAddTag').prop('checked', true);
+    });
 
-// Met les options d'archivage de film par défaut LORS DE L'OUVERTURE de la modale
-$('#archiveMovieModal').on('show.bs.modal', function () {
-    $('#archiveMovieDeleteFiles').prop('checked', true);
-    $('#archiveMovieUnmonitor').prop('checked', true);
-    $('#archiveMovieAddTag').prop('checked', true);
-});
+    $('#archiveShowModal').on('show.bs.modal', function () {
+        $('#archiveShowDeleteFiles').prop('checked', true);
+        $('#archiveShowUnmonitor').prop('checked', true);
+        $('#archiveShowAddTag').prop('checked', true);
+    });
 
-// Met les options d'archivage de série par défaut LORS DE L'OUVERTURE de la modale
-$('#archiveShowModal').on('show.bs.modal', function () {
-    $('#archiveShowDeleteFiles').prop('checked', true);
-    $('#archiveShowUnmonitor').prop('checked', true);
-    $('#archiveShowAddTag').prop('checked', true);
-});
+    $('#confirmArchiveMovieBtn').on('click', function() {
+        const btn = $(this);
+        const ratingKey = btn.data('ratingKey');
+        const userId = $('#user-select').val();
+        if (!userId) {
+            alert("Erreur : Aucun utilisateur n'est sélectionné.");
+            return;
+        }
 
-// Gère la soumission LORS DU CLIC sur le bouton de confirmation
-$('#confirmArchiveMovieBtn').on('click', function() {
-    const btn = $(this);
-    const ratingKey = btn.data('ratingKey');
-    const userId = $('#user-select').val();
-    if (!userId) {
-        alert("Erreur : Aucun utilisateur n'est sélectionné.");
-        return;
-    }
-
-    btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Archivage...');
-    const options = {
-        deleteFiles: $('#archiveMovieDeleteFiles').is(':checked'),
-        unmonitor: $('#archiveMovieUnmonitor').is(':checked'),
-        addTag: $('#archiveMovieAddTag').is(':checked')
-    };
-    fetch('/plex/archive_movie', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ratingKey: ratingKey, options: options, userId: userId })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.status === 'success') {
-            $(`.archive-movie-btn[data-rating-key='${ratingKey}']`).closest('tr').remove();
-            bootstrap.Modal.getInstance(document.getElementById('archiveMovieModal')).hide();
-        } else { alert('Erreur: ' + data.message); }
-    })
-    .catch(error => { console.error(error); alert('Erreur de communication.'); })
-    .finally(() => btn.prop('disabled', false).html('Confirmer l\'archivage'));
-});
+        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Archivage...');
+        const options = {
+            deleteFiles: $('#archiveMovieDeleteFiles').is(':checked'),
+            unmonitor: $('#archiveMovieUnmonitor').is(':checked'),
+            addTag: $('#archiveMovieAddTag').is(':checked')
+        };
+        fetch('/plex/archive_movie', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ratingKey: ratingKey, options: options, userId: userId })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                $(`.archive-movie-btn[data-rating-key='${ratingKey}']`).closest('tr').remove();
+                bootstrap.Modal.getInstance(document.getElementById('archiveMovieModal')).hide();
+            } else { alert('Erreur: ' + data.message); }
+        })
+        .catch(error => { console.error(error); alert('Erreur de communication.'); })
+        .finally(() => btn.prop('disabled', false).html('Confirmer l\'archivage'));
+    });
 
     $('#confirmArchiveShowBtn').on('click', function() {
         const btn = $(this);
@@ -468,7 +481,7 @@ $('#confirmArchiveMovieBtn').on('click', function() {
             body: JSON.stringify({
                 ratingKey: ratingKey,
                 options: options,
-                userId: $('#user-select').val() // <-- AJOUTE CETTE LIGNE
+                userId: $('#user-select').val()
             })
         })
         .then(response => response.json())
@@ -479,7 +492,7 @@ $('#confirmArchiveMovieBtn').on('click', function() {
             } else { alert('Erreur: ' + data.message); }
         })
         .catch(error => { console.error(error); alert('Erreur de communication.'); })
-    .finally(() => btn.prop('disabled', false).html('Confirmer l\'archivage'));
+        .finally(() => btn.prop('disabled', false).html('Confirmer l\'archivage'));
     });
 
     $('#confirmRejectShowBtn').on('click', function() {
@@ -502,31 +515,20 @@ $('#confirmArchiveMovieBtn').on('click', function() {
         .finally(() => btn.prop('disabled', false).text('Oui, rejeter et supprimer'));
     });
 
-    // --- Logique pour la modale de gestion de série ---
     const seriesModalElement = document.getElementById('series-management-modal');
-
     if (seriesModalElement) {
-        // --- GESTION DU TOGGLE GLOBAL DE LA SÉRIE ---
         $(seriesModalElement).on('change', '#series-monitor-toggle', function() {
             const seriesToggle = $(this);
             const isMonitored = seriesToggle.is(':checked');
-
-            // Étape 1 : On met à jour visuellement tous les toggles de saison
             const seasonToggles = $(seriesModalElement).find('.season-monitor-toggle');
             seasonToggles.prop('checked', isMonitored);
-
-            // Étape 2 : On déclenche leur événement "change" pour que la cascade se produise
-            // et que les appels API pour chaque saison soient lancés.
             seasonToggles.trigger('change');
         });
 
-        // --- GESTION DU TOGGLE PAR SAISON ---
         $(seriesModalElement).on('change', '.season-monitor-toggle', function() {
             const seasonToggle = $(this);
             const seasonRow = seasonToggle.closest('.season-row');
             const isMonitored = seasonToggle.is(':checked');
-
-            // On lance l'appel API (code existant et correct)
             const sonarrSeriesId = seasonRow.data('sonarr-series-id');
             const seasonNumber = seasonRow.data('season-number');
             seasonRow.addClass('opacity-50');
@@ -540,36 +542,27 @@ $('#confirmArchiveMovieBtn').on('click', function() {
             .catch(() => seasonToggle.prop('checked', !isMonitored))
             .finally(() => seasonRow.removeClass('opacity-50'));
 
-            // **LA CASCADE** : On met à jour visuellement tous les épisodes de la saison
             const collapseTargetSelector = seasonRow.find('[data-bs-toggle="collapse"]').data('bs-target');
             const episodeToggles = $(collapseTargetSelector).find('.episode-monitor-toggle');
             episodeToggles.prop('checked', isMonitored);
-
-            // On déclenche l'événement "change" pour chaque épisode pour lancer leurs appels API
             episodeToggles.trigger('change');
         });
-        // --- GESTION DE LA SUPPRESSION D'UNE SAISON ---
+
         $(seriesModalElement).on('click', '.delete-season-btn', function() {
             const btn = $(this);
             const seasonRow = btn.closest('.season-row');
-            const seasonId = btn.data('season-id'); // C'est le ratingKey de la saison
+            const seasonId = btn.data('season-id');
             const seasonTitle = btn.data('season-title');
-
             if (!confirm(`Êtes-vous sûr de vouloir supprimer tous les fichiers de "${seasonTitle}" et la dé-monitorer dans Sonarr ? Cette action est irréversible.`)) {
                 return;
             }
-
             btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
-
-            // --- CORRECTION : On utilise la bonne URL et la bonne méthode (DELETE) ---
             fetch(`/plex/api/season/${seasonId}`, {
                 method: 'DELETE'
-                // Pas besoin de headers ou de body, l'ID est dans l'URL
             })
             .then(response => response.json())
             .then(data => {
                 if (data.status === 'success') {
-                    // On grise la ligne et désactive les contrôles
                     seasonRow.addClass('opacity-50 text-decoration-line-through');
                     seasonRow.find('input, button').prop('disabled', true);
                     alert(`La saison "${seasonTitle}" a été traitée avec succès.`);
@@ -579,46 +572,24 @@ $('#confirmArchiveMovieBtn').on('click', function() {
             })
             .catch(error => { console.error(error); alert("Erreur de communication."); })
             .finally(() => {
-                // On change l'icône en succès pour confirmer
                 btn.removeClass('btn-outline-danger').addClass('btn-success').html('<i class="bi bi-check-lg"></i>');
             });
         });
 
-        // --- GESTION DU BOUTON DE RENOMMAGE (GLOBAL ET PAR SAISON) ---
-
-        // Écouteur pour le bouton GLOBAL (série entière)
-        $(seriesModalElement).on('click', '#rename-series-files-btn', function() {
-            const button = $(this);
-            const sonarrSeriesId = button.data('sonarr-id');
-            handleFileRename(button, sonarrSeriesId, null); // season_number est null
-        });
-
-        // NOUVEL ÉCOUTEUR pour les boutons de SAISON
-        $(seriesModalElement).on('click', '.rename-season-files-btn', function() {
-            const button = $(this);
-            const sonarrSeriesId = button.data('sonarr-id');
-            const seasonNumber = button.data('season-number');
-            handleFileRename(button, sonarrSeriesId, seasonNumber);
-        });
-
-        // NOUVELLE FONCTION HELPER pour éviter la duplication de code
         function handleFileRename(button, sonarrSeriesId, seasonNumber) {
             const isSeason = seasonNumber !== null;
             const message = isSeason ? `la saison ${seasonNumber}` : "toute la série";
-
             if (!confirm(`Êtes-vous sûr de vouloir demander à Sonarr de renommer tous les fichiers pour ${message} ?`)) {
                 return;
             }
-
             const originalHtml = button.html();
             button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
-
             fetch('/plex/api/series/rename_files', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     sonarr_series_id: sonarrSeriesId,
-                    season_number: seasonNumber // Envoie null pour la série entière
+                    season_number: seasonNumber
                 })
             })
             .then(response => response.json())
@@ -634,15 +605,25 @@ $('#confirmArchiveMovieBtn').on('click', function() {
             });
         }
 
-        // --- GESTION DU TOGGLE PAR ÉPISODE (EFFET IMMÉDIAT) ---
+        $(seriesModalElement).on('click', '#rename-series-files-btn', function() {
+            const button = $(this);
+            const sonarrSeriesId = button.data('sonarr-id');
+            handleFileRename(button, sonarrSeriesId, null);
+        });
+
+        $(seriesModalElement).on('click', '.rename-season-files-btn', function() {
+            const button = $(this);
+            const sonarrSeriesId = button.data('sonarr-id');
+            const seasonNumber = button.data('season-number');
+            handleFileRename(button, sonarrSeriesId, seasonNumber);
+        });
+
         $(seriesModalElement).on('change', '.episode-monitor-toggle', function() {
             const episodeToggle = $(this);
             const episodeRow = episodeToggle.closest('li');
             const episodeId = episodeToggle.data('sonarr-episode-id');
             const isMonitored = episodeToggle.is(':checked');
-
             if (!episodeId) return;
-
             episodeRow.addClass('opacity-50');
             fetch('/plex/api/episodes/update_monitoring_single', {
                 method: 'POST',
@@ -655,26 +636,20 @@ $('#confirmArchiveMovieBtn').on('click', function() {
             .finally(() => episodeRow.removeClass('opacity-50'));
         });
 
-        // --- GESTION DU BOUTON DE SUPPRESSION ---
         $(seriesModalElement).on('click', '#delete-selected-episodes-btn', function() {
             const btn = $(this);
             const checked_boxes = $(seriesModalElement).find('.episode-delete-checkbox:checked');
-
             if (checked_boxes.length === 0) {
                 alert("Veuillez cocher au moins un épisode à supprimer.");
                 return;
             }
-
             if (!confirm(`Êtes-vous sûr de vouloir supprimer définitivement les fichiers des ${checked_boxes.length} épisodes sélectionnés ?`)) {
                 return;
             }
-
             const episodeFileIds = checked_boxes.map(function() {
                 return $(this).val();
             }).get();
-
             btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Suppression...');
-
             fetch('/plex/api/episodes/delete_bulk', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -684,7 +659,6 @@ $('#confirmArchiveMovieBtn').on('click', function() {
             .then(data => {
                 if (data.status === 'success') {
                     alert(`Suppression de ${checked_boxes.length} épisode(s) lancée.`);
-                    // On grise les lignes supprimées
                     checked_boxes.each(function() {
                         $(this).closest('li').addClass('opacity-50 text-decoration-line-through');
                         $(this).prop('checked', false).prop('disabled', true);
@@ -699,16 +673,12 @@ $('#confirmArchiveMovieBtn').on('click', function() {
             });
         });
 
-        // --- GESTION DU CLIC SUR L'ICÔNE VU/NON VU D'UN ÉPISODE ---
         $(seriesModalElement).on('click', '.toggle-episode-watched-btn', function(event) {
             event.preventDefault();
             const link = $(this);
             const ratingKey = link.data('ratingKey');
-            const userId = userSelect.val(); // On a besoin de l'utilisateur
-
-            // Feedback visuel
+            const userId = userSelect.val();
             link.html('<span class="spinner-border spinner-border-sm"></span>');
-
             fetch('/plex/toggle_watched_status', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -717,14 +687,11 @@ $('#confirmArchiveMovieBtn').on('click', function() {
             .then(response => response.json())
             .then(data => {
                 if (data.status === 'success') {
-                    // On remplace juste l'icône, sans recharger toute la modale
                     const isNowWatched = data.new_status === 'Vu';
                     const newIcon = isNowWatched
                         ? '<i class="bi bi-check-circle-fill text-success"></i>'
                         : '<i class="bi bi-circle"></i>';
                     link.html(newIcon);
-
-                    // On met aussi à jour le style de la ligne
                     const listItem = link.closest('li');
                     if (isNowWatched) {
                         listItem.removeClass('list-group-item-secondary').addClass('list-group-item-light text-muted');
@@ -738,17 +705,17 @@ $('#confirmArchiveMovieBtn').on('click', function() {
             .catch(error => { console.error(error); alert("Erreur de communication."); });
         });
 
-        // --- NOUVEAU : GESTION DE LA RECHERCHE D'ÉPISODES MANQUANTS ---
         function handleFindMissing(button, ratingKey, seasonNumber = null, search_mode = 'packs') {
             button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
-
+            const filtersState = getFiltersState();
             fetch('/plex/api/series/search_missing', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     ratingKey: ratingKey,
                     seasonNumber: seasonNumber,
-                    search_mode: search_mode
+                    search_mode: search_mode,
+                    filtersState: filtersState
                 })
             })
             .then(response => response.json())
@@ -767,37 +734,29 @@ $('#confirmArchiveMovieBtn').on('click', function() {
             });
         }
 
-        // Bouton global
         $(seriesModalElement).on('click', '#find-missing-episodes-btn', function() {
             const ratingKey = $('#series-management-modal .modal-body [data-rating-key]').first().data('ratingKey');
             const selectedSeasons = $('.season-search-checkbox:checked').map(function() {
                 return $(this).val();
             }).get();
-
             const seasonNumber = selectedSeasons.length > 0 ? selectedSeasons : null;
             handleFindMissing($(this), ratingKey, seasonNumber, 'packs');
         });
 
-        // Bouton par saison
         $(seriesModalElement).on('click', '.find-missing-season-episodes-btn', function() {
             const ratingKey = $('#series-management-modal .modal-body [data-rating-key]').first().data('ratingKey');
             const seasonNumber = $(this).data('season-number');
             handleFindMissing($(this), ratingKey, seasonNumber, 'episodes');
         });
     }
-    // =================================================================
-    // ### LOGIQUE POUR BASCULER LE STATUT VU/NON-VU ###
-    // =================================================================
+
     itemsContainer.on('click', '.toggle-watched-btn', function() {
         const button = $(this);
         const ratingKey = button.data('ratingKey');
-        const userId = userSelect.val(); // On récupère l'ID de l'utilisateur depuis le dropdown.
+        const userId = userSelect.val();
         const statusCell = button.closest('tr').find('.media-status-cell');
         const originalIcon = button.html();
-
-        // Feedback visuel immédiat
         button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
-
         fetch('/plex/toggle_watched_status', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -820,44 +779,30 @@ $('#confirmArchiveMovieBtn').on('click', function() {
         });
     });
 
-    // =================================================================
-    // ### PARTIE 3 : GESTION DES ACTIONS DE MASSE (BULK) ###
-    // =================================================================
-
-    // --- A. Logique de sélection et affichage du conteneur d'actions ---
     $(document).on('change', '#select-all-checkbox, .item-checkbox', function() {
         const isSelectAll = $(this).is('#select-all-checkbox');
         const itemCheckboxes = $('.item-checkbox');
         const selectAllCheckbox = $('#select-all-checkbox');
-
         if (isSelectAll) {
-            // Si la case "tout sélectionner" est cochée, on coche toutes les autres
             itemCheckboxes.prop('checked', $(this).prop('checked'));
         } else {
-            // Si une case individuelle est décochée, on décoche "tout sélectionner"
             if (!$(this).prop('checked')) {
                 selectAllCheckbox.prop('checked', false);
             }
-            // Si toutes les cases sont cochées manuellement, on coche "tout sélectionner"
             if ($('.item-checkbox:checked').length === itemCheckboxes.length) {
                 selectAllCheckbox.prop('checked', true);
             }
         }
-
         const selectedCount = $('.item-checkbox:checked').length;
         const batchActionsContainer = $('#batch-actions-container');
-
-        // Mettre à jour tous les compteurs
         batchActionsContainer.find('.badge').text(selectedCount);
         batchActionsContainer.toggle(selectedCount > 0);
     });
 
-    // --- B. Action de déplacement en masse ---
     $('#batch-move-btn').on('click', function() {
         const selectedItems = $('.item-checkbox:checked');
         const sonarrItems = [];
         const radarrItems = [];
-
         selectedItems.each(function() {
             const row = $(this).closest('tr');
             const item = {
@@ -870,15 +815,11 @@ $('#confirmArchiveMovieBtn').on('click', function() {
                 radarrItems.push(item);
             }
         });
-
         const modal = $('#bulk-move-media-modal');
         modal.find('#bulk-move-item-count').text(selectedItems.length);
-
-        // Réinitialiser la modale
         modal.find('#bulk-move-sonarr-section, #bulk-move-radarr-section').hide();
         modal.find('#bulk-move-progress-section').hide();
         modal.find('#confirm-bulk-move-btn').show();
-
         if (sonarrItems.length > 0) {
             modal.find('#bulk-move-sonarr-count').text(sonarrItems.length);
             loadRootFoldersForBulkMove('sonarr', '#bulk-root-folder-select-sonarr');
@@ -889,7 +830,6 @@ $('#confirmArchiveMovieBtn').on('click', function() {
             loadRootFoldersForBulkMove('radarr', '#bulk-root-folder-select-radarr');
             modal.find('#bulk-move-radarr-section').show();
         }
-
         new bootstrap.Modal(modal[0]).show();
     });
 
@@ -916,13 +856,11 @@ $('#confirmArchiveMovieBtn').on('click', function() {
         const modal = $('#bulk-move-media-modal');
         const sonarrDest = $('#bulk-root-folder-select-sonarr').val();
         const radarrDest = $('#bulk-root-folder-select-radarr').val();
-
         const itemsToMove = [];
         $('.item-checkbox:checked').each(function() {
             const row = $(this).closest('tr');
             const mediaType = row.data('media-type-from-mapping');
             const destination = (mediaType === 'sonarr') ? sonarrDest : radarrDest;
-
             if (destination) {
                 itemsToMove.push({
                     plex_id: $(this).data('rating-key'),
@@ -931,15 +869,12 @@ $('#confirmArchiveMovieBtn').on('click', function() {
                 });
             }
         });
-
         if (itemsToMove.length === 0) {
             alert("Aucune destination valide sélectionnée pour les médias.");
             return;
         }
-
         btn.hide();
         modal.find('#bulk-move-progress-section').show();
-
         fetch('/plex/api/media/bulk_move', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -947,16 +882,11 @@ $('#confirmArchiveMovieBtn').on('click', function() {
         })
         .then(response => response.json())
         .then(data => {
-            // On ferme la modale immédiatement
             bootstrap.Modal.getInstance(modal[0]).hide();
-
             if (data.status === 'success' && data.task_id) {
-                // On lance le polling en arrière-plan
                 pollBulkMoveStatus(data.task_id);
             } else {
-                // S'il y a une erreur au lancement, on l'affiche
                 alert('Erreur au lancement de la tâche : ' + data.message);
-                // Pas besoin de gérer les boutons car la modale est fermée
             }
         })
         .catch(error => {
@@ -967,14 +897,9 @@ $('#confirmArchiveMovieBtn').on('click', function() {
     });
 
     function resetSelectionState() {
-        // Décocher toutes les cases
         $('.item-checkbox, #select-all-checkbox').prop('checked', false);
-
-        // Masquer le conteneur des actions de masse
         const batchActionsContainer = $('#batch-actions-container');
         batchActionsContainer.hide();
-
-        // Réinitialiser le compteur sur les boutons
         batchActionsContainer.find('.badge').text('0');
     }
 
@@ -983,11 +908,9 @@ $('#confirmArchiveMovieBtn').on('click', function() {
         const statusSpinner = $('#bulk-move-status-spinner');
         const statusText = $('#bulk-move-status-text');
         const statusCloseBtn = $('#bulk-move-status-close-btn');
-
         statusSpinner.html('<div class="spinner-border spinner-border-sm text-primary" role="status"></div>');
         statusIndicator.removeClass('bg-success-soft bg-danger-soft').addClass('bg-light').show();
         statusCloseBtn.hide();
-
         const interval = setInterval(() => {
             fetch(`/plex/api/media/bulk_move_status/${taskId}`)
                 .then(response => response.json())
@@ -1000,17 +923,12 @@ $('#confirmArchiveMovieBtn').on('click', function() {
                         statusCloseBtn.show();
                         return;
                     }
-
                     statusText.text(data.message || 'Chargement...');
-
                     if (data.status === 'completed' || data.status === 'failed') {
                         clearInterval(interval);
-
                         if (data.status === 'completed') {
                             statusSpinner.html('<i class="bi bi-check-circle-fill text-success"></i>');
                             statusIndicator.removeClass('bg-light').addClass('bg-success-soft');
-
-                            // Faire disparaître les lignes des éléments déplacés avec succès
                             if (data.successes && data.successes.length > 0) {
                                 data.successes.forEach(mediaId => {
                                     $(`.item-checkbox[data-rating-key='${mediaId}']`).closest('tr').fadeOut(500, function() {
@@ -1018,14 +936,11 @@ $('#confirmArchiveMovieBtn').on('click', function() {
                                     });
                                 });
                             }
-                            // Réinitialiser l'état de la sélection
                             resetSelectionState();
-
-                        } else { // 'failed'
+                        } else {
                             statusSpinner.html('<i class="bi bi-x-circle-fill text-danger"></i>');
                             statusIndicator.removeClass('bg-light').addClass('bg-danger-soft');
                         }
-
                         statusCloseBtn.show();
                     }
                 })
@@ -1040,23 +955,19 @@ $('#confirmArchiveMovieBtn').on('click', function() {
         }, 3000);
     }
 
-    // --- NOUVEL ÉCOUTEUR POUR LE BOUTON "OK" DE L'INDICATEUR ---
     $('#bulk-move-status-close-btn').on('click', function() {
         $('#bulk-move-status-indicator').hide();
     });
 
-    // --- C. Action de suppression en masse ---
     $(document).on('click', '#batch-delete-btn', function() {
         const selectedItems = $('.item-checkbox:checked');
         const selectedItemKeys = selectedItems.map(function() {
             return $(this).data('rating-key');
         }).get();
-
         if (selectedItemKeys.length === 0) {
             alert('Veuillez sélectionner au moins un élément.');
             return;
         }
-
         if (confirm(`Êtes-vous sûr de vouloir supprimer ${selectedItemKeys.length} élément(s) ? Cette action est irréversible.`)) {
             fetch('/plex/bulk_delete_items', {
                 method: 'POST',
@@ -1071,14 +982,13 @@ $('#confirmArchiveMovieBtn').on('click', function() {
                 if (response.ok) {
                     return response.json();
                 }
-                // Si la réponse n'est pas OK, on essaie de lire le message d'erreur JSON
                 return response.json().then(errData => {
                     throw new Error(errData.error || 'Erreur inconnue du serveur.');
                 });
             })
             .then(data => {
                  alert(data.message || 'Éléments supprimés avec succès.');
-                $('#apply-filters-btn').click(); // Rafraîchir la liste
+                $('#apply-filters-btn').click();
             })
             .catch(error => {
                 console.error('Error during batch delete:', error);
@@ -1087,158 +997,120 @@ $('#confirmArchiveMovieBtn').on('click', function() {
         }
     });
 
-    // =================================================================
-    // ### PARTIE 4 : TRI DYNAMIQUE DU TABLEAU ###
-    // =================================================================
-
-// NOUVELLE FONCTION PARSESIZE ROBUSTE
-function parseSize(sizeStr) {
-    if (!sizeStr || typeof sizeStr !== 'string' || sizeStr === 'N/A') return 0;
-    const sizeMatch = sizeStr.match(/([\d,.]+)\s*(\w+)/);
-    if (!sizeMatch) return 0;
-
-    const value = parseFloat(sizeMatch[1].replace(',', '.'));
-    const unit = sizeMatch[2].toUpperCase();
-
-    switch (unit) {
-        case 'TB': case 'TO': return value * 1e12;
-        case 'GB': case 'GO': return value * 1e9;
-        case 'MB': case 'MO': return value * 1e6;
-        case 'KB': case 'KO': return value * 1e3;
-        default: return value;
-    }
-}
-
-function sortTable(table, sortBy, sortType, direction) {
-    const tbody = table.find('tbody');
-    const rows = tbody.find('tr').toArray();
-
-    const cellIndex = table.find(`th.sortable-header[data-sort-by='${sortBy}']`).index();
-
-    rows.sort(function(a, b) {
-        let valA, valB;
-
-        const cellA = $(a).children('td').eq(cellIndex);
-        const cellB = $(b).children('td').eq(cellIndex);
-
-        if (sortBy === 'production_status') {
-            // Ordre personnalisé : "À venir" < "En Production" < "Terminée"
-            const statusOrder = { 'À venir': 0, 'En Production': 1, 'Terminée': 2 };
-            const textA = cellA.text().trim();
-            const textB = cellB.text().trim();
-            valA = statusOrder[textA] !== undefined ? statusOrder[textA] : 3;
-            valB = statusOrder[textB] !== undefined ? statusOrder[textB] : 3;
-        } else if (sortBy === 'rating') {
-            valA = parseFloat($(a).data('rating')) || 0;
-            valB = parseFloat($(b).data('rating')) || 0;
-        } else {
-            // Extraction générique
-            if (sortBy === 'title') {
-                valA = cellA.find('.item-title-link').text().trim();
-                valB = cellB.find('.item-title-link').text().trim();
-            } else {
-                valA = cellA.text().trim();
-                valB = cellB.text().trim();
-            }
-
-            // Conversion de type
-            if (sortType === 'size') {
-                valA = parseSize(valA);
-                valB = parseSize(valB);
-            } else if (sortType === 'date') {
-                valA = new Date(valA).getTime() || 0;
-                valB = new Date(valB).getTime() || 0;
-            } else if (sortType === 'text') {
-                valA = valA.toLowerCase();
-                valB = valB.toLowerCase();
-            }
+    function parseSize(sizeStr) {
+        if (!sizeStr || typeof sizeStr !== 'string' || sizeStr === 'N/A') return 0;
+        const sizeMatch = sizeStr.match(/([\d,.]+)\s*(\w+)/);
+        if (!sizeMatch) return 0;
+        const value = parseFloat(sizeMatch[1].replace(',', '.'));
+        const unit = sizeMatch[2].toUpperCase();
+        switch (unit) {
+            case 'TB': case 'TO': return value * 1e12;
+            case 'GB': case 'GO': return value * 1e9;
+            case 'MB': case 'MO': return value * 1e6;
+            case 'KB': case 'KO': return value * 1e3;
+            default: return value;
         }
+    }
 
-        if (valA < valB) return -1 * direction;
-        if (valA > valB) return 1 * direction;
-        return 0;
-    });
+    function sortTable(table, sortBy, sortType, direction) {
+        const tbody = table.find('tbody');
+        const rows = tbody.find('tr').toArray();
+        const cellIndex = table.find(`th.sortable-header[data-sort-by='${sortBy}']`).index();
+        rows.sort(function(a, b) {
+            let valA, valB;
+            const cellA = $(a).children('td').eq(cellIndex);
+            const cellB = $(b).children('td').eq(cellIndex);
+            if (sortBy === 'production_status') {
+                const statusOrder = { 'À venir': 0, 'En Production': 1, 'Terminée': 2 };
+                const textA = cellA.text().trim();
+                const textB = cellB.text().trim();
+                valA = statusOrder[textA] !== undefined ? statusOrder[textA] : 3;
+                valB = statusOrder[textB] !== undefined ? statusOrder[textB] : 3;
+            } else if (sortBy === 'rating') {
+                valA = parseFloat($(a).data('rating')) || 0;
+                valB = parseFloat($(b).data('rating')) || 0;
+            } else {
+                if (sortBy === 'title') {
+                    valA = cellA.find('.item-title-link').text().trim();
+                    valB = cellB.find('.item-title-link').text().trim();
+                } else {
+                    valA = cellA.text().trim();
+                    valB = cellB.text().trim();
+                }
+                if (sortType === 'size') {
+                    valA = parseSize(valA);
+                    valB = parseSize(valB);
+                } else if (sortType === 'date') {
+                    valA = new Date(valA).getTime() || 0;
+                    valB = new Date(valB).getTime() || 0;
+                } else if (sortType === 'text') {
+                    valA = valA.toLowerCase();
+                    valB = valB.toLowerCase();
+                }
+            }
+            if (valA < valB) return -1 * direction;
+            if (valA > valB) return 1 * direction;
+            return 0;
+        });
+        tbody.empty().append(rows);
+    }
 
-    tbody.empty().append(rows);
-}
-
-    // Écouteur pour les en-têtes de colonne
     $(document).on('click', '.sortable-header', function() {
         const header = $(this);
         const table = $('#plex-results-table');
         const sortBy = header.data('sort-by');
         const sortType = header.data('sort-type') || 'text';
-
         let currentDir = header.data('sort-direction') || 'desc';
         let newDir = currentDir === 'asc' ? 'desc' : 'asc';
         header.data('sort-direction', newDir);
-
         $('.sortable-header').removeClass('sort-asc sort-desc');
         header.addClass(newDir === 'asc' ? 'sort-asc' : 'sort-desc');
-
         sortTable(table, sortBy, sortType, newDir === 'asc' ? 1 : -1);
     });
 
-    // Écouteur pour le bouton de tri par note
     $(document).on('click', '#sort-by-rating-btn', function() {
         const table = $('#plex-results-table');
         let newDir = $(this).data('sort-direction') === 'asc' ? 'desc' : 'asc';
         $(this).data('sort-direction', newDir);
-
         $('.sortable-header').removeClass('sort-asc sort-desc');
         sortTable(table, 'rating', 'number', newDir === 'asc' ? 1 : -1);
     });
 
-// --- DÉBUT DU BLOC DE GESTION DES BANDES-ANNONCES (NOUVELLE VERSION) ---
-
-// Handler pour le bouton principal "Voir la BA" sur la ligne du média
-$(document).on('click', '.find-and-play-trailer-btn', function() {
-    const button = $(this);
-    const plexTrailerUrl = button.data('plex-trailer-url');
-
-    if (plexTrailerUrl) {
-        // Cas 1: La bande-annonce est fournie directement par Plex. On la joue.
-        const title = button.data('title');
-        $('#trailerModalLabel').text('Bande-Annonce (Plex): ' + title);
-        $('#trailer-modal .modal-body').html(`<div class="ratio ratio-16x9"><iframe src="${plexTrailerUrl}" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>`);
-        bootstrap.Modal.getOrCreateInstance(document.getElementById('trailer-modal')).show();
-    } else {
-        // Cas 2: Pas de bande-annonce Plex, on utilise notre nouveau système de recherche.
-        // On récupère toutes les informations nécessaires directement depuis le bouton.
-        const mediaType = button.data('media-type');
-        const externalId = button.data('external-id');
-        const title = button.data('title');
-        const year = button.data('year'); // On récupère aussi l'année
-
-        if (mediaType && externalId && title) {
-            // On déclenche l'événement global avec toutes les données.
-            $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
+    $(document).on('click', '.find-and-play-trailer-btn', function() {
+        const button = $(this);
+        const plexTrailerUrl = button.data('plex-trailer-url');
+        if (plexTrailerUrl) {
+            const title = button.data('title');
+            $('#trailerModalLabel').text('Bande-Annonce (Plex): ' + title);
+            $('#trailer-modal .modal-body').html(`<div class="ratio ratio-16x9"><iframe src="${plexTrailerUrl}" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>`);
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('trailer-modal')).show();
         } else {
-            alert('Erreur: Informations manquantes pour rechercher la bande-annonce (mediaType, externalId, title).');
-            console.error('Attributs de données manquants sur le bouton de bande-annonce:', {
-                mediaType: mediaType,
-                externalId: externalId,
-                title: title
-            });
+            const mediaType = button.data('media-type');
+            const externalId = button.data('external-id');
+            const title = button.data('title');
+            const year = button.data('year');
+            if (mediaType && externalId && title) {
+                $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
+            } else {
+                alert('Erreur: Informations manquantes pour rechercher la bande-annonce (mediaType, externalId, title).');
+                console.error('Attributs de données manquants sur le bouton de bande-annonce:', {
+                    mediaType: mediaType,
+                    externalId: externalId,
+                    title: title
+                });
+            }
         }
-    }
-});
+    });
 
-// --- FIN DU BLOC DE GESTION DES BANDES-ANNONCES ---
-
-    // NOUVEL ÉCOUTEUR D'ÉVÉNEMENT
     $(document).on('click', '#scan-libraries-btn', function() {
         const button = $(this);
         const selectedLibraries = $('#library-select').val();
         const userId = $('#user-select').val();
         let keysToScan = [];
-
         if (!selectedLibraries || selectedLibraries.length === 0) {
             alert("Veuillez sélectionner au moins une bibliothèque.");
             return;
         }
-
-        // Gestion de l'option "Toutes"
         if (selectedLibraries.includes('all')) {
             keysToScan = $('#library-select option').map(function() {
                 if (this.value && this.value !== 'all') return this.value;
@@ -1246,9 +1118,7 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
         } else {
             keysToScan = selectedLibraries;
         }
-
-        button.prop('disabled', true).find('i').addClass('fa-spin'); // Ajoute un effet de chargement
-
+        button.prop('disabled', true).find('i').addClass('fa-spin');
         fetch('/plex/api/scan_libraries', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1267,20 +1137,13 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
         });
     });
 
-    // --- GESTION DE L'AJOUT AUX *ARR DEPUIS LES SUGGESTIONS ---
     $(document).on('click', '.add-to-arr-btn', function(e) {
         e.preventDefault();
         const button = $(this);
         const mediaType = button.data('media-type');
         const mediaId = button.data('id');
         const searchOnAdd = button.data('search-on-add');
-
-        // Afficher un spinner
         button.closest('.btn-group').find('button').prop('disabled', true);
-
-        // NOTE: The user prompt assumes a route at '/search/api/add_to_arr'.
-        // I will need to check for this route and potentially create it.
-        // For now, I will assume it exists as per the instructions.
         fetch('/search/api/add_to_arr', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1294,11 +1157,9 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
         .then(data => {
             if (data.success) {
                 alert('Média ajouté avec succès !');
-                // Remplacer le bouton par un badge "Déjà surveillé"
                 button.closest('.btn-group').replaceWith('<span class="badge bg-success">Ajouté !</span>');
             } else {
                 alert('Erreur : ' + data.message);
-                // Réactiver les boutons en cas d'erreur
                 button.closest('.btn-group').find('button').prop('disabled', false);
             }
         })
@@ -1309,144 +1170,4 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
         });
     });
 
-    // =================================================================
-    // ### PARTIE 5 : GESTION DU DÉPLACEMENT DE MÉDIAS ###
-    // =================================================================
-
-    let activeMoveTaskId = null;
-    let activeMoveMediaId = null;
-    let moveCheckInterval = null;
-
-    // --- A. Ouvrir la modale et charger les dossiers ---
-    $(document).on('click', '.move-media-btn', function() {
-        if (activeMoveTaskId) {
-            alert("Un déplacement est déjà en cours. Veuillez attendre sa fin.");
-            return;
-        }
-
-        const button = $(this);
-        const mediaId = button.data('media-id');
-        const mediaTitle = button.data('media-title');
-        const mediaType = button.data('media-type'); // 'sonarr' or 'radarr'
-
-        const modal = $('#move-media-modal');
-        modal.find('#move-media-title').text(mediaTitle);
-        const confirmBtn = modal.find('#confirm-move-btn');
-        const folderSelect = modal.find('#root-folder-select');
-
-        confirmBtn.data({ mediaId, mediaType });
-        folderSelect.html('<option>Chargement...</option>').prop('disabled', true);
-
-        fetch(`/plex/api/media/root_folders?type=${mediaType}`)
-            .then(response => response.json())
-            .then(folders => {
-                folderSelect.html('').prop('disabled', false);
-                if (folders && folders.length > 0) {
-                    folders.forEach(folder => {
-                        const freeSpace = folder.freeSpace_formatted ? `(Espace libre: ${folder.freeSpace_formatted})` : '';
-                        const optionText = `${folder.path} ${freeSpace}`;
-                        folderSelect.append(new Option(optionText, folder.path));
-                    });
-                } else {
-                    folderSelect.html('<option>Aucun dossier trouvé.</option>').prop('disabled', true);
-                }
-            })
-            .catch(err => {
-                console.error("Erreur chargement dossiers:", err);
-                folderSelect.html('<option>Erreur de chargement.</option>').prop('disabled', true);
-            });
-    });
-
-    // --- B. Confirmer le déplacement et démarrer le polling ---
-    $('#confirm-move-btn').on('click', function() {
-        const btn = $(this);
-        const mediaId = btn.data('mediaId');
-        const mediaType = btn.data('mediaType');
-        const newPath = $('#move-media-modal #root-folder-select').val();
-
-        if (!newPath) {
-            alert("Veuillez sélectionner un dossier de destination.");
-            return;
-        }
-
-        if (!confirm(`Êtes-vous sûr de vouloir déplacer ce média vers "${newPath}" ?`)) {
-            return;
-        }
-
-        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Lancement...');
-
-        fetch('/plex/api/media/move', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mediaId, mediaType, newPath })
-        })
-        .then(response => response.json())
-        .then(data => {
-            bootstrap.Modal.getInstance(document.getElementById('move-media-modal')).hide();
-            if (data.status === 'success') {
-                activeMoveTaskId = data.task_id;
-                activeMoveMediaId = mediaId; // Store the mediaId
-                updateUIAfterMoveStart(mediaId);
-                startMoveStatusPolling();
-            } else {
-                alert('Erreur: ' + data.message);
-            }
-        })
-        .catch(err => {
-            console.error("Erreur API déplacement:", err);
-            alert("Erreur de communication lors du lancement du déplacement.");
-        })
-        .finally(() => {
-            btn.prop('disabled', false).html('Valider le déplacement');
-        });
-    });
-
-    function updateUIAfterMoveStart(mediaId) {
-        const row = $(`tr[data-rating-key="${mediaId}"]`);
-        row.addClass('opacity-50');
-        row.find('.move-media-btn').html('<span class="spinner-border spinner-border-sm"></span>').prop('disabled', true);
-        row.find('button').not('.move-media-btn').prop('disabled', true);
-    }
-
-    function startMoveStatusPolling() {
-        if (moveCheckInterval) clearInterval(moveCheckInterval);
-
-        moveCheckInterval = setInterval(() => {
-            fetch('/plex/api/media/move_status')
-                .then(response => response.json())
-                .then(data => {
-                    if (data.status === 'idle' || data.status === 'completed' || data.status === 'failed') {
-                        clearInterval(moveCheckInterval);
-                        moveCheckInterval = null;
-                        const mediaIdToEnd = activeMoveMediaId; // Use the stored mediaId
-                        activeMoveTaskId = null;
-                        activeMoveMediaId = null;
-                        updateUIAfterMoveEnd(mediaIdToEnd, data.status === 'completed');
-                        alert(data.message || "Opération terminée.");
-                        $('#apply-filters-btn').click(); // Refresh the table
-                    }
-                })
-                .catch(err => {
-                    console.error("Erreur polling statut:", err);
-                    clearInterval(moveCheckInterval);
-                    activeMoveTaskId = null;
-                });
-        }, 15000); // Poll every 15 seconds
-    }
-
-    function updateUIAfterMoveEnd(mediaId, wasSuccessful) {
-        const row = $(`tr[data-rating-key="${mediaId}"]`);
-        row.removeClass('opacity-50');
-        const moveBtn = row.find('.move-media-btn');
-        moveBtn.html('<i class="bi bi-folder-symlink"></i>').prop('disabled', false);
-        row.find('button').prop('disabled', false);
-
-        if(wasSuccessful) {
-            moveBtn.addClass('btn-success').removeClass('btn-outline-info');
-            setTimeout(() => {
-                 moveBtn.removeClass('btn-success').addClass('btn-outline-info');
-            }, 5000);
-        }
-    }
-
-}); // Fin de $(document).ready
+});
