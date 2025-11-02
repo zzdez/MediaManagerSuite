@@ -194,8 +194,7 @@ $(document).ready(function() {
         applyBtn.prop('disabled', false);
         console.log("Restauration des filtres terminée.");
 
-        // Vider le cache de la session pour que le rechargement normal fonctionne
-        fetch('/plex/api/clear_last_search', { method: 'POST' });
+        // Le cache n'est plus vidé automatiquement pour permettre les retours multiples.
     }
 
     // --- INITIALISATION DE LA PAGE ---

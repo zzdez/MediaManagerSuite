@@ -2846,15 +2846,6 @@ def rename_series_files_endpoint():
     else:
         return jsonify({'status': 'error', 'message': 'Échec de l\'envoi de la commande à Sonarr.'}), 500
 
-@plex_editor_bp.route('/api/clear_last_search', methods=['POST'])
-@login_required
-def clear_last_search():
-    """Vide le cache de la dernière recherche de l'éditeur Plex de la session."""
-    if 'plex_editor_last_search' in session:
-        session.pop('plex_editor_last_search')
-        current_app.logger.info("Cache de la dernière recherche de l'éditeur Plex vidé.")
-    return jsonify({'status': 'success'})
-
 # --- Gestionnaires d'erreur ---
 #@app.errorhandler(404)
 #def page_not_found(e):
