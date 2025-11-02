@@ -29,6 +29,18 @@ def search_page():
     """Affiche la page de recherche principale."""
     return render_template('search_ui/search.html')
 
+@search_ui_bp.route('/plex/return_and_clear')
+@login_required
+def return_to_plex_editor_and_clear_session():
+    """Nettoie les requêtes de recherche de la session et redirige vers l'éditeur Plex."""
+    if 'missing_episodes_queries' in session:
+        session.pop('missing_episodes_queries', None)
+    if 'search_mode_intent' in session:
+        session.pop('search_mode_intent', None)
+
+    # Redirige vers la page de l'éditeur Plex
+    return redirect(url_for('plex_editor.index'))
+
 # --- API Routes ---
 
 @search_ui_bp.route('/api/media/search', methods=['POST'])
