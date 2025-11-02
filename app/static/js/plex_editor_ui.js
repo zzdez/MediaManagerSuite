@@ -750,6 +750,40 @@ $(document).ready(function() {
         });
     }
 
+    function getFiltersState() {
+        let selectedRootFolders = $('#root-folder-select-main').val();
+        if (selectedRootFolders && selectedRootFolders.includes('all')) {
+            selectedRootFolders = [];
+        }
+
+        return {
+            userId: $('#user-select').val(),
+            libraryKeys: $('#library-select').val(),
+            statusFilter: $('#status-filter').val(),
+            titleFilter: $('#title-filter-input').val().trim(),
+            year: $('#year-filter').val(),
+            genres: $('#genre-filter').val(),
+            genreLogic: $('input[name="genre-logic"]:checked').val(),
+            dateFilter: {
+                type: $('#date-filter-type').val(),
+                preset: $('#date-filter-preset').val(),
+                start: $('#date-filter-start').val(),
+                end: $('#date-filter-end').val()
+            },
+            ratingFilter: {
+                operator: $('#rating-filter-operator').val(),
+                value: $('#rating-filter-value').val()
+            },
+            collections: $('#collection-filter').val(),
+            resolutions: $('#resolution-filter').val(),
+            actor: $('#actor-filter').val().trim(),
+            director: $('#director-filter').val().trim(),
+            writer: $('#writer-filter').val().trim(),
+            studios: $('#studio-filter').val(),
+            rootFolders: selectedRootFolders
+        };
+    }
+
     itemsContainer.on('click', '.toggle-watched-btn', function() {
         const button = $(this);
         const ratingKey = button.data('ratingKey');
