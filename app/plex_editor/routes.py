@@ -949,11 +949,19 @@ def get_media_items():
 
         items_to_render.sort(key=lambda x: getattr(x, 'titleSort', x.title).lower())
 
-        return render_template(
+        results_html = render_template(
             'plex_editor/_media_table.html',
             items=items_to_render,
             external_suggestions=external_suggestions
         )
+
+        session['plex_editor_last_search'] = {
+            'filters': data,
+            'results_html': results_html
+        }
+        session.modified = True
+
+        return results_html
 
     except Exception as e:
         current_app.logger.error(f"Erreur API get_media_items: {e}", exc_info=True)
@@ -1075,6 +1083,15 @@ def toggle_watched_status_api(rating_key): # Nom de fonction unique
     except Exception as e:
         current_app.logger.error(f"API toggle_watched: Erreur pour média {rating_key} (contexte {user_context_description}): {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@plex_editor_bp.route('/api/get_last_search', methods=['GET'])
+@login_required
+def get_last_search():
+    """Retourne la dernière recherche sauvegardée en session."""
+    last_search = session.get('plex_editor_last_search', None)
+    if last_search:
+        return jsonify(last_search)
+    return jsonify(None)
 
 @plex_editor_bp.route('/')
 @login_required
@@ -2751,6 +2768,13 @@ def search_missing_episodes():
     rating_key = data.get('ratingKey')
     season_numbers = data.get('seasonNumber')
     search_mode = data.get('search_mode', 'packs')  # 'packs' par défaut
+    filters_state = data.get('filtersState')
+
+    if filters_state:
+        if 'plex_editor_last_search' not in session:
+            session['plex_editor_last_search'] = {}
+        session['plex_editor_last_search']['filters'] = filters_state
+        session.modified = True
 
     try:
         plex_server = get_plex_admin_server()

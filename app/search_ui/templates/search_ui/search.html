@@ -18,6 +18,14 @@
         {# Headings and paragraphs should inherit text color from the dark theme #}
         <h1><i class="fas fa-search-plus"></i> Découverte de Contenu</h1>
         <p class="lead">Recherchez des nouveautés ou complétez votre bibliothèque existante.</p>
+
+        {% if session['plex_editor_last_search'] %}
+        <div class="d-grid gap-2 d-md-flex justify-content-md-start my-3">
+            <a href="{{ url_for('plex_editor.index') }}" class="btn btn-outline-light">
+                <i class="bi bi-arrow-left-circle"></i> Retour à l'Éditeur Plex
+            </a>
+        </div>
+        {% endif %}
         
         {# Flash messages are handled by layout.html, no need to repeat here unless special placement is needed #}
         {# {% with messages = get_flashed_messages(with_categories=true) %}

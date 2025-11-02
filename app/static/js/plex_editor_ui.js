@@ -1,7 +1,76 @@
 // Fichier : app/static/js/plex_editor_ui.js (Version Complète et Définitive)
 
-$(document).ready(function() {
+async function restoreLastSearch() {
+    try {
+        const response = await fetch('/plex/api/get_last_search');
+        const data = await response.json();
 
+        if (data && data.filters && data.results_html) {
+            const filters = data.filters;
+
+            // --- Restauration des filtres ---
+            // Attendre que la liste des utilisateurs soit chargée
+            await new Promise(resolve => {
+                const userSelect = $('#user-select');
+                if (userSelect.find('option').length > 1) {
+                    resolve();
+                } else {
+                    userSelect.on('change', resolve);
+                }
+            });
+            $('#user-select').val(filters.userId).trigger('change');
+
+            // Attendre que les bibliothèques soient chargées pour cet utilisateur
+            await new Promise(resolve => {
+                const librarySelect = $('#library-select');
+                const checkLibraries = () => {
+                    if (!librarySelect.prop('disabled') && librarySelect.find('option').length > 0) {
+                        resolve();
+                    } else {
+                        setTimeout(checkLibraries, 100);
+                    }
+                };
+                checkLibraries();
+            });
+
+            $('#library-select').val(filters.libraryKeys);
+            $('#status-filter').val(filters.statusFilter);
+            $('#title-filter-input').val(filters.titleFilter);
+            $('#year-filter').val(filters.year);
+
+            // Restaurer les filtres avancés
+            $('#genre-filter').val(filters.genres);
+            $(`input[name="genre-logic"][value="${filters.genreLogic}"]`).prop('checked', true);
+            $('#collection-filter').val(filters.collections);
+            $('#resolution-filter').val(filters.resolutions);
+            $('#studio-filter').val(filters.studios);
+            $('#actor-filter').val(filters.actor);
+            $('#director-filter').val(filters.director);
+            $('#writer-filter').val(filters.writer);
+            $('#root-folder-select-main').val(filters.rootFolders);
+
+            if (filters.dateFilter) {
+                $('#date-filter-type').val(filters.dateFilter.type).trigger('change');
+                $('#date-filter-preset').val(filters.dateFilter.preset).trigger('change');
+                $('#date-filter-start').val(filters.dateFilter.start);
+                $('#date-filter-end').val(filters.dateFilter.end);
+            }
+            if (filters.ratingFilter) {
+                $('#rating-filter-operator').val(filters.ratingFilter.operator).trigger('change');
+                $('#rating-filter-value').val(filters.ratingFilter.value);
+            }
+
+            // --- Affichage du HTML ---
+            $('#plex-items-container').html(data.results_html);
+        }
+    } catch (error) {
+        console.error("Erreur lors de la restauration de la recherche :", error);
+    }
+}
+
+
+$(document).ready(function() {
+    restoreLastSearch();
     // =================================================================
     // ### PARTIE 1 : GESTION DES FILTRES ET DE LA SESSION ###
     // =================================================================
@@ -193,12 +262,12 @@ $(document).ready(function() {
         $('#rating-value-container').toggle(showValueSelector);
     });
 
-    applyBtn.on('click', function() {
+    function getFiltersState() {
         const userId = userSelect.val();
         const selectedLibraries = librarySelect.val();
         const statusFilter = $('#status-filter').val();
         const titleFilter = $('#title-filter-input').val().trim();
-        const yearFilter = $('#year-filter').val(); // <-- NOUVELLE LIGNE
+        const yearFilter = $('#year-filter').val();
         const selectedGenres = genreSelect.val();
         const genreLogic = $('input[name="genre-logic"]:checked').val();
         const dateFilterType = $('#date-filter-type').val();
@@ -215,12 +284,42 @@ $(document).ready(function() {
         const selectedStudios = $('#studio-filter').val();
         let selectedRootFolders = $('#root-folder-select-main').val();
 
-        // Si "Tous les dossiers" est sélectionné, on traite la valeur comme une liste vide
         if (selectedRootFolders && selectedRootFolders.includes('all')) {
             selectedRootFolders = [];
         }
 
-        if (!userId || !selectedLibraries || selectedLibraries.length === 0) {
+        return {
+            userId: userId,
+            libraryKeys: selectedLibraries,
+            statusFilter: statusFilter,
+            titleFilter: titleFilter,
+            year: yearFilter,
+            genres: selectedGenres,
+            genreLogic: genreLogic,
+            dateFilter: {
+                type: dateFilterType,
+                preset: dateFilterPreset,
+                start: dateFilterStart,
+                end: dateFilterEnd
+            },
+            ratingFilter: {
+                operator: ratingFilterOperator,
+                value: ratingFilterValue
+            },
+            collections: selectedCollections,
+            resolutions: selectedResolutions,
+            actor: actorFilter,
+            director: directorFilter,
+            writer: writerFilter,
+            studios: selectedStudios,
+            rootFolders: selectedRootFolders
+        };
+    }
+
+    applyBtn.on('click', function() {
+        const filtersState = getFiltersState();
+
+        if (!filtersState.userId || !filtersState.libraryKeys || filtersState.libraryKeys.length === 0) {
             itemsContainer.html('<p class="text-center text-warning">Veuillez sélectionner un utilisateur et une bibliothèque.</p>');
             return;
         }
@@ -231,32 +330,7 @@ $(document).ready(function() {
         fetch("/plex/api/media_items", {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                userId: userId,
-                libraryKeys: selectedLibraries,
-                statusFilter: statusFilter,
-                titleFilter: titleFilter,
-                year: yearFilter, // <-- NOUVELLE LIGNE
-                genres: selectedGenres,
-                genreLogic: genreLogic,
-                dateFilter: {
-                    type: dateFilterType,
-                    preset: dateFilterPreset,
-                    start: dateFilterStart,
-                    end: dateFilterEnd
-                },
-                ratingFilter: {
-                    operator: ratingFilterOperator,
-                    value: ratingFilterValue
-                },
-                collections: selectedCollections,
-                resolutions: selectedResolutions,
-                actor: actorFilter,
-                director: directorFilter,
-                writer: writerFilter,
-                studios: selectedStudios,
-                rootFolders: selectedRootFolders // <-- NOUVELLE LIGNE
-            })
+            body: JSON.stringify(filtersState)
         })
         .then(response => response.text())
         .then(html => {
@@ -741,6 +815,7 @@ $('#confirmArchiveMovieBtn').on('click', function() {
         // --- NOUVEAU : GESTION DE LA RECHERCHE D'ÉPISODES MANQUANTS ---
         function handleFindMissing(button, ratingKey, seasonNumber = null, search_mode = 'packs') {
             button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+            const filtersState = getFiltersState();
 
             fetch('/plex/api/series/search_missing', {
                 method: 'POST',
@@ -748,7 +823,8 @@ $('#confirmArchiveMovieBtn').on('click', function() {
                 body: JSON.stringify({
                     ratingKey: ratingKey,
                     seasonNumber: seasonNumber,
-                    search_mode: search_mode
+                    search_mode: search_mode,
+                    filtersState: filtersState
                 })
             })
             .then(response => response.json())
