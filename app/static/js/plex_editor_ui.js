@@ -754,7 +754,11 @@ $('#confirmArchiveMovieBtn').on('click', function() {
             .then(response => response.json())
             .then(data => {
                 if (data.status === 'success' && data.redirect_url) {
-                    window.location.href = data.redirect_url;
+                    window.open(data.redirect_url, '_blank');
+                    // On réactive le bouton immédiatement après l'ouverture de l'onglet
+                    button.prop('disabled', false).html('<i class="bi bi-search"></i>');
+                    // On peut aussi fermer la modale si souhaité
+                    bootstrap.Modal.getInstance(seriesModalElement).hide();
                 } else {
                     alert('Erreur: ' + data.message);
                     button.prop('disabled', false).html('<i class="bi bi-search"></i>');
