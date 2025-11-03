@@ -121,7 +121,12 @@ def prowlarr_search():
             all_raw_results.extend(raw_results)
 
     if not all_raw_results:
-        return jsonify({"error": "Erreur de communication avec Prowlarr ou aucun résultat."}), 500
+        # Si aucun résultat n'est trouvé, ce n'est pas une erreur.
+        # On renvoie une réponse vide pour que le frontend puisse afficher "Aucun résultat".
+        return jsonify({
+            'results': [],
+            'filter_options': filter_options
+        })
 
     # Dédoublonnage des résultats basé sur le GUID
     unique_results = []
