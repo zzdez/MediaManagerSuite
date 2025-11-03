@@ -110,8 +110,12 @@ def prowlarr_search():
         if query:
             queries = [query]
 
+        # CORRECTION : S'assurer que 'queries' est une liste avant de l'utiliser.
+        if not isinstance(queries, list):
+            queries = [] # Si ce n'est pas une liste, on la traite comme une liste vide.
+
         if not queries:
-            return jsonify({"error": "La requête est vide."}), 400
+            return jsonify({"error": "La requête est vide ou invalide."}), 400
 
         search_type = data.get('search_type', 'sonarr')
 
