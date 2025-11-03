@@ -101,8 +101,10 @@ def prowlarr_search():
     if query:
         queries = [query]
 
-    if not queries:
-        return jsonify({"error": "La requête est vide."}), 400
+    # --- NOUVELLE VALIDATION ROBUSTE ---
+    if not isinstance(queries, list) or not all(isinstance(q, str) and q.strip() for q in queries):
+        current_app.logger.error(f"Prowlarr search: 'queries' invalide reçu. Attendu: liste de chaînes non vides. Reçu: {queries}")
+        return jsonify({"error": "Format de requête invalide."}), 400
 
     search_type = data.get('search_type', 'sonarr')
 
