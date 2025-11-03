@@ -103,8 +103,6 @@ def media_search():
 def prowlarr_search():
     try:
         data = request.get_json()
-        # --- AJOUT DE LOGS DE DÉBOGAGE ---
-        current_app.logger.debug(f"PROWLARR_SEARCH: Données brutes reçues : {data}")
         queries = data.get('queries')
         query = data.get('query')
 
@@ -132,8 +130,12 @@ def prowlarr_search():
             # CORRECTION : S'assurer que la requête est une chaîne de caractères valide
             if isinstance(query, str) and query.strip():
                 raw_results = search_prowlarr(query=query, categories=category_ids)
-                if raw_results:
+                # --- CORRECTIF FINAL ---
+                # S'assurer que raw_results est une liste avant de l'étendre.
+                if isinstance(raw_results, list):
                     all_raw_results.extend(raw_results)
+                else:
+                    current_app.logger.warning(f"Prowlarr search for '{query}' returned invalid data (not a list), skipping.")
             else:
                 current_app.logger.warning(f"Prowlarr search: Ignored invalid query item: {query}")
 
