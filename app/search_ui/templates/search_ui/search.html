@@ -21,7 +21,7 @@
 
         {% if session['plex_editor_last_search'] %}
         <div class="d-grid gap-2 d-md-flex justify-content-md-start my-3">
-            <a href="{{ url_for('search_ui.return_to_plex_editor_and_clear_session') }}" class="btn btn-outline-light">
+            <a href="{{ url_for('plex_editor.index') }}" class="btn btn-outline-light">
                 <i class="bi bi-arrow-left-circle"></i> Retour à l'Éditeur Plex
             </a>
         </div>
@@ -258,10 +258,6 @@
     <script src="{{ url_for('static', filename='js/search_logic.js') }}"></script>
 
     <script>
-        // Injecte les requêtes de recherche depuis la session Flask, si elles existent.
-        var initialQueries = {{ session.pop('missing_episodes_queries', 'null') | tojson }};
-        var searchModeIntent = {{ session.pop('search_mode_intent', 'null') | tojson }};
-
         document.addEventListener('DOMContentLoaded', function() {
             const mediaTypeRadios = document.querySelectorAll('input[name="media_type"]');
             const hiddenInput = document.getElementById('search-form-media-type');

@@ -1,19 +1,30 @@
 // Fichier : app/static/js/search_logic.js
 
 $(document).ready(function() {
-    // Si des requêtes initiales sont injectées par Flask, on les exécute.
-    if (typeof initialQueries !== 'undefined' && initialQueries && initialQueries.length > 0) {
-        // 1. Activer l'onglet "Recherche Libre"
-        const freeSearchTab = new bootstrap.Tab($('#torrent-search-tab')[0]);
-        freeSearchTab.show();
+    // Nouvelle fonction pour gérer la recherche automatique via une API sécurisée
+    function triggerAutoSearch() {
+        fetch('/search/api/get_search_queries')
+            .then(response => response.json())
+            .then(data => {
+                if (data && data.queries && data.queries.length > 0) {
+                    // 1. Activer l'onglet "Recherche Libre"
+                    const freeSearchTab = new bootstrap.Tab($('#torrent-search-tab')[0]);
+                    freeSearchTab.show();
 
-        // 2. Lancer la recherche avec les requêtes
-        const payload = {
-            queries: initialQueries,
-            search_type: 'sonarr' // Par défaut, la recherche d'épisodes manquants est pour les séries
-        };
-        executeProwlarrSearch(payload, searchModeIntent); // Passer l'intention de recherche
+                    // 2. Lancer la recherche avec les données de l'API
+                    const payload = {
+                        queries: data.queries,
+                        search_type: 'sonarr' // Par défaut, la recherche d'épisodes manquants est pour les séries
+                    };
+                    // Passer l'intention de recherche (packs ou episodes)
+                    executeProwlarrSearch(payload, data.search_mode);
+                }
+            })
+            .catch(error => console.error('Erreur lors de la récupération des requêtes de recherche automatique:', error));
     }
+
+    // Appeler la nouvelle fonction au chargement de la page
+    triggerAutoSearch();
 
     // CONTEXTE GLOBAL POUR LE PRE-MAPPING
     window.currentMediaContext = null;
