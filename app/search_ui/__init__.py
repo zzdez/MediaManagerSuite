@@ -106,83 +106,83 @@ def media_search():
 @login_required
 def prowlarr_search():
     try:
-    data = request.get_json()
-    queries = data.get('queries')
-    query = data.get('query')
+        data = request.get_json()
+        queries = data.get('queries')
+        query = data.get('query')
 
-    # Unifier les deux types de requêtes en s'assurant que 'queries' est toujours une liste
-    if query:
-        queries = [query]
+        # Unifier les deux types de requêtes en s'assurant que 'queries' est toujours une liste
+        if query:
+            queries = [query]
 
-    if not queries:
-        return jsonify({"error": "La requête est vide."}), 400
+        if not queries:
+            return jsonify({"error": "La requête est vide."}), 400
 
-    search_type = data.get('search_type', 'sonarr')
+        search_type = data.get('search_type', 'sonarr')
 
-    # 1. Charger les configurations
-    filter_options = load_filter_options()
-    search_config = load_search_categories()
-    category_ids = search_config.get(f"{search_type}_categories", [])
+        # 1. Charger les configurations
+        filter_options = load_filter_options()
+        search_config = load_search_categories()
+        category_ids = search_config.get(f"{search_type}_categories", [])
 
-    # 2. On envoie la requête de base à Prowlarr
-    all_raw_results = []
-    for query in queries:
-        # CORRECTION : S'assurer que la requête est une chaîne de caractères valide
-        if isinstance(query, str) and query.strip():
-            raw_results = search_prowlarr(query=query, categories=category_ids)
-            if raw_results:
-                all_raw_results.extend(raw_results)
-        else:
-            current_app.logger.warning(f"Prowlarr search: Ignored invalid query item: {query}")
+        # 2. On envoie la requête de base à Prowlarr
+        all_raw_results = []
+        for query in queries:
+            # CORRECTION : S'assurer que la requête est une chaîne de caractères valide
+            if isinstance(query, str) and query.strip():
+                raw_results = search_prowlarr(query=query, categories=category_ids)
+                if raw_results:
+                    all_raw_results.extend(raw_results)
+            else:
+                current_app.logger.warning(f"Prowlarr search: Ignored invalid query item: {query}")
 
-    if not all_raw_results:
-        return jsonify({"error": "Erreur de communication avec Prowlarr ou aucun résultat."}), 500
+        if not all_raw_results:
+            return jsonify({"error": "Erreur de communication avec Prowlarr ou aucun résultat."}), 500
 
-    # Dédoublonnage des résultats basé sur le GUID
-    unique_results = []
-    seen_guids = set()
-    for result in all_raw_results:
-        guid = result.get('guid')
-        if guid and guid not in seen_guids:
-            unique_results.append(result)
-            seen_guids.add(guid)
-    all_raw_results = unique_results
+        # Dédoublonnage des résultats basé sur le GUID
+        unique_results = []
+        seen_guids = set()
+        for result in all_raw_results:
+            guid = result.get('guid')
+            if guid and guid not in seen_guids:
+                unique_results.append(result)
+                seen_guids.add(guid)
+        all_raw_results = unique_results
 
-    # 3. Enrichir les résultats en utilisant le nouveau parseur centralisé
-    enriched_results = []
-    for result in all_raw_results:
-        release_title = result.get('title', '')
-        parsed_data = parse_release_data(release_title)
+        # 3. Enrichir les résultats en utilisant le nouveau parseur centralisé
+        enriched_results = []
+        for result in all_raw_results:
+            release_title = result.get('title', '')
+            parsed_data = parse_release_data(release_title)
 
-        # Fusionner les données parsées avec le résultat original de Prowlarr
-        final_result = {**result, **parsed_data}
+            # Fusionner les données parsées avec le résultat original de Prowlarr
+            final_result = {**result, **parsed_data}
 
-        # --- Filtre intelligent pour ne garder que les résultats pertinents ---
-        if search_type == 'sonarr':
-            # Pour les séries, on garde les épisodes, les packs de saison et les collections
-            if not (final_result['is_episode'] or final_result['is_season_pack'] or final_result['is_collection']):
-                continue
-        elif search_type == 'radarr':
-            # Pour les films, on garde les collections ou les releases avec une année
-            # (pour exclure les épisodes de séries qui pourraient matcher par titre)
-            if not (final_result['is_collection'] or final_result['year'] is not None):
-                continue
+            # --- Filtre intelligent pour ne garder que les résultats pertinents ---
+            if search_type == 'sonarr':
+                # Pour les séries, on garde les épisodes, les packs de saison et les collections
+                if not (final_result['is_episode'] or final_result['is_season_pack'] or final_result['is_collection']):
+                    continue
+            elif search_type == 'radarr':
+                # Pour les films, on garde les collections ou les releases avec une année
+                # (pour exclure les épisodes de séries qui pourraient matcher par titre)
+                if not (final_result['is_collection'] or final_result['year'] is not None):
+                    continue
 
-        # Le champ 'is_special' est encore géré ici car il dépend de 'season' et 'episode'
-        final_result['is_special'] = (
-            final_result['season'] == 0 or
-            (isinstance(final_result.get('episode'), int) and final_result.get('episode') > 50 and final_result.get('season') is not None)
-        )
+            # Le champ 'is_special' est encore géré ici car il dépend de 'season' et 'episode'
+            final_result['is_special'] = (
+                final_result['season'] == 0 or
+                (isinstance(final_result.get('episode'), int) and final_result.get('episode') > 50 and final_result.get('season') is not None)
+            )
 
-        enriched_results.append(final_result)
+            enriched_results.append(final_result)
 
-    # 4. Construire la réponse finale
-    response_data = {
-        'results': enriched_results,
-        'filter_options': filter_options
-    }
+        # 4. Construire la réponse finale
+        response_data = {
+            'results': enriched_results,
+            'filter_options': filter_options
+        }
 
-    return jsonify(response_data)
+        return jsonify(response_data)
     except Exception as e:
         current_app.logger.error(f"Erreur détaillée dans prowlarr_search: {e}", exc_info=True)
         # Renvoyer une réponse d'erreur claire au frontend
