@@ -103,6 +103,8 @@ def media_search():
 def prowlarr_search():
     try:
         data = request.get_json()
+        # --- AJOUT DE LOGS DE DÉBOGAGE ---
+        current_app.logger.debug(f"PROWLARR_SEARCH: Données brutes reçues : {data}")
         queries = data.get('queries')
         query = data.get('query')
 
