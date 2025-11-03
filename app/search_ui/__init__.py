@@ -105,6 +105,7 @@ def media_search():
 @search_ui_bp.route('/api/prowlarr/search', methods=['POST'])
 @login_required
 def prowlarr_search():
+    try:
     data = request.get_json()
     queries = data.get('queries')
     query = data.get('query')
@@ -182,6 +183,10 @@ def prowlarr_search():
     }
 
     return jsonify(response_data)
+    except Exception as e:
+        current_app.logger.error(f"Erreur détaillée dans prowlarr_search: {e}", exc_info=True)
+        # Renvoyer une réponse d'erreur claire au frontend
+        return jsonify({"error": f"Une erreur serveur détaillée est survenue: {str(e)}"}), 500
 
 
 @search_ui_bp.route('/api/search/lookup', methods=['POST'])
