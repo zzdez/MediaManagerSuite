@@ -5,11 +5,21 @@ from app.auth import login_required
 from app.utils.mapping_manager import add_or_update_torrent_in_map
 from pathlib import Path
 
+from flask import session
+
 debug_tools_bp = Blueprint(
     'debug_tools',
     __name__,
     template_folder='templates'
 )
+
+@debug_tools_bp.route('/clear_session')
+@login_required
+def clear_user_session():
+    """Vide complètement la session de l'utilisateur."""
+    session.clear()
+    flash("Votre session a été complètement réinitialisée.", "success")
+    return redirect(url_for('home'))
 
 @debug_tools_bp.route('/staging_simulator')
 @login_required

@@ -126,9 +126,13 @@ def prowlarr_search():
     # 2. On envoie la requête de base à Prowlarr
     all_raw_results = []
     for query in queries:
-        raw_results = search_prowlarr(query=query, categories=category_ids)
-        if raw_results:
-            all_raw_results.extend(raw_results)
+        # CORRECTION : S'assurer que la requête est une chaîne de caractères valide
+        if isinstance(query, str) and query.strip():
+            raw_results = search_prowlarr(query=query, categories=category_ids)
+            if raw_results:
+                all_raw_results.extend(raw_results)
+        else:
+            current_app.logger.warning(f"Prowlarr search: Ignored invalid query item: {query}")
 
     if not all_raw_results:
         return jsonify({"error": "Erreur de communication avec Prowlarr ou aucun résultat."}), 500
