@@ -1228,6 +1228,25 @@ $(document).on('click', '.find-and-play-trailer-btn', function() {
     }
 });
 
+// --- MISE À JOUR EN TEMPS RÉEL DU BOUTON DE BANDE-ANNONCE ---
+$(document).on('trailerStatusUpdated', function(event, { mediaType, externalId, newStatus }) {
+    // Le bouton sur la page de l'éditeur a une classe différente
+    const buttonSelector = `.find-and-play-trailer-btn[data-media-type="${mediaType}"][data-external-id="${externalId}"]`;
+    const button = $(buttonSelector);
+
+    if (button.length) {
+        // Logique de mise à jour de la couleur
+        button.removeClass('btn-outline-success btn-outline-primary btn-outline-danger');
+        let newClass = 'btn-outline-danger'; // Statut NONE
+        if (newStatus === 'LOCKED') {
+            newClass = 'btn-outline-success';
+        } else if (newStatus === 'UNLOCKED') {
+            newClass = 'btn-outline-primary';
+        }
+        button.addClass(newClass);
+    }
+});
+
 // --- FIN DU BLOC DE GESTION DES BANDES-ANNONCES ---
 
     // NOUVEL ÉCOUTEUR D'ÉVÉNEMENT
