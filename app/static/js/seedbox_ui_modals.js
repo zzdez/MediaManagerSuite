@@ -1791,13 +1791,20 @@ async function handleTrailerLockForAddTorrent(button) {
         // Convertir 'sonarr'/'radarr' en 'tv'/'movie' pour l'API
         const apiMediaType = mediaType === 'sonarr' ? 'tv' : 'movie';
 
+        // *** CORRECTION ***
+        // Cacher la modale actuelle pour éviter les conflits de focus
+        const addTorrentModalInstance = bootstrap.Modal.getInstance(modalElement);
+        if (addTorrentModalInstance) {
+            addTorrentModalInstance.hide();
+        }
+
         // Déclencher l'événement global
         $(document).trigger('openTrailerSearch', {
             mediaType: apiMediaType,
             externalId: externalId,
             title: title,
             year: year,
-            sourceModalId: '#addTorrentModal'
+            sourceModalId: 'addTorrentModal' // Juste l'ID, sans le '#'
         });
     });
 
