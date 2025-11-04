@@ -392,9 +392,12 @@ $(document).ready(function() {
             selectionModal.data('source-modal-id', sourceModalId);
         }
 
-        // Nettoyage de l'état précédent
-        $('#trailer-results-container').empty();
-        $('#trailer-load-more-container').hide();
+        // --- Réinitialisation complète de l'état de la modale ---
+        $('#trailer-search-input').val(''); // Vider la barre de recherche
+        $('#manual-trailer-url').val(''); // Vider le champ de l'URL manuelle
+        $('#manual-trailer-preview').hide().empty(); // Cacher et vider la prévisualisation
+        $('#trailer-results-container').empty(); // Vider les résultats précédents
+        $('#trailer-load-more-container').hide(); // Cacher le bouton "Plus de résultats"
         $('#trailerSearchModalLabel').text(`Bande-annonce pour : ${title}`);
 
         // Lance la recherche
