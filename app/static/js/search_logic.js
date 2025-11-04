@@ -240,6 +240,27 @@ $(document).ready(function() {
         $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
     });
 
+    // --- MISE À JOUR EN TEMPS RÉEL DU BOUTON DE BANDE-ANNONCE ---
+    $(document).on('trailerStatusUpdated', function(event, { mediaType, externalId, newStatus }) {
+        // 1. Trouver le bouton correspondant dans la page de résultats
+        const buttonSelector = `.search-trailer-btn[data-media-type="${mediaType}"][data-external-id="${externalId}"]`;
+        const button = $(buttonSelector);
+
+        if (button.length) {
+            // 2. Retirer toutes les classes de couleur potentielles
+            button.removeClass('btn-outline-success btn-outline-primary btn-outline-danger');
+
+            // 3. Ajouter la nouvelle classe en fonction du statut
+            let newClass = 'btn-outline-danger'; // Cas par défaut (NONE)
+            if (newStatus === 'LOCKED') {
+                newClass = 'btn-outline-success';
+            } else if (newStatus === 'UNLOCKED') {
+                newClass = 'btn-outline-primary';
+            }
+            button.addClass(newClass);
+        }
+    });
+
     $('#media-results-container').on('click', '.search-torrents-btn', function() {
         resetFilters(); // Réinitialiser les filtres pour la nouvelle recherche
         const resultIndex = $(this).data('result-index');

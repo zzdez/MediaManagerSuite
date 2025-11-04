@@ -166,6 +166,8 @@ $(document).ready(function() {
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success') {
+                const newStatus = isLocked ? 'UNLOCKED' : 'LOCKED';
+                $(document).trigger('trailerStatusUpdated', { mediaType, externalId, newStatus });
                 // Rafraîchit toute la modale pour obtenir le nouvel état du backend
                 fetchAndRenderTrailers(mediaType, externalId, title, year);
             } else {
@@ -235,6 +237,7 @@ $(document).ready(function() {
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success') {
+                $(document).trigger('trailerStatusUpdated', { mediaType, externalId, newStatus: 'NONE' });
                 $('#trailer-results-container').html('<p class="text-center text-success">Résultats effacés. Vous pouvez fermer cette fenêtre ou lancer une nouvelle recherche.</p>');
                 $('#trailer-load-more-container').hide();
             } else {
@@ -311,6 +314,7 @@ $(document).ready(function() {
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success') {
+                $(document).trigger('trailerStatusUpdated', { mediaType, externalId, newStatus: 'LOCKED' });
                 // Rafraîchit toute la modale pour afficher le nouvel état verrouillé
                 fetchAndRenderTrailers(mediaType, externalId, title, year);
                 $('#manual-trailer-preview').hide(); // Cache la zone de prévisualisation
