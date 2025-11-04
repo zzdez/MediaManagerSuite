@@ -1072,12 +1072,9 @@ function selectArrItemForAddTorrent(itemId, itemTitle, appType, isAddedBoolean, 
     }
 
     // Affiche le panneau de recherche de bande-annonce
-    const trailerPanel = document.getElementById('trailer-search-panel');
-    if (trailerPanel) {
-        trailerPanel.style.display = 'block';
-        document.getElementById('trailer-search-query').value = itemTitle; // Pré-remplir la recherche
-        document.getElementById('trailer-results-container').innerHTML = ''; // Nettoyer les anciens résultats
-        document.getElementById('trailer-search-feedback').innerHTML = '';
+    const trailerSection = document.getElementById('add-torrent-trailer-section');
+    if (trailerSection) {
+        trailerSection.style.display = 'block';
     }
 
     const sonarrOptionsDiv = document.getElementById('addTorrentSonarrNewSeriesOptions');
