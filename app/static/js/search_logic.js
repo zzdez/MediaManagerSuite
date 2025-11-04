@@ -2,7 +2,7 @@
 
 $(document).ready(function() {
     // Si des requêtes initiales sont injectées par Flask, on les exécute.
-    if (typeof initialQueries !== 'undefined' && initialQueries && initialQueries.length > 0) {
+    if (typeof initialQueries !== 'undefined' && Array.isArray(initialQueries) && initialQueries.length > 0) {
         // 1. Activer l'onglet "Recherche Libre"
         const freeSearchTab = new bootstrap.Tab($('#torrent-search-tab')[0]);
         freeSearchTab.show();
@@ -238,6 +238,25 @@ $(document).ready(function() {
         // Déclencher l'événement global avec les données du bouton.
         // Le script global s'occupera du reste.
         $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
+    });
+
+    // --- MISE À JOUR EN TEMPS RÉEL DU BOUTON DE BANDE-ANNONCE ---
+    $(document).on('trailerStatusUpdated', function(event, { mediaType, externalId, newStatus }) {
+        // Cible à la fois le bouton de la page de recherche et celui dans la modale de mapping
+        const buttonSelectors = [
+            `.search-trailer-btn[data-media-type="${mediaType}"][data-external-id="${externalId}"]`,
+            `.find-trailer-from-map-btn[data-media-id="${externalId}"]`
+        ];
+
+        const button = $(buttonSelectors.join(', '));
+
+        if (button.length) {
+            button.removeClass('btn-outline-success btn-outline-primary btn-outline-danger');
+            let newClass = 'btn-outline-danger'; // NONE
+            if (newStatus === 'LOCKED') newClass = 'btn-outline-success';
+            else if (newStatus === 'UNLOCKED') newClass = 'btn-outline-primary';
+            button.addClass(newClass);
+        }
     });
 
     $('#media-results-container').on('click', '.search-torrents-btn', function() {
@@ -1181,7 +1200,7 @@ $(document).ready(function() {
 
     // --- GESTION DES BANDES-ANNONCES DEPUIS LA MODALE DE MAPPING (NOUVELLE VERSION) ---
     $('body').on('click', '.find-trailer-from-map-btn', function(e) {
-        e.stopPropagation(); // Empêche d'autres clics de se déclencher
+        e.stopPropagation();
 
         const button = $(this);
         const mediaType = button.data('media-type');
@@ -1190,9 +1209,13 @@ $(document).ready(function() {
         const year = button.data('year');
 
         if (mediaType && externalId && title) {
-            // Déclenche l'événement global géré par `global_trailer_search.js`
-            // Cela ouvrira la modale de recherche de BA par-dessus la modale actuelle.
-            $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
+            $(document).trigger('openTrailerSearch', {
+                mediaType,
+                externalId,
+                title,
+                year,
+                sourceModalId: 'sonarrRadarrSearchModal'
+            });
         } else {
             alert('Erreur: Informations manquantes pour rechercher la bande-annonce.');
         }
