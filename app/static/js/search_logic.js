@@ -2,7 +2,7 @@
 
 $(document).ready(function() {
     // Si des requêtes initiales sont injectées par Flask, on les exécute.
-    if (typeof initialQueries !== 'undefined' && initialQueries && initialQueries.length > 0) {
+    if (typeof initialQueries !== 'undefined' && Array.isArray(initialQueries) && initialQueries.length > 0) {
         // 1. Activer l'onglet "Recherche Libre"
         const freeSearchTab = new bootstrap.Tab($('#torrent-search-tab')[0]);
         freeSearchTab.show();
