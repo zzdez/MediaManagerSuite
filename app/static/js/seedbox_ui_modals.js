@@ -1796,7 +1796,8 @@ async function handleTrailerLockForAddTorrent(button) {
             mediaType: apiMediaType,
             externalId: externalId,
             title: title,
-            year: year
+            year: year,
+            sourceModalId: '#addTorrentModal'
         });
     });
 
