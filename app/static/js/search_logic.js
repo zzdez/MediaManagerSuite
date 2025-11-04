@@ -242,21 +242,19 @@ $(document).ready(function() {
 
     // --- MISE À JOUR EN TEMPS RÉEL DU BOUTON DE BANDE-ANNONCE ---
     $(document).on('trailerStatusUpdated', function(event, { mediaType, externalId, newStatus }) {
-        // 1. Trouver le bouton correspondant dans la page de résultats
-        const buttonSelector = `.search-trailer-btn[data-media-type="${mediaType}"][data-external-id="${externalId}"]`;
-        const button = $(buttonSelector);
+        // Cible à la fois le bouton de la page de recherche et celui dans la modale de mapping
+        const buttonSelectors = [
+            `.search-trailer-btn[data-media-type="${mediaType}"][data-external-id="${externalId}"]`,
+            `.find-trailer-from-map-btn[data-media-id="${externalId}"]`
+        ];
+
+        const button = $(buttonSelectors.join(', '));
 
         if (button.length) {
-            // 2. Retirer toutes les classes de couleur potentielles
             button.removeClass('btn-outline-success btn-outline-primary btn-outline-danger');
-
-            // 3. Ajouter la nouvelle classe en fonction du statut
-            let newClass = 'btn-outline-danger'; // Cas par défaut (NONE)
-            if (newStatus === 'LOCKED') {
-                newClass = 'btn-outline-success';
-            } else if (newStatus === 'UNLOCKED') {
-                newClass = 'btn-outline-primary';
-            }
+            let newClass = 'btn-outline-danger'; // NONE
+            if (newStatus === 'LOCKED') newClass = 'btn-outline-success';
+            else if (newStatus === 'UNLOCKED') newClass = 'btn-outline-primary';
             button.addClass(newClass);
         }
     });
@@ -1202,7 +1200,7 @@ $(document).ready(function() {
 
     // --- GESTION DES BANDES-ANNONCES DEPUIS LA MODALE DE MAPPING (NOUVELLE VERSION) ---
     $('body').on('click', '.find-trailer-from-map-btn', function(e) {
-        e.stopPropagation(); // Empêche d'autres clics de se déclencher
+        e.stopPropagation();
 
         const button = $(this);
         const mediaType = button.data('media-type');
@@ -1211,9 +1209,13 @@ $(document).ready(function() {
         const year = button.data('year');
 
         if (mediaType && externalId && title) {
-            // Déclenche l'événement global géré par `global_trailer_search.js`
-            // Cela ouvrira la modale de recherche de BA par-dessus la modale actuelle.
-            $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
+            $(document).trigger('openTrailerSearch', {
+                mediaType,
+                externalId,
+                title,
+                year,
+                sourceModalId: 'sonarrRadarrSearchModal'
+            });
         } else {
             alert('Erreur: Informations manquantes pour rechercher la bande-annonce.');
         }
