@@ -115,13 +115,13 @@ $(document).ready(function() {
     $(document).on('click', '#load-more-trailers-btn', function() {
         const button = $(this);
         const selectionModal = $('#trailer-search-modal');
-        const { mediaType, externalId } = selectionModal.data();
+        const { mediaType, externalId, title, year } = selectionModal.data();
         const pageToken = button.data('page-token');
 
         if (!mediaType || !externalId || !pageToken) return;
 
         button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
-        fetchAndRenderTrailers(mediaType, externalId, pageToken);
+        fetchAndRenderTrailers(mediaType, externalId, title, year, pageToken);
     });
 
     // Gère le clic sur le bouton de verrouillage/déverrouillage
@@ -250,6 +250,83 @@ $(document).ready(function() {
         });
     });
 
+    // --- GESTION DE L'AJOUT MANUEL ---
+    $(document).on('click', '#add-manual-trailer-btn', function() {
+        const url = $('#manual-trailer-url').val().trim();
+        const previewContainer = $('#manual-trailer-preview');
+
+        if (!url) {
+            previewContainer.html('<p class="text-warning">Veuillez entrer une URL.</p>').show();
+            return;
+        }
+
+        // Regex pour extraire l'ID de la vidéo de différentes formes d'URL YouTube
+        const videoIdRegex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
+        const match = url.match(videoIdRegex);
+        const videoId = match ? match[1] : null;
+
+        if (!videoId) {
+            previewContainer.html('<p class="text-danger">URL YouTube non valide.</p>').show();
+            return;
+        }
+
+        const embedHtml = `
+            <div class="ratio ratio-16x9 mb-2">
+                <iframe src="https://www.youtube.com/embed/${videoId}" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
+            </div>
+            <button class="btn btn-sm btn-outline-success lock-manual-trailer-btn" data-video-id="${videoId}">
+                <i class="bi bi-lock-fill"></i> Verrouiller cette bande-annonce
+            </button>
+        `;
+        previewContainer.html(embedHtml).show();
+    });
+
+    // Gère le clic sur le bouton de verrouillage manuel
+    $(document).on('click', '.lock-manual-trailer-btn', function() {
+        const button = $(this);
+        const videoId = button.data('video-id');
+        const selectionModal = $('#trailer-search-modal');
+        const { mediaType, externalId, title, year } = selectionModal.data();
+
+        if (!mediaType || !externalId || !videoId) {
+            alert("Erreur: Données incomplètes pour le verrouillage manuel.");
+            return;
+        }
+
+        // Pour un verrouillage manuel, nous n'avons pas le titre, la chaîne, etc.
+        // L'API est conçue pour accepter juste l'ID.
+        const videoData = { videoId: videoId, title: "Titre non disponible", channel: "N/A", thumbnail: "" };
+
+        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Verrouillage...');
+
+        fetch('/api/agent/lock_trailer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                media_type: mediaType,
+                external_id: externalId,
+                video_data: videoData
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                // Rafraîchit toute la modale pour afficher le nouvel état verrouillé
+                fetchAndRenderTrailers(mediaType, externalId, title, year);
+                $('#manual-trailer-preview').hide(); // Cache la zone de prévisualisation
+                $('#manual-trailer-url').val(''); // Vide le champ
+            } else {
+                alert('Erreur: ' + (data.message || 'Une erreur inconnue est survenue.'));
+                button.prop('disabled', false).html('<i class="bi bi-lock-fill"></i> Verrouiller cette bande-annonce');
+            }
+        })
+        .catch(error => {
+            console.error('Erreur technique lors du verrouillage manuel:', error);
+            alert('Une erreur technique est survenue.');
+            button.prop('disabled', false).html('<i class="bi bi-lock-fill"></i> Verrouiller cette bande-annonce');
+        });
+    });
+
     // --- NOUVEAU : Gère le clic sur le bouton "Affiner la recherche" ---
     $(document).on('click', '#trailer-search-button', function() {
         const button = $(this);
@@ -257,27 +334,52 @@ $(document).ready(function() {
         const query = searchInput.val().trim();
 
         const selectionModal = $('#trailer-search-modal');
-        const { mediaType, externalId, title, year } = selectionModal.data();
+        const resultsContainer = $('#trailer-results-container');
+        const loadMoreContainer = $('#trailer-load-more-container');
+        const { mediaType, externalId } = selectionModal.data();
 
+        if (!query) return; // Ne rien faire si la recherche est vide
         if (!mediaType || !externalId) {
             alert("Erreur: Contexte du média non trouvé pour la recherche.");
             return;
         }
 
-        // Construire le nouveau titre de recherche
-        // Si l'utilisateur a entré du texte, on l'utilise. Sinon, on reprend le titre original.
-        const finalSearchTitle = query ? `${title} ${query}` : title;
-
         button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+        resultsContainer.html('<div class="text-center"><div class="spinner-border"></div></div>');
+        loadMoreContainer.hide();
 
-        // On appelle la fonction existante avec le nouveau titre de recherche
-        // Le `false` pour pageToken assure que les résultats actuels sont remplacés.
-        fetchAndRenderTrailers(mediaType, externalId, finalSearchTitle, year, null);
+        // Appel à l'API de recherche manuelle
+        fetch(`/api/agent/search_trailer`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                media_type: mediaType,
+                external_id: externalId,
+                query: query
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            resultsContainer.empty();
+            if (data.status === 'success' && data.results) {
+                renderTrailerResults(data.results, { lockedVideoData: data.locked_video_data });
 
-        // Réactiver le bouton après un court délai pour éviter le spam
-        setTimeout(() => {
+                // Gérer la pagination pour la nouvelle recherche
+                if (data.next_page_token) {
+                    $('#load-more-trailers-btn').data('page-token', data.next_page_token);
+                    loadMoreContainer.show();
+                }
+            } else {
+                resultsContainer.html(`<p class="text-danger text-center">${data.message || 'Une erreur est survenue.'}</p>`);
+            }
+        })
+        .catch(error => {
+            console.error('Erreur lors de la recherche manuelle de BA:', error);
+            resultsContainer.html('<p class="text-danger text-center">Erreur de communication.</p>');
+        })
+        .finally(() => {
             button.prop('disabled', false).html('<i class="bi bi-search"></i>');
-        }, 1000);
+        });
     });
 
     // Déclencheur global pour ouvrir la modale de recherche de BA
