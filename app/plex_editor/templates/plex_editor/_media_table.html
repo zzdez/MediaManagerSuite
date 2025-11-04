@@ -2,30 +2,31 @@
     <table class="table table-dark table-striped table-hover mt-4 align-middle" id="plex-results-table">
         <thead>
             <tr>
-                <th scope="col" style="width: 5%;"><input type="checkbox" class="form-check-input" id="select-all-checkbox"></th>
-                <th scope="col" class="sortable-header" data-sort-by="title">Titre</th>
-                <th scope="col" class="sortable-header" data-sort-by="library" style="width: 15%;">Bibliothèque</th>
-                <th scope="col" class="sortable-header" data-sort-by="size" data-sort-type="size" style="width: 10%;">Taille Disque</th>
-                <th scope="col" class="sortable-header" data-sort-by="added" data-sort-type="date" style="width: 10%;">Date d'Ajout</th>
-                <th scope="col" class="sortable-header" data-sort-by="status" data-sort-type="text" style="width: 10%;">Statut</th>
-                <th scope="col" style="width: 15%;">Actions</th>
+                <th scope="col" style="width: 3%;"><input type="checkbox" class="form-check-input" id="select-all-checkbox"></th>
+                <th scope="col" class="sortable-header" data-sort-by="title" style="width: 35%;">Titre</th>
+                <th scope="col" class="sortable-header" data-sort-by="library" style="width: 12%;">Bibliothèque</th>
+                <th scope="col" class="sortable-header" data-sort-by="size" data-sort-type="size" style="width: 8%;">Taille</th>
+                <th scope="col" class="sortable-header" data-sort-by="added" data-sort-type="date" style="width: 8%;">Ajout</th>
+                <th scope="col" class="sortable-header" data-sort-by="view_status" data-sort-type="text" style="width: 8%;">Statut Visionnage</th>
+                <th scope="col" class="sortable-header" data-sort-by="production_status" data-sort-type="text" style="width: 8%;">Statut Production</th>
+                <th scope="col" style="width: 18%;">Actions</th>
             </tr>
         </thead>
         <tbody>
             {% for item in items %}
-            <tr data-rating="{{ item.userRating or 0 }}" data-incomplete="{{ 'true' if item.type == 'show' and item.is_incomplete else 'false' }}">
+            <tr data-rating="{{ item.userRating or 0 }}"
+                data-incomplete="{{ 'true' if item.type == 'show' and item.is_incomplete else 'false' }}"
+                data-media-type-from-mapping="{{ item.media_type_from_mapping }}"
+                data-custom-media-type="{{ item.custom_media_type }}"
+                data-rating-key="{{ item.ratingKey }}">
                 <td><input type="checkbox" class="form-check-input item-checkbox" data-rating-key="{{ item.ratingKey }}"></td>
                 <td>
                     <div class="d-flex align-items-center">
-                        {# --- NOUVEAU BLOC POUR L'IMAGE --- #}
                         <div class="me-3">
                             <img src="{{ item.poster_url or url_for('static', filename='img/placeholder.png') }}"
                                  alt="Poster for {{ item.title }}"
                                  style="width: 50px; height: 75px; object-fit: cover; border-radius: 4px;">
                         </div>
-                        {# --- FIN DU BLOC IMAGE --- #}
-
-                        {# Le contenu textuel est maintenant dans sa propre div pour l'alignement #}
                         <div>
                             <a href="#" class="text-white item-title-link"
                                data-bs-toggle="modal"
@@ -34,32 +35,15 @@
                                 {{ item.title }}
                             </a>
                             <small class="d-block text-muted">Année: {{ item.year }}</small>
-
-                            {# --- DÉBUT DU BLOC D'ÉTOILES --- #}
                             {% if item.userRating is not none and item.userRating > 0 %}
                                 <div class="star-rating">
-                                    {# On convertit la note sur 10 en note sur 5 #}
                                     {% set star_rating = item.userRating / 2 %}
-
-                                    {# Boucle pour les étoiles pleines #}
-                                    {% for i in range(star_rating|int) %}
-                                        <i class="bi bi-star-fill"></i>
-                                    {% endfor %}
-
-                                    {# Condition pour la demi-étoile #}
-                                    {% if (star_rating - (star_rating|int)) >= 0.5 %}
-                                        <i class="bi bi-star-half"></i>
-                                    {% endif %}
-
-                                    {# Boucle pour les étoiles vides #}
+                                    {% for i in range(star_rating|int) %}<i class="bi bi-star-fill"></i>{% endfor %}
+                                    {% if (star_rating - (star_rating|int)) >= 0.5 %}<i class="bi bi-star-half"></i>{% endif %}
                                     {% set full_stars = (star_rating + 0.5)|int %}
-                                    {% for i in range(5 - full_stars) %}
-                                        <i class="bi bi-star"></i>
-                                    {% endfor %}
+                                    {% for i in range(5 - full_stars) %}<i class="bi bi-star"></i>{% endfor %}
                                 </div>
                             {% endif %}
-                            {# --- FIN DU BLOC D'ÉTOILES --- #}
-
                             {% if item.original_title and item.original_title|lower != item.title|lower %}
                                 <small class="d-block" style="color: #6c757d; font-style: italic;">(Titre Original: {{ item.original_title }})</small>
                             {% endif %}
@@ -68,10 +52,8 @@
                             {% endif %}
                         </div>
                     </div>
-
-                    {# --- AJOUTE CE BLOC ENTIER --- #}
                     {% if item.file_path %}
-                    <div class="mt-2" style="font-size: 0.8em;">
+                    <div class="mt-2 filepath-cell" style="font-size: 0.8em;">
                         <code class="text-muted">{{ item.file_path }}</code>
                         <button class="btn btn-outline-secondary btn-sm ms-2 py-0 copy-path-btn"
                                 title="Copier le chemin"
@@ -80,40 +62,46 @@
                         </button>
                     </div>
                     {% endif %}
-                    {# --- FIN DU BLOC À AJOUTER --- #}
                 </td>
                 <td><span class="badge bg-secondary">{{ item.library_name }}</span></td>
-                <td>{{ item.total_size_display if item.total_size_display else 'N/A' }}</td> {# MODIFIED CELLULE #}
+                <td>{{ item.total_size_display if item.total_size_display else 'N/A' }}</td>
                 <td>{{ item.addedAt.strftime('%Y-%m-%d') if item.addedAt else 'N/A' }}</td>
-                <td class="media-status-cell" data-rating-key="{{ item.ratingKey }}">
+                <td class="view-status-cell" data-rating-key="{{ item.ratingKey }}">
                     {% if item.type == 'show' %}
                         {% if item.viewed_episodes == 0 and item.total_episodes > 0 %}
-                            <span class="badge bg-warning text-dark">Non commencé</span>
+                            <span class="badge bg-warning text-dark">Non vue</span>
                         {% elif item.viewed_episodes == item.total_episodes and item.total_episodes > 0 %}
-                            <span class="badge bg-success">Terminé</span>
+                            <span class="badge bg-success">Vue</span>
                         {% elif item.total_episodes > 0 %}
-                            <span class="badge bg-info">En cours</span>
+                            <span class="badge bg-info">Commencée</span>
                         {% else %}
                             <span class="badge bg-secondary">Inconnu</span>
                         {% endif %}
-
                         {% if item.total_episodes > 0 %}
-                        <small class="d-block text-muted">
+                        <small class="d-block text-muted mt-1">
                             {{ item.viewed_episodes }} / {{ item.total_episodes }} ép.
-
-                            {# ### DÉBUT DE L'AJOUT ### #}
                             {% if item.is_incomplete %}
                                 <span class="badge bg-danger ms-1" title="Des épisodes diffusés sont manquants selon Sonarr.">
                                     <i class="bi bi-exclamation-triangle-fill"></i>
                                 </span>
                             {% endif %}
-                            {# ### FIN DE L'AJOUT ### #}
                         </small>
                         {% endif %}
                     {% elif item.isWatched %}
                         <span class="badge bg-success">Vu</span>
                     {% else %}
                         <span class="badge bg-warning text-dark">Non Vu</span>
+                    {% endif %}
+                </td>
+                <td class="production-status-cell">
+                    {% if item.type == 'show' and item.production_status %}
+                        {% if item.production_status == 'En Production' %}
+                            <span class="badge bg-primary">{{ item.production_status }}</span>
+                        {% elif item.production_status == 'Terminée' %}
+                            <span class="badge bg-secondary">{{ item.production_status }}</span>
+                        {% elif item.production_status == 'À venir' %}
+                            <span class="badge bg-info-subtle text-dark">{{ item.production_status }}</span>
+                        {% endif %}
                     {% endif %}
                 </td>
                 <td>

@@ -1,6 +1,20 @@
 // Fichier : app/static/js/search_logic.js
 
 $(document).ready(function() {
+    // Si des requêtes initiales sont injectées par Flask, on les exécute.
+    if (typeof initialQueries !== 'undefined' && initialQueries && initialQueries.length > 0) {
+        // 1. Activer l'onglet "Recherche Libre"
+        const freeSearchTab = new bootstrap.Tab($('#torrent-search-tab')[0]);
+        freeSearchTab.show();
+
+        // 2. Lancer la recherche avec les requêtes
+        const payload = {
+            queries: initialQueries,
+            search_type: 'sonarr' // Par défaut, la recherche d'épisodes manquants est pour les séries
+        };
+        executeProwlarrSearch(payload, searchModeIntent); // Passer l'intention de recherche
+    }
+
     // CONTEXTE GLOBAL POUR LE PRE-MAPPING
     window.currentMediaContext = null;
 
@@ -31,13 +45,113 @@ $(document).ready(function() {
                 ? `${TMDB_POSTER_BASE_URL}${item.poster}`
                 : (item.poster || 'https://via.placeholder.com/185x278.png?text=No+Poster');
 
-            // Logique pour déterminer la classe du bouton de bande-annonce
-            let trailerBtnClass = 'btn-outline-danger'; // Rouge par défaut (NONE)
-            if (item.trailer_status === 'LOCKED') {
-                trailerBtnClass = 'btn-outline-success'; // Vert
-            } else if (item.trailer_status === 'UNLOCKED') {
-                trailerBtnClass = 'btn-outline-primary'; // Bleu
+            // --- NOUVELLE LOGIQUE POUR LES BADGES ET BOUTONS ---
+            const details = item.details || {};
+            let badgesHtml = '';
+
+            // 1. Badges Sonarr/Radarr
+            const sonarrStatus = details.sonarr_status || {};
+            const radarrStatus = details.radarr_status || {};
+            if (sonarrStatus.present) {
+                badgesHtml += `<span class="badge bg-info me-1">Sonarr</span>`;
+                badgesHtml += sonarrStatus.monitored ? `<span class="badge bg-success me-1">Surveillé</span>` : `<span class="badge bg-secondary me-1">Non surveillé</span>`;
+            } else if (radarrStatus.present) {
+                badgesHtml += `<span class="badge bg-info me-1">Radarr</span>`;
+                badgesHtml += radarrStatus.monitored ? `<span class="badge bg-success me-1">Surveillé</span>` : `<span class="badge bg-secondary me-1">Non surveillé</span>`;
             }
+
+            // 2. Badge de Statut de Production (Séries seulement)
+            const prodStatus = details.production_status || {};
+            if (mediaType === 'tv' && prodStatus.status) {
+                let statusText = prodStatus.status;
+                let statusClass = 'bg-secondary';
+                switch (prodStatus.status.toLowerCase()) {
+                    case 'ended': statusText = 'Terminée'; statusClass = 'bg-dark'; break;
+                    case 'continuing': statusText = 'En Production'; statusClass = 'bg-success'; break;
+                    case 'upcoming': statusText = 'À venir'; statusClass = 'bg-info text-dark'; break;
+                }
+                badgesHtml += `<span class="badge ${statusClass} me-1">${statusText}</span>`;
+            }
+
+            // 3. Badge de Visionnage Plex
+            const plexStatus = details.plex_status || {};
+            if (plexStatus.present) {
+                if (mediaType === 'tv') {
+                    if (plexStatus.is_watched) {
+                        badgesHtml += `<span class="badge bg-primary me-1">Série Vue</span>`;
+                    } else if (plexStatus.watched_episodes && !plexStatus.watched_episodes.startsWith('0/')) {
+                        badgesHtml += `<span class="badge bg-primary me-1">Commencée (${plexStatus.watched_episodes})</span>`;
+                    }
+                } else { // Film
+                    if (plexStatus.is_watched) {
+                        badgesHtml += `<span class="badge bg-primary me-1">Vu</span>`;
+                    }
+                }
+            }
+
+            // 4. Logique pour les boutons
+            let trailerBtnClass = 'btn-outline-danger';
+            if (item.trailer_status === 'LOCKED') trailerBtnClass = 'btn-outline-success';
+            else if (item.trailer_status === 'UNLOCKED') trailerBtnClass = 'btn-outline-primary';
+
+            // ### CORRECTION ICI ###
+            let buttonsHtml = `
+                <button class="btn btn-sm ${trailerBtnClass} search-trailer-btn"
+                        data-media-type="${mediaType}"
+                        data-external-id="${item.id}"
+                        data-title="${item.title}"
+                        data-year="${item.year || ''}">
+                    <i class="fas fa-video"></i> Bande-annonce
+                </button>`;
+
+            if (!sonarrStatus.present && !radarrStatus.present) {
+                buttonsHtml += `
+                    <button class="btn btn-sm btn-outline-success add-to-arr-btn" data-result-index="${index}">
+                        <i class="fas fa-plus"></i> Ajouter
+                    </button>`;
+            }
+
+            buttonsHtml += `
+                <button class="btn btn-sm btn-primary search-torrents-btn" data-result-index="${index}">
+                    <i class="fas fa-download"></i> Chercher les Torrents
+                </button>`;
+
+            // --- FIN DE LA NOUVELLE LOGIQUE ---
+
+            // --- NOUVEAU : Logique pour la date de sortie ---
+            let releaseDateHtml = '';
+            const releaseDate = details.release_date;
+            if (releaseDate) {
+                const date = new Date(releaseDate);
+                // Vérifier si la date est dans le futur
+                if (date > new Date()) {
+                    const formattedDate = date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }).replace('.', '');
+                    releaseDateHtml = `<p class="mb-1 text-info"><small><strong>Sortie le :</strong> ${formattedDate}</small></p>`;
+                }
+            }
+
+            // --- NOUVEAU : Logique pour le statut de téléchargement ---
+            let downloadStatusHtml = '';
+            if (radarrStatus.present) {
+                const statusClass = radarrStatus.has_file ? 'bg-success' : 'bg-warning text-dark';
+                const statusText = radarrStatus.has_file ? `Téléchargé (${radarrStatus.size_on_disk_gb})` : 'Manquant';
+                downloadStatusHtml = `<span class="badge ${statusClass} me-1">${statusText}</span>`;
+            } else if (sonarrStatus.present) {
+                const statusClass = sonarrStatus.episodes_file_count > 0 ? 'bg-success' : 'bg-warning text-dark';
+                const statusText = sonarrStatus.episodes_file_count > 0 ? 'Téléchargé' : 'Manquant';
+                downloadStatusHtml = `
+                    <div>
+                        <span class="badge ${statusClass} me-1">${statusText}</span>
+                    </div>
+                    <div class="mt-1">
+                        <small class="text-muted">
+                            ${sonarrStatus.seasons_complete}/${sonarrStatus.seasons_total} Saisons -
+                            (${sonarrStatus.episodes_file_count}/${sonarrStatus.episodes_count} ép.) -
+                            ${sonarrStatus.size_on_disk_gb}
+                        </small>
+                    </div>`;
+            }
+
 
             const cardHtml = `
                 <div class="list-group-item list-group-item-action" data-media-type="${mediaType}">
@@ -47,18 +161,14 @@ $(document).ready(function() {
                         </div>
                         <div class="col-md-10 col-sm-9">
                             <h5 class="mb-1">${item.title} <span class="text-muted">(${item.year || 'N/A'})</span></h5>
+                            ${releaseDateHtml}
                             <p class="mb-1 small">${item.overview ? item.overview.substring(0, 280) + (item.overview.length > 280 ? '...' : '') : 'Pas de synopsis disponible.'}</p>
+                            <div class="mt-2 mb-2">
+                                ${badgesHtml}
+                                ${downloadStatusHtml}
+                            </div>
                             <div class="mt-2">
-                                <button class="btn btn-sm ${trailerBtnClass} search-trailer-btn"
-                                        data-result-index="${index}"
-                                        data-title="${item.title}"
-                                        data-year="${item.year || ''}"
-                                        data-media-type="${mediaType}">
-                                    <i class="fas fa-video"></i> Bande-annonce
-                                </button>
-                                <button class="btn btn-sm btn-primary search-torrents-btn" data-result-index="${index}">
-                                    <i class="fas fa-download"></i> Chercher les Torrents
-                                </button>
+                                ${buttonsHtml}
                             </div>
                         </div>
                     </div>
@@ -116,45 +226,18 @@ $(document).ready(function() {
     });
 
     // --- GESTION DES BANDES-ANNONCES DE LA PAGE DE RECHERCHE (NOUVELLE VERSION) ---
+    // Le code a été simplifié. Le gestionnaire d'événements global `global_trailer_search.js`
+    // s'occupe maintenant de toute la logique, car le bouton a le bon `data-trailer-id-key`.
     $('#media-results-container').on('click', '.search-trailer-btn', function() {
         const button = $(this);
-        const resultIndex = button.data('result-index');
-        const mediaData = mediaSearchResults[resultIndex];
-
         const mediaType = button.data('media-type');
-        const externalId = mediaData.id;
-        const title = mediaData.title;
-        const year = mediaData.year;
-        const trailerStatus = mediaData.trailer_status;
+        const externalId = button.data('external-id');
+        const title = button.data('title');
+        const year = button.data('year');
 
-        if (!mediaType || !externalId || !title) {
-            alert('Erreur: Informations de base manquantes pour la bande-annonce.');
-            return;
-        }
-
-        if (trailerStatus === 'LOCKED') {
-            // Si la bande-annonce est verrouillée, on récupère son ID et on la joue directement.
-            fetch(`/api/agent/get_locked_trailer_id?media_type=${mediaType}&external_id=${externalId}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.status === 'success' && data.video_id) {
-                        const playerModal = $('#trailer-modal');
-                        $('#trailerModalLabel').text('Bande-Annonce: ' + title);
-                        playerModal.find('.modal-body').html(`<div class="ratio ratio-16x9"><iframe src="https://www.youtube.com/embed/${data.video_id}?autoplay=1&cc_lang=fr&cc_load_policy=1" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe></div>`);
-                        bootstrap.Modal.getOrCreateInstance(playerModal[0]).show();
-                    } else {
-                        // Fallback au cas où l'ID ne serait pas trouvé (ne devrait pas arriver)
-                        $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
-                    }
-                })
-                .catch(() => {
-                    // En cas d'erreur de communication, on ouvre la recherche standard
-                    $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
-                });
-        } else {
-            // Pour 'UNLOCKED' ou 'NONE', on ouvre la modale de recherche/sélection.
-            $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
-        }
+        // Déclencher l'événement global avec les données du bouton.
+        // Le script global s'occupera du reste.
+        $(document).trigger('openTrailerSearch', { mediaType, externalId, title, year });
     });
 
     $('#media-results-container').on('click', '.search-torrents-btn', function() {
@@ -165,19 +248,175 @@ $(document).ready(function() {
 
         window.currentMediaContext = { ...mediaData, media_type: mediaType };
 
-        // Pré-remplir le champ de recherche de l'autre onglet
-        $('#search-form input[name="query"]').val(mediaData.title);
+        // --- NOUVELLE LOGIQUE DE RECHERCHE MULTI-TITRES (Corrigée) ---
+        const title = mediaData.title;
+        const originalTitle = mediaData.original_title;
+        const year = mediaData.year;
 
-        // Basculer vers l'onglet de recherche libre
+        // 1. Nettoyer les titres de base pour enlever l'année potentielle
+        const cleanedTitle = title ? title.replace(/\(\d{4}\)/, '').trim() : '';
+        const cleanedOriginalTitle = originalTitle ? originalTitle.replace(/\(\d{4}\)/, '').trim() : '';
+
+        // 2. Créer les variations de titres à partir des versions nettoyées
+        let finalQueries = new Set();
+        if (cleanedTitle) {
+            finalQueries.add(cleanedTitle); // Titre traduit sans année
+            if (year && year !== 'N/A') {
+                finalQueries.add(`${cleanedTitle} ${year}`); // Titre traduit avec année
+            }
+        }
+        if (cleanedOriginalTitle && cleanedOriginalTitle !== cleanedTitle) {
+            finalQueries.add(cleanedOriginalTitle); // Titre original sans année
+            if (year && year !== 'N/A') {
+                finalQueries.add(`${cleanedOriginalTitle} ${year}`); // Titre original avec année
+            }
+        }
+
+        // 3. Pré-remplir le champ de recherche avec le titre principal et lancer la recherche
+        $('#search-form input[name="query"]').val(cleanedTitle);
+
         const freeSearchTab = new bootstrap.Tab($('#torrent-search-tab')[0]);
         freeSearchTab.show();
 
         const payload = {
-            query: mediaData.title,
+            queries: [...finalQueries], // Convertir le Set en Array
             search_type: mediaType === 'movie' ? 'radarr' : 'sonarr'
         };
 
-        executeProwlarrSearch(payload); // Appel direct de la fonction partagée
+        executeProwlarrSearch(payload);
+    });
+
+    // --- NOUVELLE LOGIQUE POUR L'AJOUT DIRECT SANS TORRENT ---
+    $('#media-results-container').on('click', '.add-to-arr-btn', function() {
+        const resultIndex = $(this).data('result-index');
+        const mediaData = mediaSearchResults[resultIndex];
+        const mediaType = $(this).closest('[data-media-type]').data('media-type');
+        const modal = $('#add-to-arr-direct-modal');
+
+        // Stocker les données nécessaires dans la modale
+        modal.data('media-data', mediaData);
+        modal.data('media-type', mediaType);
+
+        // Mettre à jour le titre de la modale
+        modal.find('#add-direct-media-title').text(mediaData.title);
+
+        // Afficher/cacher le conteneur du profil de langue pour Sonarr
+        modal.find('#add-direct-language-profile-container').toggle(mediaType === 'tv');
+
+        // Réinitialiser et désactiver les sélecteurs et le bouton de confirmation
+        modal.find('select').empty().prop('disabled', true).html('<option>Chargement...</option>');
+        modal.find('#confirm-add-direct-btn').prop('disabled', true);
+        modal.find('#add-direct-error-container').empty();
+
+        // Afficher la modale
+        new bootstrap.Modal(modal[0]).show();
+
+        // Définir les URLs des API en fonction du type de média
+        const rootFolderUrl = mediaType === 'tv' ? '/seedbox/api/get-sonarr-rootfolders' : '/seedbox/api/get-radarr-rootfolders';
+        const qualityProfileUrl = mediaType === 'tv' ? '/seedbox/api/get-sonarr-qualityprofiles' : '/seedbox/api/get-radarr-qualityprofiles';
+        const languageProfileUrl = mediaType === 'tv' ? '/seedbox/api/get-sonarr-language-profiles' : null;
+
+        // Lancer les appels API
+        const promises = [
+            fetch(rootFolderUrl).then(res => res.json()),
+            fetch(qualityProfileUrl).then(res => res.json())
+        ];
+        if (languageProfileUrl) {
+            promises.push(fetch(languageProfileUrl).then(res => res.json()));
+        }
+
+        Promise.all(promises).then(([rootFolders, qualityProfiles, languageProfiles]) => {
+            // Peupler le sélecteur de dossier racine
+            const rootFolderSelect = modal.find('#add-direct-root-folder-select').empty().prop('disabled', false);
+            rootFolders.forEach(folder => rootFolderSelect.append(new Option(folder.path, folder.path)));
+
+            // Peupler le sélecteur de profil de qualité
+            const qualityProfileSelect = modal.find('#add-direct-quality-profile-select').empty().prop('disabled', false);
+            qualityProfiles.forEach(profile => qualityProfileSelect.append(new Option(profile.name, profile.id)));
+
+            // Peupler le sélecteur de profil de langue si nécessaire
+            if (languageProfiles) {
+                const languageProfileSelect = modal.find('#add-direct-language-profile-select').empty().prop('disabled', false);
+                languageProfiles.forEach(profile => languageProfileSelect.append(new Option(profile.name, profile.id)));
+            }
+
+            // Activer le bouton de confirmation
+            modal.find('#confirm-add-direct-btn').prop('disabled', false);
+        }).catch(error => {
+            modal.find('#add-direct-error-container').text("Erreur lors du chargement des options depuis Sonarr/Radarr.");
+            console.error("Erreur API pour la modale d'ajout:", error);
+        });
+    });
+
+    $('#confirm-add-direct-btn').on('click', function() {
+        const btn = $(this);
+        const modal = $('#add-to-arr-direct-modal');
+        const mediaData = modal.data('media-data');
+        const mediaType = modal.data('media-type');
+        const errorContainer = modal.find('#add-direct-error-container');
+
+        const payload = {
+            media_type: mediaType,
+            external_id: mediaData.id,
+            root_folder_path: modal.find('#add-direct-root-folder-select').val(),
+            quality_profile_id: modal.find('#add-direct-quality-profile-select').val()
+        };
+        if (mediaType === 'tv') {
+            payload.language_profile_id = modal.find('#add-direct-language-profile-select').val();
+        }
+
+        btn.prop('disabled', true).find('.spinner-border').removeClass('d-none');
+        errorContainer.empty();
+
+        fetch('/search/api/media/add_direct', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Fermer la modale
+                bootstrap.Modal.getInstance(modal[0]).hide();
+                toastr.success(data.message);
+
+                // --- NOUVELLE LOGIQUE DE RAFRAÎCHISSEMENT ---
+                // 1. Trouver l'index de l'élément à mettre à jour
+                const itemIndex = mediaSearchResults.findIndex(item => item.id == mediaData.id);
+
+                // 2. Appeler le nouvel endpoint pour obtenir les détails frais
+                if (itemIndex !== -1) {
+                    fetch(`/search/api/media/get_details?media_type=${mediaType}&external_id=${mediaData.id}`)
+                        .then(res => res.json())
+                        .then(newDetails => {
+                            // 3. Mettre à jour les détails de l'élément dans notre cache local
+                            mediaSearchResults[itemIndex].details = newDetails;
+
+                            // 4. Redessiner toute la liste avec les données à jour
+                            const currentMediaType = $('input[name="media_type"]:checked').val();
+                            renderMediaResults(mediaSearchResults, currentMediaType);
+                        })
+                        .catch(err => {
+                            console.error("Erreur lors du rafraîchissement de la fiche.", err);
+                            // En cas d'erreur, on recharge toute la recherche comme avant
+                            performMediaSearch();
+                        });
+                } else {
+                    // Fallback si on ne trouve pas l'item, ce qui ne devrait pas arriver
+                    performMediaSearch();
+                }
+
+            } else {
+                errorContainer.text(data.message || "Une erreur est survenue.");
+            }
+        })
+        .catch(error => {
+            errorContainer.text("Erreur de communication avec le serveur.");
+            console.error("Erreur lors de l'ajout direct:", error);
+        })
+        .finally(() => {
+            btn.prop('disabled', false).find('.spinner-border').addClass('d-none');
+        });
     });
 
     // =================================================================
@@ -292,7 +531,7 @@ $(document).ready(function() {
     }
 
 
-    function executeProwlarrSearch(payload) {
+    function executeProwlarrSearch(payload, searchIntent = null) {
         const resultsContainer = $('#search-results-container');
         resultsContainer.html('<div class="text-center p-5"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Recherche en cours...</p></div>');
 
@@ -308,9 +547,16 @@ $(document).ready(function() {
             return response.json();
         })
         .then(data => {
-            // Correction: Utiliser un fallback `{}` pour éviter les erreurs si filter_options est manquant.
-            const results = data.results || [];
+            let results = data.results || [];
             const filterOptions = data.filter_options || {};
+
+            // Appliquer le filtrage par intention si spécifié
+            if (searchIntent === 'packs') {
+                results = results.filter(r => r.is_season_pack);
+            } else if (searchIntent === 'episodes') {
+                results = results.filter(r => r.is_episode);
+            }
+
             prowlarrResultsCache = results;
 
             if (data.error) {
@@ -763,7 +1009,7 @@ $(document).ready(function() {
             title: optionsContainer.data('title'),
             root_folder_path: $('#root-folder-select').find('option:selected').text(),
             quality_profile_id: $('#quality-profile-select').val(),
-            searchForMovie: $('#search-on-add-check').is(':checked')
+            searchForMovie: false
         };
         fetch('/seedbox/api/add-arr-item-and-get-id', {
             method: 'POST',

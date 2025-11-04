@@ -61,6 +61,9 @@
 <!-- NOUVEAU : Formulaire et Boutons d'Action Globaux -->
 <form id="manage-episodes-form">
     <div class="d-flex justify-content-end mb-3">
+        <button type="button" class="btn btn-info" id="find-missing-episodes-btn">
+            <i class="bi bi-search"></i> Rechercher les Épisodes Manquants
+        </button>
         <button type="button" class="btn btn-danger" id="delete-selected-episodes-btn">
             <i class="bi bi-trash"></i> Supprimer la Sélection
         </button>
@@ -75,10 +78,14 @@
             <div class="d-flex justify-content-between align-items-center p-2 season-row"
      data-sonarr-series-id="{{ series.sonarr_series_id }}"
      data-season-number="{{ season.seasonNumber }}">
-                <div class="flex-grow-1">
-                    <strong>{{ season.title }}</strong>
-                    {% if season.total_episodes > 0 %}
-                        <small class="d-block text-muted">
+                <div class="flex-grow-1 d-flex align-items-center">
+                    <div class="form-check me-2">
+                        <input class="form-check-input season-search-checkbox" type="checkbox" value="{{ season.seasonNumber }}" id="search-season-{{ season.seasonNumber }}">
+                    </div>
+                    <div>
+                        <strong>{{ season.title }}</strong>
+                        {% if season.total_episodes > 0 %}
+                            <small class="d-block text-muted">
                             {% if season.viewed_episodes == 0 %}
                                 Non commencée
                             {% elif season.viewed_episodes == season.total_episodes %}
@@ -89,9 +96,13 @@
                             ({{ season.viewed_episodes }} / {{ season.total_episodes }} ép.)
                             | Taille: {{ (season.total_size_on_disk / (1024*1024)) | round(2) }} MB
                         </small>
-                    {% else %}
-                         <small class="d-block text-muted">Aucun épisode listé dans Plex. (Taille: {{ (season.total_size_on_disk / (1024*1024)) | round(2) }} MB)</small>
-                    {% endif %}
+                        <small class="d-block text-info">
+                            Disponibles : {{ season.file_count }} / {{ season.total_episodes }} ép.
+                        </small>
+                        {% else %}
+                            <small class="d-block text-muted">Aucun épisode listé dans Plex. (Taille: {{ (season.total_size_on_disk / (1024*1024)) | round(2) }} MB)</small>
+                        {% endif %}
+                    </div>
                 </div>
                 <div class="d-flex align-items-center ms-2">
                     <!-- Bouton pour afficher/cacher les épisodes -->
@@ -129,6 +140,11 @@
                             title="Renommer les fichiers de la Saison {{ season.seasonNumber }}">
                         <i class="bi bi-pencil-square"></i>
                     </button>
+                    <button class="btn btn-sm btn-outline-info find-missing-season-episodes-btn ms-1"
+                            data-season-number="{{ season.seasonNumber }}"
+                            title="Rechercher les épisodes manquants pour la Saison {{ season.seasonNumber }}">
+                        <i class="bi bi-search"></i>
+                    </button>
                     {% endif %}
                 </div>
             </div>
@@ -149,7 +165,7 @@
         <input class="form-check-input episode-delete-checkbox" type="checkbox"
                value="{{ episode.sonarr_episodeFileId }}"
                id="delete-ep-{{ episode.sonarr_episodeFileId }}"
-               {% if not episode.isPresentInPlex or not episode.sonarr_episodeFileId %}disabled{% endif %}>
+               {% if not episode.sonarr_episodeFileId %}disabled{% endif %}>
         <label class="form-check-label" for="delete-ep-{{ episode.sonarr_episodeFileId }}">
             <small>E{{ '%02d'|format(episode.episodeNumber) }} - {{ episode.title }}</small>
 

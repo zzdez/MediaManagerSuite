@@ -4,6 +4,7 @@ import requests
 from flask import current_app
 import re
 import logging
+from datetime import datetime, timezone
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -1333,46 +1334,61 @@ def move_sonarr_series(series_id, new_root_folder_path):
 
 def move_radarr_movie(movie_id, new_root_folder_path):
     """
-    Moves a Radarr movie to a new root folder by editing the movie object.
-    This is the reliable method, mirroring the Sonarr implementation.
-    Returns True on success, False on failure.
+    Déplace un film Radarr vers un nouveau dossier racine en éditant l'objet film.
+    Retourne (True, None) en cas de succès de l'initiation, (False, error_message) en cas d'échec.
     """
-    logger.info(f"Radarr: Initiating move for movie ID {movie_id} to '{new_root_folder_path}'.")
+    logger.info(f"Radarr: Initiating move for movie ID {movie_id} to '{new_root_folder_path}' by editing the movie object.")
     try:
         movie_id_int = int(movie_id)
     except (ValueError, TypeError):
-        logger.error(f"L'ID du film '{movie_id}' n'est pas un entier valide.")
-        return False, f"L'ID du film '{movie_id}' est invalide."
+        error_msg = f"L'ID du film '{movie_id}' est invalide."
+        logger.error(error_msg)
+        return False, error_msg
 
-    # 1. Get the full movie object from Radarr
     movie_data = get_radarr_movie_by_id(movie_id_int)
     if not movie_data:
-        logger.error(f"Radarr: Could not retrieve movie {movie_id_int} to move it.")
-        return False, "Film non trouvé."
+        error_msg = f"Film non trouvé dans Radarr avec l'ID {movie_id_int}."
+        logger.error(f"Radarr: {error_msg}")
+        return False, error_msg
 
-    # 2. Update root folder path
-    movie_data['rootFolderPath'] = new_root_folder_path
+    # Mettre à jour le chemin racine et le chemin complet
+    # Utiliser 'folderName' est plus robuste que de se baser sur le titre ou l'ancien chemin
+    folder_path_from_radarr = movie_data.get('folderName')
+    if not folder_path_from_radarr:
+        # Fallback si folderName n'est pas disponible
+        original_path = movie_data.get('path', '')
+        movie_folder = os.path.basename(original_path) if original_path else movie_data.get('title', '')
+        logger.warning(f"Radarr: 'folderName' non trouvé pour le film ID {movie_id_int}. Utilisation du fallback : '{movie_folder}'")
+    else:
+        # CORRECTION : Extraire uniquement le nom du dossier du chemin complet fourni par Radarr
+        movie_folder = os.path.basename(os.path.normpath(folder_path_from_radarr))
+        logger.info(f"Radarr: Nom de dossier extrait de 'folderName' : '{movie_folder}'")
 
-    # 3. CRUCIAL: Update the full path
-    # Note: Radarr's 'path' field might already be just the folder name, unlike Sonarr.
-    # We build the new path defensively.
-    original_path = movie_data.get('path', '')
-    movie_folder = os.path.basename(original_path)
     new_path = os.path.join(new_root_folder_path, movie_folder)
-    movie_data['path'] = new_path
-    logger.info(f"Radarr: Updating movie path. Original: '{original_path}', New: '{new_path}'")
 
-    # 4. Send the updated object with moveFiles=true parameter
+    movie_data['rootFolderPath'] = new_root_folder_path
+    movie_data['path'] = new_path
+
+    # --- DÉBUT DE LA CORRECTION ---
+    # Il est crucial de mettre aussi à jour le chemin dans l'objet 'movieFile'
+    if movie_data.get('movieFile') and 'path' in movie_data['movieFile']:
+        original_filename = os.path.basename(movie_data['movieFile']['path'])
+        new_file_path = os.path.join(new_path, original_filename)
+        movie_data['movieFile']['path'] = new_file_path
+        logger.info(f"Radarr: Le chemin du fichier vidéo a été mis à jour dans la requête : '{new_file_path}'")
+    else:
+        logger.warning(f"Radarr: 'movieFile' non trouvé dans les données du film ID {movie_id_int}. Le déplacement pourrait échouer si le fichier n'est pas trouvé par Radarr.")
+    # --- FIN DE LA CORRECTION ---
+
     params = {'moveFiles': 'true'}
-    # The endpoint for updating a movie is just PUT /api/v3/movie/{id}
-    # However, Radarr API for this action is PUT /api/v3/movie/editor
+
     response = _radarr_api_request('PUT', f"movie/{movie_id_int}", params=params, json_data=movie_data)
 
     if response and response.get('id'):
         logger.info(f"Radarr: Move request for movie ID {movie_id_int} accepted. The operation will proceed in the background.")
         return True, None
 
-    error_msg = "Failed to initiate move by editing the movie."
+    error_msg = "Échec de l'initiation du déplacement via l'API Radarr."
     if isinstance(response, list) and response:
         error_msg = response[0].get('errorMessage', str(response))
     logger.error(f"Radarr: Failed to move movie {movie_id_int}. Response: {response}")
@@ -1412,6 +1428,24 @@ def get_sonarr_root_folders():
             free_space = folder.get('freeSpace')
             folder['freeSpace_formatted'] = _format_bytes(free_space)
     return folders
+
+def get_sonarr_queue():
+    """Fetches the current activity queue from Sonarr."""
+    logger.info("Sonarr: Fetching activity queue.")
+    queue_response = _sonarr_api_request('GET', 'queue', params={'page': '1', 'pageSize': 100, 'includeUnknownSeriesItems': 'false'})
+    if queue_response and 'records' in queue_response:
+        return queue_response['records']
+    logger.warning(f"Sonarr: Could not retrieve queue or queue is empty. Response: {queue_response}")
+    return []
+
+def get_radarr_queue():
+    """Fetches the current activity queue from Radarr."""
+    logger.info("Radarr: Fetching activity queue.")
+    queue_response = _radarr_api_request('GET', 'queue', params={'page': '1', 'pageSize': 100})
+    if queue_response and 'records' in queue_response:
+        return queue_response['records']
+    logger.warning(f"Radarr: Could not retrieve queue or queue is empty. Response: {queue_response}")
+    return []
 
 def get_radarr_root_folders():
     """Fetches all root folders from Radarr and adds formatted free space."""

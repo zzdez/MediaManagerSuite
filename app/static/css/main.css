@@ -160,3 +160,13 @@ body {
 #trailer-modal + .modal-backdrop {
     z-index: 1059 !important;
 }
+
+/* Animation pour l'icône de chargement */
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.spin {
+    animation: spin 1s linear infinite;
+}

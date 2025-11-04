@@ -51,12 +51,12 @@
                     <div class="row g-2 align-items-center">
                         <div class="col-auto">
                             <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="radio" name="media_type" id="media_type_movie" value="movie" checked>
-                                <label class="form-check-label" for="media_type_movie">Film</label>
+                                <input class="form-check-input" type="radio" name="media_type" id="media_type_tv" value="tv" checked>
+                                <label class="form-check-label" for="media_type_tv">Recherche Sonarr</label>
                             </div>
                             <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="radio" name="media_type" id="media_type_tv" value="tv">
-                                <label class="form-check-label" for="media_type_tv">Série</label>
+                                <input class="form-check-input" type="radio" name="media_type" id="media_type_movie" value="movie">
+                                <label class="form-check-label" for="media_type_movie">Recherche Radarr</label>
                             </div>
                         </div>
                         <div class="col">
@@ -217,12 +217,6 @@
                             <label for="quality-profile-select" class="form-label">Profil de Qualité</label>
                             <select id="quality-profile-select" class="form-select"></select>
                         </div>
-                        <div class="form-check mb-3">
-                            <input class="form-check-input" type="checkbox" id="search-on-add-check" checked>
-                            <label class="form-check-label" for="search-on-add-check">
-                                Lancer la recherche du média après l'ajout
-                            </label>
-                        </div>
                         <div id="add-item-error-container" class="text-danger small mt-2"></div>
                     </div>
 
@@ -256,6 +250,10 @@
     <script src="{{ url_for('static', filename='js/search_logic.js') }}"></script>
 
     <script>
+        // Injecte les requêtes de recherche depuis la session Flask, si elles existent.
+        var initialQueries = {{ session.pop('missing_episodes_queries', 'null') | tojson }};
+        var searchModeIntent = {{ session.pop('search_mode_intent', 'null') | tojson }};
+
         document.addEventListener('DOMContentLoaded', function() {
             const mediaTypeRadios = document.querySelectorAll('input[name="media_type"]');
             const hiddenInput = document.getElementById('search-form-media-type');

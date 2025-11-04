@@ -1,5 +1,10 @@
 {% extends "layout.html" %}
 
+{% block head_styles %}
+    {{ super() }}
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css">
+{% endblock %}
+
 {% block content %}
 <div class="container">
     <h1>Configuration de l'Application</h1>
@@ -106,5 +111,182 @@
 
         <button type="submit" class="btn btn-primary mt-4 w-100">Sauvegarder Toute la Configuration</button>
     </form>
+
+    <hr class="my-5">
+
+    <!-- Section dédiée au mapping Plex -->
+    <div>
+        <h3 class="mt-4 mb-3">Mapping des Dossiers Plex <i class="fas fa-project-diagram"></i></h3>
+        <p class="text-muted">Associez chaque chemin de dossier de vos bibliothèques Plex à un dossier racine Sonarr ou Radarr correspondant, et assignez-lui un type. Ce mapping est essentiel pour la fonctionnalité de déplacement de médias.</p>
+
+        <!-- Datalist pour les suggestions de type -->
+        <datalist id="media-types-suggestions">
+            <option value="FILM"></option>
+            <option value="SÉRIE"></option>
+            <option value="DOCUMENTAIRE_FILM"></option>
+            <option value="DOCUMENTAIRE_SÉRIE"></option>
+            <option value="ANIME_FILM"></option>
+            <option value="ANIME_SÉRIE"></option>
+        </datalist>
+
+        <div id="plex-mapping-container" class="mb-4">
+            <!-- Le contenu sera généré dynamiquement par JavaScript -->
+            <div class="text-center">
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">Chargement...</span>
+                </div>
+            </div>
+        </div>
+        <button type="button" id="save-plex-mappings-btn" class="btn btn-secondary w-100">Sauvegarder les Mappings Plex</button>
+    </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+<script>
+$(document).ready(function() {
+    // Configuration de Toastr
+    toastr.options = {
+        "closeButton": true,
+        "progressBar": true,
+        "positionClass": "toast-top-right",
+        "timeOut": "5000",
+    };
+
+    const container = $('#plex-mapping-container');
+    const saveBtn = $('#save-plex-mappings-btn');
+    let plexLibraries = [];
+    let sonarrFolders = [];
+    let radarrFolders = [];
+    let currentMappings = {};
+
+    function renderMappings() {
+        container.empty();
+        if (!plexLibraries || plexLibraries.length === 0) {
+            container.html('<div class="alert alert-warning">Aucune bibliothèque Plex de type film ou série n\'a été trouvée.</div>');
+            return;
+        }
+
+        plexLibraries.forEach(lib => {
+            const libCard = $(`
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <i class="fas fa-${lib.type === 'show' ? 'tv' : 'film'}"></i>
+                        <strong>${lib.name}</strong>
+                    </div>
+                    <ul class="list-group list-group-flush"></ul>
+                </div>
+            `);
+            const locationList = libCard.find('ul');
+
+            lib.locations.forEach(location => {
+                const arrFolders = lib.type === 'show' ? sonarrFolders : radarrFolders;
+                const arrType = lib.type === 'show' ? 'Sonarr' : 'Radarr';
+
+                // Trouver le mapping existant pour ce chemin spécifique
+                const existingMapping = currentMappings[lib.name]?.find(m => m.path === location);
+
+                const arrOptions = arrFolders.map(folder => {
+                    const isSelected = existingMapping && existingMapping.root_folder === folder.path;
+                    return `<option value="${folder.path}" ${isSelected ? 'selected' : ''}>${folder.path} (${folder.freeSpace_formatted})</option>`;
+                }).join('');
+
+                const mediaType = existingMapping?.type || (lib.type === 'show' ? 'SÉRIE' : 'FILM');
+
+                const listItem = $(`
+                    <li class="list-group-item" data-plex-lib-name="${lib.name}" data-plex-path="${location}">
+                        <div class="row align-items-center">
+                            <div class="col-md-4">
+                                <label class="form-label mb-0 small text-muted">Chemin Plex</label>
+                                <p class="form-control-plaintext py-1">${location}</p>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label mb-0 small text-muted">Dossier ${arrType}</label>
+                                <select class="form-select form-select-sm" data-mapping="root_folder">
+                                    <option value="">-- Non mappé --</option>
+                                    ${arrOptions}
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label mb-0 small text-muted">Type de Média</label>
+                                <input type="text" class="form-control form-control-sm" list="media-types-suggestions" value="${mediaType}" data-mapping="type">
+                            </div>
+                        </div>
+                    </li>
+                `);
+                locationList.append(listItem);
+            });
+            container.append(libCard);
+        });
+    }
+
+    fetch('{{ url_for("api.get_mapping_data") }}')
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                container.html(`<div class="alert alert-danger">Erreur: ${data.error}</div>`);
+                return;
+            }
+            plexLibraries = data.plex_libraries || [];
+            sonarrFolders = data.sonarr_root_folders || [];
+            radarrFolders = data.radarr_root_folders || [];
+            currentMappings = data.current_mappings || {};
+            renderMappings();
+        })
+        .catch(error => {
+            container.html(`<div class="alert alert-danger">Impossible de charger les données de mapping. Vérifiez la connexion aux services.</div>`);
+            console.error('Error fetching mapping data:', error);
+        });
+
+    saveBtn.on('click', function() {
+        const newMappings = {};
+
+        container.find('li[data-plex-lib-name]').each(function() {
+            const item = $(this);
+            const libName = item.data('plex-lib-name');
+            const plexPath = item.data('plex-path');
+            const rootFolder = item.find('[data-mapping="root_folder"]').val();
+            const mediaType = item.find('[data-mapping="type"]').val();
+
+            if (!rootFolder) return; // Ne pas sauvegarder les non-mappés
+
+            if (!newMappings[libName]) {
+                newMappings[libName] = [];
+            }
+
+            newMappings[libName].push({
+                path: plexPath,
+                root_folder: rootFolder,
+                type: mediaType
+            });
+        });
+
+        saveBtn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Sauvegarde...');
+
+        fetch('{{ url_for("api.save_mapping_data") }}', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(newMappings),
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                toastr.success('Mappings sauvegardés avec succès !');
+                currentMappings = newMappings;
+            } else {
+                toastr.error('Erreur lors de la sauvegarde : ' + (data.error || 'Erreur inconnue'));
+            }
+        })
+        .catch(error => {
+            toastr.error('Une erreur de communication est survenue.');
+            console.error('Error saving mappings:', error);
+        })
+        .finally(() => {
+            saveBtn.prop('disabled', false).text('Sauvegarder les Mappings Plex');
+        });
+    });
+});
+</script>
 {% endblock %}

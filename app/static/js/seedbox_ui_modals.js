@@ -1777,6 +1777,31 @@ async function handleTrailerLockForAddTorrent(button) {
 // --- NOUVELLE LOGIQUE POUR LES ACTIONS MANUELLES DE LA VUE RTORRENT ---
 // ==============================================================================
 
+    // --- NOUVEAU : Gère le clic pour ouvrir la recherche de bande-annonce depuis la modale d'ajout de torrent ---
+    $(document).on('click', '#add-torrent-open-trailer-search', function() {
+        const modalElement = document.getElementById('addTorrentModal');
+        const mediaType = modalElement.getAttribute('data-selected-media-type'); // sonarr ou radarr
+        const externalId = modalElement.getAttribute('data-selected-media-id');
+        const title = modalElement.getAttribute('data-selected-media-title');
+        const year = modalElement.getAttribute('data-selected-media-year');
+
+        if (!mediaType || !externalId || !title) {
+            alert("Veuillez d'abord sélectionner un média (film ou série) avant de chercher une bande-annonce.");
+            return;
+        }
+
+        // Convertir 'sonarr'/'radarr' en 'tv'/'movie' pour l'API
+        const apiMediaType = mediaType === 'sonarr' ? 'tv' : 'movie';
+
+        // Déclencher l'événement global
+        $(document).trigger('openTrailerSearch', {
+            mediaType: apiMediaType,
+            externalId: externalId,
+            title: title,
+            year: year
+        });
+    });
+
 // Logique pour le bouton "Rapatrier vers Staging"
 $(document).on('click', '.repatriate-btn', function() {
     const button = $(this);

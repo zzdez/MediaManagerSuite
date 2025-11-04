@@ -55,7 +55,7 @@ coverage.xml
 .env
 .venv
 env/
-venv/  # <<<--- LA LIGNE IMPORTANTE POUR VOUS
+venv/
 ENV/
 env.bak/
 venv.bak/
@@ -92,29 +92,16 @@ dmypy.json
 
 # Cache / Temp files
 *.log
-local_settings.py # Example user-specific settings
-# .idea/ # Uncomment if you use PyCharm/IntelliJ
-# *.swp # Vim swap files
-
-# Logs directory (si vous ne voulez pas le versionner)
-logs/ # Décommentez si vous ne voulez PAS inclure les logs dans git
+local_settings.py
+# .idea/
+# *.swp
 
 # Config files potentially containing secrets
-# config/users.json # Peut-être à ignorer si vous ne voulez pas versionner les users/passwords
-# config/parametres_college.json # Idem si contient des clés API sensibles
 instance/
 pending_torrents_map.json
-pending_torrents_map.json
-logs/mediamanager.log.5
-logs/mediamanager.log.4
-logs/mediamanager.log.3
-logs/mediamanager.log.2
-logs/mediamanager.log.10
-logs/mediamanager.log.1
-logs/mediamanager.log.6
-logs/mediamanager.log.5
-logs/mediamanager.log.4
-logs/mediamanager.log.3
-logs/mediamanager.log.2
-logs/mediamanager.log.10
-logs/mediamanager.log.1
+
+# Logs directory
+logs/
+
+# Fichier de contexte pour l'agent IA
+agents.md

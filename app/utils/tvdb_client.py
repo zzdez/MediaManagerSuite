@@ -40,7 +40,7 @@ class CustomTVDBClient:
                 'name': series_data.get('name'),
                 'year': series_data.get('year'),
                 'overview': series_data.get('overview'),
-                'image': series_data.get('image')
+                'image': series_data.get('image') or ''
             }
             try:
                 translation = self.client.get_series_translation(tvdb_id, lang)
@@ -108,9 +108,18 @@ class CustomTVDBClient:
                     continue
 
                 # On commence avec les données de base
+                # On récupère les détails complets pour avoir le nom original non traduit (avec fallback)
+                try:
+                    full_series_details = self.client.get_series(tvdb_id)
+                    original_name = full_series_details.get('name') if full_series_details else series_summary.get('name')
+                except Exception as e:
+                    logger.warning(f"  -> Impossible de récupérer les détails complets pour l'ID {tvdb_id} afin d'obtenir le nom original. Erreur: {e}")
+                    original_name = series_summary.get('name') # Fallback sécurisé
+
                 series_data = {
                     'tvdb_id': tvdb_id,
                     'name': series_summary.get('name'),
+                    'original_name': original_name,
                     'year': series_summary.get('year'),
                     'overview': series_summary.get('overview'),
                     'poster_url': series_summary.get('image_url'),

@@ -59,7 +59,7 @@ function fetchAndRenderTrailers(mediaType, externalId, title, year = null, pageT
     const resultsContainer = $('#trailer-results-container');
     const loadMoreContainer = $('#trailer-load-more-container');
     const loadMoreBtn = $('#load-more-trailers-btn');
-    const selectionModal = $('#trailer-selection-modal');
+    const selectionModal = $('#trailer-search-modal');
 
     // Stocke le contexte pour les actions futures (verrouillage, pagination)
     selectionModal.data({ mediaType, externalId, title, year });
@@ -114,7 +114,7 @@ $(document).ready(function() {
     // Gère le clic sur "Afficher plus"
     $(document).on('click', '#load-more-trailers-btn', function() {
         const button = $(this);
-        const selectionModal = $('#trailer-selection-modal');
+        const selectionModal = $('#trailer-search-modal');
         const { mediaType, externalId } = selectionModal.data();
         const pageToken = button.data('page-token');
 
@@ -130,7 +130,7 @@ $(document).ready(function() {
 
         const button = $(this);
         const isLocked = button.data('is-locked') === true;
-        const selectionModal = $('#trailer-selection-modal');
+        const selectionModal = $('#trailer-search-modal');
         const { mediaType, externalId, title, year } = selectionModal.data();
 
         if (!mediaType || !externalId) return;
@@ -184,13 +184,13 @@ $(document).ready(function() {
     $(document).on('click', '.play-trailer-area', function() {
         const videoId = $(this).data('video-id');
         const videoTitle = $(this).data('video-title');
-        const selectionModal = $('#trailer-selection-modal');
+        const selectionModal = $('#trailer-search-modal');
         const playerModal = $('#trailer-modal');
 
         if (!videoId) return;
 
         bootstrap.Modal.getInstance(selectionModal[0]).hide();
-        playerModal.data('source-modal', 'trailer-selection-modal');
+        playerModal.data('source-modal', 'trailer-search-modal');
 
         $('#trailerModalLabel').text('Bande-Annonce: ' + videoTitle);
         playerModal.find('.modal-body').html(`<div class="ratio ratio-16x9"><iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1&cc_lang=fr&cc_load_policy=1" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe></div>`);
@@ -211,9 +211,78 @@ $(document).ready(function() {
         }
     });
 
+    // Gère le clic sur "Effacer les résultats"
+    $(document).on('click', '#clear-trailer-cache-btn', function() {
+        const button = $(this);
+        const selectionModal = $('#trailer-search-modal');
+        const { mediaType, externalId } = selectionModal.data();
+
+        if (!mediaType || !externalId) {
+            alert("Erreur: Contexte du média non trouvé.");
+            return;
+        }
+
+        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+        fetch('/api/agent/clear_trailer_cache', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                media_type: mediaType,
+                external_id: externalId
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                $('#trailer-results-container').html('<p class="text-center text-success">Résultats effacés. Vous pouvez fermer cette fenêtre ou lancer une nouvelle recherche.</p>');
+                $('#trailer-load-more-container').hide();
+            } else {
+                alert('Erreur: ' + (data.message || 'Une erreur inconnue est survenue.'));
+            }
+        })
+        .catch(error => {
+            console.error('Erreur technique lors de l\'effacement du cache:', error);
+            alert('Une erreur technique est survenue.');
+        })
+        .finally(() => {
+            button.prop('disabled', false).html('<i class="bi bi-trash"></i> Effacer les résultats');
+        });
+    });
+
+    // --- NOUVEAU : Gère le clic sur le bouton "Affiner la recherche" ---
+    $(document).on('click', '#trailer-search-button', function() {
+        const button = $(this);
+        const searchInput = $('#trailer-search-input');
+        const query = searchInput.val().trim();
+
+        const selectionModal = $('#trailer-search-modal');
+        const { mediaType, externalId, title, year } = selectionModal.data();
+
+        if (!mediaType || !externalId) {
+            alert("Erreur: Contexte du média non trouvé pour la recherche.");
+            return;
+        }
+
+        // Construire le nouveau titre de recherche
+        // Si l'utilisateur a entré du texte, on l'utilise. Sinon, on reprend le titre original.
+        const finalSearchTitle = query ? `${title} ${query}` : title;
+
+        button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+        // On appelle la fonction existante avec le nouveau titre de recherche
+        // Le `false` pour pageToken assure que les résultats actuels sont remplacés.
+        fetchAndRenderTrailers(mediaType, externalId, finalSearchTitle, year, null);
+
+        // Réactiver le bouton après un court délai pour éviter le spam
+        setTimeout(() => {
+            button.prop('disabled', false).html('<i class="bi bi-search"></i>');
+        }, 1000);
+    });
+
     // Déclencheur global pour ouvrir la modale de recherche de BA
     $(document).on('openTrailerSearch', function(event, { mediaType, externalId, title, year, sourceModalId }) {
-        const selectionModal = $('#trailer-selection-modal');
+        const selectionModal = $('#trailer-search-modal');
         const modalInstance = bootstrap.Modal.getOrCreateInstance(selectionModal[0]);
 
         // Stocke l'ID de la modale source pour y revenir plus tard
@@ -224,7 +293,7 @@ $(document).ready(function() {
         // Nettoyage de l'état précédent
         $('#trailer-results-container').empty();
         $('#trailer-load-more-container').hide();
-        $('#trailer-selection-modal-label').text(`Bande-annonce pour : ${title}`);
+        $('#trailerSearchModalLabel').text(`Bande-annonce pour : ${title}`);
 
         // Lance la recherche
         fetchAndRenderTrailers(mediaType, externalId, title, year);
@@ -235,7 +304,7 @@ $(document).ready(function() {
     // --- GESTION DU MENU LATÉRAL "BANDES-ANNONCES" (NOUVELLE VERSION) ---
 
     // Gère la fermeture de la modale de sélection pour potentiellement rouvrir la modale source
-    $('#trailer-selection-modal').on('hidden.bs.modal', function () {
+    $('#trailer-search-modal').on('hidden.bs.modal', function () {
         const selectionModal = $(this);
         const sourceModalId = selectionModal.data('source-modal-id');
 

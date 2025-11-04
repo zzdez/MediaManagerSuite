@@ -13,7 +13,33 @@ $(document).ready(function() {
     const itemsContainer = $('#plex-items-container');
     const LAST_USER_KEY = 'mms_last_plex_user_id';
 
-    // --- 1. Charger les utilisateurs au démarrage ---
+    // --- 1. Charger les utilisateurs et les dossiers racines au démarrage ---
+    function loadRootFolders() {
+        const rootFolderSelect = $('#root-folder-select-main');
+        rootFolderSelect.html('<option selected disabled>Chargement...</option>').prop('disabled', true);
+
+        fetch("/plex/api/media/root_folders")
+            .then(response => response.json())
+            .then(folders => {
+                rootFolderSelect.html(''); // Vider avant de remplir
+                if (folders && folders.length > 0) {
+                    // Ajouter une option "Tous les dossiers" qui sera sélectionnée par défaut
+                    rootFolderSelect.append($('<option>', { value: 'all', text: 'Tous les dossiers' }));
+                    folders.forEach(folder => {
+                        const displayText = `${folder.path} (${folder.freeSpace_formatted})`;
+                        rootFolderSelect.append(new Option(displayText, folder.path));
+                    });
+                    rootFolderSelect.prop('disabled', false);
+                } else {
+                    rootFolderSelect.html('<option selected disabled>Aucun dossier trouvé</option>');
+                }
+            })
+            .catch(error => {
+                console.error('Erreur chargement dossiers racines:', error);
+                rootFolderSelect.html('<option selected disabled>Erreur</option>');
+            });
+    }
+
     fetch("/plex/api/users")
         .then(response => response.json())
         .then(users => {
@@ -28,6 +54,8 @@ $(document).ready(function() {
                 userSelect.val(lastUserId).trigger('change');
             }
         });
+
+    loadRootFolders(); // On charge les dossiers au démarrage
 
     // --- 2. Gérer la sélection de l'utilisateur ---
     userSelect.on('change', function () {
@@ -185,6 +213,12 @@ $(document).ready(function() {
         const directorFilter = $('#director-filter').val().trim();
         const writerFilter = $('#writer-filter').val().trim();
         const selectedStudios = $('#studio-filter').val();
+        let selectedRootFolders = $('#root-folder-select-main').val();
+
+        // Si "Tous les dossiers" est sélectionné, on traite la valeur comme une liste vide
+        if (selectedRootFolders && selectedRootFolders.includes('all')) {
+            selectedRootFolders = [];
+        }
 
         if (!userId || !selectedLibraries || selectedLibraries.length === 0) {
             itemsContainer.html('<p class="text-center text-warning">Veuillez sélectionner un utilisateur et une bibliothèque.</p>');
@@ -220,7 +254,8 @@ $(document).ready(function() {
                 actor: actorFilter,
                 director: directorFilter,
                 writer: writerFilter,
-                studios: selectedStudios
+                studios: selectedStudios,
+                rootFolders: selectedRootFolders // <-- NOUVELLE LIGNE
             })
         })
         .then(response => response.text())
@@ -702,6 +737,57 @@ $('#confirmArchiveMovieBtn').on('click', function() {
             })
             .catch(error => { console.error(error); alert("Erreur de communication."); });
         });
+
+        // --- NOUVEAU : GESTION DE LA RECHERCHE D'ÉPISODES MANQUANTS ---
+        function handleFindMissing(button, ratingKey, seasonNumber = null, search_mode = 'packs') {
+            button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+            fetch('/plex/api/series/search_missing', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    ratingKey: ratingKey,
+                    seasonNumber: seasonNumber,
+                    search_mode: search_mode
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success' && data.redirect_url) {
+                    window.open(data.redirect_url, '_blank');
+                    // On réactive le bouton immédiatement après l'ouverture de l'onglet
+                    button.prop('disabled', false).html('<i class="bi bi-search"></i>');
+                    // On peut aussi fermer la modale si souhaité
+                    bootstrap.Modal.getInstance(seriesModalElement).hide();
+                } else {
+                    alert('Erreur: ' + data.message);
+                    button.prop('disabled', false).html('<i class="bi bi-search"></i>');
+                }
+            })
+            .catch(error => {
+                console.error('Erreur:', error);
+                alert('Une erreur de communication est survenue.');
+                button.prop('disabled', false).html('<i class="bi bi-search"></i>');
+            });
+        }
+
+        // Bouton global
+        $(seriesModalElement).on('click', '#find-missing-episodes-btn', function() {
+            const ratingKey = $('#series-management-modal .modal-body [data-rating-key]').first().data('ratingKey');
+            const selectedSeasons = $('.season-search-checkbox:checked').map(function() {
+                return $(this).val();
+            }).get();
+
+            const seasonNumber = selectedSeasons.length > 0 ? selectedSeasons : null;
+            handleFindMissing($(this), ratingKey, seasonNumber, 'packs');
+        });
+
+        // Bouton par saison
+        $(seriesModalElement).on('click', '.find-missing-season-episodes-btn', function() {
+            const ratingKey = $('#series-management-modal .modal-body [data-rating-key]').first().data('ratingKey');
+            const seasonNumber = $(this).data('season-number');
+            handleFindMissing($(this), ratingKey, seasonNumber, 'episodes');
+        });
     }
     // =================================================================
     // ### LOGIQUE POUR BASCULER LE STATUT VU/NON-VU ###
@@ -764,13 +850,206 @@ $('#confirmArchiveMovieBtn').on('click', function() {
 
         const selectedCount = $('.item-checkbox:checked').length;
         const batchActionsContainer = $('#batch-actions-container');
-        const selectedItemCountSpan = $('#selected-item-count');
 
-        selectedItemCountSpan.text(selectedCount);
+        // Mettre à jour tous les compteurs
+        batchActionsContainer.find('.badge').text(selectedCount);
         batchActionsContainer.toggle(selectedCount > 0);
     });
 
-    // --- B. Action de suppression en masse ---
+    // --- B. Action de déplacement en masse ---
+    $('#batch-move-btn').on('click', function() {
+        const selectedItems = $('.item-checkbox:checked');
+        const sonarrItems = [];
+        const radarrItems = [];
+
+        selectedItems.each(function() {
+            const row = $(this).closest('tr');
+            const item = {
+                plex_id: $(this).data('rating-key'),
+                media_type: row.data('media-type-from-mapping')
+            };
+            if (item.media_type === 'sonarr') {
+                sonarrItems.push(item);
+            } else if (item.media_type === 'radarr') {
+                radarrItems.push(item);
+            }
+        });
+
+        const modal = $('#bulk-move-media-modal');
+        modal.find('#bulk-move-item-count').text(selectedItems.length);
+
+        // Réinitialiser la modale
+        modal.find('#bulk-move-sonarr-section, #bulk-move-radarr-section').hide();
+        modal.find('#bulk-move-progress-section').hide();
+        modal.find('#confirm-bulk-move-btn').show();
+
+        if (sonarrItems.length > 0) {
+            modal.find('#bulk-move-sonarr-count').text(sonarrItems.length);
+            loadRootFoldersForBulkMove('sonarr', '#bulk-root-folder-select-sonarr');
+            modal.find('#bulk-move-sonarr-section').show();
+        }
+        if (radarrItems.length > 0) {
+            modal.find('#bulk-move-radarr-count').text(radarrItems.length);
+            loadRootFoldersForBulkMove('radarr', '#bulk-root-folder-select-radarr');
+            modal.find('#bulk-move-radarr-section').show();
+        }
+
+        new bootstrap.Modal(modal[0]).show();
+    });
+
+    function loadRootFoldersForBulkMove(type, selectId) {
+        const select = $(selectId);
+        select.html('<option>Chargement...</option>').prop('disabled', true);
+        fetch(`/plex/api/media/root_folders?type=${type}`)
+            .then(response => response.json())
+            .then(folders => {
+                select.html('').prop('disabled', false);
+                if (folders && folders.length > 0) {
+                    folders.forEach(folder => {
+                        const freeSpace = folder.freeSpace_formatted ? `(Espace: ${folder.freeSpace_formatted})` : '';
+                        select.append(new Option(`${folder.path} ${freeSpace}`, folder.path));
+                    });
+                } else {
+                    select.html('<option>Aucun dossier.</option>').prop('disabled', true);
+                }
+            });
+    }
+
+    $('#confirm-bulk-move-btn').on('click', function() {
+        const btn = $(this);
+        const modal = $('#bulk-move-media-modal');
+        const sonarrDest = $('#bulk-root-folder-select-sonarr').val();
+        const radarrDest = $('#bulk-root-folder-select-radarr').val();
+
+        const itemsToMove = [];
+        $('.item-checkbox:checked').each(function() {
+            const row = $(this).closest('tr');
+            const mediaType = row.data('media-type-from-mapping');
+            const destination = (mediaType === 'sonarr') ? sonarrDest : radarrDest;
+
+            if (destination) {
+                itemsToMove.push({
+                    plex_id: $(this).data('rating-key'),
+                    media_type: mediaType,
+                    destination: destination
+                });
+            }
+        });
+
+        if (itemsToMove.length === 0) {
+            alert("Aucune destination valide sélectionnée pour les médias.");
+            return;
+        }
+
+        btn.hide();
+        modal.find('#bulk-move-progress-section').show();
+
+        fetch('/plex/api/media/bulk_move', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: itemsToMove })
+        })
+        .then(response => response.json())
+        .then(data => {
+            // On ferme la modale immédiatement
+            bootstrap.Modal.getInstance(modal[0]).hide();
+
+            if (data.status === 'success' && data.task_id) {
+                // On lance le polling en arrière-plan
+                pollBulkMoveStatus(data.task_id);
+            } else {
+                // S'il y a une erreur au lancement, on l'affiche
+                alert('Erreur au lancement de la tâche : ' + data.message);
+                // Pas besoin de gérer les boutons car la modale est fermée
+            }
+        })
+        .catch(error => {
+            bootstrap.Modal.getInstance(modal[0]).hide();
+            alert('Erreur de communication avec le serveur.');
+            console.error(error);
+        });
+    });
+
+    function resetSelectionState() {
+        // Décocher toutes les cases
+        $('.item-checkbox, #select-all-checkbox').prop('checked', false);
+
+        // Masquer le conteneur des actions de masse
+        const batchActionsContainer = $('#batch-actions-container');
+        batchActionsContainer.hide();
+
+        // Réinitialiser le compteur sur les boutons
+        batchActionsContainer.find('.badge').text('0');
+    }
+
+    function pollBulkMoveStatus(taskId) {
+        const statusIndicator = $('#bulk-move-status-indicator');
+        const statusSpinner = $('#bulk-move-status-spinner');
+        const statusText = $('#bulk-move-status-text');
+        const statusCloseBtn = $('#bulk-move-status-close-btn');
+
+        statusSpinner.html('<div class="spinner-border spinner-border-sm text-primary" role="status"></div>');
+        statusIndicator.removeClass('bg-success-soft bg-danger-soft').addClass('bg-light').show();
+        statusCloseBtn.hide();
+
+        const interval = setInterval(() => {
+            fetch(`/plex/api/media/bulk_move_status/${taskId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (!data || !data.status) {
+                        clearInterval(interval);
+                        statusSpinner.html('<i class="bi bi-exclamation-triangle-fill text-danger"></i>');
+                        statusText.text("Erreur: réponse invalide du serveur.");
+                        statusIndicator.removeClass('bg-light').addClass('bg-danger-soft');
+                        statusCloseBtn.show();
+                        return;
+                    }
+
+                    statusText.text(data.message || 'Chargement...');
+
+                    if (data.status === 'completed' || data.status === 'failed') {
+                        clearInterval(interval);
+
+                        if (data.status === 'completed') {
+                            statusSpinner.html('<i class="bi bi-check-circle-fill text-success"></i>');
+                            statusIndicator.removeClass('bg-light').addClass('bg-success-soft');
+
+                            // Faire disparaître les lignes des éléments déplacés avec succès
+                            if (data.successes && data.successes.length > 0) {
+                                data.successes.forEach(mediaId => {
+                                    $(`.item-checkbox[data-rating-key='${mediaId}']`).closest('tr').fadeOut(500, function() {
+                                        $(this).remove();
+                                    });
+                                });
+                            }
+                            // Réinitialiser l'état de la sélection
+                            resetSelectionState();
+
+                        } else { // 'failed'
+                            statusSpinner.html('<i class="bi bi-x-circle-fill text-danger"></i>');
+                            statusIndicator.removeClass('bg-light').addClass('bg-danger-soft');
+                        }
+
+                        statusCloseBtn.show();
+                    }
+                })
+                .catch(err => {
+                    clearInterval(interval);
+                    statusSpinner.html('<i class="bi bi-exclamation-triangle-fill text-danger"></i>');
+                    statusText.text("Erreur de communication.");
+                    statusIndicator.removeClass('bg-light').addClass('bg-danger-soft');
+                    statusCloseBtn.show();
+                    console.error("Erreur polling statut:", err);
+                });
+        }, 3000);
+    }
+
+    // --- NOUVEL ÉCOUTEUR POUR LE BOUTON "OK" DE L'INDICATEUR ---
+    $('#bulk-move-status-close-btn').on('click', function() {
+        $('#bulk-move-status-indicator').hide();
+    });
+
+    // --- C. Action de suppression en masse ---
     $(document).on('click', '#batch-delete-btn', function() {
         const selectedItems = $('.item-checkbox:checked');
         const selectedItemKeys = selectedItems.map(function() {
@@ -838,38 +1117,45 @@ function sortTable(table, sortBy, sortType, direction) {
     const tbody = table.find('tbody');
     const rows = tbody.find('tr').toArray();
 
-    // Correction majeure : On trouve l'index de la colonne PARMI TOUS les <th>
     const cellIndex = table.find(`th.sortable-header[data-sort-by='${sortBy}']`).index();
 
     rows.sort(function(a, b) {
         let valA, valB;
 
-        if (sortBy === 'rating') {
+        const cellA = $(a).children('td').eq(cellIndex);
+        const cellB = $(b).children('td').eq(cellIndex);
+
+        if (sortBy === 'production_status') {
+            // Ordre personnalisé : "À venir" < "En Production" < "Terminée"
+            const statusOrder = { 'À venir': 0, 'En Production': 1, 'Terminée': 2 };
+            const textA = cellA.text().trim();
+            const textB = cellB.text().trim();
+            valA = statusOrder[textA] !== undefined ? statusOrder[textA] : 3;
+            valB = statusOrder[textB] !== undefined ? statusOrder[textB] : 3;
+        } else if (sortBy === 'rating') {
             valA = parseFloat($(a).data('rating')) || 0;
             valB = parseFloat($(b).data('rating')) || 0;
         } else {
-            // On utilise maintenant le cellIndex qui est fiable
-            const cellA = $(a).children('td').eq(cellIndex);
-            const cellB = $(b).children('td').eq(cellIndex);
-
+            // Extraction générique
             if (sortBy === 'title') {
-                valA = cellA.find('.item-title-link').text().trim().toLowerCase();
-                valB = cellB.find('.item-title-link').text().trim().toLowerCase();
+                valA = cellA.find('.item-title-link').text().trim();
+                valB = cellB.find('.item-title-link').text().trim();
             } else {
                 valA = cellA.text().trim();
                 valB = cellB.text().trim();
             }
-        }
 
-        if (sortType === 'size') {
-            valA = parseSize(valA);
-            valB = parseSize(valB);
-        } else if (sortType === 'date') {
-            valA = new Date(valA).getTime() || 0;
-            valB = new Date(valB).getTime() || 0;
-        } else if (sortType === 'text') {
-            valA = valA.toLowerCase();
-            valB = valB.toLowerCase();
+            // Conversion de type
+            if (sortType === 'size') {
+                valA = parseSize(valA);
+                valB = parseSize(valB);
+            } else if (sortType === 'date') {
+                valA = new Date(valA).getTime() || 0;
+                valB = new Date(valB).getTime() || 0;
+            } else if (sortType === 'text') {
+                valA = valA.toLowerCase();
+                valB = valB.toLowerCase();
+            }
         }
 
         if (valA < valB) return -1 * direction;

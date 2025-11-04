@@ -1951,6 +1951,32 @@ def get_sonarr_qualityprofiles_api():
     else:
         logger.warning("API Get Sonarr Quality Profiles: Aucune donnée ou format inattendu reçu de Sonarr pour les profils.")
         return jsonify([]), 200
+
+@seedbox_ui_bp.route('/api/get-sonarr-language-profiles', methods=['GET'])
+@login_required
+def get_sonarr_language_profiles_api():
+    """Récupère les profils de langue depuis l'API Sonarr."""
+    logger = current_app.logger
+    logger.info("API: Demande de récupération des profils de langue Sonarr.")
+
+    sonarr_url = current_app.config.get('SONARR_URL')
+    sonarr_api_key = current_app.config.get('SONARR_API_KEY')
+
+    if not sonarr_url or not sonarr_api_key:
+        return jsonify({"error": "Sonarr non configuré."}), 500
+
+    api_endpoint = f"{sonarr_url.rstrip('/')}/api/v3/languageprofile"
+    profiles_data, error_msg = _make_arr_request('GET', api_endpoint, sonarr_api_key)
+
+    if error_msg:
+        return jsonify({"error": f"Erreur Sonarr: {error_msg}"}), 502
+
+    if profiles_data and isinstance(profiles_data, list):
+        formatted_profiles = [{"id": profile.get("id"), "name": profile.get("name")} for profile in profiles_data if profile.get("id") is not None and profile.get("name")]
+        return jsonify(formatted_profiles), 200
+    else:
+        return jsonify([]), 200
+
 # ==============================================================================
 # ROUTES API POUR RÉCUPÉRER LES CONFIGURATIONS DE RADARR (Root Folders, Profiles)
 # ==============================================================================
@@ -2076,7 +2102,7 @@ def add_arr_item_and_get_id():
         # Paramètres spécifiques à Sonarr depuis le payload JS
         language_profile_id = int(data.get('language_profile_id', 1)) # Default à 1 si non fourni
         season_folder = data.get('use_season_folder', True) # Default
-        search_for_missing_episodes = data.get('search_for_missing_episodes', False) # Default
+        search_for_missing_episodes = False # ON FORCE À FALSE
 
         logger.debug(f"API Add *Arr Item (Sonarr): LangID={language_profile_id}, SeasonFolder={season_folder}, SearchMissing={search_for_missing_episodes}")
 
@@ -2098,7 +2124,7 @@ def add_arr_item_and_get_id():
     elif app_type == 'radarr':
         # Paramètres spécifiques à Radarr
         minimum_availability = data.get('minimum_availability', 'announced') # Default
-        search_for_movie = data.get('search_for_movie', False) # Default
+        search_for_movie = False # ON FORCE À FALSE
 
         logger.debug(f"API Add *Arr Item (Radarr): MinAvail={minimum_availability}, SearchMovie={search_for_movie}")
 

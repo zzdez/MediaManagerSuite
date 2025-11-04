@@ -36,31 +36,35 @@ from app.agent.services import _search_and_score_trailers
 
 from app.utils.move_manager import move_manager
 from app.utils.arr_client import get_sonarr_root_folders, get_radarr_root_folders, move_sonarr_series, move_radarr_movie, get_arr_command_status, radarr_post_command
+from app.utils.bulk_move_manager import bulk_move_manager # Import du nouveau manager
 
 # --- Routes du Blueprint ---
 
 @plex_editor_bp.route('/api/media/root_folders', methods=['GET'])
 @login_required
 def get_root_folders():
-    media_type = request.args.get('type')
-    if media_type == 'sonarr':
-        folders = get_sonarr_root_folders()
-    elif media_type == 'radarr':
-        folders = get_radarr_root_folders()
-    else:
-        return jsonify({'error': 'Invalid media type specified.'}), 400
+    sonarr_folders = get_sonarr_root_folders() or []
+    radarr_folders = get_radarr_root_folders() or []
 
-    if folders is None:
-        return jsonify({'error': f'Could not fetch root folders from {media_type}.'}), 500
+    all_folders = sonarr_folders + radarr_folders
 
-    # Construire explicitement la réponse pour s'assurer que les données formatées sont incluses.
+    # Utiliser un dictionnaire pour dédoublonner par chemin, au cas où
+    unique_folders_dict = {folder['path']: folder for folder in all_folders if folder.get('path')}
+    unique_folders = list(unique_folders_dict.values())
+
+    if not unique_folders:
+        return jsonify([]) # Renvoyer une liste vide est plus simple pour le frontend
+
     response_data = [
         {
             'path': folder.get('path'),
             'freeSpace_formatted': folder.get('freeSpace_formatted', 'N/A')
         }
-        for folder in folders
+        for folder in unique_folders
     ]
+    # Trier pour un affichage cohérent
+    response_data.sort(key=lambda x: x['path'])
+
     return jsonify(response_data)
 
 @plex_editor_bp.route('/api/media/move', methods=['POST'])
@@ -151,6 +155,76 @@ def get_move_status():
         return jsonify({'status': 'failed', 'message': f'Le déplacement a échoué: {error_message}'})
     else: # 'pending', 'started', 'running'
         return jsonify({'status': 'running', 'message': f'Déplacement en cours... (Statut: {status})'})
+
+@plex_editor_bp.route('/api/media/bulk_move', methods=['POST'])
+@login_required
+def bulk_move_media_items():
+    data = request.get_json()
+    items_to_move = data.get('items', []) # ex: [{'plex_id': key, 'media_type': type, 'destination': path}]
+
+    if not items_to_move:
+        return jsonify({'status': 'error', 'message': 'Aucun élément à déplacer fourni.'}), 400
+
+    if bulk_move_manager.is_task_running():
+        return jsonify({'status': 'error', 'message': 'Une autre tâche de déplacement est déjà en cours.'}), 409
+
+    processed_items_for_manager = []
+    try:
+        plex_server = get_plex_admin_server()
+        if not plex_server:
+            return jsonify({'status': 'error', 'message': 'Connexion au serveur Plex admin échouée.'}), 500
+
+        for item_data in items_to_move:
+            plex_rating_key = item_data.get('plex_id')
+            media_type = item_data.get('media_type') # 'sonarr' ou 'radarr'
+            destination = item_data.get('destination')
+
+            plex_item = plex_server.fetchItem(int(plex_rating_key))
+
+            arr_item = None
+            if media_type == 'sonarr':
+                guid = next((g.id for g in plex_item.guids if 'tvdb' in g.id), None)
+                if guid: arr_item = get_sonarr_series_by_guid(guid)
+            elif media_type == 'radarr':
+                guid = next((g.id for g in plex_item.guids if 'tmdb' in g.id), None)
+                if guid: arr_item = get_radarr_movie_by_guid(guid)
+
+            if not arr_item or not arr_item.get('id'):
+                current_app.logger.error(f"BulkMove: Could not find media in {media_type} for Plex ID {plex_rating_key} (GUID: {guid})")
+                continue # On ignore cet item
+
+            processed_items_for_manager.append({
+                'media_id': arr_item.get('id'),
+                'title': plex_item.title,
+                'media_type': media_type,
+                'destination': destination,
+                'library_key': plex_item.librarySectionID
+            })
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur lors de la préparation du déplacement en masse: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': "Erreur lors de la préparation des médias pour le déplacement."}), 500
+
+    if not processed_items_for_manager:
+        return jsonify({'status': 'error', 'message': 'Aucun média n\'a pu être trouvé dans Sonarr/Radarr pour le déplacement.'}), 404
+
+    # Démarrer la tâche de fond
+    app_context = current_app._get_current_object()
+    task_id, error_message = bulk_move_manager.start_bulk_move(processed_items_for_manager, app_context)
+
+    if error_message:
+        return jsonify({'status': 'error', 'message': error_message}), 409
+
+    return jsonify({'status': 'success', 'message': 'Déplacement en masse démarré.', 'task_id': task_id})
+
+@plex_editor_bp.route('/api/media/bulk_move_status/<task_id>', methods=['GET'])
+@login_required
+def get_bulk_move_status(task_id):
+    status = bulk_move_manager.get_task_status(task_id)
+    if not status:
+        return jsonify({'status': 'error', 'message': 'Tâche non trouvée.'}), 404
+
+    return jsonify(status)
 
 
 @plex_editor_bp.route('/api/users')
@@ -480,6 +554,7 @@ def get_media_items():
     director_filter = data.get('director')
     writer_filter = data.get('writer')
     studios_filter = data.get('studios', [])
+    root_folders_filter = data.get('rootFolders', []) # <--- NOUVEAU FILTRE
 
     cleaned_genres = [genre for genre in genres_filter if genre]
     cleaned_collections = [c for c in collections_filter if c]
@@ -498,6 +573,10 @@ def get_media_items():
         # ### DÉBUT MODIFICATION : Initialisation du cache ###
         series_status_cache = SimpleCache('series_completeness_status', default_lifetime_hours=6)
         # ### FIN MODIFICATION ###
+
+        # Charger les mappings pour l'enrichissement
+        from app.utils.plex_mapping_manager import get_plex_mappings
+        plex_mappings = get_plex_mappings()
 
         # --- 3. NOUVELLE LOGIQUE : Recherche unifiée sur Plex d'abord ---
         all_plex_items = {}  # Utilise un dictionnaire pour dédupliquer par ratingKey
@@ -578,7 +657,8 @@ def get_media_items():
                     for item in search_title + search_original + search_sort_smart:
                         all_plex_items[item.ratingKey] = item
                 else:
-                    for item in library.search(**search_args):
+                    search_results = library.search(**search_args)
+                    for item in search_results:
                         all_plex_items[item.ratingKey] = item
 
             except Exception as e_lib:
@@ -708,6 +788,32 @@ def get_media_items():
             if writer_filter:
                 items_after_python_filter = [item for item in items_after_python_filter if hasattr(item, 'writers') and any(writer_filter.lower() in writer.tag.lower() for writer in item.writers)]
 
+            # --- NOUVEAU BLOC : FILTRAGE PAR ROOT FOLDER ---
+            if root_folders_filter:
+                normalized_root_paths = [os.path.normpath(p).lower() for p in root_folders_filter]
+
+                def get_item_path(item):
+                    if item.type == 'movie':
+                        return getattr(item.media[0].parts[0], 'file', None) if item.media and item.media[0].parts else None
+                    elif item.type == 'show':
+                        return item.locations[0] if item.locations else None
+                    return None
+
+                items_temp = []
+                for item in items_after_python_filter:
+                    item_path_str = get_item_path(item)
+                    if item_path_str:
+                        normalized_item_path = os.path.normpath(item_path_str).lower()
+                        for root_path in normalized_root_paths:
+                            # CORRECTION: La vérification doit être stricte.
+                            # Le chemin de l'item doit soit être identique au chemin racine,
+                            # soit commencer par le chemin racine suivi d'un séparateur.
+                            if normalized_item_path == root_path or normalized_item_path.startswith(root_path + os.sep):
+                                items_temp.append(item)
+                                break
+                items_after_python_filter = items_temp
+            # --- FIN DU NOUVEAU BLOC ---
+
             final_filtered_list = []
             if status_filter == 'all':
                 final_filtered_list = items_after_python_filter
@@ -750,39 +856,46 @@ def get_media_items():
                     item.viewed_episodes = item.viewedLeafCount
                     item.total_episodes = item.leafCount
 
-                    # ### DÉBUT MODIFICATION : Logique de cache pour le badge "manquant" ###
-                    item.is_incomplete = False # Initialisation
-
-                    # On utilise le ratingKey de Plex comme clé de cache unique et stable
                     cache_key = item.ratingKey
-                    cached_status = series_status_cache.get(cache_key)
+                    cached_data = series_status_cache.get(cache_key)
 
-                    if cached_status is not None:
-                        # Cas 1: La valeur est dans le cache et est valide
-                        item.is_incomplete = cached_status
-                        current_app.logger.debug(f"Cache HIT for '{item.title}' (ratingKey: {cache_key}). Status: {item.is_incomplete}")
+                    if cached_data:
+                        item.is_incomplete = cached_data.get('is_incomplete', False)
+                        item.production_status = cached_data.get('production_status')
+                        current_app.logger.debug(f"Cache HIT for '{item.title}' (ratingKey: {cache_key}).")
                     else:
-                        # Cas 2: Pas dans le cache ou expiré, on fait le vrai calcul
                         current_app.logger.debug(f"Cache MISS for '{item.title}' (ratingKey: {cache_key}). Fetching from Sonarr.")
                         try:
-                            is_incomplete_status = False # Valeur par défaut
+                            is_incomplete_status = False
+                            production_status = None
+
                             sonarr_series = get_sonarr_series_by_guid(next((g.id for g in item.guids if 'tvdb' in g.id), None))
                             if sonarr_series:
                                 full_sonarr_series = get_sonarr_series_by_id(sonarr_series['id'])
-                                if full_sonarr_series and 'statistics' in full_sonarr_series:
-                                    stats = full_sonarr_series['statistics']
+                                if full_sonarr_series:
+                                    stats = full_sonarr_series.get('statistics', {})
                                     file_count = stats.get('episodeFileCount', 0)
                                     total_aired_count = stats.get('episodeCount', 0) - stats.get('futureEpisodeCount', 0)
                                     if file_count < total_aired_count:
                                         is_incomplete_status = True
 
-                            item.is_incomplete = is_incomplete_status
-                            # On met à jour le cache pour la prochaine fois
-                            series_status_cache.set(cache_key, is_incomplete_status)
+                                    sonarr_status = full_sonarr_series.get('status')
+                                    if sonarr_status == 'continuing':
+                                        production_status = 'En Production'
+                                    elif sonarr_status == 'ended':
+                                        production_status = 'Terminée'
+                                    elif sonarr_status == 'upcoming':
+                                        production_status = 'À venir'
 
+                            item.is_incomplete = is_incomplete_status
+                            item.production_status = production_status
+
+                            series_status_cache.set(cache_key, {
+                                'is_incomplete': item.is_incomplete,
+                                'production_status': item.production_status
+                            })
                         except Exception as e_sonarr:
-                            current_app.logger.warning(f"Impossible de vérifier l'état de complétude pour '{item.title}': {e_sonarr}")
-                    # ### FIN MODIFICATION ###
+                            current_app.logger.warning(f"Impossible de vérifier l'état Sonarr pour '{item.title}': {e_sonarr}")
 
                 if getattr(item, 'total_size', 0) > 0:
                     size_name = ("B", "KB", "MB", "GB", "TB"); i = 0
@@ -801,6 +914,36 @@ def get_media_items():
                         media_type=item.media_type_for_trailer,
                         external_id=item.external_id
                     )
+
+                # Enrichissement avec le type de média depuis le mapping
+                item.media_type_from_mapping = None # Sera 'sonarr' ou 'radarr'
+                item.custom_media_type = None       # Sera 'FILM', 'SÉRIE', etc.
+
+                # 1. Déterminer le type d'*Arr* de base (sonarr/radarr) à partir du type Plex
+                if item.type == 'show':
+                    item.media_type_from_mapping = 'sonarr'
+                elif item.type == 'movie':
+                    item.media_type_from_mapping = 'radarr'
+
+                # 2. Chercher le "type" personnalisé dans le mapping JSON
+                if item.file_path:
+                    normalized_item_path = os.path.normpath(item.file_path.lower())
+                    mapping_found = False
+                    for lib_name, mappings in plex_mappings.items():
+                        for mapping in mappings:
+                            # Utiliser la nouvelle structure de clé : 'path'
+                            normalized_mapped_path = os.path.normpath(mapping['path'].lower())
+                            if normalized_item_path.startswith(normalized_mapped_path):
+                                # Utiliser la nouvelle structure de clé : 'type'
+                                item.custom_media_type = mapping.get('type')
+                                mapping_found = True
+                                break
+                        if mapping_found:
+                            break
+
+                # 3. Fallback : si aucun type personnalisé n'est trouvé, utiliser un type par défaut
+                if not item.custom_media_type:
+                    item.custom_media_type = 'SÉRIE' if item.type == 'show' else 'FILM'
 
                 items_to_render.append(item)
 
@@ -2198,14 +2341,19 @@ def get_series_details_for_management(rating_key):
 
                     episodes_list_for_season.append(episode_dict)
 
+                stats = sonarr_season_info.get('statistics', {})
+                file_count = stats.get('episodeFileCount', 0)
+                total_episode_count = stats.get('episodeCount', 0)
+
                 total_series_size += total_season_size
                 seasons_list.append({
                     'title': f"Saison {season_number}" if season_number > 0 else "Specials",
                     'ratingKey': plex_season.ratingKey if plex_season else f"sonarr-season-{season_number}", 'seasonNumber': season_number,
-                    'total_episodes': sonarr_season_info.get('statistics', {}).get('episodeCount', 0),
+                    'total_episodes': total_episode_count,
                     'viewed_episodes': plex_season.viewedLeafCount if plex_season else 0,
                     'is_monitored_season': sonarr_season_info.get('monitored', False), 'total_size_on_disk': total_season_size,
-                    'episodes': episodes_list_for_season
+                    'episodes': episodes_list_for_season,
+                    'file_count': file_count
                 })
 
             # Vérification du statut du trailer avec le nouveau manager
@@ -2595,6 +2743,74 @@ def update_single_episode_monitoring():
 
     return jsonify({'status': 'error', 'message': 'Échec de la mise à jour dans Sonarr.'}), 500
 
+
+@plex_editor_bp.route('/api/series/search_missing', methods=['POST'])
+@login_required
+def search_missing_episodes():
+    data = request.json
+    rating_key = data.get('ratingKey')
+    season_numbers = data.get('seasonNumber')
+    search_mode = data.get('search_mode', 'packs')  # 'packs' par défaut
+
+    try:
+        plex_server = get_plex_admin_server()
+        series = plex_server.fetchItem(int(rating_key))
+
+        sonarr_series_info = None
+        tvdb_id = next((g.id.replace('tvdb://', '') for g in series.guids if g.id.startswith('tvdb://')), None)
+        if tvdb_id:
+            sonarr_series_info = get_sonarr_series_by_guid(f"tvdb://{tvdb_id}")
+
+        if not sonarr_series_info:
+            return jsonify({'status': 'error', 'message': 'Série non trouvée dans Sonarr.'}), 404
+
+        sonarr_series_id = sonarr_series_info.get('id')
+        all_sonarr_episodes = get_sonarr_episodes_by_series_id(sonarr_series_id)
+
+        missing_episodes = [
+            ep for ep in all_sonarr_episodes
+            if not ep.get('hasFile') and ep.get('monitored')
+        ]
+
+        target_seasons = set()
+        if season_numbers is not None:
+            if not isinstance(season_numbers, list):
+                season_numbers = [season_numbers]
+            target_seasons = {int(s) for s in season_numbers}
+            missing_episodes = [ep for ep in missing_episodes if ep.get('seasonNumber') in target_seasons]
+        else:
+            # Si aucune saison n'est spécifiée, on cible toutes les saisons qui ont des manques
+            target_seasons = {ep.get('seasonNumber') for ep in missing_episodes}
+
+        queries = set()
+        original_title = series.originalTitle if series.originalTitle and series.originalTitle != series.title else None
+
+        if search_mode == 'episodes':
+            # Recherche par épisode (ex: "Nom Série S05E")
+            for season_num in target_seasons:
+                query = f"{series.title} S{season_num:02d}E"
+                queries.add(query)
+                if original_title:
+                    queries.add(f"{original_title} S{season_num:02d}E")
+        else:  # 'packs'
+            # Recherche par pack saison (ex: "Nom Série S05", "Nom Série Saison 05")
+            for season_num in target_seasons:
+                queries.add(f"{series.title} S{season_num:02d}")
+                queries.add(f"{series.title} Saison {season_num:02d}")
+                if original_title:
+                    queries.add(f"{original_title} S{season_num:02d}")
+                    queries.add(f"{original_title} Saison {season_num:02d}")
+
+        session['missing_episodes_queries'] = list(queries)
+        session['search_mode_intent'] = search_mode
+        return jsonify({
+            'status': 'success',
+            'redirect_url': url_for('search_ui.search_page', tab='free-search')
+        })
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur lors de la recherche d'épisodes manquants: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @plex_editor_bp.route('/api/series/rename_files', methods=['POST'])
 @login_required

@@ -1,7 +1,7 @@
 # app/search_ui/__init__.py
 
 import logging
-from flask import Blueprint, render_template, request, flash, jsonify, Response, stream_with_context, current_app, url_for
+from flask import Blueprint, render_template, request, flash, jsonify, Response, stream_with_context, current_app, url_for, session
 from app.auth import login_required
 from config import Config
 from app.utils import arr_client
@@ -36,6 +36,7 @@ def search_page():
 def media_search():
     """Recherche des médias (films ou séries) via les API externes (TMDb/TVDB) et enrichit avec le statut du trailer."""
     from app.utils import trailer_manager # Import local
+    from app.utils.media_info_manager import media_info_manager
 
     data = request.get_json()
     query = data.get('query')
@@ -52,13 +53,16 @@ def media_search():
             for item in search_results:
                 external_id = item.get('id')
                 trailer_status = trailer_manager.get_trailer_status('movie', external_id) if external_id else 'NONE'
+                media_details = media_info_manager.get_media_details('movie', external_id) if external_id else {}
                 results.append({
                     'id': external_id,
                     'title': item.get('title'),
+                    'original_title': item.get('original_title'),
                     'year': item.get('release_date', 'N/A')[:4],
                     'overview': item.get('overview'),
                     'poster': item.get('poster_path'),
-                    'trailer_status': trailer_status
+                    'trailer_status': trailer_status,
+                    'details': media_details
                 })
         elif media_type_search == 'tv':
             client = CustomTVDBClient()
@@ -66,13 +70,16 @@ def media_search():
             for item in search_results:
                 external_id = item.get('tvdb_id')
                 trailer_status = trailer_manager.get_trailer_status('tv', external_id) if external_id else 'NONE'
+                media_details = media_info_manager.get_media_details('tv', external_id) if external_id else {}
                 results.append({
                     'id': external_id,
                     'title': item.get('name'),
+                    'original_title': item.get('original_name'),
                     'year': item.get('year'),
                     'overview': item.get('overview'),
                     'poster': item.get('poster_url'),
-                    'trailer_status': trailer_status
+                    'trailer_status': trailer_status,
+                    'details': media_details
                 })
         else:
             return jsonify({"error": "Type de média non supporté."}), 400
@@ -87,9 +94,17 @@ def media_search():
 @login_required
 def prowlarr_search():
     data = request.get_json()
+    queries = data.get('queries')
     query = data.get('query')
-    if not query:
-        return jsonify({"error": "La requête est vide."}), 400
+
+    # Unifier les deux types de requêtes en s'assurant que 'queries' est toujours une liste
+    if query:
+        queries = [query]
+
+    # --- NOUVELLE VALIDATION ROBUSTE ---
+    if not isinstance(queries, list) or not all(isinstance(q, str) and q.strip() for q in queries):
+        current_app.logger.error(f"Prowlarr search: 'queries' invalide reçu. Attendu: liste de chaînes non vides. Reçu: {queries}")
+        return jsonify({"error": "Format de requête invalide."}), 400
 
     search_type = data.get('search_type', 'sonarr')
 
@@ -99,14 +114,33 @@ def prowlarr_search():
     category_ids = search_config.get(f"{search_type}_categories", [])
 
     # 2. On envoie la requête de base à Prowlarr
-    raw_results = search_prowlarr(query=query, categories=category_ids)
+    all_raw_results = []
+    for query in queries:
+        raw_results = search_prowlarr(query=query, categories=category_ids)
+        if raw_results:
+            all_raw_results.extend(raw_results)
 
-    if raw_results is None:
-        return jsonify({"error": "Erreur de communication avec Prowlarr."}), 500
+    if not all_raw_results:
+        # Si aucun résultat n'est trouvé, ce n'est pas une erreur.
+        # On renvoie une réponse vide pour que le frontend puisse afficher "Aucun résultat".
+        return jsonify({
+            'results': [],
+            'filter_options': filter_options
+        })
+
+    # Dédoublonnage des résultats basé sur le GUID
+    unique_results = []
+    seen_guids = set()
+    for result in all_raw_results:
+        guid = result.get('guid')
+        if guid and guid not in seen_guids:
+            unique_results.append(result)
+            seen_guids.add(guid)
+    all_raw_results = unique_results
 
     # 3. Enrichir les résultats en utilisant le nouveau parseur centralisé
     enriched_results = []
-    for result in raw_results:
+    for result in all_raw_results:
         release_title = result.get('title', '')
         parsed_data = parse_release_data(release_title)
 
@@ -433,13 +467,19 @@ def _process_single_release(release_details, final_app_type, final_target_id):
             if display_names and display_names[0]:
                 release_name_for_map = display_names[0].strip()
         else: # Fichier .torrent
-            proxy_url = url_for('search_ui.download_torrent_proxy', _external=True)
-            params = {'url': download_link, 'release_name': release_name_original, 'indexer_id': indexer_id, 'guid': guid}
-            session_cookie_name = current_app.config.get("SESSION_COOKIE_NAME", "session")
-            cookies = {session_cookie_name: request.cookies.get(session_cookie_name)}
-            response = requests.get(proxy_url, params=params, cookies=cookies, timeout=60)
-            response.raise_for_status()
-            torrent_content_bytes = response.content
+            try:
+                proxy_url = url_for('search_ui.download_torrent_proxy', _external=True)
+                params = {'url': download_link, 'release_name': release_name_original, 'indexer_id': indexer_id, 'guid': guid}
+                session_cookie_name = current_app.config.get("SESSION_COOKIE_NAME", "session")
+                cookies = {session_cookie_name: request.cookies.get(session_cookie_name)}
+                response = requests.get(proxy_url, params=params, cookies=cookies, timeout=60)
+                response.raise_for_status()
+                torrent_content_bytes = response.content
+            except requests.exceptions.HTTPError as e:
+                # Si le proxy a renvoyé une erreur (ex: cookie invalide), on la propage
+                error_message_from_proxy = e.response.text
+                logger.error(f"Erreur du proxy de téléchargement pour '{release_name_original}': {error_message_from_proxy}")
+                return False, error_message_from_proxy
             
             release_name_for_map = _decode_bencode_name(torrent_content_bytes) or release_name_original.replace('.torrent', '').strip()
             actual_hash = add_torrent_data_and_get_hash_robustly(
@@ -585,7 +625,9 @@ def download_torrent_proxy():
             cookie_status = get_ygg_cookie_status()
 
             if not cookie_status["is_valid"]:
-                raise ValueError(f"Cookie YGG invalide ou expiré. Message : {cookie_status.get('status_message', 'Veuillez le mettre à jour.')}")
+                error_message = f"Cookie YGG invalide ou expiré. Message : {cookie_status.get('status_message', 'Veuillez le mettre à jour.')}"
+                current_app.logger.warning(f"Proxy download: {error_message}")
+                return Response(error_message, status=400)
 
             ygg_user_agent = current_app.config.get('YGG_USER_AGENT')
             ygg_base_url = current_app.config.get('YGG_BASE_URL')
@@ -749,3 +791,89 @@ def add_to_arr():
     except Exception as e:
         current_app.logger.error(f"Erreur dans add_to_arr: {e}", exc_info=True)
         return jsonify({'success': False, 'message': str(e)}), 500
+
+@search_ui_bp.route('/api/media/get_details', methods=['GET'])
+@login_required
+def get_media_details():
+    """Récupère les détails enrichis pour un seul média."""
+    from app.utils.media_info_manager import media_info_manager
+
+    media_type = request.args.get('media_type')
+    external_id = request.args.get('external_id')
+
+    if not media_type or not external_id:
+        return jsonify({"error": "Paramètres media_type et external_id requis."}), 400
+
+    try:
+        details = media_info_manager.get_media_details(media_type, int(external_id))
+        return jsonify(details)
+    except Exception as e:
+        current_app.logger.error(f"Erreur dans /api/media/get_details: {e}", exc_info=True)
+        return jsonify({"error": f"Erreur serveur : {e}"}), 500
+
+
+@search_ui_bp.route('/api/media/add_direct', methods=['POST'])
+@login_required
+def add_media_direct():
+    """Ajoute un média à Sonarr/Radarr sans déclencher de recherche de torrent."""
+    data = request.get_json()
+    media_type = data.get('media_type')
+    external_id = data.get('external_id')
+    root_folder_path = data.get('root_folder_path')
+    quality_profile_id = data.get('quality_profile_id')
+    language_profile_id = data.get('language_profile_id') # Spécifique à Sonarr
+
+    if not all([media_type, external_id, root_folder_path, quality_profile_id]):
+        return jsonify({'success': False, 'message': 'Données manquantes.'}), 400
+
+    try:
+        item_title = "N/A"
+        if media_type == 'tv':
+            if not language_profile_id:
+                return jsonify({'success': False, 'message': 'Profil de langue manquant pour Sonarr.'}), 400
+
+            # Récupérer le titre canonique depuis TVDB pour la cohérence
+            client = CustomTVDBClient()
+            series_details = client.get_series_details_by_id(external_id, lang='fra')
+            item_title = series_details.get('name') if series_details else 'Titre inconnu'
+
+            added_item = arr_client.add_new_series_to_sonarr(
+                tvdb_id=int(external_id),
+                title=item_title,
+                quality_profile_id=int(quality_profile_id),
+                language_profile_id=int(language_profile_id),
+                root_folder_path=root_folder_path,
+                search_for_missing_episodes=False # Exigence clé
+            )
+
+        elif media_type == 'movie':
+            # Récupérer le titre canonique depuis TMDB
+            client = TheMovieDBClient()
+            movie_details = client.get_movie_details(external_id, lang='fr-FR')
+            item_title = movie_details.get('title') if movie_details else 'Titre inconnu'
+
+            added_item = arr_client.add_new_movie_to_radarr(
+                tmdb_id=int(external_id),
+                title=item_title,
+                quality_profile_id=int(quality_profile_id),
+                root_folder_path=root_folder_path,
+                search_for_movie=False # Exigence clé
+            )
+
+        else:
+            return jsonify({'success': False, 'message': 'Type de média non supporté.'}), 400
+
+        if added_item and added_item.get('id'):
+            return jsonify({
+                'success': True,
+                'message': f"'{item_title}' a été ajouté avec succès à {media_type.capitalize()}."
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': f"Échec de l'ajout de '{item_title}' à {media_type.capitalize()}. Vérifiez les logs."
+            }), 500
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur dans /api/media/add_direct: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': f"Erreur serveur: {str(e)}"}), 500

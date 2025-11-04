@@ -52,11 +52,17 @@ class MediaInfoManager:
         }
 
         if media_type == 'tv':
-            details['sonarr_status'] = self._get_sonarr_status(tmdb_id)
+            sonarr_status = self._get_sonarr_status(tmdb_id)
+            details['sonarr_status'] = sonarr_status
             details['radarr_status'] = {"present": False}
+            # Prioriser la date de Sonarr, sinon prendre celle de TMDB
+            details['release_date'] = sonarr_status.get('release_date') or tmdb_details.get('first_air_date')
         else: # movie
-            details['radarr_status'] = self._get_radarr_status(tmdb_id)
+            radarr_status = self._get_radarr_status(tmdb_id)
+            details['radarr_status'] = radarr_status
             details['sonarr_status'] = {"present": False}
+            # Prioriser la date de Radarr, sinon prendre celle de TMDB
+            details['release_date'] = radarr_status.get('release_date') or tmdb_details.get('release_date')
 
         logger.info(f"Détails finaux pour {media_type}_{external_id}: {details}")
         return details
@@ -83,7 +89,37 @@ class MediaInfoManager:
         for series in self._sonarr_series:
             if series.get('tmdbId') == tmdb_id:
                 stats = series.get('statistics', {})
-                return {"present": True, "monitored": series.get('monitored', False), "episodes_file_count": stats.get('episodeFileCount', 0), "episodes_count": stats.get('episodeCount', 0)}
+
+                # Helper to format bytes
+                def _format_bytes(size):
+                    if size == 0: return "0 GB"
+                    gb = size / (1024**3)
+                    return f"{gb:.2f} GB"
+
+                # Calculer les saisons complètes
+                seasons_total = 0
+                seasons_complete = 0
+                if 'seasons' in series:
+                    for season in series['seasons']:
+                        # On ne compte que les saisons normales (pas la saison 0 des spéciaux) et qui ont au moins un épisode.
+                        if season.get('seasonNumber', 0) > 0 and season.get('statistics', {}).get('totalEpisodeCount', 0) > 0:
+                            seasons_total += 1
+                            season_stats = season.get('statistics', {})
+                            # Une saison est complète si tous ses épisodes diffusés ont un fichier.
+                            if season_stats.get('episodeFileCount', 0) >= season_stats.get('episodeCount', 0):
+                                seasons_complete += 1
+
+                return {
+                    "present": True,
+                    "monitored": series.get('monitored', False),
+                    "release_date": series.get('firstAired'),
+                    "episodes_file_count": stats.get('episodeFileCount', 0),
+                    "episodes_count": stats.get('episodeCount', 0), # Épisodes diffusés
+                    "total_episodes_count": stats.get('totalEpisodeCount', 0), # Total d'épisodes prévus
+                    "size_on_disk_gb": _format_bytes(stats.get('sizeOnDisk', 0)),
+                    "seasons_complete": seasons_complete,
+                    "seasons_total": seasons_total
+                }
         return {"present": False}
 
     def _get_radarr_status(self, tmdb_id):
@@ -91,7 +127,23 @@ class MediaInfoManager:
         if not tmdb_id: return {"present": False}
         for movie in self._radarr_movies:
             if movie.get('tmdbId') == tmdb_id:
-                return {"present": True, "monitored": movie.get('monitored', False), "has_file": movie.get('hasFile', False)}
+                has_file = movie.get('hasFile', False)
+                size_on_disk = movie.get('sizeOnDisk', 0)
+
+                # Helper to format bytes
+                def _format_bytes(size):
+                    if size == 0: return "0 GB"
+                    gb = size / (1024**3)
+                    return f"{gb:.2f} GB"
+
+                return {
+                    "present": True,
+                    "monitored": movie.get('monitored', False),
+                    "has_file": has_file,
+                    "release_date": movie.get('inCinemas'),
+                    "size_on_disk_gb": _format_bytes(size_on_disk) if has_file else None,
+                    "status_text": "Téléchargé" if has_file else "Manquant"
+                }
         return {"present": False}
 
     def _get_plex_status(self, media_type, tmdb_id, tvdb_id):

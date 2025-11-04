@@ -103,3 +103,25 @@ def get_media_details_route(media_type, external_id):
     except Exception as e:
         current_app.logger.error(f"Erreur inattendue dans get_media_details_route pour {media_type}_{external_id}: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': 'Une erreur interne est survenue.'}), 500
+
+@agent_bp.route('/clear_trailer_cache', methods=['POST'])
+def clear_trailer_cache_route():
+    """
+    Supprime l'entrée d'un média de la base de données des bandes-annonces.
+    """
+    data = request.json
+    media_type = data.get('media_type')
+    external_id = data.get('external_id')
+
+    if not all([media_type, external_id]):
+        return jsonify({'status': 'error', 'message': 'Les paramètres media_type et external_id sont requis.'}), 400
+
+    try:
+        success = trailer_manager.clear_trailer_cache(media_type, external_id)
+        if success:
+            return jsonify({'status': 'success', 'message': 'Cache de la bande-annonce effacé avec succès.'})
+        else:
+            return jsonify({'status': 'not_found', 'message': 'Entrée non trouvée dans le cache.'}), 404
+    except Exception as e:
+        current_app.logger.error(f"Erreur inattendue dans clear_trailer_cache_route pour {media_type}_{external_id}: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': 'Une erreur interne est survenue.'}), 500
