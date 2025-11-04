@@ -1,0 +1,1184 @@
+# AGENTS.md
+
+Ce fichier sert de journal de bord pour notre collaboration. Il a pour but de conserver une trace des échanges, des décisions et des réalisations importantes, afin de faciliter le suivi du projet et de garantir une mémoire à long terme des interventions.
+
+## Historique du projet
+
+### Gestion des Bandes-annonces
+
+- **zzdez**: Merge pull request #98 from zzdez/Backup-trailers-en-cours-38-Stable-Rech.Ep.Manquants
+- **google-labs-jules[bot]**: fix(Recherche): Corrige la régression 'undefined_undefined' pour les bandes-annonces
+- **google-labs-jules[bot]**: fix: Ajoute la fonctionnalité de recherche affinée dans la modale de bande-annonce
+- **google-labs-jules[bot]**: fix: Corrige l'erreur 404 lors de l'effacement du cache de bande-annonce
+- **google-labs-jules[bot]**: fix(js): Corrige la transmission de l'ID du média pour les bandes-annonces
+- **google-labs-jules[bot]**: fix(js): Corrige l'ID du sélecteur de la modale de bande-annonce
+- **google-labs-jules[bot]**: hotfix: Corrige la logique d'affichage de la modale de bande-annonce
+- **google-labs-jules[bot]**: hotfix: Corrige une incohérence de paramètre dans l'API de bande-annonce
+- **google-labs-jules[bot]**: fix: Corrige le bug 404 et la régression de la modale de bande-annonce
+- **google-labs-jules[bot]**: fix: Corrige la régression de la modale de bande-annonce
+- **google-labs-jules[bot]**: feat: Améliore la modale Plex, la recherche d'épisodes et corrige les bugs des bandes-annonces
+- **google-labs-jules[bot]**: Fix: Assurer la cohérence de l'ID de bande-annonce
+- **google-labs-jules[bot]**: fix(plex): Unifie les ID de bandes-annonces et corrige le crash de recherche
+- **google-labs-jules[bot]**: feat(plex): Améliore la modale de gestion et corrige les bugs des bandes-annonces
+- **google-labs-jules[bot]**: feat: Améliore la gestion Plex et corrige les bandes-annonces
+- **zzdez**: Merge pull request #97 from zzdez/Backup-trailers-en-cours-23-depl.RadarrSanarrOK.-Vue-taille-root-ok
+- **zzdez**: Debug infos modale B.A
+- **google-labs-jules[bot]**: fix: Correct trailer modal stacking and enrich search results
+- **zzdez**: Finazl Trailers avant debug regressions.
+- **google-labs-jules[bot]**: fix: Corrige l'URL de l'API pour la recherche de bande-annonce autonome
+- **google-labs-jules[bot]**: fix: Corrige l'URL de l'API pour la recherche de bandes-annonces autonome
+- **google-labs-jules[bot]**: feat: Ajoute une recherche de bande-annonce autonome
+- **google-labs-jules[bot]**: feat: Applique le statut de couleur des bandes-annonces à la page de recherche
+- **google-labs-jules[bot]**: fix(ui): Finalise l'harmonisation des boutons de bande-annonce
+- **google-labs-jules[bot]**: fix(ui): Unifie l'icône de bande-annonce sur tous les statuts
+- **google-labs-jules[bot]**: fix(ui): Harmonise l'icône du bouton de bande-annonce
+- **google-labs-jules[bot]**: feat: Implémente les statuts de couleur pour les bandes-annonces
+- **google-labs-jules[bot]**: docs: Update agents.md with new trailer logic
+- **google-labs-jules[bot]**: fix(trailer): Finalize trailer handling and caching logic
+- **google-labs-jules[bot]**: fix(trailer): Overhaul caching logic to prevent mass API calls
+- **google-labs-jules[bot]**: fix(trailer): Prevent mass API calls and clean up database
+- **google-labs-jules[bot]**: fix: Align modal trailer button behavior with main list
+- **google-labs-jules[bot]**: fix: Add external ID to trailer button in series modal
+- **google-labs-jules[bot]**: fix: Correct trailer lock check in series details view
+- **google-labs-jules[bot]**: docs: Update agents.md with trailer system info
+- **google-labs-jules[bot]**: fix(frontend): Final trailer UI visual corrections
+- **google-labs-jules[bot]**: fix(frontend): Improve trailer UI feedback and visuals
+- **google-labs-jules[bot]**: fix(frontend): Correct trailer lock icon color and placeholder image
+- **google-labs-jules[bot]**: fix(plex): Add external ID data attributes to trailer button
+- **google-labs-jules[bot]**: feat: Refactor trailer management system
+- **google-labs-jules[bot]**: feat: Refactor trailer management system
+- **google-labs-jules[bot]**: feat: Refactor trailer management system
+- **google-labs-jules[bot]**: feat: Refactor trailer management system
+- **google-labs-jules[bot]**: feat: Refactor trailer management system
+- **google-labs-jules[bot]**: feat: Refactor trailer management system
+- **google-labs-jules[bot]**: feat: Integrate trailer search directly into Add Torrent modal
+- **google-labs-jules[bot]**: feat: Finalize trailer feature with pending locks and UI enhancements
+- **google-labs-jules[bot]**: feat: Finalize trailer search with pending locks and refactoring
+- **google-labs-jules[bot]**: feat: Finalize trailer search with pending locks and refactoring
+- **google-labs-jules[bot]**: fix(trailer): Add robust pending lock finalization logic
+- **google-labs-jules[bot]**: fix(trailer): Preserve lock context in custom search
+- **google-labs-jules[bot]**: fix(trailer): Correct pending lock finalization logic
+- **google-labs-jules[bot]**: feat: Add trailer lock button to torrent mapping modal
+- **google-labs-jules[bot]**: feat: Implement pending trailer lock feature
+- **google-labs-jules[bot]**: fix(trailer): Finalize trailer search with consistent cache and logic
+- **google-labs-jules[bot]**: fix: Retain lock context on custom trailer search
+- **google-labs-jules[bot]**: fix: Restore trailer lock button and correct search page logic
+- **google-labs-jules[bot]**: fix: Resolve TypeError in trailer search
+- **google-labs-jules[bot]**: fix: Rearchitect trailer search pagination
+- **google-labs-jules[bot]**: feat: Finalize and refactor trailer search feature
+- **google-labs-jules[bot]**: fix(js): Fix trailer pagination and refactor JS logic
+- **google-labs-jules[bot]**: feat: Add standalone trailer search and fix pagination
+- **google-labs-jules[bot]**: fix(trailers): Fix custom search 404 and add standalone search
+- **google-labs-jules[bot]**: feat: Add advanced trailer features and refactor backend
+- **google-labs-jules[bot]**: feat: Add unlock and improved navigation for trailers
+- **google-labs-jules[bot]**: feat: Finalize and extend trailer search functionality
+- **google-labs-jules[bot]**: feat: Finalise la recherche de trailer intelligente
+- **google-labs-jules[bot]**: debug: Add detailed logging for trailer search
+- **google-labs-jules[bot]**: feat: Implémente la recherche de titre et un scoring avancé pour les trailers
+- **google-labs-jules[bot]**: feat: Refonte du scoring pour une recherche de trailer plus pertinente
+- **google-labs-jules[bot]**: feat: Implémente une recherche de trailer intelligente avec scoring
+- **google-labs-jules[bot]**: feat: Améliore la recherche de trailers avec liste paginée et fallback
+- **google-labs-jules[bot]**: feat: Améliore la recherche de trailers avec liste paginée
+- **zzdez**: Merge branch 'feature/intelligent-trailer-search' of https://github.com/zzdez/MediaManagerSuite into feature/intelligent-trailer-search
+- **google-labs-jules[bot]**: feat: Remplace la sélection auto par une liste paginée de trailers
+- **google-labs-jules[bot]**: feat: Remplace la sélection auto par une liste paginée de trailers
+- **google-labs-jules[bot]**: feat: Finalise la recherche intelligente de bandes-annonces
+- **google-labs-jules[bot]**: feat: Finalise la recherche intelligente de bandes-annonces
+- **google-labs-jules[bot]**: fix(js): Add missing trailer selection modal HTML
+- **google-labs-jules[bot]**: fix(js): Force replacement of trailer logic with correct implementation
+- **google-labs-jules[bot]**: feat(agent): Implement caching system for trailer search to protect API quotas
+- **google-labs-jules[bot]**: feat(agent): Implement caching system for trailer search to protect API quotas
+- **google-labs-jules[bot]**: arch: Create 'Agent' module and migrate trailer AI logic
+- **google-labs-jules[bot]**: refactor(trailer): Implement Hybrid Architecture (Eager Plex, Lazy YouTube)
+- **google-labs-jules[bot]**: fix(trailer): Reload Plex item to ensure extras are loaded
+- **google-labs-jules[bot]**: fix(trailer): Reinstate Plex search in on-demand endpoint
+- **google-labs-jules[bot]**: refactor(trailer): Implement lazy loading for trailer search
+- **google-labs-jules[bot]**: fix(app): Resolve circular import in trailer_finder service
+- **google-labs-jules[bot]**: feat(trailer): Add YouTube search layer to trailer_finder service
+- **google-labs-jules[bot]**: feat(ui): Play trailers in a modal window
+- **google-labs-jules[bot]**: fix(trailer): Use direct part key for service-based trailers
+- **google-labs-jules[bot]**: fix(trailer): URL-encode the media part key for the transcode URL
+- **google-labs-jules[bot]**: fix(trailer): Use media part key for universal transcode URL
+- **google-labs-jules[bot]**: fix(trailer): Correctly format and encode the universal transcode URL
+- **google-labs-jules[bot]**: fix(trailer): Build universal transcode URL for Plex trailers
+- **google-labs-jules[bot]**: fix(trailer): Call .extras() as a method to fix TypeError
+- **google-labs-jules[bot]**: feat(trailer): Create trailer_finder service and implement Plex search
+- **google-labs-jules[bot]**: feat: Create analysis file for trailer finder service
+
+### Recherche et Téléchargement
+
+- **google-labs-jules[bot]**: feat: Ouvre la recherche dans un nouvel onglet et corrige les bugs liés
+- **google-labs-jules[bot]**: fix: Gère correctement les recherches Prowlarr sans résultat
+- **google-labs-jules[bot]**: fix: Ajoute une validation d'entrée pour prévenir les crashs de l'API de recherche Prowlarr
+- **google-labs-jules[bot]**: feat: Ouvre la recherche d'épisodes manquants dans un nouvel onglet
+- **google-labs-jules[bot]**: feat(plex): Filtre les résultats de recherche d'épisodes manquants
+- **google-labs-jules[bot]**: feat(plex): Spécialise la recherche d'épisodes manquants
+- **google-labs-jules[bot]**: feat(plex): Ajoute la recherche ciblée par saison dans la modale
+- **google-labs-jules[bot]**: feat: Amélioration de la modale de gestion Plex et recherche d'épisodes
+- **google-labs-jules[bot]**: refactor: Simplifie la stratégie de recherche pour Prowlarr
+- **google-labs-jules[bot]**: fix: Exécute les recherches Prowlarr en parallèle pour éviter les timeouts
+- **google-labs-jules[bot]**: feat: Améliorations modale Plex, recherche manquants & BAs
+- **google-labs-jules[bot]**: feat: Améliorations modale Plex, recherche manquants & BAs
+- **google-labs-jules[bot]**: feat(ui): Harmonise les libellés de recherche
+- **google-labs-jules[bot]**: feat: Améliore la gestion des erreurs de cookie YGG
+- **google-labs-jules[bot]**: fix: Corrige une erreur de syntaxe JavaScript dans la recherche
+- **google-labs-jules[bot]**: fix: Corrige la régression et l'erreur 400 sur la recherche
+- **google-labs-jules[bot]**: feat: Améliore la recherche libre avec des requêtes multiples
+- **google-labs-jules[bot]**: feat(Search): Enrichir les résultats de recherche et corriger le bug de téléchargement en double
+- **google-labs-jules[bot]**: feat(search): Display detailed download status on media cards
+- **google-labs-jules[bot]**: fix(search): Refresh card on add and display release date
+- **google-labs-jules[bot]**: feat(search): Enrich media search results and add to Arr
+- **google-labs-jules[bot]**: fix(plex-editor): Correct root folder filter logic
+- **google-labs-jules[bot]**: feat: Ajout de logs pour diagnostiquer le problème de recherche Plex
+- **google-labs-jules[bot]**: feat: Ajout du filtre par dossier racine à la recherche Plex
+- **google-labs-jules[bot]**: fix: Réinitialise la sélection après un téléchargement par lot
+- **google-labs-jules[bot]**: feat: Fiabilise le téléchargement par lot
+- **google-labs-jules[bot]**: feat: Ajout du téléchargement par lots sur la page de recherche
+- **zzdez**: debug infos recherche BA
+- **google-labs-jules[bot]**: fix: Corrige l'ImportError et la logique de recherche par ID du tableau de bord
+- **google-labs-jules[bot]**: fix: Corrige la recherche de séries TV par ID et finalise le tableau de bord
+- **google-labs-jules[bot]**: fix(search): Unifie la réponse de l'API et nettoie le JS
+- **google-labs-jules[bot]**: fix(search): Corrige la régression de la modale de mapping
+- **zzdez**: Merge pull request #96 from zzdez/Backup---Ajout-Filtres-en-cours-4-Fonctionnel
+- **google-labs-jules[bot]**: fix(js): Apply default language filter after rendering results
+- **google-labs-jules[bot]**: fix(js): Use correct value for default language filter
+- **google-labs-jules[bot]**: feat: Default language filter to French on search
+- **google-labs-jules[bot]**: feat: Finalize and refactor advanced search filters
+- **google-labs-jules[bot]**: fix(search): Keep collection releases in Sonarr searches
+- **google-labs-jules[bot]**: feat: Refactor parser and finalize intelligent filters
+- **google-labs-jules[bot]**: feat: Finalize intelligent filter logic and UI
+- **google-labs-jules[bot]**: feat: Implement intelligent and conditional search filters
+- **google-labs-jules[bot]**: fix(parser): Clean release_group data before filtering
+- **google-labs-jules[bot]**: fix(config): Load filter options directly from .env file
+- **google-labs-jules[bot]**: debug: Add detailed logging to search API response
+- **google-labs-jules[bot]**: fix: Populate configurable filter options in UI
+- **google-labs-jules[bot]**: feat: Implement configurable advanced search filters
+- **google-labs-jules[bot]**: feat: Rework and fix advanced filtering logic
+- **google-labs-jules[bot]**: feat(search): Add intelligent filters and improve UI state
+- **google-labs-jules[bot]**: feat(search): Add intelligent filters and improve UI state
+- **google-labs-jules[bot]**: feat(search): Unify search UI and enable pre-filtering
+- **google-labs-jules[bot]**: fix(search): Finalize search filtering with backend and frontend fixes
+- **google-labs-jules[bot]**: fix(search): Fix filtering by correcting backend serialization
+- **google-labs-jules[bot]**: fix(search): Fix filtering by correcting backend serialization
+- **google-labs-jules[bot]**: fix(test): Use correct environment variable for Prowlarr URL
+- **google-labs-jules[bot]**: feat(test): Add script to test Prowlarr filtering
+- **google-labs-jules[bot]**: debug(search): Ajouter une alerte pour le débogage du filtre
+- **google-labs-jules[bot]**: fix(search): Réparer le filtrage JS en corrigeant les sélecteurs
+- **google-labs-jules[bot]**: fix(search): Corriger le déclencheur du filtre pour le rendre fonctionnel
+- **google-labs-jules[bot]**: feat(search): Rendre le filtrage JavaScript des résultats de recherche opérationnel
+- **google-labs-jules[bot]**: fix: Implement and correct advanced search filtering
+- **google-labs-jules[bot]**: feat: Implement advanced search with debug logging
+- **google-labs-jules[bot]**: chore: Add extensive logging for debugging client-side filters
+- **google-labs-jules[bot]**: feat: Implement advanced search and filtering
+- **google-labs-jules[bot]**: chore: Add extensive logging for debugging search filters
+- **google-labs-jules[bot]**: fix: Correct JSON serialization error in search API
+- **google-labs-jules[bot]**: feat: Integrate advanced search and filtering into UI
+- **google-labs-jules[bot]**: feat: Add category-based search scenarios to test script
+- **google-labs-jules[bot]**: feat: Create isolated script for Prowlarr/Guessit testing
+- **google-labs-jules[bot]**: fix: Improve cookie file detection logic
+- **google-labs-jules[bot]**: feat: Implement dynamic cookie detection from filesystem
+- **google-labs-jules[bot]**: feat: Rework cookie management for Cloudflare indexers
+- **zzdez**: Merge pull request #95 from zzdez/fix-free-search-promise
+- **google-labs-jules[bot]**: Fix(Search): Stabilize and polish Free Search download workflow
+- **google-labs-jules[bot]**: Fix(Search): Stabilize and polish Free Search download workflow
+- **zzdez**: Merge pull request #94 from zzdez/fix-free-search-promise
+- **google-labs-jules[bot]**: Fix(Search): Stabilize Free Search download workflow
+- **zzdez**: Merge pull request #93 from zzdez/fix-free-search-promise
+- **google-labs-jules[bot]**: Fix(Search): Align Free Search with Promise download system
+- **google-labs-jules[bot]**: Fixes an issue where the download path was not set when remapping a completed torrent to a new media item.
+- **google-labs-jules[bot]**: Fixes an issue where the download path was not set when remapping a completed torrent to a new media item.
+- **google-labs-jules[bot]**: Fix(download): Use final download path instead of initial prediction
+- **google-labs-jules[bot]**: Fix(download): Use final download path instead of initial prediction
+- **google-labs-jules[bot]**: fix(search): Corrige le crash et implémente la logique de filtrage par alias - Ajoute la fonction manquante 'load_search_filter_aliases' au config_manager. - Corrige l'ImportError qui faisait planter l'application. - La logique de filtrage avancée est maintenant pleinement opérationnelle.
+- **google-labs-jules[bot]**: fix(search): Corrige le crash et implémente la logique de filtrage par alias - Ajoute la fonction manquante 'load_search_filter_aliases' au config_manager. - Corrige l'ImportError qui faisait planter l'application. - La logique de filtrage avancée est maintenant pleinement opérationnelle.
+- **google-labs-jules[bot]**: fix(search): Remplace la logique de filtrage par une recherche d'alias robuste - Abandonne l'utilisation de 'guessit' pour le filtrage avancé, qui était peu fiable. - La nouvelle logique vérifie la présence des alias de filtre (configurés dans le .env) directement dans le titre de la release. - Cette méthode corrige le bug où les filtres de langue, codec et source ne fonctionnaient pas.
+- **google-labs-jules[bot]**: feat(search): Refond la recherche Prowlarr avec un système d'alias configurable - Les filtres (langue, qualité, codec, source) sont maintenant définis dans le .env pour plus de flexibilité. - La recherche utilise une logique hybride : pré-filtrage par catégorie via Prowlarr, puis filtrage local robuste par alias. - Corrige les bugs où les filtres de codec et source ne fonctionnaient pas. - Améliore le filtrage de langue pour gérer les cas VFF, MULTI, etc.
+- **google-labs-jules[bot]**: fix(search): Restaure le filtrage local pour fiabiliser la recherche Prowlarr - Le client Prowlarr est simplifié pour n'envoyer que la requête de base et les catégories. - La route de recherche réintroduit une boucle de filtrage local avec 'guessit' pour appliquer de manière fiable les filtres de qualité, codec et source. - Cette approche hybride corrige le bug des filtres inopérants.
+- **google-labs-jules[bot]**: fix(search): Corrige un crash JS et fiabilise la construction du payload - Ajoute une garde pour empêcher le crash si un champ de filtre est manquant dans le DOM. - Assure que le champ HTML pour le filtre "Release Group" est bien présent. - La recherche Prowlarr est maintenant robuste face à des éléments de formulaire manquants.
+- **google-labs-jules[bot]**: refactor(search): Unifie la logique de construction du payload de recherche Prowlarr - Crée une fonction buildProwlarrPayload unique pour garantir la cohérence. - Les deux flux de recherche (par média et libre) utilisent maintenant cette fonction. - Corrige le bug qui provoquait des résultats de recherche incorrects lors de l'application de filtres.
+- **google-labs-jules[bot]**: fix(prowlarr): Corrige la construction de la requête de recherche - Empêche l'ajout de filtres textuels vides à la chaîne de recherche, ce qui provoquait des résultats de recherche incorrects. - La recherche et les filtres devraient maintenant fonctionner comme prévu.
+- **google-labs-jules[bot]**: feat(search): Fiabilise et améliore le filtrage de la recherche Prowlarr - Le client Prowlarr construit maintenant une requête de recherche intelligente. - Le filtrage est délégué à l'API Prowlarr, supprimant la logique locale 'guessit'. - Le filtrage par catégories Sonarr/Radarr est maintenant utilisé. - Ajout d'un filtre pour le "Release Group" (Team).
+- **google-labs-jules[bot]**: feat(plex): Ajoute un filtre pour les séries incomplètes
+- **google-labs-jules[bot]**: fix(plex): Rend la recherche de série Sonarr robuste
+- **google-labs-jules[bot]**: fix(plex): Rend la recherche de série Sonarr robuste
+- **google-labs-jules[bot]**: Fix: Prevent re-download of items already in staging
+- **google-labs-jules[bot]**: Cette modification améliore le flux de pré-mapping initié depuis l'onglet 'Recherche par Média'.
+- **google-labs-jules[bot]**: feat: Use ID-based search for manual imports
+- **google-labs-jules[bot]**: fix(api): Use correct method and keys for TV search
+- **google-labs-jules[bot]**: refactor(js): Isolate Prowlarr search logic to fix context bug
+- **google-labs-jules[bot]**: fix: Use dynamic URL for media search API
+- **google-labs-jules[bot]**: feat: Implement media search and pre-mapping workflow
+- **google-labs-jules[bot]**: refactor(search): Unify media search logic
+- **google-labs-jules[bot]**: fix(tmdb): Ensure all movie search results are JSON serializable
+- **google-labs-jules[bot]**: fix(tmdb): Implement correct language handling for movie search
+- **google-labs-jules[bot]**: fix(tmdb): Use correct 'term' parameter for movie search
+- **google-labs-jules[bot]**: fix(search): Fix media search functionality
+- **google-labs-jules[bot]**: fix(search): Move media search logic to the active JS file
+- **google-labs-jules[bot]**: feat(search): Add isolated 'Search by Media' mode
+- **google-labs-jules[bot]**: refactor(agent): Implement sequential multi-query search
+- **zzdez**: Merge pull request #80 from zzdez/fix/staging-search-persistence
+- **google-labs-jules[bot]**: fix(staging): Fiabilisation de la Recherche et de la Persistance des Associations
+- **google-labs-jules[bot]**: refactor(ui): Disable automatic search on modal open
+- **google-labs-jules[bot]**: Fix(mapping): Allow empty download path in mapping manager
+- **google-labs-jules[bot]**: I've fixed a `TypeError` that occurred when manually mapping a torrent from the rTorrent view if the torrent's download path was not available from the rTorrent client.
+- **google-labs-jules[bot]**: Refactor add torrent modal with enriched search
+- **google-labs-jules[bot]**: fix(tvdb): Ensure language parameter is used in initial search
+- **google-labs-jules[bot]**: refactor(plex): Architect search to query all libraries before external fallback
+- **google-labs-jules[bot]**: fix(plex): Correct search logic to prevent early exit
+- **google-labs-jules[bot]**: perf(tvdb): Optimize series search and translation handling
+- **google-labs-jules[bot]**: fix(tvdb): Correct indentation of search_and_translate_series
+- **google-labs-jules[bot]**: feat(tvdb): Add new translated search function to prevent regressions
+- **google-labs-jules[bot]**: I've optimized the title search to reduce API calls with the following changes:
+- **google-labs-jules[bot]**: refactor(plex): Implement multi-stage smart search with external APIs
+- **google-labs-jules[bot]**: fix(plex): Implement smart search for titleSort field
+- **google-labs-jules[bot]**: feat(plex): Implement multi-field title search and enhance display
+- **google-labs-jules[bot]**: feat(staging): Add 'pending_download' state to prevent race conditions
+- **google-labs-jules[bot]**: fix(search): Add missing 'status' parameter to manual torrent mapping
+- **google-labs-jules[bot]**: Feat: Add SFTP remote path mapping to fix download errors
+- **google-labs-jules[bot]**: fix(ui): Increase width of the title search input
+- **google-labs-jules[bot]**: feat(config): Allow filtering of Plex libraries via .env file
+- **google-labs-jules[bot]**: refactor(plex): Final ultra-compact redesign of the advanced filter UI
+- **google-labs-jules[bot]**: refactor(plex): Final compact redesign of main and advanced filters
+- **google-labs-jules[bot]**: refactor(plex): Redesign filter UI for a compact single-row layout
+- **google-labs-jules[bot]**: refactor(plex): Redesign filter UI for compactness and responsiveness
+- **zzdez**: Merge pull request #72 from zzdez/refactor/plex-person-filters-regex
+- **google-labs-jules[bot]**: I've made some changes to how I handle person-based searches in Plex.
+- **google-labs-jules[bot]**: I've made some improvements to the person-based filters in Plex. Now, when you're searching for actors, directors, or writers, the search will be more flexible. Instead of needing an exact match, you can use partial names. This should make finding what you're looking for a bit easier and fixes a recent issue where those filters weren't working as expected.
+- **google-labs-jules[bot]**: refactor(plex): Increase flexibility of person-based filters using regex
+- **google-labs-jules[bot]**: Fix(plex): Correct filters and add writer filter
+- **google-labs-jules[bot]**: Fix(plex): Correct filter keys for resolution, actor, director, and studio
+- **google-labs-jules[bot]**: fix(plex): Correct resolution/actor filters and add studio filter
+- **google-labs-jules[bot]**: feat(plex): Add resolution, actor, and director filters
+- **zzdez**: Merge pull request #71 from zzdez/feature/genre-filter
+- **google-labs-jules[bot]**: I've implemented the Collections filter and removed the redundant Label filter. I've added the necessary JavaScript to populate the Collections dropdown and removed all code related to the 'Label' filter, which was redundant.
+- **zzdez**: Merge pull request #70 from zzdez/feature/genre-filter
+- **google-labs-jules[bot]**: feat(plex): Add collection and label filters
+- **google-labs-jules[bot]**: feat(plex): Add release year to standard filters
+- **zzdez**: Merge pull request #69 from zzdez/feature/genre-filter
+- **google-labs-jules[bot]**: feat(plex): Add personal rating filter
+- **zzdez**: Merge pull request #68 from zzdez/feature/genre-filter
+- **google-labs-jules[bot]**: feat(plex): Implement advanced time-based filtering
+- **zzdez**: Merge pull request #67 from zzdez/feature/genre-filter
+- **google-labs-jules[bot]**: fix(plex): Ensure 'All Genres' filter returns correct results
+- **google-labs-jules[bot]**: I’ve made some improvements to the genre filter. I replaced the radio buttons with a more compact button group and moved it above the genre selection dropdown. This should provide a cleaner and more intuitive experience for you.
+- **google-labs-jules[bot]**: refactor(plex): Improve filter UX and clean up debug code
+- **google-labs-jules[bot]**: I am adding some temporary logging to diagnose the 'AND' genre filter logic.
+- **google-labs-jules[bot]**: I am adding some temporary logging to diagnose the 'AND' genre filter logic.
+- **google-labs-jules[bot]**: feat: Add advanced genre filtering with multi-select and AND/OR logic
+- **google-labs-jules[bot]**: feat: Add genre filter to Plex Editor
+- **google-labs-jules[bot]**: fix(search): Envoie le chemin du dossier racine au lieu de l'ID
+- **google-labs-jules[bot]**: fix(search): Finalise la structure du payload d'ajout de média
+- **google-labs-jules[bot]**: fix(search): Corrige la structure du payload d'ajout de média
+- **google-labs-jules[bot]**: fix(search): Corrige la convention de nommage des clés du payload
+- **google-labs-jules[bot]**: fix(search): Ajoute le titre manquant au payload d'ajout de média
+- **google-labs-jules[bot]**: fix(search): Encapsule le payload de la requête d'ajout
+- **google-labs-jules[bot]**: fix(search): Ajoute le header Content-Type manquant à l'API d'ajout
+- **google-labs-jules[bot]**: fix(search): Corrige l'URL de l'API pour l'ajout final de média
+- **google-labs-jules[bot]**: fix(search): Supprime la fonctionnalité de profil de langue
+- **google-labs-jules[bot]**: fix(search): Corrige les URL des API Sonarr pour l'ajout de média
+- **google-labs-jules[bot]**: feat(search): Ajoute un bouton 'Retour' dans la modale de recherche
+- **google-labs-jules[bot]**: feat(search): Affiche les détails enrichis lors de l'ajout d'un média
+- **google-labs-jules[bot]**: fix(search): Corrige les URL des API pour l'ajout de média
+- **google-labs-jules[bot]**: Bonjour ! J'ai apporté deux changements majeurs à votre page de recherche : l'implémentation d'une nouvelle fonctionnalité et la correction d'un bug.
+- **google-labs-jules[bot]**: fix(seedbox-ui): Amélioration du nettoyage des titres pour la recherche
+- **google-labs-jules[bot]**: fix(seedbox-ui): Pré-remplissage automatique de la recherche dans les modales de mapping
+- **zzdez**: Debug barre de recherche
+- **zzdez**: Merge pull request #52 from zzdez/feature/ygg-cookie-refresh
+- **zzdez**: Modale search terminé stable
+- **zzdez**: Correction telechargement search
+- **zzdez**: Merge pull request #51 from zzdez/feature/ygg-cookie-refresh
+- **google-labs-jules[bot]**: feat: Add YGG cookie refresh button and functionality
+- **google-labs-jules[bot]**: feat: Enhance Plex search and modal with alternative titles
+- **google-labs-jules[bot]**: feat: Ajout d'une barre de recherche par titre à l'éditeur Plex
+- **zzdez**: Merge pull request #40 from zzdez/unify-search-logic
+- **google-labs-jules[bot]**: Fix poster display and improve advanced filters
+- **google-labs-jules[bot]**: Fix event delegation in search modal
+- **google-labs-jules[bot]**: Add enrichment functionality to search modal
+- **google-labs-jules[bot]**: I am going to unify the search logic and clean up the HTML template.
+- **zzdez**: debug cat filtres
+- **google-labs-jules[bot]**: Fix: Implement client-side filtering for Prowlarr search
+- **google-labs-jules[bot]**: Fix: Remove conflicting search code from seedbox_ui_modals.js
+- **google-labs-jules[bot]**: Fix: Correctly retrieve search type in Prowlarr search
+- **google-labs-jules[bot]**: Fix: Correctly retrieve search type in Prowlarr search
+- **google-labs-jules[bot]**: I've fixed the search type detection. I removed the extra radio buttons and now use a hidden input field to determine the search type. This ensures that the search type is correctly identified and logged. I've updated the `search.html`, `search_actions.js`, and `__init__.py` files to reflect these changes.
+- **google-labs-jules[bot]**: Fix: Correctly retrieve search type in Prowlarr search
+- **google-labs-jules[bot]**: Fix: Move radio buttons inside the search form
+- **google-labs-jules[bot]**: Fix: Replace incorrect search handler with the correct one
+- **google-labs-jules[bot]**: Fix: Replace incorrect search handler with the correct one
+- **google-labs-jules[bot]**: Feat: Implement search by category
+- **google-labs-jules[bot]**: Fix: Correctly format categories for Prowlarr API
+- **google-labs-jules[bot]**: Feat(search): Replace media type buttons with Sonarr/Radarr
+- **google-labs-jules[bot]**: I've refactored the code to delegate filtering to Prowlarr.
+- **google-labs-jules[bot]**: I am now implementing the final and definitive filtering logic.
+- **google-labs-jules[bot]**: I've added diagnostic logging to the `prowlarr_search` function.
+- **google-labs-jules[bot]**: fix: correct faulty filtering logic in prowlarr_search
+- **google-labs-jules[bot]**: feat: add event handler for main search button
+- **google-labs-jules[bot]**: refactor: modify search form for javascript control
+- **google-labs-jules[bot]**: feat: update prowlarr_search to handle all filters
+- **google-labs-jules[bot]**: feat: implement advanced filtering logic in backend
+- **google-labs-jules[bot]**: feat: send advanced filters to backend
+- **google-labs-jules[bot]**: feat: add advanced filters section to search page
+- **zzdez**: Merge pull request #39 from zzdez/fix/prowlarr-category-aggregation
+- **google-labs-jules[bot]**: Fix(prowlarr): Implement correct recursive category parsing
+- **google-labs-jules[bot]**: Refactor(prowlarr): Implement dynamic Torznab feed discovery
+- **google-labs-jules[bot]**: Refactor(prowlarr): Overhaul client to use Torznab API
+- **google-labs-jules[bot]**: Fix(prowlarr): Implement definitive documentation-based category fetching
+- **google-labs-jules[bot]**: Fix(prowlarr): Implement correct category interpretation strategy
+- **google-labs-jules[bot]**: Revert(prowlarr): Restore stable category fetching logic
+- **google-labs-jules[bot]**: Fix(prowlarr): Implement hybrid category fetching strategy
+- **google-labs-jules[bot]**: Fix(prowlarr): Aggregate categories from all indexers
+- **zzdez**: Update prowlarr_client.py
+- **google-labs-jules[bot]**: Finalize category logic by moving filtering to the backend
+- **zzdez**: Update prowlarr_client.py
+- **google-labs-jules[bot]**: Feat: Met à jour le template des catégories Prowlarr
+- **google-labs-jules[bot]**: Fix: Supprime le filtre erroné des catégories Prowlarr
+- **zzdez**: Update prowlarr_client.py
+- **zzdez**: Update prowlarr_client.py
+- **google-labs-jules[bot]**: I've fixed an issue with Prowlarr category fetching. The `get_prowlarr_categories` function was calling the wrong endpoint. This has been corrected to call `/api/v1/caps` and parse the correct response structure.
+- **google-labs-jules[bot]**: feat: Integrate Prowlarr category management into configuration page
+- **google-labs-jules[bot]**: I've fixed the 'Working outside of application context' error. The `SEARCH_SETTINGS_FILE` variable was being initialized at module load time, which is outside the Flask application context. I've corrected this by moving the path generation into a function that is called within the application context.
+- **google-labs-jules[bot]**: I've added the backend functions for search configuration. I added a new function in the Prowlarr client to get the list of all available categories and created a new file to manage reading and writing of our JSON configuration files.
+- **zzdez**: Merge pull request #37 from zzdez/feature/powerful-search-filters
+- **google-labs-jules[bot]**: feat: Implement powerful and functional search filters
+- **zzdez**: Merge pull request #36 from zzdez/refactor/unified-search-modal
+- **zzdez**: Corrections recherche par manuelle par ID
+- **google-labs-jules[bot]**: feat: Refactor unified search modal
+- **zzdez**: Merge pull request #32 from zzdez/feature/manual-search-in-modal
+- **zzdez**: Update search_actions.js
+- **zzdez**: Merge pull request #31 from zzdez/feature/manual-search-in-modal
+- **zzdez**: Update search_actions.js
+- **google-labs-jules[bot]**: I am highlighting the best match in the search results.
+- **zzdez**: Merge pull request #30 from zzdez/feature/manual-search-in-modal
+- **zzdez**: Update search_actions.js
+- **zzdez**: Merge branch 'feature/manual-search-in-modal' of https://github.com/zzdez/MediaManagerSuite into feature/manual-search-in-modal
+- **zzdez**: Update search_actions.js
+- **google-labs-jules[bot]**: Finalize manual search feature
+- **google-labs-jules[bot]**: feat: Implement intelligent search and manual override
+- **google-labs-jules[bot]**: Fix: Crash in /api/search/lookup
+- **google-labs-jules[bot]**: Fix: Restore search_page route
+- **google-labs-jules[bot]**: Refactor manual search to use JSON and new display function
+- **google-labs-jules[bot]**: I am adding manual search functionality to the mapping modal.
+- **google-labs-jules[bot]**: feat: Add id to search form
+- **google-labs-jules[bot]**: feat: Replace search_actions.js with lazy loading script
+- **google-labs-jules[bot]**: feat: Restore download proxy routes to search_ui
+- **google-labs-jules[bot]**: feat: Restore additional routes to search_ui
+- **google-labs-jules[bot]**: Refactor search_ui to use local imports
+- **google-labs-jules[bot]**: Refactor: Consolidate search_ui blueprint to fix import error
+- **google-labs-jules[bot]**: Implement lazy loading for the search modal
+- **google-labs-jules[bot]**: feat: Add fast API endpoint for Sonarr/Radarr search
+- **zzdez**: Merge pull request #28 from zzdez/feature/search-final-polish
+- **google-labs-jules[bot]**: fix(search): Use url_for to generate correct API endpoint for mapping
+- **google-labs-jules[bot]**: feat(search): Implement multi-API enrichment for mapping (TVDB/TMDb)
+- **google-labs-jules[bot]**: fix(search): Correctly display title and activate search in mapping modal
+- **google-labs-jules[bot]**: fix(search): Ensure mapping modal is displayed
+- **google-labs-jules[bot]**: debug(search): Add final JS logging to mapping modal
+- **google-labs-jules[bot]**: fix(search): Call arr_client functions directly instead of instantiating a class
+- **google-labs-jules[bot]**: fix(search): Add correct data-title attribute to mapping button
+- **google-labs-jules[bot]**: refactor(search): Remove old modal logic and correctly wire up intelligent mapping modal
+- **google-labs-jules[bot]**: fix(search): Move TVDB enrichment logic to the correct API route
+- **google-labs-jules[bot]**: debug(search): Add detailed logging to TVDB enrichment process
+- **google-labs-jules[bot]**: fix(search): Display alternate titles based on language (FR/EN)
+- **google-labs-jules[bot]**: fix(search): Improve logic for displaying alternate media titles
+- **google-labs-jules[bot]**: feat(search): Improve modal results with scrollable synopsis and alternate titles
+- **google-labs-jules[bot]**: feat(search): Enrich search results display within mapping modal
+- **google-labs-jules[bot]**: refactor(search): Replace mapping modal with a full-featured search and selection modal
+- **google-labs-jules[bot]**: fix(search): Correct variable name in download_and_map route to resolve NameError
+- **google-labs-jules[bot]**: fix(search): Implement backend logic for adding new media
+- **google-labs-jules[bot]**: fix(search): Send explicit flag for new media mapping
+- **google-labs-jules[bot]**: feat(search): Activate final download and map action
+- **google-labs-jules[bot]**: feat(search): Add "Add New Media" workflow to mapping modal
+- **google-labs-jules[bot]**: refactor(search): Revert to jQuery event delegation for dynamic content
+- **google-labs-jules[bot]**: fix(search): Correctly wire up event listener for mapping modal
+- **google-labs-jules[bot]**: feat(search): Implement intelligent pre-mapping modal with data enrichment
+- **zzdez**: Merge pull request #25 from zzdez/feature/search-page-refactor
+- **google-labs-jules[bot]**: feat(search): Add support for full season presence check in Plex
+- **google-labs-jules[bot]**: fix(search): Resolve InvalidURL and NameError in Plex client utils
+- **google-labs-jules[bot]**: refactor(search): Implement multi-level search logic for better accuracy
+- **google-labs-jules[bot]**: Here's the updated status on the fix for the search functionality:
+- **google-labs-jules[bot]**: fix(search): Add Plex library check to status verification logic
+- **zzdez**: Merge pull request #24 from zzdez/feature/search-page-refactor
+- **google-labs-jules[bot]**: feat(search): Rework mapping logic to handle adding new media
+- **google-labs-jules[bot]**: fix(search): Correct Jinja2 errors in search template
+- **google-labs-jules[bot]**: Here's how I've improved search performance:
+- **zzdez**: Merge pull request #23 from zzdez/feature/search-page-refactor
+- **google-labs-jules[bot]**: feat(search): Apply global layout and dark theme to search page
+- **google-labs-jules[bot]**: feat(plex): Enhance status filter with 'in progress' option
+- **google-labs-jules[bot]**: feat(plex): Dynamically populate user and library filters
+- **zzdez**: Merge pull request #14 from zzdez/feature/final-downloader
+- **zzdez**: Merge pull request #12 from zzdez/feature/robust-downloader
+- **google-labs-jules[bot]**: feat: Intégration de la stratégie finale pour téléchargement YGG
+- **google-labs-jules[bot]**: test: Remplace download_torrent_proxy par un script de test YGG
+- **google-labs-jules[bot]**: test: Force la méthode YGG dans download_torrent_proxy
+- **google-labs-jules[bot]**: feat: Implémentation d'un proxy de téléchargement robuste pour YGG
+- **zzdez**: Merge pull request #11 from zzdez/feature/search-download-destination
+- **google-labs-jules[bot]**: Feat: Ajout du chemin de destination dynamique pour les téléchargements rTorrent
+- **zzdez**: Update search_actions.js
+- **zzdez**: Merge pull request #10 from zzdez/feature/search-modal-functionality
+- **zzdez**: Merge pull request #9 from zzdez/feature/search-modal-functionality
+- **google-labs-jules[bot]**: Finalize Prowlarr search and mapping workflow
+- **zzdez**: Merge branch 'feature/search-modal-functionality' of https://github.com/zzdez/MediaManagerSuite into feature/search-modal-functionality
+- **zzdez**: Update search_actions.js
+- **google-labs-jules[bot]**: Fix: Resolve Prowlarr search modal JS conflicts and improve stability
+- **google-labs-jules[bot]**: Fix: Correct JavaScript syntax in search_actions.js
+- **google-labs-jules[bot]**: Finalize download and map functionality
+- **google-labs-jules[bot]**: Enable search button in Sonarr/Radarr modal
+- **google-labs-jules[bot]**: Fix: Correct static file URL generation in search template
+- **google-labs-jules[bot]**: Implement "Download & Map" workflow for search page
+- **google-labs-jules[bot]**: Implement "Download & Map" workflow for search page
+- **zzdez**: Implementation recherche client torrent
+- **google-labs-jules[bot]**: Opti: Implement Plex episode pre-loading cache for search
+- **google-labs-jules[bot]**: Opti: Implement Plex show pre-loading cache for search
+- **google-labs-jules[bot]**: Feat: Implement client-side search form handling
+- **google-labs-jules[bot]**: Feat: Add tracing logs for search and Plex utilities
+- **zzdez**: Debug Search
+- **google-labs-jules[bot]**: fix: Corrige la recherche Plex et améliore les statuts dans media_status_checker
+- **google-labs-jules[bot]**: chore: Vérification et résolution des erreurs de démarrage liées à search_ui
+- **google-labs-jules[bot]**: feat: Intégration de l'affichage du statut des médias dans la recherche
+- **zzdez**: Update prowlarr_client.py
+- **google-labs-jules[bot]**: Intégration Prowlarr: UI et routes pour la recherche
+- **google-labs-jules[bot]**: Intégration Prowlarr: Configuration et client API
+- **google-labs-jules[bot]**: Fix: Initialize data-current-action in openRadarrSearchModal
+- **google-labs-jules[bot]**: feat: Implement SFTP download guardrail for Sonarr/Radarr
+- **google-labs-jules[bot]**: feat: Complete SFTP scanner integration with working downloads and notifications
+- **zzdez**: Corrections bugs filtres
+- **google-labs-jules[bot]**: Refactor plex_editor.show_library and enhance filters
+- **zzdez**: Ajout moteur de recherche
+- **zzdez**: ajout filtre date visionnage
+- **google-labs-jules[bot]**: Fix: Include the download directory for magnet links
+
+### Éditeur Plex et Gestion des Médias
+
+- **google-labs-jules[bot]**: fix(plex): Corrige les régressions de la modale de gestion des séries
+- **google-labs-jules[bot]**: fix(plex_editor): Harmonise l'extraction de l'ID pour les films
+- **google-labs-jules[bot]**: fix: Corrige la gestion des posters manquants dans la modale
+- **google-labs-jules[bot]**: fix(plex-editor): Corrige la hauteur des lignes en réintégrant le chemin
+- **google-labs-jules[bot]**: feat(plex-editor): Divise la colonne Statut et ajoute un tri personnalisé
+- **google-labs-jules[bot]**: feat(plex-editor): Ajoute le statut de production Sonarr et rafraîchit l'UI
+- **google-labs-jules[bot]**: fix: Rend le scan de bibliothèque post-déplacement plus robuste
+- **google-labs-jules[bot]**: feat(plex-editor): Rafraîchissement dynamique du chemin après déplacement
+- **google-labs-jules[bot]**: fix(plex): Implement definitive filesystem-based move polling
+- **google-labs-jules[bot]**: fix(plex): Implement two-stage polling for reliable move completion
+- **google-labs-jules[bot]**: fix(plex): Implement final robust polling using media-specific history
+- **google-labs-jules[bot]**: fix(plex): Implement robust path-based polling for bulk moves
+- **google-labs-jules[bot]**: fix(plex): Increase history page size for reliable move polling
+- **google-labs-jules[bot]**: fix(plex): Correct history polling logic for bulk moves
+- **google-labs-jules[bot]**: fix(plex): Replace bulk move polling logic with history check
+- **google-labs-jules[bot]**: Refactor(Plex Editor): Fiabilisation du suivi des déplacements en masse via la surveillance de la file d'attente
+- **google-labs-jules[bot]**: Fix(Plex Editor): Amélioration de la fiabilité et du rafraîchissement de l'UI pour le déplacement en masse
+- **google-labs-jules[bot]**: fix(plex): Corrige la logique de vérification du déplacement Radarr
+- **google-labs-jules[bot]**: feat(plex): Implémentation du déplacement en masse avec mapping dynamique
+- **google-labs-jules[bot]**: fix: Corrige l'affichage du mapping Plex sur la page de configuration
+- **google-labs-jules[bot]**: feat: Ajout du déplacement de médias en masse avec mapping dynamique
+- **google-labs-jules[bot]**: feat: Implémentation du déplacement en masse dans l'éditeur Plex
+- **google-labs-jules[bot]**: feat: Affichage de l'espace disque dans la modale de déplacement
+- **google-labs-jules[bot]**: fix: Corrige le déplacement de médias en traduisant l'ID de Plex
+- **google-labs-jules[bot]**: fix: Assure que les ID de média sont des entiers pour les déplacements
+- **google-labs-jules[bot]**: fix: Corrige le déplacement des séries Sonarr en utilisant l'endpoint 'series/editor'
+- **google-labs-jules[bot]**: feat: Ajout de logs de diagnostic pour le déplacement de médias
+- **google-labs-jules[bot]**: Corrige le déplacement des séries Sonarr en utilisant l'endpoint 'series/editor'
+- **google-labs-jules[bot]**: Corrige le déplacement des séries Sonarr en utilisant l'endpoint 'series/editor'
+- **google-labs-jules[bot]**: feat: Ajoute la fonctionnalité de déplacement de média
+- **google-labs-jules[bot]**: fix: Corrige le bug de la modale de mappage en mode lot
+- **google-labs-jules[bot]**: fix: Corrige et finalise le tableau de bord d'informations média
+- **google-labs-jules[bot]**: fix: Corrige l'emplacement et l'exactitude du tableau de bord média
+- **google-labs-jules[bot]**: feat: Implémentation du tableau de bord d'informations média
+- **google-labs-jules[bot]**: fix: Rework modal management to fix stacking issue
+- **google-labs-jules[bot]**: feat: Applique le statut de couleur à la modale de mapping
+- **google-labs-jules[bot]**: Refactor(remap): Use dedicated logic for adding new media from remap modal
+- **google-labs-jules[bot]**: Feat(remap): Add new media from rTorrent remapping modal
+- **google-labs-jules[bot]**: perf(plex): Implémente un cache pour le statut de complétude des séries
+- **google-labs-jules[bot]**: feat(plex): Ajoute un badge pour les séries avec épisodes manquants
+- **google-labs-jules[bot]**: feat(plex): Affiche un statut de disponibilité intelligent pour les épisodes manquants
+- **zzdez**: Support épisodes manquants vue plex
+- **zzdez**: Update plex_editor_ui.js
+- **google-labs-jules[bot]**: fix(js): Correct remaining syntax error in plex_editor_ui.js
+- **google-labs-jules[bot]**: fix(js): Correct syntax error in plex_editor_ui.js
+- **google-labs-jules[bot]**: fix(js): Corrige l'erreur de syntaxe dans plex_editor_ui.js
+- **google-labs-jules[bot]**: fix(plex): Corrige l'archivage des films et coche les options par défaut
+- **google-labs-jules[bot]**: Fix: Modal backdrop persists after adding a torrent
+- **google-labs-jules[bot]**: Cette modification apporte une série d'améliorations et de corrections significatives au système de mapping des médias et à l'interface utilisateur.
+- **google-labs-jules[bot]**: Cette modification apporte une série d'améliorations et de corrections significatives au système de mapping des médias, le rendant plus intelligent, robuste, et fiable.
+- **google-labs-jules[bot]**: Cette modification apporte une série d'améliorations et de corrections significatives au système de mapping des médias, le rendant plus intelligent, robuste, et fiable.
+- **google-labs-jules[bot]**: Cette modification apporte une série d'améliorations significatives au système de mapping des médias, le rendant plus intelligent, robuste, et fiable.
+- **google-labs-jules[bot]**: fix(js): Use getOrCreateInstance for robust Bootstrap modal management
+- **google-labs-jules[bot]**: fix(js): Correctly initialize Bootstrap modals using raw DOM elements
+- **google-labs-jules[bot]**: fix(plex): Implement correct file targeting for season renaming
+- **google-labs-jules[bot]**: feat(plex): Add season-specific file renaming and improve UI
+- **google-labs-jules[bot]**: Fix: Stabilize and correct modal functionalities
+- **google-labs-jules[bot]**: Fix: Address performance and stability issues in add torrent modal
+- **google-labs-jules[bot]**: I've addressed the performance and stability issues in the 'Add Torrent File' modal, fixing problems reported after the initial refactoring.
+- **google-labs-jules[bot]**: Fix: Address performance and stability issues in add torrent modal
+- **google-labs-jules[bot]**: fix(seedbox): Correct poster image URL in mapping modal
+- **google-labs-jules[bot]**: I've refactored the Sonarr mapping modal in your seedbox UI to enrich the mapping with TVDB data in French. My approach was to use the internal TVDB client instead of fetching metadata directly from the Sonarr API.
+- **google-labs-jules[bot]**: feat(seedbox): Refactor Sonarr mapping modal to use TVDB
+- **google-labs-jules[bot]**: feat(seedbox): Refactor Sonarr mapping modal to use TVDB
+- **google-labs-jules[bot]**: feat(plex): Enhance External Suggestions (Actions, Language, Links)
+- **google-labs-jules[bot]**: feat(plex): Display external suggestions on no results
+- **google-labs-jules[bot]**: refactor(ui): Group library selector and scan button
+- **google-labs-jules[bot]**: I've added a commented-out example for the `PLEX_LIBRARIES_TO_IGNORE` variable to the `.env.template` file. This should improve usability and make the configuration process clearer for you.
+- **google-labs-jules[bot]**: fix(plex): Use admin connection for library scan to resolve 403 error
+- **google-labs-jules[bot]**: feat(plex): Ajout de la fonctionnalité de scan de bibliothèque
+- **google-labs-jules[bot]**: fix(plex): Correct client-side sorting issues
+- **google-labs-jules[bot]**: fix(plex): Correct client-side sorting issues
+- **google-labs-jules[bot]**: feat(plex): Add dynamic sorting on result columns
+- **google-labs-jules[bot]**: fix(plex_editor): Corrects the layout of bulk action buttons
+- **google-labs-jules[bot]**: J'ai ajouté la fonctionnalité de sélection multiple et de suppression en masse dans l'éditeur Plex.
+- **google-labs-jules[bot]**: I've made a fix to correctly fetch studios and resolutions. It seems the `MovieSection` object in `plexapi` doesn't have `studios` or `resolutions` attributes. I've adjusted the `/api/studios` and `/api/resolutions` endpoints to iterate through all items in your selected libraries and gather the studios and resolutions from each one.
+- **google-labs-jules[bot]**: fix(plex): Correctly parse collection names using .title attribute
+- **google-labs-jules[bot]**: feat(plex): Replace date operator with preset periods
+- **google-labs-jules[bot]**: feat(plex): Replace date operator with preset periods
+- **zzdez**: Merge pull request #64 from zzdez/feature/rtorrent-mapping-modal
+- **google-labs-jules[bot]**: I will create the modal and the logic for torrent deletion.
+- **zzdez**: Debug modale fanôme
+- **google-labs-jules[bot]**: fix(modals): Eradicate last undefined URL and replace broken image placeholders.
+- **google-labs-jules[bot]**: fix(ui): Ensure modal backdrop is removed on close
+- **zzdez**: Correction bug modale staging
+- **zzdez**: Merge pull request #53 from zzdez/fix/staging-modal-prefill
+- **google-labs-jules[bot]**: feat: Synchronize monitoring switches in series management modal
+- **google-labs-jules[bot]**: feat: Display episode number in management modal
+- **google-labs-jules[bot]**: fix: Correct episode number and size in management modal
+- **google-labs-jules[bot]**: feat: Ajoute une nouvelle fonction pour récupérer les épisodes Sonarr et met à jour la route Plex
+- **google-labs-jules[bot]**: feat: Ajoute une nouvelle fonction pour récupérer les épisodes Sonarr et met à jour la route Plex
+- **google-labs-jules[bot]**: fix: Corriger l'association des épisodes Plex et Sonarr
+- **google-labs-jules[bot]**: feat: Mettre à jour le template de la modale pour la gestion par épisode
+- **google-labs-jules[bot]**: feat: Enrichir les données de la modale avec les informations Sonarr par épisode
+- **zzdez**: Merge pull request #42 from zzdez/feature/details-modal
+- **google-labs-jules[bot]**: feat: add details modal javascript
+- **zzdez**: Debug Plex et sftp
+- **zzdez**: Update plex_client.py
+- **zzdez**: Filtrage cat et Modale OK
+- **google-labs-jules[bot]**: feat: Activer l'ajout manuel de média
+- **google-labs-jules[bot]**: Fix: Correct TVDB library import to tvdb_v4_official
+- **google-labs-jules[bot]**: Fix: Correct TVDB library import to tvdb_v4_api
+- **google-labs-jules[bot]**: Fix: Correct TVDB library import
+- **google-labs-jules[bot]**: fix(deps): Correct TVDB library package name and imports
+- **google-labs-jules[bot]**: fix(plex): Implement manual size calculation for series in media list
+- **google-labs-jules[bot]**: fix(plex): Correct NameError when calculating movie size
+- **google-labs-jules[bot]**: fix(plex): Ensure disk size and duration are displayed for movies
+- **zzdez**: Merge pull request #21 from zzdez/feature/restore-plex-actions
+- **google-labs-jules[bot]**: feat(plex): Add and display aggregated disk size for series and seasons
+- **zzdez**: Merge pull request #20 from zzdez/feature/restore-plex-actions
+- **google-labs-jules[bot]**: feat(plex): Re-add episode list display using a collapse component
+- **google-labs-jules[bot]**: fix(plex): Correct final typo for season_item_data variable in episode loop
+- **google-labs-jules[bot]**: fix(plex): Correctly determine viewed seasons count for series and fix typo
+- **google-labs-jules[bot]**: fix(plex): Use correct attribute 'status' for series status after inspection
+- **google-labs-jules[bot]**: fix(plex): Use correct 'isContinuing' attribute for series status
+- **google-labs-jules[bot]**: refactor(plex): Overhaul series management modal for better UX
+- **zzdez**: Merge pull request #19 from zzdez/feature/restore-plex-actions
+- **google-labs-jules[bot]**: feat(plex): Add season management actions (monitor, delete) in series modal
+- **zzdez**: Merge pull request #18 from zzdez/feature/restore-plex-actions
+- **google-labs-jules[bot]**: feat(plex): Display detailed watch-progress for series
+- **google-labs-jules[bot]**: feat(plex): Rework series season management into a detailed modal
+- **google-labs-jules[bot]**: fix(plex): Permanently remove all calls to undefined csrf_token
+- **google-labs-jules[bot]**: feat(plex): Restore and reactivate advanced media actions and modals
+- **zzdez**: Merge pull request #17 from zzdez/feature/plex-item-modal
+- **google-labs-jules[bot]**: feat(plex): Re-implement media details modal
+- **zzdez**: Merge pull request #16 from zzdez/feature/plex-dashboard-refactor
+- **google-labs-jules[bot]**: perf(plex): Cache library list in localStorage to optimize page load
+- **google-labs-jules[bot]**: fix(plex): Remove duplicate JS variable declarations
+- **google-labs-jules[bot]**: fix(plex): Update status badge on toggle and persist last user choice
+- **google-labs-jules[bot]**: feat(plex): Implement toggle watched status action
+- **google-labs-jules[bot]**: fix(plex): Permanently remove invalid csrf_token call from template
+- **google-labs-jules[bot]**: fix(plex): Manually construct API URL to prevent ValueError in template
+- **google-labs-jules[bot]**: feat(plex): Implement delete media item action
+- **google-labs-jules[bot]**: feat(plex): Enrich media table with more details and action buttons
+- **google-labs-jules[bot]**: fix(plex): Remove nonexistent csrf_token call from template
+- **google-labs-jules[bot]**: feat(plex): Implement dynamic loading of media items
+- **google-labs-jules[bot]**: fix(plex): Remove stray text from javascript in dashboard template
+- **google-labs-jules[bot]**: feat(plex): Implement unified dashboard layout
+- **google-labs-jules[bot]**: fix(seedbox): Remove duplicate JS variable declaration for addTorrentModalEl
+- **google-labs-jules[bot]**: Fix(plex): Remove condition disabling archive button for shows
+- **zzdez**: Modale suite
+- **zzdez**: Modale suite
+- **google-labs-jules[bot]**: Refactor: Move Plex utilities to break circular dependency
+- **google-labs-jules[bot]**: feat: Intègre la vérification Radarr et Plex dans media_status_checker
+- **zzdez**: Ajout modale détails.
+- **google-labs-jules[bot]**: Fix: Correct back link in library view
+- **zzdez**: Prise en charge filtrage multi bibliothèque OK
+- **zzdez**: Support Archivage Plex Radarr Sonarr (serie)
+- **zzdez**: Plex: Gestion tags et suppression Films
+- **zzdez**: Correction bugs Modales
+- **zzdez**: Probl. Modale fichier multiples seedbox
+- **zzdez**: Corrections de liaisons entre seedboxUI et PlexWebEditor
+
+### Interface Utilisateur (UI) et Expérience Utilisateur (UX)
+
+- **google-labs-jules[bot]**: fix: Corrige l'erreur de routage et restaure le bouton de saison
+- **google-labs-jules[bot]**: feat: Améliore le rafraîchissement de l'UI après un déplacement
+- **google-labs-jules[bot]**: feat: Mise à jour en temps réel de l'UI après un déplacement
+- **google-labs-jules[bot]**: feat: Amélioration de l'UI pour le déplacement en masse
+- **google-labs-jules[bot]**: feat: Ajout du suivi de progression en temps réel pour les déplacements en masse
+- **zzdez**: Update requirements.txt
+- **google-labs-jules[bot]**: fix(js): Correct date sorting in rTorrent view
+- **google-labs-jules[bot]**: feat(seedbox): Finalize UI enhancements and fix bugs
+- **google-labs-jules[bot]**: fix(Seedbox): Finalize UI improvements and bug fixes
+- **google-labs-jules[bot]**: feat(Seedbox): Enhance UI, add file tree, and fix bugs
+- **google-labs-jules[bot]**: feat(Seedbox): Enhance UI and add file tree view
+- **google-labs-jules[bot]**: Fix(seedbox_ui): Correct multiple torrent mapping workflows
+- **google-labs-jules[bot]**: Fix(seedbox_ui): Correct multiple torrent mapping workflows
+- **google-labs-jules[bot]**: Fix(seedbox_ui): Correct seedbox_dl_path for existing media mapping
+- **zzdez**: Update requirements.txt
+- **google-labs-jules[bot]**: Cette modification finalise l'amélioration du flux de "pré-mapping" et ajoute des logs de débogage pour le traitement manuel.
+- **google-labs-jules[bot]**: Cette modification finalise l'amélioration du flux de "pré-mapping" en le rendant intelligent, robuste et correct.
+- **google-labs-jules[bot]**: Cette modification améliore et sécurise le flux de "pré-mapping" de l'application.
+- **google-labs-jules[bot]**: fix(js): Make pre-mapping context persistent for torrent lists
+- **google-labs-jules[bot]**: fix(js): Prevent duplicate event listeners on mapper button
+- **zzdez**: Merge branch 'feat/agent-module' of https://github.com/zzdez/MediaManagerSuite into feat/agent-module
+- **zzdez**: Update requirements.txt
+- **google-labs-jules[bot]**: feat(ui): Add client-side sorting to Seedbox tables
+- **google-labs-jules[bot]**: feat(ui): Add client-side sorting to Seedbox tables
+- **google-labs-jules[bot]**: Fix(js): Force rtorrent view to reload after batch actions
+- **google-labs-jules[bot]**: Fix(js): Use AJAX to reload rtorrent view after batch actions
+- **google-labs-jules[bot]**: Fix(js): Reload page after rtorrent batch actions
+- **google-labs-jules[bot]**: fix(seedbox): Update rTorrent mapping routes to include required parameters
+- **google-labs-jules[bot]**: J'ai finalisé la refactorisation de l'interface de la vue rTorrent. Désormais, seules les actions groupées sont utilisées pour une expérience plus épurée.
+- **google-labs-jules[bot]**: Bonjour ! J'ai terminé d'implémenter les actions groupées pour votre vue rTorrent. Pour ce faire, j'ai refactorisé l'interface afin d'en améliorer l'ergonomie.
+- **google-labs-jules[bot]**: feat(ui): Add status column and differentiate import types
+- **google-labs-jules[bot]**: feat(ui): Add 'Repatriate' and 'Mark as Processed' manual actions
+- **google-labs-jules[bot]**: fix(js): Repair 'Ignore Permanently' button event using delegation
+- **google-labs-jules[bot]**: fix(ui): Correct display logic for 'Retry Repatriation' button
+- **google-labs-jules[bot]**: fix(ui): Replace obsolete scan link on seedbox page
+- **google-labs-jules[bot]**: fix(ui): Replace obsolete manual scan button with a staging processor trigger
+- **google-labs-jules[bot]**: fix(ui): Replace obsolete manual scan button with a staging processor trigger
+- **google-labs-jules[bot]**: J'ai implémenté la fonctionnalité de mapping Sonarr/Radarr depuis la vue rTorrent.
+- **google-labs-jules[bot]**: feat(ui): Use full-width container for main content
+- **google-labs-jules[bot]**: refactor(ui): Use text wrapping instead of truncation
+- **google-labs-jules[bot]**: feat(ui): Improve responsiveness of all views
+- **google-labs-jules[bot]**: feat(ui): Make file tree view responsive
+- **zzdez**: refactor(seedbox): Remove incomplete "Finished Files" tab from UI.
+- **zzdez**: Update index.html
+- **google-labs-jules[bot]**: Fix(js): Correct unclosed event listener in index.html
+- **google-labs-jules[bot]**: Fix(js): Correct unclosed event listener in index.html
+- **google-labs-jules[bot]**: Fix(js): Correct unclosed event listener in index.html
+- **zzdez**: Corrections bouton oublier assoc.
+- **google-labs-jules[bot]**: fix(ui): Correct Radarr and Sonarr mapping URL
+- **zzdez**: Update index.html
+- **google-labs-jules[bot]**: I fixed the "Delete selection" button in the Arr queue manager. It was staying disabled because the JavaScript that was supposed to update it wasn't running correctly for the content that was loaded in. This happened because the function to update the button was in a script tag that was being injected, and browsers don't run those.
+- **google-labs-jules[bot]**: feat: add javascript logic for watched/unwatched icons
+- **google-labs-jules[bot]**: feat: Add backend route and frontend logic for updating episode monitoring status
+- **zzdez**: Activation bouton chosir media
+- **google-labs-jules[bot]**: Fix(config): Correct HTML structure for category items
+- **google-labs-jules[bot]**: Feat(config): Update frontend to display indexer badges
+- **google-labs-jules[bot]**: feat: Build the Category Configuration Interface
+- **google-labs-jules[bot]**: fix: Corriger le bouton d'ajout manuel
+- **google-labs-jules[bot]**: feat: Enrich API status response and update frontend to display a detailed information card
+- **google-labs-jules[bot]**: Add UI elements for manual media creation
+- **google-labs-jules[bot]**: Refactor: Isolate login_required to fix circular import
+- **zzdez**: Merge pull request #22 from zzdez/feature/ui-polish-fixes
+- **google-labs-jules[bot]**: feat(ui): Apply various UX improvements and visual fixes
+- **google-labs-jules[bot]**: refactor(seedbox): Clean up integrated templates to remove redundant UI elements
+- **google-labs-jules[bot]**: fix(seedbox): Sync HTML elements and JS selectors for maintenance tab
+- **google-labs-jules[bot]**: fix(seedbox): Consolidate JS logic and fix duplicate variable 'selectedStagingItemsForBatch' in index.html
+- **google-labs-jules[bot]**: fix(config): Add missing 'os' import in config_ui routes
+- **google-labs-jules[bot]**: fix(config): Rework config page UI and add crash guard to SFTP scanner
+- **google-labs-jules[bot]**: fix(UI): Correct internal url_for calls in content templates
+- **google-labs-jules[bot]**: fix(UI): Correct endpoint names in layout and sync template paths
+- **google-labs-jules[bot]**: feat(UI): Implement global application shell with persistent sidebar
+- **google-labs-jules[bot]**: Feat: Remplacement du bouton JS par lien direct pour télécharger .torrent
+- **google-labs-jules[bot]**: Feat: Ajout du bouton 'Télécharger .torrent' et amélioration des erreurs JS
+- **google-labs-jules[bot]**: Fix: Ensure jQuery is loaded before dependent scripts in seedbox_ui
+- **google-labs-jules[bot]**: Fix: Address JS event conflict and improve torrent hash retrieval
+- **zzdez**: Update remote_seedbox_list.html
+- **zzdez**: Update remote_seedbox_list.html
+- **google-labs-jules[bot]**: fix: Correct Jinja2 string formatting in queue_manager.html
+- **zzdez**: Merge branch 'feature/sftp-guardrail' of https://github.com/zzdez/MediaManagerSuite into feature/sftp-guardrail
+- **zzdez**: Merge branch 'feature/sftp-guardrail' of https://github.com/zzdez/MediaManagerSuite into feature/sftp-guardrail
+- **zzdez**: Merge branch 'feature/sftp-guardrail' of https://github.com/zzdez/MediaManagerSuite into feature/sftp-guardrail
+- **zzdez**: Merge branch 'feature/sftp-guardrail' of https://github.com/zzdez/MediaManagerSuite into feature/sftp-guardrail
+- **zzdez**: Merge branch 'feature/sftp-guardrail' of https://github.com/zzdez/MediaManagerSuite into feature/sftp-guardrail
+- **zzdez**: Merge branch 'feature/sftp-guardrail' of https://github.com/zzdez/MediaManagerSuite into feature/sftp-guardrail
+- **zzdez**: changements répertoires sftp.json
+- **google-labs-jules[bot]**: feat: Integrate SFTP scanner and notifier into MediaManagerSuite
+- **zzdez**: Stable Corrections de boutons
+- **zzdez**: Bug bouton séries a regarder
+- **zzdez**: Ajout bouton Rejet
+- **google-labs-jules[bot]**: style: Harmonisation de la taille des boutons sur la page d'accueil
+- **zzdez**: Update configuration.html
+- **zzdez**: Create configuration.html
+- **zzdez**: Update remote_seedbox_list.html
+- **google-labs-jules[bot]**: Refactor(UI): Unify item selection and toolbar actions in remote_seedbox_list
+- **google-labs-jules[bot]**: Refactor(UI): Standardize actions in remote_seedbox_list.html
+- **zzdez**: Update index.html
+- **zzdez**: Update index.html
+- **zzdez**: Update remote_seedbox_list.html
+- **zzdez**: Corrections boutons page index
+- **zzdez**: Update index.html
+- **google-labs-jules[bot]**: Fix(JS): Enable Radarr 'Choose' button using TMDB ID
+- **zzdez**: Merge branch 'main' of https://github.com/zzdez/MediaManagerSuite
+- **zzdez**: Merge branch 'main' of https://github.com/zzdez/MediaManagerSuite
+- **google-labs-jules[bot]**: fix: Ensure rtorrent_list.html uses context variables for labels
+- **zzdez**: Update index.html
+- **zzdez**: Ajour bouton de nettoyage dossier
+
+### Seedbox et Gestion des Torrents
+
+- **zzdez**: Final Debug Suppression SFTP
+- **google-labs-jules[bot]**: Corrige la suppression SFTP et met à jour la documentation agents.md
+- **google-labs-jules[bot]**: Corrige la suppression SFTP pour utiliser les slashes (/)
+- **google-labs-jules[bot]**: feat(seedbox): Add manual trigger for SFTP scanner with locking
+- **google-labs-jules[bot]**: fix(seedbox): Use d.load_date for torrent 'Added Date'
+- **google-labs-jules[bot]**: fix(Seedbox): Fix table sorting, API URL, and revert date logic
+- **google-labs-jules[bot]**: fix(Seedbox): Correct API URL and date display
+- **google-labs-jules[bot]**: fix(Seedbox): Correct API URL, date display, and refresh behavior
+- **google-labs-jules[bot]**: This commit addresses two critical bugs in the torrent processing workflow.
+- **google-labs-jules[bot]**: fix(rtorrent): Correctly fetch and use base_path for remaps
+- **google-labs-jules[bot]**: fix(rtorrent): Use base_path for new media remap path
+- **google-labs-jules[bot]**: Fix: Ensure correct path handling in rTorrent mapping and staging
+- **google-labs-jules[bot]**: Fix: Construct full seedbox path for new rTorrent mappings
+- **google-labs-jules[bot]**: Fix: Correct path construction for rTorrent new media mapping
+- **google-labs-jules[bot]**: Fix: Correctly handle rTorrent remapping for new media
+- **google-labs-jules[bot]**: Fix(scanner): Re-apply fix for incomplete map update call
+- **zzdez**: Update staging_processor.py
+- **google-labs-jules[bot]**: Fix(scanner): Provide full context when updating torrent map
+- **google-labs-jules[bot]**: Fix(map): Ensure add_or_update_torrent_in_map returns True on success
+- **zzdez**: Merge pull request #86 from zzdez/feat/sftp-delete-script
+- **google-labs-jules[bot]**: feat: Implement robust SFTP data deletion in rtorrent_client
+- **google-labs-jules[bot]**: fix: Improve SFTP deletion logic and path translation
+- **google-labs-jules[bot]**: feat: Implement recursive SFTP deletion for torrents
+- **google-labs-jules[bot]**: feat: Implement recursive SFTP deletion for torrents
+- **google-labs-jules[bot]**: feat: Add SFTP delete test script
+- **google-labs-jules[bot]**: This change addresses a critical race condition in the `sftp_scanner`.
+- **google-labs-jules[bot]**: Fix: Process 'in_staging' items in staging_processor
+- **google-labs-jules[bot]**: Fix: Process 'in_staging' items in staging_processor
+- **google-labs-jules[bot]**: Fix: Correct logic for re-mapping items from Staging view
+- **google-labs-jules[bot]**: Fix critical bug in staging view mapping logic
+- **google-labs-jules[bot]**: Fix critical bug in staging view mapping logic
+- **google-labs-jules[bot]**: Fix infinite fetch loop for manually processed torrents
+- **zzdez**: Merge pull request #83 from zzdez/feat/fallback-rtorrent-path
+- **google-labs-jules[bot]**: This commit provides the definitive fix for the re-mapping bug where the `base_path` from rTorrent could be incomplete.
+- **google-labs-jules[bot]**: The `_translate_rtorrent_path_to_sftp_path` function would crash if the input `rtorrent_path` was `None`.
+- **google-labs-jules[bot]**: fix(rtorrent): Utilise la traduction de chemin SFTP pour le mappage rTorrent
+- **google-labs-jules[bot]**: feat(rtorrent): Ajout d'une logique de fallback pour le chemin de base manquant
+- **google-labs-jules[bot]**: Fix: Ensure SFTP connection is closed via finally block
+- **google-labs-jules[bot]**: Feat: Improve SFTP connection error diagnostics
+- **google-labs-jules[bot]**: Fix: Add timeouts to SFTP operations in staging processor
+- **google-labs-jules[bot]**: Feat: Add SFTP debug logs to staging processor
+- **google-labs-jules[bot]**: feat: Enhance staging simulator and processor
+- **google-labs-jules[bot]**: feat: Add debug tools module for staging simulation
+- **zzdez**: Merge pull request #81 from zzdez/refactor/consolidate-add-or-update-torrent-in-map
+- **zzdez**: Debug SFTP (encore !)
+- **google-labs-jules[bot]**: fix(rtorrent-view): Display Sonarr/Radarr ID in association column
+- **google-labs-jules[bot]**: refactor(app)!: Consolidateadd_or_update_torrent_in_mapinto a single source of truth
+- **zzdez**: Merge pull request #79 from zzdez/feat/seedbox-table-sorting
+- **google-labs-jules[bot]**: refactor(app): Overhaul and harmonize the torrent status system
+- **google-labs-jules[bot]**: refactor(app): Overhaul and harmonize the torrent status system
+- **google-labs-jules[bot]**: I've completed the refactoring to overhaul and harmonize the torrent status system. Here's a summary of the changes:
+- **zzdez**: Merge pull request #78 from zzdez/feature/rtorrent-batch-actions
+- **google-labs-jules[bot]**: Refactor(rtorrent): Replace individual action buttons with a batch action system
+- **google-labs-jules[bot]**: feat: Ajout d'actions groupées à la vue rTorrent
+- **google-labs-jules[bot]**: feat: Ajout d'actions groupées à la vue rTorrent
+- **google-labs-jules[bot]**: feat(staging): Make repatriation a universal tool
+- **google-labs-jules[bot]**: Fix: Correct TypeError in rtorrent mapping routes
+- **google-labs-jules[bot]**: fix(api): Correct NameError in ignore_torrent_permanently route
+- **google-labs-jules[bot]**: fix(seedbox): Restore missing mapping options
+- **zzdez**: Update staging_processor.py
+- **google-labs-jules[bot]**: fix(staging): Use rTorrent base path as the definitive folder name
+- **google-labs-jules[bot]**: feat(staging): Add 'Retry Repatriation' functionality
+- **google-labs-jules[bot]**: fix(scanner): Use correct function name 'load_torrent_map'
+- **google-labs-jules[bot]**: fix(staging): Add delay before cleanup to prevent race condition
+- **google-labs-jules[bot]**: Fix: Resolve PermissionError in SFTP staging processor
+- **google-labs-jules[bot]**: fix(staging): Normalize local paths to prevent PermissionError
+- **google-labs-jules[bot]**: fix(staging): Implement ultimate SFTP repatriation logic
+- **google-labs-jules[bot]**: fix(staging): Implement ultimate SFTP repatriation logic
+- **google-labs-jules[bot]**: refactor(staging)!: Implement final robust hash-based import pipeline
+- **google-labs-jules[bot]**: fix(staging): Correct SFTP client variable name in repatriation
+- **google-labs-jules[bot]**: fix(scanner): Use correct keyword arguments for mapping_manager call
+- **google-labs-jules[bot]**: feat(staging)!: Implement final robust hash-based import pipeline
+- **zzdez**: Merge pull request #63 from zzdez/refactor/rtorrent-page-reload
+- **google-labs-jules[bot]**: feat(rtorrent): Enable manual refresh button in rTorrent view
+- **google-labs-jules[bot]**: fix(rtorrent): Fix page reload loop and restore active tab
+- **google-labs-jules[bot]**: refactor(rtorrent): Reload page and restore active tab
+- **google-labs-jules[bot]**: refactor(rtorrent): Force page reload after successful actions
+- **zzdez**: Merge pull request #62 from zzdez/feat/contextual-torrent-actions
+- **google-labs-jules[bot]**: feat(rtorrent): Add contextual action buttons to torrent list
+- **zzdez**: Merge pull request #61 from zzdez/feat/rtorrent-mms-status
+- **zzdez**: feat(rtorrent): Enrich torrent list with MMS status.
+- **zzdez**: Merge pull request #60 from zzdez/feature/restauration-seedbox-stable
+- **zzdez**: Merge pull request #59 from zzdez/feature/restauration-seedbox-stable
+- **google-labs-jules[bot]**: feat(seedbox): Enable action buttons for pending items via event delegation
+- **google-labs-jules[bot]**: fix(seedbox): Instrument _make_arr_request for detailed API response logging
+- **google-labs-jules[bot]**: refactor(seedbox): Consolidate maintenance tab event listeners to fix conflicts
+- **google-labs-jules[bot]**: refactor(seedbox): Consolidate maintenance tab event listeners to fix conflicts
+- **google-labs-jules[bot]**: refactor(seedbox): Centralize workdir deletion logic in main template
+- **google-labs-jules[bot]**: fix(seedbox): Re-attach event listener for workdir delete button
+- **google-labs-jules[bot]**: fix(seedbox): Enable workdir deletion button via event delegation
+- **zzdez**: Corrections bugs chemin seedbox
+- **google-labs-jules[bot]**: fix(seedbox): Correct URL for manual SFTP scan button
+- **google-labs-jules[bot]**: feat(seedbox): Populate maintenance tab and clean up integrated templates
+- **google-labs-jules[bot]**: feat(seedbox): Re-integrate rTorrent list view tab
+- **google-labs-jules[bot]**: refactor(seedbox): Use SFTP scan for unified finished view
+- **google-labs-jules[bot]**: feat(seedbox): Implement unified view for finished files
+- **google-labs-jules[bot]**: fix(seedbox): Use correct route names for Sonarr and Radarr tabs
+- **google-labs-jules[bot]**: feat(seedbox): Dynamically load Sonarr and Radarr files into tabs
+- **google-labs-jules[bot]**: feat(seedbox): Dynamically load rTorrent list into dashboard tab
+- **google-labs-jules[bot]**: feat(seedbox): Redesign dashboard with user-centric tab layout
+- **google-labs-jules[bot]**: fix(rtorrent): Sync client and routes with new rTorrent config variable names
+- **google-labs-jules[bot]**: Fix: Correct imports and usage for rTorrent and MappingManager
+- **zzdez**: Merge pull request #8 from zzdez/fix/indentation-sftp_scanner
+- **zzdez**: Update sftp_scanner.py
+- **google-labs-jules[bot]**: Fix: Corriger les problèmes d'indentation dans sftp_scanner.py
+- **google-labs-jules[bot]**: Fix: Correct SyntaxWarning in sftp_scanner.py docstrings
+- **zzdez**: Merge pull request #7 from zzdez/feature/local-staging-add-map
+- **google-labs-jules[bot]**: Implement Add & Map for Local Staging
+- **zzdez**: Merge pull request #6 from zzdez/feature/sftp-retrieve-map-refactor
+- **zzdez**: Merge pull request #4 from zzdez/feature/sftp-guardrail
+- **google-labs-jules[bot]**: fix: Enable Sonarr 'Add Torrent' button when options selected
+- **google-labs-jules[bot]**: fix: Resolve ImportError for sftp_scan_lock using app context
+- **google-labs-jules[bot]**: fix: Correct SyntaxError in sftp_scanner.py try...finally block
+- **google-labs-jules[bot]**: fix: Improve parsing and add SFTP scan concurrency lock
+- **google-labs-jules[bot]**: feat: Add manual SFTP scan trigger
+- **zzdez**: correction chemins sftp
+- **google-labs-jules[bot]**: fix: Add INFO logs for tracing calls in sftp_scanner
+- **google-labs-jules[bot]**: fix: Add detailed logging for SFTP scanner diagnostics
+- **zzdez**: Fusion script sftp (en cours de debug)
+- **google-labs-jules[bot]**: Fix: Correctly determine 'is_in_local_staging' for remote items
+- **zzdez**: Debugge multi fichiers seedbox
+- **zzdez**: Ajout Torrents en attente
+- **zzdez**: Automatisation rapatriement seedbox
+- **zzdez**: Merge pull request #2 from zzdez/feature/staging-association-processing
+- **zzdez**: Merge pull request #1 from zzdez/fix/rtorrent-hash-retrieval
+- **zzdez**: Ajout torrent fonctionnel
+- **zzdez**: Ajout torrent fonctionnel
+- **google-labs-jules[bot]**: Fix: Improve torrent name cleaning for rTorrent hash retrieval
+- **zzdez**: Update rtorrent_client.py
+- **zzdez**: Update rtorrent_client.py
+- **zzdez**: Update rtorrent_client.py
+- **google-labs-jules[bot]**: Refactor: Migration du client rTorrent vers XML-RPC direct
+- **google-labs-jules[bot]**: Fix: Ajouter start_now et fast_resume à add_torrent_file
+- **google-labs-jules[bot]**: Testing: Send minimal parameters for `add_torrent_file` via httprpc.
+- **google-labs-jules[bot]**: To investigate the "add torrent" issue, I've made a temporary change to the `add_magnet` and `add_torrent_file` functions in `rtorrent_client.py`. Specifically, I've removed the `dir_edit` parameter from the information sent to the httprpc API.
+- **google-labs-jules[bot]**: fix: Correct rtorrent_client list parsing and template errors
+- **google-labs-jules[bot]**: fix: Use HTTPDigestAuth for ruTorrent httprpc API
+- **google-labs-jules[bot]**: refactor: Adapt rTorrent interaction to use httprpc API
+- **google-labs-jules[bot]**: feat: Add rTorrent interaction and pre-association
+- **google-labs-jules[bot]**: fix: Résout les erreurs SFTP et de template, restaure la fonctionnalité
+- **zzdez**: Version fonctionelle bug sftp corrigee sans logs
+- **zzdez**: Version fonctionelle bug port sftp resolu
+- **zzdez**: Ajout arborescence dans le staging
+
+### Configuration et Maintenance
+
+- **google-labs-jules[bot]**: fix: Corrige la page de configuration et ajoute la librairie Toastr
+- **google-labs-jules[bot]**: refactor: Séparation des formulaires sur la page de configuration
+- **google-labs-jules[bot]**: This commit fixes a potential bug in path construction where a missing trailing slash in the configuration could lead to incorrect paths.
+- **google-labs-jules[bot]**: refactor(agent): Make Gemini model configurable and update to 1.5 Pro
+- **google-labs-jules[bot]**: Feat: Add .env cleanup script and update template
+- **zzdez**: Update .env.template
+- **zzdez**: Update .env.template
+- **zzdez**: Debug maintenance
+- **google-labs-jules[bot]**: fix: Robustly handle empty MMS_ENV_FILE_PATH
+- **google-labs-jules[bot]**: I've fixed the issue where an empty `MMS_ENV_FILE_PATH` in your `.env` file was causing an error. Now, it correctly falls back to the default `.env` path at the project root.
+- **google-labs-jules[bot]**: Fix(config): Correctly save categories from checkboxes
+- **google-labs-jules[bot]**: Fix(config): Add bottom margin to badge container
+- **google-labs-jules[bot]**: Fix(config): Add bottom margin to badge container
+- **google-labs-jules[bot]**: Fix(config): Add bottom margin to label container
+- **google-labs-jules[bot]**: Fix(config): Add bottom margin to badge container
+- **google-labs-jules[bot]**: Fix(config): Add bottom margin to badge container
+- **google-labs-jules[bot]**: Fix(config): Revert vertical margin and align items
+- **google-labs-jules[bot]**: Fix(config): Add vertical margin to badge container
+- **google-labs-jules[bot]**: Fix(config): Add vertical margin to badge container
+- **google-labs-jules[bot]**: Fix(config): Adjust vertical spacing for badges
+- **google-labs-jules[bot]**: Fix(config): Implement robust Flexbox layout for badges
+- **google-labs-jules[bot]**: Fix(config): Implement robust Flexbox layout for badges
+- **google-labs-jules[bot]**: Fix(config): Improve layout of indexer badges
+- **google-labs-jules[bot]**: Fix: Correct config import path in tvdb_client.py
+- **google-labs-jules[bot]**: fix(config): Prevent parsing errors from inline comments in .env
+- **google-labs-jules[bot]**: feat(config): Add default root folder and profile IDs for Sonarr/Radarr
+- **zzdez**: Corrections template env
+- **zzdez**: Update .env.template
+- **google-labs-jules[bot]**: feat(config): Load restored variables from .env into config.py
+- **zzdez**: Update .env.template
+- **google-labs-jules[bot]**: fix(config): Resolve final errors on configuration page
+- **google-labs-jules[bot]**: refactor(config): Restructure and clarify .env and config variables
+- **zzdez**: Update .env.template
+- **zzdez**: Update .env.template
+- **zzdez**: Update .env.template
+- **google-labs-jules[bot]**: fix: Corrige le lien de déconnexion sur la page de configuration
+- **google-labs-jules[bot]**: feat: Ajout d'un lien vers la page de configuration
+- **zzdez**: ajout config
+- **google-labs-jules[bot]**: refactor: Amélioration visuelle de la page de configuration avec des cartes
+- **zzdez**: Ajout page de configuration
+- **google-labs-jules[bot]**: feat: Ajout d'une page de configuration web pour gérer les paramètres .env
+- **zzdez**: Update .env.template
+
+### Déplacement et Organisation des Fichiers
+
+- **google-labs-jules[bot]**: fix: Améliore la visibilité du statut de scan après un déplacement
+- **google-labs-jules[bot]**: docs(agents): Document definitive filesystem-based move polling
+- **google-labs-jules[bot]**: fix(radarr): Corrige la construction du chemin de destination pour le déplacement
+- **google-labs-jules[bot]**: debug(radarr): Ajoute une journalisation détaillée pour le déplacement de film
+- **google-labs-jules[bot]**: fix(radarr): Corrige le déplacement de film en mettant à jour le chemin du fichier
+- **google-labs-jules[bot]**: fix: Rétablissement de la logique de déplacement Radarr
+- **google-labs-jules[bot]**: fix: Correction du payload pour la commande de déplacement Radarr
+- **google-labs-jules[bot]**: fix: Correction de l'initiation du déplacement pour Radarr
+- **google-labs-jules[bot]**: feat: Implémentation du déplacement en masse et du mapping dynamique
+- **google-labs-jules[bot]**: feat: Ajout du déplacement en masse avec mapping corrigé et type personnalisé
+- **google-labs-jules[bot]**: fix: Correction d'une erreur d'import dans l'API de mapping
+- **google-labs-jules[bot]**: fix: Correction d'un crash dans l'API de mapping
+- **google-labs-jules[bot]**: Debug(Radarr): Ajoute des logs avancés pour le débogage du déplacement de films
+- **google-labs-jules[bot]**: Fix(Radarr): Corrige le déplacement des films en alignant la logique sur Sonarr
+- **google-labs-jules[bot]**: fix: Met à jour le champ 'path' en plus de 'rootFolderPath' pour les déplacements Sonarr
+- **google-labs-jules[bot]**: fix: Sépare la logique de déplacement pour Sonarr et Radarr
+- **google-labs-jules[bot]**: fix: Finalise la logique de déplacement pour Sonarr et Radarr
+- **google-labs-jules[bot]**: fix: Rétablit la méthode de déplacement Sonarr via PUT sur /series/{id}
+- **google-labs-jules[bot]**: fix: Rétablit la méthode de déplacement Sonarr via l'édition de série
+- **google-labs-jules[bot]**: fix: Utilise la commande 'MoveSeries' pour le déplacement Sonarr
+- **google-labs-jules[bot]**: fix: Corrige un deadlock dans le MoveManager
+- **google-labs-jules[bot]**: fix: Refactor path translation to use global mapping
+- **google-labs-jules[bot]**: Fix: Remove invalid 'timeout' argument from transport.connect
+- **google-labs-jules[bot]**: feat: Améliore la logique de pré-mapping avec vérification backend
+- **google-labs-jules[bot]**: refactor: Remove temporary simulation code from arr_client
+- **google-labs-jules[bot]**: fix(map): Add folder_name parameter to mapping function
+- **zzdez**: Merge pull request #66 from zzdez/feature/force-multi-part-mapping
+- **zzdez**: Merge pull request #65 from zzdez/feature/force-multi-part-mapping
+- **zzdez**: Merge pull request #58 from zzdez/fix/radarr-mapping-url
+- **zzdez**: Merge pull request #57 from zzdez/fix/radarr-mapping-url
+- **zzdez**: Merge pull request #45 from zzdez/feat/display-media-filepath
+- **zzdez**: Merge pull request #44 from zzdez/feat/display-media-filepath
+- **google-labs-jules[bot]**: fix: Correctly retrieve file path for TV shows
+- **google-labs-jules[bot]**: feat: Display media file path and add copy button
+- **google-labs-jules[bot]**: fix: Remove arguments from client constructors in enrich_details
+- **zzdez**: Merge pull request #27 from zzdez/feature/intelligent-pre-mapping
+- **zzdez**: Merge pull request #26 from zzdez/feature/intelligent-pre-mapping
+- **google-labs-jules[bot]**: feat: Implémentation du téléchargeur final et du mapping
+- **google-labs-jules[bot]**: Fix: Remove duplicate declaration of currentAction
+- **google-labs-jules[bot]**: feat: Add removeFromClient option to queue item deletion
+- **zzdez**: Ajout multi sélection mapping local
+- **zzdez**: Version stable mapping direct
+- **zzdez**: Test Mapping import Sonarr réussi
+
+### Intégrations (Sonarr, Radarr, Prowlarr, TVDB, TMDB)
+
+- **google-labs-jules[bot]**: Corrige la régression des données manquantes dans le client TVDB
+- **google-labs-jules[bot]**: docs: Update agents.md with session summary and API docs
+- **google-labs-jules[bot]**: debug: Add detailed logging to TVDB client
+- **zzdez**: Update arr_client.py
+- **zzdez**: Update arr_client.py
+- **zzdez**: Update arr_client.py
+- **zzdez**: Update arr_client.py
+- **zzdez**: Update arr_client.py
+- **zzdez**: Update arr_client.py
+- **zzdez**: Update arr_client.py
+- **zzdez**: Update arr_client.py
+- **zzdez**: Update arr_client.py
+- **zzdez**: Update arr_client.py
+- **zzdez**: Update arr_client.py
+- **google-labs-jules[bot]**: Fix race condition with Sonarr/Radarr API calls
+- **google-labs-jules[bot]**: feat: Simulate arr queue items for testing
+- **google-labs-jules[bot]**: I've added a button to trigger Sonarr file renaming. Here's a summary of the changes:
+- **zzdez**: Update arr_client.py
+- **zzdez**: Update arr_client.py
+- **google-labs-jules[bot]**: I've added detailed logging to the `tvdb` component to help diagnose the translation issues.
+- **google-labs-jules[bot]**: feat(sonarr): Add multi-part episode forcing option
+- **zzdez**: Correction bug suppresson *arr
+- **google-labs-jules[bot]**: I've identified an issue with the Sonarr queue deletion parameter. The API parameter for blacklisting a release when deleting from the queue has been changed from `blocklist` to `blacklist`, aligning it with the Radarr API.
+- **zzdez**: Merge pull request #47 from zzdez/feature/sonarr-episode-monitoring
+- **zzdez**: Merge pull request #46 from zzdez/feature/sonarr-episode-monitoring
+- **google-labs-jules[bot]**: I’ve implemented a fix that uses bulk updates for Sonarr episode monitoring.
+- **google-labs-jules[bot]**: feat: Add function to update Sonarr episode monitoring status
+- **google-labs-jules[bot]**: fix: Correct parameter name in sonarr_delete_episode_files_bulk
+- **google-labs-jules[bot]**: fix: Correct parameter name in sonarr_delete_episode_files_bulk
+- **google-labs-jules[bot]**: feat: Add sonarr_delete_episode_files_bulk function
+- **google-labs-jules[bot]**: feat: Add poster URL to API and display in table
+- **google-labs-jules[bot]**: I am going to fix the language handling in tmdb_client.py.
+- **google-labs-jules[bot]**: I'll fix an import error in `tmdb_client.py`.
+- **google-labs-jules[bot]**: Fix movie details fetching from TMDB
+- **zzdez**: Merge pull request #35 from zzdez/feature/dynamic-arr-links
+- **google-labs-jules[bot]**: feat: Make 'Voir dans Sonarr/Radarr' links functional
+- **google-labs-jules[bot]**: fix: Correct logic in _check_arr_status to properly identify media in Sonarr and consistently populate rich details
+- **google-labs-jules[bot]**: Feature: Richer status API response and detailed information card
+- **google-labs-jules[bot]**: Fix app startup and API lookup
+- **zzdez**: Merge pull request #29 from zzdez/fix/tvdb-method-name
+- **google-labs-jules[bot]**: Fix: Correctly handle TVDB API response
+- **zzdez**: Update tvdb_client.py
+- **zzdez**: Update tvdb_client.py
+- **google-labs-jules[bot]**: I've fixed the structure of the TVDB client by replacing the content of `app/utils/tvdb_client.py` to ensure all methods are correctly defined within the class.
+- **google-labs-jules[bot]**: Fix: Make TVDB client more robust
+- **google-labs-jules[bot]**: Fix: Correct TVDB client method name
+- **google-labs-jules[bot]**: fix: Correct TMDb class name in enrich_details
+- **google-labs-jules[bot]**: fix(tvdb): Use get_series_translation to fetch localized data
+- **zzdez**: Correction API TheTVDB (encore)
+- **zzdez**: Corrections API TheTVDB
+- **zzdez**: Corrections API TVDB
+- **google-labs-jules[bot]**: feat(api): Integrate TheTVDB API for data enrichment
+- **google-labs-jules[bot]**: Fix: Correct API URL for add-arr-item-and-get-id
+- **google-labs-jules[bot]**: Add console.log for debugging Radarr new media flow
+- **google-labs-jules[bot]**: fix: Improve Radarr queue items display and fetching
+- **google-labs-jules[bot]**: feat: Add Sonarr/Radarr queue management feature
+- **google-labs-jules[bot]**: fix: Improve guardrail for Sonarr season packs
+- **google-labs-jules[bot]**: fix: Correct IndentationError in arr_client.py
+- **zzdez**: Ajout elements non présents dans soanarr radarr
+- **zzdez**: Merge pull request #3 from zzdez/fix-radarr-choose-button
+- **zzdez**: Ajout import via application sonarr
+- **zzdez**: Import sonarr set nettoyage dossier stable
+
+### Tests et Débogage
+
+- **google-labs-jules[bot]**: fix: Corrige l'erreur 'Working outside of application context'
+- **google-labs-jules[bot]**: fix: Corrige une NameError due à un import manquant de session
+- **google-labs-jules[bot]**: docs(agents): Update with latest session summary
+- **google-labs-jules[bot]**: fix: Corrige le filtrage par dossier racine
+- **google-labs-jules[bot]**: fix: Ensure full poster URL is returned for TV shows
+- **zzdez**: Avec backup main pour debug
+- **google-labs-jules[bot]**: fix: Resolve ImportError for cache_manager
+- **google-labs-jules[bot]**: fix: Corrige le bug de session et ajoute des logs de débogage
+- **google-labs-jules[bot]**: debug: Add console log for available language options
+- **google-labs-jules[bot]**: debug: Add targeted logging for release type detection
+- **google-labs-jules[bot]**: fix: Correct AttributeError in guessit call
+- **google-labs-jules[bot]**: Fix: Re-apply fixes for TypeError and incomplete promise fulfillment
+- **zzdez**: Merge pull request #87 from zzdez/fix/robust-series-lookup-1
+- **zzdez**: Corrections import Auto
+- **zzdez**: Merge pull request #84 from zzdez/fix-infinite-fetch-loop
+- **google-labs-jules[bot]**: Fix: Resolve TypeError in import trigger routes
+- **google-labs-jules[bot]**: Fix: Correct NameError in import trigger routes
+- **google-labs-jules[bot]**: fix: Make _rapatriate_item more robust
+- **zzdez**: Correction Assoc.
+- **zzdez**: Merge pull request #56 from zzdez/fix/workdir-delete-button
+- **zzdez**: Merge pull request #55 from zzdez/feat/add-new-media-workflow-and-fix-status-button
+- **zzdez**: Merge pull request #54 from zzdez/feat/add-new-media-workflow-and-fix-status-button
+- **zzdez**: Fix bug suppr saison série
+- **zzdez**: Correction vu pas vu épisodes
+- **google-labs-jules[bot]**: fix: Add missing helper function
+- **google-labs-jules[bot]**: fix: Correct URL for season monitoring update
+- **google-labs-jules[bot]**: fix: Corrige la correspondance des épisodes dans get_series_details_for_management
+- **google-labs-jules[bot]**: fix: Corrige la logique de correspondance des épisodes dans get_series_details_for_management
+- **google-labs-jules[bot]**: Fix TV show poster URL retrieval
+- **google-labs-jules[bot]**: Fix TV show poster URL construction
+- **google-labs-jules[bot]**: Fix poster display for TV shows
+- **zzdez**: Debug Catégories
+- **google-labs-jules[bot]**: Fix: Isolate and repair category recovery
+- **zzdez**: Corrections statut
+- **google-labs-jules[bot]**: Fix template inheritance crash
+- **google-labs-jules[bot]**: Fix functional regression and improve robustness
+- **google-labs-jules[bot]**: fix: Correct class name in enrich_details function
+- **zzdez**: Merge pull request #13 from zzdez/fix/archive-show-button
+- **zzdez**: Correction bug parse-it
+- **google-labs-jules[bot]**: fix: Utilise les commentaires Jinja2 pour les routes non définies
+- **google-labs-jules[bot]**: fix: Commente les url_for pour des routes batch non définies
+- **google-labs-jules[bot]**: fix: Improve TV show identification in parse_media_name
+- **google-labs-jules[bot]**: fix: Optimize regex in parse_media_name to prevent freeze
+- **google-labs-jules[bot]**: fix: Correct regex PatternError in parse_media_name
+- **google-labs-jules[bot]**: fix: Replace datetime.utcnow with timezone-aware alternative
+- **google-labs-jules[bot]**: fix: Correct APScheduler job definition in __init__
+- **zzdez**: Correction fichiers multiples video
+- **zzdez**: debug routes.py
+- **google-labs-jules[bot]**: fix: Correct httprpc parsing and 'add' response handling
+- **google-labs-jules[bot]**: fix: Add User-Agent header to httprpc requests
+
+### Documentation et Agents
+
+- **zzdez**: Update agents.md
+- **zzdez**: Update AGENTS.md
+- **google-labs-jules[bot]**: docs: Met à jour AGENTS.md avec le résumé de la session
+- **zzdez**: Update agents.md
+- **zzdez**: agents
+- **zzdez**: Update agents.md
+- **zzdez**: Update agents.md
+- **zzdez**: Update AGENTS.md
+- **google-labs-jules[bot]**: Docs: Met à jour AGENTS.MD avec les apprentissages de la session
+- **zzdez**: Update AGENTS.md
+- **google-labs-jules[bot]**: docs: Ajoute le fichier agents.md pour la base de connaissances
+- **zzdez**: Create AGENTS.md
+- **zzdez**: ajustement agents
+- **zzdez**: Update AGENTS.md
+- **zzdez**: Update AGENTS.md
+- **zzdez**: Update AGENTS.md
+- **zzdez**: Update AGENTS.md
+- **zzdez**: Maj agent
+- **zzdez**: Update agents.md
+- **zzdez**: Update agents.md
+- **google-labs-jules[bot]**: Ajoute le fichier de documentation AGENTS.md
+- **zzdez**: Merge pull request #82 from zzdez/feat/agent-module
+
+### Autres
+
+- **google-labs-jules[bot]**: Apply patch /tmp/033ffdf5-e659-4080-bea9-74ad33dbe15c.patch
+- **zzdez**: ajustement
+- **google-labs-jules[bot]**: feat: Implémentation de la fonction "Effacer les résultats"
+- **zzdez**: dd
+- **zzdez**: ajustement logs
+- **zzdez**: Jules-scrach suppr.
+- **zzdez**: Update __init__.py
+- **zzdez**: Merge pull request #89 from zzdez/feat/missing-episodes-badge-1
+- **zzdez**: Merge pull request #88 from zzdez/feat/intelligent-missing-status-1
+- **zzdez**: Merge pull request #85 from zzdez/feature/analysis-movie-show-archive
+- **google-labs-jules[bot]**: Analyze and compare movie and show archiving functions.
+- **google-labs-jules[bot]**: feat: Improve manual import and handle single file items
+- **google-labs-jules[bot]**: Voici les modifications que j'ai apportées à votre projet :
+- **zzdez**: Update routes.py
+- **zzdez**: Merge pull request #77 from zzdez/feat-retry-repatriation
+- **google-labs-jules[bot]**: I've implemented the "Ignore Permanently" functionality. Here's what I did:
+- **zzdez**: Merge pull request #76 from zzdez/feat-client-side-sorting
+- **zzdez**: Merge pull request #75 from zzdez/feature/bulk-delete-media
+- **zzdez**: Ajout notes
+- **zzdez**: Merge pull request #74 from zzdez/feature/bulk-delete-media
+- **zzdez**: Update routes.py
+- **zzdez**: Merge pull request #73 from zzdez/Restore-Et,-OU-conditon-
+- **zzdez**: maj arborescence
+- **zzdez**: Merge pull request #50 from zzdez/feature/watched-unwatched-icons
+- **google-labs-jules[bot]**: feat: Restore toggle watched status functionality
+- **google-labs-jules[bot]**: feat: Restore toggle watched status functionality
+- **google-labs-jules[bot]**: feat: Restore toggle watched status functionality
+- **zzdez**: Merge pull request #49 from zzdez/feature/instant-monitoring
+- **zzdez**: Merge pull request #48 from zzdez/feature/instant-monitoring
+- **google-labs-jules[bot]**: feat: Implement instant monitoring changes
+- **google-labs-jules[bot]**: feat: Implement instant monitoring changes
+- **google-labs-jules[bot]**: feat: Reactivate season monitoring management
+- **google-labs-jules[bot]**: refactor: Nettoie le code de débogage de get_series_details_for_management
+- **google-labs-jules[bot]**: feat: Ajout de logs de débogage détaillés pour get_series_details_for_management
+- **google-labs-jules[bot]**: feat: Ajout de logs de débogage pour get_series_details_for_management
+- **google-labs-jules[bot]**: feat: Activer la suppression des épisodes sélectionnés
+- **zzdez**: Update routes.py
+- **zzdez**: Merge pull request #43 from zzdez/feat/display-poster
+- **zzdez**: Update routes.py
+- **zzdez**: Create placeholder.png
+- **google-labs-jules[bot]**: feat: Display alternative titles for media
+- **zzdez**: Update routes.py
+- **zzdez**: Update routes.py
+- **zzdez**: Merge pull request #41 from zzdez/feature/manage-series-button
+- **zzdez**: Update routes.py
+- **google-labs-jules[bot]**: Reintegrate logic for 'Gérer la série' button
+- **zzdez**: Update __init__.py
+- **zzdez**: Merge pull request #38 from zzdez/feature/show-all-categories
+- **google-labs-jules[bot]**: feat: Afficher toutes les options de catégories
+- **google-labs-jules[bot]**: feat: replace category sorting with whitelist system
+- **zzdez**: Update __init__.py
+- **zzdez**: Update media_status_checker.py
+- **zzdez**: Merge pull request #34 from zzdez/feature/rich-status-response
+- **zzdez**: Merge pull request #33 from zzdez/feature/restore-check-status-button
+- **zzdez**: Update media_status_checker.py
+- **google-labs-jules[bot]**: feat: Restore check status button functionality
+- **zzdez**: Create fichier.txt
+- **zzdez**: Update routes.py
+- **google-labs-jules[bot]**: Here's a summary of the changes I've made:
+- **zzdez**: Merge pull request #15 from zzdez/feature/unified-finished-view
+- **zzdez**: Update routes.py
+- **zzdez**: Update routes.py
+- **google-labs-jules[bot]**: feat: Implémente la vérification de statut intelligent pour les séries
+- **zzdez**: Update media_status_checker.py
+- **zzdez**: Stable
+- **zzdez**: début branche
+- **google-labs-jules[bot]**: feat: Rapatrier & Mapper avec gestion ajout et refactor import
+- **zzdez**: Update __init__.py
+- **google-labs-jules[bot]**: feat: Implémente Rapatrier & Mapper et refactorise la logique d'import
+- **zzdez**: Merge pull request #5 from zzdez/feat/queue-manager
+- **zzdez**: Update .gitignore
+- **zzdez**: Selection et filtrage multi blibliothèque - boguée
+- **zzdez**: Filtrage date visionnage OK
+- **zzdez**: Update .gitignore
+- **zzdez**: ajout archive séries
+- **google-labs-jules[bot]**: feat: Implémentation d'une authentification globale par mot de passe
+- **zzdez**: Update Arborescence.txt
+- **zzdez**: Ajout transfert items problematiques
+- **zzdez**: croutage Jules -reprise studio
+- **google-labs-jules[bot]**: feat: Implémentation du traitement des items staginés via pré-association
+- **zzdez**: Changement "d.ratio=",
+- **zzdez**: Modifs jules
+- **zzdez**: maj jules
+- **google-labs-jules[bot]**: feat: Improve logging of httprpc 'add' responses and list structure
+- **google-labs-jules[bot]**: feat: Enhance httprpc client logging and response handling
+- **zzdez**: bordel
+- **zzdez**: Ajout de l'option de mappage forcé en cas discordance
+- **zzdez**: Preparation améliorations Imports inconus
+- **zzdez**: Create Arborescence.txt
+- **zzdez**: Initial commit
