@@ -1007,20 +1007,20 @@ function renderEnrichedArrSearchResultsForAddTorrent(results, appType, resultsDi
         const overview = item.overview || 'Synopsis non disponible.';
         let posterUrl = item.remotePoster || (item.images && item.images.length > 0 ? item.images.find(img => img.coverType === 'poster')?.remoteUrl : null) || '/static/img/placeholder.png';
 
-        let isAlreadyAdded = false, idForSelection = null, idTypeForDisplay = "", externalIdForDisplay = "", internalIdDisplay = "";
+        let isAlreadyAdded = false, idForSelection = null, idTypeForDisplay = "", externalId = null, internalIdDisplay = "";
         if (appType === 'sonarr') {
             const sonarrId = parseInt(item.id);
             isAlreadyAdded = !isNaN(sonarrId) && sonarrId > 0;
             idForSelection = isAlreadyAdded ? sonarrId : item.tvdbId;
             idTypeForDisplay = "TVDB ID";
-            externalIdForDisplay = item.tvdbId || 'N/A';
+            externalId = item.tvdbId || null;
             if (isAlreadyAdded && sonarrId) internalIdDisplay = `| Sonarr ID: ${sonarrId}`;
         } else { // radarr
             const radarrId = parseInt(item.id);
             isAlreadyAdded = !isNaN(radarrId) && radarrId > 0;
             idForSelection = isAlreadyAdded ? radarrId : item.tmdbId;
             idTypeForDisplay = "TMDB ID";
-            externalIdForDisplay = item.tmdbId || 'N/A';
+            externalId = item.tmdbId || null;
             if (isAlreadyAdded && radarrId) internalIdDisplay = `| Radarr ID: ${radarrId}`;
         }
         const buttonText = isAlreadyAdded ? "Sélectionner" : "Ajouter & Sélectionner";
@@ -1036,11 +1036,11 @@ function renderEnrichedArrSearchResultsForAddTorrent(results, appType, resultsDi
                     </div>
                     <div class="col">
                         <strong>${displayTitle}</strong> (${year || 'N/A'})<br>
-                        <small class="text-muted">Statut: <span class="fw-bold ${isAlreadyAdded ? 'text-success' : 'text-primary'}">${isAlreadyAdded ? (item.status || 'Géré(e)') : 'Non Ajouté(e)'}</span> | ${idTypeForDisplay}: ${externalIdForDisplay} ${internalIdDisplay}</small>
+                        <small class="text-muted">Statut: <span class="fw-bold ${isAlreadyAdded ? 'text-success' : 'text-primary'}">${isAlreadyAdded ? (item.status || 'Géré(e)') : 'Non Ajouté(e)'}</span> | ${idTypeForDisplay}: ${externalId} ${internalIdDisplay}</small>
                         <p class="mb-0 small mt-2" style="max-height: 60px; overflow-y: auto;">${overview}</p>
                     </div>
                     <div class="col-auto d-flex align-items-center" style="height: 120px;">
-                        <button type="button" class="btn ${buttonClass} btn-sm" onclick="selectArrItemForAddTorrent(${idForSelection || 0}, '${escapedTitle}', '${appType}', ${isAlreadyAdded}, ${year})" title="${buttonTitle}" ${idForSelection ? '' : 'disabled title="ID manquant"'}>
+                        <button type="button" class="btn ${buttonClass} btn-sm" onclick="selectArrItemForAddTorrent(${idForSelection || 0}, '${escapedTitle}', '${appType}', ${isAlreadyAdded}, ${year}, ${externalId || 0})" title="${buttonTitle}" ${idForSelection ? '' : 'disabled title="ID manquant"'}>
                             <i class="${buttonIcon}"></i> ${buttonText}
                         </button>
                     </div>
@@ -1051,12 +1051,13 @@ function renderEnrichedArrSearchResultsForAddTorrent(results, appType, resultsDi
     resultsDiv.innerHTML = html;
 }
 
-function selectArrItemForAddTorrent(itemId, itemTitle, appType, isAddedBoolean, itemYear) {
+function selectArrItemForAddTorrent(itemId, itemTitle, appType, isAddedBoolean, itemYear, externalId) {
     document.getElementById('addTorrentTargetId').value = itemId;
     document.getElementById('addTorrentSelectedMediaDisplay').innerHTML = `${appType === 'sonarr' ? 'Série' : 'Film'}: <strong>${itemTitle}</strong> (ID: ${itemId})`;
     const addTorrentModalElement = document.getElementById('addTorrentModal');
     addTorrentModalElement.setAttribute('data-selected-is-new', !isAddedBoolean ? 'true' : 'false');
     addTorrentModalElement.setAttribute('data-selected-media-id', itemId);
+    addTorrentModalElement.setAttribute('data-selected-media-external-id', externalId);
     addTorrentModalElement.setAttribute('data-selected-media-title', itemTitle);
     addTorrentModalElement.setAttribute('data-selected-media-type', appType);
     addTorrentModalElement.setAttribute('data-selected-media-year', itemYear || 0); // Stocke l'année
@@ -1779,7 +1780,7 @@ async function handleTrailerLockForAddTorrent(button) {
     $(document).on('click', '#add-torrent-open-trailer-search', function() {
         const modalElement = document.getElementById('addTorrentModal');
         const mediaType = modalElement.getAttribute('data-selected-media-type'); // sonarr ou radarr
-        const externalId = modalElement.getAttribute('data-selected-media-id');
+        const externalId = modalElement.getAttribute('data-selected-media-external-id');
         const title = modalElement.getAttribute('data-selected-media-title');
         const year = modalElement.getAttribute('data-selected-media-year');
 
