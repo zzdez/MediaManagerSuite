@@ -909,6 +909,7 @@ function initializeAddTorrentModal() {
     modalElement.removeAttribute('data-selected-media-type');
     modalElement.removeAttribute('data-selected-media-year');
     modalElement.removeAttribute('data-locked-trailer-id');
+    document.getElementById('add-torrent-trailer-section').style.display = 'none';
 
     // --- NOUVELLE LOGIQUE POUR LA BANDE-ANNONCE ---
     const trailerPanel = document.getElementById('trailer-search-panel');
