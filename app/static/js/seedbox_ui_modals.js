@@ -1792,6 +1792,9 @@ async function handleTrailerLockForAddTorrent(button) {
         const apiMediaType = mediaType === 'sonarr' ? 'tv' : 'movie';
 
         // *** CORRECTION ***
+        // Ajouter un drapeau pour indiquer que nous allons revenir, AVANT de cacher.
+        modalElement.setAttribute('data-is-returning-from-trailer', 'true');
+
         // Cacher la modale actuelle pour éviter les conflits de focus
         const addTorrentModalInstance = bootstrap.Modal.getInstance(modalElement);
         if (addTorrentModalInstance) {
