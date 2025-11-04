@@ -104,6 +104,28 @@ def get_media_details_route(media_type, external_id):
         current_app.logger.error(f"Erreur inattendue dans get_media_details_route pour {media_type}_{external_id}: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': 'Une erreur interne est survenue.'}), 500
 
+@agent_bp.route('/search_trailer', methods=['POST'])
+def search_trailer_route():
+    """
+    Point de terminaison pour lancer une recherche manuelle de bande-annonce
+    avec une requête personnalisée.
+    """
+    data = request.json
+    media_type = data.get('media_type')
+    external_id = data.get('external_id')
+    query = data.get('query')
+    page_token = data.get('page_token')
+
+    if not all([media_type, external_id, query]):
+        return jsonify({'status': 'error', 'message': 'Les paramètres media_type, external_id et query sont requis.'}), 400
+
+    try:
+        results = trailer_manager.search_trailer_manually(media_type, external_id, query, page_token=page_token)
+        return jsonify(results)
+    except Exception as e:
+        current_app.logger.error(f"Erreur inattendue dans search_trailer_route pour {media_type}_{external_id}: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': 'Une erreur interne est survenue.'}), 500
+
 @agent_bp.route('/clear_trailer_cache', methods=['POST'])
 def clear_trailer_cache_route():
     """

@@ -169,41 +169,61 @@ def get_trailer_info(media_type, external_id, title, year=None, page_token=None)
     _save_database(database)
     logger.info(f"Résultats de recherche mis à jour pour {db_key}.")
 
+    # Si on pagine, on ne retourne que les nouveaux résultats.
+    # Sinon (premier chargement), on retourne tout ce qui est en cache.
+    results_to_return = new_results if page_token else entry['search_results']
+
     return {
         'status': 'success',
-        'results': entry['search_results'],
+        'results': results_to_return,
         'next_page_token': new_next_page_token
     }
 
 def lock_trailer(media_type, external_id, video_data):
     """
-    Verrouille une bande-annonce spécifique pour un média en sauvegardant toutes ses données.
+    Verrouille une bande-annonce pour un média. Si les données vidéo sont
+    incomplètes (ajout manuel), elle les récupère depuis l'API YouTube.
     """
     db_key = _get_key(media_type, external_id)
     database = _load_database()
     _, logger = _get_db_path_and_logger()
 
-    entry = database.get(db_key, {})
+    final_video_data = video_data
 
+    # Détecte un ajout manuel (données potentiellement incomplètes)
+    if video_data and 'videoId' in video_data and video_data.get('title') == "Titre non disponible":
+        logger.info(f"Détection d'un verrouillage manuel pour {db_key}. Récupération des détails de la vidéo.")
+        api_key = current_app.config.get('YOUTUBE_API_KEY')
+        if api_key:
+            from .trailer_finder import get_videos_details
+            video_id = video_data['videoId']
+            details = get_videos_details([video_id], api_key)
+            if video_id in details:
+                snippet = details[video_id]['snippet']
+                final_video_data = {
+                    'videoId': video_id,
+                    'title': snippet.get('title', 'Titre inconnu'),
+                    'thumbnail': snippet.get('thumbnails', {}).get('high', {}).get('url'),
+                    'channel': snippet.get('channelTitle', 'Chaîne inconnue')
+                }
+                logger.info(f"Détails de la vidéo récupérés avec succès pour {video_id}.")
+            else:
+                logger.warning(f"Impossible de récupérer les détails pour la vidéo {video_id}. Utilisation des données partielles.")
+        else:
+            logger.error("Clé API YouTube non configurée. Impossible de récupérer les détails de la vidéo.")
+
+    entry = database.get(db_key, {})
     entry['is_locked'] = True
-    # Au lieu de juste stocker l'ID, on stocke l'objet vidéo complet
-    entry['locked_video_data'] = {
-        'videoId': video_data.get('videoId'),
-        'title': video_data.get('title'),
-        'thumbnail': video_data.get('thumbnail'),
-        'channel': video_data.get('channel')
-    }
+    entry['locked_video_data'] = final_video_data
     entry['last_updated_timestamp'] = datetime.utcnow().isoformat()
 
-    # On purge les anciens résultats de recherche pour ne garder que le verrou
-    if 'search_results' in entry:
-        del entry['search_results']
-    if 'next_page_token' in entry:
-        del entry['next_page_token']
+    # Nettoyage des données de recherche obsolètes
+    entry.pop('search_results', None)
+    entry.pop('next_page_token', None)
 
     database[db_key] = entry
     _save_database(database)
-    logger.info(f"Bande-annonce verrouillée pour {db_key} avec les données : {video_data}")
+    logger.info(f"Bande-annonce verrouillée pour {db_key} avec les données : {final_video_data}")
     return True
 
 def get_trailer_status(media_type, external_id):
@@ -232,6 +252,33 @@ def is_trailer_locked(media_type, external_id):
     Retourne True si le statut est 'LOCKED', False sinon.
     """
     return get_trailer_status(media_type, external_id) == 'LOCKED'
+
+def search_trailer_manually(media_type, external_id, query, page_token=None):
+    """
+    Effectue une recherche de bande-annonce manuelle avec une requête textuelle fournie.
+    Ne met pas en cache les résultats pour ne pas écraser la recherche automatique.
+    """
+    _, logger = _get_db_path_and_logger()
+    api_key = current_app.config.get('YOUTUBE_API_KEY')
+    if not api_key:
+        logger.error("Clé API YouTube non configurée.")
+        return {'status': 'error', 'message': 'Clé API YouTube non configurée.'}
+
+    logger.info(f"Lancement d'une recherche manuelle de bande-annonce avec la requête : '{query}'")
+    youtube_response = find_youtube_trailer(query, api_key, page_token=page_token)
+
+    # On récupère l'état de verrouillage actuel pour que l'UI reste cohérente
+    db_key = _get_key(media_type, external_id)
+    database = _load_database()
+    entry = database.get(db_key, {})
+    locked_video_data = entry.get('locked_video_data') if entry.get('is_locked') else None
+
+    return {
+        'status': 'success',
+        'results': youtube_response.get('results', []),
+        'next_page_token': youtube_response.get('nextPageToken'),
+        'locked_video_data': locked_video_data
+    }
 
 def get_locked_trailer_video_id(media_type, external_id):
     """
