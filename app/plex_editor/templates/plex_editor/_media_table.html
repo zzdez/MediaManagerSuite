@@ -254,8 +254,3 @@
         <p>Aucun média trouvé pour les filtres sélectionnés.</p>
     </div>
 {% endif %}
-
-{% macro date_format(iso_date_string) %}
-    {% set dt = iso_date_string | to_datetime %}
-    {{ dt.strftime('%d/%m/%Y à %H:%M') if dt else 'Date inconnue' }}
-{% endmacro %}

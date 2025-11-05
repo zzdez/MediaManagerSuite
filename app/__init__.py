@@ -68,6 +68,33 @@ def create_app(config_class=Config):
     else:
         app.logger.warning("Clé API Gemini non trouvée. Le service de suggestion de requêtes sera limité aux requêtes de secours.")
 
+    # --- Filtres Jinja2 personnalisés ---
+    def format_iso_datetime(iso_string):
+        """Filtre Jinja pour formater une date/heure ISO en format lisible."""
+        if not iso_string:
+            return 'Date inconnue'
+        try:
+            # fromisoformat gère les strings se terminant par 'Z' ou '+00:00' sur Python 3.11+
+            # Pour la compatibilité, on remplace 'Z' manuellement.
+            dt = datetime.fromisoformat(iso_string.replace('Z', '+00:00'))
+            return dt.strftime('%d/%m/%Y à %H:%M')
+        except (ValueError, TypeError):
+            return 'Date invalide'
+
+    app.jinja_env.filters['date_format'] = format_iso_datetime
+    # Ajout du filtre to_datetime manquant si la version de Jinja est ancienne
+    if 'to_datetime' not in app.jinja_env.filters:
+        from jinja2.filters import pass_environment
+        @pass_environment
+        def to_datetime_filter(environment, value):
+            if value is None:
+                return None
+            try:
+                return datetime.fromisoformat(value.replace('Z', '+00:00'))
+            except:
+                return None
+        app.jinja_env.filters['to_datetime'] = to_datetime_filter
+
 
     # Enregistrement des Blueprints
     from app.plex_editor import plex_editor_bp
