@@ -1735,38 +1735,32 @@ def archive_movie_route():
     data = request.get_json()
     rating_key = data.get('ratingKey')
     options = data.get('options', {})
-    # On récupère le userId envoyé par le frontend, comme pour les séries.
-    user_id = data.get('userId')
+    user_id = data.get('userId') # Gardé pour la validation, même si le client Plex n'en a pas besoin directement ici
 
     if not rating_key or not user_id:
         return jsonify({'status': 'error', 'message': 'Missing ratingKey or userId.'}), 400
 
-    # ÉTAPE 1: Obtenir les deux connexions nécessaires
-    admin_plex_server = get_plex_admin_server()
-    if not admin_plex_server:
-        return jsonify({'status': 'error', 'message': 'Could not get admin Plex connection.'}), 500
-
-    # On utilise la fonction helper qui gère l'admin et l'emprunt d'identité
-    user_plex_server = get_user_specific_plex_server_from_id(user_id)
-
-    if not admin_plex_server or not user_plex_server:
-        return jsonify({'status': 'error', 'message': 'Could not establish Plex connections.'}), 500
-
     try:
-        # ÉTAPE 2: Récupérer l'objet film dans les deux contextes
-        movie_admin_context = admin_plex_server.fetchItem(int(rating_key))
-        if not movie_admin_context or movie_admin_context.type != 'movie':
+        # Utiliser le nouveau client Plex centralisé
+        from app.utils.plex_client import PlexClient
+        plex_client = PlexClient()
+
+        # Récupérer l'objet film via le client (qui utilise le token admin par défaut)
+        movie = plex_client.get_item_by_rating_key(int(rating_key))
+        if not movie or movie.type != 'movie':
             return jsonify({'status': 'error', 'message': 'Movie not found or not a movie item.'}), 404
 
-        movie_user_context = user_plex_server.fetchItem(int(rating_key))
-        if not movie_user_context.isWatched:
-            return jsonify({'status': 'error', 'message': 'Movie is not marked as watched for the current user.'}), 400
+        # Important : la logique d'archivage ne doit se déclencher que si le film est VU.
+        # Le client Plex récupère le statut de visionnage du propriétaire du token (admin),
+        # ce qui est le comportement souhaité pour l'archivage.
+        if not movie.isWatched:
+            return jsonify({'status': 'error', 'message': 'Movie is not marked as watched for the admin user.'}), 400
 
-        # --- Radarr Actions ---
+        # --- Radarr Actions (AMÉLIORÉES) ---
         if options.get('unmonitor') or options.get('addTag'):
             radarr_movie = None
-            guids_to_check = [g.id for g in movie_admin_context.guids]
-            current_app.logger.info(f"Recherche du film '{movie_admin_context.title}' dans Radarr avec les GUIDs : {guids_to_check}")
+            guids_to_check = [g.id for g in movie.guids]
+            current_app.logger.info(f"Recherche du film '{movie.title}' dans Radarr avec les GUIDs : {guids_to_check}")
 
             for guid_str in guids_to_check:
                 radarr_movie = get_radarr_movie_by_guid(guid_str)
@@ -1777,12 +1771,16 @@ def archive_movie_route():
             if not radarr_movie:
                 return jsonify({'status': 'error', 'message': 'Movie not found in Radarr.'}), 404
 
-            if options.get('unmonitor'): radarr_movie['monitored'] = False
+            if options.get('unmonitor'):
+                radarr_movie['monitored'] = False
+
             if options.get('addTag'):
-                tag_label = current_app.config.get('RADARR_TAG_ON_ARCHIVE', 'vu')
-                tag_id = get_radarr_tag_id(tag_label)
-                if tag_id and tag_id not in radarr_movie.get('tags', []):
-                    radarr_movie['tags'].append(tag_id)
+                # Utiliser le client Plex pour obtenir les tags
+                watched_tags = plex_client.get_movie_watched_tags(movie)
+                for tag_label in watched_tags:
+                    tag_id = get_radarr_tag_id(tag_label)
+                    if tag_id and tag_id not in radarr_movie.get('tags', []):
+                        radarr_movie['tags'].append(tag_id)
 
             if not update_radarr_movie(radarr_movie):
                 return jsonify({'status': 'error', 'message': 'Failed to update movie in Radarr.'}), 500
@@ -1839,30 +1837,17 @@ def archive_show_route():
         return jsonify({'status': 'error', 'message': 'Missing ratingKey or userId.'}), 400
 
     try:
-        admin_plex_server = get_plex_admin_server()
-        if not admin_plex_server:
-            return jsonify({'status': 'error', 'message': 'Could not get admin Plex connection.'}), 500
+        # On utilise le nouveau client Plex, qui gère la config en interne
+        from app.utils.plex_client import PlexClient
+        plex_client = PlexClient()
 
-        main_account = admin_plex_server.myPlexAccount()
-        user_plex_server = None
+        # Récupérer l'objet série via le client
+        show = plex_client.get_item_by_rating_key(int(rating_key))
 
-        if str(main_account.id) == user_id:
-            user_plex_server = admin_plex_server
-        else:
-            user_to_impersonate = next((u for u in main_account.users() if str(u.id) == user_id), None)
-            if user_to_impersonate:
-                managed_user_token = user_to_impersonate.get_token(admin_plex_server.machineIdentifier)
-                user_plex_server = PlexServer(current_app.config.get('PLEX_URL'), managed_user_token)
-            else:
-                return jsonify({'status': 'error', 'message': f"User with ID {user_id} not found."}), 404
-
-        if not user_plex_server:
-            return jsonify({'status': 'error', 'message': 'Could not create user-specific Plex server instance.'}), 500
-
-        show = user_plex_server.fetchItem(int(rating_key))
         if not show or show.type != 'show':
             return jsonify({'status': 'error', 'message': 'Show not found or not a show item.'}), 404
 
+        # La vérification se fait sur l'objet récupéré, qui a le contexte de l'utilisateur admin
         if show.viewedLeafCount != show.leafCount:
             error_msg = f"Not all episodes are marked as watched (Viewed: {show.viewedLeafCount}, Total: {show.leafCount})."
             return jsonify({'status': 'error', 'message': error_msg}), 400
@@ -1871,17 +1856,34 @@ def archive_show_route():
         if not sonarr_series:
             return jsonify({'status': 'error', 'message': 'Show not found in Sonarr.'}), 404
 
-        # --- Logique Sonarr (fonctionnait déjà) ---
+        # --- Logique Sonarr (AMÉLIORÉE) ---
         if options.get('unmonitor') or options.get('addTag'):
             full_series_data = get_sonarr_series_by_id(sonarr_series['id'])
             if not full_series_data: return jsonify({'status': 'error', 'message': 'Could not fetch full series details from Sonarr.'}), 500
-            if options.get('unmonitor'): full_series_data['monitored'] = False
+
+            if options.get('unmonitor'):
+                full_series_data['monitored'] = False
+
             if options.get('addTag'):
-                tags_to_add = ['vu', 'vu-complet']
-                for tag_label in tags_to_add:
+                # *** NOUVELLE LOGIQUE DE TAGS ***
+                # Utiliser le PlexClient pour obtenir les tags de visionnage
+                watched_tags = plex_client.get_watched_seasons_tags(show)
+
+                # S'assurer que les tags de base sont présents si nécessaire
+                if not watched_tags:
+                    watched_tags = ['vu'] # Fallback
+
+                # Ajouter 'vu-complet' si tous les épisodes sont vus
+                if show.viewedLeafCount == show.leafCount:
+                    if 'vu-complet' not in watched_tags:
+                        watched_tags.append('vu-complet')
+
+                # Ajouter les tags à Sonarr
+                for tag_label in watched_tags:
                     tag_id = get_sonarr_tag_id(tag_label)
                     if tag_id and tag_id not in full_series_data.get('tags', []):
                         full_series_data['tags'].append(tag_id)
+
             if not update_sonarr_series(full_series_data):
                 return jsonify({'status': 'error', 'message': 'Failed to update series in Sonarr.'}), 500
 
