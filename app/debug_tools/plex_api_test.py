@@ -17,7 +17,8 @@ def run_plex_test(plex_url, plex_token, series_title):
         output_lines.append("Connexion réussie !")
 
         output_lines.append(f"\nRecherche de la série : '{series_title}'...")
-        results = plex.search(series_title, libtype='show')
+        # Correction: Le bon paramètre est 'mediatype', pas 'libtype'
+        results = plex.search(series_title, mediatype='show')
 
         show = None
         if results:
