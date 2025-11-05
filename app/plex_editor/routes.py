@@ -1814,7 +1814,7 @@ def archive_movie_route():
 
         # --- File Deletion Action ---
         if options.get('deleteFiles'):
-            media_filepath = get_media_filepath(movie_admin_context)
+            media_filepath = get_media_filepath(movie)
             if media_filepath and os.path.exists(media_filepath):
                 try:
                     is_simulating = _is_dry_run_mode()
@@ -1823,7 +1823,7 @@ def archive_movie_route():
                     if not is_simulating:
                         os.remove(media_filepath)
 
-                    library_sections = admin_plex_server.library.sections()
+                    library_sections = plex_client.admin_plex.library.sections()
                     temp_roots = {os.path.normpath(loc) for lib in library_sections for loc in lib.locations}
                     temp_guards = {os.path.normpath(os.path.splitdrive(r)[0] + os.sep) if os.path.splitdrive(r)[0] else os.path.normpath(os.sep + r.split(os.sep)[1]) for r in temp_roots if r}
                     cleanup_parent_directory_recursively(
@@ -1832,19 +1832,19 @@ def archive_movie_route():
                         base_paths_guards=list(temp_guards)
                     )
                 except Exception as e_cleanup:
-                    current_app.logger.error(f"ARCHIVE: Erreur durant le nettoyage pour '{movie_admin_context.title}': {e_cleanup}", exc_info=True)
+                    current_app.logger.error(f"ARCHIVE: Erreur durant le nettoyage pour '{movie.title}': {e_cleanup}", exc_info=True)
 
         # --- Déclencher un scan Plex ---
         try:
-            library_name = movie_admin_context.librarySectionTitle
-            movie_library = admin_plex_server.library.section(library_name)
+            library_name = movie.librarySectionTitle
+            movie_library = plex_client.admin_plex.library.section(library_name)
             current_app.logger.info(f"Déclenchement d'un scan de la bibliothèque '{movie_library.title}'.")
             if not _is_dry_run_mode():
                 movie_library.update()
         except Exception as e_scan:
             current_app.logger.error(f"Échec du scan Plex: {e_scan}", exc_info=True)
 
-        return jsonify({'status': 'success', 'message': f"'{movie_admin_context.title}' successfully archived."})
+        return jsonify({'status': 'success', 'message': f"'{movie.title}' successfully archived."})
 
     except NotFound:
         return jsonify({'status': 'error', 'message': f"Movie with ratingKey {rating_key} not found."}), 404
@@ -1965,8 +1965,8 @@ def archive_show_route():
                         current_app.logger.error(f"Failed to delete file {media_filepath}: {e_file}")
 
             if last_deleted_filepath:
-                # On a déjà 'admin_plex_server', on peut l'utiliser pour le nettoyage
-                library_sections = admin_plex_server.library.sections()
+                # Utiliser l'instance admin du plex_client pour le nettoyage
+                library_sections = plex_client.admin_plex.library.sections()
                 temp_roots = {os.path.normpath(loc) for lib in library_sections for loc in lib.locations}
                 temp_guards = {os.path.normpath(os.path.splitdrive(r)[0] + os.sep) if os.path.splitdrive(r)[0] else os.path.normpath(os.sep + r.split(os.sep)[1]) for r in temp_roots if r}
                 cleanup_parent_directory_recursively(last_deleted_filepath, list(temp_roots), list(temp_guards))
