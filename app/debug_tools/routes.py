@@ -66,3 +66,27 @@ def run_staging_simulation():
         flash(f"Erreur de simulation : {e}", "danger")
 
     return redirect(url_for('debug_tools.staging_simulator_page'))
+
+
+@debug_tools_bp.route('/test_plex_watch_status')
+@login_required
+def test_plex_watch_status():
+    """
+    Exécute un test de l'API Plex en utilisant la configuration de l'application.
+    """
+    from app.debug_tools.plex_api_test import run_plex_test
+
+    # Charger la configuration directement depuis l'application
+    plex_url = current_app.config.get('PLEX_URL')
+    plex_token = current_app.config.get('PLEX_TOKEN')
+
+    if not plex_url or not plex_token or 'your_plex_token_here' in plex_token:
+        return "<pre>ERREUR : PLEX_URL et/ou PLEX_TOKEN ne sont pas correctement configurés dans votre fichier .env.</pre>"
+
+    series_title_to_test = 'Acapulco'
+
+    # Exécution du test
+    test_output = run_plex_test(plex_url, plex_token, series_title_to_test)
+
+    # Renvoyer le résultat brut dans une balise <pre> pour un affichage clair
+    return f"<pre>Test pour la série : '{series_title_to_test}'\n\n{test_output}</pre>"
