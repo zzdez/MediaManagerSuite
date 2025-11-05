@@ -54,3 +54,13 @@ Sans ces étapes, l'application risque de ne pas démarrer ou de présenter des 
 
 - **Tâches en arrière-plan et contexte applicatif** : Les tâches longues, comme le scan de la seedbox, sont exécutées dans des threads séparés pour ne pas bloquer l'interface. Pour que ces threads puissent accéder aux services de l'application (comme les logs), ils sont exécutés à l'intérieur du contexte de l'application Flask (`with app.app_context():`).
 - **Gestion des erreurs Prowlarr** : Le client Prowlarr a été rendu plus robuste. Si une recherche externe échoue ou prend trop de temps, la fonction retourne `None`. Le code appelant doit impérativement vérifier ce retour (`isinstance(result, list)`) avant de tenter d'itérer sur les résultats, prévenant ainsi des crashs de type `TypeError`.
+
+#### Modale d'Ajout de Torrent : Interactions Complexes
+
+La modale d'ajout de torrent (`addTorrentModal`) présente des défis uniques en raison de son interaction avec la modale globale de recherche de bande-annonce. Voici les points d'attention cruciaux :
+
+-   **Gestion du focus entre les modales** : Pour éviter que la modale d'arrière-plan (`addTorrentModal`) ne "capture" le focus du clavier et de la souris, il est impératif de la masquer explicitement (`.hide()`) *avant* d'afficher la modale de bande-annonce par-dessus. Le retour à la modale d'origine est géré automatiquement par le système de `sourceModalId`.
+-   **Préservation de l'état** : Le masquage de la modale d'ajout déclenche son événement de réinitialisation, ce qui vide son contenu. Pour préserver l'état (fichier torrent chargé, média sélectionné) lors du retour, un mécanisme de drapeau a été mis en place :
+    1.  Un attribut `data-is-returning-from-trailer` est ajouté à `addTorrentModal` avant de la masquer.
+    2.  L'écouteur d'événement `show.bs.modal` de cette modale vérifie la présence de ce drapeau. S'il existe, la fonction de réinitialisation est ignorée.
+-   **Utilisation des bons identifiants** : Pour la recherche de bande-annonce, il est **critique** d'utiliser l'identifiant externe (TMDB ID pour les films, TVDB ID pour les séries). L'interface doit donc stocker à la fois l'ID interne de Sonarr/Radarr (pour le mapping) et l'ID externe (dans un attribut `data-selected-media-external-id`) pour la recherche de bande-annonce. Le code qui déclenche la recherche doit impérativement utiliser cet ID externe.
