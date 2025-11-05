@@ -537,7 +537,17 @@
         
         const addTorrentModalEl = document.getElementById('addTorrentModal');
         if (addTorrentModalEl && typeof initializeAddTorrentModal === 'function') {
-            addTorrentModalEl.addEventListener('show.bs.modal', initializeAddTorrentModal);
+            addTorrentModalEl.addEventListener('show.bs.modal', function() {
+                // Vérifie la présence du drapeau. Si on revient de la recherche de bande-annonce,
+                // on ne réinitialise PAS la modale.
+                if (addTorrentModalEl.getAttribute('data-is-returning-from-trailer')) {
+                    // On retire simplement le drapeau pour la prochaine ouverture.
+                    addTorrentModalEl.removeAttribute('data-is-returning-from-trailer');
+                } else {
+                    // Comportement normal : on réinitialise tout.
+                    initializeAddTorrentModal();
+                }
+            });
         }
 
         // --- Logique pour le Batch Mapping du Staging ---

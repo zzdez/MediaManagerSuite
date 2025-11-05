@@ -909,6 +909,7 @@ function initializeAddTorrentModal() {
     modalElement.removeAttribute('data-selected-media-type');
     modalElement.removeAttribute('data-selected-media-year');
     modalElement.removeAttribute('data-locked-trailer-id');
+    document.getElementById('add-torrent-trailer-section').style.display = 'none';
 
     // --- NOUVELLE LOGIQUE POUR LA BANDE-ANNONCE ---
     const trailerPanel = document.getElementById('trailer-search-panel');
@@ -1006,20 +1007,20 @@ function renderEnrichedArrSearchResultsForAddTorrent(results, appType, resultsDi
         const overview = item.overview || 'Synopsis non disponible.';
         let posterUrl = item.remotePoster || (item.images && item.images.length > 0 ? item.images.find(img => img.coverType === 'poster')?.remoteUrl : null) || '/static/img/placeholder.png';
 
-        let isAlreadyAdded = false, idForSelection = null, idTypeForDisplay = "", externalIdForDisplay = "", internalIdDisplay = "";
+        let isAlreadyAdded = false, idForSelection = null, idTypeForDisplay = "", externalId = null, internalIdDisplay = "";
         if (appType === 'sonarr') {
             const sonarrId = parseInt(item.id);
             isAlreadyAdded = !isNaN(sonarrId) && sonarrId > 0;
             idForSelection = isAlreadyAdded ? sonarrId : item.tvdbId;
             idTypeForDisplay = "TVDB ID";
-            externalIdForDisplay = item.tvdbId || 'N/A';
+            externalId = item.tvdbId || null;
             if (isAlreadyAdded && sonarrId) internalIdDisplay = `| Sonarr ID: ${sonarrId}`;
         } else { // radarr
             const radarrId = parseInt(item.id);
             isAlreadyAdded = !isNaN(radarrId) && radarrId > 0;
             idForSelection = isAlreadyAdded ? radarrId : item.tmdbId;
             idTypeForDisplay = "TMDB ID";
-            externalIdForDisplay = item.tmdbId || 'N/A';
+            externalId = item.tmdbId || null;
             if (isAlreadyAdded && radarrId) internalIdDisplay = `| Radarr ID: ${radarrId}`;
         }
         const buttonText = isAlreadyAdded ? "Sélectionner" : "Ajouter & Sélectionner";
@@ -1035,11 +1036,11 @@ function renderEnrichedArrSearchResultsForAddTorrent(results, appType, resultsDi
                     </div>
                     <div class="col">
                         <strong>${displayTitle}</strong> (${year || 'N/A'})<br>
-                        <small class="text-muted">Statut: <span class="fw-bold ${isAlreadyAdded ? 'text-success' : 'text-primary'}">${isAlreadyAdded ? (item.status || 'Géré(e)') : 'Non Ajouté(e)'}</span> | ${idTypeForDisplay}: ${externalIdForDisplay} ${internalIdDisplay}</small>
+                        <small class="text-muted">Statut: <span class="fw-bold ${isAlreadyAdded ? 'text-success' : 'text-primary'}">${isAlreadyAdded ? (item.status || 'Géré(e)') : 'Non Ajouté(e)'}</span> | ${idTypeForDisplay}: ${externalId} ${internalIdDisplay}</small>
                         <p class="mb-0 small mt-2" style="max-height: 60px; overflow-y: auto;">${overview}</p>
                     </div>
                     <div class="col-auto d-flex align-items-center" style="height: 120px;">
-                        <button type="button" class="btn ${buttonClass} btn-sm" onclick="selectArrItemForAddTorrent(${idForSelection || 0}, '${escapedTitle}', '${appType}', ${isAlreadyAdded}, ${year})" title="${buttonTitle}" ${idForSelection ? '' : 'disabled title="ID manquant"'}>
+                        <button type="button" class="btn ${buttonClass} btn-sm" onclick="selectArrItemForAddTorrent(${idForSelection || 0}, '${escapedTitle}', '${appType}', ${isAlreadyAdded}, ${year}, ${externalId || 0})" title="${buttonTitle}" ${idForSelection ? '' : 'disabled title="ID manquant"'}>
                             <i class="${buttonIcon}"></i> ${buttonText}
                         </button>
                     </div>
@@ -1050,12 +1051,13 @@ function renderEnrichedArrSearchResultsForAddTorrent(results, appType, resultsDi
     resultsDiv.innerHTML = html;
 }
 
-function selectArrItemForAddTorrent(itemId, itemTitle, appType, isAddedBoolean, itemYear) {
+function selectArrItemForAddTorrent(itemId, itemTitle, appType, isAddedBoolean, itemYear, externalId) {
     document.getElementById('addTorrentTargetId').value = itemId;
     document.getElementById('addTorrentSelectedMediaDisplay').innerHTML = `${appType === 'sonarr' ? 'Série' : 'Film'}: <strong>${itemTitle}</strong> (ID: ${itemId})`;
     const addTorrentModalElement = document.getElementById('addTorrentModal');
     addTorrentModalElement.setAttribute('data-selected-is-new', !isAddedBoolean ? 'true' : 'false');
     addTorrentModalElement.setAttribute('data-selected-media-id', itemId);
+    addTorrentModalElement.setAttribute('data-selected-media-external-id', externalId);
     addTorrentModalElement.setAttribute('data-selected-media-title', itemTitle);
     addTorrentModalElement.setAttribute('data-selected-media-type', appType);
     addTorrentModalElement.setAttribute('data-selected-media-year', itemYear || 0); // Stocke l'année
@@ -1072,12 +1074,9 @@ function selectArrItemForAddTorrent(itemId, itemTitle, appType, isAddedBoolean, 
     }
 
     // Affiche le panneau de recherche de bande-annonce
-    const trailerPanel = document.getElementById('trailer-search-panel');
-    if (trailerPanel) {
-        trailerPanel.style.display = 'block';
-        document.getElementById('trailer-search-query').value = itemTitle; // Pré-remplir la recherche
-        document.getElementById('trailer-results-container').innerHTML = ''; // Nettoyer les anciens résultats
-        document.getElementById('trailer-search-feedback').innerHTML = '';
+    const trailerSection = document.getElementById('add-torrent-trailer-section');
+    if (trailerSection) {
+        trailerSection.style.display = 'block';
     }
 
     const sonarrOptionsDiv = document.getElementById('addTorrentSonarrNewSeriesOptions');
@@ -1781,7 +1780,7 @@ async function handleTrailerLockForAddTorrent(button) {
     $(document).on('click', '#add-torrent-open-trailer-search', function() {
         const modalElement = document.getElementById('addTorrentModal');
         const mediaType = modalElement.getAttribute('data-selected-media-type'); // sonarr ou radarr
-        const externalId = modalElement.getAttribute('data-selected-media-id');
+        const externalId = modalElement.getAttribute('data-selected-media-external-id');
         const title = modalElement.getAttribute('data-selected-media-title');
         const year = modalElement.getAttribute('data-selected-media-year');
 
@@ -1793,12 +1792,23 @@ async function handleTrailerLockForAddTorrent(button) {
         // Convertir 'sonarr'/'radarr' en 'tv'/'movie' pour l'API
         const apiMediaType = mediaType === 'sonarr' ? 'tv' : 'movie';
 
+        // *** CORRECTION ***
+        // Ajouter un drapeau pour indiquer que nous allons revenir, AVANT de cacher.
+        modalElement.setAttribute('data-is-returning-from-trailer', 'true');
+
+        // Cacher la modale actuelle pour éviter les conflits de focus
+        const addTorrentModalInstance = bootstrap.Modal.getInstance(modalElement);
+        if (addTorrentModalInstance) {
+            addTorrentModalInstance.hide();
+        }
+
         // Déclencher l'événement global
         $(document).trigger('openTrailerSearch', {
             mediaType: apiMediaType,
             externalId: externalId,
             title: title,
-            year: year
+            year: year,
+            sourceModalId: 'addTorrentModal' // Juste l'ID, sans le '#'
         });
     });
 

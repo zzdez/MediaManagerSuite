@@ -402,6 +402,7 @@ $(document).ready(function() {
         $('#manual-trailer-preview').hide().empty(); // Cacher et vider la prévisualisation
         $('#trailer-results-container').empty(); // Vider les résultats précédents
         $('#trailer-load-more-container').hide(); // Cacher le bouton "Plus de résultats"
+    $('#load-more-trailers-btn').removeData('page-token'); // Réinitialiser le token de pagination
         $('#trailerSearchModalLabel').text(`Bande-annonce pour : ${title}`);
 
         // Lance la recherche
