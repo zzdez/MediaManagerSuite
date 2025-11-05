@@ -67,3 +67,21 @@ def save_mapping_data():
     except Exception as e:
         current_app.logger.error(f"Erreur lors de la sauvegarde des données de mapping : {e}", exc_info=True)
         return jsonify({"error": "An internal error occurred while saving mapping data"}), 500
+
+@api_bp.route('/history/search')
+@login_required
+def search_archive_history():
+    """
+    Recherche dans la base de données d'archives les médias correspondant à un titre.
+    """
+    title = request.args.get('title', '').strip()
+    if not title:
+        return jsonify({'error': 'A title parameter is required.'}), 400
+
+    try:
+        from app.utils.archive_manager import find_archived_media_by_title
+        results = find_archived_media_by_title(title)
+        return jsonify(results)
+    except Exception as e:
+        current_app.logger.error(f"Erreur lors de la recherche dans l'historique d'archives : {e}", exc_info=True)
+        return jsonify({"error": "An internal error occurred while searching the archive."}), 500

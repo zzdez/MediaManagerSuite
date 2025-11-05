@@ -949,10 +949,16 @@ def get_media_items():
 
         items_to_render.sort(key=lambda x: getattr(x, 'titleSort', x.title).lower())
 
+        archived_results = []
+        if not items_to_render and not external_suggestions and title_filter:
+            from app.utils.archive_manager import find_archived_media_by_title
+            archived_results = find_archived_media_by_title(title_filter)
+
         return render_template(
             'plex_editor/_media_table.html',
             items=items_to_render,
-            external_suggestions=external_suggestions
+            external_suggestions=external_suggestions,
+            archived_results=archived_results
         )
 
     except Exception as e:
@@ -1741,20 +1747,41 @@ def archive_movie_route():
         return jsonify({'status': 'error', 'message': 'Missing ratingKey or userId.'}), 400
 
     try:
-        # Utiliser le nouveau client Plex centralisé
+        # Utiliser le nouveau client Plex centralisé, en passant l'ID de l'utilisateur
         from app.utils.plex_client import PlexClient
-        plex_client = PlexClient()
+        plex_client = PlexClient(user_id=user_id)
 
-        # Récupérer l'objet film via le client (qui utilise le token admin par défaut)
+        # Récupérer l'objet film via le client (qui a maintenant le bon contexte utilisateur)
         movie = plex_client.get_item_by_rating_key(int(rating_key))
         if not movie or movie.type != 'movie':
             return jsonify({'status': 'error', 'message': 'Movie not found or not a movie item.'}), 404
 
-        # Important : la logique d'archivage ne doit se déclencher que si le film est VU.
-        # Le client Plex récupère le statut de visionnage du propriétaire du token (admin),
-        # ce qui est le comportement souhaité pour l'archivage.
+        # La vérification du statut de visionnage se fait maintenant sur l'utilisateur sélectionné.
         if not movie.isWatched:
-            return jsonify({'status': 'error', 'message': 'Movie is not marked as watched for the admin user.'}), 400
+            return jsonify({'status': 'error', 'message': 'Movie is not marked as watched for the selected user.'}), 400
+
+        # --- ÉTAPE DE SAUVEGARDE DANS LA BDD D'ARCHIVES ---
+        try:
+            from app.utils.archive_manager import add_archived_media
+
+            tmdb_id = next((g.id.replace('tmdb://', '') for g in movie.guids if g.id.startswith('tmdb://')), None)
+
+            media_data_to_archive = {
+                'media_type': 'movie',
+                'external_id': tmdb_id,
+                'user_id': user_id,
+                'title': movie.title,
+                'year': movie.year,
+                'summary': movie.summary,
+                'poster_url': plex_client.admin_plex.url(movie.thumb, includeToken=True) if movie.thumb else None,
+                'watched_status': {
+                    'is_watched': movie.isWatched
+                }
+            }
+            add_archived_media(media_data_to_archive)
+            current_app.logger.info(f"'{movie.title}' ajouté à la base de données d'archives.")
+        except Exception as e:
+            current_app.logger.error(f"Erreur lors de la sauvegarde dans la BDD d'archives pour '{movie.title}': {e}", exc_info=True)
 
         # --- Radarr Actions (AMÉLIORÉES) ---
         if options.get('unmonitor') or options.get('addTag'):
@@ -1837,24 +1864,55 @@ def archive_show_route():
         return jsonify({'status': 'error', 'message': 'Missing ratingKey or userId.'}), 400
 
     try:
-        # On utilise le nouveau client Plex, qui gère la config en interne
+        # On instancie le client Plex AVEC le contexte de l'utilisateur
         from app.utils.plex_client import PlexClient
-        plex_client = PlexClient()
+        plex_client = PlexClient(user_id=user_id)
 
-        # Récupérer l'objet série via le client
+        # Récupérer l'objet série via le client (qui a maintenant le bon contexte utilisateur)
         show = plex_client.get_item_by_rating_key(int(rating_key))
 
         if not show or show.type != 'show':
             return jsonify({'status': 'error', 'message': 'Show not found or not a show item.'}), 404
 
-        # La vérification se fait sur l'objet récupéré, qui a le contexte de l'utilisateur admin
+        # La vérification se fait maintenant sur le statut de visionnage de l'utilisateur sélectionné
         if show.viewedLeafCount != show.leafCount:
-            error_msg = f"Not all episodes are marked as watched (Viewed: {show.viewedLeafCount}, Total: {show.leafCount})."
+            error_msg = f"Not all episodes are marked as watched for the selected user (Viewed: {show.viewedLeafCount}, Total: {show.leafCount})."
             return jsonify({'status': 'error', 'message': error_msg}), 400
 
         sonarr_series = next((s for g in show.guids if (s := get_sonarr_series_by_guid(g.id))), None)
         if not sonarr_series:
             return jsonify({'status': 'error', 'message': 'Show not found in Sonarr.'}), 404
+
+        # --- ÉTAPE DE SAUVEGARDE DANS LA BDD D'ARCHIVES ---
+        try:
+            from app.utils.archive_manager import add_archived_media
+
+            # 1. Extraire les IDs externes pertinents
+            tvdb_id = next((g.id.replace('tvdb://', '') for g in show.guids if g.id.startswith('tvdb://')), None)
+
+            # 2. Préparer le résumé du visionnage
+            watched_seasons = [s.seasonNumber for s in show.seasons() if s.isWatched and s.seasonNumber > 0]
+
+            # 3. Construire l'objet de données à archiver
+            media_data_to_archive = {
+                'media_type': 'show',
+                'external_id': tvdb_id, # Utiliser TVDB ID comme clé principale pour les séries
+                'user_id': user_id,
+                'title': show.title,
+                'year': show.year,
+                'summary': show.summary,
+                'poster_url': plex_client.admin_plex.url(show.thumb, includeToken=True) if show.thumb else None,
+                'watched_status': {
+                    'viewed_seasons': watched_seasons,
+                    'is_fully_watched': show.isWatched
+                }
+            }
+            add_archived_media(media_data_to_archive)
+            current_app.logger.info(f"'{show.title}' ajouté à la base de données d'archives.")
+        except Exception as e:
+            # Ne pas bloquer l'archivage, mais logger l'erreur
+            current_app.logger.error(f"Erreur lors de la sauvegarde dans la BDD d'archives pour '{show.title}': {e}", exc_info=True)
+
 
         # --- Logique Sonarr (AMÉLIORÉE) ---
         if options.get('unmonitor') or options.get('addTag'):

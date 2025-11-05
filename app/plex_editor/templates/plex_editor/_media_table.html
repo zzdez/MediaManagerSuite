@@ -203,8 +203,59 @@
             {% include 'plex_editor/_external_suggestions.html' %}
         {% endfor %}
     </div>
+{% elif archived_results %}
+    <div class="mt-4">
+        <h4>Résultats trouvés dans les archives :</h4>
+        <hr>
+        {% for item in archived_results %}
+            <div class="card bg-dark text-white mb-3">
+                <div class="row g-0">
+                    <div class="col-md-2">
+                        <img src="{{ item.poster_url or url_for('static', filename='img/placeholder.png') }}" class="img-fluid rounded-start" alt="Poster for {{ item.title }}">
+                    </div>
+                    <div class="col-md-10">
+                        <div class="card-body">
+                            <h5 class="card-title">
+                                {{ item.title }} <span class="badge bg-secondary">{{ item.year }}</span>
+                                <span class="badge bg-info">Archivé</span>
+                            </h5>
+                            <p class="card-text"><small class="text-muted">ID Externe: {{ item.external_id }}</small></p>
+                            <p class="card-text">{{ item.summary | truncate(300) }}</p>
+
+                            {% if item.archive_history %}
+                                <hr>
+                                <h6><i class="bi bi-clock-history"></i> Historique de visionnage archivé :</h6>
+                                <ul class="list-unstyled">
+                                    {% for history in item.archive_history %}
+                                        <li>
+                                            <small>
+                                                Archivé par l'utilisateur <strong>{{ history.user_id }}</strong> le {{ history.archived_at | date_format }}.<br>
+                                                Statut :
+                                                {% if item.media_type == 'show' and history.watched_status.viewed_seasons %}
+                                                    <strong>Saisons vues : {{ history.watched_status.viewed_seasons | join(', ') }}</strong>
+                                                {% elif item.media_type == 'movie' and history.watched_status.is_watched %}
+                                                    <strong>Vu</strong>
+                                                {% else %}
+                                                    <i>Informations de visionnage non disponibles.</i>
+                                                {% endif %}
+                                            </small>
+                                        </li>
+                                    {% endfor %}
+                                </ul>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
 {% else %}
     <div class="text-center mt-4">
         <p>Aucun média trouvé pour les filtres sélectionnés.</p>
     </div>
 {% endif %}
+
+{% macro date_format(iso_date_string) %}
+    {% set dt = iso_date_string | to_datetime %}
+    {{ dt.strftime('%d/%m/%Y à %H:%M') if dt else 'Date inconnue' }}
+{% endmacro %}
