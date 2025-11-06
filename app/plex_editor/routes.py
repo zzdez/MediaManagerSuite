@@ -735,39 +735,46 @@ def get_media_items():
             remove_pending_lock(matched_id)
             current_app.logger.info(f"FINALIZATION: Success for '{item.title}'. Pending lock for {matched_id} removed.")
 
-        # --- 4. LA DÉCISION : Chercher à l'extérieur ? ---
+        # --- 4. LA DÉCISION : Chercher dans les archives ou à l'extérieur ? ---
         final_plex_results_unfiltered = list(all_plex_items.values())
         external_suggestions = []
+        archived_results = [] # Toujours initialiser la liste
 
         if not final_plex_results_unfiltered and title_filter:
-            current_app.logger.info(f"No results in Plex across all libraries for '{title_filter}'. Searching externally.")
+            # Priorité n°1 : Chercher dans notre base de données d'archives locales
+            from app.utils.archive_manager import find_archived_media_by_title
+            archived_results = find_archived_media_by_title(title_filter)
 
-            tmdb_client = TheMovieDBClient()
-            tvdb_client = CustomTVDBClient()
+            # Priorité n°2 : Si (et seulement si) on n'a rien trouvé dans nos archives, on cherche des suggestions externes
+            if not archived_results:
+                current_app.logger.info(f"No results in Plex or Archive for '{title_filter}'. Searching externally.")
 
-            # Recherche Films (TMDb)
-            tmdb_results = tmdb_client.search_movie(title_filter)
-            for movie in tmdb_results[:3]:
-                tmdb_id = movie.get('id')
-                radarr_entry = get_radarr_movie_by_guid(f'tmdb:{tmdb_id}')
-                movie['is_monitored'] = radarr_entry is not None
-                movie['source_url'] = f"https://www.themoviedb.org/movie/{movie.get('id')}"
-                movie['poster_url'] = f"https://image.tmdb.org/t/p/w500{movie.get('poster_path')}" if movie.get('poster_path') else ''
-                movie['year'] = movie.get('release_date', 'N/A').split('-')[0] if movie.get('release_date') else 'N/A'
-                movie['type'] = 'movie'
-                external_suggestions.append(movie)
+                tmdb_client = TheMovieDBClient()
+                tvdb_client = CustomTVDBClient()
 
-            # Recherche Séries (TVDb)
-            tvdb_results = tvdb_client.search_and_translate_series(title_filter)
-            for series in tvdb_results[:3]:
-                tvdb_id = series.get('tvdb_id')
-                sonarr_entry = get_sonarr_series_by_guid(f'tvdb:{tvdb_id}')
-                series['is_monitored'] = sonarr_entry is not None
-                series['source_url'] = f"https://thetvdb.com/series/{series.get('slug')}"
-                series['poster_url'] = series.get('image_url', '')
-                series['year'] = series.get('first_air_time', 'N/A')
-                series['type'] = 'show'
-                external_suggestions.append(series)
+                # Recherche Films (TMDb)
+                tmdb_results = tmdb_client.search_movie(title_filter)
+                for movie in tmdb_results[:3]:
+                    tmdb_id = movie.get('id')
+                    radarr_entry = get_radarr_movie_by_guid(f'tmdb:{tmdb_id}')
+                    movie['is_monitored'] = radarr_entry is not None
+                    movie['source_url'] = f"https://www.themoviedb.org/movie/{movie.get('id')}"
+                    movie['poster_url'] = f"https://image.tmdb.org/t/p/w500{movie.get('poster_path')}" if movie.get('poster_path') else ''
+                    movie['year'] = movie.get('release_date', 'N/A').split('-')[0] if movie.get('release_date') else 'N/A'
+                    movie['type'] = 'movie'
+                    external_suggestions.append(movie)
+
+                # Recherche Séries (TVDb)
+                tvdb_results = tvdb_client.search_and_translate_series(title_filter)
+                for series in tvdb_results[:3]:
+                    tvdb_id = series.get('tvdb_id')
+                    sonarr_entry = get_sonarr_series_by_guid(f'tvdb:{tvdb_id}')
+                    series['is_monitored'] = sonarr_entry is not None
+                    series['source_url'] = f"https://thetvdb.com/series/{series.get('slug')}"
+                    series['poster_url'] = series.get('image_url', '')
+                    series['year'] = series.get('first_air_time', 'N/A')
+                    series['type'] = 'show'
+                    external_suggestions.append(series)
 
         # --- 5. Post-filtrage et Rendu ---
         items_to_render = []
@@ -948,11 +955,6 @@ def get_media_items():
                 items_to_render.append(item)
 
         items_to_render.sort(key=lambda x: getattr(x, 'titleSort', x.title).lower())
-
-        archived_results = []
-        if not items_to_render and not external_suggestions and title_filter:
-            from app.utils.archive_manager import find_archived_media_by_title
-            archived_results = find_archived_media_by_title(title_filter)
 
         return render_template(
             'plex_editor/_media_table.html',

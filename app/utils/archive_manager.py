@@ -102,6 +102,14 @@ def add_archived_media(media_data):
     database[db_key] = entry
     _save_database(database)
 
+def find_archived_media_by_id(media_type, external_id):
+    """
+    Récupère un média archivé par son type et son ID externe.
+    """
+    db_key = _get_key(media_type, external_id)
+    database = _load_database()
+    return database.get(db_key)
+
 def find_archived_media_by_title(title):
     """
     Recherche des médias archivés dont le titre correspond (insensible à la casse).
