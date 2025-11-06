@@ -3,7 +3,7 @@
 import logging
 from logging.handlers import RotatingFileHandler
 import os
-from datetime import datetime
+import datetime
 import secrets
 from app.auth import login_required
 
@@ -16,7 +16,6 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from app.utils.sftp_scanner import scan_and_map_torrents
 from app.utils.staging_processor import process_pending_staging_items
 from app.utils.trailer_manager import clean_stale_entries
-import datetime
 import atexit
 import threading
 
@@ -82,12 +81,12 @@ def create_app(config_class=Config):
             else:
                 core_string = iso_string.rstrip('Z')
 
-            dt = datetime.strptime(core_string, '%Y-%m-%dT%H:%M:%S')
+            dt = datetime.datetime.strptime(core_string, '%Y-%m-%dT%H:%M:%S')
             return dt.strftime('%d/%m/%Y à %H:%M')
         except (ValueError, TypeError):
              # Tentative de fallback pour un format sans heure
             try:
-                dt = datetime.strptime(iso_string.split('T')[0], '%Y-%m-%d')
+                dt = datetime.datetime.strptime(iso_string.split('T')[0], '%Y-%m-%d')
                 return dt.strftime('%d/%m/%Y')
             except (ValueError, TypeError):
                 return 'Date invalide'
@@ -101,7 +100,8 @@ def create_app(config_class=Config):
             if value is None:
                 return None
             try:
-                return datetime.fromisoformat(value.replace('Z', '+00:00'))
+                # Remplacé par strptime pour la compatibilité
+                return datetime.datetime.strptime(value.split('.')[0], '%Y-%m-%dT%H:%M:%S')
             except:
                 return None
         app.jinja_env.filters['to_datetime'] = to_datetime_filter
