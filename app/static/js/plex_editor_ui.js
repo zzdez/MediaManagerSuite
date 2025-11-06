@@ -384,9 +384,7 @@ $(document).ready(function() {
         if (titleLink) {
             event.preventDefault(); // Empêche le lien de remonter en haut de la page
             const ratingKey = $(titleLink).data('ratingKey');
-        }
-
-        const modalElement = document.getElementById('item-details-modal');
+            const modalElement = document.getElementById('item-details-modal');
             const modalTitle = modalElement.querySelector('#itemDetailsModalLabel');
             const modalBody = modalElement.querySelector('.modal-body');
 
