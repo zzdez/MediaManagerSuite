@@ -169,7 +169,15 @@ class PlexClient:
 
         for entry in history:
             if entry.source() is None:
-                title = entry.grandparentTitle or entry.title
+                # CORRECTION: Vérifier le type avant d'accéder aux attributs
+                if entry.type == 'episode':
+                    title = entry.grandparentTitle
+                elif entry.type == 'movie':
+                    title = entry.title
+                else:
+                    # Gérer d'autres types ou ignorer
+                    title = getattr(entry, 'title', None)
+
                 if title and title_query.lower() in title.lower():
                     media_key = title.lower()
                     ghosts[media_key]['title'] = title
