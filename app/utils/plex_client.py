@@ -48,48 +48,57 @@ class PlexClient:
             current_app.logger.error(f"PlexClient: Impossible de trouver l'item avec le ratingKey {rating_key}: {e}")
             return None
 
-    def get_watched_seasons_tags(self, plex_show_obj):
+    def get_show_watch_history(self, plex_show_obj):
         """
-        Pour une série Plex donnée, retourne une liste de tags pour chaque saison entièrement vue.
+        Pour une série Plex, récupère un historique de visionnage détaillé.
         """
         if not plex_show_obj or plex_show_obj.type != 'show':
-            return []
+            return None
 
-        tags = []
         try:
             plex_show_obj.reload()
-
-            if plex_show_obj.viewedLeafCount > 0:
-                tags.append('vu')
+            history = {
+                "poster_url": plex_show_obj.posterUrl,
+                "is_watched": plex_show_obj.isWatched,
+                "seasons": []
+            }
 
             for season in plex_show_obj.seasons():
+                # Ignorer les saisons "Spéciales" (généralement saison 0)
                 if season.seasonNumber == 0:
                     continue
 
-                if season.isWatched:
-                    tag = f"saison-{str(season.seasonNumber).zfill(2)}-vue"
-                    tags.append(tag)
+                season_data = {
+                    "season_number": season.seasonNumber,
+                    "is_watched": season.isWatched,
+                    "total_episodes": season.leafCount,
+                    "watched_episodes": season.viewedLeafCount
+                }
+                history["seasons"].append(season_data)
+
+            return history
 
         except Exception as e:
-            current_app.logger.error(f"PlexClient: Erreur lors de la récupération des saisons vues pour '{plex_show_obj.title}': {e}")
+            current_app.logger.error(f"PlexClient: Erreur lors de la récupération de l'historique pour la série '{plex_show_obj.title}': {e}")
+            return None
 
-        return tags
-
-    def get_movie_watched_tags(self, plex_movie_obj):
+    def get_movie_watch_history(self, plex_movie_obj):
         """
-        Pour un film Plex donné, retourne un tag si le film a été vu.
+        Pour un film Plex, récupère un historique de visionnage simple.
         """
         if not plex_movie_obj or plex_movie_obj.type != 'movie':
-            return []
+            return None
 
-        tags = []
         try:
-            if plex_movie_obj.isWatched:
-                tags.append('vu')
+            history = {
+                "poster_url": plex_movie_obj.posterUrl,
+                "is_watched": plex_movie_obj.isWatched,
+                "status": "Vu" if plex_movie_obj.isWatched else "Non vu"
+            }
+            return history
         except Exception as e:
-            current_app.logger.error(f"PlexClient: Erreur lors de la vérification du statut de visionnage pour le film '{plex_movie_obj.title}': {e}")
-
-        return tags
+            current_app.logger.error(f"PlexClient: Erreur lors de la récupération de l'historique pour le film '{plex_movie_obj.title}': {e}")
+            return None
 
 # --- Fonctions de compatibilité pour l'ancien code ---
 

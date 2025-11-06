@@ -208,40 +208,65 @@
         <h4>Résultats trouvés dans les archives :</h4>
         <hr>
         {% for item in archived_results %}
-            <div class="card bg-dark text-white mb-3">
+            <div class="card bg-dark text-white mb-3 shadow-lg">
                 <div class="row g-0">
-                    <div class="col-md-2">
-                        <img src="{{ item.poster_url or url_for('static', filename='img/placeholder.png') }}" class="img-fluid rounded-start" alt="Poster for {{ item.title }}">
+                    <div class="col-md-2 d-flex justify-content-center align-items-center">
+                        <img src="{{ item.poster_url or url_for('static', filename='img/placeholder.png') }}" class="img-fluid rounded-start" alt="Poster for {{ item.title }}" style="max-height: 300px; object-fit: cover;">
                     </div>
                     <div class="col-md-10">
                         <div class="card-body">
                             <h5 class="card-title">
-                                {{ item.title }} <span class="badge bg-secondary">{{ item.year }}</span>
-                                <span class="badge bg-info">Archivé</span>
+                                {{ item.title }}
+                                <span class="badge bg-secondary align-middle">{{ item.year }}</span>
+                                <span class="badge bg-dark align-middle"><i class="bi bi-archive-fill me-1"></i>Archivé</span>
                             </h5>
                             <p class="card-text"><small class="text-muted">ID Externe: {{ item.external_id }}</small></p>
-                            <p class="card-text">{{ item.summary | truncate(300) }}</p>
+                            <p class="card-text small">{{ item.summary | truncate(350) }}</p>
 
                             {% if item.archive_history %}
                                 <hr>
-                                <h6><i class="bi bi-clock-history"></i> Historique de visionnage archivé :</h6>
-                                <ul class="list-unstyled">
-                                    {% for history in item.archive_history %}
-                                        <li>
-                                            <small>
-                                                Archivé par l'utilisateur <strong>{{ history.user_id }}</strong> le {{ history.archived_at | date_format }}.<br>
+                                {% for history in item.archive_history %}
+                                    <div class="mb-3">
+                                        <h6><i class="bi bi-clock-history me-2"></i>Historique de <strong>{{ history.user_id }}</strong></h6>
+                                        <p class="mb-1"><small>Média archivé le {{ history.archived_at | date_format }}</small></p>
+
+                                        {% if item.media_type == 'show' and history.watched_status.seasons %}
+                                            <div class="row gx-3">
+                                                {% for season in history.watched_status.seasons %}
+                                                    <div class="col-12 col-sm-6 col-md-4 mb-2">
+                                                        <div class="p-2 rounded" style="background-color: #343a40;">
+                                                            <strong>Saison {{ season.season_number }}</strong>
+                                                            {% if season.is_watched %}
+                                                                <span class="badge bg-success float-end">Vue entièrement</span>
+                                                            {% endif %}
+                                                            <div class="progress mt-1" style="height: 10px;">
+                                                                <div class="progress-bar {% if season.is_watched %}bg-success{% else %}bg-info{% endif %}"
+                                                                     role="progressbar"
+                                                                     style="width: {{ (season.watched_episodes / season.total_episodes) * 100 if season.total_episodes > 0 else 0 }}%;"
+                                                                     aria-valuenow="{{ season.watched_episodes }}"
+                                                                     aria-valuemin="0"
+                                                                     aria-valuemax="{{ season.total_episodes }}">
+                                                                </div>
+                                                            </div>
+                                                            <small class="text-muted d-block mt-1">Vus ({{ season.watched_episodes }} / {{ season.total_episodes }} ép.)</small>
+                                                        </div>
+                                                    </div>
+                                                {% endfor %}
+                                            </div>
+                                        {% elif item.media_type == 'movie' %}
+                                            <p class="mb-0">
                                                 Statut :
-                                                {% if item.media_type == 'show' and history.watched_status.viewed_seasons %}
-                                                    <strong>Saisons vues : {{ history.watched_status.viewed_seasons | join(', ') }}</strong>
-                                                {% elif item.media_type == 'movie' and history.watched_status.is_watched %}
-                                                    <strong>Vu</strong>
+                                                {% if history.watched_status.is_watched %}
+                                                    <span class="badge bg-success">Vu</span>
                                                 {% else %}
-                                                    <i>Informations de visionnage non disponibles.</i>
+                                                    <span class="badge bg-warning text-dark">Non vu</span>
                                                 {% endif %}
-                                            </small>
-                                        </li>
-                                    {% endfor %}
-                                </ul>
+                                            </p>
+                                        {% else %}
+                                            <p class="text-muted"><small>Aucun détail de visionnage disponible.</small></p>
+                                        {% endif %}
+                                    </div>
+                                {% endfor %}
                             {% endif %}
                         </div>
                     </div>

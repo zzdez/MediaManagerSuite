@@ -89,15 +89,27 @@ def add_archived_media(media_data):
         'archive_history': []
     })
 
-    # Ajouter une nouvelle entrée dans l'historique d'archivage
-    history_entry = {
-        'user_id': media_data['user_id'],
+    # Chercher si une entrée existe déjà pour cet utilisateur
+    user_id = media_data['user_id']
+    existing_entry_index = -1
+    for i, history in enumerate(entry['archive_history']):
+        if history.get('user_id') == user_id:
+            existing_entry_index = i
+            break
+
+    # Créer ou mettre à jour l'entrée d'historique
+    new_history_entry = {
+        'user_id': user_id,
         'archived_at': datetime.utcnow().isoformat(),
         'watched_status': media_data.get('watched_status', {})
     }
 
-    # Pour éviter les doublons, on pourrait vérifier si une entrée similaire existe déjà
-    entry['archive_history'].append(history_entry)
+    if existing_entry_index != -1:
+        # Mettre à jour l'entrée existante
+        entry['archive_history'][existing_entry_index] = new_history_entry
+    else:
+        # Ajouter une nouvelle entrée
+        entry['archive_history'].append(new_history_entry)
 
     database[db_key] = entry
     _save_database(database)

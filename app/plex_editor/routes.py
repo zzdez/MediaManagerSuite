@@ -1762,11 +1762,14 @@ def archive_movie_route():
         if not movie.isWatched:
             return jsonify({'status': 'error', 'message': 'Movie is not marked as watched for the selected user.'}), 400
 
-        # --- ÉTAPE DE SAUVEGARDE DANS LA BDD D'ARCHIVES ---
+        # --- ÉTAPE DE SAUVEGARDE DANS LA BDD D'ARCHIVES (AMÉLIORÉE) ---
         try:
             from app.utils.archive_manager import add_archived_media
 
             tmdb_id = next((g.id.replace('tmdb://', '') for g in movie.guids if g.id.startswith('tmdb://')), None)
+
+            # Utiliser la nouvelle méthode pour obtenir l'historique détaillé
+            watch_history = plex_client.get_movie_watch_history(movie)
 
             media_data_to_archive = {
                 'media_type': 'movie',
@@ -1775,10 +1778,8 @@ def archive_movie_route():
                 'title': movie.title,
                 'year': movie.year,
                 'summary': movie.summary,
-                'poster_url': plex_client.admin_plex.url(movie.thumb, includeToken=True) if movie.thumb else None,
-                'watched_status': {
-                    'is_watched': movie.isWatched
-                }
+                'poster_url': watch_history.get('poster_url') if watch_history else None,
+                'watched_status': watch_history or {'is_watched': movie.isWatched, 'status': 'Unknown'}
             }
             add_archived_media(media_data_to_archive)
             current_app.logger.info(f"'{movie.title}' ajouté à la base de données d'archives.")
@@ -1885,34 +1886,28 @@ def archive_show_route():
         if not sonarr_series:
             return jsonify({'status': 'error', 'message': 'Show not found in Sonarr.'}), 404
 
-        # --- ÉTAPE DE SAUVEGARDE DANS LA BDD D'ARCHIVES ---
+        # --- ÉTAPE DE SAUVEGARDE DANS LA BDD D'ARCHIVES (AMÉLIORÉE) ---
         try:
             from app.utils.archive_manager import add_archived_media
 
-            # 1. Extraire les IDs externes pertinents
             tvdb_id = next((g.id.replace('tvdb://', '') for g in show.guids if g.id.startswith('tvdb://')), None)
 
-            # 2. Préparer le résumé du visionnage
-            watched_seasons = [s.seasonNumber for s in show.seasons() if s.isWatched and s.seasonNumber > 0]
+            # Utiliser la nouvelle méthode pour obtenir l'historique détaillé
+            watch_history = plex_client.get_show_watch_history(show)
 
-            # 3. Construire l'objet de données à archiver
             media_data_to_archive = {
                 'media_type': 'show',
-                'external_id': tvdb_id, # Utiliser TVDB ID comme clé principale pour les séries
+                'external_id': tvdb_id,
                 'user_id': user_id,
                 'title': show.title,
                 'year': show.year,
                 'summary': show.summary,
-                'poster_url': plex_client.admin_plex.url(show.thumb, includeToken=True) if show.thumb else None,
-                'watched_status': {
-                    'viewed_seasons': watched_seasons,
-                    'is_fully_watched': show.isWatched
-                }
+                'poster_url': watch_history.get('poster_url') if watch_history else None,
+                'watched_status': watch_history or {'is_fully_watched': show.isWatched, 'seasons': []}
             }
             add_archived_media(media_data_to_archive)
             current_app.logger.info(f"'{show.title}' ajouté à la base de données d'archives.")
         except Exception as e:
-            # Ne pas bloquer l'archivage, mais logger l'erreur
             current_app.logger.error(f"Erreur lors de la sauvegarde dans la BDD d'archives pour '{show.title}': {e}", exc_info=True)
 
 
