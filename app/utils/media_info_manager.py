@@ -149,10 +149,12 @@ class MediaInfoManager:
     def _get_plex_status(self, media_type, tmdb_id, tvdb_id):
         if not self.plex_server: return {"present": False}
 
-        guid = f"tvdb://{tvdb_id}" if media_type == 'tv' and tvdb_id else f"tmdb://{tmdb_id}"
-        libtype = 'show' if media_type == 'tv' else 'movie'
+        # Correction : on doit passer le media_type ('movie' ou 'tv') et l'ID externe
+        external_id = tvdb_id if media_type == 'tv' else tmdb_id
+        if not external_id:
+            return {"present": False}
 
-        plex_media = find_plex_media_by_external_id(self.plex_server, guid, libtype)
+        plex_media = find_plex_media_by_external_id(media_type, external_id)
         if not plex_media: return {"present": False}
 
         physical_presence = any(hasattr(part, 'file') and part.file for media in plex_media.media for part in media.parts)

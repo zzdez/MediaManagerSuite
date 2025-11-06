@@ -58,7 +58,7 @@ class PlexClient:
         try:
             plex_show_obj.reload()
             history = {
-                "poster_url": plex_show_obj.posterUrl,
+                "poster_url": self.admin_plex.url(plex_show_obj.thumb, includeToken=True) if plex_show_obj.thumb else None,
                 "is_watched": plex_show_obj.isWatched,
                 "seasons": []
             }
@@ -91,7 +91,7 @@ class PlexClient:
 
         try:
             history = {
-                "poster_url": plex_movie_obj.posterUrl,
+                "poster_url": self.admin_plex.url(plex_movie_obj.thumb, includeToken=True) if plex_movie_obj.thumb else None,
                 "is_watched": plex_movie_obj.isWatched,
                 "status": "Vu" if plex_movie_obj.isWatched else "Non vu"
             }

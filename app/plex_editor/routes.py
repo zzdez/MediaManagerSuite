@@ -1805,8 +1805,8 @@ def archive_movie_route():
                 radarr_movie['monitored'] = False
 
             if options.get('addTag'):
-                # Utiliser le client Plex pour obtenir les tags
-                watched_tags = plex_client.get_movie_watched_tags(movie)
+                # Pour les films, le tag est simple.
+                watched_tags = ['vu']
                 for tag_label in watched_tags:
                     tag_id = get_radarr_tag_id(tag_label)
                     if tag_id and tag_id not in radarr_movie.get('tags', []):
@@ -1920,21 +1920,19 @@ def archive_show_route():
                 full_series_data['monitored'] = False
 
             if options.get('addTag'):
-                # *** NOUVELLE LOGIQUE DE TAGS ***
-                # Utiliser le PlexClient pour obtenir les tags de visionnage
-                watched_tags = plex_client.get_watched_seasons_tags(show)
+                # *** LOGIQUE DE TAGS CORRIGÉE ***
+                # On dérive les tags depuis l'objet watch_history déjà récupéré
+                watched_tags = ['vu'] # Tag de base
 
-                # S'assurer que les tags de base sont présents si nécessaire
-                if not watched_tags:
-                    watched_tags = ['vu'] # Fallback
+                if watch_history.get('is_fully_watched'):
+                    watched_tags.append('vu-complet')
 
-                # Ajouter 'vu-complet' si tous les épisodes sont vus
-                if show.viewedLeafCount == show.leafCount:
-                    if 'vu-complet' not in watched_tags:
-                        watched_tags.append('vu-complet')
+                for season in watch_history.get('seasons', []):
+                    if season.get('is_watched'):
+                        watched_tags.append(f"Saison {season.get('season_number')}")
 
                 # Ajouter les tags à Sonarr
-                for tag_label in watched_tags:
+                for tag_label in set(watched_tags): # Utiliser set() pour dédoublonner
                     tag_id = get_sonarr_tag_id(tag_label)
                     if tag_id and tag_id not in full_series_data.get('tags', []):
                         full_series_data['tags'].append(tag_id)

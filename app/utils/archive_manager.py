@@ -78,34 +78,36 @@ def add_archived_media(media_data):
     db_key = _get_key(media_data['media_type'], media_data['external_id'])
     database = _load_database()
 
-    # Créer ou mettre à jour l'entrée
+    # Obtenir ou créer l'entrée de base
     entry = database.get(db_key, {
         'media_type': media_data['media_type'],
         'external_id': media_data['external_id'],
-        'title': media_data.get('title'),
-        'year': media_data.get('year'),
-        'poster_url': media_data.get('poster_url'),
-        'summary': media_data.get('summary'),
         'archive_history': []
     })
 
-    # Chercher si une entrée existe déjà pour cet utilisateur
-    user_id = media_data['user_id']
+    # Mettre à jour les métadonnées principales à chaque fois
+    entry['title'] = media_data.get('title')
+    entry['year'] = media_data.get('year')
+    entry['poster_url'] = media_data.get('poster_url')
+    entry['summary'] = media_data.get('summary')
+
+    # Chercher si une entrée existe déjà pour cet utilisateur (comparaison robuste)
+    user_id_to_check = str(media_data['user_id'])
     existing_entry_index = -1
     for i, history in enumerate(entry['archive_history']):
-        if history.get('user_id') == user_id:
+        if str(history.get('user_id')) == user_id_to_check:
             existing_entry_index = i
             break
 
     # Créer ou mettre à jour l'entrée d'historique
     new_history_entry = {
-        'user_id': user_id,
+        'user_id': user_id_to_check, # Sauvegarder en string pour la cohérence
         'archived_at': datetime.utcnow().isoformat(),
         'watched_status': media_data.get('watched_status', {})
     }
 
     if existing_entry_index != -1:
-        # Mettre à jour l'entrée existante
+        # Remplacer l'entrée existante
         entry['archive_history'][existing_entry_index] = new_history_entry
     else:
         # Ajouter une nouvelle entrée
