@@ -100,6 +100,27 @@ class PlexClient:
             current_app.logger.error(f"PlexClient: Erreur lors de la récupération de l'historique pour le film '{plex_movie_obj.title}': {e}")
             return None
 
+    def get_user_names(self):
+        """
+        Récupère un dictionnaire mappant les ID des utilisateurs Plex à leurs noms.
+        """
+        user_map = {}
+        try:
+            main_account = self.admin_plex.myPlexAccount()
+            # Ajouter l'utilisateur principal
+            main_title = main_account.title or main_account.username or f"Principal (ID: {main_account.id})"
+            user_map[str(main_account.id)] = main_title
+
+            # Ajouter les utilisateurs gérés
+            for user in main_account.users():
+                managed_title = user.title or f"Géré (ID: {user.id})"
+                user_map[str(user.id)] = managed_title
+
+            return user_map
+        except Exception as e:
+            current_app.logger.error(f"PlexClient: Impossible de récupérer la liste des utilisateurs: {e}")
+            return {}
+
 # --- Fonctions de compatibilité pour l'ancien code ---
 
 def get_plex_admin_server():

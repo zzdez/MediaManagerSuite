@@ -536,6 +536,86 @@ def get_user_specific_plex_server_from_id(user_id):
     current_app.logger.warning(f"Helper get_user_specific_plex_server_from_id: Utilisateur avec ID '{user_id}' non trouvé.")
     return None
 
+def _process_archived_results(archived_results_raw):
+    """
+    Traite les résultats bruts de la base d'archives pour les nettoyer,
+    fusionner les doublons, et les enrichir avec des métadonnées externes.
+    """
+    if not archived_results_raw:
+        return []
+
+    # Clients pour l'enrichissement
+    from app.utils.plex_client import PlexClient
+    from app.utils.tmdb_client import TheMovieDBClient
+    from app.utils.tvdb_client import CustomTVDBClient
+
+    plex_client = PlexClient()
+    user_names_map = plex_client.get_user_names()
+    tmdb_client = TheMovieDBClient()
+    tvdb_client = CustomTVDBClient()
+
+    # Étape 1: Fusionner les entrées par ID externe
+    merged_media = {}
+    for item in archived_results_raw:
+        key = item.get('external_id')
+        if not key: continue
+
+        if key not in merged_media:
+            merged_media[key] = item.copy()
+            merged_media[key]['archive_history'] = {
+                h['user_id']: h for h in item.get('archive_history', []) if 'user_id' in h
+            }
+        else:
+            # Fusionner les historiques, en gardant le plus récent
+            for history in item.get('archive_history', []):
+                user_id = history.get('user_id')
+                if not user_id: continue
+
+                existing_history = merged_media[key]['archive_history'].get(user_id)
+                if not existing_history or history.get('archived_at', '') > existing_history.get('archived_at', ''):
+                    merged_media[key]['archive_history'][user_id] = history
+
+    # Étape 2: Enrichir chaque entrée fusionnée
+    final_results = []
+    for key, item in merged_media.items():
+        # Enrichissement du poster
+        if item.get('media_type') == 'movie':
+            details = tmdb_client.get_movie_details(item['external_id'])
+            item['poster_url'] = details.get('poster') if details else None
+        elif item.get('media_type') == 'show':
+            details = tvdb_client.get_series_details_by_id(item['external_id'])
+            item['poster_url'] = details.get('image') if details else None
+
+        # Traitement de l'historique
+        processed_history = []
+        for user_id, history_entry in item['archive_history'].items():
+            history_entry['user_name'] = user_names_map.get(user_id, f"ID: {user_id}")
+
+            # Création de la chaîne de caractères formatée pour l'affichage
+            display_str = f"Archivé par {history_entry['user_name']} le {history_entry['archived_at']}"
+
+            watched_status = history_entry.get('watched_status', {})
+            if item.get('media_type') == 'movie':
+                status = "Vu" if watched_status.get('is_watched') else "Non vu"
+                display_str += f" (Statut: {status})"
+            elif item.get('media_type') == 'show':
+                seasons_str = []
+                for season in watched_status.get('seasons', []):
+                    if season.get('is_watched'):
+                        seasons_str.append(f"Saison {season['season_number']}: Vus ({season['watched_episodes']}/{season['total_episodes']} ép.)")
+                if seasons_str:
+                    display_str += " - " + " | ".join(seasons_str)
+
+            history_entry['display_string'] = display_str
+            processed_history.append(history_entry)
+
+        # Triage de l'historique par date pour un affichage cohérent
+        item['archive_history'] = sorted(processed_history, key=lambda x: x.get('archived_at', ''), reverse=True)
+        final_results.append(item)
+
+    return final_results
+
+
 @plex_editor_bp.route('/api/media_items', methods=['POST'])
 @login_required
 def get_media_items():
@@ -743,7 +823,8 @@ def get_media_items():
         if not final_plex_results_unfiltered and title_filter:
             # Priorité n°1 : Chercher dans notre base de données d'archives locales
             from app.utils.archive_manager import find_archived_media_by_title
-            archived_results = find_archived_media_by_title(title_filter)
+            archived_results_raw = find_archived_media_by_title(title_filter)
+            archived_results = _process_archived_results(archived_results_raw)
 
             # Priorité n°2 : Si (et seulement si) on n'a rien trouvé dans nos archives, on cherche des suggestions externes
             if not archived_results:
