@@ -74,12 +74,23 @@ def create_app(config_class=Config):
         if not iso_string:
             return 'Date inconnue'
         try:
-            # fromisoformat gère les strings se terminant par 'Z' ou '+00:00' sur Python 3.11+
-            # Pour la compatibilité, on remplace 'Z' manuellement.
-            dt = datetime.fromisoformat(iso_string.replace('Z', '+00:00'))
+            # Utilisation de strptime pour une compatibilité étendue avec Python < 3.7
+            # On retire le 'Z' et les microsecondes qui peuvent causer des soucis.
+            if '.' in iso_string:
+                # Gérer les microsecondes
+                core_string = iso_string.split('.')[0]
+            else:
+                core_string = iso_string.rstrip('Z')
+
+            dt = datetime.strptime(core_string, '%Y-%m-%dT%H:%M:%S')
             return dt.strftime('%d/%m/%Y à %H:%M')
         except (ValueError, TypeError):
-            return 'Date invalide'
+             # Tentative de fallback pour un format sans heure
+            try:
+                dt = datetime.strptime(iso_string.split('T')[0], '%Y-%m-%d')
+                return dt.strftime('%d/%m/%Y')
+            except (ValueError, TypeError):
+                return 'Date invalide'
 
     app.jinja_env.filters['date_format'] = format_iso_datetime
     # Ajout du filtre to_datetime manquant si la version de Jinja est ancienne
