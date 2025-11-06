@@ -262,6 +262,52 @@ $(document).ready(function() {
         .then(html => {
             loader.hide();
             itemsContainer.html(html);
+
+            // Masquer les conteneurs de recherche fantôme par défaut
+            $('#ghost-search-trigger-container').hide();
+            $('#ghost-search-results-container').html('');
+            $('#ghost-search-loader').hide();
+
+            // Si la réponse est vide (pas de table, pas de card) et qu'on cherchait un titre
+            if (!html.includes('<tr') && !html.includes('<div class="card') && titleFilter) {
+                $('#ghost-search-trigger-container').show();
+            }
+        });
+    });
+
+    // =================================================================
+    // ### PARTIE 6 : GESTION DE LA RECHERCHE "FANTÔME" ###
+    // =================================================================
+    $(document).on('click', '#trigger-ghost-search-btn', function() {
+        const btn = $(this);
+        const titleFilter = $('#title-filter-input').val().trim();
+        const ghostLoader = $('#ghost-search-loader');
+        const ghostResultsContainer = $('#ghost-search-results-container');
+
+        if (!titleFilter) {
+            alert("Veuillez entrer un titre pour la recherche fantôme.");
+            return;
+        }
+
+        btn.closest('#ghost-search-trigger-container').hide();
+        ghostLoader.show();
+        ghostResultsContainer.html('');
+
+        fetch('/plex/api/search_ghost_media', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ titleFilter: titleFilter })
+        })
+        .then(response => response.text()) // On attend du HTML
+        .then(html => {
+            ghostResultsContainer.html(html);
+        })
+        .catch(error => {
+            console.error('Erreur recherche fantôme:', error);
+            ghostResultsContainer.html('<div class="alert alert-danger">Erreur de communication lors de la recherche fantôme.</div>');
+        })
+        .finally(() => {
+            ghostLoader.hide();
         });
     });
 
@@ -340,41 +386,7 @@ $(document).ready(function() {
             const ratingKey = $(titleLink).data('ratingKey');
         }
 
-        // --- NOUVEAU : GESTION DU BOUTON "AFFICHER L'HISTORIQUE" ---
-        const loadHistoryBtn = event.target.closest('.load-archived-history-btn');
-        if (loadHistoryBtn) {
-            const button = $(loadHistoryBtn);
-            const title = button.data('title');
-            const mediaType = button.data('media-type');
-            const detailsContainer = button.next('.archived-history-details');
-
-            // Afficher un spinner et désactiver le bouton
-            button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Chargement...');
-
-            fetch(`/plex/api/archived_history/${mediaType}/${encodeURIComponent(title)}`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.error) {
-                        detailsContainer.html(`<p class="text-danger small">${data.error}</p>`);
-                    } else if (data.history && data.history.length > 0) {
-                        let historyHtml = '<ul class="list-unstyled mb-0">';
-                        data.history.forEach(line => {
-                            historyHtml += `<li class="small mb-1"><i class="bi bi-clock-history me-2"></i>${line}</li>`;
-                        });
-                        historyHtml += '</ul>';
-                        detailsContainer.html(historyHtml);
-                    } else {
-                        detailsContainer.html(`<p class="text-muted small">${data.message || 'Aucun détail trouvé.'}</p>`);
-                    }
-                    detailsContainer.slideDown();
-                    button.slideUp(); // Masquer le bouton après le chargement
-                })
-                .catch(error => {
-                    console.error('Erreur chargement historique:', error);
-                    detailsContainer.html('<p class="text-danger small">Erreur de communication.</p>').slideDown();
-                    button.prop('disabled', false).html('<i class="bi bi-clock-history"></i> Réessayer');
-                });
-            const modalElement = document.getElementById('item-details-modal');
+        const modalElement = document.getElementById('item-details-modal');
             const modalTitle = modalElement.querySelector('#itemDetailsModalLabel');
             const modalBody = modalElement.querySelector('.modal-body');
 

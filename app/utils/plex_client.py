@@ -152,38 +152,77 @@ class PlexClient:
 
     def find_ghost_media_in_history(self, title_query):
         """
-        Analyse l'historique Plex pour trouver des médias "fantômes" (supprimés)
-        qui correspondent à une recherche par titre.
-        VERSION OPTIMISÉE : Ne récupère que les informations de base pour un affichage rapide.
+        Analyse l'historique Plex pour trouver des médias "fantômes" (supprimés),
+        tente d'extraire leur ID externe, et agrège l'historique de visionnage détaillé.
         """
-        # Utilise un dictionnaire pour dédupliquer par titre
         ghosts = {}
         history = self.admin_plex.history(maxresults=10000)
+        user_names_map = self.get_user_names()
 
         for entry in history:
-            if entry.source() is None:
-                title = None
-                media_type = 'unknown'
+            # Un média "fantôme" est une entrée d'historique sans source de fichier
+            if entry.source() is not None:
+                continue
 
-                if entry.type == 'episode':
-                    title = entry.grandparentTitle
-                    media_type = 'show'
-                elif entry.type == 'movie':
-                    title = entry.title
-                    media_type = 'movie'
+            title = None
+            media_type = 'unknown'
+            year = None
 
-                if title and title_query.lower() in title.lower():
-                    media_key = title.lower()
-                    if media_key not in ghosts:
-                        ghosts[media_key] = {
-                            'title': title,
-                            'media_type': media_type,
-                            'external_id': None,
-                            'year': None,
-                            'summary': "Ce média a été reconstitué à partir de l'historique de visionnage de Plex.",
-                            'poster_url': None,
-                            'archive_history': [] # Laissé vide pour être rempli à la demande
-                        }
+            if entry.type == 'episode':
+                title = entry.grandparentTitle
+                media_type = 'show'
+                year = entry.grandparentYear
+            elif entry.type == 'movie':
+                title = entry.title
+                media_type = 'movie'
+                year = entry.year
+
+            if not title or title_query.lower() not in title.lower():
+                continue
+
+            media_key = title.lower()
+            if media_key not in ghosts:
+                # Tentative d'extraction de l'ID externe à partir du GUID de l'historique
+                external_id = None
+                if hasattr(entry, 'guid') and entry.guid:
+                    if media_type == 'show' and 'tvdb' in entry.guid:
+                        external_id = entry.guid.split('//')[1]
+                    elif media_type == 'movie' and 'tmdb' in entry.guid:
+                        external_id = entry.guid.split('//')[1]
+
+                ghosts[media_key] = {
+                    'title': title,
+                    'media_type': media_type,
+                    'external_id': external_id,
+                    'year': year,
+                    'summary': "Ce média a été reconstitué à partir de l'historique de visionnage de Plex.",
+                    'poster_url': None, # Sera rempli plus tard
+                    'archive_history': [] # Rempli ci-dessous
+                }
+
+            # Agrégation de l'historique de visionnage
+            user_id = str(entry.accountID)
+            user_name = user_names_map.get(user_id, f"ID: {user_id}")
+            watched_at = entry.viewedAt.strftime('%d/%m/%Y') if entry.viewedAt else 'Date inconnue'
+
+            history_entry = {
+                'user_id': user_id,
+                'user_name': user_name,
+                'archived_at': watched_at, # Utiliser la date de visionnage comme référence
+                'watched_status': {}
+            }
+
+            if media_type == 'movie':
+                history_entry['watched_status']['is_watched'] = True
+            elif media_type == 'show':
+                # Pour les séries, on stocke les numéros de saison/épisode
+                # Le traitement complet (regroupement par saison) sera fait dans _process_archived_results
+                history_entry['watched_status'] = {
+                    'season_number': entry.parentIndex,
+                    'episode_number': entry.index
+                }
+
+            ghosts[media_key]['archive_history'].append(history_entry)
 
         return list(ghosts.values())
 

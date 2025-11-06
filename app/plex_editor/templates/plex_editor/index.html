@@ -184,6 +184,25 @@
         <p class="text-center text-muted">Veuillez sélectionner un utilisateur et une bibliothèque pour afficher les médias.</p>
     </div>
 
+    <!-- NOUVEAU: Conteneur pour le bouton de recherche fantôme -->
+    <div id="ghost-search-trigger-container" class="text-center mt-4" style="display: none;">
+        <p class="text-muted">Aucun résultat. Voulez-vous lancer une recherche approfondie dans l'historique de visionnage de Plex ?</p>
+        <button id="trigger-ghost-search-btn" class="btn btn-outline-info">
+            <i class="bi bi-search"></i> Lancer la recherche fantôme
+        </button>
+    </div>
+
+    <!-- NOUVEAU: Conteneur pour le loader et les résultats de la recherche fantôme -->
+    <div id="ghost-search-loader" class="text-center mt-5" style="display: none;">
+        <div class="spinner-border text-info" style="width: 3rem; height: 3rem;" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-2 text-muted">Recherche approfondie en cours... Cela peut prendre un certain temps.</p>
+    </div>
+    <div id="ghost-search-results-container" class="mt-4">
+        <!-- Les résultats de la recherche fantôme seront injectés ici -->
+    </div>
+
 </div>
 
 <!-- Modale d'Information -->

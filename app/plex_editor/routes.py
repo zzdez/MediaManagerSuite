@@ -604,29 +604,56 @@ def _process_archived_results(archived_results_raw):
             reverse=True
         )
 
-        # Construire la chaîne de caractères d'affichage unifiée
-        history_display_parts = []
-        for history_entry in aggregated_history_list:
-            user_name = user_names_map.get(history_entry['user_id'], f"ID: {history_entry['user_id']}")
-            archive_date = history_entry.get('archived_at', 'Date inconnue')
-            part = f"Archivé par {user_name} le {archive_date}"
+        # *** NOUVELLE LOGIQUE DE TRAITEMENT D'HISTORIQUE ***
+        # Traitement spécifique pour les médias "fantômes" qui ont un historique brut
+        if item.get('media_type') == 'show' and any('episode_number' in h.get('watched_status', {}) for h in aggregated_history_list):
 
-            watched_status = history_entry.get('watched_status', {})
-            if item.get('media_type') == 'movie':
-                if watched_status.get('is_watched'):
-                    part += " (Vu)"
-            elif item.get('media_type') == 'show':
-                seasons_str = []
-                sorted_seasons = sorted(watched_status.get('seasons', []), key=lambda s: s.get('season_number', 0))
-                for season in sorted_seasons:
-                    if season.get('is_watched'):
-                         seasons_str.append(f"Saison {season['season_number']}: Vus ({season['watched_episodes']}/{season['total_episodes']} ép.)")
-                if seasons_str:
-                    part += " - " + " | ".join(seasons_str)
+            # 1. Regrouper les épisodes vus par utilisateur et par saison
+            user_season_episodes = defaultdict(lambda: defaultdict(set))
+            for history_entry in aggregated_history_list:
+                user_id = history_entry['user_id']
+                status = history_entry.get('watched_status', {})
+                s_num, e_num = status.get('season_number'), status.get('episode_number')
+                if user_id and s_num is not None and e_num is not None:
+                    user_season_episodes[user_id][s_num].add(e_num)
 
-            history_display_parts.append(part)
+            # 2. Construire la chaîne d'affichage
+            history_display_parts = []
+            for user_id, seasons in user_season_episodes.items():
+                user_name = user_names_map.get(user_id, f"ID: {user_id}")
+                seasons_str_parts = []
+                for s_num in sorted(seasons.keys()):
+                    # Pour les fantômes, on ne connaît pas le total, on affiche juste le nombre d'épisodes vus
+                    seasons_str_parts.append(f"Saison {s_num} ({len(seasons[s_num])} ép. vus)")
 
-        item['unified_history_display'] = history_display_parts
+                part = f"Vu par {user_name} : " + " | ".join(seasons_str_parts)
+                history_display_parts.append(part)
+
+            item['unified_history_display'] = history_display_parts
+
+        else: # Logique existante pour les archives locales
+            history_display_parts = []
+            for history_entry in aggregated_history_list:
+                user_name = user_names_map.get(history_entry['user_id'], f"ID: {history_entry['user_id']}")
+                archive_date = history_entry.get('archived_at', 'Date inconnue')
+                part = f"Archivé par {user_name} le {archive_date}"
+
+                watched_status = history_entry.get('watched_status', {})
+                if item.get('media_type') == 'movie':
+                    if watched_status.get('is_watched'):
+                        part += " (Vu)"
+                elif item.get('media_type') == 'show':
+                    seasons_str = []
+                    sorted_seasons = sorted(watched_status.get('seasons', []), key=lambda s: s.get('season_number', 0))
+                    for season in sorted_seasons:
+                        if season.get('is_watched'):
+                            seasons_str.append(f"Saison {season['season_number']}: Vus ({season['watched_episodes']}/{season['total_episodes']} ép.)")
+                    if seasons_str:
+                        part += " - " + " | ".join(seasons_str)
+
+                history_display_parts.append(part)
+            item['unified_history_display'] = history_display_parts
+
         item['archive_history'] = aggregated_history_list # On garde aussi les données brutes
         final_results.append(item)
 
@@ -838,20 +865,13 @@ def get_media_items():
         archived_results = [] # Toujours initialiser la liste
 
         if not final_plex_results_unfiltered and title_filter:
-            # CORRECTION : On restaure la recherche unifiée (locale + fantôme)
+            # On ne fait que la recherche locale (rapide)
             from app.utils.archive_manager import find_archived_media_by_title
-            from app.utils.plex_client import PlexClient
 
-            # 1. Recherche locale (rapide)
             archived_results_raw = find_archived_media_by_title(title_filter)
 
-            # 2. Recherche fantôme (maintenant optimisée pour être rapide)
-            plex_client = PlexClient()
-            ghost_results_raw = plex_client.find_ghost_media_in_history(title_filter)
-
-            # 3. On combine les deux avant de traiter
-            combined_raw_results = archived_results_raw + ghost_results_raw
-            archived_results = _process_archived_results(combined_raw_results)
+            # On traite uniquement les résultats locaux
+            archived_results = _process_archived_results(archived_results_raw)
 
             # La recherche de suggestions externes reste pertinente si on ne trouve rien.
             if not archived_results:
@@ -3081,6 +3101,37 @@ def get_archived_history_details(media_type, title):
     except Exception as e:
         current_app.logger.error(f"Erreur API get_archived_history_details pour '{title}': {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
+
+@plex_editor_bp.route('/api/search_ghost_media', methods=['POST'])
+@login_required
+def search_ghost_media():
+    """
+    API pour lancer la recherche "fantôme" (lente) dans l'historique Plex.
+    """
+    data = request.json
+    title_filter = data.get('titleFilter', '').strip()
+
+    if not title_filter:
+        return jsonify({'error': 'Un titre est requis pour la recherche fantôme.'}), 400
+
+    try:
+        from app.utils.plex_client import PlexClient
+
+        plex_client = PlexClient()
+        ghost_results_raw = plex_client.find_ghost_media_in_history(title_filter)
+
+        archived_results = _process_archived_results(ghost_results_raw)
+
+        # Renvoyer directement le HTML de la table des résultats archivés
+        return render_template(
+            'plex_editor/_archived_results_table.html',
+            archived_results=archived_results
+        )
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur API search_ghost_media pour '{title_filter}': {e}", exc_info=True)
+        # Renvoyer une alerte HTML en cas d'erreur
+        return f'<div class="alert alert-danger" role="alert">Erreur durant la recherche : {str(e)}</div>', 500
 
 # --- Gestionnaires d'erreur ---
 #@app.errorhandler(404)
