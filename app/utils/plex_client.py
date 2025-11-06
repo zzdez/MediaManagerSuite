@@ -154,84 +154,38 @@ class PlexClient:
         """
         Analyse l'historique Plex pour trouver des médias "fantômes" (supprimés)
         qui correspondent à une recherche par titre.
+        VERSION OPTIMISÉE : Ne récupère que les informations de base pour un affichage rapide.
         """
-        ghosts = defaultdict(lambda: {
-            'title': None,
-            'media_type': 'unknown',
-            'archive_history': defaultdict(lambda: {
-                'watched_episodes': set(),
-                'last_watched': datetime.min
-            })
-        })
-
-        # On utilise le contexte admin pour avoir une vue complète de l'historique
+        # Utilise un dictionnaire pour dédupliquer par titre
+        ghosts = {}
         history = self.admin_plex.history(maxresults=10000)
 
         for entry in history:
             if entry.source() is None:
-                # CORRECTION: Vérifier le type avant d'accéder aux attributs
+                title = None
+                media_type = 'unknown'
+
                 if entry.type == 'episode':
                     title = entry.grandparentTitle
+                    media_type = 'show'
                 elif entry.type == 'movie':
                     title = entry.title
-                else:
-                    # Gérer d'autres types ou ignorer
-                    title = getattr(entry, 'title', None)
+                    media_type = 'movie'
 
                 if title and title_query.lower() in title.lower():
                     media_key = title.lower()
-                    ghosts[media_key]['title'] = title
+                    if media_key not in ghosts:
+                        ghosts[media_key] = {
+                            'title': title,
+                            'media_type': media_type,
+                            'external_id': None,
+                            'year': None,
+                            'summary': "Ce média a été reconstitué à partir de l'historique de visionnage de Plex.",
+                            'poster_url': None,
+                            'archive_history': [] # Laissé vide pour être rempli à la demande
+                        }
 
-                    user_id = str(entry.accountID)
-
-                    if entry.type == 'episode':
-                        ghosts[media_key]['media_type'] = 'show'
-                        season_num = entry.parentIndex
-                        episode_num = entry.index
-                        if season_num is not None and episode_num is not None:
-                            ghosts[media_key]['archive_history'][user_id]['watched_episodes'].add((season_num, episode_num))
-
-                    elif entry.type == 'movie':
-                        ghosts[media_key]['media_type'] = 'movie'
-                        ghosts[media_key]['archive_history'][user_id]['is_watched'] = True
-
-                    if entry.viewedAt and entry.viewedAt > ghosts[media_key]['archive_history'][user_id]['last_watched']:
-                        ghosts[media_key]['archive_history'][user_id]['last_watched'] = entry.viewedAt
-
-        # Transformer les données brutes en un format similaire à celui de l'archive_manager
-        processed_ghosts = []
-        for title, data in ghosts.items():
-            processed_item = {
-                'title': data['title'],
-                'media_type': data['media_type'],
-                'external_id': None, # On ne peut pas le deviner à ce stade
-                'year': None, # Idem
-                'summary': "Ce média a été reconstitué à partir de l'historique de visionnage de Plex.",
-                'poster_url': None, # Sera rempli plus tard si possible
-                'archive_history': []
-            }
-            for user_id, history_data in data['archive_history'].items():
-                watched_status = {}
-                if data['media_type'] == 'show':
-                    seasons = defaultdict(lambda: {'total_episodes': 0, 'watched_episodes': 0})
-                    for s_num, e_num in history_data['watched_episodes']:
-                        seasons[s_num]['watched_episodes'] += 1
-                    # Note: Le total_episodes est inconnu, on ne peut que montrer ce qui a été vu.
-                    watched_status['seasons'] = [
-                        {'season_number': s, 'watched_episodes': d['watched_episodes'], 'total_episodes': d['watched_episodes'], 'is_watched': True}
-                        for s, d in seasons.items()
-                    ]
-                elif data['media_type'] == 'movie':
-                    watched_status['is_watched'] = history_data.get('is_watched', False)
-
-                processed_item['archive_history'].append({
-                    'user_id': user_id,
-                    'archived_at': history_data['last_watched'].isoformat(),
-                    'watched_status': watched_status
-                })
-            processed_ghosts.append(processed_item)
-
-        return processed_ghosts
+        return list(ghosts.values())
 
 # --- Fonctions de compatibilité pour l'ancien code ---
 

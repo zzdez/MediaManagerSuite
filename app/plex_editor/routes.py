@@ -838,22 +838,22 @@ def get_media_items():
         archived_results = [] # Toujours initialiser la liste
 
         if not final_plex_results_unfiltered and title_filter:
-            # Recherche unifiée dans les archives et l'historique Plex
+            # CORRECTION : On restaure la recherche unifiée (locale + fantôme)
             from app.utils.archive_manager import find_archived_media_by_title
             from app.utils.plex_client import PlexClient
 
-            # 1. Recherche dans la BDD d'archives locale
+            # 1. Recherche locale (rapide)
             archived_results_raw = find_archived_media_by_title(title_filter)
 
-            # 2. Recherche des "médias fantômes" dans l'historique Plex
-            plex_client = PlexClient() # On a besoin d'une instance
+            # 2. Recherche fantôme (maintenant optimisée pour être rapide)
+            plex_client = PlexClient()
             ghost_results_raw = plex_client.find_ghost_media_in_history(title_filter)
 
-            # 3. On combine les deux listes avant de les traiter
+            # 3. On combine les deux avant de traiter
             combined_raw_results = archived_results_raw + ghost_results_raw
             archived_results = _process_archived_results(combined_raw_results)
 
-            # Priorité n°3 : Si on n'a toujours rien trouvé, on cherche des suggestions externes
+            # La recherche de suggestions externes reste pertinente si on ne trouve rien.
             if not archived_results:
                 current_app.logger.info(f"No results in Plex or Archive for '{title_filter}'. Searching externally.")
 
@@ -1876,8 +1876,11 @@ def archive_movie_route():
 
             tmdb_id = next((g.id.replace('tmdb://', '') for g in movie.guids if g.id.startswith('tmdb://')), None)
 
-            # Utiliser la nouvelle méthode pour obtenir l'historique détaillé
-            watch_history = plex_client.get_movie_watch_history(movie)
+            # CORRECTION: S'assurer qu'on appelle la bonne méthode et qu'on a un fallback
+            watch_history_data = plex_client.get_movie_watch_history(movie)
+            if not watch_history_data:
+                # Fallback au cas où la méthode échouerait
+                watch_history_data = {'is_watched': movie.isWatched, 'status': 'Unknown', 'poster_url': None}
 
             media_data_to_archive = {
                 'media_type': 'movie',
@@ -1886,8 +1889,10 @@ def archive_movie_route():
                 'title': movie.title,
                 'year': movie.year,
                 'summary': movie.summary,
-                'poster_url': watch_history.get('poster_url') if watch_history else None,
-                'watched_status': watch_history or {'is_watched': movie.isWatched, 'status': 'Unknown'}
+                'poster_url': watch_history_data.get('poster_url'),
+                'watched_status': {
+                    'is_watched': watch_history_data.get('is_watched', False)
+                }
             }
             add_archived_media(media_data_to_archive)
             current_app.logger.info(f"'{movie.title}' ajouté à la base de données d'archives.")
@@ -2000,8 +2005,11 @@ def archive_show_route():
 
             tvdb_id = next((g.id.replace('tvdb://', '') for g in show.guids if g.id.startswith('tvdb://')), None)
 
-            # Utiliser la nouvelle méthode pour obtenir l'historique détaillé
-            watch_history = plex_client.get_show_watch_history(show)
+            # CORRECTION: S'assurer qu'on appelle la bonne méthode et qu'on a un fallback
+            watch_history_data = plex_client.get_show_watch_history(show)
+            if not watch_history_data:
+                # Fallback simple si la méthode détaillée échoue
+                watch_history_data = {'is_fully_watched': show.isWatched, 'seasons': [], 'poster_url': None}
 
             media_data_to_archive = {
                 'media_type': 'show',
@@ -2010,8 +2018,11 @@ def archive_show_route():
                 'title': show.title,
                 'year': show.year,
                 'summary': show.summary,
-                'poster_url': watch_history.get('poster_url') if watch_history else None,
-                'watched_status': watch_history or {'is_fully_watched': show.isWatched, 'seasons': []}
+                'poster_url': watch_history_data.get('poster_url'),
+                'watched_status': {
+                    'is_fully_watched': watch_history_data.get('is_fully_watched', False),
+                    'seasons': watch_history_data.get('seasons', [])
+                }
             }
             add_archived_media(media_data_to_archive)
             current_app.logger.info(f"'{show.title}' ajouté à la base de données d'archives.")
@@ -2992,6 +3003,84 @@ def rename_series_files_endpoint():
         return jsonify({'status': 'success', 'message': message})
     else:
         return jsonify({'status': 'error', 'message': 'Échec de l\'envoi de la commande à Sonarr.'}), 500
+
+@plex_editor_bp.route('/api/archived_history/<media_type>/<title>', methods=['GET'])
+@login_required
+def get_archived_history_details(media_type, title):
+    """
+    API pour récupérer l'historique de visionnage détaillé d'un média archivé
+    en effectuant la recherche "fantôme" complète et lente.
+    """
+    if not title:
+        return jsonify({'error': 'Le titre est manquant.'}), 400
+
+    try:
+        from app.utils.plex_client import PlexClient
+        from collections import defaultdict
+
+        plex_client = PlexClient()
+        user_names_map = plex_client.get_user_names()
+
+        # --- DÉBUT DE LA LOGIQUE DE TRAITEMENT LOURD ---
+        history = plex_client.admin_plex.history(maxresults=10000)
+
+        # Structure pour agréger les données par utilisateur
+        user_history = defaultdict(lambda: {
+            'watched_episodes': set(),
+            'is_watched': False,
+            'last_watched': datetime.min
+        })
+
+        for entry in history:
+            if entry.source() is None:
+                entry_title = None
+                if entry.type == 'episode':
+                    entry_title = entry.grandparentTitle
+                elif entry.type == 'movie':
+                    entry_title = entry.title
+
+                if entry_title and entry_title.lower() == title.lower():
+                    user_id = str(entry.accountID)
+                    if entry.type == 'episode' and entry.parentIndex is not None and entry.index is not None:
+                        user_history[user_id]['watched_episodes'].add((entry.parentIndex, entry.index))
+                    elif entry.type == 'movie':
+                        user_history[user_id]['is_watched'] = True
+
+                    if entry.viewedAt and entry.viewedAt > user_history[user_id]['last_watched']:
+                        user_history[user_id]['last_watched'] = entry.viewedAt
+        # --- FIN DE LA LOGIQUE DE TRAITEMENT LOURD ---
+
+        if not user_history:
+            return jsonify({'message': 'Aucun historique de visionnage détaillé trouvé dans Plex.'})
+
+        # --- FORMATAGE DE LA RÉPONSE ---
+        history_display_parts = []
+        for user_id, data in user_history.items():
+            user_name = user_names_map.get(user_id, f"ID: {user_id}")
+            archive_date = data['last_watched'].strftime('%d/%m/%Y à %H:%M') if data['last_watched'] != datetime.min else 'Date inconnue'
+            part = f"Vu par {user_name} le {archive_date}"
+
+            if media_type == 'show':
+                seasons = defaultdict(int)
+                for s_num, e_num in data['watched_episodes']:
+                    seasons[s_num] += 1
+
+                seasons_str = []
+                for s_num in sorted(seasons.keys()):
+                    seasons_str.append(f"Saison {s_num} ({seasons[s_num]} ép.)")
+                if seasons_str:
+                    part += " - " + " | ".join(seasons_str)
+
+            elif media_type == 'movie' and data['is_watched']:
+                part += " (Vu)"
+
+            history_display_parts.append(part)
+
+        return jsonify({'history': sorted(history_display_parts, reverse=True)})
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur API get_archived_history_details pour '{title}': {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
 
 # --- Gestionnaires d'erreur ---
 #@app.errorhandler(404)
