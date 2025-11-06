@@ -223,16 +223,39 @@
                             <p class="card-text"><small class="text-muted">ID Externe: {{ item.external_id }}</small></p>
                             <p class="card-text small">{{ item.summary | truncate(350) }}</p>
 
-                            <div class="mt-3">
-                                <button class="btn btn-sm btn-outline-info load-archived-history-btn"
-                                        data-title="{{ item.title }}"
-                                        data-media-type="{{ item.media_type }}">
-                                    <i class="bi bi-clock-history"></i> Afficher l'historique de visionnage détaillé
-                                </button>
-                                <div class="archived-history-details mt-2" style="display: none;">
-                                    <!-- Le contenu sera injecté ici par JavaScript -->
-                                </div>
-                            </div>
+                            {% if item.archive_history %}
+                                <hr>
+                                {% for history in item.archive_history %}
+                                    <div class="mb-3">
+                                        <h6><i class="bi bi-clock-history me-2"></i>Historique de <strong>{{ history.user_name }}</strong></h6>
+                                        <p class="mb-1"><small>Média archivé le {{ history.archived_at | date_format }}</small></p>
+
+                                        {% if item.media_type == 'show' and history.watched_status and history.watched_status.seasons %}
+                                            <div class="d-flex flex-wrap">
+                                                {% for season in history.watched_status.seasons %}
+                                                    <div class="me-3 mb-2">
+                                                        <span class="badge {% if season.is_watched %}bg-success{% else %}bg-info{% endif %}">
+                                                            Saison {{ season.season_number }}: Vus ({{ season.watched_episodes }} / {{ season.total_episodes }} ép.)
+                                                        </span>
+                                                    </div>
+                                                {% endfor %}
+                                            </div>
+                                        {% elif item.media_type == 'movie' and history.watched_status %}
+                                            <p class="mb-0">
+                                                Statut :
+                                                {% if history.watched_status.is_watched %}
+                                                    <span class="badge bg-success">Vu</span>
+                                                {% else %}
+                                                    <span class="badge bg-warning text-dark">Non vu</span>
+                                                {% endif %}
+                                            </p>
+                                        {% else %}
+                                            {# Cas pour les "ghosts" qui n'ont pas de `watched_status` détaillé #}
+                                            <p class="text-muted"><small>Détails de visionnage non disponibles (média reconstitué).</small></p>
+                                        {% endif %}
+                                    </div>
+                                {% endfor %}
+                            {% endif %}
                         </div>
                     </div>
                 </div>

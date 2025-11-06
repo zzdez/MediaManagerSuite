@@ -483,27 +483,7 @@ def select_user_route():
 # Dans app/plex_editor/routes.py
 
 # Dans app/plex_editor/routes.py
-
-def _parse_main_external_id(guids):
-    """
-    Parses the list of guids from a Plex item to find the primary external ID.
-    Prefers 'tvdb' for shows and 'tmdb' for movies.
-    """
-    # Priorité des sources
-    priority_order = ['tvdb', 'tmdb', 'imdb']
-
-    for source in priority_order:
-        for guid_obj in guids:
-            if guid_obj.id.startswith(f'{source}://'):
-                try:
-                    # 'tmdb://12345' -> ('tmdb', '12345')
-                    id_val = guid_obj.id.split('//')[1]
-                    # Pour les séries, on veut le type 'tv' pour notre API
-                    media_type = 'tv' if source == 'tvdb' else source
-                    return media_type, id_val
-                except (IndexError, ValueError):
-                    continue
-    return None, None
+from app.utils.plex_client import _parse_main_external_id
 
 def get_user_specific_plex_server_from_id(user_id):
     """
@@ -535,130 +515,6 @@ def get_user_specific_plex_server_from_id(user_id):
     # Si l'ID n'a pas été trouvé
     current_app.logger.warning(f"Helper get_user_specific_plex_server_from_id: Utilisateur avec ID '{user_id}' non trouvé.")
     return None
-
-def _process_archived_results(archived_results_raw):
-    """
-    Traite les résultats bruts combinés (archives locales + fantômes) pour les nettoyer,
-    fusionner les doublons par titre, et enrichir les données pour l'affichage.
-    """
-    if not archived_results_raw:
-        return []
-
-    # Clients pour l'enrichissement
-    from app.utils.plex_client import PlexClient
-    from app.utils.tmdb_client import TheMovieDBClient
-    from app.utils.tvdb_client import CustomTVDBClient
-
-    plex_client = PlexClient()
-    user_names_map = plex_client.get_user_names()
-    tmdb_client = TheMovieDBClient()
-    tvdb_client = CustomTVDBClient()
-
-    # Étape 1: Fusionner les entrées par titre (insensible à la casse)
-    merged_media = {}
-    for item in archived_results_raw:
-        title_key = item.get('title', '').lower()
-        if not title_key:
-            continue
-
-        if title_key not in merged_media:
-            merged_media[title_key] = item.copy()
-            # Initialiser une structure pour agréger l'historique de tous les utilisateurs
-            merged_media[title_key]['aggregated_history'] = {}
-
-        # Agrégation de l'historique
-        history_list = item.get('archive_history', [])
-        for history_entry in history_list:
-            user_id = history_entry.get('user_id')
-            if not user_id: continue
-
-            # On garde l'entrée la plus récente pour chaque utilisateur
-            existing_entry = merged_media[title_key]['aggregated_history'].get(user_id)
-            if not existing_entry or history_entry.get('archived_at', '') > existing_entry.get('archived_at', ''):
-                merged_media[title_key]['aggregated_history'][user_id] = history_entry
-
-        # On s'assure que les champs importants (external_id, media_type, etc.) sont présents
-        # en privilégiant les entrées qui en ont.
-        if not merged_media[title_key].get('external_id') and item.get('external_id'):
-            merged_media[title_key]['external_id'] = item.get('external_id')
-        if not merged_media[title_key].get('media_type') and item.get('media_type'):
-            merged_media[title_key]['media_type'] = item.get('media_type')
-
-    # Étape 2: Enrichir chaque entrée fusionnée
-    final_results = []
-    for title_key, item in merged_media.items():
-        # Enrichissement du poster (uniquement si on a un ID externe)
-        external_id = item.get('external_id')
-        if external_id:
-            if item.get('media_type') == 'movie':
-                details = tmdb_client.get_movie_details(external_id)
-                item['poster_url'] = details.get('poster') if details else None
-            elif item.get('media_type') == 'show':
-                details = tvdb_client.get_series_details_by_id(external_id)
-                item['poster_url'] = details.get('image') if details else None
-
-        # Remplacer 'archive_history' par la version agrégée et triée
-        aggregated_history_list = sorted(
-            item['aggregated_history'].values(),
-            key=lambda x: x.get('archived_at', ''),
-            reverse=True
-        )
-
-        # *** NOUVELLE LOGIQUE DE TRAITEMENT D'HISTORIQUE ***
-        # Traitement spécifique pour les médias "fantômes" qui ont un historique brut
-        if item.get('media_type') == 'show' and any('episode_number' in h.get('watched_status', {}) for h in aggregated_history_list):
-
-            # 1. Regrouper les épisodes vus par utilisateur et par saison
-            user_season_episodes = defaultdict(lambda: defaultdict(set))
-            for history_entry in aggregated_history_list:
-                user_id = history_entry['user_id']
-                status = history_entry.get('watched_status', {})
-                s_num, e_num = status.get('season_number'), status.get('episode_number')
-                if user_id and s_num is not None and e_num is not None:
-                    user_season_episodes[user_id][s_num].add(e_num)
-
-            # 2. Construire la chaîne d'affichage
-            history_display_parts = []
-            for user_id, seasons in user_season_episodes.items():
-                user_name = user_names_map.get(user_id, f"ID: {user_id}")
-                seasons_str_parts = []
-                for s_num in sorted(seasons.keys()):
-                    # Pour les fantômes, on ne connaît pas le total, on affiche juste le nombre d'épisodes vus
-                    seasons_str_parts.append(f"Saison {s_num} ({len(seasons[s_num])} ép. vus)")
-
-                part = f"Vu par {user_name} : " + " | ".join(seasons_str_parts)
-                history_display_parts.append(part)
-
-            item['unified_history_display'] = history_display_parts
-
-        else: # Logique existante pour les archives locales
-            history_display_parts = []
-            for history_entry in aggregated_history_list:
-                user_name = user_names_map.get(history_entry['user_id'], f"ID: {history_entry['user_id']}")
-                archive_date = history_entry.get('archived_at', 'Date inconnue')
-                part = f"Archivé par {user_name} le {archive_date}"
-
-                watched_status = history_entry.get('watched_status', {})
-                if item.get('media_type') == 'movie':
-                    if watched_status.get('is_watched'):
-                        part += " (Vu)"
-                elif item.get('media_type') == 'show':
-                    seasons_str = []
-                    sorted_seasons = sorted(watched_status.get('seasons', []), key=lambda s: s.get('season_number', 0))
-                    for season in sorted_seasons:
-                        if season.get('is_watched'):
-                            seasons_str.append(f"Saison {season['season_number']}: Vus ({season['watched_episodes']}/{season['total_episodes']} ép.)")
-                    if seasons_str:
-                        part += " - " + " | ".join(seasons_str)
-
-                history_display_parts.append(part)
-            item['unified_history_display'] = history_display_parts
-
-        item['archive_history'] = aggregated_history_list # On garde aussi les données brutes
-        final_results.append(item)
-
-    return final_results
-
 
 @plex_editor_bp.route('/api/media_items', methods=['POST'])
 @login_required
@@ -865,15 +721,26 @@ def get_media_items():
         archived_results = [] # Toujours initialiser la liste
 
         if not final_plex_results_unfiltered and title_filter:
-            # On ne fait que la recherche locale (rapide)
+            # Priorité n°1 : Chercher dans notre base de données d'archives locales
             from app.utils.archive_manager import find_archived_media_by_title
+            from app.utils.plex_client import PlexClient
 
-            archived_results_raw = find_archived_media_by_title(title_filter)
+            archived_results = find_archived_media_by_title(title_filter)
 
-            # On traite uniquement les résultats locaux
-            archived_results = _process_archived_results(archived_results_raw)
+            # NOUVEAU: Recherche de "fantômes" dans l'historique Plex
+            plex_client = PlexClient(user_id=user_id)
+            ghost_media = plex_client.find_ghost_media_in_history(title_filter)
 
-            # La recherche de suggestions externes reste pertinente si on ne trouve rien.
+            # Fusionner et dédoublonner les résultats locaux et fantômes
+            existing_ids = {res.get('external_id') for res in archived_results if res.get('external_id')}
+            for ghost in ghost_media:
+                if ghost.get('external_id') not in existing_ids:
+                    archived_results.append(ghost)
+
+            # NOUVEAU: Traitement pour enrichir les résultats archivés (posters, etc.)
+            archived_results = _process_archived_results(archived_results, user_id)
+
+            # Priorité n°2 : Si (et seulement si) on n'a rien trouvé dans nos archives, on cherche des suggestions externes
             if not archived_results:
                 current_app.logger.info(f"No results in Plex or Archive for '{title_filter}'. Searching externally.")
 
@@ -1896,11 +1763,8 @@ def archive_movie_route():
 
             tmdb_id = next((g.id.replace('tmdb://', '') for g in movie.guids if g.id.startswith('tmdb://')), None)
 
-            # CORRECTION: S'assurer qu'on appelle la bonne méthode et qu'on a un fallback
-            watch_history_data = plex_client.get_movie_watch_history(movie)
-            if not watch_history_data:
-                # Fallback au cas où la méthode échouerait
-                watch_history_data = {'is_watched': movie.isWatched, 'status': 'Unknown', 'poster_url': None}
+            # Utiliser la nouvelle méthode pour obtenir l'historique détaillé
+            watch_history = plex_client.get_movie_watch_history(movie)
 
             media_data_to_archive = {
                 'media_type': 'movie',
@@ -1909,10 +1773,8 @@ def archive_movie_route():
                 'title': movie.title,
                 'year': movie.year,
                 'summary': movie.summary,
-                'poster_url': watch_history_data.get('poster_url'),
-                'watched_status': {
-                    'is_watched': watch_history_data.get('is_watched', False)
-                }
+                'poster_url': watch_history.get('poster_url') if watch_history else None,
+                'watched_status': watch_history or {'is_watched': movie.isWatched, 'status': 'Unknown'}
             }
             add_archived_media(media_data_to_archive)
             current_app.logger.info(f"'{movie.title}' ajouté à la base de données d'archives.")
@@ -2025,11 +1887,8 @@ def archive_show_route():
 
             tvdb_id = next((g.id.replace('tvdb://', '') for g in show.guids if g.id.startswith('tvdb://')), None)
 
-            # CORRECTION: S'assurer qu'on appelle la bonne méthode et qu'on a un fallback
-            watch_history_data = plex_client.get_show_watch_history(show)
-            if not watch_history_data:
-                # Fallback simple si la méthode détaillée échoue
-                watch_history_data = {'is_fully_watched': show.isWatched, 'seasons': [], 'poster_url': None}
+            # Utiliser la nouvelle méthode pour obtenir l'historique détaillé
+            watch_history = plex_client.get_show_watch_history(show)
 
             media_data_to_archive = {
                 'media_type': 'show',
@@ -2038,11 +1897,8 @@ def archive_show_route():
                 'title': show.title,
                 'year': show.year,
                 'summary': show.summary,
-                'poster_url': watch_history_data.get('poster_url'),
-                'watched_status': {
-                    'is_fully_watched': watch_history_data.get('is_fully_watched', False),
-                    'seasons': watch_history_data.get('seasons', [])
-                }
+                'poster_url': watch_history.get('poster_url') if watch_history else None,
+                'watched_status': watch_history or {'is_fully_watched': show.isWatched, 'seasons': []}
             }
             add_archived_media(media_data_to_archive)
             current_app.logger.info(f"'{show.title}' ajouté à la base de données d'archives.")
@@ -3024,114 +2880,45 @@ def rename_series_files_endpoint():
     else:
         return jsonify({'status': 'error', 'message': 'Échec de l\'envoi de la commande à Sonarr.'}), 500
 
-@plex_editor_bp.route('/api/archived_history/<media_type>/<title>', methods=['GET'])
-@login_required
-def get_archived_history_details(media_type, title):
+def _process_archived_results(results, current_user_id):
     """
-    API pour récupérer l'historique de visionnage détaillé d'un média archivé
-    en effectuant la recherche "fantôme" complète et lente.
+    Enrichit les résultats d'archives (locaux ou fantômes) avec des métadonnées
+    supplémentaires comme les posters et les noms d'utilisateurs.
     """
-    if not title:
-        return jsonify({'error': 'Le titre est manquant.'}), 400
+    if not results:
+        return []
 
-    try:
-        from app.utils.plex_client import PlexClient
-        from collections import defaultdict
+    from app.utils.plex_client import PlexClient
+    from app.utils.tmdb_client import TheMovieDBClient
+    from app.utils.tvdb_client import CustomTVDBClient
 
-        plex_client = PlexClient()
-        user_names_map = plex_client.get_user_names()
+    # Obtenir les noms des utilisateurs une seule fois
+    plex_client = PlexClient(user_id=current_user_id)
+    user_map = plex_client.get_user_names()
 
-        # --- DÉBUT DE LA LOGIQUE DE TRAITEMENT LOURD ---
-        history = plex_client.admin_plex.history(maxresults=10000)
+    tmdb = TheMovieDBClient()
+    tvdb = CustomTVDBClient()
 
-        # Structure pour agréger les données par utilisateur
-        user_history = defaultdict(lambda: {
-            'watched_episodes': set(),
-            'is_watched': False,
-            'last_watched': datetime.min
-        })
+    for item in results:
+        # 1. Enrichir avec le poster si manquant
+        if not item.get('poster_url') and item.get('external_id'):
+            ext_id = item['external_id']
+            if item.get('media_type') == 'movie':
+                movie_details = tmdb.get_movie_details(ext_id)
+                if movie_details and movie_details.get('poster_path'):
+                    item['poster_url'] = f"https://image.tmdb.org/t/p/w500{movie_details['poster_path']}"
+            elif item.get('media_type') == 'show':
+                series_details = tvdb.get_series_details(ext_id)
+                if series_details and series_details.get('image_url'):
+                    item['poster_url'] = series_details['image_url']
 
-        for entry in history:
-            if entry.source() is None:
-                entry_title = None
-                if entry.type == 'episode':
-                    entry_title = entry.grandparentTitle
-                elif entry.type == 'movie':
-                    entry_title = entry.title
+        # 2. Formater l'historique de visionnage
+        if 'archive_history' in item and isinstance(item['archive_history'], list):
+            for history_entry in item['archive_history']:
+                user_id_str = str(history_entry.get('user_id', ''))
+                history_entry['user_name'] = user_map.get(user_id_str, f"Utilisateur {user_id_str}")
 
-                if entry_title and entry_title.lower() == title.lower():
-                    user_id = str(entry.accountID)
-                    if entry.type == 'episode' and entry.parentIndex is not None and entry.index is not None:
-                        user_history[user_id]['watched_episodes'].add((entry.parentIndex, entry.index))
-                    elif entry.type == 'movie':
-                        user_history[user_id]['is_watched'] = True
-
-                    if entry.viewedAt and entry.viewedAt > user_history[user_id]['last_watched']:
-                        user_history[user_id]['last_watched'] = entry.viewedAt
-        # --- FIN DE LA LOGIQUE DE TRAITEMENT LOURD ---
-
-        if not user_history:
-            return jsonify({'message': 'Aucun historique de visionnage détaillé trouvé dans Plex.'})
-
-        # --- FORMATAGE DE LA RÉPONSE ---
-        history_display_parts = []
-        for user_id, data in user_history.items():
-            user_name = user_names_map.get(user_id, f"ID: {user_id}")
-            archive_date = data['last_watched'].strftime('%d/%m/%Y à %H:%M') if data['last_watched'] != datetime.min else 'Date inconnue'
-            part = f"Vu par {user_name} le {archive_date}"
-
-            if media_type == 'show':
-                seasons = defaultdict(int)
-                for s_num, e_num in data['watched_episodes']:
-                    seasons[s_num] += 1
-
-                seasons_str = []
-                for s_num in sorted(seasons.keys()):
-                    seasons_str.append(f"Saison {s_num} ({seasons[s_num]} ép.)")
-                if seasons_str:
-                    part += " - " + " | ".join(seasons_str)
-
-            elif media_type == 'movie' and data['is_watched']:
-                part += " (Vu)"
-
-            history_display_parts.append(part)
-
-        return jsonify({'history': sorted(history_display_parts, reverse=True)})
-
-    except Exception as e:
-        current_app.logger.error(f"Erreur API get_archived_history_details pour '{title}': {e}", exc_info=True)
-        return jsonify({'error': str(e)}), 500
-
-@plex_editor_bp.route('/api/search_ghost_media', methods=['POST'])
-@login_required
-def search_ghost_media():
-    """
-    API pour lancer la recherche "fantôme" (lente) dans l'historique Plex.
-    """
-    data = request.json
-    title_filter = data.get('titleFilter', '').strip()
-
-    if not title_filter:
-        return jsonify({'error': 'Un titre est requis pour la recherche fantôme.'}), 400
-
-    try:
-        from app.utils.plex_client import PlexClient
-
-        plex_client = PlexClient()
-        ghost_results_raw = plex_client.find_ghost_media_in_history(title_filter)
-
-        archived_results = _process_archived_results(ghost_results_raw)
-
-        # Renvoyer directement le HTML de la table des résultats archivés
-        return render_template(
-            'plex_editor/_archived_results_table.html',
-            archived_results=archived_results
-        )
-
-    except Exception as e:
-        current_app.logger.error(f"Erreur API search_ghost_media pour '{title_filter}': {e}", exc_info=True)
-        # Renvoyer une alerte HTML en cas d'erreur
-        return f'<div class="alert alert-danger" role="alert">Erreur durant la recherche : {str(e)}</div>', 500
+    return results
 
 # --- Gestionnaires d'erreur ---
 #@app.errorhandler(404)

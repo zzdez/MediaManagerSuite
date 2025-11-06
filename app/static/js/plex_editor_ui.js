@@ -262,52 +262,6 @@ $(document).ready(function() {
         .then(html => {
             loader.hide();
             itemsContainer.html(html);
-
-            // Masquer les conteneurs de recherche fantôme par défaut
-            $('#ghost-search-trigger-container').hide();
-            $('#ghost-search-results-container').html('');
-            $('#ghost-search-loader').hide();
-
-            // Si la réponse est vide (pas de table, pas de card) et qu'on cherchait un titre
-            if (!html.includes('<tr') && !html.includes('<div class="card') && titleFilter) {
-                $('#ghost-search-trigger-container').show();
-            }
-        });
-    });
-
-    // =================================================================
-    // ### PARTIE 6 : GESTION DE LA RECHERCHE "FANTÔME" ###
-    // =================================================================
-    $(document).on('click', '#trigger-ghost-search-btn', function() {
-        const btn = $(this);
-        const titleFilter = $('#title-filter-input').val().trim();
-        const ghostLoader = $('#ghost-search-loader');
-        const ghostResultsContainer = $('#ghost-search-results-container');
-
-        if (!titleFilter) {
-            alert("Veuillez entrer un titre pour la recherche fantôme.");
-            return;
-        }
-
-        btn.closest('#ghost-search-trigger-container').hide();
-        ghostLoader.show();
-        ghostResultsContainer.html('');
-
-        fetch('/plex/api/search_ghost_media', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ titleFilter: titleFilter })
-        })
-        .then(response => response.text()) // On attend du HTML
-        .then(html => {
-            ghostResultsContainer.html(html);
-        })
-        .catch(error => {
-            console.error('Erreur recherche fantôme:', error);
-            ghostResultsContainer.html('<div class="alert alert-danger">Erreur de communication lors de la recherche fantôme.</div>');
-        })
-        .finally(() => {
-            ghostLoader.hide();
         });
     });
 
