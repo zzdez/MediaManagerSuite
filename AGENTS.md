@@ -64,3 +64,35 @@ La modale d'ajout de torrent (`addTorrentModal`) présente des défis uniques en
     1.  Un attribut `data-is-returning-from-trailer` est ajouté à `addTorrentModal` avant de la masquer.
     2.  L'écouteur d'événement `show.bs.modal` de cette modale vérifie la présence de ce drapeau. S'il existe, la fonction de réinitialisation est ignorée.
 -   **Utilisation des bons identifiants** : Pour la recherche de bande-annonce, il est **critique** d'utiliser l'identifiant externe (TMDB ID pour les films, TVDB ID pour les séries). L'interface doit donc stocker à la fois l'ID interne de Sonarr/Radarr (pour le mapping) et l'ID externe (dans un attribut `data-selected-media-external-id`) pour la recherche de bande-annonce. Le code qui déclenche la recherche doit impérativement utiliser cet ID externe.
+
+### Fonctionnalité d'Archivage Améliorée (Novembre 2025)
+
+- **Objectif** : Créer un historique de visionnage persistant, même après suppression des médias de Plex. Lors de l'archivage, les détails de visionnage d'un utilisateur sont extraits de Plex et sauvegardés dans une base de données locale. Ces informations sont ensuite utilisées pour enrichir les futures recherches.
+
+- **Composants clés** :
+  - `app/utils/archive_manager.py` : Un nouveau module qui gère une base de données `instance/archive_database.json`. Il inclut un système de verrouillage de fichier (`.lock`) pour éviter les corruptions lors d'écritures concurrentes. La logique `add_archived_media` est conçue pour mettre à jour l'historique d'un utilisateur existant plutôt que de créer des doublons.
+  - `app/utils/plex_client.py` : Refactorisé en une classe `PlexClient` pour gérer proprement les connexions Plex spécifiques à chaque utilisateur, ce qui est crucial pour récupérer l'historique de visionnage correct. Cette classe est capable de générer des URL de posters authentifiées et de construire un objet `watch_history` détaillé (statut global, statut par saison, nombre d'épisodes vus/total).
+
+- **Intégration UI** :
+  - **Plex Editor (`/plex/`)** : Si une recherche ne trouve rien dans Plex, le système consulte la base d'archives. Les résultats archivés sont affichés via un template `_archived_media_card.html` qui présente le poster, le résumé et un historique de visionnage formaté (ex: "Saison 1: Vus (10 / 10 ép.)").
+  - **Recherche Globale (`/search/`)** : Le `media_info_manager.py` enrichit les résultats de recherche externes (TMDB/TVDB) en vérifiant s'ils existent dans la base d'archives. Si c'est le cas, un badge "Archivé" est ajouté au résultat, avec l'historique de visionnage disponible dans une infobulle (tooltip).
+
+- **État Actuel et Problèmes Rencontrés** :
+  - La fonctionnalité de base (sauvegarde et récupération) est implémentée.
+  - **Problème 1 (Plex Editor)** : Lors de l'affichage des résultats archivés sur la page `/plex/`, l'affichage est défectueux. Le poster n'apparaît pas et les informations de visionnage sont brutes et mal formatées. De plus, la logique crée des entrées dupliquées pour un même utilisateur au lieu de les mettre à jour.
+  - **Problème 2 (Recherche Globale)** : La page de recherche (`/search/`) subit un crash (`TypeError`) lorsqu'elle tente d'enrichir les résultats avec les données d'archives. Cela est dû à une incohérence dans les arguments passés à une fonction du `media_info_manager`.
+  - **Cause Racine des bugs (Corrigés en théorie)** :
+    - Le `PlexClient` ne construisait pas une URL complète et authentifiée pour le poster. **(Corrigé)**
+    - Le `archive_manager` ne comparait pas correctement les `user_id`, provoquant les doublons. **(Corrigé)**
+    - Les templates Jinja2 n'étaient pas adaptés pour afficher correctement la nouvelle structure de données de `watch_history`. **(Corrigé)**
+    - L'appel de fonction dans `media_info_manager` n'avait pas été mis à jour suite à une refactorisation. **(Corrigé)**
+    - Des régressions dans les routes d'archivage (`plex_editor/routes.py`) appelaient des fonctions inexistantes. **(Corrigé)**
+
+- **Prochaines Étapes (Nouvelle Session)** :
+  1.  **Priorité 1: Déboguer l'affichage sur la page Plex Editor (`/plex/`)** :
+      - Malgré les correctifs, le problème d'affichage (posters, formatage) persiste. Il faut vérifier la transmission des données du backend au frontend et l'interprétation par le template Jinja2 `_archived_media_card.html`. Il est possible qu'un rafraîchissement JavaScript soit nécessaire après l'injection du HTML.
+  2.  **Priorité 2: Déboguer la page de Recherche Globale (`/search/`)** :
+      - Vérifier que les correctifs ont bien résolu le `TypeError`.
+      - S'assurer que le badge "Archivé" et l'infobulle (tooltip) s'affichent correctement et avec les bonnes informations formatées sur les résultats de recherche pertinents.
+  3.  **Validation Complète** :
+      - Effectuer un test de bout en bout : archiver un nouveau média, puis le rechercher dans les deux interfaces pour confirmer que l'ensemble du flux fonctionne comme prévu.
