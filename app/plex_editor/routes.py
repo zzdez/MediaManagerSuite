@@ -538,8 +538,8 @@ def get_user_specific_plex_server_from_id(user_id):
 
 def _process_archived_results(archived_results_raw):
     """
-    Traite les résultats bruts de la base d'archives pour les nettoyer,
-    fusionner les doublons, et les enrichir avec des métadonnées externes.
+    Traite les résultats bruts combinés (archives locales + fantômes) pour les nettoyer,
+    fusionner les doublons par titre, et enrichir les données pour l'affichage.
     """
     if not archived_results_raw:
         return []
@@ -554,63 +554,80 @@ def _process_archived_results(archived_results_raw):
     tmdb_client = TheMovieDBClient()
     tvdb_client = CustomTVDBClient()
 
-    # Étape 1: Fusionner les entrées par ID externe
+    # Étape 1: Fusionner les entrées par titre (insensible à la casse)
     merged_media = {}
     for item in archived_results_raw:
-        key = item.get('external_id')
-        if not key: continue
+        title_key = item.get('title', '').lower()
+        if not title_key:
+            continue
 
-        if key not in merged_media:
-            merged_media[key] = item.copy()
-            merged_media[key]['archive_history'] = {
-                h['user_id']: h for h in item.get('archive_history', []) if 'user_id' in h
-            }
-        else:
-            # Fusionner les historiques, en gardant le plus récent
-            for history in item.get('archive_history', []):
-                user_id = history.get('user_id')
-                if not user_id: continue
+        if title_key not in merged_media:
+            merged_media[title_key] = item.copy()
+            # Initialiser une structure pour agréger l'historique de tous les utilisateurs
+            merged_media[title_key]['aggregated_history'] = {}
 
-                existing_history = merged_media[key]['archive_history'].get(user_id)
-                if not existing_history or history.get('archived_at', '') > existing_history.get('archived_at', ''):
-                    merged_media[key]['archive_history'][user_id] = history
+        # Agrégation de l'historique
+        history_list = item.get('archive_history', [])
+        for history_entry in history_list:
+            user_id = history_entry.get('user_id')
+            if not user_id: continue
+
+            # On garde l'entrée la plus récente pour chaque utilisateur
+            existing_entry = merged_media[title_key]['aggregated_history'].get(user_id)
+            if not existing_entry or history_entry.get('archived_at', '') > existing_entry.get('archived_at', ''):
+                merged_media[title_key]['aggregated_history'][user_id] = history_entry
+
+        # On s'assure que les champs importants (external_id, media_type, etc.) sont présents
+        # en privilégiant les entrées qui en ont.
+        if not merged_media[title_key].get('external_id') and item.get('external_id'):
+            merged_media[title_key]['external_id'] = item.get('external_id')
+        if not merged_media[title_key].get('media_type') and item.get('media_type'):
+            merged_media[title_key]['media_type'] = item.get('media_type')
 
     # Étape 2: Enrichir chaque entrée fusionnée
     final_results = []
-    for key, item in merged_media.items():
-        # Enrichissement du poster
-        if item.get('media_type') == 'movie':
-            details = tmdb_client.get_movie_details(item['external_id'])
-            item['poster_url'] = details.get('poster') if details else None
-        elif item.get('media_type') == 'show':
-            details = tvdb_client.get_series_details_by_id(item['external_id'])
-            item['poster_url'] = details.get('image') if details else None
+    for title_key, item in merged_media.items():
+        # Enrichissement du poster (uniquement si on a un ID externe)
+        external_id = item.get('external_id')
+        if external_id:
+            if item.get('media_type') == 'movie':
+                details = tmdb_client.get_movie_details(external_id)
+                item['poster_url'] = details.get('poster') if details else None
+            elif item.get('media_type') == 'show':
+                details = tvdb_client.get_series_details_by_id(external_id)
+                item['poster_url'] = details.get('image') if details else None
 
-        # Traitement de l'historique
-        processed_history = []
-        for user_id, history_entry in item['archive_history'].items():
-            history_entry['user_name'] = user_names_map.get(user_id, f"ID: {user_id}")
+        # Remplacer 'archive_history' par la version agrégée et triée
+        aggregated_history_list = sorted(
+            item['aggregated_history'].values(),
+            key=lambda x: x.get('archived_at', ''),
+            reverse=True
+        )
 
-            # Création de la chaîne de caractères formatée pour l'affichage
-            display_str = f"Archivé par {history_entry['user_name']} le {history_entry['archived_at']}"
+        # Construire la chaîne de caractères d'affichage unifiée
+        history_display_parts = []
+        for history_entry in aggregated_history_list:
+            user_name = user_names_map.get(history_entry['user_id'], f"ID: {history_entry['user_id']}")
+            archive_date = history_entry.get('archived_at', 'Date inconnue')
+            part = f"Archivé par {user_name} le {archive_date}"
 
             watched_status = history_entry.get('watched_status', {})
             if item.get('media_type') == 'movie':
-                status = "Vu" if watched_status.get('is_watched') else "Non vu"
-                display_str += f" (Statut: {status})"
+                if watched_status.get('is_watched'):
+                    part += " (Vu)"
             elif item.get('media_type') == 'show':
                 seasons_str = []
-                for season in watched_status.get('seasons', []):
+                sorted_seasons = sorted(watched_status.get('seasons', []), key=lambda s: s.get('season_number', 0))
+                for season in sorted_seasons:
                     if season.get('is_watched'):
-                        seasons_str.append(f"Saison {season['season_number']}: Vus ({season['watched_episodes']}/{season['total_episodes']} ép.)")
+                         seasons_str.append(f"Saison {season['season_number']}: Vus ({season['watched_episodes']}/{season['total_episodes']} ép.)")
                 if seasons_str:
-                    display_str += " - " + " | ".join(seasons_str)
+                    part += " - " + " | ".join(seasons_str)
 
-            history_entry['display_string'] = display_str
-            processed_history.append(history_entry)
+            history_display_parts.append(part)
 
-        # Triage de l'historique par date pour un affichage cohérent
-        item['archive_history'] = sorted(processed_history, key=lambda x: x.get('archived_at', ''), reverse=True)
+        item['unified_history_display'] = history_display_parts
+        item['archive_history'] = aggregated_history_list # On garde aussi les données brutes
         final_results.append(item)
 
     return final_results
@@ -821,12 +838,22 @@ def get_media_items():
         archived_results = [] # Toujours initialiser la liste
 
         if not final_plex_results_unfiltered and title_filter:
-            # Priorité n°1 : Chercher dans notre base de données d'archives locales
+            # Recherche unifiée dans les archives et l'historique Plex
             from app.utils.archive_manager import find_archived_media_by_title
-            archived_results_raw = find_archived_media_by_title(title_filter)
-            archived_results = _process_archived_results(archived_results_raw)
+            from app.utils.plex_client import PlexClient
 
-            # Priorité n°2 : Si (et seulement si) on n'a rien trouvé dans nos archives, on cherche des suggestions externes
+            # 1. Recherche dans la BDD d'archives locale
+            archived_results_raw = find_archived_media_by_title(title_filter)
+
+            # 2. Recherche des "médias fantômes" dans l'historique Plex
+            plex_client = PlexClient() # On a besoin d'une instance
+            ghost_results_raw = plex_client.find_ghost_media_in_history(title_filter)
+
+            # 3. On combine les deux listes avant de les traiter
+            combined_raw_results = archived_results_raw + ghost_results_raw
+            archived_results = _process_archived_results(combined_raw_results)
+
+            # Priorité n°3 : Si on n'a toujours rien trouvé, on cherche des suggestions externes
             if not archived_results:
                 current_app.logger.info(f"No results in Plex or Archive for '{title_filter}'. Searching externally.")
 

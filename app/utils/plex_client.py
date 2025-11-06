@@ -3,6 +3,8 @@ from flask import current_app
 from plexapi.server import PlexServer
 from plexapi.myplex import MyPlexAccount
 from flask import session
+from datetime import datetime
+from collections import defaultdict
 
 class PlexClient:
     """
@@ -50,36 +52,63 @@ class PlexClient:
 
     def get_show_watch_history(self, plex_show_obj):
         """
-        Pour une série Plex, récupère un historique de visionnage détaillé.
+        Pour une série Plex, récupère un historique de visionnage détaillé en
+        se basant sur l'historique de visionnage réel de l'utilisateur.
         """
         if not plex_show_obj or plex_show_obj.type != 'show':
             return None
 
         try:
             plex_show_obj.reload()
-            history = {
+
+            # Récupérer tous les épisodes de la série pour avoir le compte total
+            all_episodes = plex_show_obj.episodes()
+            total_episodes_by_season = {}
+            for ep in all_episodes:
+                s_num = ep.seasonNumber
+                if s_num not in total_episodes_by_season:
+                    total_episodes_by_season[s_num] = 0
+                total_episodes_by_season[s_num] += 1
+
+            # Analyser l'historique de l'utilisateur pour trouver les épisodes vus de cette série
+            user_history = self.plex.history(maxresults=5000) # Augmenter la limite pour être sûr
+            watched_episodes_by_season = {}
+
+            for entry in user_history:
+                # On s'assure que l'entrée d'historique correspond bien à la série en cours
+                if entry.grandparentRatingKey == plex_show_obj.ratingKey:
+                    s_num = entry.parentIndex
+                    if s_num not in watched_episodes_by_season:
+                        watched_episodes_by_season[s_num] = set()
+                    watched_episodes_by_season[s_num].add(entry.index)
+
+            # Construire l'objet historique final
+            final_history = {
                 "poster_url": self.admin_plex.url(plex_show_obj.thumb, includeToken=True) if plex_show_obj.thumb else None,
-                "is_watched": plex_show_obj.isWatched,
+                "is_fully_watched": plex_show_obj.isWatched, # Garde une vue d'ensemble simple
                 "seasons": []
             }
 
+            # Itérer sur les saisons existantes dans la série
             for season in plex_show_obj.seasons():
-                # Ignorer les saisons "Spéciales" (généralement saison 0)
-                if season.seasonNumber == 0:
-                    continue
+                s_num = season.seasonNumber
+                if s_num == 0: continue # Ignorer les spéciaux
+
+                watched_count = len(watched_episodes_by_season.get(s_num, set()))
+                total_count = total_episodes_by_season.get(s_num, 0)
 
                 season_data = {
-                    "season_number": season.seasonNumber,
-                    "is_watched": season.isWatched,
-                    "total_episodes": season.leafCount,
-                    "watched_episodes": season.viewedLeafCount
+                    "season_number": s_num,
+                    "is_watched": watched_count > 0 and watched_count == total_count,
+                    "total_episodes": total_count,
+                    "watched_episodes": watched_count
                 }
-                history["seasons"].append(season_data)
+                final_history["seasons"].append(season_data)
 
-            return history
+            return final_history
 
         except Exception as e:
-            current_app.logger.error(f"PlexClient: Erreur lors de la récupération de l'historique pour la série '{plex_show_obj.title}': {e}")
+            current_app.logger.error(f"PlexClient: Erreur lors de la récupération de l'historique pour la série '{plex_show_obj.title}': {e}", exc_info=True)
             return None
 
     def get_movie_watch_history(self, plex_movie_obj):
@@ -120,6 +149,81 @@ class PlexClient:
         except Exception as e:
             current_app.logger.error(f"PlexClient: Impossible de récupérer la liste des utilisateurs: {e}")
             return {}
+
+    def find_ghost_media_in_history(self, title_query):
+        """
+        Analyse l'historique Plex pour trouver des médias "fantômes" (supprimés)
+        qui correspondent à une recherche par titre.
+        """
+        ghosts = defaultdict(lambda: {
+            'title': None,
+            'media_type': 'unknown',
+            'archive_history': defaultdict(lambda: {
+                'watched_episodes': set(),
+                'last_watched': datetime.min
+            })
+        })
+
+        # On utilise le contexte admin pour avoir une vue complète de l'historique
+        history = self.admin_plex.history(maxresults=10000)
+
+        for entry in history:
+            if entry.source() is None:
+                title = entry.grandparentTitle or entry.title
+                if title and title_query.lower() in title.lower():
+                    media_key = title.lower()
+                    ghosts[media_key]['title'] = title
+
+                    user_id = str(entry.accountID)
+
+                    if entry.type == 'episode':
+                        ghosts[media_key]['media_type'] = 'show'
+                        season_num = entry.parentIndex
+                        episode_num = entry.index
+                        if season_num is not None and episode_num is not None:
+                            ghosts[media_key]['archive_history'][user_id]['watched_episodes'].add((season_num, episode_num))
+
+                    elif entry.type == 'movie':
+                        ghosts[media_key]['media_type'] = 'movie'
+                        ghosts[media_key]['archive_history'][user_id]['is_watched'] = True
+
+                    if entry.viewedAt and entry.viewedAt > ghosts[media_key]['archive_history'][user_id]['last_watched']:
+                        ghosts[media_key]['archive_history'][user_id]['last_watched'] = entry.viewedAt
+
+        # Transformer les données brutes en un format similaire à celui de l'archive_manager
+        processed_ghosts = []
+        for title, data in ghosts.items():
+            processed_item = {
+                'title': data['title'],
+                'media_type': data['media_type'],
+                'external_id': None, # On ne peut pas le deviner à ce stade
+                'year': None, # Idem
+                'summary': "Ce média a été reconstitué à partir de l'historique de visionnage de Plex.",
+                'poster_url': None, # Sera rempli plus tard si possible
+                'archive_history': []
+            }
+            for user_id, history_data in data['archive_history'].items():
+                watched_status = {}
+                if data['media_type'] == 'show':
+                    seasons = defaultdict(lambda: {'total_episodes': 0, 'watched_episodes': 0})
+                    for s_num, e_num in history_data['watched_episodes']:
+                        seasons[s_num]['watched_episodes'] += 1
+                    # Note: Le total_episodes est inconnu, on ne peut que montrer ce qui a été vu.
+                    watched_status['seasons'] = [
+                        {'season_number': s, 'watched_episodes': d['watched_episodes'], 'total_episodes': d['watched_episodes'], 'is_watched': True}
+                        for s, d in seasons.items()
+                    ]
+                elif data['media_type'] == 'movie':
+                    watched_status['is_watched'] = history_data.get('is_watched', False)
+
+                processed_item['archive_history'].append({
+                    'user_id': user_id,
+                    'archived_at': history_data['last_watched'].isoformat(),
+                    'watched_status': watched_status
+                })
+            processed_ghosts.append(processed_item)
+
+        return processed_ghosts
 
 # --- Fonctions de compatibilité pour l'ancien code ---
 
