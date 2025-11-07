@@ -91,8 +91,10 @@ def add_archived_media(media_type, external_id, user_id, rating_key):
             series_details = tvdb_client.get_series_details_by_id(external_id)
             if series_details:
                 fresh_metadata = {
-                    'title': series_details.get('name'), 'year': series_details.get('year'),
-                    'poster_url': series_details.get('image_url'), 'summary': series_details.get('description')
+                    'title': series_details.get('name'),
+                    'year': series_details.get('year'),
+                    'poster_url': series_details.get('image'),  # CORRIGÉ
+                    'summary': series_details.get('overview') # CORRIGÉ
                 }
         except Exception as e:
             logger.warning(f"Impossible de récupérer les détails TVDB pour {external_id}: {e}")
@@ -133,13 +135,16 @@ def add_archived_media(media_type, external_id, user_id, rating_key):
         'media_type': stored_media_type, 'external_id': external_id, 'archive_history': []
     })
 
-    # Mettre à jour les métadonnées en utilisant uniquement les données fraîches.
-    # Si les données fraîches ne sont pas disponibles, les champs seront None,
-    # évitant ainsi de conserver des données potentiellement obsolètes.
-    entry['title'] = fresh_metadata.get('title')
-    entry['year'] = fresh_metadata.get('year')
-    entry['poster_url'] = fresh_metadata.get('poster_url')
-    entry['summary'] = fresh_metadata.get('summary')
+    # Mettre à jour les métadonnées de manière robuste : on ne remplace une valeur
+    # existante que si la nouvelle valeur est valide (non-None).
+    if fresh_metadata.get('title'):
+        entry['title'] = fresh_metadata.get('title')
+    if fresh_metadata.get('year'):
+        entry['year'] = fresh_metadata.get('year')
+    if fresh_metadata.get('poster_url'):
+        entry['poster_url'] = fresh_metadata.get('poster_url')
+    if fresh_metadata.get('summary'):
+        entry['summary'] = fresh_metadata.get('summary')
 
     # 4. Gérer l'historique (mise à jour ou ajout)
     user_id_to_check = str(user_id)
