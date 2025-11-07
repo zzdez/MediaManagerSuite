@@ -41,6 +41,102 @@ from app.utils.bulk_move_manager import bulk_move_manager # Import du nouveau ma
 
 # --- Routes du Blueprint ---
 
+# --- Route de test pour la synchronisation de l'historique fantôme ---
+@plex_editor_bp.route('/sync_test')
+@login_required
+def sync_test_page():
+    """Affiche une page de test pour lancer la synchronisation de l'historique."""
+    return render_template('plex_editor/sync_test.html')
+
+@plex_editor_bp.route('/run_sync_test', methods=['POST'])
+@login_required
+def run_sync_test():
+    """Exécute le script de test de synchronisation de l'historique fantôme."""
+    from app.utils.archive_manager import add_archived_media
+
+    def _parse_external_id_from_guid(guid_string):
+        if not guid_string: return None, None
+        # Gère les formats comme 'tv.plex.agents.thetvdb://...' ou 'com.plexapp.agents.thetvdb://...'
+        if 'tvdb' in guid_string:
+            try: return 'show', guid_string.split('//')[1].split('?')[0]
+            except IndexError: return None, None
+        if 'tmdb' in guid_string:
+            try: return 'movie', guid_string.split('//')[1].split('?')[0]
+            except IndexError: return None, None
+        return None, None
+
+    try:
+        admin_plex = get_plex_admin_server()
+        if not admin_plex:
+            flash("Connexion au serveur Plex admin échouée.", "danger")
+            return redirect(url_for('plex_editor.sync_test_page'))
+
+        flash("Scan de l'historique Plex en cours... Cela peut prendre du temps.", "info")
+
+        history = admin_plex.history()
+
+        movie_found = False
+        show_found = False
+        processed_items = 0
+        items_scanned = 0
+
+        for entry in history:
+            items_scanned += 1
+            source_item = None
+            try:
+                source_item = entry.source()
+            except NotFound:
+                # L'exception confirme que c'est un item fantôme
+                pass
+
+            if source_item is not None:
+                continue
+
+            # --- C'est un item fantôme, on continue ---
+            media_type, external_id = None, None
+            # ratingKey est nécessaire pour que add_archived_media puisse récupérer l'historique
+            rating_key_to_archive = None
+            user_id = str(entry.accountID)
+
+            if entry.type == 'movie' and not movie_found:
+                media_type, external_id = _parse_external_id_from_guid(entry.guid)
+                if media_type == 'movie':
+                    rating_key_to_archive = entry.ratingKey
+
+            elif entry.type == 'episode' and not show_found:
+                media_type, external_id = _parse_external_id_from_guid(entry.grandparentGuid)
+                if media_type == 'show':
+                    rating_key_to_archive = entry.grandparentRatingKey
+
+            if media_type and external_id and rating_key_to_archive:
+                current_app.logger.info(f"Item fantôme trouvé : Type={media_type}, ID={external_id}, User={user_id}. Tentative d'archivage.")
+
+                success, message = add_archived_media(media_type, external_id, user_id, rating_key_to_archive)
+
+                if success:
+                    flash(f"Succès : {message}", "success")
+                    if media_type == 'movie': movie_found = True
+                    if media_type == 'show': show_found = True
+                    processed_items += 1
+                else:
+                    flash(f"Échec de l'archivage pour {media_type} ID {external_id}: {message}", "warning")
+
+            if movie_found and show_found:
+                break
+
+        if processed_items == 0:
+            flash(f"Scan terminé ({items_scanned} éléments vérifiés). Aucun nouvel item fantôme (film ou série) n'a été trouvé.", "info")
+        else:
+            flash(f"Scan terminé. {processed_items} item(s) ont été ajoutés aux archives.", "success")
+
+        return redirect(url_for('plex_editor.sync_test_page'))
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur majeure lors du test de synchronisation: {e}", exc_info=True)
+        flash(f"Une erreur inattendue est survenue: {str(e)}", "danger")
+        return redirect(url_for('plex_editor.sync_test_page'))
+
+
 @plex_editor_bp.route('/api/media/root_folders', methods=['GET'])
 @login_required
 def get_root_folders():
