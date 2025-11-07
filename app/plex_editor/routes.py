@@ -750,6 +750,24 @@ def get_media_items():
                 tmdb_client = TheMovieDBClient()
                 tvdb_client = CustomTVDBClient()
                 for item in archived_results:
+                    # Déduplication de l'historique
+                    if 'archive_history' in item:
+                        latest_history_by_user = {}
+                        for history_entry in item['archive_history']:
+                            user_id = history_entry.get('user_id')
+                            archived_at_str = history_entry.get('archived_at')
+                            if not user_id or not archived_at_str:
+                                continue
+
+                            # Convertir la date en objet datetime pour la comparaison
+                            archived_at = datetime.fromisoformat(archived_at_str)
+
+                            if user_id not in latest_history_by_user or archived_at > datetime.fromisoformat(latest_history_by_user[user_id]['archived_at']):
+                                latest_history_by_user[user_id] = history_entry
+
+                        item['archive_history'] = list(latest_history_by_user.values())
+
+                    # Récupération du poster
                     if item.get('media_type') == 'movie' and item.get('external_id'):
                         try:
                             movie_details = tmdb_client.get_movie_details(item['external_id'])

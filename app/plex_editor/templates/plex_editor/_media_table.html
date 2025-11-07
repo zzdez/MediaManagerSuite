@@ -230,26 +230,29 @@
                                         <h6><i class="bi bi-clock-history me-2"></i>Historique de <strong>{{ history.user_id }}</strong></h6>
                                         <p class="mb-1"><small>Média archivé le {{ history.archived_at | date_format }}</small></p>
 
-                                        {% if item.media_type == 'show' and history.watched_status and (history.watched_status.seasons or history.watched_status.viewed_seasons) %}
-                                            <p class="mb-1">
-                                                <strong>Détails du visionnage :</strong>
-                                                {% if history.watched_status.is_fully_watched %}
-                                                    <span class="badge bg-success">Série vue entièrement</span>
-                                                {% endif %}
-                                            </p>
-                                            <ul class="list-unstyled">
-                                                {% if history.watched_status.seasons %}
-                                                    {# Logique pour la structure détaillée future #}
-                                                    {% for season in history.watched_status.seasons %}
-                                                        <li>Saison {{ season.season_number }} : {{ season.watched_episodes }} / {{ season.total_episodes }} épisodes vus.</li>
-                                                    {% endfor %}
-                                                {% elif history.watched_status.viewed_seasons %}
-                                                    {# Logique pour la structure actuelle simple #}
-                                                    {% for season_num in history.watched_status.viewed_seasons %}
-                                                        <li>Saison {{ season_num }} vue.</li>
-                                                    {% endfor %}
-                                                {% endif %}
-                                            </ul>
+                                        {% if item.media_type == 'show' and history.watched_status.seasons %}
+                                            <div class="row gx-3">
+                                                {% for season in history.watched_status.seasons %}
+                                                    <div class="col-12 col-sm-6 col-md-4 mb-2">
+                                                        <div class="p-2 rounded" style="background-color: #343a40;">
+                                                            <strong>Saison {{ season.season_number }}</strong>
+                                                            {% if season.is_watched %}
+                                                                <span class="badge bg-success float-end">Vue entièrement</span>
+                                                            {% endif %}
+                                                            <div class="progress mt-1" style="height: 10px;">
+                                                                <div class="progress-bar {% if season.is_watched %}bg-success{% else %}bg-info{% endif %}"
+                                                                     role="progressbar"
+                                                                     style="width: {{ (season.watched_episodes / season.total_episodes) * 100 if season.total_episodes > 0 else 0 }}%;"
+                                                                     aria-valuenow="{{ season.watched_episodes }}"
+                                                                     aria-valuemin="0"
+                                                                     aria-valuemax="{{ season.total_episodes }}">
+                                                                </div>
+                                                            </div>
+                                                            <small class="text-muted d-block mt-1">Vus ({{ season.watched_episodes }} / {{ season.total_episodes }} ép.)</small>
+                                                        </div>
+                                                    </div>
+                                                {% endfor %}
+                                            </div>
                                         {% elif item.media_type == 'movie' %}
                                             <p class="mb-0">
                                                 Statut :
