@@ -5,6 +5,8 @@ import logging
 from filelock import FileLock, Timeout
 from flask import current_app
 from datetime import datetime
+from app.utils.tmdb_client import TheMovieDBClient
+from app.utils.tvdb_client import CustomTVDBClient
 
 # Logger pour ce module
 module_logger = logging.getLogger(__name__)
@@ -41,7 +43,7 @@ def _load_database():
                 return json.loads(content) if content else {}
     except (Timeout, json.JSONDecodeError) as e:
         logger.error(f"Erreur lors du chargement de {db_file}: {e}")
-        return {} # Retourner un dictionnaire vide en cas d'erreur
+        return {}
     except Exception as e:
         logger.error(f"Erreur inattendue lors du chargement de {db_file}: {e}", exc_info=True)
         raise
@@ -62,59 +64,97 @@ def _save_database(data):
         raise
 
 def _get_key(media_type, external_id):
-    """Construit une clé unique pour une entrée média."""
-    return f"{media_type.lower()}_{external_id}"
+    """Construit une clé unique au format 'tv_<id>' ou 'movie_<id>'."""
+    prefix = 'tv' if media_type == 'show' else media_type
+    return f"{prefix.lower()}_{external_id}"
 
-def add_archived_media(media_data):
+from app.utils.plex_client import PlexClient # NOUVEL IMPORT
+
+def add_archived_media(media_type, external_id, user_id, rating_key):
     """
     Ajoute ou met à jour une entrée pour un média archivé.
-    media_data doit être un dictionnaire contenant les infos à sauvegarder.
+    Récupère les métadonnées fraîches et l'historique de visionnage, et gère les doublons.
+    Retourne (True, "Success message") ou (False, "Error message").
     """
-    if not all(k in media_data for k in ['media_type', 'external_id', 'user_id']):
-        _, logger = _get_db_path_and_logger()
-        logger.error("Données manquantes pour l'archivage: media_type, external_id et user_id sont requis.")
-        return
+    _, logger = _get_db_path_and_logger()
 
-    db_key = _get_key(media_data['media_type'], media_data['external_id'])
+    if not all([media_type, external_id, user_id, rating_key]):
+        msg = "Données manquantes : media_type, external_id, user_id et rating_key sont requis."
+        logger.error(msg)
+        return False, msg
+
+    # 1. Récupérer les métadonnées fraîches (logique existante)
+    fresh_metadata = {}
+    if media_type == 'show':
+        try:
+            tvdb_client = CustomTVDBClient()
+            series_details = tvdb_client.get_series_details_by_id(external_id)
+            if series_details:
+                fresh_metadata = {
+                    'title': series_details.get('name'), 'year': series_details.get('year'),
+                    'poster_url': series_details.get('image_url'), 'summary': series_details.get('description')
+                }
+        except Exception as e:
+            logger.warning(f"Impossible de récupérer les détails TVDB pour {external_id}: {e}")
+    elif media_type == 'movie':
+        try:
+            tmdb_client = TheMovieDBClient()
+            movie_details = tmdb_client.get_movie_details(external_id)
+            if movie_details:
+                fresh_metadata = {
+                    'title': movie_details.get('title'), 'year': movie_details.get('release_date', '----').split('-')[0],
+                    'poster_url': f"https://image.tmdb.org/t/p/w500{movie_details.get('poster_path')}" if movie_details.get('poster_path') else None,
+                    'summary': movie_details.get('overview')
+                }
+        except Exception as e:
+            logger.warning(f"Impossible de récupérer les détails TMDB pour {external_id}: {e}")
+
+    # 2. Récupérer l'historique de visionnage spécifique à l'utilisateur
+    watch_history = {}
+    try:
+        plex_client = PlexClient(user_id=user_id)
+        plex_item = plex_client.get_item_by_rating_key(int(rating_key))
+        if media_type == 'show':
+            watch_history = plex_client.get_show_watch_history(plex_item)
+        else: # movie
+            watch_history = plex_client.get_movie_watch_history(plex_item)
+    except Exception as e:
+        logger.error(f"Impossible de récupérer l'historique de visionnage pour ratingKey {rating_key} / user {user_id}: {e}", exc_info=True)
+        # On ne bloque pas si Plex échoue, on archivera avec un historique vide.
+
+    # 3. Charger la base de données et préparer l'entrée
+    db_key = _get_key(media_type, external_id)
     database = _load_database()
-
-    # Obtenir ou créer l'entrée de base
     entry = database.get(db_key, {
-        'media_type': media_data['media_type'],
-        'external_id': media_data['external_id'],
-        'archive_history': []
+        'media_type': media_type, 'external_id': external_id, 'archive_history': []
     })
 
-    # Mettre à jour les métadonnées principales à chaque fois
-    entry['title'] = media_data.get('title')
-    entry['year'] = media_data.get('year')
-    entry['poster_url'] = media_data.get('poster_url')
-    entry['summary'] = media_data.get('summary')
+    # Mettre à jour les métadonnées (priorité aux fraîches)
+    entry['title'] = fresh_metadata.get('title') or entry.get('title')
+    entry['year'] = fresh_metadata.get('year') or entry.get('year')
+    entry['poster_url'] = fresh_metadata.get('poster_url') or entry.get('poster_url')
+    entry['summary'] = fresh_metadata.get('summary') or entry.get('summary')
 
-    # Chercher si une entrée existe déjà pour cet utilisateur (comparaison robuste)
-    user_id_to_check = str(media_data['user_id'])
-    existing_entry_index = -1
-    for i, history in enumerate(entry['archive_history']):
-        if str(history.get('user_id')) == user_id_to_check:
-            existing_entry_index = i
-            break
-
-    # Créer ou mettre à jour l'entrée d'historique
+    # 4. Gérer l'historique (mise à jour ou ajout)
+    user_id_to_check = str(user_id)
     new_history_entry = {
-        'user_id': user_id_to_check, # Sauvegarder en string pour la cohérence
+        'user_id': user_id_to_check,
         'archived_at': datetime.utcnow().isoformat(),
-        'watched_status': media_data.get('watched_status', {})
+        'watched_status': watch_history or {}
     }
 
-    if existing_entry_index != -1:
-        # Remplacer l'entrée existante
-        entry['archive_history'][existing_entry_index] = new_history_entry
-    else:
-        # Ajouter une nouvelle entrée
-        entry['archive_history'].append(new_history_entry)
+    # Remplacer l'entrée existante ou ajouter la nouvelle
+    new_archive_history = [h for h in entry.get('archive_history', []) if str(h.get('user_id')) != user_id_to_check]
+    new_archive_history.append(new_history_entry)
 
+    entry['archive_history'] = new_archive_history
     database[db_key] = entry
     _save_database(database)
+
+    success_msg = f"Média '{entry['title']}' archivé/mis à jour avec succès pour l'utilisateur {user_id_to_check}."
+    logger.info(success_msg)
+    return True, success_msg
+
 
 def find_archived_media_by_id(media_type, external_id):
     """
@@ -137,3 +177,35 @@ def find_archived_media_by_title(title):
             results.append(entry)
 
     return results
+
+def migrate_database_keys():
+    """
+    Migre les clés de la base de données du format 'show_<id>' vers 'tv_<id>'.
+    Cette fonction est destinée à être exécutée une seule fois au démarrage si nécessaire.
+    """
+    db_file, logger = _get_db_path_and_logger()
+    if not os.path.exists(db_file):
+        return # Pas de BDD, pas de migration à faire
+
+    database = _load_database()
+    if not database:
+        return
+
+    updated = False
+    new_database = {}
+    for key, value in database.items():
+        if key.startswith('show_'):
+            new_key = key.replace('show_', 'tv_', 1)
+            new_database[new_key] = value
+            logger.info(f"Migration de la clé d'archive: '{key}' -> '{new_key}'")
+            updated = True
+        else:
+            new_database[key] = value
+
+    if updated:
+        _save_database(new_database)
+        logger.info("Migration des clés de la base de données d'archives terminée.")
+
+# Ligne pour déclencher la migration au démarrage de l'application.
+# Cela garantit que la BDD est cohérente avant toute opération.
+migrate_database_keys()

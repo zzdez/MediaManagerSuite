@@ -1736,116 +1736,82 @@ def bulk_delete_items():
 # (### SUPPRESSION ICI ###) - La ligne d'import qui était ici a été supprimée car elle est déjà en haut du fichier.
 
 
-# --- ROUTE D'ARCHIVAGE DE FILM (VERSION CORRIGÉE) ---
+# --- ROUTE D'ARCHIVAGE DE FILM (VERSION CORRIGÉE ET CENTRALISÉE) ---
 @plex_editor_bp.route('/archive_movie', methods=['POST'])
 @login_required
 def archive_movie_route():
     data = request.get_json()
     rating_key = data.get('ratingKey')
     options = data.get('options', {})
-    user_id = data.get('userId') # Gardé pour la validation, même si le client Plex n'en a pas besoin directement ici
+    user_id = data.get('userId')
 
     if not rating_key or not user_id:
         return jsonify({'status': 'error', 'message': 'Missing ratingKey or userId.'}), 400
 
     try:
-        # Utiliser le nouveau client Plex centralisé, en passant l'ID de l'utilisateur
-        from app.utils.plex_client import PlexClient
-        plex_client = PlexClient(user_id=user_id)
+        # On utilise une seule connexion admin pour récupérer les détails de base
+        # car on a besoin des GUIDs qui ne sont pas toujours dispo pour les utilisateurs gérés.
+        admin_plex = get_plex_admin_server()
+        if not admin_plex:
+            return jsonify({'status': 'error', 'message': 'Admin Plex server connection failed.'}), 500
 
-        # Récupérer l'objet film via le client (qui a maintenant le bon contexte utilisateur)
-        movie = plex_client.get_item_by_rating_key(int(rating_key))
+        movie = admin_plex.fetchItem(int(rating_key))
         if not movie or movie.type != 'movie':
             return jsonify({'status': 'error', 'message': 'Movie not found or not a movie item.'}), 404
 
-        # La vérification du statut de visionnage se fait maintenant sur l'utilisateur sélectionné.
-        if not movie.isWatched:
+        # La validation du statut de visionnage doit se faire avec le contexte de l'utilisateur
+        user_plex = get_user_specific_plex_server_from_id(user_id)
+        user_movie_view = user_plex.fetchItem(int(rating_key))
+        if not user_movie_view.isWatched:
             return jsonify({'status': 'error', 'message': 'Movie is not marked as watched for the selected user.'}), 400
 
-        # --- ÉTAPE DE SAUVEGARDE DANS LA BDD D'ARCHIVES (AMÉLIORÉE) ---
-        try:
-            from app.utils.archive_manager import add_archived_media
+        # --- NOUVELLE LOGIQUE CENTRALISÉE ---
+        from app.utils.archive_manager import add_archived_media
+        tmdb_id = next((g.id.replace('tmdb://', '') for g in movie.guids if g.id.startswith('tmdb://')), None)
+        if not tmdb_id:
+            return jsonify({'status': 'error', 'message': 'TMDB ID not found for this movie.'}), 400
 
-            tmdb_id = next((g.id.replace('tmdb://', '') for g in movie.guids if g.id.startswith('tmdb://')), None)
+        # On passe le `user_id` et le `rating_key` à la fonction centrale
+        # Elle se chargera de récupérer l'historique de visionnage spécifique à cet utilisateur
+        success, message = add_archived_media('movie', tmdb_id, user_id, rating_key)
+        if not success:
+            return jsonify({'status': 'error', 'message': message}), 500
 
-            # Utiliser la nouvelle méthode pour obtenir l'historique détaillé
-            watch_history = plex_client.get_movie_watch_history(movie)
-
-            media_data_to_archive = {
-                'media_type': 'movie',
-                'external_id': tmdb_id,
-                'user_id': user_id,
-                'title': movie.title,
-                'year': movie.year,
-                'summary': movie.summary,
-                'poster_url': watch_history.get('poster_url') if watch_history else None,
-                'watched_status': watch_history or {'is_watched': movie.isWatched, 'status': 'Unknown'}
-            }
-            add_archived_media(media_data_to_archive)
-            current_app.logger.info(f"'{movie.title}' ajouté à la base de données d'archives.")
-        except Exception as e:
-            current_app.logger.error(f"Erreur lors de la sauvegarde dans la BDD d'archives pour '{movie.title}': {e}", exc_info=True)
-
-        # --- Radarr Actions (AMÉLIORÉES) ---
+        # --- LE RESTE DE LA LOGIQUE (RADARR, SUPPRESSION) RESTE ICI ---
         if options.get('unmonitor') or options.get('addTag'):
-            radarr_movie = None
-            guids_to_check = [g.id for g in movie.guids]
-            current_app.logger.info(f"Recherche du film '{movie.title}' dans Radarr avec les GUIDs : {guids_to_check}")
-
-            for guid_str in guids_to_check:
-                radarr_movie = get_radarr_movie_by_guid(guid_str)
-                if radarr_movie:
-                    current_app.logger.info(f"Film trouvé dans Radarr avec le GUID {guid_str}.")
-                    break
-
+            radarr_movie = get_radarr_movie_by_guid(f"tmdb:{tmdb_id}")
             if not radarr_movie:
                 return jsonify({'status': 'error', 'message': 'Movie not found in Radarr.'}), 404
 
-            if options.get('unmonitor'):
-                radarr_movie['monitored'] = False
-
+            if options.get('unmonitor'): radarr_movie['monitored'] = False
             if options.get('addTag'):
-                # Pour les films, le tag est simple.
-                watched_tags = ['vu']
-                for tag_label in watched_tags:
-                    tag_id = get_radarr_tag_id(tag_label)
-                    if tag_id and tag_id not in radarr_movie.get('tags', []):
-                        radarr_movie['tags'].append(tag_id)
-
+                tag_id = get_radarr_tag_id('vu')
+                if tag_id and tag_id not in radarr_movie.get('tags', []):
+                    radarr_movie['tags'].append(tag_id)
             if not update_radarr_movie(radarr_movie):
                 return jsonify({'status': 'error', 'message': 'Failed to update movie in Radarr.'}), 500
 
-        # --- File Deletion Action ---
         if options.get('deleteFiles'):
             media_filepath = get_media_filepath(movie)
             if media_filepath and os.path.exists(media_filepath):
                 try:
                     is_simulating = _is_dry_run_mode()
-                    dry_run_prefix = "[SIMULATION] " if is_simulating else ""
-                    current_app.logger.info(f"{dry_run_prefix}ARCHIVE: Suppression du fichier média : {media_filepath}")
-                    if not is_simulating:
-                        os.remove(media_filepath)
+                    if not is_simulating: os.remove(media_filepath)
+                    current_app.logger.info(f"ARCHIVE MOVIE: {'[SIMULATION] ' if is_simulating else ''}Deleted file: {media_filepath}")
 
-                    library_sections = plex_client.admin_plex.library.sections()
-                    temp_roots = {os.path.normpath(loc) for lib in library_sections for loc in lib.locations}
-                    temp_guards = {os.path.normpath(os.path.splitdrive(r)[0] + os.sep) if os.path.splitdrive(r)[0] else os.path.normpath(os.sep + r.split(os.sep)[1]) for r in temp_roots if r}
-                    cleanup_parent_directory_recursively(
-                        media_filepath,
-                        dynamic_plex_library_roots=list(temp_roots),
-                        base_paths_guards=list(temp_guards)
-                    )
+                    # On a besoin d'une instance admin plex pour le cleanup
+                    library_sections = admin_plex.library.sections()
+                    root_paths = {os.path.normpath(loc) for lib in library_sections for loc in lib.locations}
+                    guard_paths = {os.path.normpath(os.path.splitdrive(r)[0] + os.sep) if os.path.splitdrive(r)[0] else os.path.normpath(os.sep + r.split(os.sep)[1]) for r in root_paths if r}
+                    cleanup_parent_directory_recursively(media_filepath, list(root_paths), list(guard_paths))
                 except Exception as e_cleanup:
-                    current_app.logger.error(f"ARCHIVE: Erreur durant le nettoyage pour '{movie.title}': {e_cleanup}", exc_info=True)
+                    current_app.logger.error(f"ARCHIVE MOVIE: Cleanup error for '{movie.title}': {e_cleanup}", exc_info=True)
 
-        # --- Déclencher un scan Plex ---
         try:
-            library_name = movie.librarySectionTitle
-            movie_library = plex_client.admin_plex.library.section(library_name)
-            current_app.logger.info(f"Déclenchement d'un scan de la bibliothèque '{movie_library.title}'.")
-            if not _is_dry_run_mode():
-                movie_library.update()
+            library = admin_plex.library.section(movie.librarySectionTitle)
+            if not _is_dry_run_mode(): library.update()
         except Exception as e_scan:
-            current_app.logger.error(f"Échec du scan Plex: {e_scan}", exc_info=True)
+            current_app.logger.error(f"Failed to trigger Plex scan: {e_scan}", exc_info=True)
 
         return jsonify({'status': 'success', 'message': f"'{movie.title}' successfully archived."})
 
@@ -1854,7 +1820,9 @@ def archive_movie_route():
     except Exception as e:
         current_app.logger.error(f"Error archiving movie: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500
-# --- ROUTE POUR L'ARCHIVAGE DE SÉRIE COMPLÈTE ---
+
+
+# --- ROUTE POUR L'ARCHIVAGE DE SÉRIE (VERSION CORRIGÉE ET CENTRALISÉE) ---
 @plex_editor_bp.route('/archive_show', methods=['POST'])
 @login_required
 def archive_show_route():
@@ -1867,72 +1835,51 @@ def archive_show_route():
         return jsonify({'status': 'error', 'message': 'Missing ratingKey or userId.'}), 400
 
     try:
-        # On instancie le client Plex AVEC le contexte de l'utilisateur
-        from app.utils.plex_client import PlexClient
-        plex_client = PlexClient(user_id=user_id)
+        admin_plex = get_plex_admin_server()
+        if not admin_plex:
+            return jsonify({'status': 'error', 'message': 'Admin Plex server connection failed.'}), 500
 
-        # Récupérer l'objet série via le client (qui a maintenant le bon contexte utilisateur)
-        show = plex_client.get_item_by_rating_key(int(rating_key))
-
+        show = admin_plex.fetchItem(int(rating_key))
         if not show or show.type != 'show':
             return jsonify({'status': 'error', 'message': 'Show not found or not a show item.'}), 404
 
-        # La vérification se fait maintenant sur le statut de visionnage de l'utilisateur sélectionné
-        if show.viewedLeafCount != show.leafCount:
-            error_msg = f"Not all episodes are marked as watched for the selected user (Viewed: {show.viewedLeafCount}, Total: {show.leafCount})."
-            return jsonify({'status': 'error', 'message': error_msg}), 400
+        user_plex = get_user_specific_plex_server_from_id(user_id)
+        user_show_view = user_plex.fetchItem(int(rating_key))
+        if user_show_view.viewedLeafCount != user_show_view.leafCount:
+            return jsonify({'status': 'error', 'message': f"Not all episodes are watched for the selected user ({user_show_view.viewedLeafCount}/{user_show_view.leafCount})."}), 400
 
-        sonarr_series = next((s for g in show.guids if (s := get_sonarr_series_by_guid(g.id))), None)
+        # --- NOUVELLE LOGIQUE CENTRALISÉE ---
+        from app.utils.archive_manager import add_archived_media
+        tvdb_id = next((g.id.replace('tvdb://', '') for g in show.guids if g.id.startswith('tvdb://')), None)
+        if not tvdb_id:
+            return jsonify({'status': 'error', 'message': 'TVDB ID not found for this show.'}), 400
+
+        success, message = add_archived_media('show', tvdb_id, user_id, rating_key)
+        if not success:
+            return jsonify({'status': 'error', 'message': message}), 500
+
+        # --- LE RESTE DE LA LOGIQUE (SONARR, SUPPRESSION) RESTE ICI ---
+        sonarr_series = get_sonarr_series_by_guid(f"tvdb:{tvdb_id}")
         if not sonarr_series:
             return jsonify({'status': 'error', 'message': 'Show not found in Sonarr.'}), 404
 
-        # --- ÉTAPE DE SAUVEGARDE DANS LA BDD D'ARCHIVES (AMÉLIORÉE) ---
-        try:
-            from app.utils.archive_manager import add_archived_media
-
-            tvdb_id = next((g.id.replace('tvdb://', '') for g in show.guids if g.id.startswith('tvdb://')), None)
-
-            # Utiliser la nouvelle méthode pour obtenir l'historique détaillé
-            watch_history = plex_client.get_show_watch_history(show)
-
-            media_data_to_archive = {
-                'media_type': 'show',
-                'external_id': tvdb_id,
-                'user_id': user_id,
-                'title': show.title,
-                'year': show.year,
-                'summary': show.summary,
-                'poster_url': watch_history.get('poster_url') if watch_history else None,
-                'watched_status': watch_history or {'is_fully_watched': show.isWatched, 'seasons': []}
-            }
-            add_archived_media(media_data_to_archive)
-            current_app.logger.info(f"'{show.title}' ajouté à la base de données d'archives.")
-        except Exception as e:
-            current_app.logger.error(f"Erreur lors de la sauvegarde dans la BDD d'archives pour '{show.title}': {e}", exc_info=True)
-
-
-        # --- Logique Sonarr (AMÉLIORÉE) ---
         if options.get('unmonitor') or options.get('addTag'):
             full_series_data = get_sonarr_series_by_id(sonarr_series['id'])
             if not full_series_data: return jsonify({'status': 'error', 'message': 'Could not fetch full series details from Sonarr.'}), 500
 
-            if options.get('unmonitor'):
-                full_series_data['monitored'] = False
-
+            if options.get('unmonitor'): full_series_data['monitored'] = False
             if options.get('addTag'):
-                # *** LOGIQUE DE TAGS CORRIGÉE ***
-                # On dérive les tags depuis l'objet watch_history déjà récupéré
-                watched_tags = ['vu'] # Tag de base
+                # On a besoin de l'historique pour les tags, on le récupère à nouveau ici si nécessaire
+                from app.utils.plex_client import PlexClient
+                plex_client = PlexClient(user_id=user_id)
+                watch_history = plex_client.get_show_watch_history(user_show_view)
 
-                if watch_history.get('is_fully_watched'):
-                    watched_tags.append('vu-complet')
-
+                watched_tags = ['vu', 'vu-complet']
                 for season in watch_history.get('seasons', []):
                     if season.get('is_watched'):
                         watched_tags.append(f"Saison {season.get('season_number')}")
 
-                # Ajouter les tags à Sonarr
-                for tag_label in set(watched_tags): # Utiliser set() pour dédoublonner
+                for tag_label in set(watched_tags):
                     tag_id = get_sonarr_tag_id(tag_label)
                     if tag_id and tag_id not in full_series_data.get('tags', []):
                         full_series_data['tags'].append(tag_id)
@@ -1940,33 +1887,24 @@ def archive_show_route():
             if not update_sonarr_series(full_series_data):
                 return jsonify({'status': 'error', 'message': 'Failed to update series in Sonarr.'}), 500
 
-        # --- Logique de suppression de fichiers (RESTAURÉE) ---
         if options.get('deleteFiles'):
             episode_files = get_sonarr_episode_files(sonarr_series['id'])
-            if episode_files is None:
-                return jsonify({'status': 'error', 'message': 'Could not retrieve episode file list from Sonarr.'}), 500
+            if episode_files is not None:
+                last_deleted_filepath = None
+                for file_info in episode_files:
+                    media_filepath = file_info.get('path')
+                    if media_filepath and os.path.exists(media_filepath):
+                        try:
+                            if not _is_dry_run_mode(): os.remove(media_filepath)
+                            last_deleted_filepath = media_filepath
+                        except Exception as e_file:
+                            current_app.logger.error(f"Failed to delete file {media_filepath}: {e_file}")
 
-            last_deleted_filepath = None
-            deleted_count = 0
-            for file_info in episode_files:
-                media_filepath = file_info.get('path')
-                if media_filepath and os.path.exists(media_filepath):
-                    try:
-                        if not _is_dry_run_mode(): os.remove(media_filepath)
-                        last_deleted_filepath = media_filepath
-                        deleted_count += 1
-                        current_app.logger.info(f"ARCHIVE SHOW: {'[SIMULATION] ' if _is_dry_run_mode() else ''}Deleting file: {media_filepath}")
-                    except Exception as e_file:
-                        current_app.logger.error(f"Failed to delete file {media_filepath}: {e_file}")
-
-            if last_deleted_filepath:
-                # Utiliser l'instance admin du plex_client pour le nettoyage
-                library_sections = plex_client.admin_plex.library.sections()
-                temp_roots = {os.path.normpath(loc) for lib in library_sections for loc in lib.locations}
-                temp_guards = {os.path.normpath(os.path.splitdrive(r)[0] + os.sep) if os.path.splitdrive(r)[0] else os.path.normpath(os.sep + r.split(os.sep)[1]) for r in temp_roots if r}
-                cleanup_parent_directory_recursively(last_deleted_filepath, list(temp_roots), list(temp_guards))
-            
-            flash(f"{deleted_count} fichier(s) supprimés (ou leur suppression simulée).", "success")
+                if last_deleted_filepath:
+                    library_sections = admin_plex.library.sections()
+                    root_paths = {os.path.normpath(loc) for lib in library_sections for loc in lib.locations}
+                    guard_paths = {os.path.normpath(os.path.splitdrive(r)[0] + os.sep) if os.path.splitdrive(r)[0] else os.path.normpath(os.sep + r.split(os.sep)[1]) for r in root_paths if r}
+                    cleanup_parent_directory_recursively(last_deleted_filepath, list(root_paths), list(guard_paths))
 
         return jsonify({'status': 'success', 'message': f"Série '{show.title}' archivée avec succès."})
 
