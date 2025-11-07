@@ -1,5 +1,6 @@
 # app/plex_editor/routes.py
 # -*- coding: utf-8 -*-
+# Commentaire pour forcer la relecture du fichier
 
 import os
 from app.auth import login_required
