@@ -70,7 +70,7 @@ def _get_key(media_type, external_id):
 
 from app.utils.plex_client import PlexClient # NOUVEL IMPORT
 
-def add_archived_media(media_type, external_id, user_id, rating_key):
+def add_archived_media(media_type, external_id, user_id, rating_key=None):
     """
     Ajoute ou met à jour une entrée pour un média archivé.
     Récupère les métadonnées fraîches et l'historique de visionnage, et gère les doublons.
@@ -78,8 +78,8 @@ def add_archived_media(media_type, external_id, user_id, rating_key):
     """
     _, logger = _get_db_path_and_logger()
 
-    if not all([media_type, external_id, user_id, rating_key]):
-        msg = "Données manquantes : media_type, external_id, user_id et rating_key sont requis."
+    if not all([media_type, external_id, user_id]):
+        msg = "Données manquantes : media_type, external_id et user_id sont requis."
         logger.error(msg)
         return False, msg
 
@@ -111,18 +111,28 @@ def add_archived_media(media_type, external_id, user_id, rating_key):
         except Exception as e:
             logger.warning(f"Impossible de récupérer les détails TMDB pour {external_id}: {e}")
 
-    # 2. Récupérer l'historique de visionnage spécifique à l'utilisateur
+    # 2. Récupérer l'historique de visionnage ou créer une entrée de base pour les fantômes
     watch_history = {}
-    try:
-        plex_client = PlexClient(user_id=user_id)
-        plex_item = plex_client.get_item_by_rating_key(int(rating_key))
-        if media_type == 'show':
-            watch_history = plex_client.get_show_watch_history(plex_item)
-        else: # movie
-            watch_history = plex_client.get_movie_watch_history(plex_item)
-    except Exception as e:
-        logger.error(f"Impossible de récupérer l'historique de visionnage pour ratingKey {rating_key} / user {user_id}: {e}", exc_info=True)
-        # On ne bloque pas si Plex échoue, on archivera avec un historique vide.
+    if rating_key:
+        try:
+            plex_client = PlexClient(user_id=user_id)
+            plex_item = plex_client.get_item_by_rating_key(int(rating_key))
+            if media_type == 'show':
+                watch_history = plex_client.get_show_watch_history(plex_item)
+            else: # movie
+                watch_history = plex_client.get_movie_watch_history(plex_item)
+        except Exception as e:
+            logger.error(f"Impossible de récupérer l'historique de visionnage pour ratingKey {rating_key} / user {user_id}: {e}", exc_info=True)
+            # Fallback pour les items existants : marquer comme vu si Plex échoue
+            watch_history = {'is_fully_watched': True, 'status': 'viewed'}
+    else:
+        # Cas d'un item fantôme sans rating_key
+        logger.info(f"Création d'une entrée d'historique de base pour un item fantôme (ID externe: {external_id}).")
+        watch_history = {
+            'is_fully_watched': True,
+            'status': 'viewed_ghost', # Statut spécifique pour les fantômes
+            'last_viewed_at': datetime.utcnow().isoformat() # On utilise la date d'archivage comme fallback
+        }
 
     # 3. Charger la base de données et préparer l'entrée
     db_key = _get_key(media_type, external_id)

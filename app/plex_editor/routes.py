@@ -118,13 +118,10 @@ def run_sync_test():
             if media_type and external_id:
                 current_app.logger.info(f"Tentative d'archivage pour l'item fantôme: Type={media_type}, ID={external_id}, User={user_id}")
 
-                # On passe un `rating_key` factice car il n'est pas fiable pour les fantômes,
-                # la fonction `add_archived_media` devra être adaptée pour gérer ce cas si nécessaire.
-                # Pour l'instant, on se fie à l'ID externe.
-                success, message = add_archived_media(media_type, external_id, user_id, rating_key_to_archive=None)
+                success, message = add_archived_media(media_type, external_id, user_id)
 
                 if success:
-                    flash(f"Succès de l'archivage : {message}", "success")
+                    flash(f"Succès de l'archivage fantôme : {message}", "success")
                     if media_type == 'movie': movie_found = True
                     if media_type == 'show': show_found = True
                     processed_items += 1
