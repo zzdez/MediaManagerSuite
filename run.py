@@ -21,6 +21,17 @@ logging.getLogger("plexapi").setLevel(logging.DEBUG) # Ou INFO en prod
 # ...
 
 if __name__ == '__main__':
+    # --- DÉBOGAGE DES ROUTES ---
+    with app.app_context():
+        app.logger.info("="*80)
+        app.logger.info("LISTE DES ROUTES ENREGISTRÉES AU DÉMARRAGE")
+        for rule in app.url_map.iter_rules():
+            methods = ','.join(rule.methods)
+            line = f"Endpoint: {rule.endpoint:35s} | Methods: {methods:30s} | URL: {rule.rule}"
+            app.logger.info(line)
+        app.logger.info("="*80)
+    # --- FIN DÉBOGAGE ---
+
     flask_debug_mode = os.environ.get('FLASK_DEBUG', '0').lower() in ('true', '1', 't')
     app.logger.info(f"Démarrage MediaManagerSuite. Debug: {flask_debug_mode}, Reloader: False (pour test)")
     app.run(host='0.0.0.0', 
