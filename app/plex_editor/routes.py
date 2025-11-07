@@ -51,18 +51,27 @@ def sync_test_page():
 @plex_editor_bp.route('/run_sync_test', methods=['POST'])
 @login_required
 def run_sync_test():
-    """Exécute le script de test de synchronisation pour une collecte de données exhaustive."""
+    """Exécute le script de test de synchronisation de l'historique fantôme."""
+    from app.utils.archive_manager import add_archived_media
+
     try:
         admin_plex = get_plex_admin_server()
         if not admin_plex:
             flash("Connexion au serveur Plex admin échouée.", "danger")
             return redirect(url_for('plex_editor.sync_test_page'))
 
-        flash("Lancement de la collecte de données EXHAUSTIVE sur les 100 premiers éléments...", "info")
+        flash("Scan de l'historique Plex en cours... Cela peut prendre du temps.", "info")
 
-        history = admin_plex.history(maxresults=100)
+        # Initialisation des clients API
+        tmdb_client = TheMovieDBClient()
+        tvdb_client = CustomTVDBClient()
+
+        history = admin_plex.history(maxresults=200) # Scanner un peu plus pour augmenter les chances de trouver
+
+        movie_found = False
+        show_found = False
+        processed_items = 0
         items_scanned = 0
-        ghost_items_found = 0
 
         for entry in history:
             items_scanned += 1
@@ -75,39 +84,62 @@ def run_sync_test():
             if source_item is not None:
                 continue
 
-            ghost_items_found += 1
-            current_app.logger.info("="*80)
-            current_app.logger.info(f"ITEM FANTÔME N°{ghost_items_found} TROUVÉ - DUMP DE TOUS LES ATTRIBUTS")
-            current_app.logger.info("="*80)
+            # C'est un item fantôme. On tente de trouver l'ID externe.
+            media_type, external_id = None, None
+            user_id = str(getattr(entry, 'accountID', None))
+            year = getattr(entry, 'originallyAvailableAt', None)
+            if year:
+                year = year.year
 
-            # Itérer sur tous les attributs de l'objet 'entry'
-            for attr in dir(entry):
-                if attr.startswith('_'): # Ignorer les attributs privés/internes
-                    continue
+            if entry.type == 'movie' and not movie_found:
+                title = getattr(entry, 'title', None)
+                if title and year:
+                    current_app.logger.info(f"Item fantôme (film) détecté: '{title}' ({year}). Recherche sur TMDB...")
+                    search_results = tmdb_client.search_movie(title, year=year)
+                    if search_results:
+                        media_type = 'movie'
+                        external_id = search_results[0].get('id')
+                        current_app.logger.info(f"-> Trouvé sur TMDB ! ID: {external_id}")
 
-                value = 'N/A'
-                try:
-                    # Obtenir la valeur de l'attribut
-                    attr_value = getattr(entry, attr)
-                    # Ne pas appeler les méthodes pour éviter les effets de bord
-                    if callable(attr_value):
-                        value = f"<Méthode: {attr}>"
-                    else:
-                        value = attr_value
-                except Exception as e:
-                    value = f"<Erreur lors de la lecture: {e}>"
+            elif entry.type == 'episode' and not show_found:
+                show_title = getattr(entry, 'grandparentTitle', None)
+                if show_title and year:
+                    current_app.logger.info(f"Item fantôme (série) détecté: '{show_title}' ({year}). Recherche sur TVDB...")
+                    search_results = tvdb_client.search_and_translate_series(show_title, year=str(year))
+                    if search_results:
+                        media_type = 'show'
+                        external_id = search_results[0].get('tvdb_id')
+                        current_app.logger.info(f"-> Trouvé sur TVDB ! ID: {external_id}")
 
-                current_app.logger.info(f"  - {attr}: {value}")
+            if media_type and external_id:
+                current_app.logger.info(f"Tentative d'archivage pour l'item fantôme: Type={media_type}, ID={external_id}, User={user_id}")
 
-            if ghost_items_found >= 20: # Limiter à 20 items pour ne pas surcharger les logs
-                current_app.logger.info("Limite de 20 items fantômes atteinte pour l'analyse. Arrêt de la collecte.")
+                # On passe un `rating_key` factice car il n'est pas fiable pour les fantômes,
+                # la fonction `add_archived_media` devra être adaptée pour gérer ce cas si nécessaire.
+                # Pour l'instant, on se fie à l'ID externe.
+                success, message = add_archived_media(media_type, external_id, user_id, rating_key_to_archive=None)
+
+                if success:
+                    flash(f"Succès de l'archivage : {message}", "success")
+                    if media_type == 'movie': movie_found = True
+                    if media_type == 'show': show_found = True
+                    processed_items += 1
+                else:
+                    flash(f"Échec de l'archivage pour {media_type} ID {external_id}: {message}", "warning")
+
+
+            if movie_found and show_found:
                 break
 
-        flash(f"Scan de collecte terminé. {items_scanned} éléments vérifiés, {ghost_items_found} items fantômes analysés. Logs disponibles.", "success")
+        if processed_items == 0:
+            flash(f"Scan terminé ({items_scanned} éléments vérifiés). Aucun nouvel item fantôme (film ou série) n'a pu être identifié via la recherche par titre/année.", "info")
+        else:
+            flash(f"Scan terminé. {processed_items} item(s) fantôme(s) ont été identifiés avec succès. Prochaine étape : archivage.", "success")
+
         return redirect(url_for('plex_editor.sync_test_page'))
 
     except Exception as e:
-        current_app.logger.error(f"Erreur majeure lors de la collecte de données exhaustive: {e}", exc_info=True)
+        current_app.logger.error(f"Erreur majeure lors du test de synchronisation: {e}", exc_info=True)
         flash(f"Une erreur inattendue est survenue: {str(e)}", "danger")
         return redirect(url_for('plex_editor.sync_test_page'))
 
