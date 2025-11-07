@@ -51,35 +51,18 @@ def sync_test_page():
 @plex_editor_bp.route('/run_sync_test', methods=['POST'])
 @login_required
 def run_sync_test():
-    """Exécute le script de test de synchronisation de l'historique fantôme."""
-    from app.utils.archive_manager import add_archived_media
-
-    def _parse_external_id_from_guid(guid_string):
-        if not guid_string: return None, None
-        # Gère les formats comme 'tv.plex.agents.thetvdb://...' ou 'com.plexapp.agents.thetvdb://...'
-        if 'tvdb' in guid_string:
-            try: return 'show', guid_string.split('//')[1].split('?')[0]
-            except IndexError: return None, None
-        if 'tmdb' in guid_string:
-            try: return 'movie', guid_string.split('//')[1].split('?')[0]
-            except IndexError: return None, None
-        return None, None
-
+    """Exécute le script de test de synchronisation pour une collecte de données exhaustive."""
     try:
         admin_plex = get_plex_admin_server()
         if not admin_plex:
             flash("Connexion au serveur Plex admin échouée.", "danger")
             return redirect(url_for('plex_editor.sync_test_page'))
 
-        flash("Scan de l'historique Plex en cours... Cela peut prendre du temps.", "info")
+        flash("Lancement de la collecte de données EXHAUSTIVE sur les 100 premiers éléments...", "info")
 
-        history = admin_plex.history()
-
-        movie_found = False
-        show_found = False
-        processed_items = 0
+        history = admin_plex.history(maxresults=100)
         items_scanned = 0
-        ghost_items_logged = 0
+        ghost_items_found = 0
 
         for entry in history:
             items_scanned += 1
@@ -87,66 +70,44 @@ def run_sync_test():
             try:
                 source_item = entry.source()
             except NotFound:
-                # L'exception confirme que c'est un item fantôme
                 pass
 
             if source_item is not None:
                 continue
 
-            # --- C'est un item fantôme, on logge ses détails ---
-            if ghost_items_logged < 5:
-                current_app.logger.info("="*50)
-                current_app.logger.info(f"DÉTAILS ITEM FANTÔME N°{ghost_items_logged + 1}")
-                current_app.logger.info(f"  - Type: {entry.type}")
-                current_app.logger.info(f"  - Titre: {getattr(entry, 'title', 'N/A')}")
-                current_app.logger.info(f"  - GUID: {getattr(entry, 'guid', 'N/A')}")
-                current_app.logger.info(f"  - GrandparentGUID: {getattr(entry, 'grandparentGuid', 'N/A')}")
-                current_app.logger.info(f"  - RatingKey: {getattr(entry, 'ratingKey', 'N/A')}")
-                current_app.logger.info(f"  - GrandparentRatingKey: {getattr(entry, 'grandparentRatingKey', 'N/A')}")
-                current_app.logger.info(f"  - AccountID: {getattr(entry, 'accountID', 'N/A')}")
-                current_app.logger.info("="*50)
-                ghost_items_logged += 1
+            ghost_items_found += 1
+            current_app.logger.info("="*80)
+            current_app.logger.info(f"ITEM FANTÔME N°{ghost_items_found} TROUVÉ - DUMP DE TOUS LES ATTRIBUTS")
+            current_app.logger.info("="*80)
 
-            # --- Logique d'archivage existante ---
-            media_type, external_id = None, None
-            rating_key_to_archive = None
-            user_id = str(entry.accountID)
+            # Itérer sur tous les attributs de l'objet 'entry'
+            for attr in dir(entry):
+                if attr.startswith('_'): # Ignorer les attributs privés/internes
+                    continue
 
-            if entry.type == 'movie' and not movie_found:
-                media_type, external_id = _parse_external_id_from_guid(entry.guid)
-                if media_type == 'movie':
-                    rating_key_to_archive = entry.ratingKey
+                value = 'N/A'
+                try:
+                    # Obtenir la valeur de l'attribut
+                    attr_value = getattr(entry, attr)
+                    # Ne pas appeler les méthodes pour éviter les effets de bord
+                    if callable(attr_value):
+                        value = f"<Méthode: {attr}>"
+                    else:
+                        value = attr_value
+                except Exception as e:
+                    value = f"<Erreur lors de la lecture: {e}>"
 
-            elif entry.type == 'episode' and not show_found:
-                media_type, external_id = _parse_external_id_from_guid(entry.grandparentGuid)
-                if media_type == 'show':
-                    rating_key_to_archive = entry.grandparentRatingKey
+                current_app.logger.info(f"  - {attr}: {value}")
 
-            if media_type and external_id and rating_key_to_archive:
-                current_app.logger.info(f"Item fantôme trouvé : Type={media_type}, ID={external_id}, User={user_id}. Tentative d'archivage.")
-
-                success, message = add_archived_media(media_type, external_id, user_id, rating_key_to_archive)
-
-                if success:
-                    flash(f"Succès : {message}", "success")
-                    if media_type == 'movie': movie_found = True
-                    if media_type == 'show': show_found = True
-                    processed_items += 1
-                else:
-                    flash(f"Échec de l'archivage pour {media_type} ID {external_id}: {message}", "warning")
-
-            if movie_found and show_found:
+            if ghost_items_found >= 20: # Limiter à 20 items pour ne pas surcharger les logs
+                current_app.logger.info("Limite de 20 items fantômes atteinte pour l'analyse. Arrêt de la collecte.")
                 break
 
-        if processed_items == 0:
-            flash(f"Scan terminé ({items_scanned} éléments vérifiés). Aucun nouvel item fantôme (film ou série) n'a été trouvé. Vérifiez les logs pour plus de détails.", "info")
-        else:
-            flash(f"Scan terminé. {processed_items} item(s) ont été ajoutés aux archives.", "success")
-
+        flash(f"Scan de collecte terminé. {items_scanned} éléments vérifiés, {ghost_items_found} items fantômes analysés. Logs disponibles.", "success")
         return redirect(url_for('plex_editor.sync_test_page'))
 
     except Exception as e:
-        current_app.logger.error(f"Erreur majeure lors du test de synchronisation: {e}", exc_info=True)
+        current_app.logger.error(f"Erreur majeure lors de la collecte de données exhaustive: {e}", exc_info=True)
         flash(f"Une erreur inattendue est survenue: {str(e)}", "danger")
         return redirect(url_for('plex_editor.sync_test_page'))
 
