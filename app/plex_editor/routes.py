@@ -79,6 +79,7 @@ def run_sync_test():
         show_found = False
         processed_items = 0
         items_scanned = 0
+        ghost_items_logged = 0
 
         for entry in history:
             items_scanned += 1
@@ -92,9 +93,22 @@ def run_sync_test():
             if source_item is not None:
                 continue
 
-            # --- C'est un item fantôme, on continue ---
+            # --- C'est un item fantôme, on logge ses détails ---
+            if ghost_items_logged < 5:
+                current_app.logger.info("="*50)
+                current_app.logger.info(f"DÉTAILS ITEM FANTÔME N°{ghost_items_logged + 1}")
+                current_app.logger.info(f"  - Type: {entry.type}")
+                current_app.logger.info(f"  - Titre: {getattr(entry, 'title', 'N/A')}")
+                current_app.logger.info(f"  - GUID: {getattr(entry, 'guid', 'N/A')}")
+                current_app.logger.info(f"  - GrandparentGUID: {getattr(entry, 'grandparentGuid', 'N/A')}")
+                current_app.logger.info(f"  - RatingKey: {getattr(entry, 'ratingKey', 'N/A')}")
+                current_app.logger.info(f"  - GrandparentRatingKey: {getattr(entry, 'grandparentRatingKey', 'N/A')}")
+                current_app.logger.info(f"  - AccountID: {getattr(entry, 'accountID', 'N/A')}")
+                current_app.logger.info("="*50)
+                ghost_items_logged += 1
+
+            # --- Logique d'archivage existante ---
             media_type, external_id = None, None
-            # ratingKey est nécessaire pour que add_archived_media puisse récupérer l'historique
             rating_key_to_archive = None
             user_id = str(entry.accountID)
 
@@ -125,7 +139,7 @@ def run_sync_test():
                 break
 
         if processed_items == 0:
-            flash(f"Scan terminé ({items_scanned} éléments vérifiés). Aucun nouvel item fantôme (film ou série) n'a été trouvé.", "info")
+            flash(f"Scan terminé ({items_scanned} éléments vérifiés). Aucun nouvel item fantôme (film ou série) n'a été trouvé. Vérifiez les logs pour plus de détails.", "info")
         else:
             flash(f"Scan terminé. {processed_items} item(s) ont été ajoutés aux archives.", "success")
 
