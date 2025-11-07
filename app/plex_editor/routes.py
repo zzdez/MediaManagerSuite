@@ -101,41 +101,51 @@ def run_sync_test():
             media_type, external_id = None, None
             unique_key = None
 
-            # Déterminer la clé unique pour le cache
+            # --- NOUVELLE LOGIQUE DE CLÉ DE CACHE ---
+            unique_key = None
+            title = None
+
             if entry.type == 'movie':
                 title = getattr(entry, 'title', None)
                 if title and year:
-                    unique_key = f"movie_{title}_{year}"
+                    unique_key = f"movie_{title}_{year}" # La clé pour les films reste inchangée (titre + année)
             elif entry.type == 'episode':
-                show_title = getattr(entry, 'grandparentTitle', None)
-                if show_title and year:
-                    unique_key = f"show_{show_title}_{year}"
+                title = getattr(entry, 'grandparentTitle', None)
+                if title:
+                    unique_key = f"show_{title}" # La clé pour les séries est MAINTENANT juste le titre
 
             if not unique_key:
                 continue
 
-            # --- NOUVELLE LOGIQUE DE CACHE ---
+            # --- LOGIQUE DE CACHE ADAPTÉE ---
             if unique_key in media_cache:
-                # Si l'item est en cache (même si c'est 'None'), on récupère les données
                 media_type, external_id = media_cache[unique_key]
             else:
-                # Sinon, on fait la recherche externe
+                # Recherche externe uniquement si pas dans le cache
+                media_type, external_id = None, None
                 if entry.type == 'movie':
-                    title = getattr(entry, 'title', None)
                     search_results = tmdb_client.search_movie(title)
+                    # Le filtrage par année reste pertinent et fiable pour les films
                     filtered_results = [m for m in search_results if m.get('year') == str(year)]
                     if filtered_results:
                         media_type = 'movie'
                         external_id = filtered_results[0].get('id')
+
                 elif entry.type == 'episode':
-                    show_title = getattr(entry, 'grandparentTitle', None)
-                    search_results = tvdb_client.search_and_translate_series(show_title)
+                    # L'année de l'épisode est un 'indice' pour la première recherche, mais n'est pas dans la clé
+                    search_results = tvdb_client.search_and_translate_series(title)
                     filtered_results = [s for s in search_results if s.get('year') == str(year)]
                     if filtered_results:
                         media_type = 'show'
                         external_id = filtered_results[0].get('tvdb_id')
+                    else:
+                        # Si la recherche avec l'année échoue, tenter sans pour trouver la série principale
+                        current_app.logger.warning(f"Recherche TVDB pour '{title}' (Année: {year}) a échoué. Tentative sans l'année.")
+                        if search_results:
+                             media_type = 'show'
+                             external_id = search_results[0].get('tvdb_id')
 
-                # Mettre le résultat en cache (y compris 'None' si non trouvé pour éviter de chercher à nouveau)
+                # Mettre en cache le résultat (y compris None) pour la clé unique
                 media_cache[unique_key] = (media_type, external_id)
 
             # --- FIN DE LA NOUVELLE LOGIQUE DE CACHE ---
