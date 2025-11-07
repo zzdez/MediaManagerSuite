@@ -127,12 +127,14 @@ La modale d'ajout de torrent (`addTorrentModal`) présente des défis uniques en
     - Ajout de routes de débogage pour lister toutes les routes de l'application.
   - **Conclusion** : L'environnement de développement est dans un état instable qui rend impossible toute vérification. Ce problème devra être résolu en priorité avant de pouvoir continuer.
 
-- **Prochaines Étapes (Session Suivante)** :
-  1.  **Priorité 0 : Résoudre le problème de l'environnement de développement.** C'est un prérequis indispensable. Il faudra s'assurer que le serveur Flask se charge et recharge correctement, en prenant en compte toutes les modifications du code.
-  2.  **Priorité 1 : Tester le script de synchronisation de l'historique fantôme.** Une fois le serveur fonctionnel, lancer le test via la page `/plex/sync_test` et vérifier que le script identifie et archive correctement un film et une série supprimés.
-  3.  **Priorité 2 : Développer la fonctionnalité de synchronisation complète.**
-      - Ajouter un bouton dans l'interface (par exemple, dans la page de configuration).
-      - Ce bouton déclenchera un scan complet de l'historique fantôme, l'analysera, le comparera à la base d'archives existante et ajoutera les entrées manquantes.
-      - Implémenter un retour utilisateur pour indiquer que la synchronisation est en cours et qu'elle est terminée.
-  4.  **Priorité 3 : Enrichir la structure de données.**
-      - Mettre à jour la fonction `add_archived_media` pour sauvegarder des détails de visionnage plus fins pour les séries (par exemple, le nombre d'épisodes vus par saison), comme demandé initialement.
+- **État Final de la Session** :
+  - **Succès** : Après de multiples tentatives, le problème de routage a été résolu. La page de test `/plex/sync_test` est désormais accessible.
+  - **Échec** : Le script de synchronisation s'exécute mais ne parvient pas à identifier correctement les "items fantômes". La logique actuelle, qui se base sur une exception `NotFound` et une analyse des `guid`, est inefficace.
+
+- **Prochaines Étapes (Stratégie Recommandée)** :
+  1.  **Changer de Stratégie de Débogage** : La tentative de "deviner" la structure des données a échoué. La prochaine session doit se concentrer sur l'obtention de données réelles.
+  2.  **Modifier le script de test** : Le script `/plex/run_sync_test` doit être temporairement modifié non pas pour traiter les données, mais pour **collecter et logger** les détails bruts d'un échantillon d'entrées de l'historique (par exemple, les 100 premières). Il faudra logger tous les attributs disponibles pour chaque entrée (`entry.type`, `entry.title`, `entry.guid`, `entry.grandparentGuid`, etc.).
+  3.  **Analyser les Logs** : L'utilisateur devra lancer ce script modifié et fournir les logs générés.
+  4.  **Adapter la Logique** : En se basant sur l'analyse de ces logs, nous pourrons enfin écrire une condition fiable pour identifier un item comme "fantôme" et savoir quel attribut (`guid`, `grandparentGuid`, etc.) contient l'identifiant externe pertinent.
+  5.  **Finaliser le Test** : Une fois la logique de détection corrigée, l'utilisateur pourra valider que le script archive bien un film et une série fantômes.
+  6.  **Développer la Fonctionnalité Complète** : Procéder ensuite au développement de la synchronisation complète (scan de tout l'historique, bouton dans l'interface, etc.) et à l'enrichissement des données de visionnage.
