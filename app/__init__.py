@@ -109,7 +109,7 @@ def create_app(config_class=Config):
 
     # Enregistrement des Blueprints
     from app.plex_editor import plex_editor_bp
-    app.register_blueprint(plex_editor_bp, url_prefix='/plex')
+    app.register_blueprint(plex_editor_bp)
     logger.info("Blueprint 'plex_editor' enregistré avec succès.")
 
     from app.seedbox_ui import seedbox_ui_bp
