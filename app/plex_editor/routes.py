@@ -81,7 +81,8 @@ def run_sync_test():
         tvdb_client = CustomTVDBClient()
         history = user_plex.history(maxresults=300)
 
-        processed_items = set()
+        media_cache = {} # Remplacer processed_items par un cache {unique_key: (media_type, external_id)}
+        archived_count = 0
 
         for entry in history:
             source_item = None
@@ -98,39 +99,54 @@ def run_sync_test():
                 year = year.year
 
             media_type, external_id = None, None
-
-            # Pour éviter de traiter le même film ou la même série plusieurs fois
             unique_key = None
 
+            # Déterminer la clé unique pour le cache
             if entry.type == 'movie':
                 title = getattr(entry, 'title', None)
-                unique_key = f"movie_{title}_{year}"
-                if title and year and unique_key not in processed_items:
+                if title and year:
+                    unique_key = f"movie_{title}_{year}"
+            elif entry.type == 'episode':
+                show_title = getattr(entry, 'grandparentTitle', None)
+                if show_title and year:
+                    unique_key = f"show_{show_title}_{year}"
+
+            if not unique_key:
+                continue
+
+            # --- NOUVELLE LOGIQUE DE CACHE ---
+            if unique_key in media_cache:
+                # Si l'item est en cache (même si c'est 'None'), on récupère les données
+                media_type, external_id = media_cache[unique_key]
+            else:
+                # Sinon, on fait la recherche externe
+                if entry.type == 'movie':
+                    title = getattr(entry, 'title', None)
                     search_results = tmdb_client.search_movie(title)
                     filtered_results = [m for m in search_results if m.get('year') == str(year)]
                     if filtered_results:
                         media_type = 'movie'
                         external_id = filtered_results[0].get('id')
-
-            elif entry.type == 'episode':
-                show_title = getattr(entry, 'grandparentTitle', None)
-                unique_key = f"show_{show_title}_{year}"
-                if show_title and year and unique_key not in processed_items:
+                elif entry.type == 'episode':
+                    show_title = getattr(entry, 'grandparentTitle', None)
                     search_results = tvdb_client.search_and_translate_series(show_title)
                     filtered_results = [s for s in search_results if s.get('year') == str(year)]
                     if filtered_results:
                         media_type = 'show'
                         external_id = filtered_results[0].get('tvdb_id')
 
-            if media_type and external_id:
-                processed_items.add(unique_key)
+                # Mettre le résultat en cache (y compris 'None' si non trouvé pour éviter de chercher à nouveau)
+                media_cache[unique_key] = (media_type, external_id)
 
-                # Enrichissement pour les épisodes
+            # --- FIN DE LA NOUVELLE LOGIQUE DE CACHE ---
+
+            # Si on a un ID (depuis le cache ou une nouvelle recherche), on traite TOUJOURS l'entrée
+            if media_type and external_id:
                 season_number = episode_number = None
                 if entry.type == 'episode':
                     season_number = getattr(entry, 'parentIndex', None)
                     episode_number = getattr(entry, 'index', None)
-                    current_app.logger.info(f"-> Détails de l'épisode fantôme trouvés: Saison={season_number}, Épisode={episode_number}")
+                    current_app.logger.info(f"-> Détails de l'épisode fantôme trouvés pour '{unique_key}': Saison={season_number}, Épisode={episode_number}")
 
                 success, message = add_archived_media(
                     media_type,
@@ -140,15 +156,22 @@ def run_sync_test():
                     episode_number=episode_number
                 )
 
-                if success:
-                    flash(f"Succès de l'archivage fantôme : {message}", "success")
-                else:
-                    flash(f"Échec ou info pour l'archivage de {unique_key}: {message}", "warning")
+                # On ne flashe que le premier succès pour un item donné pour éviter le spam
+                if success and unique_key not in (getattr(request, '_processed_flash', set())):
+                    flash(f"Archivage fantôme réussi pour : {unique_key}", "success")
+                    if not hasattr(request, '_processed_flash'):
+                        request._processed_flash = set()
+                    request._processed_flash.add(unique_key)
+                    archived_count +=1
+                elif not success:
+                     # On peut vouloir logger les échecs ou les infos
+                     current_app.logger.info(f"Info/Échec archivage fantôme pour {unique_key}: {message}")
 
-        if not processed_items:
-            flash(f"Scan terminé. Aucun nouvel item fantôme n'a pu être identifié.", "info")
+
+        if archived_count == 0:
+            flash("Scan terminé. Aucun nouvel item fantôme n'a pu être identifié.", "info")
         else:
-            flash(f"Scan terminé. {len(processed_items)} item(s) fantôme(s) ont été traités.", "success")
+            flash(f"Scan terminé. {archived_count} nouveau(x) média(s) fantôme(s) ont été archivés.", "success")
 
         return redirect(url_for('plex_editor.sync_test_page'))
 
