@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>Test de Synchronisation de l'Historique Fantôme de Plex</h1>
+    <p>Cette page est un outil de développement pour tester la synchronisation de l'historique des médias supprimés de Plex.</p>
+    <p>Cliquez sur le bouton ci-dessous pour lancer un scan limité (un film et une série) de l'historique fantôme. Les éléments trouvés seront ajoutés à la base de données d'archives.</p>
+
+    <form action="{{ url_for('plex_editor.run_sync_test') }}" method="POST">
+        <button type="submit" class="btn btn-primary">Lancer le Test de Synchronisation</button>
+    </form>
+
+    <div id="sync-results" class="mt-4">
+        <!-- Les résultats de la synchronisation apparaîtront ici -->
+    </div>
+</div>
+{% endblock %}

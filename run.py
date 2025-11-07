@@ -22,8 +22,8 @@ logging.getLogger("plexapi").setLevel(logging.DEBUG) # Ou INFO en prod
 
 if __name__ == '__main__':
     flask_debug_mode = os.environ.get('FLASK_DEBUG', '0').lower() in ('true', '1', 't')
-    app.logger.info(f"Démarrage MediaManagerSuite. Debug: {flask_debug_mode}, Reloader: False (pour test)")
+    app.logger.info(f"Démarrage MediaManagerSuite. Debug: {flask_debug_mode}, Reloader: True (pour test)")
     app.run(host='0.0.0.0', 
             port=5001,
             debug=flask_debug_mode, 
-            use_reloader=False)
+            use_reloader=True)

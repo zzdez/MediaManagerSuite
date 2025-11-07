@@ -96,3 +96,43 @@ La modale d'ajout de torrent (`addTorrentModal`) présente des défis uniques en
       - S'assurer que le badge "Archivé" et l'infobulle (tooltip) s'affichent correctement et avec les bonnes informations formatées sur les résultats de recherche pertinents.
   3.  **Validation Complète** :
       - Effectuer un test de bout en bout : archiver un nouveau média, puis le rechercher dans les deux interfaces pour confirmer que l'ensemble du flux fonctionne comme prévu.
+
+### Session du 7 Novembre 2025 : Fiabilisation et Préparation de la Synchro de l'Historique Fantôme
+
+- **Objectif initial** : Corriger les bugs d'affichage des médias archivés et explorer la possibilité de synchroniser l'historique des médias supprimés de Plex ("historique fantôme").
+
+- **Réalisations** :
+  - **Correction de la logique d'archivage manuelle** : Nous avons pivoté pour corriger la cause racine des bugs d'affichage. La fonction `add_archived_media` dans `archive_manager.py` a été entièrement revue pour :
+    - **Empêcher les doublons** : Le système remplace désormais l'entrée d'un utilisateur pour un média donné, au lieu d'en ajouter une nouvelle à chaque archivage.
+    - **Enrichissement des métadonnées** : La fonction récupère maintenant des métadonnées riches et persistantes (poster, résumé, année) depuis TMDB (pour les films) et TVDB (pour les séries), garantissant que les informations restent valides même après la suppression du média de Plex.
+    - **Standardisation des clés** : Les entrées dans `archive_database.json` utilisent maintenant un format de clé standard (`tv_<id>` ou `movie_<id>`), améliorant la cohérence de la base de données.
+    - **Correction de bugs multiples** : Nous avons résolu des `TypeError` dans les routes et des incohérences dans la structure des données de visionnage (`watched_status`).
+
+  - **Préparation du script de synchronisation de l'historique fantôme** :
+    - **Création d'une page de test** : Une nouvelle page a été ajoutée à l'URL `/plex/sync_test` avec un template `sync_test.html` et un bouton pour lancer le test.
+    - **Implémentation de la logique de scan** : Une nouvelle route, `/plex/run_sync_test`, a été créée. Elle contient la logique principale pour :
+      1.  Parcourir l'historique complet de Plex.
+      2.  Identifier les éléments "fantômes" (ceux dont la source n'existe plus).
+      3.  Extraire l'identifiant externe (TMDB/TVDB) à partir du `guid` de l'entrée d'historique.
+      4.  Appeler la fonction fiabilisée `add_archived_media` pour sauvegarder ces médias fantômes dans notre base de données.
+    - Le script est conçu pour un test initial : il s'arrête après avoir trouvé et archivé un film et une série.
+
+- **Problème Bloquant : Instabilité du Serveur de Développement** :
+  - Un problème majeur et persistant avec le serveur Flask nous a empêchés de tester les nouvelles fonctionnalités.
+  - **Symptômes** : Le serveur ne prend pas en compte les modifications de code, même après redémarrage. Les nouvelles routes renvoient systématiquement des erreurs `404 Not Found`, et les routes existantes comme `/login` renvoient des erreurs `405 Method Not Allowed` pour les requêtes `POST`, bien que le code soit correct.
+  - **Actions de débogage (sans succès)** :
+    - Vérification des blueprints et des préfixes d'URL.
+    - Suppression des caches Python (`__pycache__`).
+    - Activation du `reloader` de Flask dans `run.py`.
+    - Ajout de routes de débogage pour lister toutes les routes de l'application.
+  - **Conclusion** : L'environnement de développement est dans un état instable qui rend impossible toute vérification. Ce problème devra être résolu en priorité avant de pouvoir continuer.
+
+- **Prochaines Étapes (Session Suivante)** :
+  1.  **Priorité 0 : Résoudre le problème de l'environnement de développement.** C'est un prérequis indispensable. Il faudra s'assurer que le serveur Flask se charge et recharge correctement, en prenant en compte toutes les modifications du code.
+  2.  **Priorité 1 : Tester le script de synchronisation de l'historique fantôme.** Une fois le serveur fonctionnel, lancer le test via la page `/plex/sync_test` et vérifier que le script identifie et archive correctement un film et une série supprimés.
+  3.  **Priorité 2 : Développer la fonctionnalité de synchronisation complète.**
+      - Ajouter un bouton dans l'interface (par exemple, dans la page de configuration).
+      - Ce bouton déclenchera un scan complet de l'historique fantôme, l'analysera, le comparera à la base d'archives existante et ajoutera les entrées manquantes.
+      - Implémenter un retour utilisateur pour indiquer que la synchronisation est en cours et qu'elle est terminée.
+  4.  **Priorité 3 : Enrichir la structure de données.**
+      - Mettre à jour la fonction `add_archived_media` pour sauvegarder des détails de visionnage plus fins pour les séries (par exemple, le nombre d'épisodes vus par saison), comme demandé initialement.
