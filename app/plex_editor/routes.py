@@ -745,44 +745,6 @@ def get_media_items():
             from app.utils.archive_manager import find_archived_media_by_title
             archived_results = find_archived_media_by_title(title_filter)
 
-            # NOUVEAU BLOC : Enrichir les résultats archivés avec des posters valides
-            if archived_results:
-                tmdb_client = TheMovieDBClient()
-                tvdb_client = CustomTVDBClient()
-                for item in archived_results:
-                    # Déduplication de l'historique
-                    if 'archive_history' in item:
-                        latest_history_by_user = {}
-                        for history_entry in item['archive_history']:
-                            user_id = history_entry.get('user_id')
-                            archived_at_str = history_entry.get('archived_at')
-                            if not user_id or not archived_at_str:
-                                continue
-
-                            # Convertir la date en objet datetime pour la comparaison
-                            archived_at = datetime.fromisoformat(archived_at_str)
-
-                            if user_id not in latest_history_by_user or archived_at > datetime.fromisoformat(latest_history_by_user[user_id]['archived_at']):
-                                latest_history_by_user[user_id] = history_entry
-
-                        item['archive_history'] = list(latest_history_by_user.values())
-
-                    # Récupération du poster
-                    if item.get('media_type') == 'movie' and item.get('external_id'):
-                        try:
-                            movie_details = tmdb_client.get_movie_details(item['external_id'])
-                            if movie_details and movie_details.get('poster_path'):
-                                item['poster_url'] = f"https://image.tmdb.org/t/p/w500{movie_details['poster_path']}"
-                        except Exception as e:
-                            current_app.logger.warning(f"Could not fetch TMDB poster for archived movie {item.get('title')}: {e}")
-                    elif item.get('media_type') == 'show' and item.get('external_id'):
-                        try:
-                            series_details = tvdb_client.get_series_details_by_id(item['external_id'])
-                            if series_details and series_details.get('image_url'):
-                                item['poster_url'] = series_details['image_url']
-                        except Exception as e:
-                            current_app.logger.warning(f"Could not fetch TVDB poster for archived show {item.get('title')}: {e}")
-
             # Priorité n°2 : Si (et seulement si) on n'a rien trouvé dans nos archives, on cherche des suggestions externes
             if not archived_results:
                 current_app.logger.info(f"No results in Plex or Archive for '{title_filter}'. Searching externally.")
