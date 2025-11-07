@@ -95,20 +95,24 @@ def run_sync_test():
                 title = getattr(entry, 'title', None)
                 if title and year:
                     current_app.logger.info(f"Item fantôme (film) détecté: '{title}' ({year}). Recherche sur TMDB...")
-                    search_results = tmdb_client.search_movie(title, year=year)
-                    if search_results:
+                    search_results = tmdb_client.search_movie(title)
+                    # Filtrer les résultats par année manuellement
+                    filtered_results = [m for m in search_results if m.get('year') == str(year)]
+                    if filtered_results:
                         media_type = 'movie'
-                        external_id = search_results[0].get('id')
+                        external_id = filtered_results[0].get('id')
                         current_app.logger.info(f"-> Trouvé sur TMDB ! ID: {external_id}")
 
             elif entry.type == 'episode' and not show_found:
                 show_title = getattr(entry, 'grandparentTitle', None)
                 if show_title and year:
                     current_app.logger.info(f"Item fantôme (série) détecté: '{show_title}' ({year}). Recherche sur TVDB...")
-                    search_results = tvdb_client.search_and_translate_series(show_title, year=str(year))
-                    if search_results:
+                    search_results = tvdb_client.search_and_translate_series(show_title)
+                    # Filtrer les résultats par année manuellement
+                    filtered_results = [s for s in search_results if s.get('year') == str(year)]
+                    if filtered_results:
                         media_type = 'show'
-                        external_id = search_results[0].get('tvdb_id')
+                        external_id = filtered_results[0].get('tvdb_id')
                         current_app.logger.info(f"-> Trouvé sur TVDB ! ID: {external_id}")
 
             if media_type and external_id:
