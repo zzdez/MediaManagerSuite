@@ -53,28 +53,27 @@ def sync_test_page():
 def run_sync_test():
     """Exécute le script de test de synchronisation de l'historique fantôme."""
     from app.utils.archive_manager import add_archived_media
+    user_id = request.form.get('user_id')
+    if not user_id:
+        flash("Veuillez sélectionner un utilisateur.", "danger")
+        return redirect(url_for('plex_editor.sync_test_page'))
 
     try:
-        admin_plex = get_plex_admin_server()
-        if not admin_plex:
-            flash("Connexion au serveur Plex admin échouée.", "danger")
+        user_plex = get_user_specific_plex_server_from_id(user_id)
+        if not user_plex:
+            flash(f"Impossible de se connecter au serveur Plex pour l'utilisateur ID {user_id}.", "danger")
             return redirect(url_for('plex_editor.sync_test_page'))
 
-        flash("Scan de l'historique Plex en cours... Cela peut prendre du temps.", "info")
+        user_title = user_plex.myPlexAccount().title if user_plex.myPlexAccount() else f"ID: {user_id}"
+        flash(f"Scan de l'historique Plex pour l'utilisateur '{user_title}' en cours... Cela peut prendre du temps.", "info")
 
-        # Initialisation des clients API
         tmdb_client = TheMovieDBClient()
         tvdb_client = CustomTVDBClient()
+        history = user_plex.history(maxresults=300)
 
-        history = admin_plex.history(maxresults=200) # Scanner un peu plus pour augmenter les chances de trouver
-
-        movie_found = False
-        show_found = False
-        processed_items = 0
-        items_scanned = 0
+        processed_items = set()
 
         for entry in history:
-            items_scanned += 1
             source_item = None
             try:
                 source_item = entry.source()
@@ -84,58 +83,62 @@ def run_sync_test():
             if source_item is not None:
                 continue
 
-            # C'est un item fantôme. On tente de trouver l'ID externe.
-            media_type, external_id = None, None
-            user_id = str(getattr(entry, 'accountID', None))
             year = getattr(entry, 'originallyAvailableAt', None)
             if year:
                 year = year.year
 
-            if entry.type == 'movie' and not movie_found:
+            media_type, external_id = None, None
+
+            # Pour éviter de traiter le même film ou la même série plusieurs fois
+            unique_key = None
+
+            if entry.type == 'movie':
                 title = getattr(entry, 'title', None)
-                if title and year:
-                    current_app.logger.info(f"Item fantôme (film) détecté: '{title}' ({year}). Recherche sur TMDB...")
+                unique_key = f"movie_{title}_{year}"
+                if title and year and unique_key not in processed_items:
                     search_results = tmdb_client.search_movie(title)
-                    # Filtrer les résultats par année manuellement
                     filtered_results = [m for m in search_results if m.get('year') == str(year)]
                     if filtered_results:
                         media_type = 'movie'
                         external_id = filtered_results[0].get('id')
-                        current_app.logger.info(f"-> Trouvé sur TMDB ! ID: {external_id}")
 
-            elif entry.type == 'episode' and not show_found:
+            elif entry.type == 'episode':
                 show_title = getattr(entry, 'grandparentTitle', None)
-                if show_title and year:
-                    current_app.logger.info(f"Item fantôme (série) détecté: '{show_title}' ({year}). Recherche sur TVDB...")
+                unique_key = f"show_{show_title}_{year}"
+                if show_title and year and unique_key not in processed_items:
                     search_results = tvdb_client.search_and_translate_series(show_title)
-                    # Filtrer les résultats par année manuellement
                     filtered_results = [s for s in search_results if s.get('year') == str(year)]
                     if filtered_results:
                         media_type = 'show'
                         external_id = filtered_results[0].get('tvdb_id')
-                        current_app.logger.info(f"-> Trouvé sur TVDB ! ID: {external_id}")
 
             if media_type and external_id:
-                current_app.logger.info(f"Tentative d'archivage pour l'item fantôme: Type={media_type}, ID={external_id}, User={user_id}")
+                processed_items.add(unique_key)
 
-                success, message = add_archived_media(media_type, external_id, user_id)
+                # Enrichissement pour les épisodes
+                season_number = episode_number = None
+                if entry.type == 'episode':
+                    season_number = getattr(entry, 'parentIndex', None)
+                    episode_number = getattr(entry, 'index', None)
+                    current_app.logger.info(f"-> Détails de l'épisode fantôme trouvés: Saison={season_number}, Épisode={episode_number}")
+
+                success, message = add_archived_media(
+                    media_type,
+                    external_id,
+                    user_id,
+                    season_number=season_number,
+                    episode_number=episode_number
+                )
 
                 if success:
                     flash(f"Succès de l'archivage fantôme : {message}", "success")
-                    if media_type == 'movie': movie_found = True
-                    if media_type == 'show': show_found = True
-                    processed_items += 1
                 else:
-                    flash(f"Échec de l'archivage pour {media_type} ID {external_id}: {message}", "warning")
+                    flash(f"Échec ou info pour l'archivage de {unique_key}: {message}", "warning")
 
-
-            if movie_found and show_found:
-                break
-
-        if processed_items == 0:
-            flash(f"Scan terminé ({items_scanned} éléments vérifiés). Aucun nouvel item fantôme (film ou série) n'a pu être identifié via la recherche par titre/année.", "info")
+        if not processed_items:
+            flash(f"Scan terminé. Aucun nouvel item fantôme n'a pu être identifié.", "info")
         else:
-            flash(f"Scan terminé. {processed_items} item(s) fantôme(s) ont été identifiés avec succès. Prochaine étape : archivage.", "success")
+            flash(f"Scan terminé. {len(processed_items)} item(s) fantôme(s) ont été traités.", "success")
 
         return redirect(url_for('plex_editor.sync_test_page'))
 

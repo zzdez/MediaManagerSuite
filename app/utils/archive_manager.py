@@ -70,111 +70,107 @@ def _get_key(media_type, external_id):
 
 from app.utils.plex_client import PlexClient # NOUVEL IMPORT
 
-def add_archived_media(media_type, external_id, user_id, rating_key=None):
+def add_archived_media(media_type, external_id, user_id, rating_key=None, season_number=None, episode_number=None):
     """
     Ajoute ou met à jour une entrée pour un média archivé.
     Récupère les métadonnées fraîches et l'historique de visionnage, et gère les doublons.
-    Retourne (True, "Success message") ou (False, "Error message").
+    Pour les items fantômes ('shows'), peut enrichir l'historique avec les numéros de saison/épisode.
+    Retourne (True, "Success message") ou (False, "Error/Info message").
     """
     _, logger = _get_db_path_and_logger()
 
     if not all([media_type, external_id, user_id]):
-        msg = "Données manquantes : media_type, external_id et user_id sont requis."
-        logger.error(msg)
-        return False, msg
+        return False, "Données manquantes : media_type, external_id et user_id sont requis."
 
-    # 1. Récupérer les métadonnées fraîches (logique existante)
-    fresh_metadata = {}
-    if media_type == 'show':
-        try:
-            tvdb_client = CustomTVDBClient()
-            series_details = tvdb_client.get_series_details_by_id(external_id)
-            if series_details:
-                fresh_metadata = {
-                    'title': series_details.get('name'),
-                    'year': series_details.get('year'),
-                    'poster_url': series_details.get('image'),  # CORRIGÉ
-                    'summary': series_details.get('overview') # CORRIGÉ
-                }
-        except Exception as e:
-            logger.warning(f"Impossible de récupérer les détails TVDB pour {external_id}: {e}")
-    elif media_type == 'movie':
-        try:
-            tmdb_client = TheMovieDBClient()
-            movie_details = tmdb_client.get_movie_details(external_id)
-            if movie_details:
-                fresh_metadata = {
-                    'title': movie_details.get('title'), 'year': movie_details.get('release_date', '----').split('-')[0],
-                    'poster_url': f"https://image.tmdb.org/t/p/w500{movie_details.get('poster_path')}" if movie_details.get('poster_path') else None,
-                    'summary': movie_details.get('overview')
-                }
-        except Exception as e:
-            logger.warning(f"Impossible de récupérer les détails TMDB pour {external_id}: {e}")
+    db_key = _get_key(media_type, external_id)
+    database = _load_database()
+    entry = database.get(db_key, {
+        'media_type': 'tv' if media_type == 'show' else media_type,
+        'external_id': external_id, 'archive_history': []
+    })
 
-    # 2. Récupérer l'historique de visionnage ou créer une entrée de base pour les fantômes
-    watch_history = {}
-    if rating_key:
+    # Mise à jour des métadonnées si elles sont absentes ou incomplètes
+    if not all(k in entry for k in ['title', 'year', 'poster_url', 'summary']):
+        fresh_metadata = {}
+        if media_type == 'show':
+            try:
+                series_details = CustomTVDBClient().get_series_details_by_id(external_id)
+                if series_details:
+                    fresh_metadata = {'title': series_details.get('name'), 'year': series_details.get('year'),
+                                      'poster_url': series_details.get('image'), 'summary': series_details.get('overview')}
+            except Exception as e:
+                logger.warning(f"Impossible de récupérer les détails TVDB pour {external_id}: {e}")
+        elif media_type == 'movie':
+            try:
+                movie_details = TheMovieDBClient().get_movie_details(external_id)
+                if movie_details:
+                    fresh_metadata = {'title': movie_details.get('title'), 'year': movie_details.get('release_date', '----').split('-')[0],
+                                      'poster_url': f"https://image.tmdb.org/t/p/w500{movie_details.get('poster_path')}" if movie_details.get('poster_path') else None,
+                                      'summary': movie_details.get('overview')}
+            except Exception as e:
+                logger.warning(f"Impossible de récupérer les détails TMDB pour {external_id}: {e}")
+
+        for key, value in fresh_metadata.items():
+            if value: entry[key] = value
+
+    # Gérer l'historique de visionnage
+    user_id_str = str(user_id)
+    user_history_index = next((i for i, h in enumerate(entry['archive_history']) if str(h.get('user_id')) == user_id_str), -1)
+
+    if user_history_index != -1:
+        history_entry = entry['archive_history'][user_history_index]
+    else:
+        history_entry = {'user_id': user_id_str, 'archived_at': None, 'watched_status': {}}
+
+    # Mise à jour de l'historique
+    if rating_key: # Item non-fantôme
         try:
             plex_client = PlexClient(user_id=user_id)
             plex_item = plex_client.get_item_by_rating_key(int(rating_key))
             if media_type == 'show':
-                watch_history = plex_client.get_show_watch_history(plex_item)
-            else: # movie
-                watch_history = plex_client.get_movie_watch_history(plex_item)
+                history_entry['watched_status'] = plex_client.get_show_watch_history(plex_item) or {}
+            else:
+                history_entry['watched_status'] = plex_client.get_movie_watch_history(plex_item) or {}
+            history_entry['archived_at'] = datetime.utcnow().isoformat()
         except Exception as e:
-            logger.error(f"Impossible de récupérer l'historique de visionnage pour ratingKey {rating_key} / user {user_id}: {e}", exc_info=True)
-            # Fallback pour les items existants : marquer comme vu si Plex échoue
-            watch_history = {'is_fully_watched': True, 'status': 'viewed'}
+            logger.error(f"Erreur PLEX pour {rating_key}: {e}", exc_info=True)
+            return False, f"Erreur de récupération PLEX pour {rating_key}."
+    else: # Item fantôme
+        if media_type == 'show' and season_number is not None and episode_number is not None:
+            # Assurer l'initialisation de la structure
+            if 'seasons' not in history_entry['watched_status']:
+                history_entry['watched_status']['seasons'] = []
+
+            # Chercher si la saison existe déjà
+            season_entry = next((s for s in history_entry['watched_status']['seasons'] if s.get('season_number') == season_number), None)
+            if not season_entry:
+                season_entry = {'season_number': season_number, 'episodes_watched': []}
+                history_entry['watched_status']['seasons'].append(season_entry)
+
+            # Ajouter l'épisode s'il n'est pas déjà listé
+            if episode_number not in season_entry['episodes_watched']:
+                season_entry['episodes_watched'].append(episode_number)
+                season_entry['episodes_watched'].sort()
+                history_entry['archived_at'] = datetime.utcnow().isoformat() # Mettre à jour la date d'archive
+                logger.info(f"Épisode fantôme S{season_number}E{episode_number} ajouté pour '{entry.get('title', db_key)}'.")
+            else:
+                return False, f"Épisode S{season_number}E{episode_number} déjà archivé pour '{entry.get('title', db_key)}'."
+        elif media_type == 'movie':
+             if history_entry.get('archived_at'):
+                 return False, f"Film fantôme '{entry.get('title', db_key)}' déjà archivé."
+             history_entry['watched_status'] = {'is_fully_watched': True, 'status': 'viewed_ghost'}
+             history_entry['archived_at'] = datetime.utcnow().isoformat()
+
+    # Mettre à jour l'entrée dans la BDD
+    if user_history_index != -1:
+        entry['archive_history'][user_history_index] = history_entry
     else:
-        # Cas d'un item fantôme sans rating_key
-        logger.info(f"Création d'une entrée d'historique de base pour un item fantôme (ID externe: {external_id}).")
-        watch_history = {
-            'is_fully_watched': True,
-            'status': 'viewed_ghost', # Statut spécifique pour les fantômes
-            'last_viewed_at': datetime.utcnow().isoformat() # On utilise la date d'archivage comme fallback
-        }
+        entry['archive_history'].append(history_entry)
 
-    # 3. Charger la base de données et préparer l'entrée
-    db_key = _get_key(media_type, external_id)
-    database = _load_database()
-
-    # S'assurer que le media_type stocké est 'tv' pour les séries, pour la cohérence.
-    stored_media_type = 'tv' if media_type == 'show' else media_type
-
-    entry = database.get(db_key, {
-        'media_type': stored_media_type, 'external_id': external_id, 'archive_history': []
-    })
-
-    # Mettre à jour les métadonnées de manière robuste : on ne remplace une valeur
-    # existante que si la nouvelle valeur est valide (non-None).
-    if fresh_metadata.get('title'):
-        entry['title'] = fresh_metadata.get('title')
-    if fresh_metadata.get('year'):
-        entry['year'] = fresh_metadata.get('year')
-    if fresh_metadata.get('poster_url'):
-        entry['poster_url'] = fresh_metadata.get('poster_url')
-    if fresh_metadata.get('summary'):
-        entry['summary'] = fresh_metadata.get('summary')
-
-    # 4. Gérer l'historique (mise à jour ou ajout)
-    user_id_to_check = str(user_id)
-    new_history_entry = {
-        'user_id': user_id_to_check,
-        'archived_at': datetime.utcnow().isoformat(),
-        'watched_status': watch_history or {}
-    }
-
-    # Remplacer l'entrée existante ou ajouter la nouvelle
-    new_archive_history = [h for h in entry.get('archive_history', []) if str(h.get('user_id')) != user_id_to_check]
-    new_archive_history.append(new_history_entry)
-
-    entry['archive_history'] = new_archive_history
     database[db_key] = entry
     _save_database(database)
 
-    success_msg = f"Média '{entry['title']}' archivé/mis à jour avec succès pour l'utilisateur {user_id_to_check}."
-    logger.info(success_msg)
-    return True, success_msg
+    return True, f"Média '{entry.get('title', db_key)}' archivé/mis à jour."
 
 
 def find_archived_media_by_id(media_type, external_id):

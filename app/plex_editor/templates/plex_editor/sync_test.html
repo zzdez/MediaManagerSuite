@@ -4,14 +4,48 @@
 <div class="container mt-4">
     <h1>Test de Synchronisation de l'Historique Fantôme de Plex</h1>
     <p>Cette page est un outil de développement pour tester la synchronisation de l'historique des médias supprimés de Plex.</p>
-    <p>Cliquez sur le bouton ci-dessous pour lancer un scan limité (un film et une série) de l'historique fantôme. Les éléments trouvés seront ajoutés à la base de données d'archives.</p>
+    <p>Sélectionnez un utilisateur, puis cliquez sur le bouton pour lancer un scan limité (un film et une série) de son historique fantôme. Les éléments trouvés seront ajoutés à la base de données d'archives.</p>
 
     <form action="{{ url_for('plex_editor.run_sync_test') }}" method="POST">
-        <button type="submit" class="btn btn-primary">Lancer le Test de Synchronisation</button>
+        <div class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <label for="user-select" class="form-label">Utilisateur Plex</label>
+                <select id="user-select" name="user_id" class="form-select" required>
+                    <option selected disabled value="">Chargement...</option>
+                </select>
+            </div>
+            <div class="col-md-auto">
+                <button type="submit" class="btn btn-primary">Lancer le Test de Synchronisation</button>
+            </div>
+        </div>
     </form>
 
     <div id="sync-results" class="mt-4">
         <!-- Les résultats de la synchronisation apparaîtront ici -->
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialiser le sélecteur d'utilisateurs (copié depuis plex_editor_ui.js)
+    const userSelect = document.getElementById('user-select');
+
+    fetch("{{ url_for('plex_editor.get_plex_users') }}")
+        .then(response => response.json())
+        .then(users => {
+            userSelect.innerHTML = '<option selected disabled value="">Sélectionnez un utilisateur</option>';
+            users.forEach(user => {
+                const option = new Option(user.text, user.id);
+                userSelect.add(option);
+            });
+        })
+        .catch(error => {
+            console.error('Erreur lors du chargement des utilisateurs Plex:', error);
+            userSelect.innerHTML = '<option selected disabled>Erreur de chargement</option>';
+        });
+});
+</script>
 {% endblock %}
