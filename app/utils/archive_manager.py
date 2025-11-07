@@ -125,15 +125,21 @@ def add_archived_media(media_type, external_id, user_id, rating_key):
     # 3. Charger la base de données et préparer l'entrée
     db_key = _get_key(media_type, external_id)
     database = _load_database()
+
+    # S'assurer que le media_type stocké est 'tv' pour les séries, pour la cohérence.
+    stored_media_type = 'tv' if media_type == 'show' else media_type
+
     entry = database.get(db_key, {
-        'media_type': media_type, 'external_id': external_id, 'archive_history': []
+        'media_type': stored_media_type, 'external_id': external_id, 'archive_history': []
     })
 
-    # Mettre à jour les métadonnées (priorité aux fraîches)
-    entry['title'] = fresh_metadata.get('title') or entry.get('title')
-    entry['year'] = fresh_metadata.get('year') or entry.get('year')
-    entry['poster_url'] = fresh_metadata.get('poster_url') or entry.get('poster_url')
-    entry['summary'] = fresh_metadata.get('summary') or entry.get('summary')
+    # Mettre à jour les métadonnées en utilisant uniquement les données fraîches.
+    # Si les données fraîches ne sont pas disponibles, les champs seront None,
+    # évitant ainsi de conserver des données potentiellement obsolètes.
+    entry['title'] = fresh_metadata.get('title')
+    entry['year'] = fresh_metadata.get('year')
+    entry['poster_url'] = fresh_metadata.get('poster_url')
+    entry['summary'] = fresh_metadata.get('summary')
 
     # 4. Gérer l'historique (mise à jour ou ajout)
     user_id_to_check = str(user_id)

@@ -57,16 +57,16 @@ class PlexClient:
 
         try:
             plex_show_obj.reload()
+            # La structure est simplifiée pour ne contenir que le statut de visionnage global
+            # et les détails par saison, sans métadonnées redondantes.
             history = {
-                "poster_url": self.admin_plex.url(plex_show_obj.thumb, includeToken=True) if plex_show_obj.thumb else None,
-                "is_watched": plex_show_obj.isWatched,
-                "seasons": []
+                "is_fully_watched": plex_show_obj.isWatched,
+                "viewed_seasons": [], # On ne listera que les saisons entièrement vues
+                "seasons": [] # Gardé pour la compatibilité, mais pourrait être fusionné
             }
 
             for season in plex_show_obj.seasons():
-                # Ignorer les saisons "Spéciales" (généralement saison 0)
-                if season.seasonNumber == 0:
-                    continue
+                if season.seasonNumber == 0: continue # Ignorer les spéciaux
 
                 season_data = {
                     "season_number": season.seasonNumber,
@@ -76,6 +76,9 @@ class PlexClient:
                 }
                 history["seasons"].append(season_data)
 
+                if season.isWatched:
+                    history["viewed_seasons"].append(season.seasonNumber)
+
             return history
 
         except Exception as e:
@@ -84,14 +87,14 @@ class PlexClient:
 
     def get_movie_watch_history(self, plex_movie_obj):
         """
-        Pour un film Plex, récupère un historique de visionnage simple.
+        Pour un film Plex, récupère un historique de visionnage simple et propre.
         """
         if not plex_movie_obj or plex_movie_obj.type != 'movie':
             return None
 
         try:
+            # La structure ne contient que les informations de visionnage.
             history = {
-                "poster_url": self.admin_plex.url(plex_movie_obj.thumb, includeToken=True) if plex_movie_obj.thumb else None,
                 "is_watched": plex_movie_obj.isWatched,
                 "status": "Vu" if plex_movie_obj.isWatched else "Non vu"
             }
