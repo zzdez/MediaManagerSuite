@@ -59,12 +59,22 @@ def run_sync_test():
         return redirect(url_for('plex_editor.sync_test_page'))
 
     try:
+        # Correction : Récupérer le nom de l'utilisateur de manière sécurisée
+        main_account = get_main_plex_account_object()
+        user_title = f"ID: {user_id}"
+        if main_account:
+            if str(main_account.id) == user_id:
+                user_title = main_account.title
+            else:
+                user_account = next((u for u in main_account.users() if str(u.id) == user_id), None)
+                if user_account:
+                    user_title = user_account.title
+
         user_plex = get_user_specific_plex_server_from_id(user_id)
         if not user_plex:
-            flash(f"Impossible de se connecter au serveur Plex pour l'utilisateur ID {user_id}.", "danger")
+            flash(f"Impossible de se connecter au serveur Plex pour l'utilisateur '{user_title}'.", "danger")
             return redirect(url_for('plex_editor.sync_test_page'))
 
-        user_title = user_plex.myPlexAccount().title if user_plex.myPlexAccount() else f"ID: {user_id}"
         flash(f"Scan de l'historique Plex pour l'utilisateur '{user_title}' en cours... Cela peut prendre du temps.", "info")
 
         tmdb_client = TheMovieDBClient()
