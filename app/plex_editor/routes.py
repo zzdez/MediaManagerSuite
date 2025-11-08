@@ -132,18 +132,36 @@ def run_sync_test():
                         external_id = filtered_results[0].get('id')
 
                 elif entry.type == 'episode':
-                    # L'année de l'épisode est un 'indice' pour la première recherche, mais n'est pas dans la clé
                     search_results = tvdb_client.search_and_translate_series(title)
-                    filtered_results = [s for s in search_results if s.get('year') == str(year)]
-                    if filtered_results:
+
+                    best_match = None
+                    if search_results:
+                        if len(search_results) == 1:
+                            best_match = search_results[0]
+                            current_app.logger.info(f"Un seul résultat TVDB trouvé pour '{title}', sélection automatique.")
+                        else:
+                            # Logique de sélection basée sur la proximité de l'année
+                            min_year_diff = float('inf')
+                            for result in search_results:
+                                try:
+                                    result_year = int(result.get('year', 0))
+                                    if result_year > 0 and year is not None:
+                                        diff = abs(result_year - year)
+                                        if diff < min_year_diff:
+                                            min_year_diff = diff
+                                            best_match = result
+                                except (ValueError, TypeError):
+                                    continue
+
+                            # Si aucun match n'a été trouvé via l'année, on prend le premier par défaut
+                            if not best_match:
+                                best_match = search_results[0]
+                                current_app.logger.warning(f"Aucun match d'année fiable pour '{title}'. Prise du premier résultat par défaut.")
+
+                    if best_match:
                         media_type = 'show'
-                        external_id = filtered_results[0].get('tvdb_id')
-                    else:
-                        # Si la recherche avec l'année échoue, tenter sans pour trouver la série principale
-                        current_app.logger.warning(f"Recherche TVDB pour '{title}' (Année: {year}) a échoué. Tentative sans l'année.")
-                        if search_results:
-                             media_type = 'show'
-                             external_id = search_results[0].get('tvdb_id')
+                        external_id = best_match.get('tvdb_id')
+                        current_app.logger.info(f"Meilleur match TVDB pour '{title}' (Année indice: {year}) -> '{best_match.get('name')}' (Année sortie: {best_match.get('year')}, ID: {external_id})")
 
                 # Mettre en cache le résultat (y compris None) pour la clé unique
                 media_cache[unique_key] = (media_type, external_id)
