@@ -153,36 +153,54 @@ class CustomTVDBClient:
     def get_season_episode_counts(self, tvdb_id):
         """
         Récupère le nombre total d'épisodes pour chaque saison d'une série.
+        Tente d'utiliser get_series_extended pour obtenir toutes les données en une fois.
         Retourne un dictionnaire {saison_number: episode_count}.
         """
         if not self.client:
             logger.error("Client TVDB non initialisé.")
             return {}
 
-        logger.info(f"Récupération du nombre d'épisodes pour la série TVDB ID: {tvdb_id}")
+        logger.info(f"Récupération étendue du nombre d'épisodes pour la série TVDB ID: {tvdb_id}")
 
         try:
-            # On spécifie 'aired' pour récupérer les saisons officielles.
-            # C'est l'appel API CORRECT pour obtenir la liste des épisodes.
-            episodes_response = self.client.get_series_episodes(tvdb_id, season_type='aired')
+            # NOUVELLE TENTATIVE avec get_series_extended
+            extended_data = self.client.get_series_extended(tvdb_id)
 
-            # La réponse contient une clé 'episodes' avec la liste
-            if not episodes_response or 'episodes' not in episodes_response or not episodes_response['episodes']:
-                logger.warning(f"Aucune donnée d'épisode 'aired' trouvée pour la série TVDB ID {tvdb_id}.")
+            # --- LOGS DE DÉBOGAGE AMÉLIORÉS ---
+            logger.info(f"--- DÉBUT DÉBOGAGE TVDB ÉTENDU POUR ID: {tvdb_id} ---")
+            logger.info(f"Type de extended_data: {type(extended_data)}")
+            if isinstance(extended_data, dict):
+                logger.info(f"Clés de extended_data: {extended_data.keys()}")
+                # Logguer des parties spécifiques si elles existent
+                if 'seasons' in extended_data:
+                    logger.info(f"Nombre de saisons trouvées: {len(extended_data['seasons'])}")
+                if 'episodes' in extended_data:
+                     logger.info(f"Nombre total d'épisodes trouvés: {len(extended_data['episodes'])}")
+            else:
+                logger.info("extended_data n'est pas un dictionnaire.")
+            logger.info(f"--- FIN DÉBOGAGE TVDB ÉTENDU ---")
+            # --- FIN DES LOGS ---
+
+            # On vérifie si la clé 'seasons' avec les détails est présente
+            if not extended_data or 'seasons' not in extended_data:
+                logger.warning(f"Aucune donnée de saison trouvée dans la réponse étendue pour la série TVDB ID {tvdb_id}.")
                 return {}
 
             episode_counts = {}
-            for episode in episodes_response['episodes']:
-                # Le numéro de saison est dans 'airedSeason'
-                season_number = episode.get('airedSeason')
-
-                # On ignore la saison 0 (qui correspond aux épisodes spéciaux) et les épisodes sans numéro de saison
+            for season in extended_data['seasons']:
+                season_number = season.get('number')
+                # On ne compte que les saisons officielles (pas les "specials")
                 if season_number is not None and season_number > 0:
-                    episode_counts[season_number] = episode_counts.get(season_number, 0) + 1
+                    # Le nombre d'épisodes est parfois directement dans l'objet saison
+                    if 'episodeCount' in season and season['episodeCount'] is not None:
+                        episode_counts[season_number] = season['episodeCount']
+                    # Fallback si episodeCount n'est pas là, mais qu'il y a une liste d'épisodes
+                    elif 'episodes' in season and season['episodes'] is not None:
+                        episode_counts[season_number] = len(season['episodes'])
 
             logger.info(f"Nombre d'épisodes par saison pour TVDB ID {tvdb_id}: {episode_counts}")
             return episode_counts
 
         except Exception as e:
-            logger.error(f"Erreur lors de la récupération du nombre d'épisodes pour la série TVDB ID {tvdb_id}: {e}", exc_info=True)
+            logger.error(f"Erreur lors de la récupération étendue du nombre d'épisodes pour la série TVDB ID {tvdb_id}: {e}", exc_info=True)
             return {}
