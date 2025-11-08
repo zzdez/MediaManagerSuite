@@ -189,6 +189,10 @@ class CustomTVDBClient:
                 logger.warning(f"Aucune donnée de saison trouvée dans la réponse étendue pour la série TVDB ID {tvdb_id}.")
                 return {}
 
+            # --- LOG DE DÉBOGAGE CRUCIAL ---
+            logger.info(f"Contenu brut de extended_data['seasons']: {extended_data['seasons']}")
+            # --- FIN DU LOG ---
+
             episode_counts = {}
             for season in extended_data['seasons']:
                 season_number = season.get('number')
