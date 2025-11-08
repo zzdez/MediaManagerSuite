@@ -104,3 +104,6 @@ wsproto==1.2.0
 xmltodict==0.14.2
 zendriver==0.5.2
 pytest
+
+thefuzz
+python-Levenshtein

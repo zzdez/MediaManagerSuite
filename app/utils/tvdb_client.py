@@ -162,11 +162,11 @@ class CustomTVDBClient:
         logger.info(f"Récupération du nombre d'épisodes pour la série TVDB ID: {tvdb_id}")
 
         try:
-            # Cette méthode retourne toutes les pages d'épisodes pour une série
-            episodes_data = self.client.get_series_episodes(tvdb_id)
+            # On spécifie 'aired' pour récupérer les saisons officielles.
+            episodes_data = self.client.get_series_episodes(tvdb_id, season_type='aired')
 
             if not episodes_data or 'episodes' not in episodes_data:
-                logger.warning(f"Aucune donnée d'épisode trouvée pour la série TVDB ID {tvdb_id}.")
+                logger.warning(f"Aucune donnée d'épisode 'aired' trouvée pour la série TVDB ID {tvdb_id}.")
                 return {}
 
             episode_counts = {}

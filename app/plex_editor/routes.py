@@ -34,6 +34,7 @@ from app.utils.tvdb_client import CustomTVDBClient
 from app.utils.cache_manager import SimpleCache, get_pending_lock, remove_pending_lock
 from app.utils import trailer_manager # Import du nouveau manager
 from app.agent.services import _search_and_score_trailers
+from thefuzz import fuzz
 
 from app.utils.move_manager import move_manager
 from app.utils.arr_client import get_sonarr_root_folders, get_radarr_root_folders, move_sonarr_series, move_radarr_movie, get_arr_command_status, radarr_post_command
@@ -137,17 +138,32 @@ def run_sync_test():
                         if len(search_results) == 1:
                             best_match = search_results[0]
                         else:
-                            min_year_diff = float('inf')
+                            # NOUVELLE LOGIQUE AVEC FUZZY SEARCH
+                            SIMILARITY_THRESHOLD = 85
+
+                            # 1. Filtrer par similarité de titre
+                            highly_similar_results = []
                             for result in search_results:
-                                try:
-                                    result_year = int(result.get('year', 0))
-                                    if result_year > 0 and year is not None:
-                                        diff = abs(result_year - year)
-                                        if diff < min_year_diff:
-                                            min_year_diff = diff
-                                            best_match = result
-                                except (ValueError, TypeError): continue
-                            if not best_match: best_match = search_results[0]
+                                similarity_score = fuzz.ratio(title.lower(), result.get('name', '').lower())
+                                if similarity_score > SIMILARITY_THRESHOLD:
+                                    highly_similar_results.append(result)
+
+                            # 2. Si on a des candidats similaires, on choisit par année
+                            if highly_similar_results:
+                                min_year_diff = float('inf')
+                                for result in highly_similar_results:
+                                    try:
+                                        result_year = int(result.get('year', 0))
+                                        if result_year > 0 and year is not None:
+                                            diff = abs(result_year - year)
+                                            if diff < min_year_diff:
+                                                min_year_diff = diff
+                                                best_match = result
+                                    except (ValueError, TypeError): continue
+                                # Si aucun match par année n'est trouvé, prendre le premier des similaires
+                                if not best_match: best_match = highly_similar_results[0]
+                            # (Optionnel) Fallback: si aucun n'est similaire, on pourrait utiliser l'ancienne logique
+                            # mais pour l'instant on préfère ne pas matcher pour éviter les faux positifs.
 
                     if best_match:
                         media_type = 'show'
