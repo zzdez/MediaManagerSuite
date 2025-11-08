@@ -70,11 +70,11 @@ def _get_key(media_type, external_id):
 
 from app.utils.plex_client import PlexClient # NOUVEL IMPORT
 
-def add_archived_media(media_type, external_id, user_id, rating_key=None, season_number=None, episode_number=None):
+def add_archived_media(media_type, external_id, user_id, rating_key=None, season_number=None, episode_number=None, viewed_at_date=None):
     """
     Ajoute ou met à jour une entrée pour un média archivé.
     Récupère les métadonnées fraîches et l'historique de visionnage, et gère les doublons.
-    Pour les items fantômes ('shows'), peut enrichir l'historique avec les numéros de saison/épisode.
+    Pour les items fantômes, peut enrichir l'historique avec les détails de visionnage.
     Retourne (True, "Success message") ou (False, "Error/Info message").
     """
     _, logger = _get_db_path_and_logger()
@@ -120,7 +120,7 @@ def add_archived_media(media_type, external_id, user_id, rating_key=None, season
     if user_history_index != -1:
         history_entry = entry['archive_history'][user_history_index]
     else:
-        history_entry = {'user_id': user_id_str, 'archived_at': None, 'watched_status': {}}
+        history_entry = {'user_id': user_id_str, 'archived_at': None, 'last_viewed_at': None, 'watched_status': {}}
 
     # Mise à jour de l'historique
     if rating_key: # Item non-fantôme
@@ -137,21 +137,33 @@ def add_archived_media(media_type, external_id, user_id, rating_key=None, season
             return False, f"Erreur de récupération PLEX pour {rating_key}."
     else: # Item fantôme
         if media_type == 'show' and season_number is not None and episode_number is not None:
-            # Assurer l'initialisation de la structure
             if 'seasons' not in history_entry['watched_status']:
                 history_entry['watched_status']['seasons'] = []
 
-            # Chercher si la saison existe déjà
             season_entry = next((s for s in history_entry['watched_status']['seasons'] if s.get('season_number') == season_number), None)
             if not season_entry:
-                season_entry = {'season_number': season_number, 'episodes_watched': []}
+                season_entry = {'season_number': season_number, 'episodes_watched': [], 'total_episodes_count': 0}
+                try:
+                    tvdb_series_details = CustomTVDBClient().get_series_details_by_id(external_id)
+                    if tvdb_series_details and 'seasons' in tvdb_series_details:
+                        tvdb_season = next((s for s in tvdb_series_details['seasons'] if s.get('number') == season_number), None)
+                        if tvdb_season and tvdb_season.get('episodeCount', 0) > 0:
+                            season_entry['total_episodes_count'] = tvdb_season['episodeCount']
+                            logger.info(f"TVDB: Trouvé {tvdb_season['episodeCount']} épisodes pour la saison {season_number} de '{entry.get('title')}'.")
+                except Exception as e:
+                    logger.warning(f"Impossible de récupérer le nombre total d'épisodes pour la saison {season_number} de {external_id}: {e}")
                 history_entry['watched_status']['seasons'].append(season_entry)
 
-            # Ajouter l'épisode s'il n'est pas déjà listé
             if episode_number not in season_entry['episodes_watched']:
                 season_entry['episodes_watched'].append(episode_number)
                 season_entry['episodes_watched'].sort()
-                history_entry['archived_at'] = datetime.utcnow().isoformat() # Mettre à jour la date d'archive
+                history_entry['archived_at'] = datetime.utcnow().isoformat()
+
+                if viewed_at_date:
+                    current_last_viewed = history_entry.get('last_viewed_at')
+                    if not current_last_viewed or viewed_at_date.isoformat() > current_last_viewed:
+                        history_entry['last_viewed_at'] = viewed_at_date.isoformat()
+
                 logger.info(f"Épisode fantôme S{season_number}E{episode_number} ajouté pour '{entry.get('title', db_key)}'.")
             else:
                 return False, f"Épisode S{season_number}E{episode_number} déjà archivé pour '{entry.get('title', db_key)}'."
@@ -160,6 +172,8 @@ def add_archived_media(media_type, external_id, user_id, rating_key=None, season
                  return False, f"Film fantôme '{entry.get('title', db_key)}' déjà archivé."
              history_entry['watched_status'] = {'is_fully_watched': True, 'status': 'viewed_ghost'}
              history_entry['archived_at'] = datetime.utcnow().isoformat()
+             if viewed_at_date:
+                history_entry['last_viewed_at'] = viewed_at_date.isoformat()
 
     # Mettre à jour l'entrée dans la BDD
     if user_history_index != -1:
