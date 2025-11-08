@@ -152,59 +152,39 @@ class CustomTVDBClient:
 
     def get_season_episode_counts(self, tvdb_id):
         """
-        Tente plusieurs stratégies pour récupérer le nombre d'épisodes par saison.
-        Retourne un dictionnaire {saison_number: episode_count}.
+        Récupère le nombre d'épisodes par saison en utilisant la méthode 'default' qui a fonctionné.
         """
         if not self.client:
             logger.error("Client TVDB non initialisé.")
             return {}
 
-        logger.info(f"--- Début du diagnostic de récupération d'épisodes pour TVDB ID: {tvdb_id} ---")
+        logger.info(f"Récupération des épisodes avec season_type='default' pour TVDB ID: {tvdb_id}")
 
-        episodes_list = None
-
-        # Tentative A: 'aired'
         try:
-            logger.info("Tentative A: get_series_episodes avec season_type='aired'")
-            response_a = self.client.get_series_episodes(tvdb_id, season_type='aired')
-            if response_a and 'episodes' in response_a and response_a['episodes']:
-                episodes_list = response_a['episodes']
-                logger.info(f"Succès de la Tentative A. {len(episodes_list)} épisodes trouvés.")
+            episodes_response = self.client.get_series_episodes(tvdb_id, season_type='default')
+
+            if not episodes_response or 'episodes' not in episodes_response or not episodes_response['episodes']:
+                logger.warning(f"Aucune donnée d'épisode 'default' trouvée pour la série TVDB ID {tvdb_id}.")
+                return {}
+
+            # --- LOG DE DÉBOGAGE DE LA STRUCTURE D'UN ÉPISODE ---
+            if episodes_response['episodes']:
+                logger.info(f"Structure du premier épisode: {episodes_response['episodes'][0]}")
+            # --- FIN DU LOG ---
+
+            episode_counts = {}
+            for episode in episodes_response['episodes']:
+                # On inspecte la clé de la saison. C'est probablement 'seasonNumber' ou 'airedSeason'
+                season_number = episode.get('seasonNumber') # Hypothèse 1
+                if season_number is None:
+                    season_number = episode.get('airedSeason') # Hypothèse 2 (fallback)
+
+                if season_number is not None and season_number > 0:
+                    episode_counts[season_number] = episode_counts.get(season_number, 0) + 1
+
+            logger.info(f"Nombre d'épisodes par saison (depuis 'default'): {episode_counts}")
+            return episode_counts
+
         except Exception as e:
-            logger.warning(f"Échec de la Tentative A: {e}")
-
-        # Tentative B: 'default'
-        if not episodes_list:
-            try:
-                logger.info("Tentative B: get_series_episodes avec season_type='default'")
-                response_b = self.client.get_series_episodes(tvdb_id, season_type='default')
-                if response_b and 'episodes' in response_b and response_b['episodes']:
-                    episodes_list = response_b['episodes']
-                    logger.info(f"Succès de la Tentative B. {len(episodes_list)} épisodes trouvés.")
-            except Exception as e:
-                logger.warning(f"Échec de la Tentative B: {e}")
-
-        # Tentative C: forcer la pagination (page=0 ou page=1, selon l'API)
-        if not episodes_list:
-            try:
-                logger.info("Tentative C: get_series_episodes avec season_type='aired' et page=0")
-                response_c = self.client.get_series_episodes(tvdb_id, season_type='aired', page=0)
-                if response_c and 'episodes' in response_c and response_c['episodes']:
-                    episodes_list = response_c['episodes']
-                    logger.info(f"Succès de la Tentative C. {len(episodes_list)} épisodes trouvés.")
-            except Exception as e:
-                logger.warning(f"Échec de la Tentative C: {e}")
-
-        if not episodes_list:
-            logger.error(f"Toutes les tentatives de récupération des épisodes ont échoué pour TVDB ID {tvdb_id}.")
+            logger.error(f"Erreur lors de la récupération des épisodes 'default' pour TVDB ID {tvdb_id}: {e}", exc_info=True)
             return {}
-
-        # Si on a réussi, on compte
-        episode_counts = {}
-        for episode in episodes_list:
-            season_number = episode.get('airedSeason')
-            if season_number is not None and season_number > 0:
-                episode_counts[season_number] = episode_counts.get(season_number, 0) + 1
-
-        logger.info(f"--- Fin du diagnostic --- Nombre d'épisodes par saison: {episode_counts}")
-        return episode_counts
