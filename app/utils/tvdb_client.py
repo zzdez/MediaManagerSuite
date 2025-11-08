@@ -149,3 +149,36 @@ class CustomTVDBClient:
         except Exception as e:
             logger.error(f"Erreur majeure dans search_and_translate_series pour '{title}': {e}", exc_info=True)
             return []
+
+    def get_season_episode_counts(self, tvdb_id):
+        """
+        Récupère le nombre total d'épisodes pour chaque saison d'une série.
+        Retourne un dictionnaire {saison_number: episode_count}.
+        """
+        if not self.client:
+            logger.error("Client TVDB non initialisé.")
+            return {}
+
+        logger.info(f"Récupération du nombre d'épisodes pour la série TVDB ID: {tvdb_id}")
+
+        try:
+            # Cette méthode retourne toutes les pages d'épisodes pour une série
+            episodes_data = self.client.get_series_episodes(tvdb_id)
+
+            if not episodes_data or 'episodes' not in episodes_data:
+                logger.warning(f"Aucune donnée d'épisode trouvée pour la série TVDB ID {tvdb_id}.")
+                return {}
+
+            episode_counts = {}
+            for episode in episodes_data['episodes']:
+                season_number = episode.get('airedSeason')
+                # On ignore la saison 0 (spéciaux) et les épisodes sans saison
+                if season_number is not None and season_number > 0:
+                    episode_counts[season_number] = episode_counts.get(season_number, 0) + 1
+
+            logger.info(f"Nombre d'épisodes par saison pour TVDB ID {tvdb_id}: {episode_counts}")
+            return episode_counts
+
+        except Exception as e:
+            logger.error(f"Erreur lors de la récupération du nombre d'épisodes pour la série TVDB ID {tvdb_id}: {e}", exc_info=True)
+            return {}

@@ -228,36 +228,47 @@
                                 {% for history in item.archive_history %}
                                     <div class="mb-3">
                                         <h6><i class="bi bi-clock-history me-2"></i>Historique de <strong>{{ history.user_id }}</strong></h6>
-                                        <p class="mb-1"><small>Média archivé le {{ history.archived_at | date_format }}</small></p>
+                                        <p class="mb-1">
+                                            <small>
+                                                {% if history.last_viewed_at %}
+                                                    Dernier visionnage le {{ history.last_viewed_at | date_format }}.
+                                                {% endif %}
+                                                Média archivé le {{ history.archived_at | date_format }}.
+                                            </small>
+                                        </p>
 
                                         {% if (item.media_type == 'show' or item.media_type == 'tv') and history.watched_status.seasons %}
                                             <div class="row gx-3">
-                                                {% for season in history.watched_status.seasons %}
+                                                {% for season in history.watched_status.seasons | sort(attribute='season_number') %}
                                                     <div class="col-12 col-sm-6 col-md-4 mb-2">
                                                         <div class="p-2 rounded" style="background-color: #343a40;">
                                                             <strong>Saison {{ season.season_number }}</strong>
 
-                                                            {# Cas 1: Données complètes avec total d'épisodes (archivage normal) #}
-                                                            {% if season.total_episodes is defined and season.total_episodes > 0 %}
-                                                                {% if season.is_watched %}
+                                                            {# Logique unifiée pour fantômes et normaux #}
+                                                            {% set watched = season.watched_count | default(season.episodes_watched | length, true) %}
+                                                            {% set total = season.total_count | default(season.total_episodes, true) %}
+
+                                                            {% if total is defined and total > 0 %}
+                                                                {% if watched == total %}
                                                                     <span class="badge bg-success float-end">Vue entièrement</span>
+                                                                {% else %}
+                                                                    <span class="badge bg-info float-end">Partiellement vue</span>
                                                                 {% endif %}
                                                                 <div class="progress mt-1" style="height: 10px;">
-                                                                    <div class="progress-bar {% if season.is_watched %}bg-success{% else %}bg-info{% endif %}"
+                                                                    <div class="progress-bar {% if watched == total %}bg-success{% else %}bg-info{% endif %}"
                                                                          role="progressbar"
-                                                                         style="width: {{ (season.watched_episodes / season.total_episodes) * 100 }}%;"
-                                                                         aria-valuenow="{{ season.watched_episodes }}"
+                                                                         style="width: {{ (watched / total) * 100 }}%;"
+                                                                         aria-valuenow="{{ watched }}"
                                                                          aria-valuemin="0"
-                                                                         aria-valuemax="{{ season.total_episodes }}">
+                                                                         aria-valuemax="{{ total }}">
                                                                     </div>
                                                                 </div>
-                                                                <small class="text-muted d-block mt-1">Vus ({{ season.watched_episodes }} / {{ season.total_episodes }} ép.)</small>
-
-                                                            {# Cas 2: Données partielles avec juste la liste des épisodes (archivage fantôme) #}
-                                                            {% elif season.episodes_watched is defined and season.episodes_watched %}
+                                                                <small class="text-muted d-block mt-1">Vus ({{ watched }} / {{ total }} ép.)</small>
+                                                            {% elif watched > 0 %}
+                                                                {# Fallback si total inconnu mais on a des épisodes vus #}
                                                                 <span class="badge bg-info float-end">Partiellement vue</span>
                                                                 <p class="mb-0 mt-1"><small class="text-muted">
-                                                                    {{ season.episodes_watched | length }} épisode(s) vu(s).
+                                                                    {{ watched }} épisode(s) vu(s).
                                                                 </small></p>
                                                             {% endif %}
                                                         </div>

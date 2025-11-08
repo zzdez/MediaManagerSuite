@@ -81,7 +81,8 @@ def run_sync_test():
         tvdb_client = CustomTVDBClient()
         history = user_plex.history(maxresults=300)
 
-        media_cache = {} # Remplacer processed_items par un cache {unique_key: (media_type, external_id)}
+        media_cache = {} # Cache pour {unique_key: (media_type, external_id, extra_data)}
+        last_viewed_dates = {} # Cache pour {unique_key: latest_viewed_at_iso}
         archived_count = 0
 
         for entry in history:
@@ -98,49 +99,44 @@ def run_sync_test():
             if year:
                 year = year.year
 
-            media_type, external_id = None, None
-            unique_key = None
-
-            # --- NOUVELLE LOGIQUE DE CLÉ DE CACHE ---
+            # --- DÉFINITION DE LA CLÉ UNIQUE ---
             unique_key = None
             title = None
-
             if entry.type == 'movie':
                 title = getattr(entry, 'title', None)
                 if title and year:
-                    unique_key = f"movie_{title}_{year}" # La clé pour les films reste inchangée (titre + année)
+                    unique_key = f"movie_{title}_{year}"
             elif entry.type == 'episode':
                 title = getattr(entry, 'grandparentTitle', None)
                 if title:
-                    unique_key = f"show_{title}" # La clé pour les séries est MAINTENANT juste le titre
+                    unique_key = f"show_{title}"
 
             if not unique_key:
                 continue
 
-            # --- LOGIQUE DE CACHE ADAPTÉE ---
-            if unique_key in media_cache:
-                media_type, external_id = media_cache[unique_key]
-            else:
-                # Recherche externe uniquement si pas dans le cache
-                media_type, external_id = None, None
+            # --- MISE À JOUR DE LA DATE DE DERNIER VISIONNAGE ---
+            entry_viewed_at = getattr(entry, 'viewedAt', None)
+            if entry_viewed_at:
+                current_latest = last_viewed_dates.get(unique_key)
+                if not current_latest or entry_viewed_at.isoformat() > current_latest:
+                    last_viewed_dates[unique_key] = entry_viewed_at.isoformat()
+
+            # --- LOGIQUE DE CACHE POUR LES MÉTADONNÉES ---
+            if unique_key not in media_cache:
+                media_type, external_id, extra_data = None, None, {}
                 if entry.type == 'movie':
                     search_results = tmdb_client.search_movie(title)
-                    # Le filtrage par année reste pertinent et fiable pour les films
                     filtered_results = [m for m in search_results if m.get('year') == str(year)]
                     if filtered_results:
                         media_type = 'movie'
                         external_id = filtered_results[0].get('id')
-
                 elif entry.type == 'episode':
                     search_results = tvdb_client.search_and_translate_series(title)
-
                     best_match = None
                     if search_results:
                         if len(search_results) == 1:
                             best_match = search_results[0]
-                            current_app.logger.info(f"Un seul résultat TVDB trouvé pour '{title}', sélection automatique.")
                         else:
-                            # Logique de sélection basée sur la proximité de l'année
                             min_year_diff = float('inf')
                             for result in search_results:
                                 try:
@@ -150,38 +146,36 @@ def run_sync_test():
                                         if diff < min_year_diff:
                                             min_year_diff = diff
                                             best_match = result
-                                except (ValueError, TypeError):
-                                    continue
-
-                            # Si aucun match n'a été trouvé via l'année, on prend le premier par défaut
-                            if not best_match:
-                                best_match = search_results[0]
-                                current_app.logger.warning(f"Aucun match d'année fiable pour '{title}'. Prise du premier résultat par défaut.")
+                                except (ValueError, TypeError): continue
+                            if not best_match: best_match = search_results[0]
 
                     if best_match:
                         media_type = 'show'
                         external_id = best_match.get('tvdb_id')
-                        current_app.logger.info(f"Meilleur match TVDB pour '{title}' (Année indice: {year}) -> '{best_match.get('name')}' (Année sortie: {best_match.get('year')}, ID: {external_id})")
+                        # On récupère le nombre d'épisodes et on le met en cache
+                        total_episode_counts = tvdb_client.get_season_episode_counts(external_id)
+                        extra_data['total_episode_counts'] = total_episode_counts
+                        current_app.logger.info(f"Match TVDB pour '{title}' -> ID: {external_id}, Counts: {total_episode_counts}")
 
-                # Mettre en cache le résultat (y compris None) pour la clé unique
-                media_cache[unique_key] = (media_type, external_id)
+                media_cache[unique_key] = (media_type, external_id, extra_data)
 
-            # --- FIN DE LA NOUVELLE LOGIQUE DE CACHE ---
+            # --- TRAITEMENT DE L'ENTRÉE ---
+            media_type, external_id, extra_data = media_cache.get(unique_key, (None, None, {}))
 
-            # Si on a un ID (depuis le cache ou une nouvelle recherche), on traite TOUJOURS l'entrée
             if media_type and external_id:
                 season_number = episode_number = None
                 if entry.type == 'episode':
                     season_number = getattr(entry, 'parentIndex', None)
                     episode_number = getattr(entry, 'index', None)
-                    current_app.logger.info(f"-> Détails de l'épisode fantôme trouvés pour '{unique_key}': Saison={season_number}, Épisode={episode_number}")
 
                 success, message = add_archived_media(
-                    media_type,
-                    external_id,
-                    user_id,
+                    media_type=media_type,
+                    external_id=external_id,
+                    user_id=user_id,
                     season_number=season_number,
-                    episode_number=episode_number
+                    episode_number=episode_number,
+                    total_episode_counts=extra_data.get('total_episode_counts'),
+                    last_viewed_at=last_viewed_dates.get(unique_key)
                 )
 
                 # On ne flashe que le premier succès pour un item donné pour éviter le spam
