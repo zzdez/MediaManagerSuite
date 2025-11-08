@@ -163,16 +163,20 @@ class CustomTVDBClient:
 
         try:
             # On spécifie 'aired' pour récupérer les saisons officielles.
-            episodes_data = self.client.get_series_episodes(tvdb_id, season_type='aired')
+            # C'est l'appel API CORRECT pour obtenir la liste des épisodes.
+            episodes_response = self.client.get_series_episodes(tvdb_id, season_type='aired')
 
-            if not episodes_data or 'episodes' not in episodes_data:
+            # La réponse contient une clé 'episodes' avec la liste
+            if not episodes_response or 'episodes' not in episodes_response or not episodes_response['episodes']:
                 logger.warning(f"Aucune donnée d'épisode 'aired' trouvée pour la série TVDB ID {tvdb_id}.")
                 return {}
 
             episode_counts = {}
-            for episode in episodes_data['episodes']:
+            for episode in episodes_response['episodes']:
+                # Le numéro de saison est dans 'airedSeason'
                 season_number = episode.get('airedSeason')
-                # On ignore la saison 0 (spéciaux) et les épisodes sans saison
+
+                # On ignore la saison 0 (qui correspond aux épisodes spéciaux) et les épisodes sans numéro de saison
                 if season_number is not None and season_number > 0:
                     episode_counts[season_number] = episode_counts.get(season_number, 0) + 1
 
