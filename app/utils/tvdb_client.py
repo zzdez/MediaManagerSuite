@@ -152,39 +152,33 @@ class CustomTVDBClient:
 
     def get_season_episode_counts(self, tvdb_id):
         """
-        Récupère le nombre d'épisodes par saison en utilisant la méthode 'default' qui a fonctionné.
+        Récupère le nombre total d'épisodes pour chaque saison d'une série.
+        Utilise la méthode 'get_series_episodes' avec 'season_type=default' qui s'est avérée la plus fiable.
         """
         if not self.client:
             logger.error("Client TVDB non initialisé.")
             return {}
 
-        logger.info(f"Récupération des épisodes avec season_type='default' pour TVDB ID: {tvdb_id}")
+        logger.info(f"Récupération du nombre d'épisodes pour la série TVDB ID: {tvdb_id}")
 
         try:
             episodes_response = self.client.get_series_episodes(tvdb_id, season_type='default')
 
             if not episodes_response or 'episodes' not in episodes_response or not episodes_response['episodes']:
-                logger.warning(f"Aucune donnée d'épisode 'default' trouvée pour la série TVDB ID {tvdb_id}.")
+                logger.warning(f"Aucune donnée d'épisode trouvée pour la série TVDB ID {tvdb_id}.")
                 return {}
-
-            # --- LOG DE DÉBOGAGE DE LA STRUCTURE D'UN ÉPISODE ---
-            if episodes_response['episodes']:
-                logger.info(f"Structure du premier épisode: {episodes_response['episodes'][0]}")
-            # --- FIN DU LOG ---
 
             episode_counts = {}
             for episode in episodes_response['episodes']:
-                # On inspecte la clé de la saison. C'est probablement 'seasonNumber' ou 'airedSeason'
-                season_number = episode.get('seasonNumber') # Hypothèse 1
-                if season_number is None:
-                    season_number = episode.get('airedSeason') # Hypothèse 2 (fallback)
+                # La clé correcte est 'seasonNumber'
+                season_number = episode.get('seasonNumber')
 
                 if season_number is not None and season_number > 0:
                     episode_counts[season_number] = episode_counts.get(season_number, 0) + 1
 
-            logger.info(f"Nombre d'épisodes par saison (depuis 'default'): {episode_counts}")
+            logger.info(f"Nombre d'épisodes par saison pour TVDB ID {tvdb_id}: {episode_counts}")
             return episode_counts
 
         except Exception as e:
-            logger.error(f"Erreur lors de la récupération des épisodes 'default' pour TVDB ID {tvdb_id}: {e}", exc_info=True)
+            logger.error(f"Erreur lors de la récupération du nombre d'épisodes pour la série TVDB ID {tvdb_id}: {e}", exc_info=True)
             return {}
