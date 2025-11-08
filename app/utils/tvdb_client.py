@@ -174,8 +174,11 @@ class CustomTVDBClient:
                 # Logguer des parties spécifiques si elles existent
                 if 'seasons' in extended_data:
                     logger.info(f"Nombre de saisons trouvées: {len(extended_data['seasons'])}")
-                if 'episodes' in extended_data:
+                # La clé 'episodes' peut être None, on ajoute une vérification
+                if 'episodes' in extended_data and extended_data['episodes'] is not None:
                      logger.info(f"Nombre total d'épisodes trouvés: {len(extended_data['episodes'])}")
+                else:
+                    logger.info("La clé 'episodes' est absente ou vide au niveau racine.")
             else:
                 logger.info("extended_data n'est pas un dictionnaire.")
             logger.info(f"--- FIN DÉBOGAGE TVDB ÉTENDU ---")
