@@ -2088,15 +2088,14 @@ def archive_show_route():
         if not sonarr_series:
             return jsonify({'status': 'error', 'message': 'Show not found in Sonarr.'}), 404
 
+        # Obtenir l'historique de visionnage détaillé (DÉPLACÉ ICI)
+        watch_history = plex_client.get_show_watch_history(show)
+
         # --- ÉTAPE DE SAUVEGARDE DANS LA BDD D'ARCHIVES (CONDITIONNELLE ET CORRIGÉE) ---
         if options.get('archive'):
             try:
                 from app.utils.archive_manager import add_archived_media
-
                 tvdb_id = next((g.id.replace('tvdb://', '') for g in show.guids if g.id.startswith('tvdb://')), None)
-
-                # Obtenir l'historique de visionnage détaillé
-                watch_history = plex_client.get_show_watch_history(show)
 
                 # L'appel à add_archived_media a été simplifié.
                 # Il prend maintenant les arguments directement.
@@ -2116,7 +2115,6 @@ def archive_show_route():
                     current_app.logger.info(f"'{show.title}' archivé manuellement avec succès.")
                 else:
                     current_app.logger.error(f"Échec de l'archivage manuel pour '{show.title}': {message}")
-                    # On pourrait vouloir retourner une erreur ici si l'archivage est critique
             except Exception as e:
                 current_app.logger.error(f"Erreur majeure lors de la sauvegarde manuelle dans la BDD d'archives pour '{show.title}': {e}", exc_info=True)
 
@@ -2131,7 +2129,7 @@ def archive_show_route():
 
             if options.get('addTag'):
                 # *** LOGIQUE DE TAGS CORRIGÉE ***
-                # On dérive les tags depuis l'objet watch_history déjà récupéré
+                # On dérive les tags depuis l'objet watch_history (maintenant toujours disponible)
                 watched_tags = ['vu'] # Tag de base
 
                 if watch_history.get('is_fully_watched'):
