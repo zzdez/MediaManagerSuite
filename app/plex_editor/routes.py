@@ -133,7 +133,7 @@ def run_sync_test():
 
             if title not in plex_item_exists_cache:
                 plex_search_results = user_plex.search(title)
-                exists = any(item.title.lower() == title.lower() for item in plex_search_results)
+                exists = any(hasattr(item, 'title') and item.title.lower() == title.lower() for item in plex_search_results)
                 plex_item_exists_cache[title] = exists
 
             if plex_item_exists_cache[title]:
