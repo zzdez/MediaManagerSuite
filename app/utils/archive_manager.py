@@ -85,13 +85,17 @@ def add_archived_media(media_type, external_id, user_id, rating_key=None, season
 
     db_key = _get_key(media_type, external_id)
     database = _load_database()
+    is_new_entry = db_key not in database
     entry = database.get(db_key, {
         'media_type': 'tv' if media_type == 'show' else media_type,
         'external_id': external_id, 'archive_history': []
     })
 
-    # Mise à jour des métadonnées si elles sont absentes ou incomplètes
-    if not all(k in entry for k in ['title', 'year', 'poster_url', 'summary']):
+    # Mise à jour des métadonnées si c'est une nouvelle entrée ou si elles sont incomplètes
+    needs_metadata_update = not all(entry.get(k) for k in ['title', 'year', 'poster_url', 'summary'])
+
+    if is_new_entry or needs_metadata_update:
+        logger.info(f"Mise à jour des métadonnées requise pour {db_key} (Nouvelle entrée: {is_new_entry}, Données manquantes: {needs_metadata_update}).")
         fresh_metadata = {}
         if media_type == 'show':
             try:
@@ -105,14 +109,20 @@ def add_archived_media(media_type, external_id, user_id, rating_key=None, season
             try:
                 movie_details = TheMovieDBClient().get_movie_details(external_id)
                 if movie_details:
-                    fresh_metadata = {'title': movie_details.get('title'), 'year': movie_details.get('release_date', '----').split('-')[0],
-                                      'poster_url': f"https://image.tmdb.org/t/p/w500{movie_details.get('poster_path')}" if movie_details.get('poster_path') else None,
-                                      'summary': movie_details.get('overview')}
+                    fresh_metadata = {
+                        'title': movie_details.get('title'),
+                        'year': movie_details.get('release_date', '').split('-')[0] if movie_details.get('release_date') else 'N/A',
+                        'poster_url': f"https://image.tmdb.org/t/p/w500{movie_details.get('poster_path')}" if movie_details.get('poster_path') else None,
+                        'summary': movie_details.get('overview')
+                    }
+                    logger.info(f"Métadonnées TMDB récupérées pour {db_key}: {fresh_metadata.get('title')} ({fresh_metadata.get('year')})")
             except Exception as e:
                 logger.warning(f"Impossible de récupérer les détails TMDB pour {external_id}: {e}")
 
+        # Remplir les champs manquants ou vides
         for key, value in fresh_metadata.items():
-            if value: entry[key] = value
+            if value and not entry.get(key):
+                entry[key] = value
 
     # Gérer l'historique de visionnage
     user_id_str = str(user_id)
@@ -174,10 +184,22 @@ def add_archived_media(media_type, external_id, user_id, rating_key=None, season
                 else:
                     return False, f"Épisode S{season_number}E{episode_number} déjà archivé pour '{entry.get('title', db_key)}'."
         elif media_type == 'movie':
-             if history_entry.get('archived_at'):
-                 return False, f"Film fantôme '{entry.get('title', db_key)}' déjà archivé."
-             history_entry['watched_status'] = {'is_fully_watched': True, 'status': 'viewed_ghost'}
-             history_entry['archived_at'] = datetime.utcnow().isoformat()
+            if history_entry.get('archived_at'):
+                return False, f"Film fantôme '{entry.get('title', db_key)}' déjà archivé."
+
+            # Structure 'watched_status' alignée sur celle des items non-fantômes
+            history_entry['watched_status'] = {
+                "is_fully_watched": True,
+                "status": "viewed_ghost",
+                "last_viewed_at": last_viewed_at,
+                "history": [
+                    {
+                        "viewed_at": last_viewed_at,
+                        "user_id": user_id_str
+                    }
+                ]
+            }
+            history_entry['archived_at'] = datetime.utcnow().isoformat()
 
     # Mettre à jour l'entrée dans la BDD
     if user_history_index != -1:
