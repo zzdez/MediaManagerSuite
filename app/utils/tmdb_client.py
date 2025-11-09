@@ -36,13 +36,17 @@ class TheMovieDBClient:
             movie = movie_api.details(tmdb_id)
 
             # 3. On construit le dictionnaire de retour avec les bons noms de clés
+            release_date = getattr(movie, 'release_date', '')
+            year = release_date.split('-')[0] if release_date else 'N/A'
+
             details = {
                 'id': movie.id,
                 'title': movie.title,
                 'original_title': movie.original_title,
                 'overview': movie.overview,
-                'poster': f"https://image.tmdb.org/t/p/w500{movie.poster_path}" if movie.poster_path else "",
-                'year': movie.release_date.split('-')[0] if hasattr(movie, 'release_date') and movie.release_date else 'N/A',
+                'poster_path': movie.poster_path, # Garder le chemin relatif pour plus de flexibilité
+                'release_date': release_date,
+                'year': year,
                 'status': movie.status,
             }
             return details

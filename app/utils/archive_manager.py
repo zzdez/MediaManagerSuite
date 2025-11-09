@@ -111,7 +111,7 @@ def add_archived_media(media_type, external_id, user_id, rating_key=None, season
                 if movie_details:
                     fresh_metadata = {
                         'title': movie_details.get('title'),
-                        'year': movie_details.get('release_date', '').split('-')[0] if movie_details.get('release_date') else 'N/A',
+                        'year': movie_details.get('year'), # Utilise directement l'année traitée par le client
                         'poster_url': f"https://image.tmdb.org/t/p/w500{movie_details.get('poster_path')}" if movie_details.get('poster_path') else None,
                         'summary': movie_details.get('overview')
                     }
