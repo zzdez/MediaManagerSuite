@@ -70,10 +70,10 @@ def _get_key(media_type, external_id):
 
 from app.utils.plex_client import PlexClient
 
-def add_archived_media(media_type, external_id, user_id, rating_key=None, season_number=None, episode_number=None, total_episode_counts=None, last_viewed_at=None):
+def add_archived_media(media_type, external_id, user_id, rating_key=None, season_number=None, episode_number=None, total_episode_counts=None, last_viewed_at=None, title=None, year=None, summary=None, poster_url=None, watched_status=None):
     """
     Ajoute ou met à jour une entrée pour un média archivé.
-    Récupère les métadonnées fraîches et l'historique de visionnage, et gère les doublons.
+    Peut recevoir des métadonnées directement (archivage manuel) ou les récupérer (archivage fantôme).
     Pour les items fantômes ('shows'), peut enrichir l'historique avec les numéros de saison/épisode,
     le nombre total d'épisodes et la date de dernier visionnage.
     Retourne (True, "Success message") ou (False, "Error/Info message").
@@ -91,61 +91,105 @@ def add_archived_media(media_type, external_id, user_id, rating_key=None, season
         'external_id': external_id, 'archive_history': []
     })
 
-    # Mise à jour des métadonnées si c'est une nouvelle entrée ou si elles sont incomplètes
-    needs_metadata_update = not all(entry.get(k) for k in ['title', 'year', 'poster_url', 'summary'])
+    # --- DÉBUT DE LA NOUVELLE LOGIQUE UNIFIÉE ---
 
-    if is_new_entry or needs_metadata_update:
-        logger.info(f"Mise à jour des métadonnées requise pour {db_key} (Nouvelle entrée: {is_new_entry}, Données manquantes: {needs_metadata_update}).")
-        fresh_metadata = {}
-        if media_type == 'show':
-            try:
-                series_details = CustomTVDBClient().get_series_details_by_id(external_id)
-                if series_details:
-                    fresh_metadata = {'title': series_details.get('name'), 'year': series_details.get('year'),
-                                      'poster_url': series_details.get('image'), 'summary': series_details.get('overview')}
-            except Exception as e:
-                logger.warning(f"Impossible de récupérer les détails TVDB pour {external_id}: {e}")
-        elif media_type == 'movie':
-            try:
-                movie_details = TheMovieDBClient().get_movie_details(external_id)
-                if movie_details:
-                    fresh_metadata = {
-                        'title': movie_details.get('title'),
-                        'year': movie_details.get('year'), # Utilise directement l'année traitée par le client
-                        'poster_url': f"https://image.tmdb.org/t/p/w500{movie_details.get('poster_path')}" if movie_details.get('poster_path') else None,
-                        'summary': movie_details.get('overview')
-                    }
-                    logger.info(f"Métadonnées TMDB récupérées pour {db_key}: {fresh_metadata.get('title')} ({fresh_metadata.get('year')})")
-            except Exception as e:
-                logger.warning(f"Impossible de récupérer les détails TMDB pour {external_id}: {e}")
+    # Si les métadonnées sont fournies (archivage manuel), on les utilise.
+    if all([title, year, summary, poster_url, watched_status]):
+        logger.info(f"Archivage manuel pour {db_key} avec métadonnées fournies.")
+        entry['title'] = title
+        entry['year'] = year
+        entry['summary'] = summary
+        entry['poster_url'] = poster_url
 
-        # Remplacer les métadonnées existantes uniquement si les nouvelles sont valides
-        for key, value in fresh_metadata.items():
-            if value:
-                entry[key] = value
+        # Pour l'archivage manuel, on remplace l'historique de visionnage.
+        user_history_entry = {
+            'user_id': str(user_id),
+            'archived_at': datetime.utcnow().isoformat(),
+            'watched_status': watched_status
+        }
 
-    # Gérer l'historique de visionnage
-    user_id_str = str(user_id)
-    user_history_index = next((i for i, h in enumerate(entry['archive_history']) if str(h.get('user_id')) == user_id_str), -1)
+        # Remplacer l'historique existant pour cet utilisateur s'il existe
+        user_history_index = next((i for i, h in enumerate(entry['archive_history']) if str(h.get('user_id')) == str(user_id)), -1)
+        if user_history_index != -1:
+            entry['archive_history'][user_history_index] = user_history_entry
+        else:
+            entry['archive_history'].append(user_history_entry)
 
-    if user_history_index != -1:
-        history_entry = entry['archive_history'][user_history_index]
+    # Sinon (archivage fantôme), on récupère les métadonnées comme avant.
     else:
-        history_entry = {'user_id': user_id_str, 'archived_at': None, 'watched_status': {}}
-
-    # Mise à jour de l'historique
-    if rating_key: # Item non-fantôme
-        try:
-            plex_client = PlexClient(user_id=user_id)
-            plex_item = plex_client.get_item_by_rating_key(int(rating_key))
+        needs_metadata_update = not all(entry.get(k) for k in ['title', 'year', 'poster_url', 'summary'])
+        if is_new_entry or needs_metadata_update:
+            logger.info(f"Mise à jour des métadonnées requise pour {db_key} (Fantôme).")
+            fresh_metadata = {}
             if media_type == 'show':
-                history_entry['watched_status'] = plex_client.get_show_watch_history(plex_item) or {}
-            else:
-                history_entry['watched_status'] = plex_client.get_movie_watch_history(plex_item) or {}
+                try:
+                    series_details = CustomTVDBClient().get_series_details_by_id(external_id)
+                    if series_details:
+                        fresh_metadata = {'title': series_details.get('name'), 'year': series_details.get('year'),
+                                          'poster_url': series_details.get('image'), 'summary': series_details.get('overview')}
+                except Exception as e:
+                    logger.warning(f"Impossible de récupérer les détails TVDB pour {external_id}: {e}")
+            elif media_type == 'movie':
+                try:
+                    movie_details = TheMovieDBClient().get_movie_details(external_id)
+                    if movie_details:
+                        fresh_metadata = {
+                            'title': movie_details.get('title'), 'year': movie_details.get('year'),
+                            'poster_url': f"https://image.tmdb.org/t/p/w500{movie_details.get('poster_path')}" if movie_details.get('poster_path') else None,
+                            'summary': movie_details.get('overview')
+                        }
+                except Exception as e:
+                    logger.warning(f"Impossible de récupérer les détails TMDB pour {external_id}: {e}")
+
+            for key, value in fresh_metadata.items():
+                if value is not None: entry[key] = value
+
+        # Gérer l'historique de visionnage pour les items fantômes
+        user_id_str = str(user_id)
+        user_history_index = next((i for i, h in enumerate(entry['archive_history']) if str(h.get('user_id')) == user_id_str), -1)
+
+        if user_history_index != -1:
+            history_entry = entry['archive_history'][user_history_index]
+        else:
+            history_entry = {'user_id': user_id_str, 'archived_at': None, 'watched_status': {}}
+
+        if last_viewed_at:
+            if 'last_viewed_at' not in history_entry or not history_entry['last_viewed_at'] or last_viewed_at > history_entry['last_viewed_at']:
+                history_entry['last_viewed_at'] = last_viewed_at
+
+        if media_type == 'show':
+            if 'seasons' not in history_entry['watched_status']:
+                history_entry['watched_status']['seasons'] = []
+            if total_episode_counts:
+                for s in history_entry['watched_status']['seasons']:
+                    s_num_str = str(s.get('season_number'))
+                    if s_num_str in total_episode_counts and 'total_count' not in s:
+                        s['total_count'] = total_episode_counts[s_num_str]
+
+            if season_number is not None and episode_number is not None:
+                season_entry = next((s for s in history_entry['watched_status']['seasons'] if s.get('season_number') == season_number), None)
+                if not season_entry:
+                    season_entry = {'season_number': season_number, 'episodes_watched': []}
+                    if total_episode_counts and str(season_number) in total_episode_counts:
+                        season_entry['total_count'] = total_episode_counts[str(season_number)]
+                    history_entry['watched_status']['seasons'].append(season_entry)
+
+                if episode_number not in season_entry['episodes_watched']:
+                    season_entry['episodes_watched'].append(episode_number)
+                    season_entry['episodes_watched'].sort()
+                    season_entry['watched_count'] = len(season_entry['episodes_watched'])
+                    history_entry['archived_at'] = datetime.utcnow().isoformat()
+                else:
+                    return False, "Déjà archivé."
+        elif media_type == 'movie':
+            if history_entry.get('archived_at'): return False, "Déjà archivé."
+            history_entry['watched_status'] = {"is_watched": True, "status": "viewed_ghost", "last_viewed_at": last_viewed_at}
             history_entry['archived_at'] = datetime.utcnow().isoformat()
-        except Exception as e:
-            logger.error(f"Erreur PLEX pour {rating_key}: {e}", exc_info=True)
-            return False, f"Erreur de récupération PLEX pour {rating_key}."
+
+        if user_history_index != -1:
+            entry['archive_history'][user_history_index] = history_entry
+        else:
+            entry['archive_history'].append(history_entry)
     else: # Item fantôme
         # Mise à jour de la date de dernier visionnage si fournie et plus récente
         if last_viewed_at:
