@@ -122,14 +122,21 @@ def run_sync_test():
             if not unique_key:
                 continue
 
-            # --- VÉRIFICATION DE LA LIMITE DE TRAITEMENT ---
-            if entry_media_type == 'movie' and len(processed_movies) >= MOVIE_LIMIT:
+            # --- NOUVELLE VÉRIFICATION DE LA LIMITE ---
+            # On continue de traiter les entrées pour les médias déjà dans notre set de traitement,
+            # mais on n'ajoute pas de NOUVEAUX médias si la limite est atteinte.
+            if entry_media_type == 'movie' and unique_key not in processed_movies and len(processed_movies) >= MOVIE_LIMIT:
                 continue
-            if entry_media_type == 'show' and len(processed_shows) >= SHOW_LIMIT:
+
+            if entry_media_type == 'show' and unique_key not in processed_shows and len(processed_shows) >= SHOW_LIMIT:
                 continue
+
+            # Condition d'arrêt/continuation: si les deux listes sont pleines, on ne traite plus que
+            # les items déjà connus.
             if len(processed_movies) >= MOVIE_LIMIT and len(processed_shows) >= SHOW_LIMIT:
-                limit_reached = True
-                break
+                limit_reached = True # On met le flag pour le message final
+                if unique_key not in processed_movies and unique_key not in processed_shows:
+                    continue # On ignore ce nouvel item et on passe au suivant.
 
             if title not in plex_item_exists_cache:
                 plex_search_results = user_plex.search(title)
