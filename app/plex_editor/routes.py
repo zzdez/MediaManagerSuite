@@ -84,6 +84,7 @@ def run_sync_test():
 
         media_cache = {} # Cache pour {unique_key: (media_type, external_id, extra_data)}
         last_viewed_dates = {} # Cache pour {unique_key: latest_viewed_at_iso}
+        plex_item_exists_cache = {} # Cache pour {title: bool}
         archived_count = 0
 
         for entry in history:
@@ -113,6 +114,16 @@ def run_sync_test():
                     unique_key = f"show_{title}"
 
             if not unique_key:
+                continue
+
+            # --- VÉRIFICATION DE L'EXISTENCE DANS PLEX ---
+            if title not in plex_item_exists_cache:
+                plex_search_results = user_plex.search(title)
+                exists = any(item.title.lower() == title.lower() for item in plex_search_results)
+                plex_item_exists_cache[title] = exists
+
+            if plex_item_exists_cache[title]:
+                logger.info(f"Le média '{title}' existe toujours dans Plex. Ignoré.")
                 continue
 
             # --- MISE À JOUR DE LA DATE DE DERNIER VISIONNAGE ---
