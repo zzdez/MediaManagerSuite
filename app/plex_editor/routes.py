@@ -60,7 +60,6 @@ def run_sync_test():
         return redirect(url_for('plex_editor.sync_test_page'))
 
     try:
-        # Correction : Récupérer le nom de l'utilisateur de manière sécurisée
         main_account = get_main_plex_account_object()
         user_title = f"ID: {user_id}"
         if main_account:
@@ -76,16 +75,23 @@ def run_sync_test():
             flash(f"Impossible de se connecter au serveur Plex pour l'utilisateur '{user_title}'.", "danger")
             return redirect(url_for('plex_editor.sync_test_page'))
 
-        flash(f"Scan de l'historique Plex pour l'utilisateur '{user_title}' en cours... Cela peut prendre du temps.", "info")
+        flash(f"Scan de l'historique Plex (2000 derniers éléments) pour '{user_title}' en cours...", "info")
 
         tmdb_client = TheMovieDBClient()
         tvdb_client = CustomTVDBClient()
-        history = user_plex.history(maxresults=300)
+        history = user_plex.history(maxresults=2000)
 
-        media_cache = {} # Cache pour {unique_key: (media_type, external_id, extra_data)}
-        last_viewed_dates = {} # Cache pour {unique_key: latest_viewed_at_iso}
-        plex_item_exists_cache = {} # Cache pour {title: bool}
+        media_cache = {}
+        last_viewed_dates = {}
+        plex_item_exists_cache = {}
+
+        # --- NOUVEAUX COMPTEURS ET LIMITES ---
+        processed_movies = set()
+        processed_shows = set()
+        MOVIE_LIMIT = 5
+        SHOW_LIMIT = 5
         archived_count = 0
+        limit_reached = False
 
         for entry in history:
             source_item = None
@@ -101,22 +107,30 @@ def run_sync_test():
             if year:
                 year = year.year
 
-            # --- DÉFINITION DE LA CLÉ UNIQUE ---
-            unique_key = None
-            title = None
+            unique_key, title, entry_media_type = None, None, None
             if entry.type == 'movie':
                 title = getattr(entry, 'title', None)
                 if title and year:
                     unique_key = f"movie_{title}_{year}"
+                    entry_media_type = 'movie'
             elif entry.type == 'episode':
                 title = getattr(entry, 'grandparentTitle', None)
                 if title:
                     unique_key = f"show_{title}"
+                    entry_media_type = 'show'
 
             if not unique_key:
                 continue
 
-            # --- VÉRIFICATION DE L'EXISTENCE DANS PLEX ---
+            # --- VÉRIFICATION DE LA LIMITE DE TRAITEMENT ---
+            if entry_media_type == 'movie' and len(processed_movies) >= MOVIE_LIMIT:
+                continue
+            if entry_media_type == 'show' and len(processed_shows) >= SHOW_LIMIT:
+                continue
+            if len(processed_movies) >= MOVIE_LIMIT and len(processed_shows) >= SHOW_LIMIT:
+                limit_reached = True
+                break
+
             if title not in plex_item_exists_cache:
                 plex_search_results = user_plex.search(title)
                 exists = any(item.title.lower() == title.lower() for item in plex_search_results)
@@ -126,14 +140,12 @@ def run_sync_test():
                 current_app.logger.info(f"Le média '{title}' existe toujours dans Plex. Ignoré.")
                 continue
 
-            # --- MISE À JOUR DE LA DATE DE DERNIER VISIONNAGE ---
             entry_viewed_at = getattr(entry, 'viewedAt', None)
             if entry_viewed_at:
                 current_latest = last_viewed_dates.get(unique_key)
                 if not current_latest or entry_viewed_at.isoformat() > current_latest:
                     last_viewed_dates[unique_key] = entry_viewed_at.isoformat()
 
-            # --- LOGIQUE DE CACHE POUR LES MÉTADONNÉES ---
             if unique_key not in media_cache:
                 media_type, external_id, extra_data = None, None, {}
                 if entry.type == 'movie':
@@ -149,17 +161,8 @@ def run_sync_test():
                         if len(search_results) == 1:
                             best_match = search_results[0]
                         else:
-                            # NOUVELLE LOGIQUE AVEC FUZZY SEARCH
                             SIMILARITY_THRESHOLD = 85
-
-                            # 1. Filtrer par similarité de titre
-                            highly_similar_results = []
-                            for result in search_results:
-                                similarity_score = fuzz.ratio(title.lower(), result.get('name', '').lower())
-                                if similarity_score > SIMILARITY_THRESHOLD:
-                                    highly_similar_results.append(result)
-
-                            # 2. Si on a des candidats similaires, on choisit par année
+                            highly_similar_results = [r for r in search_results if fuzz.ratio(title.lower(), r.get('name', '').lower()) > SIMILARITY_THRESHOLD]
                             if highly_similar_results:
                                 min_year_diff = float('inf')
                                 for result in highly_similar_results:
@@ -171,25 +174,24 @@ def run_sync_test():
                                                 min_year_diff = diff
                                                 best_match = result
                                     except (ValueError, TypeError): continue
-                                # Si aucun match par année n'est trouvé, prendre le premier des similaires
                                 if not best_match: best_match = highly_similar_results[0]
-                            # (Optionnel) Fallback: si aucun n'est similaire, on pourrait utiliser l'ancienne logique
-                            # mais pour l'instant on préfère ne pas matcher pour éviter les faux positifs.
-
                     if best_match:
                         media_type = 'show'
                         external_id = best_match.get('tvdb_id')
-                        # On récupère le nombre d'épisodes et on le met en cache
                         total_episode_counts = tvdb_client.get_season_episode_counts(external_id)
                         extra_data['total_episode_counts'] = total_episode_counts
                         current_app.logger.info(f"Match TVDB pour '{title}' -> ID: {external_id}, Counts: {total_episode_counts}")
 
                 media_cache[unique_key] = (media_type, external_id, extra_data)
 
-            # --- TRAITEMENT DE L'ENTRÉE ---
             media_type, external_id, extra_data = media_cache.get(unique_key, (None, None, {}))
 
             if media_type and external_id:
+                if media_type == 'movie':
+                    processed_movies.add(unique_key)
+                elif media_type == 'show':
+                    processed_shows.add(unique_key)
+
                 season_number = episode_number = None
                 if entry.type == 'episode':
                     season_number = getattr(entry, 'parentIndex', None)
@@ -205,20 +207,20 @@ def run_sync_test():
                     last_viewed_at=last_viewed_dates.get(unique_key)
                 )
 
-                # On ne flashe que le premier succès pour un item donné pour éviter le spam
                 if success and unique_key not in (getattr(request, '_processed_flash', set())):
-                    flash(f"Archivage fantôme réussi pour : {unique_key}", "success")
+                    flash(f"Archivage fantôme réussi pour : {title}", "success")
                     if not hasattr(request, '_processed_flash'):
                         request._processed_flash = set()
                     request._processed_flash.add(unique_key)
                     archived_count +=1
                 elif not success:
-                     # On peut vouloir logger les échecs ou les infos
                      current_app.logger.info(f"Info/Échec archivage fantôme pour {unique_key}: {message}")
 
+        if limit_reached:
+            flash(f"Limite de test atteinte ({len(processed_movies)} films, {len(processed_shows)} séries). Scan arrêté.", "warning")
 
         if archived_count == 0:
-            flash("Scan terminé. Aucun nouvel item fantôme n'a pu être identifié.", "info")
+            flash("Scan terminé. Aucun nouvel item fantôme n'a pu être identifié dans l'échantillon.", "info")
         else:
             flash(f"Scan terminé. {archived_count} nouveau(x) média(s) fantôme(s) ont été archivés.", "success")
 
