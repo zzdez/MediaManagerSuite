@@ -123,7 +123,7 @@ def run_sync_test():
                 plex_item_exists_cache[title] = exists
 
             if plex_item_exists_cache[title]:
-                logger.info(f"Le média '{title}' existe toujours dans Plex. Ignoré.")
+                current_app.logger.info(f"Le média '{title}' existe toujours dans Plex. Ignoré.")
                 continue
 
             # --- MISE À JOUR DE LA DATE DE DERNIER VISIONNAGE ---
