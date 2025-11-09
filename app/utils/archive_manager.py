@@ -119,9 +119,9 @@ def add_archived_media(media_type, external_id, user_id, rating_key=None, season
             except Exception as e:
                 logger.warning(f"Impossible de récupérer les détails TMDB pour {external_id}: {e}")
 
-        # Remplir les champs manquants ou vides
+        # Remplacer les métadonnées existantes uniquement si les nouvelles sont valides
         for key, value in fresh_metadata.items():
-            if value and not entry.get(key):
+            if value:
                 entry[key] = value
 
     # Gérer l'historique de visionnage
@@ -189,7 +189,7 @@ def add_archived_media(media_type, external_id, user_id, rating_key=None, season
 
             # Structure 'watched_status' alignée sur celle des items non-fantômes
             history_entry['watched_status'] = {
-                "is_fully_watched": True,
+                "is_watched": True,
                 "status": "viewed_ghost",
                 "last_viewed_at": last_viewed_at,
                 "history": [
