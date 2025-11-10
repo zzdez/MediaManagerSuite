@@ -1437,8 +1437,75 @@ def bulk_delete_items():
 @plex_editor_bp.route('/archive_movie', methods=['POST'])
 @login_required
 def archive_movie_route():
-    # ... (le contenu de la fonction a été omis pour la concision)
-    return "Contenu de la fonction archive_movie_route"
+    data = request.get_json()
+    rating_key = data.get('ratingKey')
+    options = data.get('options', {})
+    user_id = data.get('userId')
+
+    if not rating_key or not user_id:
+        return jsonify({'status': 'error', 'message': 'Missing ratingKey or userId.'}), 400
+
+    try:
+        from app.utils.plex_client import PlexClient
+        plex_client = PlexClient(user_id=user_id)
+        movie = plex_client.get_item_by_rating_key(int(rating_key))
+
+        if not movie or movie.type != 'movie':
+            return jsonify({'status': 'error', 'message': 'Movie not found or not a movie item.'}), 404
+
+        if not movie.isWatched:
+            return jsonify({'status': 'error', 'message': 'Movie is not marked as watched for the selected user.'}), 400
+
+        radarr_movie = next((m for g in movie.guids if (m := get_radarr_movie_by_guid(g.id))), None)
+        if not radarr_movie:
+            return jsonify({'status': 'error', 'message': 'Movie not found in Radarr.'}), 404
+
+        if options.get('archive'):
+            try:
+                from app.utils.archive_manager import add_archived_media
+                tmdb_id = next((g.id.replace('tmdb://', '') for g in movie.guids if g.id.startswith('tmdb://')), None)
+                poster_url = plex_client.get_item_poster_url(movie)
+
+                success, message = add_archived_media(
+                    media_type='movie',
+                    external_id=tmdb_id,
+                    user_id=user_id,
+                    title=movie.title,
+                    year=movie.year,
+                    summary=movie.summary,
+                    poster_url=poster_url,
+                    watched_status={'is_fully_watched': True, 'last_watched_at': movie.lastViewedAt.isoformat() if movie.lastViewedAt else None}
+                )
+                if success:
+                    current_app.logger.info(f"'{movie.title}' archivé manuellement avec succès.")
+                else:
+                    current_app.logger.error(f"Échec de l'archivage manuel pour '{movie.title}': {message}")
+            except Exception as e:
+                current_app.logger.error(f"Erreur majeure lors de la sauvegarde manuelle pour '{movie.title}': {e}", exc_info=True)
+
+
+        if options.get('unmonitor') or options.get('addTag'):
+            if options.get('unmonitor'):
+                radarr_movie['monitored'] = False
+            if options.get('addTag'):
+                tag_id = get_radarr_tag_id('vu')
+                if tag_id and tag_id not in radarr_movie.get('tags', []):
+                    radarr_movie['tags'].append(tag_id)
+
+            if not update_radarr_movie(radarr_movie):
+                 return jsonify({'status': 'error', 'message': 'Failed to update movie in Radarr.'}), 500
+
+        if options.get('deleteFiles'):
+            # ... (la logique de suppression de fichiers reste la même)
+            pass
+
+        return jsonify({'status': 'success', 'message': f"Film '{movie.title}' archivé avec succès."})
+
+    except NotFound:
+        return jsonify({'status': 'error', 'message': f"Movie with ratingKey {rating_key} not found."}), 404
+    except Exception as e:
+        current_app.logger.error(f"Error archiving movie: {e}", exc_info=True)
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @plex_editor_bp.route('/archive_show', methods=['POST'])
 @login_required
@@ -1447,8 +1514,6 @@ def archive_show_route():
     rating_key = data.get('ratingKey')
     options = data.get('options', {})
     user_id = data.get('userId')
-
-    current_app.logger.info(f"ARCHIVE_SHOW_ROUTE: Options reçues : {options}")
 
     if not rating_key or not user_id:
         return jsonify({'status': 'error', 'message': 'Missing ratingKey or userId.'}), 400

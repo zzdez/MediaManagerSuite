@@ -433,6 +433,7 @@ $('#confirmArchiveMovieBtn').on('click', function() {
 
     btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Archivage...');
     const options = {
+        archive: $('#archiveMovieArchiveToDb').is(':checked'),
         deleteFiles: $('#archiveMovieDeleteFiles').is(':checked'),
         unmonitor: $('#archiveMovieUnmonitor').is(':checked'),
         addTag: $('#archiveMovieAddTag').is(':checked')
@@ -458,6 +459,7 @@ $('#confirmArchiveMovieBtn').on('click', function() {
         const ratingKey = btn.data('ratingKey');
         btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Archivage...');
         const options = {
+            archive: $('#archiveShowArchiveToDb').is(':checked'),
             deleteFiles: $('#archiveShowDeleteFiles').is(':checked'),
             unmonitor: $('#archiveShowUnmonitor').is(':checked'),
             addTag: $('#archiveShowAddTag').is(':checked')
