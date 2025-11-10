@@ -412,7 +412,9 @@ $('#archiveMovieModal').on('show.bs.modal', function () {
     $('#archiveDeleteFiles').prop('checked', true);
     $('#archiveUnmonitor').prop('checked', true);
     $('#archiveAddTag').prop('checked', true);
-    $('#archiveSaveHistoryMovie').prop('checked', true);
+    const saveHistoryCheckbox = $('#archiveSaveHistoryMovie');
+    saveHistoryCheckbox.prop('checked', true);
+    saveHistoryCheckbox.parent().show(); // Forcer l'affichage du conteneur
 });
 
 // Met les options d'archivage de série par défaut LORS DE L'OUVERTURE de la modale
@@ -420,7 +422,9 @@ $('#archiveShowModal').on('show.bs.modal', function () {
     $('#archiveShowDeleteFiles').prop('checked', true);
     $('#archiveShowUnmonitor').prop('checked', true);
     $('#archiveShowAddTag').prop('checked', true);
-    $('#archiveSaveHistoryShow').prop('checked', true);
+    const saveHistoryCheckbox = $('#archiveSaveHistoryShow');
+    saveHistoryCheckbox.prop('checked', true);
+    saveHistoryCheckbox.parent().show(); // Forcer l'affichage du conteneur
 });
 
 // Gère la soumission LORS DU CLIC sur le bouton de confirmation
