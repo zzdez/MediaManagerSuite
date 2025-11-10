@@ -412,6 +412,7 @@ $('#archiveMovieModal').on('show.bs.modal', function () {
     $('#archiveMovieDeleteFiles').prop('checked', true);
     $('#archiveMovieUnmonitor').prop('checked', true);
     $('#archiveMovieAddTag').prop('checked', true);
+    $('#archiveSaveToDb').prop('checked', true);
 });
 
 // Met les options d'archivage de série par défaut LORS DE L'OUVERTURE de la modale
@@ -419,6 +420,7 @@ $('#archiveShowModal').on('show.bs.modal', function () {
     $('#archiveShowDeleteFiles').prop('checked', true);
     $('#archiveShowUnmonitor').prop('checked', true);
     $('#archiveShowAddTag').prop('checked', true);
+    $('#archiveShowSaveToDb').prop('checked', true);
 });
 
 // Gère la soumission LORS DU CLIC sur le bouton de confirmation
@@ -454,35 +456,35 @@ $('#confirmArchiveMovieBtn').on('click', function() {
     .finally(() => btn.prop('disabled', false).html('Confirmer l\'archivage'));
 });
 
-    $('#confirmArchiveShowBtn').on('click', function() {
-        const btn = $(this);
-        const ratingKey = btn.data('ratingKey');
-        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Archivage...');
-        const options = {
-            deleteFiles: $('#archiveShowDeleteFiles').is(':checked'),
-            unmonitor: $('#archiveShowUnmonitor').is(':checked'),
-            addTag: $('#archiveShowAddTag').is(':checked'),
-            saveToDb: $('#archiveShowSaveToDb').is(':checked')
-        };
-        fetch('/plex/archive_show', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                ratingKey: ratingKey,
-                options: options,
-                userId: $('#user-select').val() // <-- AJOUTE CETTE LIGNE
-            })
+$('#confirmArchiveShowBtn').on('click', function() {
+    const btn = $(this);
+    const ratingKey = btn.data('ratingKey');
+    btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Archivage...');
+    const options = {
+        deleteFiles: $('#archiveShowDeleteFiles').is(':checked'),
+        unmonitor: $('#archiveShowUnmonitor').is(':checked'),
+        addTag: $('#archiveShowAddTag').is(':checked'),
+        saveToDb: $('#archiveShowSaveToDb').is(':checked')
+    };
+    fetch('/plex/archive_show', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            ratingKey: ratingKey,
+            options: options,
+            userId: $('#user-select').val()
         })
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === 'success') {
-                $(`.archive-show-btn[data-rating-key='${ratingKey}']`).closest('tr').remove();
-                bootstrap.Modal.getInstance(document.getElementById('archiveShowModal')).hide();
-            } else { alert('Erreur: ' + data.message); }
-        })
-        .catch(error => { console.error(error); alert('Erreur de communication.'); })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            $(`.archive-show-btn[data-rating-key='${ratingKey}']`).closest('tr').remove();
+            bootstrap.Modal.getInstance(document.getElementById('archiveShowModal')).hide();
+        } else { alert('Erreur: ' + data.message); }
+    })
+    .catch(error => { console.error(error); alert('Erreur de communication.'); })
     .finally(() => btn.prop('disabled', false).html('Confirmer l\'archivage'));
-    });
+});
 
     $('#confirmRejectShowBtn').on('click', function() {
         const btn = $(this);

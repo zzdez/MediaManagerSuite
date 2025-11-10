@@ -2110,6 +2110,11 @@ def archive_show_route():
 
         # --- Logique Sonarr (AMÉLIORÉE) ---
         if options.get('unmonitor') or options.get('addTag'):
+            # On doit récupérer l'historique de visionnage si on a besoin d'ajouter des tags
+            watch_history = {}
+            if options.get('addTag'):
+                watch_history = plex_client.get_show_watch_history(show)
+
             full_series_data = get_sonarr_series_by_id(sonarr_series['id'])
             if not full_series_data: return jsonify({'status': 'error', 'message': 'Could not fetch full series details from Sonarr.'}), 500
 
@@ -2117,19 +2122,14 @@ def archive_show_route():
                 full_series_data['monitored'] = False
 
             if options.get('addTag'):
-                # *** LOGIQUE DE TAGS CORRIGÉE ***
-                # On dérive les tags depuis l'objet watch_history déjà récupéré
-                watched_tags = ['vu'] # Tag de base
-
+                watched_tags = ['vu']
                 if watch_history.get('is_fully_watched'):
                     watched_tags.append('vu-complet')
-
                 for season in watch_history.get('seasons', []):
                     if season.get('is_watched'):
                         watched_tags.append(f"Saison {season.get('season_number')}")
 
-                # Ajouter les tags à Sonarr
-                for tag_label in set(watched_tags): # Utiliser set() pour dédoublonner
+                for tag_label in set(watched_tags):
                     tag_id = get_sonarr_tag_id(tag_label)
                     if tag_id and tag_id not in full_series_data.get('tags', []):
                         full_series_data['tags'].append(tag_id)
