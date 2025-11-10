@@ -42,12 +42,12 @@ from app.utils.bulk_move_manager import bulk_move_manager # Import du nouveau ma
 
 # --- Routes du Blueprint ---
 
-# --- Route de test pour la synchronisation de l'historique fantôme ---
-@plex_editor_bp.route('/sync_test')
+# --- Route pour la synchronisation de l'historique fantôme ---
+@plex_editor_bp.route('/sync_history')
 @login_required
-def sync_test_page():
-    """Affiche une page de test pour lancer la synchronisation de l'historique."""
-    return render_template('plex_editor/sync_test.html')
+def sync_history_page():
+    """Affiche la page pour lancer la synchronisation de l'historique."""
+    return render_template('plex_editor/sync_history.html')
 
 @plex_editor_bp.route('/run_sync_test', methods=['POST'])
 @login_required
@@ -57,7 +57,7 @@ def run_sync_test():
     user_id = request.form.get('user_id')
     if not user_id:
         flash("Veuillez sélectionner un utilisateur.", "danger")
-        return redirect(url_for('plex_editor.sync_test_page'))
+        return redirect(url_for('plex_editor.sync_history_page'))
 
     try:
         main_account = get_main_plex_account_object()
@@ -73,7 +73,7 @@ def run_sync_test():
         user_plex = get_user_specific_plex_server_from_id(user_id)
         if not user_plex:
             flash(f"Impossible de se connecter au serveur Plex pour l'utilisateur '{user_title}'.", "danger")
-            return redirect(url_for('plex_editor.sync_test_page'))
+            return redirect(url_for('plex_editor.sync_history_page'))
 
         flash(f"Scan de l'historique Plex (2000 derniers éléments) pour '{user_title}' en cours...", "info")
 
@@ -231,12 +231,12 @@ def run_sync_test():
         else:
             flash(f"Scan terminé. {archived_count} nouveau(x) média(s) fantôme(s) ont été archivés.", "success")
 
-        return redirect(url_for('plex_editor.sync_test_page'))
+        return redirect(url_for('plex_editor.sync_history_page'))
 
     except Exception as e:
         current_app.logger.error(f"Erreur majeure lors du test de synchronisation: {e}", exc_info=True)
         flash(f"Une erreur inattendue est survenue: {str(e)}", "danger")
-        return redirect(url_for('plex_editor.sync_test_page'))
+        return redirect(url_for('plex_editor.sync_history_page'))
 
 
 @plex_editor_bp.route('/api/media/root_folders', methods=['GET'])
@@ -1961,28 +1961,29 @@ def archive_movie_route():
         if not movie.isWatched:
             return jsonify({'status': 'error', 'message': 'Movie is not marked as watched for the selected user.'}), 400
 
-        # --- ÉTAPE DE SAUVEGARDE DANS LA BDD D'ARCHIVES ---
-        if options.get('save_history'):
-            try:
-                from app.utils.archive_manager import add_archived_media
+        # --- ÉTAPE DE SAUVEGARDE DANS LA BDD D'ARCHIVES (AMÉLIORÉE) ---
+        try:
+            from app.utils.archive_manager import add_archived_media
 
-                tmdb_id = next((g.id.replace('tmdb://', '') for g in movie.guids if g.id.startswith('tmdb://')), None)
-                if not tmdb_id:
-                    current_app.logger.warning(f"Archivage BDD impossible pour '{movie.title}': aucun TMDB ID trouvé.")
-                else:
-                    success, message = add_archived_media(
-                        media_type='movie',
-                        external_id=tmdb_id,
-                        user_id=user_id,
-                        rating_key=rating_key
-                    )
-                    if success:
-                        current_app.logger.info(f"Archivage BDD réussi pour '{movie.title}': {message}")
-                    else:
-                        current_app.logger.warning(f"Archivage BDD pour '{movie.title}' a retourné un message: {message}")
+            tmdb_id = next((g.id.replace('tmdb://', '') for g in movie.guids if g.id.startswith('tmdb://')), None)
 
-            except Exception as e:
-                current_app.logger.error(f"Erreur lors de la sauvegarde dans la BDD d'archives pour '{movie.title}': {e}", exc_info=True)
+            # Utiliser la nouvelle méthode pour obtenir l'historique détaillé
+            watch_history = plex_client.get_movie_watch_history(movie)
+
+            media_data_to_archive = {
+                'media_type': 'movie',
+                'external_id': tmdb_id,
+                'user_id': user_id,
+                'title': movie.title,
+                'year': movie.year,
+                'summary': movie.summary,
+                'poster_url': watch_history.get('poster_url') if watch_history else None,
+                'watched_status': watch_history or {'is_watched': movie.isWatched, 'status': 'Unknown'}
+            }
+            add_archived_media(media_data_to_archive)
+            current_app.logger.info(f"'{movie.title}' ajouté à la base de données d'archives.")
+        except Exception as e:
+            current_app.logger.error(f"Erreur lors de la sauvegarde dans la BDD d'archives pour '{movie.title}': {e}", exc_info=True)
 
         # --- Radarr Actions (AMÉLIORÉES) ---
         if options.get('unmonitor') or options.get('addTag'):
@@ -2084,37 +2085,33 @@ def archive_show_route():
         if not sonarr_series:
             return jsonify({'status': 'error', 'message': 'Show not found in Sonarr.'}), 404
 
-        # --- ÉTAPE DE SAUVEGARDE DANS LA BDD D'ARCHIVES ---
-        if options.get('save_history'):
-            try:
-                from app.utils.archive_manager import add_archived_media
+        # --- ÉTAPE DE SAUVEGARDE DANS LA BDD D'ARCHIVES (AMÉLIORÉE) ---
+        try:
+            from app.utils.archive_manager import add_archived_media
 
-                tvdb_id = next((g.id.replace('tvdb://', '') for g in show.guids if g.id.startswith('tvdb://')), None)
-                if not tvdb_id:
-                    current_app.logger.warning(f"Archivage BDD impossible pour '{show.title}': aucun TVDB ID trouvé.")
-                else:
-                    success, message = add_archived_media(
-                        media_type='show',
-                        external_id=tvdb_id,
-                        user_id=user_id,
-                        rating_key=rating_key
-                    )
-                    if success:
-                        current_app.logger.info(f"Archivage BDD réussi pour '{show.title}': {message}")
-                    else:
-                        current_app.logger.warning(f"Archivage BDD pour '{show.title}' a retourné un message: {message}")
+            tvdb_id = next((g.id.replace('tvdb://', '') for g in show.guids if g.id.startswith('tvdb://')), None)
 
-            except Exception as e:
-                current_app.logger.error(f"Erreur lors de la sauvegarde dans la BDD d'archives pour '{show.title}': {e}", exc_info=True)
+            # Utiliser la nouvelle méthode pour obtenir l'historique détaillé
+            watch_history = plex_client.get_show_watch_history(show)
+
+            media_data_to_archive = {
+                'media_type': 'show',
+                'external_id': tvdb_id,
+                'user_id': user_id,
+                'title': show.title,
+                'year': show.year,
+                'summary': show.summary,
+                'poster_url': watch_history.get('poster_url') if watch_history else None,
+                'watched_status': watch_history or {'is_fully_watched': show.isWatched, 'seasons': []}
+            }
+            add_archived_media(media_data_to_archive)
+            current_app.logger.info(f"'{show.title}' ajouté à la base de données d'archives.")
+        except Exception as e:
+            current_app.logger.error(f"Erreur lors de la sauvegarde dans la BDD d'archives pour '{show.title}': {e}", exc_info=True)
 
 
         # --- Logique Sonarr (AMÉLIORÉE) ---
         if options.get('unmonitor') or options.get('addTag'):
-            # On doit récupérer l'historique de visionnage si on a besoin d'ajouter des tags
-            watch_history = {}
-            if options.get('addTag'):
-                watch_history = plex_client.get_show_watch_history(show)
-
             full_series_data = get_sonarr_series_by_id(sonarr_series['id'])
             if not full_series_data: return jsonify({'status': 'error', 'message': 'Could not fetch full series details from Sonarr.'}), 500
 
@@ -2122,14 +2119,19 @@ def archive_show_route():
                 full_series_data['monitored'] = False
 
             if options.get('addTag'):
-                watched_tags = ['vu']
+                # *** LOGIQUE DE TAGS CORRIGÉE ***
+                # On dérive les tags depuis l'objet watch_history déjà récupéré
+                watched_tags = ['vu'] # Tag de base
+
                 if watch_history.get('is_fully_watched'):
                     watched_tags.append('vu-complet')
+
                 for season in watch_history.get('seasons', []):
                     if season.get('is_watched'):
                         watched_tags.append(f"Saison {season.get('season_number')}")
 
-                for tag_label in set(watched_tags):
+                # Ajouter les tags à Sonarr
+                for tag_label in set(watched_tags): # Utiliser set() pour dédoublonner
                     tag_id = get_sonarr_tag_id(tag_label)
                     if tag_id and tag_id not in full_series_data.get('tags', []):
                         full_series_data['tags'].append(tag_id)

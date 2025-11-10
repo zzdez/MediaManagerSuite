@@ -412,9 +412,6 @@ $('#archiveMovieModal').on('show.bs.modal', function () {
     $('#archiveMovieDeleteFiles').prop('checked', true);
     $('#archiveMovieUnmonitor').prop('checked', true);
     $('#archiveMovieAddTag').prop('checked', true);
-    const saveHistoryCheckbox = $('#archiveSaveToDb');
-    saveHistoryCheckbox.prop('checked', true);
-    saveHistoryCheckbox.parent().show(); // Forcer l'affichage du conteneur
 });
 
 // Met les options d'archivage de série par défaut LORS DE L'OUVERTURE de la modale
@@ -422,9 +419,6 @@ $('#archiveShowModal').on('show.bs.modal', function () {
     $('#archiveShowDeleteFiles').prop('checked', true);
     $('#archiveShowUnmonitor').prop('checked', true);
     $('#archiveShowAddTag').prop('checked', true);
-    const saveHistoryCheckbox = $('#archiveShowSaveToDb');
-    saveHistoryCheckbox.prop('checked', true);
-    saveHistoryCheckbox.parent().show(); // Forcer l'affichage du conteneur
 });
 
 // Gère la soumission LORS DU CLIC sur le bouton de confirmation
@@ -441,8 +435,7 @@ $('#confirmArchiveMovieBtn').on('click', function() {
     const options = {
         deleteFiles: $('#archiveMovieDeleteFiles').is(':checked'),
         unmonitor: $('#archiveMovieUnmonitor').is(':checked'),
-        addTag: $('#archiveMovieAddTag').is(':checked'),
-        save_history: $('#archiveSaveToDb').is(':checked')
+        addTag: $('#archiveMovieAddTag').is(':checked')
     };
     fetch('/plex/archive_movie', {
         method: 'POST',
@@ -452,8 +445,7 @@ $('#confirmArchiveMovieBtn').on('click', function() {
     .then(response => response.json())
     .then(data => {
         if (data.status === 'success') {
-            // Correction pour cibler la ligne du tableau (tr) parente
-            $(`.archive-movie-btn[data-rating-key='${ratingKey}']`).closest('tr').fadeOut(500, function() { $(this).remove(); });
+            $(`.archive-movie-btn[data-rating-key='${ratingKey}']`).closest('tr').remove();
             bootstrap.Modal.getInstance(document.getElementById('archiveMovieModal')).hide();
         } else { alert('Erreur: ' + data.message); }
     })
@@ -461,35 +453,34 @@ $('#confirmArchiveMovieBtn').on('click', function() {
     .finally(() => btn.prop('disabled', false).html('Confirmer l\'archivage'));
 });
 
-$('#confirmArchiveShowBtn').on('click', function() {
-    const btn = $(this);
-    const ratingKey = btn.data('ratingKey');
-    btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Archivage...');
-    const options = {
-        deleteFiles: $('#archiveShowDeleteFiles').is(':checked'),
-        unmonitor: $('#archiveShowUnmonitor').is(':checked'),
-        addTag: $('#archiveShowAddTag').is(':checked'),
-        save_history: $('#archiveShowSaveToDb').is(':checked')
-    };
-    fetch('/plex/archive_show', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            ratingKey: ratingKey,
-            options: options,
-            userId: $('#user-select').val()
+    $('#confirmArchiveShowBtn').on('click', function() {
+        const btn = $(this);
+        const ratingKey = btn.data('ratingKey');
+        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Archivage...');
+        const options = {
+            deleteFiles: $('#archiveShowDeleteFiles').is(':checked'),
+            unmonitor: $('#archiveShowUnmonitor').is(':checked'),
+            addTag: $('#archiveShowAddTag').is(':checked')
+        };
+        fetch('/plex/archive_show', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                ratingKey: ratingKey,
+                options: options,
+                userId: $('#user-select').val() // <-- AJOUTE CETTE LIGNE
+            })
         })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.status === 'success') {
-            $(`.archive-show-btn[data-rating-key='${ratingKey}']`).closest('tr').remove();
-            bootstrap.Modal.getInstance(document.getElementById('archiveShowModal')).hide();
-        } else { alert('Erreur: ' + data.message); }
-    })
-    .catch(error => { console.error(error); alert('Erreur de communication.'); })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                $(`.archive-show-btn[data-rating-key='${ratingKey}']`).closest('tr').remove();
+                bootstrap.Modal.getInstance(document.getElementById('archiveShowModal')).hide();
+            } else { alert('Erreur: ' + data.message); }
+        })
+        .catch(error => { console.error(error); alert('Erreur de communication.'); })
     .finally(() => btn.prop('disabled', false).html('Confirmer l\'archivage'));
-});
+    });
 
     $('#confirmRejectShowBtn').on('click', function() {
         const btn = $(this);
