@@ -435,7 +435,8 @@ $('#confirmArchiveMovieBtn').on('click', function() {
     const options = {
         deleteFiles: $('#archiveMovieDeleteFiles').is(':checked'),
         unmonitor: $('#archiveMovieUnmonitor').is(':checked'),
-        addTag: $('#archiveMovieAddTag').is(':checked')
+        addTag: $('#archiveMovieAddTag').is(':checked'),
+        saveToDb: $('#archiveSaveToDb').is(':checked')
     };
     fetch('/plex/archive_movie', {
         method: 'POST',
@@ -460,7 +461,8 @@ $('#confirmArchiveMovieBtn').on('click', function() {
         const options = {
             deleteFiles: $('#archiveShowDeleteFiles').is(':checked'),
             unmonitor: $('#archiveShowUnmonitor').is(':checked'),
-            addTag: $('#archiveShowAddTag').is(':checked')
+            addTag: $('#archiveShowAddTag').is(':checked'),
+            saveToDb: $('#archiveShowSaveToDb').is(':checked')
         };
         fetch('/plex/archive_show', {
             method: 'POST',

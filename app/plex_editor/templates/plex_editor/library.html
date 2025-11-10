@@ -490,6 +490,12 @@
                             Ajouter le tag <strong>'{{ config.RADARR_TAG_ON_ARCHIVE }}'</strong> dans Radarr.
                         </label>
                     </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="archiveSaveToDb" checked>
+                        <label class="form-check-label" for="archiveSaveToDb">
+                            <strong>Sauvegarder dans l'historique</strong> de visionnage.
+                        </label>
+                    </div>
                     <div class="alert alert-warning mt-3" role="alert">
                         <i class="fas fa-exclamation-triangle"></i>
                         <strong>Attention :</strong> La suppression des fichiers est définitive.
@@ -537,6 +543,12 @@
                         <input class="form-check-input" type="checkbox" id="archiveShowAddTag" checked>
                         <label class="form-check-label" for="archiveShowAddTag">
                             Ajouter les tags (ex: 'vu', 'vu-complet') dans Sonarr.
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="archiveShowSaveToDb" checked>
+                        <label class="form-check-label" for="archiveShowSaveToDb">
+                            <strong>Sauvegarder dans l'historique</strong> de visionnage.
                         </label>
                     </div>
                     <div class="alert alert-danger mt-3" role="alert">
