@@ -1442,8 +1442,6 @@ def archive_movie_route():
     options = data.get('options', {})
     user_id = data.get('userId')
 
-    current_app.logger.info(f"ARCHIVE_MOVIE_ROUTE: Received data: {data}")
-
     if not rating_key or not user_id:
         return jsonify({'status': 'error', 'message': 'Missing ratingKey or userId.'}), 400
 
@@ -1516,8 +1514,6 @@ def archive_show_route():
     rating_key = data.get('ratingKey')
     options = data.get('options', {})
     user_id = data.get('userId')
-
-    current_app.logger.info(f"ARCHIVE_SHOW_ROUTE: Received data: {data}")
 
     if not rating_key or not user_id:
         return jsonify({'status': 'error', 'message': 'Missing ratingKey or userId.'}), 400

@@ -409,6 +409,7 @@ $(document).ready(function() {
 
 // Met les options d'archivage de film par défaut LORS DE L'OUVERTURE de la modale
 $('#archiveMovieModal').on('show.bs.modal', function () {
+    $('#archiveMovieArchiveToDb').prop('checked', true);
     $('#archiveMovieDeleteFiles').prop('checked', true);
     $('#archiveMovieUnmonitor').prop('checked', true);
     $('#archiveMovieAddTag').prop('checked', true);
@@ -416,6 +417,7 @@ $('#archiveMovieModal').on('show.bs.modal', function () {
 
 // Met les options d'archivage de série par défaut LORS DE L'OUVERTURE de la modale
 $('#archiveShowModal').on('show.bs.modal', function () {
+    $('#archiveShowArchiveToDb').prop('checked', true);
     $('#archiveShowDeleteFiles').prop('checked', true);
     $('#archiveShowUnmonitor').prop('checked', true);
     $('#archiveShowAddTag').prop('checked', true);
