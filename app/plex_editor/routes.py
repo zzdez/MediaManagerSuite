@@ -1962,7 +1962,7 @@ def archive_movie_route():
             return jsonify({'status': 'error', 'message': 'Movie is not marked as watched for the selected user.'}), 400
 
         # --- ÉTAPE DE SAUVEGARDE DANS LA BDD D'ARCHIVES ---
-        if options.get('saveToDb'):
+        if options.get('save_history'):
             try:
                 from app.utils.archive_manager import add_archived_media
 
@@ -2085,7 +2085,7 @@ def archive_show_route():
             return jsonify({'status': 'error', 'message': 'Show not found in Sonarr.'}), 404
 
         # --- ÉTAPE DE SAUVEGARDE DANS LA BDD D'ARCHIVES ---
-        if options.get('saveToDb'):
+        if options.get('save_history'):
             try:
                 from app.utils.archive_manager import add_archived_media
 

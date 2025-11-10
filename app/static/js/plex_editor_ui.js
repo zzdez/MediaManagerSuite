@@ -409,10 +409,10 @@ $(document).ready(function() {
 
 // Met les options d'archivage de film par défaut LORS DE L'OUVERTURE de la modale
 $('#archiveMovieModal').on('show.bs.modal', function () {
-    $('#archiveMovieDeleteFiles').prop('checked', true);
-    $('#archiveMovieUnmonitor').prop('checked', true);
-    $('#archiveMovieAddTag').prop('checked', true);
-    $('#archiveSaveToDb').prop('checked', true);
+    $('#archiveDeleteFiles').prop('checked', true);
+    $('#archiveUnmonitor').prop('checked', true);
+    $('#archiveAddTag').prop('checked', true);
+    $('#archiveSaveHistoryMovie').prop('checked', true);
 });
 
 // Met les options d'archivage de série par défaut LORS DE L'OUVERTURE de la modale
@@ -420,7 +420,7 @@ $('#archiveShowModal').on('show.bs.modal', function () {
     $('#archiveShowDeleteFiles').prop('checked', true);
     $('#archiveShowUnmonitor').prop('checked', true);
     $('#archiveShowAddTag').prop('checked', true);
-    $('#archiveShowSaveToDb').prop('checked', true);
+    $('#archiveSaveHistoryShow').prop('checked', true);
 });
 
 // Gère la soumission LORS DU CLIC sur le bouton de confirmation
@@ -435,10 +435,10 @@ $('#confirmArchiveMovieBtn').on('click', function() {
 
     btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Archivage...');
     const options = {
-        deleteFiles: $('#archiveMovieDeleteFiles').is(':checked'),
-        unmonitor: $('#archiveMovieUnmonitor').is(':checked'),
-        addTag: $('#archiveMovieAddTag').is(':checked'),
-        saveToDb: $('#archiveSaveToDb').is(':checked')
+        deleteFiles: $('#archiveDeleteFiles').is(':checked'),
+        unmonitor: $('#archiveUnmonitor').is(':checked'),
+        addTag: $('#archiveAddTag').is(':checked'),
+        save_history: $('#archiveSaveHistoryMovie').is(':checked')
     };
     fetch('/plex/archive_movie', {
         method: 'POST',
@@ -448,7 +448,7 @@ $('#confirmArchiveMovieBtn').on('click', function() {
     .then(response => response.json())
     .then(data => {
         if (data.status === 'success') {
-            $(`.archive-movie-btn[data-rating-key='${ratingKey}']`).closest('tr').remove();
+            $(`li[data-rating-key='${ratingKey}']`).fadeOut(500, function() { $(this).remove(); });
             bootstrap.Modal.getInstance(document.getElementById('archiveMovieModal')).hide();
         } else { alert('Erreur: ' + data.message); }
     })
@@ -464,7 +464,7 @@ $('#confirmArchiveShowBtn').on('click', function() {
         deleteFiles: $('#archiveShowDeleteFiles').is(':checked'),
         unmonitor: $('#archiveShowUnmonitor').is(':checked'),
         addTag: $('#archiveShowAddTag').is(':checked'),
-        saveToDb: $('#archiveShowSaveToDb').is(':checked')
+        save_history: $('#archiveSaveHistoryShow').is(':checked')
     };
     fetch('/plex/archive_show', {
         method: 'POST',
