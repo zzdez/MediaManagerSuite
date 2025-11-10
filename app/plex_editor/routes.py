@@ -1448,6 +1448,8 @@ def archive_show_route():
     options = data.get('options', {})
     user_id = data.get('userId')
 
+    current_app.logger.info(f"ARCHIVE_SHOW_ROUTE: Options reçues : {options}")
+
     if not rating_key or not user_id:
         return jsonify({'status': 'error', 'message': 'Missing ratingKey or userId.'}), 400
 
