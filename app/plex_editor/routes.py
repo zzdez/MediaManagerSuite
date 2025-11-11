@@ -11,6 +11,10 @@ from datetime import datetime, timedelta
 import pytz
 from plexapi.server import PlexServer
 from plexapi.exceptions import NotFound, Unauthorized, BadRequest
+import logging
+
+# Initialisation du logger pour ce module
+logger = logging.getLogger(__name__)
 
 # Importer le Blueprint
 from . import plex_editor_bp
@@ -90,7 +94,7 @@ def run_sync_test():
             for media_info in archive_data.values()
             if media_info.get('title') and media_info.get('year')
         }
-        logger.info(f"{len(existing_archives)} média(s) déjà archivé(s) chargé(s).")
+        current_app.logger.info(f"{len(existing_archives)} média(s) déjà archivé(s) chargé(s).")
         # --- FIN DU NOUVEAU BLOC ---
 
         history = user_plex.history() # La limite maxresults=2000 a été supprimée pour un scan complet
@@ -139,7 +143,7 @@ def run_sync_test():
             # --- NOUVEAU : Ignorer si le média est déjà dans les archives ---
             if title and year:
                 if (title.lower(), str(year)) in existing_archives:
-                    logger.debug(f"Média '{title} ({year})' déjà archivé. Ignoré.")
+                    current_app.logger.debug(f"Média '{title} ({year})' déjà archivé. Ignoré.")
                     continue
             # --- FIN DU NOUVEAU BLOC ---
 
