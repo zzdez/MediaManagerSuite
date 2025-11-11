@@ -1,9 +1,44 @@
 # app/utils/tmdb_client.py (LA VRAIE CORRECTION)
 import logging
+import time
+import functools
 from flask import current_app
 from tmdbv3api import TMDb, Movie, Search, TV, Find
+from tmdbv3api.exceptions import TMDbException
 
 logger = logging.getLogger(__name__)
+
+def robust_request(retries=3, delay=10, backoff=2):
+    """
+    Décorateur pour rendre les appels à l'API TMDb plus robustes avec une politique de retry.
+    """
+    def decorator_robust_request(func):
+        @functools.wraps(func)
+        def wrapper_robust_request(*args, **kwargs):
+            _retries, _delay = retries, delay
+            while _retries > 0:
+                try:
+                    return func(*args, **kwargs)
+                except TMDbException as e:
+                    # Spécifiquement pour l'erreur "Too Many Requests" (status code 429)
+                    if 'Too Many Requests' in str(e) or 'status_code: 429' in str(e):
+                        logger.warning(f"TMDb: Erreur 'Too Many Requests' détectée. Attente de {_delay} secondes avant de réessayer...")
+                        time.sleep(_delay)
+                        _retries -= 1
+                        _delay *= backoff
+                    else:
+                        # Pour les autres erreurs TMDb, on ne réessaie pas.
+                        logger.error(f"TMDb: Erreur API non gérée par retry : {e}", exc_info=True)
+                        raise  # On relève l'exception
+                except Exception as e:
+                    logger.error(f"TMDb: Erreur inattendue non-TMDb : {e}", exc_info=True)
+                    raise
+            logger.error(f"TMDb: Échec de l'appel à la fonction '{func.__name__}' après {retries} tentatives.")
+            # Si toutes les tentatives échouent, on peut soit retourner None, soit relever l'exception finale.
+            # Relever l'exception est souvent mieux pour que l'appelant sache qu'il y a eu un problème persistant.
+            raise TMDbException(f"Échec final de l'appel à '{func.__name__}' après plusieurs tentatives.")
+        return wrapper_robust_request
+    return decorator_robust_request
 
 class TheMovieDBClient:
     def __init__(self):
@@ -14,6 +49,7 @@ class TheMovieDBClient:
         self.tmdb.api_key = self.api_key
         self.tmdb.language = 'fr' # Langue par défaut
 
+    @robust_request()
     def get_movie_details(self, tmdb_id, lang='fr-FR'):
         """
         Récupère les détails d'un film depuis TMDb en utilisant son ID et une langue spécifique.
@@ -57,6 +93,7 @@ class TheMovieDBClient:
             # 4. On restaure la langue d'origine, quoi qu'il arrive
             self.tmdb.language = original_lang
 
+    @robust_request()
     def search_movie(self, title, lang='fr-FR'):
         """
         Recherche un film par titre sur TMDb.
@@ -103,6 +140,7 @@ class TheMovieDBClient:
             # 4. Restaurer la langue originale, quoi qu'il arrive
             self.tmdb.language = original_lang
 
+    @robust_request()
     def get_series_details(self, tmdb_id, lang='fr-FR'):
         """
         Récupère les détails d'une série depuis TMDb, y compris son TVDB ID.
@@ -127,6 +165,7 @@ class TheMovieDBClient:
         finally:
             self.tmdb.language = original_lang
 
+    @robust_request()
     def find_series_by_tvdb_id(self, tvdb_id, lang='fr-FR'):
         """
         Trouve une série sur TMDb en utilisant son TVDB ID.

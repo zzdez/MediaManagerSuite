@@ -3,6 +3,7 @@
 # Commentaire pour forcer la relecture du fichier
 
 import os
+import time
 from app.auth import login_required
 from flask import (render_template, current_app, flash, abort, url_for,
                    redirect, request, session, jsonify, current_app)
@@ -85,13 +86,13 @@ def run_sync_test():
         last_viewed_dates = {}
         plex_item_exists_cache = {}
 
-        # --- NOUVEAUX COMPTEURS ET LIMITES ---
+        # --- COMPTEURS (LIMITES SUPPRIMÉES) ---
         processed_movies = set()
         processed_shows = set()
-        MOVIE_LIMIT = 5
-        SHOW_LIMIT = 5
+        # MOVIE_LIMIT = 5 # Désactivé
+        # SHOW_LIMIT = 5 # Désactivé
         archived_count = 0
-        limit_reached = False
+        # limit_reached = False # Désactivé
 
         for entry in history:
             source_item = None
@@ -122,21 +123,15 @@ def run_sync_test():
             if not unique_key:
                 continue
 
-            # --- NOUVELLE VÉRIFICATION DE LA LIMITE ---
-            # On continue de traiter les entrées pour les médias déjà dans notre set de traitement,
-            # mais on n'ajoute pas de NOUVEAUX médias si la limite est atteinte.
-            if entry_media_type == 'movie' and unique_key not in processed_movies and len(processed_movies) >= MOVIE_LIMIT:
-                continue
-
-            if entry_media_type == 'show' and unique_key not in processed_shows and len(processed_shows) >= SHOW_LIMIT:
-                continue
-
-            # Condition d'arrêt/continuation: si les deux listes sont pleines, on ne traite plus que
-            # les items déjà connus.
-            if len(processed_movies) >= MOVIE_LIMIT and len(processed_shows) >= SHOW_LIMIT:
-                limit_reached = True # On met le flag pour le message final
-                if unique_key not in processed_movies and unique_key not in processed_shows:
-                    continue # On ignore ce nouvel item et on passe au suivant.
+            # --- VÉRIFICATION DE LIMITE (DÉSACTIVÉE) ---
+            # if entry_media_type == 'movie' and unique_key not in processed_movies and len(processed_movies) >= MOVIE_LIMIT:
+            #     continue
+            # if entry_media_type == 'show' and unique_key not in processed_shows and len(processed_shows) >= SHOW_LIMIT:
+            #     continue
+            # if len(processed_movies) >= MOVIE_LIMIT and len(processed_shows) >= SHOW_LIMIT:
+            #     limit_reached = True
+            #     if unique_key not in processed_movies and unique_key not in processed_shows:
+            #         continue
 
             if title not in plex_item_exists_cache:
                 plex_search_results = user_plex.search(title)
@@ -154,6 +149,11 @@ def run_sync_test():
                     last_viewed_dates[unique_key] = entry_viewed_at.isoformat()
 
             if unique_key not in media_cache:
+                # --- AJOUT DU RALENTISSEMENT ---
+                # On fait une pause uniquement quand on s'apprête à chercher un NOUVEL item
+                # sur les API externes pour éviter de les surcharger.
+                time.sleep(0.5)
+
                 media_type, external_id, extra_data = None, None, {}
                 if entry.type == 'movie':
                     search_results = tmdb_client.search_movie(title)
@@ -223,8 +223,9 @@ def run_sync_test():
                 elif not success:
                      current_app.logger.info(f"Info/Échec archivage fantôme pour {unique_key}: {message}")
 
-        if limit_reached:
-            flash(f"Limite de test atteinte ({len(processed_movies)} films, {len(processed_shows)} séries). Scan arrêté.", "warning")
+        # Le message de limite a été supprimé car les limites sont désactivées.
+        # if limit_reached:
+        #     flash(f"Limite de test atteinte ({len(processed_movies)} films, {len(processed_shows)} séries). Scan arrêté.", "warning")
 
         if archived_count == 0:
             flash("Scan terminé. Aucun nouvel item fantôme n'a pu être identifié dans l'échantillon.", "info")

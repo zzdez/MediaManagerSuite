@@ -1,10 +1,47 @@
 # Fichier : app/utils/tvdb_client.py (Version Simple et Correcte)
 
 import logging
+import time
+import functools
 from tvdb_v4_official import TVDB
 from config import Config
 
 logger = logging.getLogger(__name__)
+
+def robust_request_tvdb(retries=3, delay=30, backoff=2):
+    """
+    Décorateur pour rendre les appels à l'API TVDB plus robustes,
+    avec une gestion spécifique des erreurs '429 Too Many Requests'.
+    """
+    def decorator_robust_request(func):
+        @functools.wraps(func)
+        def wrapper_robust_request(*args, **kwargs):
+            _retries, _delay = retries, delay
+            while _retries > 0:
+                try:
+                    return func(*args, **kwargs)
+                except ValueError as e:
+                    # La librairie tvdb_v4_official lève une ValueError pour les erreurs HTTP.
+                    # On vérifie si le message contient le status code 429.
+                    if 'status code 429' in str(e).lower() or 'too many requests' in str(e).lower():
+                        logger.warning(f"TVDB: Erreur '429 Too Many Requests' détectée pour la fonction '{func.__name__}'. Attente de {_delay} secondes.")
+                        time.sleep(_delay)
+                        _retries -= 1
+                        _delay *= backoff
+                    else:
+                        # Une autre erreur HTTP s'est produite, on ne réessaie pas.
+                        logger.error(f"TVDB: Erreur HTTP non gérée par retry : {e}", exc_info=True)
+                        raise  # On relève l'exception pour que l'appelant la gère.
+                except Exception as e:
+                    # Erreur inattendue non liée à une requête HTTP (ex: problème de parsing JSON)
+                    logger.error(f"TVDB: Erreur inattendue non-HTTP : {e}", exc_info=True)
+                    raise
+            logger.error(f"TVDB: Échec de l'appel à la fonction '{func.__name__}' après {retries} tentatives.")
+            # On pourrait retourner une valeur par défaut (comme None ou []) ou relever l'erreur.
+            # Relever l'erreur est plus explicite.
+            raise ValueError(f"Échec final de l'appel à '{func.__name__}' après plusieurs tentatives.")
+        return wrapper_robust_request
+    return decorator_robust_request
 
 class CustomTVDBClient:
     def __init__(self):
@@ -17,6 +54,7 @@ class CustomTVDBClient:
             except Exception as e:
                 logger.error(f"Failed to initialize TVDB client: {e}")
 
+    @robust_request_tvdb()
     def get_series_details_by_id(self, tvdb_id, lang='fra'):
         if not self.client: return None
         try:
@@ -62,6 +100,7 @@ class CustomTVDBClient:
             logger.error(f"Une erreur inattendue est survenue dans get_series_details_by_id pour {tvdb_id}: {e}")
             return None
 
+    @robust_request_tvdb()
     def search_series(self, title, lang='fra'):
         """
         Recherche une série par son titre, en priorisant une langue.
@@ -78,6 +117,7 @@ class CustomTVDBClient:
             logger.error(f"Erreur lors de la recherche TVDB pour '{title}': {e}", exc_info=True)
             return []
 
+    @robust_request_tvdb(retries=3, delay=60) # Délai plus long car cette fonction peut faire plusieurs appels
     def search_and_translate_series(self, title, lang='fra'):
         """
         [VERSION OPTIMISÉE]
@@ -150,6 +190,7 @@ class CustomTVDBClient:
             logger.error(f"Erreur majeure dans search_and_translate_series pour '{title}': {e}", exc_info=True)
             return []
 
+    @robust_request_tvdb()
     def get_season_episode_counts(self, tvdb_id):
         """
         Récupère le nombre total d'épisodes pour chaque saison d'une série.
