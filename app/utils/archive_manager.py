@@ -63,6 +63,10 @@ def _save_database(data):
         logger.error(f"Erreur inattendue lors de la sauvegarde de {db_file}: {e}", exc_info=True)
         raise
 
+def load_archive_data():
+    """Charge et retourne la base de données d'archives complète."""
+    return _load_database()
+
 def _get_key(media_type, external_id):
     """Construit une clé unique au format 'tv_<id>' ou 'movie_<id>'."""
     prefix = 'tv' if media_type == 'show' else media_type
