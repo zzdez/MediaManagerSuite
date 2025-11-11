@@ -76,11 +76,24 @@ def run_sync_test():
             flash(f"Impossible de se connecter au serveur Plex pour l'utilisateur '{user_title}'.", "danger")
             return redirect(url_for('plex_editor.sync_history_page'))
 
-        flash(f"Scan de l'historique Plex (2000 derniers éléments) pour '{user_title}' en cours...", "info")
+        flash(f"Scan de l'historique Plex complet pour '{user_title}' en cours... Cela peut prendre plusieurs minutes.", "info")
 
         tmdb_client = TheMovieDBClient()
         tvdb_client = CustomTVDBClient()
-        history = user_plex.history(maxresults=2000)
+
+        # --- NOUVEAU : Charger les archives existantes pour éviter les doublons ---
+        from app.utils.archive_manager import load_archive_data
+        archive_data = load_archive_data()
+        # Créer un set de tuples (titre, année) pour une recherche rapide et insensible à la casse
+        existing_archives = {
+            (media_info.get('title', '').lower(), str(media_info.get('year', '')))
+            for media_info in archive_data.values()
+            if media_info.get('title') and media_info.get('year')
+        }
+        logger.info(f"{len(existing_archives)} média(s) déjà archivé(s) chargé(s).")
+        # --- FIN DU NOUVEAU BLOC ---
+
+        history = user_plex.history() # La limite maxresults=2000 a été supprimée pour un scan complet
 
         media_cache = {}
         last_viewed_dates = {}
@@ -122,6 +135,13 @@ def run_sync_test():
 
             if not unique_key:
                 continue
+
+            # --- NOUVEAU : Ignorer si le média est déjà dans les archives ---
+            if title and year:
+                if (title.lower(), str(year)) in existing_archives:
+                    logger.debug(f"Média '{title} ({year})' déjà archivé. Ignoré.")
+                    continue
+            # --- FIN DU NOUVEAU BLOC ---
 
             # --- VÉRIFICATION DE LIMITE (DÉSACTIVÉE) ---
             # if entry_media_type == 'movie' and unique_key not in processed_movies and len(processed_movies) >= MOVIE_LIMIT:
