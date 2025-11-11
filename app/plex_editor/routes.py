@@ -109,6 +109,7 @@ def run_sync_test():
         # MOVIE_LIMIT = 5 # Désactivé
         # SHOW_LIMIT = 5 # Désactivé
         archived_count = 0
+        successfully_archived_titles = [] # NOUVEAU : Pour le résumé final
         # limit_reached = False # Désactivé
 
         for entry in history:
@@ -238,23 +239,27 @@ def run_sync_test():
                     last_viewed_at=last_viewed_dates.get(unique_key)
                 )
 
-                if success and unique_key not in (getattr(request, '_processed_flash', set())):
-                    flash(f"Archivage fantôme réussi pour : {title}", "success")
-                    if not hasattr(request, '_processed_flash'):
-                        request._processed_flash = set()
-                    request._processed_flash.add(unique_key)
-                    archived_count +=1
+                if success:
+                    # NOUVEAU : On ajoute le titre à la liste pour le résumé final au lieu de flasher immédiatement
+                    if title not in successfully_archived_titles:
+                        successfully_archived_titles.append(title)
+                    archived_count += 1 # On incrémente toujours le compteur global
                 elif not success:
                      current_app.logger.info(f"Info/Échec archivage fantôme pour {unique_key}: {message}")
 
         # Le message de limite a été supprimé car les limites sont désactivées.
-        # if limit_reached:
-        #     flash(f"Limite de test atteinte ({len(processed_movies)} films, {len(processed_shows)} séries). Scan arrêté.", "warning")
 
-        if archived_count == 0:
-            flash("Scan terminé. Aucun nouvel item fantôme n'a pu être identifié dans l'échantillon.", "info")
+        # --- NOUVEAU : Message de résumé final ---
+        if not successfully_archived_titles:
+            flash("Scan terminé. Aucun nouvel item fantôme n'a été trouvé à archiver.", "info")
         else:
-            flash(f"Scan terminé. {archived_count} nouveau(x) média(s) fantôme(s) ont été archivés.", "success")
+            # On affiche un résumé pour éviter de surcharger les cookies de session.
+            num_titles = len(successfully_archived_titles)
+            summary_message = f"Scan terminé. {num_titles} nouveau(x) média(s) fantôme(s) ont été archivés avec succès."
+            # On peut optionnellement lister quelques titres si on le souhaite, mais gardons-le simple pour l'instant.
+            # Exemple: titles_preview = ", ".join(successfully_archived_titles[:5])
+            # summary_message += f" Exemples : {titles_preview}..."
+            flash(summary_message, "success")
 
         return redirect(url_for('plex_editor.sync_history_page'))
 
