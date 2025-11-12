@@ -445,7 +445,12 @@ $('#confirmArchiveMovieBtn').on('click', function() {
     .then(response => response.json())
     .then(data => {
         if (data.status === 'success') {
-            $(`.archive-movie-btn[data-rating-key='${ratingKey}']`).closest('tr').remove();
+            // --- CORRECTION ---
+            const row = $(`.archive-movie-btn[data-rating-key='${ratingKey}']`).closest('tr');
+            // 1. On neutralise le bouton de bande-annonce pour éviter le nettoyage automatique
+            row.find('.find-and-play-trailer-btn').removeClass('find-and-play-trailer-btn');
+            // 2. On fait disparaître la ligne en douceur avant de la supprimer
+            row.fadeOut(500, function() { $(this).remove(); });
             bootstrap.Modal.getInstance(document.getElementById('archiveMovieModal')).hide();
         } else { alert('Erreur: ' + data.message); }
     })
@@ -474,7 +479,12 @@ $('#confirmArchiveMovieBtn').on('click', function() {
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success') {
-                $(`.archive-show-btn[data-rating-key='${ratingKey}']`).closest('tr').remove();
+                // --- CORRECTION ---
+                const row = $(`.archive-show-btn[data-rating-key='${ratingKey}']`).closest('tr');
+                // 1. On neutralise le bouton de bande-annonce pour éviter le nettoyage automatique
+                row.find('.find-and-play-trailer-btn').removeClass('find-and-play-trailer-btn');
+                // 2. On fait disparaître la ligne en douceur avant de la supprimer
+                row.fadeOut(500, function() { $(this).remove(); });
                 bootstrap.Modal.getInstance(document.getElementById('archiveShowModal')).hide();
             } else { alert('Erreur: ' + data.message); }
         })

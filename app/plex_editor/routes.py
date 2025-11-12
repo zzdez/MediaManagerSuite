@@ -3,7 +3,6 @@
 # Commentaire pour forcer la relecture du fichier
 
 import os
-import time
 from app.auth import login_required
 from flask import (render_template, current_app, flash, abort, url_for,
                    redirect, request, session, jsonify, current_app)
@@ -11,10 +10,6 @@ from datetime import datetime, timedelta
 import pytz
 from plexapi.server import PlexServer
 from plexapi.exceptions import NotFound, Unauthorized, BadRequest
-import logging
-
-# Initialisation du logger pour ce module
-logger = logging.getLogger(__name__)
 
 # Importer le Blueprint
 from . import plex_editor_bp
@@ -47,12 +42,12 @@ from app.utils.bulk_move_manager import bulk_move_manager # Import du nouveau ma
 
 # --- Routes du Blueprint ---
 
-# --- Route pour la synchronisation de l'historique fantôme ---
-@plex_editor_bp.route('/sync_history')
+# --- Route de test pour la synchronisation de l'historique fantôme ---
+@plex_editor_bp.route('/sync_test')
 @login_required
-def sync_history_page():
-    """Affiche la page pour lancer la synchronisation de l'historique."""
-    return render_template('plex_editor/sync_history.html')
+def sync_test_page():
+    """Affiche une page de test pour lancer la synchronisation de l'historique."""
+    return render_template('plex_editor/sync_test.html')
 
 @plex_editor_bp.route('/run_sync_test', methods=['POST'])
 @login_required
@@ -62,7 +57,7 @@ def run_sync_test():
     user_id = request.form.get('user_id')
     if not user_id:
         flash("Veuillez sélectionner un utilisateur.", "danger")
-        return redirect(url_for('plex_editor.sync_history_page'))
+        return redirect(url_for('plex_editor.sync_test_page'))
 
     try:
         main_account = get_main_plex_account_object()
@@ -78,39 +73,25 @@ def run_sync_test():
         user_plex = get_user_specific_plex_server_from_id(user_id)
         if not user_plex:
             flash(f"Impossible de se connecter au serveur Plex pour l'utilisateur '{user_title}'.", "danger")
-            return redirect(url_for('plex_editor.sync_history_page'))
+            return redirect(url_for('plex_editor.sync_test_page'))
 
-        flash(f"Scan de l'historique Plex complet pour '{user_title}' en cours... Cela peut prendre plusieurs minutes.", "info")
+        flash(f"Scan de l'historique Plex (2000 derniers éléments) pour '{user_title}' en cours...", "info")
 
         tmdb_client = TheMovieDBClient()
         tvdb_client = CustomTVDBClient()
-
-        # --- NOUVEAU : Charger les archives existantes pour éviter les doublons ---
-        from app.utils.archive_manager import load_archive_data
-        archive_data = load_archive_data()
-        # Créer un set de tuples (titre, année) pour une recherche rapide et insensible à la casse
-        existing_archives = {
-            (media_info.get('title', '').lower(), str(media_info.get('year', '')))
-            for media_info in archive_data.values()
-            if media_info.get('title') and media_info.get('year')
-        }
-        current_app.logger.info(f"{len(existing_archives)} média(s) déjà archivé(s) chargé(s).")
-        # --- FIN DU NOUVEAU BLOC ---
-
-        history = user_plex.history() # La limite maxresults=2000 a été supprimée pour un scan complet
+        history = user_plex.history(maxresults=2000)
 
         media_cache = {}
         last_viewed_dates = {}
         plex_item_exists_cache = {}
 
-        # --- COMPTEURS (LIMITES SUPPRIMÉES) ---
+        # --- NOUVEAUX COMPTEURS ET LIMITES ---
         processed_movies = set()
         processed_shows = set()
-        # MOVIE_LIMIT = 5 # Désactivé
-        # SHOW_LIMIT = 5 # Désactivé
+        MOVIE_LIMIT = 5
+        SHOW_LIMIT = 5
         archived_count = 0
-        successfully_archived_titles = [] # NOUVEAU : Pour le résumé final
-        # limit_reached = False # Désactivé
+        limit_reached = False
 
         for entry in history:
             source_item = None
@@ -141,22 +122,21 @@ def run_sync_test():
             if not unique_key:
                 continue
 
-            # --- NOUVEAU : Ignorer si le média est déjà dans les archives ---
-            if title and year:
-                if (title.lower(), str(year)) in existing_archives:
-                    current_app.logger.debug(f"Média '{title} ({year})' déjà archivé. Ignoré.")
-                    continue
-            # --- FIN DU NOUVEAU BLOC ---
+            # --- NOUVELLE VÉRIFICATION DE LA LIMITE ---
+            # On continue de traiter les entrées pour les médias déjà dans notre set de traitement,
+            # mais on n'ajoute pas de NOUVEAUX médias si la limite est atteinte.
+            if entry_media_type == 'movie' and unique_key not in processed_movies and len(processed_movies) >= MOVIE_LIMIT:
+                continue
 
-            # --- VÉRIFICATION DE LIMITE (DÉSACTIVÉE) ---
-            # if entry_media_type == 'movie' and unique_key not in processed_movies and len(processed_movies) >= MOVIE_LIMIT:
-            #     continue
-            # if entry_media_type == 'show' and unique_key not in processed_shows and len(processed_shows) >= SHOW_LIMIT:
-            #     continue
-            # if len(processed_movies) >= MOVIE_LIMIT and len(processed_shows) >= SHOW_LIMIT:
-            #     limit_reached = True
-            #     if unique_key not in processed_movies and unique_key not in processed_shows:
-            #         continue
+            if entry_media_type == 'show' and unique_key not in processed_shows and len(processed_shows) >= SHOW_LIMIT:
+                continue
+
+            # Condition d'arrêt/continuation: si les deux listes sont pleines, on ne traite plus que
+            # les items déjà connus.
+            if len(processed_movies) >= MOVIE_LIMIT and len(processed_shows) >= SHOW_LIMIT:
+                limit_reached = True # On met le flag pour le message final
+                if unique_key not in processed_movies and unique_key not in processed_shows:
+                    continue # On ignore ce nouvel item et on passe au suivant.
 
             if title not in plex_item_exists_cache:
                 plex_search_results = user_plex.search(title)
@@ -174,11 +154,6 @@ def run_sync_test():
                     last_viewed_dates[unique_key] = entry_viewed_at.isoformat()
 
             if unique_key not in media_cache:
-                # --- AJOUT DU RALENTISSEMENT ---
-                # On fait une pause uniquement quand on s'apprête à chercher un NOUVEL item
-                # sur les API externes pour éviter de les surcharger.
-                time.sleep(0.5)
-
                 media_type, external_id, extra_data = None, None, {}
                 if entry.type == 'movie':
                     search_results = tmdb_client.search_movie(title)
@@ -239,34 +214,29 @@ def run_sync_test():
                     last_viewed_at=last_viewed_dates.get(unique_key)
                 )
 
-                if success:
-                    # NOUVEAU : On ajoute le titre à la liste pour le résumé final au lieu de flasher immédiatement
-                    if title not in successfully_archived_titles:
-                        successfully_archived_titles.append(title)
-                    archived_count += 1 # On incrémente toujours le compteur global
+                if success and unique_key not in (getattr(request, '_processed_flash', set())):
+                    flash(f"Archivage fantôme réussi pour : {title}", "success")
+                    if not hasattr(request, '_processed_flash'):
+                        request._processed_flash = set()
+                    request._processed_flash.add(unique_key)
+                    archived_count +=1
                 elif not success:
                      current_app.logger.info(f"Info/Échec archivage fantôme pour {unique_key}: {message}")
 
-        # Le message de limite a été supprimé car les limites sont désactivées.
+        if limit_reached:
+            flash(f"Limite de test atteinte ({len(processed_movies)} films, {len(processed_shows)} séries). Scan arrêté.", "warning")
 
-        # --- NOUVEAU : Message de résumé final ---
-        if not successfully_archived_titles:
-            flash("Scan terminé. Aucun nouvel item fantôme n'a été trouvé à archiver.", "info")
+        if archived_count == 0:
+            flash("Scan terminé. Aucun nouvel item fantôme n'a pu être identifié dans l'échantillon.", "info")
         else:
-            # On affiche un résumé pour éviter de surcharger les cookies de session.
-            num_titles = len(successfully_archived_titles)
-            summary_message = f"Scan terminé. {num_titles} nouveau(x) média(s) fantôme(s) ont été archivés avec succès."
-            # On peut optionnellement lister quelques titres si on le souhaite, mais gardons-le simple pour l'instant.
-            # Exemple: titles_preview = ", ".join(successfully_archived_titles[:5])
-            # summary_message += f" Exemples : {titles_preview}..."
-            flash(summary_message, "success")
+            flash(f"Scan terminé. {archived_count} nouveau(x) média(s) fantôme(s) ont été archivés.", "success")
 
-        return redirect(url_for('plex_editor.sync_history_page'))
+        return redirect(url_for('plex_editor.sync_test_page'))
 
     except Exception as e:
         current_app.logger.error(f"Erreur majeure lors du test de synchronisation: {e}", exc_info=True)
         flash(f"Une erreur inattendue est survenue: {str(e)}", "danger")
-        return redirect(url_for('plex_editor.sync_history_page'))
+        return redirect(url_for('plex_editor.sync_test_page'))
 
 
 @plex_editor_bp.route('/api/media/root_folders', methods=['GET'])
@@ -973,24 +943,6 @@ def get_media_items():
             # Priorité n°1 : Chercher dans notre base de données d'archives locales
             from app.utils.archive_manager import find_archived_media_by_title
             archived_results = find_archived_media_by_title(title_filter)
-
-            # --- NOUVEAU : Enrichir les résultats archivés avec le statut de la bande-annonce ---
-            if archived_results:
-                for item in archived_results:
-                    item['trailer_status'] = 'NONE'  # Default
-                    media_type = item.get('media_type')
-                    external_id = item.get('external_id')
-
-                    if media_type and external_id:
-                        # Le trailer manager attend 'tv' ou 'movie'
-                        item['trailer_status'] = trailer_manager.get_trailer_status(
-                            media_type=media_type,
-                            external_id=str(external_id)  # Assurer que c'est une string
-                        )
-                    # Les autres champs nécessaires (title, year, external_id) sont déjà dans l'objet 'item'
-                    # On s'assure que le media_type est compatible pour le template
-                    item['media_type_for_trailer'] = item.get('media_type')
-
 
             # Priorité n°2 : Si (et seulement si) on n'a rien trouvé dans nos archives, on cherche des suggestions externes
             if not archived_results:
