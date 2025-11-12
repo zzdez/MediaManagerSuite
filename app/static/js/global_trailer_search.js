@@ -224,6 +224,11 @@ $(document).ready(function() {
             return;
         }
 
+        // --- AJOUT DE LA CONFIRMATION ---
+        if (!confirm("Êtes-vous sûr de vouloir effacer tous les résultats de recherche et déverrouiller la bande-annonce pour ce média ?")) {
+            return; // L'utilisateur a annulé, on ne fait rien.
+        }
+
         button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
 
         fetch('/api/agent/clear_trailer_cache', {
