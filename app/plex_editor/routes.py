@@ -25,7 +25,6 @@ from app.utils.plex_client import get_main_plex_account_object, get_plex_admin_s
 # Importer les utils spécifiques à plex_editor
 from .utils import cleanup_parent_directory_recursively, get_media_filepath, _is_dry_run_mode
 # Importer les utils globaux/partagés
-from app.utils.archive_manager import reconcile_archive_with_plex_data # NOUVEL IMPORT
 from app.utils.arr_client import (
     get_radarr_tag_id, get_radarr_movie_by_guid, update_radarr_movie,
     get_sonarr_tag_id, get_sonarr_series_by_guid, get_sonarr_series_by_id,
@@ -965,22 +964,6 @@ def get_media_items():
             remove_pending_lock(matched_id)
             current_app.logger.info(f"FINALIZATION: Success for '{item.title}'. Pending lock for {matched_id} removed.")
 
-        # --- NOUVEAU : Étape de réconciliation ---
-        # On construit un set de clés uniques à partir des médias "live" dans Plex
-        live_plex_keys = set()
-        for item in all_plex_items.values():
-            media_type = 'tv' if item.type == 'show' else 'movie'
-            source, external_id = _parse_main_external_id(item.guids)
-            if external_id:
-                live_plex_keys.add(f"{media_type}_{external_id}")
-
-        # On lance la réconciliation
-        if live_plex_keys:
-            deleted_count = reconcile_archive_with_plex_data(live_plex_keys)
-            if deleted_count > 0:
-                current_app.logger.info(f"{deleted_count} entrée(s) d'archive obsolète(s) ont été nettoyées.")
-        # --- FIN DE L'ÉTAPE DE RÉCONCILIATION ---
-
         # --- 4. LA DÉCISION : Chercher dans les archives ou à l'extérieur ? ---
         final_plex_results_unfiltered = list(all_plex_items.values())
         external_suggestions = []
@@ -990,6 +973,24 @@ def get_media_items():
             # Priorité n°1 : Chercher dans notre base de données d'archives locales
             from app.utils.archive_manager import find_archived_media_by_title
             archived_results = find_archived_media_by_title(title_filter)
+
+            # --- NOUVEAU : Enrichir les résultats archivés avec le statut de la bande-annonce ---
+            if archived_results:
+                for item in archived_results:
+                    item['trailer_status'] = 'NONE'  # Default
+                    media_type = item.get('media_type')
+                    external_id = item.get('external_id')
+
+                    if media_type and external_id:
+                        # Le trailer manager attend 'tv' ou 'movie'
+                        item['trailer_status'] = trailer_manager.get_trailer_status(
+                            media_type=media_type,
+                            external_id=str(external_id)  # Assurer que c'est une string
+                        )
+                    # Les autres champs nécessaires (title, year, external_id) sont déjà dans l'objet 'item'
+                    # On s'assure que le media_type est compatible pour le template
+                    item['media_type_for_trailer'] = item.get('media_type')
+
 
             # Priorité n°2 : Si (et seulement si) on n'a rien trouvé dans nos archives, on cherche des suggestions externes
             if not archived_results:

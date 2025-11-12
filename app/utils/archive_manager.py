@@ -267,36 +267,6 @@ def migrate_database_keys():
         _save_database(new_database)
         logger.info("Migration des clés de la base de données d'archives terminée.")
 
-def reconcile_archive_with_plex_data(live_plex_keys):
-    """
-    Supprime de la base de données d'archives les entrées qui existent à nouveau dans Plex.
-    'live_plex_keys' est un set de clés formatées (ex: {'tv_12345', 'movie_67890'}).
-    Retourne le nombre d'entrées obsolètes supprimées.
-    """
-    db_file, logger = _get_db_path_and_logger()
-    if not os.path.exists(db_file):
-        return 0 # Pas de BDD, rien à faire
-
-    database = _load_database()
-    if not database:
-        return 0
-
-    # Trouver les clés à supprimer
-    keys_to_delete = {key for key in database if key in live_plex_keys}
-
-    if not keys_to_delete:
-        return 0 # Aucune incohérence trouvée
-
-    # Supprimer les clés obsolètes
-    for key in keys_to_delete:
-        del database[key]
-        logger.info(f"Réconciliation: Suppression de l'entrée d'archive obsolète '{key}' car elle existe à nouveau dans Plex.")
-
-    # Sauvegarder la base de données nettoyée
-    _save_database(database)
-
-    return len(keys_to_delete)
-
 # Ligne pour déclencher la migration au démarrage de l'application.
 # Cela garantit que la BDD est cohérente avant toute opération.
 migrate_database_keys()

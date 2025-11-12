@@ -220,7 +220,33 @@
                                 <span class="badge bg-secondary align-middle">{{ item.year }}</span>
                                 <span class="badge bg-dark align-middle"><i class="bi bi-archive-fill me-1"></i>Archivé</span>
                             </h5>
-                            <p class="card-text"><small class="text-muted">ID Externe: {{ item.external_id }}</small></p>
+
+                            <div class="d-flex align-items-center mb-2">
+                                <p class="card-text me-3 mb-0"><small class="text-muted">ID Externe: {{ item.external_id }}</small></p>
+
+                                {# --- DÉBUT DU BLOC BANDE-ANNONCE POUR ARCHIVES --- #}
+                                {% set status = item.trailer_status or 'NONE' %}
+                                {% if status == 'LOCKED' %}
+                                    {% set btn_class = 'btn-outline-success' %}
+                                    {% set btn_title = 'Bande-annonce verrouillée' %}
+                                {% elif status == 'UNLOCKED' %}
+                                    {% set btn_class = 'btn-outline-primary' %}
+                                    {% set btn_title = 'Plusieurs bandes-annonces trouvées' %}
+                                {% else %} {# 'NONE' #}
+                                    {% set btn_class = 'btn-outline-danger' %}
+                                    {% set btn_title = 'Aucune bande-annonce trouvée' %}
+                                {% endif %}
+                                <button class="btn btn-sm {{ btn_class }} find-and-play-trailer-btn"
+                                        data-title="{{ item.title }}"
+                                        data-year="{{ item.year }}"
+                                        data-media-type="{{ item.media_type_for_trailer }}"
+                                        data-external-id="{{ item.external_id }}"
+                                        title="{{ btn_title }}">
+                                    <i class="bi bi-film"></i>
+                                </button>
+                                {# --- FIN DU BLOC BANDE-ANNONCE POUR ARCHIVES --- #}
+                            </div>
+
                             <p class="card-text small">{{ item.summary | truncate(350) }}</p>
 
                             {% if item.archive_history %}
