@@ -409,6 +409,7 @@ $(document).ready(function() {
 
 // Met les options d'archivage de film par défaut LORS DE L'OUVERTURE de la modale
 $('#archiveMovieModal').on('show.bs.modal', function () {
+    $('#archiveMovieArchive').prop('checked', true);
     $('#archiveMovieDeleteFiles').prop('checked', true);
     $('#archiveMovieUnmonitor').prop('checked', true);
     $('#archiveMovieAddTag').prop('checked', true);
@@ -416,6 +417,7 @@ $('#archiveMovieModal').on('show.bs.modal', function () {
 
 // Met les options d'archivage de série par défaut LORS DE L'OUVERTURE de la modale
 $('#archiveShowModal').on('show.bs.modal', function () {
+    $('#archiveShowArchive').prop('checked', true);
     $('#archiveShowDeleteFiles').prop('checked', true);
     $('#archiveShowUnmonitor').prop('checked', true);
     $('#archiveShowAddTag').prop('checked', true);
@@ -435,7 +437,8 @@ $('#confirmArchiveMovieBtn').on('click', function() {
     const options = {
         deleteFiles: $('#archiveMovieDeleteFiles').is(':checked'),
         unmonitor: $('#archiveMovieUnmonitor').is(':checked'),
-        addTag: $('#archiveMovieAddTag').is(':checked')
+        addTag: $('#archiveMovieAddTag').is(':checked'),
+        archive: $('#archiveMovieArchive').is(':checked')
     };
     fetch('/plex/archive_movie', {
         method: 'POST',
@@ -465,7 +468,8 @@ $('#confirmArchiveMovieBtn').on('click', function() {
         const options = {
             deleteFiles: $('#archiveShowDeleteFiles').is(':checked'),
             unmonitor: $('#archiveShowUnmonitor').is(':checked'),
-            addTag: $('#archiveShowAddTag').is(':checked')
+            addTag: $('#archiveShowAddTag').is(':checked'),
+            archive: $('#archiveShowArchive').is(':checked')
         };
         fetch('/plex/archive_show', {
             method: 'POST',

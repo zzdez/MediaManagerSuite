@@ -138,3 +138,26 @@ La modale d'ajout de torrent (`addTorrentModal`) présente des défis uniques en
   4.  **Adapter la Logique** : En se basant sur l'analyse de ces logs, nous pourrons enfin écrire une condition fiable pour identifier un item comme "fantôme" et savoir quel attribut (`guid`, `grandparentGuid`, etc.) contient l'identifiant externe pertinent.
   5.  **Finaliser le Test** : Une fois la logique de détection corrigée, l'utilisateur pourra valider que le script archive bien un film et une série fantômes.
   6.  **Développer la Fonctionnalité Complète** : Procéder ensuite au développement de la synchronisation complète (scan de tout l'historique, bouton dans l'interface, etc.) et à l'enrichissement des données de visionnage.
+
+### Session du 11 Novembre 2025 : Industrialisation de la Synchro et Fiabilisation
+
+- **Objectif** : Transformer le script de test de l'historique fantôme en une fonctionnalité de production, fiabiliser les appels aux API externes, et ajouter des fonctionnalités de qualité de vie.
+
+- **Réalisations Clés** :
+  - **Industrialisation de la Synchronisation de l'Historique Fantôme** :
+    - La page de test `sync_test.html` a été renommée en `sync_history.html` et intégrée proprement dans l'interface utilisateur avec un lien dans la barre de navigation.
+    - Toutes les limites de test (nombre de films/séries à traiter) ont été supprimées pour permettre un scan complet de l'historique Plex.
+    - La fonction de scan ignore désormais les médias déjà présents dans `archive_database.json`, évitant les traitements redondants lors de scans successifs.
+
+  - **Robustesse des Appels API Externes** :
+    - Pour éviter les erreurs dues à la limitation de débit des API (comme TVDB), un mécanisme de *throttling* a été ajouté, introduisant une courte pause (`time.sleep`) avant chaque nouvel appel API pour un média inconnu.
+    - Un décorateur `@robust_request` a été implémenté et appliqué aux clients TMDB et TVDB. Ce décorateur gère automatiquement les erreurs de connexion et les erreurs `429 Too Many Requests` en mettant en place une stratégie de réessai avec un temps d'attente exponentiel (*exponential backoff*), rendant la synchronisation beaucoup plus résiliente aux problèmes réseau et aux limitations d'API.
+
+  - **Réconciliation Automatique des Données** :
+    - Une nouvelle fonctionnalité majeure a été ajoutée pour garantir l'intégrité de la base de données d'archives. Une fonction `reconcile_archive_with_plex_data` compare désormais les archives avec les médias actuellement présents dans Plex.
+    - Si un média archivé est redécouvert dans la bibliothèque Plex (un média "ressuscité"), il est automatiquement purgé de `archive_database.json`.
+    - Ce processus est transparent pour l'utilisateur, qui est notifié via un message `flash` des actions de nettoyage effectuées.
+
+  - **Amélioration de l'Interface (Boutons de Bande-annonce)** :
+    - Les médias affichés depuis la base d'archives (`archived_results`) disposent maintenant d'un bouton de gestion de la bande-annonce, identique en apparence (couleur) et en comportement à celui des médias "live".
+    - Le backend a été mis à jour pour enrichir les données archivées avec le `trailer_status` nécessaire à l'affichage correct du bouton.
