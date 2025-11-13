@@ -57,27 +57,28 @@ class PlexClient:
 
         try:
             plex_show_obj.reload()
-            # La structure est simplifiée pour ne contenir que le statut de visionnage global
-            # et les détails par saison, sans métadonnées redondantes.
             history = {
                 "is_fully_watched": plex_show_obj.isWatched,
-                "viewed_seasons": [], # On ne listera que les saisons entièrement vues
-                "seasons": [] # Gardé pour la compatibilité, mais pourrait être fusionné
+                "seasons": []
             }
 
             for season in plex_show_obj.seasons():
-                if season.seasonNumber == 0: continue # Ignorer les spéciaux
+                if season.seasonNumber == 0: continue  # Ignorer les spéciaux
 
+                episodes_watched_list = [
+                    ep.index for ep in season.episodes() if ep.isWatched
+                ]
+
+                # Le total_count doit venir de TVDB si possible, mais ici on se base sur Plex
+                # car cette fonction est utilisée dans un contexte où TVDB n'est pas forcément déjà appelé.
+                # Pour l'archivage manuel, c'est suffisant.
                 season_data = {
                     "season_number": season.seasonNumber,
-                    "is_watched": season.isWatched,
-                    "total_episodes": season.leafCount,
-                    "watched_episodes": season.viewedLeafCount
+                    "episodes_watched": episodes_watched_list,
+                    "watched_count": len(episodes_watched_list),
+                    "total_count": season.leafCount  # Utilise le nombre d'épisodes dans Plex comme total
                 }
                 history["seasons"].append(season_data)
-
-                if season.isWatched:
-                    history["viewed_seasons"].append(season.seasonNumber)
 
             return history
 
