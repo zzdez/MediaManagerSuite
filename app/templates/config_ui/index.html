@@ -46,6 +46,31 @@
             {% endif %}
         {% endfor %}
 
+        <hr class="my-4">
+
+        <h3 class="mt-4 mb-3">Sauvegardes Automatiques</h3>
+        <p class="text-muted">Configurez la fréquence des sauvegardes automatiques et le nombre de copies à conserver. Les sauvegardes incluent tous les fichiers <code>.json</code> de configuration.</p>
+
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <label for="BACKUP_SCHEDULE" class="form-label"><code>BACKUP_SCHEDULE</code></label>
+                {# On cherche la valeur actuelle pour la présélectionner #}
+                {% set backup_schedule_value = (config_items | selectattr('key', 'equalto', 'BACKUP_SCHEDULE') | map(attribute='value') | first) or 'disabled' %}
+                <select class="form-select" id="BACKUP_SCHEDULE" name="BACKUP_SCHEDULE">
+                    <option value="disabled" {% if backup_schedule_value == 'disabled' %}selected{% endif %}>Désactivée</option>
+                    <option value="hourly" {% if backup_schedule_value == 'hourly' %}selected{% endif %}>Toutes les heures</option>
+                    <option value="daily" {% if backup_schedule_value == 'daily' %}selected{% endif %}>Tous les jours</option>
+                    <option value="weekly" {% if backup_schedule_value == 'weekly' %}selected{% endif %}>Toutes les semaines</option>
+                </select>
+                <div class="form-text text-muted fst-italic">Fréquence à laquelle une sauvegarde est créée.</div>
+            </div>
+            <div class="col-md-6 mb-3">
+                <label for="BACKUP_RETENTION" class="form-label"><code>BACKUP_RETENTION</code></label>
+                <input type="number" class="form-control" id="BACKUP_RETENTION" name="BACKUP_RETENTION" value="{{ (config_items | selectattr('key', 'equalto', 'BACKUP_RETENTION') | map(attribute='value') | first) or 7 }}" min="1">
+                <div class="form-text text-muted fst-italic">Nombre maximum de sauvegardes à conserver.</div>
+            </div>
+        </div>
+
         <hr class="my-5">
 
         <h3 class="mt-4 mb-3">Catégories de Recherche Prowlarr</h3>
@@ -114,6 +139,26 @@
 
     <hr class="my-5">
 
+    <!-- Section Gestion des Sauvegardes -->
+    <h3 class="mt-4 mb-3">Gestion des Sauvegardes</h3>
+    <div class="card">
+        <div class="card-body">
+            <p class="card-text text-muted">Gérez vos sauvegardes existantes. Vous pouvez lancer une sauvegarde manuelle, restaurer une version précédente ou supprimer d'anciennes sauvegardes.</p>
+            <button type="button" id="manual-backup-btn" class="btn btn-secondary mb-3">
+                <i class="fas fa-save"></i> Lancer une sauvegarde manuelle
+            </button>
+            <div id="backup-list-container">
+                <div class="text-center">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Chargement...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <hr class="my-5">
+
     <!-- Section dédiée au mapping Plex -->
     <div>
         <h3 class="mt-4 mb-3">Mapping des Dossiers Plex <i class="fas fa-project-diagram"></i></h3>
@@ -147,7 +192,66 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
 <script>
 $(document).ready(function() {
-    // Configuration de Toastr
+    // --- GESTION DES SAUVEGARDES ---
+    const backupContainer = $('#backup-list-container');
+
+    function renderBackupList(backups) {
+        if (!backups || backups.length === 0) {
+            backupContainer.html('<div class="alert alert-info">Aucune sauvegarde disponible.</div>');
+            return;
+        }
+
+        const table = $(`
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>Fichier</th>
+                        <th>Date de création</th>
+                        <th>Taille</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        `);
+
+        const tbody = table.find('tbody');
+        backups.forEach(backup => {
+            const row = $(`
+                <tr>
+                    <td><code>${backup.filename}</code></td>
+                    <td>${backup.created_at}</td>
+                    <td>${backup.size}</td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-outline-primary restore-btn" data-filename="${backup.filename}" title="Restaurer">
+                            <i class="fas fa-undo"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger delete-btn" data-filename="${backup.filename}" title="Supprimer">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `);
+            tbody.append(row);
+        });
+
+        backupContainer.html(table);
+    }
+
+    function fetchBackups() {
+        backupContainer.html('<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Chargement...</span></div></div>');
+        fetch('{{ url_for("config_ui.get_backups_list") }}')
+            .then(response => response.json())
+            .then(data => {
+                renderBackupList(data);
+            })
+            .catch(error => {
+                backupContainer.html('<div class="alert alert-danger">Erreur lors du chargement des sauvegardes.</div>');
+                console.error('Error fetching backups:', error);
+            });
+    }
+
+    // --- Configuration de Toastr ---
     toastr.options = {
         "closeButton": true,
         "progressBar": true,
@@ -155,6 +259,63 @@ $(document).ready(function() {
         "timeOut": "5000",
     };
 
+    // --- EVENEMENTS SAUVEGARDE ---
+    $('#manual-backup-btn').on('click', function() {
+        const btn = $(this);
+        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Création...');
+        fetch('{{ url_for("config_ui.manual_backup") }}', { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    toastr.success(data.message);
+                    fetchBackups(); // Rafraîchir la liste
+                } else {
+                    toastr.error(data.message);
+                }
+            })
+            .catch(error => toastr.error('Erreur de communication lors de la sauvegarde.'))
+            .finally(() => btn.prop('disabled', false).html('<i class="fas fa-save"></i> Lancer une sauvegarde manuelle'));
+    });
+
+    backupContainer.on('click', '.restore-btn', function() {
+        const filename = $(this).data('filename');
+        if (confirm(`Êtes-vous sûr de vouloir restaurer la sauvegarde "${filename}" ?\nCela écrasera vos fichiers de configuration actuels.`)) {
+            fetch(`/configuration/backups/${filename}/restore`, { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        toastr.success(data.message);
+                        // Pas de rafraîchissement nécessaire, mais on peut flasher un message de succès
+                    } else {
+                        toastr.error(data.message);
+                    }
+                })
+                .catch(error => toastr.error('Erreur de communication lors de la restauration.'));
+        }
+    });
+
+    backupContainer.on('click', '.delete-btn', function() {
+        const filename = $(this).data('filename');
+        if (confirm(`Êtes-vous sûr de vouloir supprimer la sauvegarde "${filename}" ?`)) {
+            fetch(`/configuration/backups/${filename}`, { method: 'DELETE' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        toastr.success(data.message);
+                        fetchBackups(); // Rafraîchir la liste
+                    } else {
+                        toastr.error(data.message);
+                    }
+                })
+                .catch(error => toastr.error('Erreur de communication lors de la suppression.'));
+        }
+    });
+
+    // Chargement initial des sauvegardes
+    fetchBackups();
+
+
+    // --- GESTION DU MAPPING PLEX ---
     const container = $('#plex-mapping-container');
     const saveBtn = $('#save-plex-mappings-btn');
     let plexLibraries = [];
