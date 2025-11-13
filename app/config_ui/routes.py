@@ -2,14 +2,15 @@
 
 import os
 import logging
-from flask import render_template, request, redirect, url_for, flash, current_app
+from flask import render_template, request, redirect, url_for, flash, current_app, jsonify
 from . import config_ui_bp
 from dotenv import dotenv_values, set_key
 
 # Imports depuis nos modules utilitaires
 from app.utils.prowlarr_client import get_prowlarr_categories
 from app.utils.config_manager import load_search_categories, save_search_categories
-from app.auth import login_required # Utilisation du bon décorateur d'authentification
+from app.utils import backup_manager
+from app.auth import login_required
 
 logger = logging.getLogger(__name__)
 
@@ -92,9 +93,65 @@ def save_config():
             if key not in env_keys_to_ignore:
                 set_key(dotenv_path, key, value)
 
+        # On ignore les clés de catégories pour ne pas les écrire dans le .env
+        env_keys_to_ignore = ['sonarr_categories', 'radarr_categories']
+        # Sauvegarde des variables .env
+        form_keys = list(request.form.keys())
+        for key in form_keys:
+            if key not in env_keys_to_ignore:
+                value = request.form[key]
+                set_key(dotenv_path, key, value, quote_mode='always')
+
         flash("Configuration sauvegardée avec succès.", "success")
+
+        # Vérifier si les paramètres de sauvegarde ont changé pour informer l'utilisateur
+        backup_schedule_changed = 'BACKUP_SCHEDULE' in request.form
+        backup_retention_changed = 'BACKUP_RETENTION' in request.form
+
+        if backup_schedule_changed or backup_retention_changed:
+            flash("Pour que les changements de planification de sauvegarde soient pris en compte, veuillez redémarrer l'application.", "info")
+
     except Exception as e:
         logging.error(f"Erreur lors de la sauvegarde de la configuration : {e}", exc_info=True)
         flash(f"Une erreur est survenue lors de la sauvegarde : {e}", "danger")
     
     return redirect(url_for('config_ui.show_config'))
+
+# --- API Routes pour la gestion des sauvegardes ---
+
+@config_ui_bp.route('/backups', methods=['GET'])
+@login_required
+def get_backups_list():
+    """Retourne la liste des sauvegardes au format JSON."""
+    backups = backup_manager.get_backups()
+    return jsonify(backups)
+
+@config_ui_bp.route('/backups/create', methods=['POST'])
+@login_required
+def manual_backup():
+    """Déclenche une sauvegarde manuelle."""
+    result = backup_manager.create_backup()
+    if result:
+        return jsonify({'success': True, 'message': 'Sauvegarde manuelle créée avec succès.'})
+    else:
+        return jsonify({'success': False, 'message': 'Erreur lors de la création de la sauvegarde manuelle.'}), 500
+
+@config_ui_bp.route('/backups/<string:filename>/restore', methods=['POST'])
+@login_required
+def restore_backup(filename):
+    """Restaure une sauvegarde spécifique."""
+    success, message = backup_manager.restore_backup(filename)
+    if success:
+        return jsonify({'success': True, 'message': message})
+    else:
+        return jsonify({'success': False, 'message': message}), 500
+
+@config_ui_bp.route('/backups/<string:filename>', methods=['DELETE'])
+@login_required
+def delete_backup(filename):
+    """Supprime une sauvegarde spécifique."""
+    success, message = backup_manager.delete_backup(filename)
+    if success:
+        return jsonify({'success': True, 'message': message})
+    else:
+        return jsonify({'success': False, 'message': message}), 500
