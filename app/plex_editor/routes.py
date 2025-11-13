@@ -2010,28 +2010,24 @@ def archive_movie_route():
             return jsonify({'status': 'error', 'message': 'Movie is not marked as watched for the selected user.'}), 400
 
         # --- ÉTAPE DE SAUVEGARDE DANS LA BDD D'ARCHIVES (AMÉLIORÉE) ---
-        try:
-            from app.utils.archive_manager import add_archived_media
+        if options.get('save_history'):
+            try:
+                from app.utils.archive_manager import add_archived_media
 
-            tmdb_id = next((g.id.replace('tmdb://', '') for g in movie.guids if g.id.startswith('tmdb://')), None)
+                tmdb_id = next((g.id.replace('tmdb://', '') for g in movie.guids if g.id.startswith('tmdb://')), None)
 
-            # Utiliser la nouvelle méthode pour obtenir l'historique détaillé
-            watch_history = plex_client.get_movie_watch_history(movie)
+                # Utiliser la nouvelle méthode pour obtenir l'historique détaillé
+                watch_history = plex_client.get_movie_watch_history(movie)
 
-            media_data_to_archive = {
-                'media_type': 'movie',
-                'external_id': tmdb_id,
-                'user_id': user_id,
-                'title': movie.title,
-                'year': movie.year,
-                'summary': movie.summary,
-                'poster_url': watch_history.get('poster_url') if watch_history else None,
-                'watched_status': watch_history or {'is_watched': movie.isWatched, 'status': 'Unknown'}
-            }
-            add_archived_media(media_data_to_archive)
-            current_app.logger.info(f"'{movie.title}' ajouté à la base de données d'archives.")
-        except Exception as e:
-            current_app.logger.error(f"Erreur lors de la sauvegarde dans la BDD d'archives pour '{movie.title}': {e}", exc_info=True)
+                add_archived_media(
+                    media_type='movie',
+                    external_id=tmdb_id,
+                    user_id=user_id,
+                    rating_key=rating_key  # Ajout du rating_key pour l'archivage manuel
+                )
+                current_app.logger.info(f"'{movie.title}' ajouté à la base de données d'archives.")
+            except Exception as e:
+                current_app.logger.error(f"Erreur lors de la sauvegarde dans la BDD d'archives pour '{movie.title}': {e}", exc_info=True)
 
         # --- Radarr Actions (AMÉLIORÉES) ---
         if options.get('unmonitor') or options.get('addTag'):
@@ -2134,28 +2130,24 @@ def archive_show_route():
             return jsonify({'status': 'error', 'message': 'Show not found in Sonarr.'}), 404
 
         # --- ÉTAPE DE SAUVEGARDE DANS LA BDD D'ARCHIVES (AMÉLIORÉE) ---
-        try:
-            from app.utils.archive_manager import add_archived_media
+        if options.get('save_history'):
+            try:
+                from app.utils.archive_manager import add_archived_media
 
-            tvdb_id = next((g.id.replace('tvdb://', '') for g in show.guids if g.id.startswith('tvdb://')), None)
+                tvdb_id = next((g.id.replace('tvdb://', '') for g in show.guids if g.id.startswith('tvdb://')), None)
 
-            # Utiliser la nouvelle méthode pour obtenir l'historique détaillé
-            watch_history = plex_client.get_show_watch_history(show)
+                # Utiliser la nouvelle méthode pour obtenir l'historique détaillé
+                watch_history = plex_client.get_show_watch_history(show)
 
-            media_data_to_archive = {
-                'media_type': 'show',
-                'external_id': tvdb_id,
-                'user_id': user_id,
-                'title': show.title,
-                'year': show.year,
-                'summary': show.summary,
-                'poster_url': watch_history.get('poster_url') if watch_history else None,
-                'watched_status': watch_history or {'is_fully_watched': show.isWatched, 'seasons': []}
-            }
-            add_archived_media(media_data_to_archive)
-            current_app.logger.info(f"'{show.title}' ajouté à la base de données d'archives.")
-        except Exception as e:
-            current_app.logger.error(f"Erreur lors de la sauvegarde dans la BDD d'archives pour '{show.title}': {e}", exc_info=True)
+                add_archived_media(
+                    media_type='show',
+                    external_id=tvdb_id,
+                    user_id=user_id,
+                    rating_key=rating_key  # Ajout du rating_key pour l'archivage manuel
+                )
+                current_app.logger.info(f"'{show.title}' ajouté à la base de données d'archives.")
+            except Exception as e:
+                current_app.logger.error(f"Erreur lors de la sauvegarde dans la BDD d'archives pour '{show.title}': {e}", exc_info=True)
 
 
         # --- Logique Sonarr (AMÉLIORÉE) ---
