@@ -249,4 +249,34 @@ def create_app(config_class=Config):
         # Ensure scheduler shuts down cleanly when the app exits
         atexit.register(lambda: scheduler.shutdown() if scheduler and scheduler.running else None)
 
+        # --- Backup Job ---
+        try:
+            from app.utils.backup_manager import create_backup
+
+            schedule = os.getenv('BACKUP_SCHEDULE', 'disabled').lower()
+            trigger_args = None
+            if schedule == 'hourly':
+                trigger, trigger_args = 'interval', {'hours': 1}
+            elif schedule == 'daily':
+                trigger, trigger_args = 'interval', {'days': 1}
+            elif schedule == 'weekly':
+                trigger, trigger_args = 'interval', {'weeks': 1}
+            else:
+                trigger = None
+
+            if trigger:
+                def backup_job_func():
+                    with app.app_context():
+                        create_backup()
+
+                scheduler.add_job(
+                    func=backup_job_func, trigger=trigger, id='backup_job',
+                    replace_existing=True, **trigger_args
+                )
+                app.logger.info(f"Tâche de sauvegarde planifiée au démarrage : {schedule}")
+
+        except ImportError:
+            app.logger.warning("Module de sauvegarde non trouvé, la tâche de sauvegarde n'a pas été planifiée.")
+
+
     return app
