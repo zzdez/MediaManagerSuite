@@ -64,3 +64,77 @@ La modale d'ajout de torrent (`addTorrentModal`) présente des défis uniques en
     1.  Un attribut `data-is-returning-from-trailer` est ajouté à `addTorrentModal` avant de la masquer.
     2.  L'écouteur d'événement `show.bs.modal` de cette modale vérifie la présence de ce drapeau. S'il existe, la fonction de réinitialisation est ignorée.
 -   **Utilisation des bons identifiants** : Pour la recherche de bande-annonce, il est **critique** d'utiliser l'identifiant externe (TMDB ID pour les films, TVDB ID pour les séries). L'interface doit donc stocker à la fois l'ID interne de Sonarr/Radarr (pour le mapping) et l'ID externe (dans un attribut `data-selected-media-external-id`) pour la recherche de bande-annonce. Le code qui déclenche la recherche doit impérativement utiliser cet ID externe.
+
+### Fonctionnalité d'Archivage Améliorée (Novembre 2025)
+
+- **Objectif** : Créer un historique de visionnage persistant, même après suppression des médias de Plex. Lors de l'archivage, les détails de visionnage d'un utilisateur sont extraits de Plex et sauvegardés dans une base de données locale. Ces informations sont ensuite utilisées pour enrichir les futures recherches.
+
+- **Composants clés** :
+  - `app/utils/archive_manager.py` : Un nouveau module qui gère une base de données `instance/archive_database.json`. Il inclut un système de verrouillage de fichier (`.lock`) pour éviter les corruptions lors d'écritures concurrentes. La logique `add_archived_media` est conçue pour mettre à jour l'historique d'un utilisateur existant plutôt que de créer des doublons.
+  - `app/utils/plex_client.py` : Refactorisé en une classe `PlexClient` pour gérer proprement les connexions Plex spécifiques à chaque utilisateur, ce qui est crucial pour récupérer l'historique de visionnage correct. Cette classe est capable de générer des URL de posters authentifiées et de construire un objet `watch_history` détaillé (statut global, statut par saison, nombre d'épisodes vus/total).
+
+- **Intégration UI** :
+  - **Plex Editor (`/plex/`)** : Si une recherche ne trouve rien dans Plex, le système consulte la base d'archives. Les résultats archivés sont affichés via un template `_archived_media_card.html` qui présente le poster, le résumé et un historique de visionnage formaté (ex: "Saison 1: Vus (10 / 10 ép.)").
+  - **Recherche Globale (`/search/`)** : Le `media_info_manager.py` enrichit les résultats de recherche externes (TMDB/TVDB) en vérifiant s'ils existent dans la base d'archives. Si c'est le cas, un badge "Archivé" est ajouté au résultat, avec l'historique de visionnage disponible dans une infobulle (tooltip).
+
+- **État Actuel et Problèmes Rencontrés** :
+  - La fonctionnalité de base (sauvegarde et récupération) est implémentée.
+  - **Problème 1 (Plex Editor)** : Lors de l'affichage des résultats archivés sur la page `/plex/`, l'affichage est défectueux. Le poster n'apparaît pas et les informations de visionnage sont brutes et mal formatées. De plus, la logique crée des entrées dupliquées pour un même utilisateur au lieu de les mettre à jour.
+  - **Problème 2 (Recherche Globale)** : La page de recherche (`/search/`) subit un crash (`TypeError`) lorsqu'elle tente d'enrichir les résultats avec les données d'archives. Cela est dû à une incohérence dans les arguments passés à une fonction du `media_info_manager`.
+  - **Cause Racine des bugs (Corrigés en théorie)** :
+    - Le `PlexClient` ne construisait pas une URL complète et authentifiée pour le poster. **(Corrigé)**
+    - Le `archive_manager` ne comparait pas correctement les `user_id`, provoquant les doublons. **(Corrigé)**
+    - Les templates Jinja2 n'étaient pas adaptés pour afficher correctement la nouvelle structure de données de `watch_history`. **(Corrigé)**
+    - L'appel de fonction dans `media_info_manager` n'avait pas été mis à jour suite à une refactorisation. **(Corrigé)**
+    - Des régressions dans les routes d'archivage (`plex_editor/routes.py`) appelaient des fonctions inexistantes. **(Corrigé)**
+
+- **Prochaines Étapes (Nouvelle Session)** :
+  1.  **Priorité 1: Déboguer l'affichage sur la page Plex Editor (`/plex/`)** :
+      - Malgré les correctifs, le problème d'affichage (posters, formatage) persiste. Il faut vérifier la transmission des données du backend au frontend et l'interprétation par le template Jinja2 `_archived_media_card.html`. Il est possible qu'un rafraîchissement JavaScript soit nécessaire après l'injection du HTML.
+  2.  **Priorité 2: Déboguer la page de Recherche Globale (`/search/`)** :
+      - Vérifier que les correctifs ont bien résolu le `TypeError`.
+      - S'assurer que le badge "Archivé" et l'infobulle (tooltip) s'affichent correctement et avec les bonnes informations formatées sur les résultats de recherche pertinents.
+  3.  **Validation Complète** :
+      - Effectuer un test de bout en bout : archiver un nouveau média, puis le rechercher dans les deux interfaces pour confirmer que l'ensemble du flux fonctionne comme prévu.
+
+### Session du 7 Novembre 2025 : Fiabilisation et Préparation de la Synchro de l'Historique Fantôme
+
+- **Objectif initial** : Corriger les bugs d'affichage des médias archivés et explorer la possibilité de synchroniser l'historique des médias supprimés de Plex ("historique fantôme").
+
+- **Réalisations** :
+  - **Correction de la logique d'archivage manuelle** : Nous avons pivoté pour corriger la cause racine des bugs d'affichage. La fonction `add_archived_media` dans `archive_manager.py` a été entièrement revue pour :
+    - **Empêcher les doublons** : Le système remplace désormais l'entrée d'un utilisateur pour un média donné, au lieu d'en ajouter une nouvelle à chaque archivage.
+    - **Enrichissement des métadonnées** : La fonction récupère maintenant des métadonnées riches et persistantes (poster, résumé, année) depuis TMDB (pour les films) et TVDB (pour les séries), garantissant que les informations restent valides même après la suppression du média de Plex.
+    - **Standardisation des clés** : Les entrées dans `archive_database.json` utilisent maintenant un format de clé standard (`tv_<id>` ou `movie_<id>`), améliorant la cohérence de la base de données.
+    - **Correction de bugs multiples** : Nous avons résolu des `TypeError` dans les routes et des incohérences dans la structure des données de visionnage (`watched_status`).
+
+  - **Préparation du script de synchronisation de l'historique fantôme** :
+    - **Création d'une page de test** : Une nouvelle page a été ajoutée à l'URL `/plex/sync_test` avec un template `sync_test.html` et un bouton pour lancer le test.
+    - **Implémentation de la logique de scan** : Une nouvelle route, `/plex/run_sync_test`, a été créée. Elle contient la logique principale pour :
+      1.  Parcourir l'historique complet de Plex.
+      2.  Identifier les éléments "fantômes" (ceux dont la source n'existe plus).
+      3.  Extraire l'identifiant externe (TMDB/TVDB) à partir du `guid` de l'entrée d'historique.
+      4.  Appeler la fonction fiabilisée `add_archived_media` pour sauvegarder ces médias fantômes dans notre base de données.
+    - Le script est conçu pour un test initial : il s'arrête après avoir trouvé et archivé un film et une série.
+
+- **Problème Bloquant : Instabilité du Serveur de Développement** :
+  - Un problème majeur et persistant avec le serveur Flask nous a empêchés de tester les nouvelles fonctionnalités.
+  - **Symptômes** : Le serveur ne prend pas en compte les modifications de code, même après redémarrage. Les nouvelles routes renvoient systématiquement des erreurs `404 Not Found`, et les routes existantes comme `/login` renvoient des erreurs `405 Method Not Allowed` pour les requêtes `POST`, bien que le code soit correct.
+  - **Actions de débogage (sans succès)** :
+    - Vérification des blueprints et des préfixes d'URL.
+    - Suppression des caches Python (`__pycache__`).
+    - Activation du `reloader` de Flask dans `run.py`.
+    - Ajout de routes de débogage pour lister toutes les routes de l'application.
+  - **Conclusion** : L'environnement de développement est dans un état instable qui rend impossible toute vérification. Ce problème devra être résolu en priorité avant de pouvoir continuer.
+
+- **État Final de la Session** :
+  - **Succès** : Après de multiples tentatives, le problème de routage a été résolu. La page de test `/plex/sync_test` est désormais accessible.
+  - **Échec** : Le script de synchronisation s'exécute mais ne parvient pas à identifier correctement les "items fantômes". La logique actuelle, qui se base sur une exception `NotFound` et une analyse des `guid`, est inefficace.
+
+- **Prochaines Étapes (Stratégie Recommandée)** :
+  1.  **Changer de Stratégie de Débogage** : La tentative de "deviner" la structure des données a échoué. La prochaine session doit se concentrer sur l'obtention de données réelles.
+  2.  **Modifier le script de test** : Le script `/plex/run_sync_test` doit être temporairement modifié non pas pour traiter les données, mais pour **collecter et logger** les détails bruts d'un échantillon d'entrées de l'historique (par exemple, les 100 premières). Il faudra logger tous les attributs disponibles pour chaque entrée (`entry.type`, `entry.title`, `entry.guid`, `entry.grandparentGuid`, etc.).
+  3.  **Analyser les Logs** : L'utilisateur devra lancer ce script modifié et fournir les logs générés.
+  4.  **Adapter la Logique** : En se basant sur l'analyse de ces logs, nous pourrons enfin écrire une condition fiable pour identifier un item comme "fantôme" et savoir quel attribut (`guid`, `grandparentGuid`, etc.) contient l'identifiant externe pertinent.
+  5.  **Finaliser le Test** : Une fois la logique de détection corrigée, l'utilisateur pourra valider que le script archive bien un film et une série fantômes.
+  6.  **Développer la Fonctionnalité Complète** : Procéder ensuite au développement de la synchronisation complète (scan de tout l'historique, bouton dans l'interface, etc.) et à l'enrichissement des données de visionnage.

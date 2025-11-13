@@ -37,6 +37,7 @@ def media_search():
     """Recherche des médias (films ou séries) via les API externes (TMDb/TVDB) et enrichit avec le statut du trailer."""
     from app.utils import trailer_manager # Import local
     from app.utils.media_info_manager import media_info_manager
+    from app.utils.archive_manager import find_archived_media_by_id # Import pour la vérification d'archive
 
     data = request.get_json()
     query = data.get('query')
@@ -54,6 +55,7 @@ def media_search():
                 external_id = item.get('id')
                 trailer_status = trailer_manager.get_trailer_status('movie', external_id) if external_id else 'NONE'
                 media_details = media_info_manager.get_media_details('movie', external_id) if external_id else {}
+                archived_info = find_archived_media_by_id('movie', external_id) if external_id else None
                 results.append({
                     'id': external_id,
                     'title': item.get('title'),
@@ -62,7 +64,8 @@ def media_search():
                     'overview': item.get('overview'),
                     'poster': item.get('poster_path'),
                     'trailer_status': trailer_status,
-                    'details': media_details
+                    'details': media_details,
+                    'archived_info': archived_info
                 })
         elif media_type_search == 'tv':
             client = CustomTVDBClient()
@@ -71,6 +74,7 @@ def media_search():
                 external_id = item.get('tvdb_id')
                 trailer_status = trailer_manager.get_trailer_status('tv', external_id) if external_id else 'NONE'
                 media_details = media_info_manager.get_media_details('tv', external_id) if external_id else {}
+                archived_info = find_archived_media_by_id('show', external_id) if external_id else None
                 results.append({
                     'id': external_id,
                     'title': item.get('name'),
@@ -79,7 +83,8 @@ def media_search():
                     'overview': item.get('overview'),
                     'poster': item.get('poster_url'),
                     'trailer_status': trailer_status,
-                    'details': media_details
+                    'details': media_details,
+                    'archived_info': archived_info
                 })
         else:
             return jsonify({"error": "Type de média non supporté."}), 400

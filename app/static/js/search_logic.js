@@ -73,9 +73,19 @@ $(document).ready(function() {
                 badgesHtml += `<span class="badge ${statusClass} me-1">${statusText}</span>`;
             }
 
-            // 3. Badge de Visionnage Plex
+            // 3. Badge de Visionnage Plex OU Statut d'Archivage
             const plexStatus = details.plex_status || {};
-            if (plexStatus.present) {
+            const archivedInfo = item.archived_info || {};
+
+            if (archivedInfo.is_archived) {
+                let tooltipText = `Archivé par ${archivedInfo.user}.`;
+                if (mediaType === 'tv' && archivedInfo.seasons_watched && archivedInfo.seasons_watched.length > 0) {
+                    tooltipText += ` Saisons vues: ${archivedInfo.seasons_watched.join(', ')}.`;
+                } else if (mediaType === 'movie') {
+                    tooltipText += ` Statut: ${archivedInfo.status}.`;
+                }
+                badgesHtml += `<span class="badge bg-dark me-1" data-bs-toggle="tooltip" title="${tooltipText}">Archivé</span>`;
+            } else if (plexStatus.present) {
                 if (mediaType === 'tv') {
                     if (plexStatus.is_watched) {
                         badgesHtml += `<span class="badge bg-primary me-1">Série Vue</span>`;
@@ -94,7 +104,6 @@ $(document).ready(function() {
             if (item.trailer_status === 'LOCKED') trailerBtnClass = 'btn-outline-success';
             else if (item.trailer_status === 'UNLOCKED') trailerBtnClass = 'btn-outline-primary';
 
-            // ### CORRECTION ICI ###
             let buttonsHtml = `
                 <button class="btn btn-sm ${trailerBtnClass} search-trailer-btn"
                         data-media-type="${mediaType}"
@@ -104,17 +113,21 @@ $(document).ready(function() {
                     <i class="fas fa-video"></i> Bande-annonce
                 </button>`;
 
-            if (!sonarrStatus.present && !radarrStatus.present) {
+            const isArchived = item.archived_info && item.archived_info.is_archived;
+
+            if (!isArchived) {
+                if (!sonarrStatus.present && !radarrStatus.present) {
+                    buttonsHtml += `
+                        <button class="btn btn-sm btn-outline-success add-to-arr-btn" data-result-index="${index}">
+                            <i class="fas fa-plus"></i> Ajouter
+                        </button>`;
+                }
+
                 buttonsHtml += `
-                    <button class="btn btn-sm btn-outline-success add-to-arr-btn" data-result-index="${index}">
-                        <i class="fas fa-plus"></i> Ajouter
+                    <button class="btn btn-sm btn-primary search-torrents-btn" data-result-index="${index}">
+                        <i class="fas fa-download"></i> Chercher les Torrents
                     </button>`;
             }
-
-            buttonsHtml += `
-                <button class="btn btn-sm btn-primary search-torrents-btn" data-result-index="${index}">
-                    <i class="fas fa-download"></i> Chercher les Torrents
-                </button>`;
 
             // --- FIN DE LA NOUVELLE LOGIQUE ---
 
@@ -176,6 +189,12 @@ $(document).ready(function() {
             listGroup.append(cardHtml);
         });
         resultsContainer.append(listGroup);
+
+        // Activer les tooltips Bootstrap pour les nouveaux éléments
+        const tooltipTriggerList = [].slice.call(resultsContainer[0].querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
     }
 
     function performMediaSearch() {

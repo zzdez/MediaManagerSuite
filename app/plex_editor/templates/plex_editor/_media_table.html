@@ -203,6 +203,125 @@
             {% include 'plex_editor/_external_suggestions.html' %}
         {% endfor %}
     </div>
+{% elif archived_results %}
+    <div class="mt-4">
+        <h4>Résultats trouvés dans les archives :</h4>
+        <hr>
+        {% for item in archived_results %}
+            <div class="card bg-dark text-white mb-3 shadow-lg">
+                <div class="row g-0">
+                    <div class="col-md-2 d-flex justify-content-center align-items-center">
+                        <img src="{{ item.poster_url or url_for('static', filename='img/placeholder.png') }}" class="img-fluid rounded-start" alt="Poster for {{ item.title }}" style="max-height: 300px; object-fit: cover;">
+                    </div>
+                    <div class="col-md-10">
+                        <div class="card-body">
+                            <h5 class="card-title">
+                                {{ item.title }}
+                                <span class="badge bg-secondary align-middle">{{ item.year }}</span>
+                                <span class="badge bg-dark align-middle"><i class="bi bi-archive-fill me-1"></i>Archivé</span>
+                            </h5>
+
+                            <div class="d-flex align-items-center mb-2">
+                                <p class="card-text me-3 mb-0"><small class="text-muted">ID Externe: {{ item.external_id }}</small></p>
+
+                                {# --- DÉBUT DU BLOC BANDE-ANNONCE POUR ARCHIVES --- #}
+                                {% set status = item.trailer_status or 'NONE' %}
+                                {% if status == 'LOCKED' %}
+                                    {% set btn_class = 'btn-outline-success' %}
+                                    {% set btn_title = 'Bande-annonce verrouillée' %}
+                                {% elif status == 'UNLOCKED' %}
+                                    {% set btn_class = 'btn-outline-primary' %}
+                                    {% set btn_title = 'Plusieurs bandes-annonces trouvées' %}
+                                {% else %} {# 'NONE' #}
+                                    {% set btn_class = 'btn-outline-danger' %}
+                                    {% set btn_title = 'Aucune bande-annonce trouvée' %}
+                                {% endif %}
+                                <button class="btn btn-sm {{ btn_class }} find-and-play-trailer-btn"
+                                        data-title="{{ item.title }}"
+                                        data-year="{{ item.year }}"
+                                        data-media-type="{{ item.media_type_for_trailer }}"
+                                        data-external-id="{{ item.external_id }}"
+                                        title="{{ btn_title }}">
+                                    <i class="bi bi-film"></i>
+                                </button>
+                                {# --- FIN DU BLOC BANDE-ANNONCE POUR ARCHIVES --- #}
+                            </div>
+
+                            <p class="card-text small">{{ item.summary | truncate(350) }}</p>
+
+                            {% if item.archive_history %}
+                                <hr>
+                                {% for history in item.archive_history %}
+                                    <div class="mb-3">
+                                        <h6><i class="bi bi-clock-history me-2"></i>Historique de <strong>{{ history.user_id }}</strong></h6>
+                                        <p class="mb-1">
+                                            <small>
+                                                {% if history.last_viewed_at %}
+                                                    Dernier visionnage le {{ history.last_viewed_at | date_format }}.
+                                                {% endif %}
+                                                Média archivé le {{ history.archived_at | date_format }}.
+                                            </small>
+                                        </p>
+
+                                        {% if (item.media_type == 'show' or item.media_type == 'tv') and history.watched_status.seasons %}
+                                            <div class="row gx-3">
+                                                {% for season in history.watched_status.seasons | sort(attribute='season_number') %}
+                                                    <div class="col-12 col-sm-6 col-md-4 mb-2">
+                                                        <div class="p-2 rounded" style="background-color: #343a40;">
+                                                            <strong>Saison {{ season.season_number }}</strong>
+
+                                                            {# Logique unifiée pour fantômes et normaux #}
+                                                            {% set watched = season.watched_count | default(season.episodes_watched | length, true) %}
+                                                            {% set total = season.total_count | default(season.total_episodes, true) %}
+
+                                                            {% if total is defined and total > 0 %}
+                                                                {% if watched == total %}
+                                                                    <span class="badge bg-success float-end">Vue entièrement</span>
+                                                                {% else %}
+                                                                    <span class="badge bg-info float-end">Partiellement vue</span>
+                                                                {% endif %}
+                                                                <div class="progress mt-1" style="height: 10px;">
+                                                                    <div class="progress-bar {% if watched == total %}bg-success{% else %}bg-info{% endif %}"
+                                                                         role="progressbar"
+                                                                         style="width: {{ (watched / total) * 100 }}%;"
+                                                                         aria-valuenow="{{ watched }}"
+                                                                         aria-valuemin="0"
+                                                                         aria-valuemax="{{ total }}">
+                                                                    </div>
+                                                                </div>
+                                                                <small class="text-muted d-block mt-1">Vus ({{ watched }} / {{ total }} ép.)</small>
+                                                            {% elif watched > 0 %}
+                                                                {# Fallback si total inconnu mais on a des épisodes vus #}
+                                                                <span class="badge bg-info float-end">Partiellement vue</span>
+                                                                <p class="mb-0 mt-1"><small class="text-muted">
+                                                                    {{ watched }} épisode(s) vu(s).
+                                                                </small></p>
+                                                            {% endif %}
+                                                        </div>
+                                                    </div>
+                                                {% endfor %}
+                                            </div>
+                                        {% elif item.media_type == 'movie' %}
+                                            <p class="mb-0">
+                                                Statut :
+                                                {% if history.watched_status.is_watched %}
+                                                    <span class="badge bg-success">Vu</span>
+                                                {% else %}
+                                                    <span class="badge bg-warning text-dark">Non vu</span>
+                                                {% endif %}
+                                            </p>
+                                        {% else %}
+                                            <p class="text-muted"><small>Aucun détail de visionnage disponible.</small></p>
+                                        {% endif %}
+                                    </div>
+                                {% endfor %}
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
 {% else %}
     <div class="text-center mt-4">
         <p>Aucun média trouvé pour les filtres sélectionnés.</p>

@@ -3,7 +3,7 @@
 import logging
 from logging.handlers import RotatingFileHandler
 import os
-from datetime import datetime
+import datetime
 import secrets
 from app.auth import login_required
 
@@ -16,7 +16,6 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from app.utils.sftp_scanner import scan_and_map_torrents
 from app.utils.staging_processor import process_pending_staging_items
 from app.utils.trailer_manager import clean_stale_entries
-import datetime
 import atexit
 import threading
 
@@ -68,10 +67,49 @@ def create_app(config_class=Config):
     else:
         app.logger.warning("Clé API Gemini non trouvée. Le service de suggestion de requêtes sera limité aux requêtes de secours.")
 
+    # --- Filtres Jinja2 personnalisés ---
+    def format_iso_datetime(iso_string):
+        """Filtre Jinja pour formater une date/heure ISO en format lisible."""
+        if not iso_string:
+            return 'Date inconnue'
+        try:
+            # Utilisation de strptime pour une compatibilité étendue avec Python < 3.7
+            # On retire le 'Z' et les microsecondes qui peuvent causer des soucis.
+            if '.' in iso_string:
+                # Gérer les microsecondes
+                core_string = iso_string.split('.')[0]
+            else:
+                core_string = iso_string.rstrip('Z')
+
+            dt = datetime.datetime.strptime(core_string, '%Y-%m-%dT%H:%M:%S')
+            return dt.strftime('%d/%m/%Y à %H:%M')
+        except (ValueError, TypeError):
+             # Tentative de fallback pour un format sans heure
+            try:
+                dt = datetime.datetime.strptime(iso_string.split('T')[0], '%Y-%m-%d')
+                return dt.strftime('%d/%m/%Y')
+            except (ValueError, TypeError):
+                return 'Date invalide'
+
+    app.jinja_env.filters['date_format'] = format_iso_datetime
+    # Ajout du filtre to_datetime manquant si la version de Jinja est ancienne
+    if 'to_datetime' not in app.jinja_env.filters:
+        from jinja2.filters import pass_environment
+        @pass_environment
+        def to_datetime_filter(environment, value):
+            if value is None:
+                return None
+            try:
+                # Remplacé par strptime pour la compatibilité
+                return datetime.datetime.strptime(value.split('.')[0], '%Y-%m-%dT%H:%M:%S')
+            except:
+                return None
+        app.jinja_env.filters['to_datetime'] = to_datetime_filter
+
 
     # Enregistrement des Blueprints
     from app.plex_editor import plex_editor_bp
-    app.register_blueprint(plex_editor_bp, url_prefix='/plex')
+    app.register_blueprint(plex_editor_bp)
     logger.info("Blueprint 'plex_editor' enregistré avec succès.")
 
     from app.seedbox_ui import seedbox_ui_bp

@@ -1,7 +1,9 @@
 # app/plex_editor/routes.py
 # -*- coding: utf-8 -*-
+# Commentaire pour forcer la relecture du fichier
 
 import os
+import time
 from app.auth import login_required
 from flask import (render_template, current_app, flash, abort, url_for,
                    redirect, request, session, jsonify, current_app)
@@ -9,6 +11,10 @@ from datetime import datetime, timedelta
 import pytz
 from plexapi.server import PlexServer
 from plexapi.exceptions import NotFound, Unauthorized, BadRequest
+import logging
+
+# Initialisation du logger pour ce module
+logger = logging.getLogger(__name__)
 
 # Importer le Blueprint
 from . import plex_editor_bp
@@ -33,12 +39,235 @@ from app.utils.tvdb_client import CustomTVDBClient
 from app.utils.cache_manager import SimpleCache, get_pending_lock, remove_pending_lock
 from app.utils import trailer_manager # Import du nouveau manager
 from app.agent.services import _search_and_score_trailers
+from thefuzz import fuzz
 
 from app.utils.move_manager import move_manager
 from app.utils.arr_client import get_sonarr_root_folders, get_radarr_root_folders, move_sonarr_series, move_radarr_movie, get_arr_command_status, radarr_post_command
 from app.utils.bulk_move_manager import bulk_move_manager # Import du nouveau manager
 
 # --- Routes du Blueprint ---
+
+# --- Route pour la synchronisation de l'historique fantôme ---
+@plex_editor_bp.route('/sync_history')
+@login_required
+def sync_history_page():
+    """Affiche la page pour lancer la synchronisation de l'historique."""
+    return render_template('plex_editor/sync_history.html')
+
+@plex_editor_bp.route('/run_sync_test', methods=['POST'])
+@login_required
+def run_sync_test():
+    """Exécute le script de test de synchronisation de l'historique fantôme."""
+    from app.utils.archive_manager import add_archived_media
+    user_id = request.form.get('user_id')
+    if not user_id:
+        flash("Veuillez sélectionner un utilisateur.", "danger")
+        return redirect(url_for('plex_editor.sync_history_page'))
+
+    try:
+        main_account = get_main_plex_account_object()
+        user_title = f"ID: {user_id}"
+        if main_account:
+            if str(main_account.id) == user_id:
+                user_title = main_account.title
+            else:
+                user_account = next((u for u in main_account.users() if str(u.id) == user_id), None)
+                if user_account:
+                    user_title = user_account.title
+
+        user_plex = get_user_specific_plex_server_from_id(user_id)
+        if not user_plex:
+            flash(f"Impossible de se connecter au serveur Plex pour l'utilisateur '{user_title}'.", "danger")
+            return redirect(url_for('plex_editor.sync_history_page'))
+
+        flash(f"Scan de l'historique Plex complet pour '{user_title}' en cours... Cela peut prendre plusieurs minutes.", "info")
+
+        tmdb_client = TheMovieDBClient()
+        tvdb_client = CustomTVDBClient()
+
+        # --- NOUVEAU : Charger les archives existantes pour éviter les doublons ---
+        from app.utils.archive_manager import load_archive_data
+        archive_data = load_archive_data()
+        # Créer un set de tuples (titre, année) pour une recherche rapide et insensible à la casse
+        existing_archives = {
+            (media_info.get('title', '').lower(), str(media_info.get('year', '')))
+            for media_info in archive_data.values()
+            if media_info.get('title') and media_info.get('year')
+        }
+        current_app.logger.info(f"{len(existing_archives)} média(s) déjà archivé(s) chargé(s).")
+        # --- FIN DU NOUVEAU BLOC ---
+
+        history = user_plex.history() # La limite maxresults=2000 a été supprimée pour un scan complet
+
+        media_cache = {}
+        last_viewed_dates = {}
+        plex_item_exists_cache = {}
+
+        # --- COMPTEURS (LIMITES SUPPRIMÉES) ---
+        processed_movies = set()
+        processed_shows = set()
+        # MOVIE_LIMIT = 5 # Désactivé
+        # SHOW_LIMIT = 5 # Désactivé
+        archived_count = 0
+        successfully_archived_titles = [] # NOUVEAU : Pour le résumé final
+        # limit_reached = False # Désactivé
+
+        for entry in history:
+            source_item = None
+            try:
+                source_item = entry.source()
+            except NotFound:
+                pass
+
+            if source_item is not None:
+                continue
+
+            year = getattr(entry, 'originallyAvailableAt', None)
+            if year:
+                year = year.year
+
+            unique_key, title, entry_media_type = None, None, None
+            if entry.type == 'movie':
+                title = getattr(entry, 'title', None)
+                if title and year:
+                    unique_key = f"movie_{title}_{year}"
+                    entry_media_type = 'movie'
+            elif entry.type == 'episode':
+                title = getattr(entry, 'grandparentTitle', None)
+                if title:
+                    unique_key = f"show_{title}"
+                    entry_media_type = 'show'
+
+            if not unique_key:
+                continue
+
+            # --- NOUVEAU : Ignorer si le média est déjà dans les archives ---
+            if title and year:
+                if (title.lower(), str(year)) in existing_archives:
+                    current_app.logger.debug(f"Média '{title} ({year})' déjà archivé. Ignoré.")
+                    continue
+            # --- FIN DU NOUVEAU BLOC ---
+
+            # --- VÉRIFICATION DE LIMITE (DÉSACTIVÉE) ---
+            # if entry_media_type == 'movie' and unique_key not in processed_movies and len(processed_movies) >= MOVIE_LIMIT:
+            #     continue
+            # if entry_media_type == 'show' and unique_key not in processed_shows and len(processed_shows) >= SHOW_LIMIT:
+            #     continue
+            # if len(processed_movies) >= MOVIE_LIMIT and len(processed_shows) >= SHOW_LIMIT:
+            #     limit_reached = True
+            #     if unique_key not in processed_movies and unique_key not in processed_shows:
+            #         continue
+
+            if title not in plex_item_exists_cache:
+                plex_search_results = user_plex.search(title)
+                exists = any(hasattr(item, 'title') and item.title.lower() == title.lower() for item in plex_search_results)
+                plex_item_exists_cache[title] = exists
+
+            if plex_item_exists_cache[title]:
+                current_app.logger.info(f"Le média '{title}' existe toujours dans Plex. Ignoré.")
+                continue
+
+            entry_viewed_at = getattr(entry, 'viewedAt', None)
+            if entry_viewed_at:
+                current_latest = last_viewed_dates.get(unique_key)
+                if not current_latest or entry_viewed_at.isoformat() > current_latest:
+                    last_viewed_dates[unique_key] = entry_viewed_at.isoformat()
+
+            if unique_key not in media_cache:
+                # --- AJOUT DU RALENTISSEMENT ---
+                # On fait une pause uniquement quand on s'apprête à chercher un NOUVEL item
+                # sur les API externes pour éviter de les surcharger.
+                time.sleep(0.5)
+
+                media_type, external_id, extra_data = None, None, {}
+                if entry.type == 'movie':
+                    search_results = tmdb_client.search_movie(title)
+                    filtered_results = [m for m in search_results if m.get('year') == str(year)]
+                    if filtered_results:
+                        media_type = 'movie'
+                        external_id = filtered_results[0].get('id')
+                elif entry.type == 'episode':
+                    search_results = tvdb_client.search_and_translate_series(title)
+                    best_match = None
+                    if search_results:
+                        if len(search_results) == 1:
+                            best_match = search_results[0]
+                        else:
+                            SIMILARITY_THRESHOLD = 85
+                            highly_similar_results = [r for r in search_results if fuzz.ratio(title.lower(), r.get('name', '').lower()) > SIMILARITY_THRESHOLD]
+                            if highly_similar_results:
+                                min_year_diff = float('inf')
+                                for result in highly_similar_results:
+                                    try:
+                                        result_year = int(result.get('year', 0))
+                                        if result_year > 0 and year is not None:
+                                            diff = abs(result_year - year)
+                                            if diff < min_year_diff:
+                                                min_year_diff = diff
+                                                best_match = result
+                                    except (ValueError, TypeError): continue
+                                if not best_match: best_match = highly_similar_results[0]
+                    if best_match:
+                        media_type = 'show'
+                        external_id = best_match.get('tvdb_id')
+                        total_episode_counts = tvdb_client.get_season_episode_counts(external_id)
+                        extra_data['total_episode_counts'] = total_episode_counts
+                        current_app.logger.info(f"Match TVDB pour '{title}' -> ID: {external_id}, Counts: {total_episode_counts}")
+
+                media_cache[unique_key] = (media_type, external_id, extra_data)
+
+            media_type, external_id, extra_data = media_cache.get(unique_key, (None, None, {}))
+
+            if media_type and external_id:
+                if media_type == 'movie':
+                    processed_movies.add(unique_key)
+                elif media_type == 'show':
+                    processed_shows.add(unique_key)
+
+                season_number = episode_number = None
+                if entry.type == 'episode':
+                    season_number = getattr(entry, 'parentIndex', None)
+                    episode_number = getattr(entry, 'index', None)
+
+                success, message = add_archived_media(
+                    media_type=media_type,
+                    external_id=external_id,
+                    user_id=user_id,
+                    season_number=season_number,
+                    episode_number=episode_number,
+                    total_episode_counts=extra_data.get('total_episode_counts'),
+                    last_viewed_at=last_viewed_dates.get(unique_key)
+                )
+
+                if success:
+                    # NOUVEAU : On ajoute le titre à la liste pour le résumé final au lieu de flasher immédiatement
+                    if title not in successfully_archived_titles:
+                        successfully_archived_titles.append(title)
+                    archived_count += 1 # On incrémente toujours le compteur global
+                elif not success:
+                     current_app.logger.info(f"Info/Échec archivage fantôme pour {unique_key}: {message}")
+
+        # Le message de limite a été supprimé car les limites sont désactivées.
+
+        # --- NOUVEAU : Message de résumé final ---
+        if not successfully_archived_titles:
+            flash("Scan terminé. Aucun nouvel item fantôme n'a été trouvé à archiver.", "info")
+        else:
+            # On affiche un résumé pour éviter de surcharger les cookies de session.
+            num_titles = len(successfully_archived_titles)
+            summary_message = f"Scan terminé. {num_titles} nouveau(x) média(s) fantôme(s) ont été archivés avec succès."
+            # On peut optionnellement lister quelques titres si on le souhaite, mais gardons-le simple pour l'instant.
+            # Exemple: titles_preview = ", ".join(successfully_archived_titles[:5])
+            # summary_message += f" Exemples : {titles_preview}..."
+            flash(summary_message, "success")
+
+        return redirect(url_for('plex_editor.sync_history_page'))
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur majeure lors du test de synchronisation: {e}", exc_info=True)
+        flash(f"Une erreur inattendue est survenue: {str(e)}", "danger")
+        return redirect(url_for('plex_editor.sync_history_page'))
+
 
 @plex_editor_bp.route('/api/media/root_folders', methods=['GET'])
 @login_required
@@ -735,39 +964,64 @@ def get_media_items():
             remove_pending_lock(matched_id)
             current_app.logger.info(f"FINALIZATION: Success for '{item.title}'. Pending lock for {matched_id} removed.")
 
-        # --- 4. LA DÉCISION : Chercher à l'extérieur ? ---
+        # --- 4. LA DÉCISION : Chercher dans les archives ou à l'extérieur ? ---
         final_plex_results_unfiltered = list(all_plex_items.values())
         external_suggestions = []
+        archived_results = [] # Toujours initialiser la liste
 
         if not final_plex_results_unfiltered and title_filter:
-            current_app.logger.info(f"No results in Plex across all libraries for '{title_filter}'. Searching externally.")
+            # Priorité n°1 : Chercher dans notre base de données d'archives locales
+            from app.utils.archive_manager import find_archived_media_by_title
+            archived_results = find_archived_media_by_title(title_filter)
 
-            tmdb_client = TheMovieDBClient()
-            tvdb_client = CustomTVDBClient()
+            # --- NOUVEAU : Enrichir les résultats archivés avec le statut de la bande-annonce ---
+            if archived_results:
+                for item in archived_results:
+                    item['trailer_status'] = 'NONE'  # Default
+                    media_type = item.get('media_type')
+                    external_id = item.get('external_id')
 
-            # Recherche Films (TMDb)
-            tmdb_results = tmdb_client.search_movie(title_filter)
-            for movie in tmdb_results[:3]:
-                tmdb_id = movie.get('id')
-                radarr_entry = get_radarr_movie_by_guid(f'tmdb:{tmdb_id}')
-                movie['is_monitored'] = radarr_entry is not None
-                movie['source_url'] = f"https://www.themoviedb.org/movie/{movie.get('id')}"
-                movie['poster_url'] = f"https://image.tmdb.org/t/p/w500{movie.get('poster_path')}" if movie.get('poster_path') else ''
-                movie['year'] = movie.get('release_date', 'N/A').split('-')[0] if movie.get('release_date') else 'N/A'
-                movie['type'] = 'movie'
-                external_suggestions.append(movie)
+                    if media_type and external_id:
+                        # Le trailer manager attend 'tv' ou 'movie'
+                        item['trailer_status'] = trailer_manager.get_trailer_status(
+                            media_type=media_type,
+                            external_id=str(external_id)  # Assurer que c'est une string
+                        )
+                    # Les autres champs nécessaires (title, year, external_id) sont déjà dans l'objet 'item'
+                    # On s'assure que le media_type est compatible pour le template
+                    item['media_type_for_trailer'] = item.get('media_type')
 
-            # Recherche Séries (TVDb)
-            tvdb_results = tvdb_client.search_and_translate_series(title_filter)
-            for series in tvdb_results[:3]:
-                tvdb_id = series.get('tvdb_id')
-                sonarr_entry = get_sonarr_series_by_guid(f'tvdb:{tvdb_id}')
-                series['is_monitored'] = sonarr_entry is not None
-                series['source_url'] = f"https://thetvdb.com/series/{series.get('slug')}"
-                series['poster_url'] = series.get('image_url', '')
-                series['year'] = series.get('first_air_time', 'N/A')
-                series['type'] = 'show'
-                external_suggestions.append(series)
+
+            # Priorité n°2 : Si (et seulement si) on n'a rien trouvé dans nos archives, on cherche des suggestions externes
+            if not archived_results:
+                current_app.logger.info(f"No results in Plex or Archive for '{title_filter}'. Searching externally.")
+
+                tmdb_client = TheMovieDBClient()
+                tvdb_client = CustomTVDBClient()
+
+                # Recherche Films (TMDb)
+                tmdb_results = tmdb_client.search_movie(title_filter)
+                for movie in tmdb_results[:3]:
+                    tmdb_id = movie.get('id')
+                    radarr_entry = get_radarr_movie_by_guid(f'tmdb:{tmdb_id}')
+                    movie['is_monitored'] = radarr_entry is not None
+                    movie['source_url'] = f"https://www.themoviedb.org/movie/{movie.get('id')}"
+                    movie['poster_url'] = f"https://image.tmdb.org/t/p/w500{movie.get('poster_path')}" if movie.get('poster_path') else ''
+                    movie['year'] = movie.get('release_date', 'N/A').split('-')[0] if movie.get('release_date') else 'N/A'
+                    movie['type'] = 'movie'
+                    external_suggestions.append(movie)
+
+                # Recherche Séries (TVDb)
+                tvdb_results = tvdb_client.search_and_translate_series(title_filter)
+                for series in tvdb_results[:3]:
+                    tvdb_id = series.get('tvdb_id')
+                    sonarr_entry = get_sonarr_series_by_guid(f'tvdb:{tvdb_id}')
+                    series['is_monitored'] = sonarr_entry is not None
+                    series['source_url'] = f"https://thetvdb.com/series/{series.get('slug')}"
+                    series['poster_url'] = series.get('image_url', '')
+                    series['year'] = series.get('first_air_time', 'N/A')
+                    series['type'] = 'show'
+                    external_suggestions.append(series)
 
         # --- 5. Post-filtrage et Rendu ---
         items_to_render = []
@@ -952,7 +1206,8 @@ def get_media_items():
         return render_template(
             'plex_editor/_media_table.html',
             items=items_to_render,
-            external_suggestions=external_suggestions
+            external_suggestions=external_suggestions,
+            archived_results=archived_results
         )
 
     except Exception as e:
@@ -1735,38 +1990,50 @@ def archive_movie_route():
     data = request.get_json()
     rating_key = data.get('ratingKey')
     options = data.get('options', {})
-    # On récupère le userId envoyé par le frontend, comme pour les séries.
-    user_id = data.get('userId')
+    user_id = data.get('userId') # Gardé pour la validation, même si le client Plex n'en a pas besoin directement ici
 
     if not rating_key or not user_id:
         return jsonify({'status': 'error', 'message': 'Missing ratingKey or userId.'}), 400
 
-    # ÉTAPE 1: Obtenir les deux connexions nécessaires
-    admin_plex_server = get_plex_admin_server()
-    if not admin_plex_server:
-        return jsonify({'status': 'error', 'message': 'Could not get admin Plex connection.'}), 500
-
-    # On utilise la fonction helper qui gère l'admin et l'emprunt d'identité
-    user_plex_server = get_user_specific_plex_server_from_id(user_id)
-
-    if not admin_plex_server or not user_plex_server:
-        return jsonify({'status': 'error', 'message': 'Could not establish Plex connections.'}), 500
-
     try:
-        # ÉTAPE 2: Récupérer l'objet film dans les deux contextes
-        movie_admin_context = admin_plex_server.fetchItem(int(rating_key))
-        if not movie_admin_context or movie_admin_context.type != 'movie':
+        # Utiliser le nouveau client Plex centralisé, en passant l'ID de l'utilisateur
+        from app.utils.plex_client import PlexClient
+        plex_client = PlexClient(user_id=user_id)
+
+        # Récupérer l'objet film via le client (qui a maintenant le bon contexte utilisateur)
+        movie = plex_client.get_item_by_rating_key(int(rating_key))
+        if not movie or movie.type != 'movie':
             return jsonify({'status': 'error', 'message': 'Movie not found or not a movie item.'}), 404
 
-        movie_user_context = user_plex_server.fetchItem(int(rating_key))
-        if not movie_user_context.isWatched:
-            return jsonify({'status': 'error', 'message': 'Movie is not marked as watched for the current user.'}), 400
+        # La vérification du statut de visionnage se fait maintenant sur l'utilisateur sélectionné.
+        if not movie.isWatched:
+            return jsonify({'status': 'error', 'message': 'Movie is not marked as watched for the selected user.'}), 400
 
-        # --- Radarr Actions ---
+        # --- ÉTAPE DE SAUVEGARDE DANS LA BDD D'ARCHIVES (AMÉLIORÉE) ---
+        if options.get('save_history'):
+            try:
+                from app.utils.archive_manager import add_archived_media
+
+                tmdb_id = next((g.id.replace('tmdb://', '') for g in movie.guids if g.id.startswith('tmdb://')), None)
+
+                # Utiliser la nouvelle méthode pour obtenir l'historique détaillé
+                watch_history = plex_client.get_movie_watch_history(movie)
+
+                add_archived_media(
+                    media_type='movie',
+                    external_id=tmdb_id,
+                    user_id=user_id,
+                    rating_key=rating_key  # Ajout du rating_key pour l'archivage manuel
+                )
+                current_app.logger.info(f"'{movie.title}' ajouté à la base de données d'archives.")
+            except Exception as e:
+                current_app.logger.error(f"Erreur lors de la sauvegarde dans la BDD d'archives pour '{movie.title}': {e}", exc_info=True)
+
+        # --- Radarr Actions (AMÉLIORÉES) ---
         if options.get('unmonitor') or options.get('addTag'):
             radarr_movie = None
-            guids_to_check = [g.id for g in movie_admin_context.guids]
-            current_app.logger.info(f"Recherche du film '{movie_admin_context.title}' dans Radarr avec les GUIDs : {guids_to_check}")
+            guids_to_check = [g.id for g in movie.guids]
+            current_app.logger.info(f"Recherche du film '{movie.title}' dans Radarr avec les GUIDs : {guids_to_check}")
 
             for guid_str in guids_to_check:
                 radarr_movie = get_radarr_movie_by_guid(guid_str)
@@ -1777,19 +2044,23 @@ def archive_movie_route():
             if not radarr_movie:
                 return jsonify({'status': 'error', 'message': 'Movie not found in Radarr.'}), 404
 
-            if options.get('unmonitor'): radarr_movie['monitored'] = False
+            if options.get('unmonitor'):
+                radarr_movie['monitored'] = False
+
             if options.get('addTag'):
-                tag_label = current_app.config.get('RADARR_TAG_ON_ARCHIVE', 'vu')
-                tag_id = get_radarr_tag_id(tag_label)
-                if tag_id and tag_id not in radarr_movie.get('tags', []):
-                    radarr_movie['tags'].append(tag_id)
+                # Pour les films, le tag est simple.
+                watched_tags = ['vu']
+                for tag_label in watched_tags:
+                    tag_id = get_radarr_tag_id(tag_label)
+                    if tag_id and tag_id not in radarr_movie.get('tags', []):
+                        radarr_movie['tags'].append(tag_id)
 
             if not update_radarr_movie(radarr_movie):
                 return jsonify({'status': 'error', 'message': 'Failed to update movie in Radarr.'}), 500
 
         # --- File Deletion Action ---
         if options.get('deleteFiles'):
-            media_filepath = get_media_filepath(movie_admin_context)
+            media_filepath = get_media_filepath(movie)
             if media_filepath and os.path.exists(media_filepath):
                 try:
                     is_simulating = _is_dry_run_mode()
@@ -1798,7 +2069,7 @@ def archive_movie_route():
                     if not is_simulating:
                         os.remove(media_filepath)
 
-                    library_sections = admin_plex_server.library.sections()
+                    library_sections = plex_client.admin_plex.library.sections()
                     temp_roots = {os.path.normpath(loc) for lib in library_sections for loc in lib.locations}
                     temp_guards = {os.path.normpath(os.path.splitdrive(r)[0] + os.sep) if os.path.splitdrive(r)[0] else os.path.normpath(os.sep + r.split(os.sep)[1]) for r in temp_roots if r}
                     cleanup_parent_directory_recursively(
@@ -1807,19 +2078,19 @@ def archive_movie_route():
                         base_paths_guards=list(temp_guards)
                     )
                 except Exception as e_cleanup:
-                    current_app.logger.error(f"ARCHIVE: Erreur durant le nettoyage pour '{movie_admin_context.title}': {e_cleanup}", exc_info=True)
+                    current_app.logger.error(f"ARCHIVE: Erreur durant le nettoyage pour '{movie.title}': {e_cleanup}", exc_info=True)
 
         # --- Déclencher un scan Plex ---
         try:
-            library_name = movie_admin_context.librarySectionTitle
-            movie_library = admin_plex_server.library.section(library_name)
+            library_name = movie.librarySectionTitle
+            movie_library = plex_client.admin_plex.library.section(library_name)
             current_app.logger.info(f"Déclenchement d'un scan de la bibliothèque '{movie_library.title}'.")
             if not _is_dry_run_mode():
                 movie_library.update()
         except Exception as e_scan:
             current_app.logger.error(f"Échec du scan Plex: {e_scan}", exc_info=True)
 
-        return jsonify({'status': 'success', 'message': f"'{movie_admin_context.title}' successfully archived."})
+        return jsonify({'status': 'success', 'message': f"'{movie.title}' successfully archived."})
 
     except NotFound:
         return jsonify({'status': 'error', 'message': f"Movie with ratingKey {rating_key} not found."}), 404
@@ -1839,49 +2110,73 @@ def archive_show_route():
         return jsonify({'status': 'error', 'message': 'Missing ratingKey or userId.'}), 400
 
     try:
-        admin_plex_server = get_plex_admin_server()
-        if not admin_plex_server:
-            return jsonify({'status': 'error', 'message': 'Could not get admin Plex connection.'}), 500
+        # On instancie le client Plex AVEC le contexte de l'utilisateur
+        from app.utils.plex_client import PlexClient
+        plex_client = PlexClient(user_id=user_id)
 
-        main_account = admin_plex_server.myPlexAccount()
-        user_plex_server = None
+        # Récupérer l'objet série via le client (qui a maintenant le bon contexte utilisateur)
+        show = plex_client.get_item_by_rating_key(int(rating_key))
 
-        if str(main_account.id) == user_id:
-            user_plex_server = admin_plex_server
-        else:
-            user_to_impersonate = next((u for u in main_account.users() if str(u.id) == user_id), None)
-            if user_to_impersonate:
-                managed_user_token = user_to_impersonate.get_token(admin_plex_server.machineIdentifier)
-                user_plex_server = PlexServer(current_app.config.get('PLEX_URL'), managed_user_token)
-            else:
-                return jsonify({'status': 'error', 'message': f"User with ID {user_id} not found."}), 404
-
-        if not user_plex_server:
-            return jsonify({'status': 'error', 'message': 'Could not create user-specific Plex server instance.'}), 500
-
-        show = user_plex_server.fetchItem(int(rating_key))
         if not show or show.type != 'show':
             return jsonify({'status': 'error', 'message': 'Show not found or not a show item.'}), 404
 
+        # La vérification se fait maintenant sur le statut de visionnage de l'utilisateur sélectionné
         if show.viewedLeafCount != show.leafCount:
-            error_msg = f"Not all episodes are marked as watched (Viewed: {show.viewedLeafCount}, Total: {show.leafCount})."
+            error_msg = f"Not all episodes are marked as watched for the selected user (Viewed: {show.viewedLeafCount}, Total: {show.leafCount})."
             return jsonify({'status': 'error', 'message': error_msg}), 400
 
         sonarr_series = next((s for g in show.guids if (s := get_sonarr_series_by_guid(g.id))), None)
         if not sonarr_series:
             return jsonify({'status': 'error', 'message': 'Show not found in Sonarr.'}), 404
 
-        # --- Logique Sonarr (fonctionnait déjà) ---
+        watch_history = None
+        # On récupère l'historique si on doit archiver OU si on doit ajouter des tags basés sur l'historique
+        if options.get('save_history') or options.get('addTag'):
+            watch_history = plex_client.get_show_watch_history(show)
+
+        # --- ÉTAPE DE SAUVEGARDE DANS LA BDD D'ARCHIVES ---
+        if options.get('save_history'):
+            try:
+                from app.utils.archive_manager import add_archived_media
+                tvdb_id = next((g.id.replace('tvdb://', '') for g in show.guids if g.id.startswith('tvdb://')), None)
+                add_archived_media(
+                    media_type='show',
+                    external_id=tvdb_id,
+                    user_id=user_id,
+                    rating_key=rating_key
+                )
+                current_app.logger.info(f"'{show.title}' ajouté à la base de données d'archives.")
+            except Exception as e:
+                current_app.logger.error(f"Erreur lors de la sauvegarde dans la BDD d'archives pour '{show.title}': {e}", exc_info=True)
+
+
+        # --- Logique Sonarr ---
         if options.get('unmonitor') or options.get('addTag'):
             full_series_data = get_sonarr_series_by_id(sonarr_series['id'])
             if not full_series_data: return jsonify({'status': 'error', 'message': 'Could not fetch full series details from Sonarr.'}), 500
-            if options.get('unmonitor'): full_series_data['monitored'] = False
+
+            if options.get('unmonitor'):
+                full_series_data['monitored'] = False
+
             if options.get('addTag'):
-                tags_to_add = ['vu', 'vu-complet']
-                for tag_label in tags_to_add:
+                # On est maintenant certain que watch_history a été chargé si cette option est active.
+                watched_tags = ['vu'] # Tag de base
+                if watch_history and watch_history.get('is_fully_watched'):
+                    watched_tags.append('vu-complet')
+                if watch_history:
+                    for season in watch_history.get('seasons', []):
+                        # La nouvelle structure n'a plus 'is_watched', on le déduit
+                        is_season_watched = (season.get('watched_count', 0) > 0 and
+                                             season.get('watched_count') == season.get('total_count'))
+                        if is_season_watched:
+                            watched_tags.append(f"Saison {season.get('season_number')}")
+
+                # Ajouter les tags à Sonarr
+                for tag_label in set(watched_tags):
                     tag_id = get_sonarr_tag_id(tag_label)
                     if tag_id and tag_id not in full_series_data.get('tags', []):
                         full_series_data['tags'].append(tag_id)
+
             if not update_sonarr_series(full_series_data):
                 return jsonify({'status': 'error', 'message': 'Failed to update series in Sonarr.'}), 500
 
@@ -1905,12 +2200,12 @@ def archive_show_route():
                         current_app.logger.error(f"Failed to delete file {media_filepath}: {e_file}")
 
             if last_deleted_filepath:
-                # On a déjà 'admin_plex_server', on peut l'utiliser pour le nettoyage
-                library_sections = admin_plex_server.library.sections()
+                # Utiliser l'instance admin du plex_client pour le nettoyage
+                library_sections = plex_client.admin_plex.library.sections()
                 temp_roots = {os.path.normpath(loc) for lib in library_sections for loc in lib.locations}
                 temp_guards = {os.path.normpath(os.path.splitdrive(r)[0] + os.sep) if os.path.splitdrive(r)[0] else os.path.normpath(os.sep + r.split(os.sep)[1]) for r in temp_roots if r}
                 cleanup_parent_directory_recursively(last_deleted_filepath, list(temp_roots), list(temp_guards))
-            
+
             flash(f"{deleted_count} fichier(s) supprimés (ou leur suppression simulée).", "success")
 
         return jsonify({'status': 'success', 'message': f"Série '{show.title}' archivée avec succès."})
