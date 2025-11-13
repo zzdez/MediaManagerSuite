@@ -62,7 +62,7 @@ def media_search():
                     'original_title': item.get('original_title'),
                     'year': item.get('release_date', 'N/A')[:4],
                     'overview': item.get('overview'),
-                    'poster': item.get('poster_path'),
+                    'poster': item.get('poster_url'),
                     'trailer_status': trailer_status,
                     'details': media_details,
                     'archived_info': archived_info
