@@ -1,0 +1,30 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <h1 class="mt-4">Liste des Catégories Prowlarr</h1>
+    <p>Utilisez les ID de cette liste pour configurer la variable <code>DASHBOARD_PROWLARR_CATEGORIES</code> dans votre fichier <code>.env</code>.</p>
+    <a href="{{ url_for('dashboard_bp.dashboard') }}" class="btn btn-secondary mb-4"><i class="bi bi-arrow-left"></i> Retour au Tableau de Bord</a>
+
+    <table class="table table-striped table-bordered">
+        <thead class="thead-light">
+            <tr>
+                <th scope="col">Nom de la Catégorie</th>
+                <th scope="col">ID</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for category in categories %}
+            <tr>
+                <td>{{ category.name }}</td>
+                <td><code>{{ category.id }}</code></td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="2" class="text-center">Aucune catégorie trouvée ou erreur lors de la communication avec Prowlarr.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
