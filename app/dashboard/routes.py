@@ -112,20 +112,20 @@ def refresh_torrents():
             # Date filtering
             if torrent['publishDate'] and last_refresh_utc:
                 if torrent['publishDate'] <= last_refresh_utc:
-                    current_app.logger.debug(f"Filtering out torrent by date: {torrent['title']} (Published: {torrent['publishDate']})")
+                    current_app.logger.info(f"Filtering out torrent by date: {torrent['title']} (Published: {torrent['publishDate']})")
                     continue
 
             # Keyword filtering
             keyword_match = next((keyword for keyword in exclude_keywords if re.search(keyword, torrent['title'], re.IGNORECASE)), None)
             if keyword_match:
-                current_app.logger.debug(f"Filtering out torrent by keyword '{keyword_match}': {torrent['title']}")
+                current_app.logger.info(f"Filtering out torrent by keyword '{keyword_match}': {torrent['title']}")
                 continue
 
             # Year filtering for movies
             if torrent['type'] == 'movie':
                 year_match = re.search(r'\b(19\d{2}|20\d{2})\b', torrent['title'])
                 if year_match and int(year_match.group(1)) < min_movie_year:
-                    current_app.logger.debug(f"Filtering out torrent by year < {min_movie_year}: {torrent['title']}")
+                    current_app.logger.info(f"Filtering out torrent by year < {min_movie_year}: {torrent['title']}")
                     continue
 
             # Step 3: Enrich the normalized data
