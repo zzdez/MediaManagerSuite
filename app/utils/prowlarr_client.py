@@ -88,4 +88,39 @@ def search_prowlarr(query, categories=None, lang=None):
 
     # La gestion de la langue est retirée ici, car elle sera gérée par le filtrage guessit.
 
-    return _make_prowlarr_request('search', params)
+    response_data = _make_prowlarr_request('search', params)
+
+    # L'API de recherche retourne une liste d'objets torrents directement.
+    # Il est bon de s'assurer que nous retournons bien une liste.
+    if isinstance(response_data, list):
+        return response_data
+    else:
+        current_app.logger.warning(f"Prowlarr search for query '{query}' did not return a list.")
+        return []
+
+def get_latest_from_prowlarr(categories, limit=200):
+    """
+    Fetches the latest releases from Prowlarr for given categories.
+    Prowlarr's default sort is by publish date descending, so no query
+    and a limit should give us the most recent items.
+    """
+    params = {
+        'type': 'search',
+        'limit': limit,
+        'offset': 0
+    }
+
+    if categories and isinstance(categories, list) and len(categories) > 0:
+        params['categories'] = categories
+        current_app.logger.info(f"Prowlarr latest fetch: Using categories {params['categories']} with limit {limit}")
+
+    response_data = _make_prowlarr_request('search', params)
+
+    # Contrairement à une recherche par query, une recherche générale peut retourner
+    # un objet avec des détails supplémentaires. On s'assure de retourner la liste.
+    # Dans ce cas, l'API retourne une liste directement, donc on garde la cohérence.
+    if isinstance(response_data, list):
+        return response_data
+    else:
+        current_app.logger.warning("Prowlarr latest fetch did not return a list.")
+        return []
