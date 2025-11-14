@@ -141,6 +141,10 @@ def create_app(config_class=Config):
     app.register_blueprint(debug_tools_bp, url_prefix='/debug')
     logger.info("Blueprint 'debug_tools' enregistré avec succès.")
 
+    from app.dashboard import dashboard_bp
+    app.register_blueprint(dashboard_bp)
+    logger.info("Blueprint 'dashboard' enregistré avec succès.")
+
     # Route pour la page d'accueil/portail
     @app.route('/')
     @login_required

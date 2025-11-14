@@ -882,6 +882,21 @@ $(document).ready(function() {
         modalEl.find('.modal-title').text(`Mapper : ${releaseDetails.title}`);
         new bootstrap.Modal(modalEl[0]).show();
 
+        // --- NOUVELLE LOGIQUE UNIVERSELLE DE CONTEXTE ---
+        // On essaie de construire le contexte à partir du bouton lui-même,
+        // ce qui le rend autonome et utilisable depuis le tableau de bord.
+        if (!window.currentMediaContext && (button.data('tmdb-id') || button.data('tvdb-id'))) {
+            const mediaType = button.data('media-type');
+            window.currentMediaContext = {
+                id: mediaType === 'tv' ? button.data('tvdb-id') : button.data('tmdb-id'),
+                media_type: mediaType,
+                title: button.data('title'),
+                year: button.data('year')
+            };
+            console.log("Contexte créé à partir du bouton:", window.currentMediaContext);
+        }
+        // --- FIN DE LA NOUVELLE LOGIQUE ---
+
         if (window.currentMediaContext) {
             // NOUVEAU FLUX PRÉ-MAPPING : Utilise le contexte pour rechercher par ID mais affiche TOUJOURS la modale pour confirmation.
             const context = window.currentMediaContext;
