@@ -12,7 +12,7 @@ from app.utils.tmdb_client import TheMovieDBClient
 # Import Arr client for checking existing media
 from app.utils.arr_client import get_sonarr_series_by_guid, get_radarr_movie_by_guid
 # Import mapping manager to check pending torrents
-from app.utils.mapping_manager import get_all_torrents_in_map
+from app.utils.mapping_manager import get_all_torrent_hashes
 
 # Define paths for our state files
 DASHBOARD_STATE_FILE = os.path.join('instance', 'dashboard_state.json')
@@ -93,7 +93,7 @@ def refresh_torrents():
 
         # --- Prepare for filtering and enrichment ---
         ignored_hashes = get_ignored_hashes()
-        pending_hashes = {torrent['torrent_hash'] for torrent in get_all_torrents_in_map()}
+        pending_hashes = get_all_torrent_hashes()
         exclude_keywords = current_app.config.get('DASHBOARD_EXCLUDE_KEYWORDS', [])
         min_movie_year = current_app.config.get('DASHBOARD_MIN_MOVIE_YEAR', 1900)
         tmdb_client = TheMovieDBClient()
