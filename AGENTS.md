@@ -138,3 +138,31 @@ La modale d'ajout de torrent (`addTorrentModal`) présente des défis uniques en
   4.  **Adapter la Logique** : En se basant sur l'analyse de ces logs, nous pourrons enfin écrire une condition fiable pour identifier un item comme "fantôme" et savoir quel attribut (`guid`, `grandparentGuid`, etc.) contient l'identifiant externe pertinent.
   5.  **Finaliser le Test** : Une fois la logique de détection corrigée, l'utilisateur pourra valider que le script archive bien un film et une série fantômes.
   6.  **Développer la Fonctionnalité Complète** : Procéder ensuite au développement de la synchronisation complète (scan de tout l'historique, bouton dans l'interface, etc.) et à l'enrichissement des données de visionnage.
+
+### Système de Sauvegarde Automatique (Novembre 2025)
+
+- **Objectif** : Mettre en place un système de sauvegarde robuste et configurable pour tous les fichiers de configuration `.json` situés dans le répertoire `instance/`.
+
+- **Composants clés** :
+  - **`app/utils/backup_manager.py`** : Un nouveau module centralisé qui contient toute la logique de sauvegarde :
+    - `create_backup()`: Crée une archive `.zip` horodatée de tous les fichiers `.json` du répertoire `instance/` et la stocke dans un nouveau répertoire `backups/` à la racine du projet.
+    - `manage_retention()`: Supprime les sauvegardes les plus anciennes pour ne conserver que le nombre de copies défini dans la configuration.
+    - `get_backups()`, `restore_backup()`, `delete_backup()`: Fonctions pour lister, restaurer et supprimer des sauvegardes individuelles.
+  - **Planificateur de tâches (`APScheduler`)** : Intégré dans `app/__init__.py`, un planificateur de tâches exécute la fonction de sauvegarde automatiquement à des intervalles réguliers (horaire, journalier, hebdomadaire) en fonction de la configuration.
+
+- **Intégration UI** :
+  - **Page de Configuration (`/configuration/`)** : Une nouvelle section "Sauvegardes Automatiques" a été ajoutée à la page de configuration. Elle permet à l'utilisateur de :
+    - **Configurer le planning** (`BACKUP_SCHEDULE`) via un menu déroulant (Désactivée, Toutes les heures, Tous les jours, Toutes les semaines).
+    - **Définir la rétention** (`BACKUP_RETENTION`) en spécifiant le nombre de sauvegardes à conserver.
+  - **Gestion des Sauvegardes** : Une section "Gestion des Sauvegardes" a également été ajoutée. Elle affiche un tableau de toutes les sauvegardes existantes et permet de :
+    - Lancer une sauvegarde manuelle à tout moment.
+    - Restaurer une sauvegarde spécifique, ce qui écrase les fichiers de configuration actuels.
+    - Supprimer une sauvegarde obsolète.
+
+- **Configuration via `.env`** :
+  - La fonctionnalité est contrôlée par deux nouvelles variables dans le fichier `.env` :
+    - `BACKUP_SCHEDULE`: Définit la fréquence des sauvegardes (`disabled`, `hourly`, `daily`, `weekly`).
+    - `BACKUP_RETENTION`: Un entier qui détermine le nombre de sauvegardes à conserver.
+  - **Note importante** : Les modifications apportées au `BACKUP_SCHEDULE` via l'interface utilisateur ne prennent effet qu'après un redémarrage de l'application, car le planificateur de tâches est initialisé au démarrage.
+
+- **État Actuel** : La fonctionnalité est entièrement implémentée, testée et fonctionnelle.

@@ -80,7 +80,7 @@ class TheMovieDBClient:
                 'title': movie.title,
                 'original_title': movie.original_title,
                 'overview': movie.overview,
-                'poster_path': movie.poster_path, # Garder le chemin relatif pour plus de flexibilité
+                'poster': f"https://image.tmdb.org/t/p/w500{movie.poster_path}" if movie.poster_path else "",
                 'release_date': release_date,
                 'year': year,
                 'status': movie.status,
@@ -129,7 +129,7 @@ class TheMovieDBClient:
                     'poster_path': str(getattr(res, 'poster_path', '')),
                     'release_date': release_date,
                     'year': release_date.split('-')[0] if release_date else 'N/A',
-                    'poster_url': f"https://image.tmdb.org/t/p/w92{getattr(res, 'poster_path', '')}" if getattr(res, 'poster_path', None) else ''
+                    'poster_url': f"https://image.tmdb.org/t/p/w500{getattr(res, 'poster_path', '')}" if getattr(res, 'poster_path', None) else ''
                 })
             return formatted_results
 
