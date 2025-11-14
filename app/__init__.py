@@ -141,14 +141,16 @@ def create_app(config_class=Config):
     app.register_blueprint(debug_tools_bp, url_prefix='/debug')
     logger.info("Blueprint 'debug_tools' enregistré avec succès.")
 
+    from app.dashboard import dashboard_bp
+    app.register_blueprint(dashboard_bp)
+    logger.info("Blueprint 'dashboard' enregistré avec succès.")
+
     # Route pour la page d'accueil/portail
     @app.route('/')
     @login_required
     def home():
-        current_year = datetime.datetime.now(datetime.timezone.utc).year
-        return render_template('home_portal.html',
-                               title="Portail Media Manager Suite",
-                               current_year=current_year)
+        # Redirige l'utilisateur vers le nouveau tableau de bord
+        return redirect(url_for('dashboard_bp.dashboard'))
 
     @app.route('/login', methods=['GET', 'POST'])
     def login():

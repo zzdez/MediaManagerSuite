@@ -12,12 +12,12 @@
 </head>
 <body>
     <div class="sidebar">
-        <a href="{{ url_for('home') }}" class="sidebar-header-link">
+        <a href="{{ url_for('dashboard_bp.dashboard') }}" class="sidebar-header-link">
             <h3 class="sidebar-header">MMS</h3>
         </a>
         <ul class="nav flex-column">
             <li class="nav-item">
-                <a class="nav-link" href="{{ url_for('home') }}"><i class="bi bi-house-door-fill"></i> Portail</a>
+                <a class="nav-link" href="{{ url_for('dashboard_bp.dashboard') }}"><i class="bi bi-grid-1x2-fill"></i> Tableau de Bord</a>
             </li>
             <li class="nav-item">
                 <a class="nav-link" href="{{ url_for('search_ui.search_page') }}"><i class="bi bi-search"></i> Recherche</a>
@@ -84,6 +84,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="{{ url_for('static', filename='js/global_trailer_search.js') }}?v=1.2"></script>
+    <script src="{{ url_for('static', filename='js/search_logic.js') }}"></script>
     {% block scripts %}{% endblock %} <!-- Pour les scripts JS spécifiques à une page -->
 {% block modals %}
 <!-- Trailer Player Modal -->
@@ -223,6 +224,54 @@
         </div>
     </div>
 </div>
+
+<!-- ================================================================== -->
+<!-- ### MODALE POUR LE MAPPING SONARR/RADARR (Globale) ### -->
+<!-- ================================================================== -->
+<div class="modal fade" id="sonarrRadarrSearchModal" tabindex="-1" aria-labelledby="sonarrRadarrModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="sonarrRadarrModalLabel">Initialisation...</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- ### Zone pour les options d'ajout d'un nouveau média (cachée par défaut) ### -->
+                <div id="add-item-options-container" class="d-none">
+                    <!-- Ce conteneur recevra la carte de détails enrichis (poster, synopsis...) -->
+                    <div id="new-media-details-container" class="mb-3"></div>
+
+                    <h5 class="mb-3">Options d'ajout</h5>
+
+                    <!-- Le contenu (menus déroulants, etc.) sera injecté ici par JS -->
+                    <div class="mb-3">
+                        <label for="root-folder-select" class="form-label">Dossier Racine</label>
+                        <select id="root-folder-select" class="form-select"></select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="quality-profile-select" class="form-label">Profil de Qualité</label>
+                        <select id="quality-profile-select" class="form-select"></select>
+                    </div>
+                    <div id="add-item-error-container" class="text-danger small mt-2"></div>
+                </div>
+
+                <!-- Ce contenu sera remplacé dynamiquement par search_logic.js lors du lookup initial -->
+                <div id="initial-lookup-content">
+                    <div class="text-center p-4">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary d-none" id="confirm-add-and-map-btn">Ajouter, Télécharger & Mapper</button>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- ### FIN DE LA MODALE ### -->
 {% endblock %}
 <script>
 document.addEventListener('DOMContentLoaded', function () {
