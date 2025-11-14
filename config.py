@@ -104,6 +104,13 @@ class Config:
     MMS_API_PROCESS_STAGING_URL = os.getenv('MMS_API_PROCESS_STAGING_URL', f"http://127.0.0.1:{os.getenv('FLASK_RUN_PORT', '5001').split('#')[0].strip()}/seedbox/process-staging-item")
     SFTP_SCANNER_GUARDFRAIL_ENABLED = os.getenv('SFTP_SCANNER_GUARDFRAIL_ENABLED', 'True').split('#')[0].strip().lower() in ('true', '1', 't')
 
+    # --- DASHBOARD ---
+    _dashboard_exclude_keywords_str = os.getenv('DASHBOARD_EXCLUDE_KEYWORDS', 'VFQ,VOSTFR,VOST')
+    DASHBOARD_EXCLUDE_KEYWORDS = [keyword.strip().lower() for keyword in _dashboard_exclude_keywords_str.split(',') if keyword.strip()]
+    DASHBOARD_MIN_MOVIE_YEAR = int(os.getenv('DASHBOARD_MIN_MOVIE_YEAR', '2020').split('#')[0].strip())
+    _dashboard_prowlarr_categories_str = os.getenv('DASHBOARD_PROWLARR_CATEGORIES', '2000,5000') # Movie, TV
+    DASHBOARD_PROWLARR_CATEGORIES = [int(cat.strip()) for cat in _dashboard_prowlarr_categories_str.split(',') if cat.strip()]
+
 
     # --- Anciennes variables (à supprimer/migrer après vérification que plus rien ne les utilise) ---
     PENDING_TORRENTS_MAP_FILE = os.getenv(
