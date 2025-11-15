@@ -1,0 +1,172 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <h1 class="mt-4">Tableau de Bord des Nouveautés</h1>
+    <p>Cliquez sur le bouton pour rechercher les nouvelles publications depuis votre dernière visite.</p>
+    <button id="refresh-btn" class="btn btn-primary mb-4">
+        <i class="fas fa-sync-alt"></i> Rafraîchir les nouveautés
+    </button>
+
+    <div id="loading-spinner" style="display: none;" class="text-center">
+        <div class="spinner-border text-primary" role="status">
+            <span class="sr-only">Chargement...</span>
+        </div>
+        <p>Recherche en cours...</p>
+    </div>
+
+    <div id="torrents-container">
+        <!-- Les résultats seront injectés ici -->
+    </div>
+</div>
+
+<!-- La modale de mapping est définie dans layout.html, nous n'avons pas besoin de la redéfinir ici -->
+
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+$(document).ready(function() {
+
+    // --- Function to render torrents ---
+    function renderTorrents(torrents) {
+        const container = $('#torrents-container');
+        container.empty();
+
+        if (torrents.length === 0) {
+            container.html('<div class="alert alert-info">Aucune nouvelle publication trouvée.</div>');
+            return;
+        }
+
+        torrents.forEach(torrent => {
+            const sizeInGB = (torrent.size / (1024 * 1024 * 1024)).toFixed(2);
+            const managedBadge = torrent.is_managed ? '<span class="badge badge-success ml-2">Déjà géré</span>' : '';
+            const yearMatch = torrent.title.match(/\b(19[89]\d|20\d{2})\b/);
+            const year = yearMatch ? yearMatch[1] : null;
+
+            const torrentCard = `
+                <div class="card mb-3" id="torrent-card-${torrent.hash}">
+                    <div class="card-body">
+                        <h5 class="card-title">${torrent.title} ${managedBadge}</h5>
+                        <h6 class="card-subtitle mb-2 text-muted">
+                            <i class="fas fa-database"></i> ${sizeInGB} GB |
+                            <i class="fas fa-arrow-up text-success"></i> ${torrent.seeders} |
+                            <i class="fas fa-arrow-down text-danger"></i> ${torrent.leechers}
+                        </h6>
+                        <p class="card-text small">Catégorie: ${torrent.category}</p>
+                        <button class="btn btn-info btn-sm" data-action="details" data-overview="${torrent.overview || ''}" data-poster="${torrent.posterUrl || ''}">Détails</button>
+                        <button class="btn btn-primary btn-sm download-and-map-btn"
+                                data-hash="${torrent.hash}"
+                                data-guid="${torrent.guid}"
+                                data-title="${torrent.title}"
+                                data-download-link="${torrent.downloadUrl}"
+                                data-indexer-id="${torrent.indexerId}"
+                                data-media-type="${torrent.type}"
+                                data-tmdb-id="${torrent.tmdbId || ''}"
+                                data-tvdb-id="${torrent.tvdbId || ''}"
+                                data-year="${year || ''}"
+                                ${torrent.is_managed ? 'disabled' : ''}>
+                            <i class="fas fa-download"></i> & Mapper
+                        </button>
+                        <button class="btn btn-secondary btn-sm" data-action="ignore" data-hash="${torrent.hash}">
+                            <i class="fas fa-eye-slash"></i> Ignorer
+                        </button>
+                        <div class="details-section mt-3" style="display: none;">
+                            <!-- Le contenu des détails sera injecté ici -->
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.append(torrentCard);
+        });
+    }
+
+    // --- Event handler for the refresh button ---
+    $('#refresh-btn').on('click', function() {
+        const button = $(this);
+        const spinner = $('#loading-spinner');
+        const container = $('#torrents-container');
+
+        button.prop('disabled', true);
+        spinner.show();
+        container.empty();
+
+        window.currentMediaContext = null;
+
+        $.ajax({
+            url: "{{ url_for('dashboard_bp.refresh_torrents') }}",
+            type: 'GET',
+            success: function(response) {
+                if (response.status === 'success') {
+                    renderTorrents(response.torrents);
+                } else {
+                    container.html(`<div class="alert alert-danger">Erreur: ${response.message || 'Une erreur est survenue.'}</div>`);
+                }
+            },
+            error: function() {
+                container.html('<div class="alert alert-danger">Erreur de communication avec le serveur.</div>');
+            },
+            complete: function() {
+                button.prop('disabled', false);
+                spinner.hide();
+            }
+        });
+    });
+
+    // --- Event delegation for action buttons ---
+    $('#torrents-container').on('click', 'button[data-action="ignore"]', function() {
+        const torrentId = $(this).data('hash'); // 'hash' data attribute holds the unique ID (hash or guid)
+        const cardElement = $(this).closest('.card');
+
+        $.ajax({
+            url: "/dashboard/api/ignore",
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ id: torrentId }),
+            success: function(response) {
+                if (response.status === 'success') {
+                    cardElement.fadeOut(500, function() { $(this).remove(); });
+                } else {
+                    alert('Erreur lors de l_ignorance du torrent: ' + response.message);
+                }
+            },
+            error: function() {
+                alert('Erreur de communication avec le serveur.');
+            }
+        });
+    });
+
+    $('#torrents-container').on('click', 'button[data-action="details"]', function() {
+        const button = $(this);
+        const detailsSection = button.siblings('.details-section');
+        const overview = button.data('overview');
+        const posterUrl = button.data('poster');
+
+        if (detailsSection.is(':visible')) {
+            detailsSection.slideUp();
+        } else {
+            if (!overview && !posterUrl) {
+                detailsSection.html('<p class="text-muted">Aucun détail supplémentaire disponible.</p>');
+            } else {
+                const detailsHtml = `
+                    <div class="row">
+                        ${posterUrl ? `
+                        <div class="col-md-2">
+                            <img src="${posterUrl}" class="img-fluid rounded">
+                        </div>
+                        ` : ''}
+                        <div class="col-md-10">
+                            <p>${overview || 'Pas de synopsis disponible.'}</p>
+                        </div>
+                    </div>
+                `;
+                detailsSection.html(detailsHtml);
+            }
+            detailsSection.slideDown();
+        }
+    });
+
+});
+</script>
+{% endblock %}
