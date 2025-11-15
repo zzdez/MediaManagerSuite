@@ -4,6 +4,7 @@ import json
 import os
 from datetime import datetime, timezone
 import re
+from thefuzz import fuzz
 
 # Import Prowlarr client
 from app.utils.prowlarr_client import get_latest_from_prowlarr
@@ -62,6 +63,40 @@ def add_ignored_hash(torrent_hash):
     current_app.logger.info(f"Added hash {torrent_hash} to ignored list.")
 
 # --- Routes ---
+
+def _parse_title_and_year(torrent_title):
+    """
+    Parses a torrent title to extract a clean title and a year.
+    Returns a tuple (title, year).
+    """
+    # Remove dots, underscores, and excessive spacing
+    clean_title = re.sub(r'[\._]', ' ', torrent_title)
+
+    # Try to extract the year (e.g., 2023). This is a strong indicator for splitting.
+    year_match = re.search(r'\b(19[5-9]\d|20\d{2})\b', clean_title)
+    year = None
+    if year_match:
+        year = int(year_match.group(1))
+        # Take everything before the year as the potential title
+        clean_title = clean_title[:year_match.start()].strip()
+
+    # Further clean up by removing common release tags (e.g., 1080p, MULTi, etc.)
+    # This list can be expanded.
+    tags_to_remove = [
+        '1080p', '720p', '2160p', '4K', 'UHD', 'BluRay', 'WEB-DL', 'WEBRip', 'HDTV', 'x264', 'x265', 'H264', 'H265',
+        'AAC', 'AC3', 'DTS', '5.1', '7.1', 'Atmos',
+        'MULTi', 'VOSTFR', 'VFF', 'TRUEFRENCH', 'FRENCH', 'PROPER', 'REPACK',
+        # Common release groups or patterns
+        r'-\w+$'
+    ]
+    for tag in tags_to_remove:
+        clean_title = re.sub(r'\b' + re.escape(tag) + r'\b', '', clean_title, flags=re.IGNORECASE)
+
+    # Final cleanup of any resulting double spaces
+    clean_title = re.sub(r'\s+', ' ', clean_title).strip()
+
+    return clean_title, year
+
 
 @dashboard_bp.route('/dashboard')
 def dashboard():
@@ -128,19 +163,66 @@ def refresh_torrents():
                     continue
 
             # Step 3: Enrich the normalized data
+            # If we don't have a TMDB ID, try to find one
+            if not torrent['tmdbId']:
+                clean_title, year = _parse_title_and_year(torrent['title'])
+
+                if clean_title:
+                    current_app.logger.debug(f"Attempting to find TMDB ID for title: '{clean_title}' ({year})")
+
+                    search_results = []
+                    if torrent['type'] == 'tv':
+                        search_results = tmdb_client.search_series(clean_title)
+                    elif torrent['type'] == 'movie':
+                        search_results = tmdb_client.search_movie(clean_title)
+
+                    if search_results:
+                        best_match = None
+                        highest_score = 0
+
+                        # Filter by year first if available
+                        if year:
+                            year_filtered_results = [r for r in search_results if r.get('year') and int(r['year']) == year]
+                            # If we have matches for the exact year, use them. Otherwise, use the full list.
+                            if year_filtered_results:
+                                search_results = year_filtered_results
+
+                        # Find the best title match in the (potentially filtered) list
+                        for result in search_results:
+                            result_title = result.get('title') or result.get('name')
+                            score = fuzz.ratio(clean_title.lower(), result_title.lower())
+                            if score > highest_score:
+                                highest_score = score
+                                best_match = result
+
+                        # If we found a reasonably good match, use its ID
+                        if best_match and highest_score > 75: # Confidence threshold
+                            torrent['tmdbId'] = best_match['id']
+                            # Correction: Get the title from the best_match to log the correct info
+                            best_match_title = best_match.get('title') or best_match.get('name')
+                            current_app.logger.info(f"Found a match for '{clean_title}': '{best_match_title}' (ID: {best_match['id']}) with score {highest_score}")
+
+            # Now, enrich with details if we have an ID (either original or found)
             if torrent['tmdbId']:
                 current_app.logger.debug(f"Enriching torrent with TMDB ID {torrent['tmdbId']}: {torrent['title']}")
+                details = None
                 if torrent['type'] == 'tv':
                     details = tmdb_client.get_series_details(torrent['tmdbId'])
                     if details:
                         torrent['tvdbId'] = details.get('tvdb_id')
-                        torrent['overview'] = details.get('overview')
-                        torrent['posterUrl'] = details.get('poster_url')
+                        # Use the name from TMDB as it's cleaner
+                        torrent['name'] = details.get('name')
                 elif torrent['type'] == 'movie':
                     details = tmdb_client.get_movie_details(torrent['tmdbId'])
                     if details:
-                        torrent['overview'] = details.get('overview')
-                        torrent['posterUrl'] = details.get('poster_url')
+                        # Use the title from TMDB
+                        torrent['name'] = details.get('title')
+
+                if details:
+                    torrent['overview'] = details.get('overview')
+                    # Corrected key for poster URL
+                    torrent['posterUrl'] = details.get('poster') or details.get('poster_url')
+
 
             # Step 4: Check if media is already managed
             torrent['is_managed'] = is_media_managed(torrent, pending_hashes)
@@ -179,6 +261,7 @@ def _normalize_torrent(raw_torrent):
     return {
         'hash': str(unique_id), # Ensure the ID is always a string for consistency
         'title': raw_torrent.get('title'),
+        'name': raw_torrent.get('title'), # Start with the original title
         'size': raw_torrent.get('size'),
         'seeders': raw_torrent.get('seeders'),
         'leechers': raw_torrent.get('leechers'),
