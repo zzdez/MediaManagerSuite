@@ -55,7 +55,7 @@ $(document).ready(function() {
                             <i class="fas fa-arrow-down text-danger"></i> ${torrent.leechers}
                         </h6>
                         <p class="card-text small">Catégorie: ${torrent.category}</p>
-                        <button class="btn btn-info btn-sm" data-action="details" data-overview="${torrent.overview || ''}" data-poster="${torrent.poster_url || ''}">Détails</button>
+                        <a href="${torrent.link}" target="_blank" rel="noopener noreferrer" class="btn btn-info btn-sm">Détails</a>
                         <button class="btn btn-primary btn-sm download-and-map-btn"
                                 data-hash="${torrent.hash}"
                                 data-guid="${torrent.guid}"
@@ -135,36 +135,6 @@ $(document).ready(function() {
                 alert('Erreur de communication avec le serveur.');
             }
         });
-    });
-
-    $('#torrents-container').on('click', 'button[data-action="details"]', function() {
-        const button = $(this);
-        const detailsSection = button.siblings('.details-section');
-        const overview = button.data('overview');
-        const posterUrl = button.data('poster');
-
-        if (detailsSection.is(':visible')) {
-            detailsSection.slideUp();
-        } else {
-            if (!overview && !posterUrl) {
-                detailsSection.html('<p class="text-muted">Aucun détail supplémentaire disponible.</p>');
-            } else {
-                const detailsHtml = `
-                    <div class="row">
-                        ${posterUrl ? `
-                        <div class="col-md-2">
-                            <img src="${posterUrl}" class="img-fluid rounded">
-                        </div>
-                        ` : ''}
-                        <div class="col-md-10">
-                            <p>${overview || 'Pas de synopsis disponible.'}</p>
-                        </div>
-                    </div>
-                `;
-                detailsSection.html(detailsHtml);
-            }
-            detailsSection.slideDown();
-        }
     });
 
 });

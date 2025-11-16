@@ -96,54 +96,42 @@ def refresh_torrents():
         pending_hashes = get_all_torrent_hashes()
         exclude_keywords = current_app.config.get('DASHBOARD_EXCLUDE_KEYWORDS', [])
         min_movie_year = current_app.config.get('DASHBOARD_MIN_MOVIE_YEAR', 1900)
-        tmdb_client = TheMovieDBClient()
+
+        tmdb_client = None
+        tmdb_api_key = current_app.config.get('TMDB_API_KEY')
+        if tmdb_api_key and tmdb_api_key != 'YOUR_TMDB_API_KEY':
+            try:
+                tmdb_client = TheMovieDBClient()
+            except Exception as e:
+                current_app.logger.error(f"Failed to initialize TMDB client: {e}")
 
         final_torrents = []
 
-        # --- Process each torrent ---
+        # --- Process each torrent in a single loop ---
         for raw_torrent in raw_torrents:
-            # Step 1: Normalize the raw data. If it's invalid, skip it.
             torrent = _normalize_torrent(raw_torrent)
-            if not torrent:
-                continue
+            if not torrent: continue
 
-            # Step 2: Filter based on normalized data
-            if torrent['hash'] in ignored_hashes:
-                continue
+            if torrent['hash'] in ignored_hashes: continue
+            if torrent['publishDate'] and last_refresh_utc and torrent['publishDate'] <= last_refresh_utc: continue
+            if next((k for k in exclude_keywords if re.search(k, torrent['title'], re.IGNORECASE)), None): continue
 
-            # Date filtering
-            if torrent['publishDate'] and last_refresh_utc:
-                if torrent['publishDate'] <= last_refresh_utc:
-                    continue
-
-            # Keyword filtering
-            keyword_match = next((keyword for keyword in exclude_keywords if re.search(keyword, torrent['title'], re.IGNORECASE)), None)
-            if keyword_match:
-                continue
-
-            # Year filtering for movies
             if torrent['type'] == 'movie':
                 year_match = re.search(r'\b(19\d{2}|20\d{2})\b', torrent['title'])
-                if year_match and int(year_match.group(1)) < min_movie_year:
-                    continue
+                if year_match and int(year_match.group(1)) < min_movie_year: continue
 
-            # Step 3: Enrich the normalized data
-            if torrent['tmdbId']:
+            # --- Conditional Enrichment ---
+            if tmdb_client and torrent['tmdbId']:
                 if torrent['type'] == 'tv':
                     details = tmdb_client.get_series_details(torrent['tmdbId'])
                     if details:
                         torrent['tvdbId'] = details.get('tvdb_id')
+                        # We keep these as they come from the same necessary API call
                         torrent['overview'] = details.get('overview')
                         torrent['poster_url'] = details.get('poster_url')
-                elif torrent['type'] == 'movie':
-                    details = tmdb_client.get_movie_details(torrent['tmdbId'])
-                    if details:
-                        torrent['overview'] = details.get('overview')
-                        torrent['poster_url'] = details.get('poster_url')
+                # No 'elif' for movies, as per code review feedback to remove unnecessary calls
 
-            # Step 4: Check if media is already managed
             torrent['is_managed'] = is_media_managed(torrent, pending_hashes)
-
             final_torrents.append(torrent)
 
         # Update the refresh timestamp *after* a successful run
