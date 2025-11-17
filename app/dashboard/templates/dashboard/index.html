@@ -159,7 +159,12 @@ $(document).ready(function() {
         const url = $(this).data('url');
         if (!url) return;
 
-        const windowFeatures = 'width=1200,height=800,resizable=yes,scrollbars=yes';
+        // --- Calculate window position for centering ---
+        const windowWidth = 1200;
+        const windowHeight = 800;
+        const left = (screen.width / 2) - (windowWidth / 2);
+        const top = (screen.height / 2) - (windowHeight / 2);
+        const windowFeatures = `width=${windowWidth},height=${windowHeight},top=${top},left=${left},resizable=yes,scrollbars=yes`;
 
         // Special handling for YGG API URLs via our backend proxy
         if (url.includes('yggapi.eu')) {
