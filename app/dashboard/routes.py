@@ -237,6 +237,7 @@ def _normalize_torrent(raw_torrent):
         'detailsUrl': raw_torrent.get('infoUrl'), # Use infoUrl for the details page
         'publishDate': publish_date,
         'category': raw_torrent.get('categoryDescription'),
+        'indexer': raw_torrent.get('indexer'),
         # Fields to be added during enrichment
         'tvdbId': None,
         'overview': '',
