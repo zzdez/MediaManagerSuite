@@ -50,16 +50,31 @@ $(document).ready(function() {
                 ? `<button class="btn btn-info btn-sm details-btn" data-url="${torrent.detailsUrl}">Détails</button>`
                 : `<button class="btn btn-info btn-sm" disabled>Détails</button>`;
 
+            // --- Badge Logic ---
+            const indexerBadge = torrent.indexer ? `<span class="badge bg-secondary me-1">${torrent.indexer}</span>` : '';
+
+            let categoryBadgeClass = 'bg-dark'; // Default color
+            if (torrent.type === 'movie') {
+                categoryBadgeClass = 'bg-primary';
+            } else if (torrent.type === 'tv') {
+                categoryBadgeClass = 'bg-success';
+            }
+            const categoryBadge = torrent.category ? `<span class="badge ${categoryBadgeClass}">${torrent.category}</span>` : '';
+
+
             const torrentCard = `
                 <div class="card mb-3" id="torrent-card-${torrent.hash}">
                     <div class="card-body">
                         <h5 class="card-title">${torrent.title} ${managedBadge}</h5>
-                        <h6 class="card-subtitle mb-2 text-muted">
+                        <div>
+                            ${indexerBadge}
+                            ${categoryBadge}
+                        </div>
+                        <h6 class="card-subtitle mb-2 mt-2 text-muted">
                             <i class="fas fa-database"></i> ${sizeInGB} GB |
                             <i class="fas fa-arrow-up text-success"></i> ${torrent.seeders} |
                             <i class="fas fa-arrow-down text-danger"></i> ${torrent.leechers}
                         </h6>
-                        <p class="card-text small">Catégorie: ${torrent.category}</p>
                         ${detailsButtonHtml}
                         <button class="btn btn-primary btn-sm download-and-map-btn"
                                 data-hash="${torrent.hash}"
