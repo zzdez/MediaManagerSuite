@@ -223,6 +223,13 @@ def _normalize_torrent(raw_torrent):
         except ValueError:
             current_app.logger.warning(f"Could not parse date for torrent '{raw_torrent.get('title')}': {publish_date_str}")
 
+    # Robust category name extraction
+    category_name = raw_torrent.get('categoryDescription')
+    if not category_name:
+        categories_list = raw_torrent.get('categories', [])
+        if categories_list and isinstance(categories_list, list) and len(categories_list) > 0:
+            category_name = categories_list[0].get('name') # Prowlarr often puts the most relevant category first
+
     return {
         'hash': str(unique_id), # Ensure the ID is always a string for consistency
         'title': raw_torrent.get('title'),
@@ -236,7 +243,7 @@ def _normalize_torrent(raw_torrent):
         'downloadUrl': raw_torrent.get('guid'), # Use guid for the download link
         'detailsUrl': raw_torrent.get('infoUrl'), # Use infoUrl for the details page
         'publishDate': publish_date,
-        'category': raw_torrent.get('categoryDescription'),
+        'category': category_name,
         'indexer': raw_torrent.get('indexer'),
         # Fields to be added during enrichment
         'tvdbId': None,
