@@ -159,6 +159,8 @@ $(document).ready(function() {
         const url = $(this).data('url');
         if (!url) return;
 
+        const windowFeatures = 'width=1200,height=800,resizable=yes,scrollbars=yes';
+
         // Special handling for YGG API URLs via our backend proxy
         if (url.includes('yggapi.eu')) {
             const proxyUrl = `/dashboard/api/proxy?url=${encodeURIComponent(url)}`;
@@ -171,20 +173,20 @@ $(document).ready(function() {
                 })
                 .then(data => {
                     if (data && data.link) {
-                        window.open(data.link, '_blank');
+                        window.open(data.link, 'MMS_Details_Window', windowFeatures);
                     } else {
                         // Fallback to opening the original URL if parsing fails
-                        window.open(url, '_blank');
+                        window.open(url, 'MMS_Details_Window', windowFeatures);
                     }
                 })
                 .catch(error => {
                     console.error('Failed to fetch YGG details via proxy:', error);
                     // Fallback to opening the original URL on error
-                    window.open(url, '_blank');
+                    window.open(url, 'MMS_Details_Window', windowFeatures);
                 });
         } else {
             // Standard behavior for all other indexers
-            window.open(url, '_blank');
+            window.open(url, 'MMS_Details_Window', windowFeatures);
         }
     });
 
