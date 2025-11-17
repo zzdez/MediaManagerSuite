@@ -124,3 +124,19 @@ def get_latest_from_prowlarr(categories, limit=200):
     else:
         current_app.logger.warning("Prowlarr latest fetch did not return a list.")
         return []
+
+def get_prowlarr_applications():
+    """
+    Fetches the applications (Sonarr, Radarr, etc.) configured in Prowlarr.
+    This is useful for getting the category IDs associated with each app.
+    """
+    response_data = _make_prowlarr_request('applications')
+    
+    # The response is a list of application objects.
+    if isinstance(response_data, list):
+        current_app.logger.info(f"Prowlarr: Successfully fetched {len(response_data)} applications.")
+        return response_data
+    else:
+        current_app.logger.error("Prowlarr: Failed to fetch applications or the response was not a list.")
+        return None
+    

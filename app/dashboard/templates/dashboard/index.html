@@ -45,6 +45,11 @@ $(document).ready(function() {
             const yearMatch = torrent.title.match(/\b(19[89]\d|20\d{2})\b/);
             const year = yearMatch ? yearMatch[1] : null;
 
+            // Conditionally create the details button
+            const detailsButtonHtml = torrent.detailsUrl
+                ? `<button class="btn btn-info btn-sm details-btn" data-url="${torrent.detailsUrl}">Détails</button>`
+                : `<button class="btn btn-info btn-sm" disabled>Détails</button>`;
+
             const torrentCard = `
                 <div class="card mb-3" id="torrent-card-${torrent.hash}">
                     <div class="card-body">
@@ -55,7 +60,7 @@ $(document).ready(function() {
                             <i class="fas fa-arrow-down text-danger"></i> ${torrent.leechers}
                         </h6>
                         <p class="card-text small">Catégorie: ${torrent.category}</p>
-                        <button class="btn btn-info btn-sm" data-action="details" data-overview="${torrent.overview || ''}" data-poster="${torrent.poster_url || ''}">Détails</button>
+                        ${detailsButtonHtml}
                         <button class="btn btn-primary btn-sm download-and-map-btn"
                                 data-hash="${torrent.hash}"
                                 data-guid="${torrent.guid}"
@@ -72,9 +77,6 @@ $(document).ready(function() {
                         <button class="btn btn-secondary btn-sm" data-action="ignore" data-hash="${torrent.hash}">
                             <i class="fas fa-eye-slash"></i> Ignorer
                         </button>
-                        <div class="details-section mt-3" style="display: none;">
-                            <!-- Le contenu des détails sera injecté ici -->
-                        </div>
                     </div>
                 </div>
             `;
@@ -137,33 +139,37 @@ $(document).ready(function() {
         });
     });
 
-    $('#torrents-container').on('click', 'button[data-action="details"]', function() {
-        const button = $(this);
-        const detailsSection = button.siblings('.details-section');
-        const overview = button.data('overview');
-        const posterUrl = button.data('poster');
+    // --- Intelligent Details Button Handler ---
+    $('#torrents-container').on('click', '.details-btn', function() {
+        const url = $(this).data('url');
+        if (!url) return;
 
-        if (detailsSection.is(':visible')) {
-            detailsSection.slideUp();
+        // Special handling for YGG API URLs via our backend proxy
+        if (url.includes('yggapi.eu')) {
+            const proxyUrl = `/dashboard/api/proxy?url=${encodeURIComponent(url)}`;
+            fetch(proxyUrl)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Proxy network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data && data.link) {
+                        window.open(data.link, '_blank');
+                    } else {
+                        // Fallback to opening the original URL if parsing fails
+                        window.open(url, '_blank');
+                    }
+                })
+                .catch(error => {
+                    console.error('Failed to fetch YGG details via proxy:', error);
+                    // Fallback to opening the original URL on error
+                    window.open(url, '_blank');
+                });
         } else {
-            if (!overview && !posterUrl) {
-                detailsSection.html('<p class="text-muted">Aucun détail supplémentaire disponible.</p>');
-            } else {
-                const detailsHtml = `
-                    <div class="row">
-                        ${posterUrl ? `
-                        <div class="col-md-2">
-                            <img src="${posterUrl}" class="img-fluid rounded">
-                        </div>
-                        ` : ''}
-                        <div class="col-md-10">
-                            <p>${overview || 'Pas de synopsis disponible.'}</p>
-                        </div>
-                    </div>
-                `;
-                detailsSection.html(detailsHtml);
-            }
-            detailsSection.slideDown();
+            // Standard behavior for all other indexers
+            window.open(url, '_blank');
         }
     });
 

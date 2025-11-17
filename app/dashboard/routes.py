@@ -4,9 +4,10 @@ import json
 import os
 from datetime import datetime, timezone
 import re
+import requests
 
 # Import Prowlarr client
-from app.utils.prowlarr_client import get_latest_from_prowlarr
+from app.utils.prowlarr_client import get_latest_from_prowlarr, get_prowlarr_applications
 # Import TMDB client for ID conversion
 from app.utils.tmdb_client import TheMovieDBClient
 # Import Arr client for checking existing media
@@ -98,6 +99,34 @@ def refresh_torrents():
         min_movie_year = current_app.config.get('DASHBOARD_MIN_MOVIE_YEAR', 1900)
         tmdb_client = TheMovieDBClient()
 
+        # --- Get Application Categories from Prowlarr for reliable media type detection ---
+        apps = get_prowlarr_applications()
+        sonarr_cat_ids = set()
+        radarr_cat_ids = set()
+        if apps:
+            for app in apps:
+                implementation_name = app.get('implementationName', '')
+                app_fields = app.get('fields', [])
+                
+                categories_to_sync = []
+                
+                if implementation_name == 'Sonarr':
+                    for field in app_fields:
+                        if field.get('name') == 'syncCategories' or field.get('name') == 'animeSyncCategories':
+                            if isinstance(field.get('value'), list):
+                                categories_to_sync.extend(field['value'])
+                    sonarr_cat_ids.update(categories_to_sync)
+                
+                elif implementation_name == 'Radarr':
+                    for field in app_fields:
+                        if field.get('name') == 'syncCategories':
+                            if isinstance(field.get('value'), list):
+                                categories_to_sync.extend(field['value'])
+                    radarr_cat_ids.update(categories_to_sync)
+
+        current_app.logger.info(f"Found Sonarr categories: {sonarr_cat_ids}")
+        current_app.logger.info(f"Found Radarr categories: {radarr_cat_ids}")
+
         final_torrents = []
 
         # --- Process each torrent ---
@@ -120,28 +149,47 @@ def refresh_torrents():
             keyword_match = next((keyword for keyword in exclude_keywords if re.search(keyword, torrent['title'], re.IGNORECASE)), None)
             if keyword_match:
                 continue
+            
+            # Step 3: Determine media type using Prowlarr App categories
+            media_type = None
+            # The 'categories' key holds a list of dicts, each with an 'id'
+            torrent_cats = raw_torrent.get('categories', [])
+            for cat_obj in torrent_cats:
+                cat_id = cat_obj.get('id')
+                if cat_id in radarr_cat_ids:
+                    media_type = 'movie'
+                    break  # Found a match, no need to check further
+                elif cat_id in sonarr_cat_ids:
+                    media_type = 'tv'
+                    break  # Found a match
+
+            if not media_type:
+                # Fallback to the type provided by Prowlarr if category doesn't match
+                media_type = torrent.get('type')
+
+            torrent['type'] = media_type
 
             # Year filtering for movies
-            if torrent['type'] == 'movie':
+            if media_type == 'movie':
                 year_match = re.search(r'\b(19\d{2}|20\d{2})\b', torrent['title'])
                 if year_match and int(year_match.group(1)) < min_movie_year:
                     continue
 
-            # Step 3: Enrich the normalized data
+            # Step 4: Enrich the normalized data
             if torrent['tmdbId']:
-                if torrent['type'] == 'tv':
+                if media_type == 'tv':
                     details = tmdb_client.get_series_details(torrent['tmdbId'])
                     if details:
                         torrent['tvdbId'] = details.get('tvdb_id')
                         torrent['overview'] = details.get('overview')
-                        torrent['poster_url'] = details.get('poster_url')
-                elif torrent['type'] == 'movie':
+                        torrent['poster_url'] = details.get('poster') # Corrected key
+                elif media_type == 'movie':
                     details = tmdb_client.get_movie_details(torrent['tmdbId'])
                     if details:
                         torrent['overview'] = details.get('overview')
-                        torrent['poster_url'] = details.get('poster_url')
+                        torrent['poster_url'] = details.get('poster') # Corrected key
 
-            # Step 4: Check if media is already managed
+            # Step 5: Check if media is already managed
             torrent['is_managed'] = is_media_managed(torrent, pending_hashes)
 
             final_torrents.append(torrent)
@@ -186,6 +234,7 @@ def _normalize_torrent(raw_torrent):
         'tmdbId': raw_torrent.get('tmdb_id'),  # snake_case to camelCase
         'guid': raw_torrent.get('guid'),
         'downloadUrl': raw_torrent.get('guid'), # Use guid for the download link
+        'detailsUrl': raw_torrent.get('infoUrl'), # Use infoUrl for the details page
         'publishDate': publish_date,
         'category': raw_torrent.get('categoryDescription'),
         # Fields to be added during enrichment
@@ -237,3 +286,24 @@ def ignore_torrent():
     add_ignored_hash(torrent_id)
 
     return jsonify({"status": "success", "message": f"Identifier {torrent_id} ignored."})
+
+@dashboard_bp.route('/dashboard/api/proxy')
+def proxy_request():
+    """
+    A simple proxy to bypass CORS issues for client-side fetches.
+    """
+    url = request.args.get('url')
+    if not url:
+        return jsonify({"error": "No URL provided"}), 400
+
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        # Attempt to return JSON, but fall back to text if that fails
+        try:
+            return jsonify(response.json())
+        except ValueError:
+            return response.text
+    except requests.exceptions.RequestException as e:
+        current_app.logger.error(f"Proxy request to {url} failed: {e}")
+        return jsonify({"error": f"Failed to fetch URL: {e}"}), 502

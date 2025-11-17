@@ -941,11 +941,14 @@ $(document).ready(function() {
 
         } else {
             console.log("FLUX CLASSIQUE : Aucun contexte, lancement du lookup.");
-            const mediaType = $('input[name="search_type"]:checked').val() === 'sonarr' ? 'tv' : 'movie';
+            const button = $(this); // Assurer que 'button' est bien défini dans ce scope
+            const mediaType = button.data('media-type'); // LIRE LE TYPE DEPUIS LE BOUTON
+            
             modalBody.find('#add-item-options-container').addClass('d-none');
             modalEl.find('#confirm-add-and-map-btn').addClass('d-none');
             const lookupContent = modalBody.find('#initial-lookup-content').removeClass('d-none').show();
             lookupContent.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div><p class="mt-2">Recherche des correspondances...</p></div>');
+            
             fetch('/search/api/search/lookup', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
