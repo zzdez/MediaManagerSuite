@@ -5,6 +5,7 @@ import os
 from datetime import datetime, timezone
 import re
 import requests
+from thefuzz import fuzz
 
 # Import Prowlarr client
 from app.utils.prowlarr_client import get_latest_from_prowlarr, get_prowlarr_applications
@@ -138,7 +139,28 @@ def refresh_torrents():
             if not torrent:
                 continue
 
-            # Step 2: Filter based on normalized data
+            # --- Step 2: Enrich with TMDB ID if missing ---
+            if not torrent.get('tmdbId'):
+                clean_title = re.sub(r'\b(VFF|TRUEFRENCH|FRENCH|1080p|BluRay|mHD|x264|AC3-ROMKENT)\b', '', torrent['title'], flags=re.IGNORECASE)
+                clean_title = re.sub(r'[._]', ' ', clean_title).strip()
+
+                year_match = re.search(r'\b(20\d{2})\b', clean_title)
+                year = int(year_match.group(1)) if year_match else None
+                if year:
+                    clean_title = clean_title.replace(str(year), '').strip()
+
+                try:
+                    search_results = tmdb_client.search_movie(clean_title, year=year) if torrent['type'] == 'movie' else tmdb_client.search_series(clean_title, year=year)
+                    if search_results:
+                        best_match = max(search_results, key=lambda r: fuzz.ratio(clean_title.lower(), r.get('title', '').lower()))
+                        if fuzz.ratio(clean_title.lower(), best_match.get('title', '').lower()) > 70: # Confidence threshold
+                            torrent['tmdbId'] = best_match.get('id')
+                            current_app.logger.info(f"Enriched '{torrent['title']}' with TMDB ID {torrent['tmdbId']} (matched: '{best_match.get('title')}')")
+                except Exception as e:
+                    current_app.logger.error(f"Error during TMDB enrichment for '{torrent['title']}': {e}")
+
+
+            # Step 3: Filter based on normalized data
             if torrent['hash'] in ignored_hashes:
                 continue
 
@@ -245,7 +267,7 @@ def _normalize_torrent(raw_torrent):
         'leechers': raw_torrent.get('leechers'),
         'indexerId': raw_torrent.get('indexerId'),
         'type': raw_torrent.get('type'),
-        'tmdbId': raw_torrent.get('tmdb_id'),  # snake_case to camelCase
+        'tmdbId': raw_torrent.get('tmdbId') or raw_torrent.get('tmdb_id'),
         'guid': raw_torrent.get('guid'),
         'downloadUrl': raw_torrent.get('guid'), # Use guid for the download link
         'detailsUrl': raw_torrent.get('infoUrl'), # Use infoUrl for the details page
