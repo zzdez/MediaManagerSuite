@@ -12,7 +12,7 @@ from app.utils.prowlarr_client import get_latest_from_prowlarr, get_prowlarr_app
 # Import TMDB client for ID conversion
 from app.utils.tmdb_client import TheMovieDBClient
 # Import Arr client for checking existing media
-from app.utils.arr_client import get_sonarr_series_by_guid, get_radarr_movie_by_guid
+from app.utils.arr_client import get_sonarr_series_by_guid, get_radarr_movie_by_guid, parse_media_name
 # Import mapping manager to check pending torrents
 from app.utils.mapping_manager import get_all_torrent_hashes
 # Import the new status manager
@@ -141,23 +141,25 @@ def refresh_torrents():
 
             # --- Step 2: Enrich with TMDB ID if missing ---
             if not torrent.get('tmdbId'):
-                clean_title = re.sub(r'\b(VFF|TRUEFRENCH|FRENCH|1080p|BluRay|mHD|x264|AC3-ROMKENT)\b', '', torrent['title'], flags=re.IGNORECASE)
-                clean_title = re.sub(r'[._]', ' ', clean_title).strip()
+                parsed_info = parse_media_name(torrent['title'])
+                clean_title = parsed_info.get('title')
+                year = parsed_info.get('year')
 
-                year_match = re.search(r'\b(20\d{2})\b', clean_title)
-                year = int(year_match.group(1)) if year_match else None
-                if year:
-                    clean_title = clean_title.replace(str(year), '').strip()
+                if clean_title:
+                    try:
+                        # Determine media type for search, defaulting to torrent's type if parsing is ambiguous
+                        search_type = 'tv' if parsed_info.get('type') == 'tv' else 'movie'
 
-                try:
-                    search_results = tmdb_client.search_movie(clean_title, year=year) if torrent['type'] == 'movie' else tmdb_client.search_series(clean_title, year=year)
-                    if search_results:
-                        best_match = max(search_results, key=lambda r: fuzz.ratio(clean_title.lower(), r.get('title', '').lower()))
-                        if fuzz.ratio(clean_title.lower(), best_match.get('title', '').lower()) > 70: # Confidence threshold
-                            torrent['tmdbId'] = best_match.get('id')
-                            current_app.logger.info(f"Enriched '{torrent['title']}' with TMDB ID {torrent['tmdbId']} (matched: '{best_match.get('title')}')")
-                except Exception as e:
-                    current_app.logger.error(f"Error during TMDB enrichment for '{torrent['title']}': {e}")
+                        search_results = tmdb_client.search_movie(clean_title, year=year) if search_type == 'movie' else tmdb_client.search_series(clean_title, year=year)
+
+                        if search_results:
+                            # Use a high confidence threshold to avoid wrong matches
+                            best_match = max(search_results, key=lambda r: fuzz.ratio(clean_title.lower(), r.get('title', '').lower()))
+                            if fuzz.ratio(clean_title.lower(), best_match.get('title', '').lower()) > 85: # Increased confidence
+                                torrent['tmdbId'] = best_match.get('id')
+                                current_app.logger.info(f"Enriched '{torrent['title']}' with TMDB ID {torrent['tmdbId']} (matched: '{best_match.get('title')}')")
+                    except Exception as e:
+                        current_app.logger.error(f"Error during TMDB enrichment for '{torrent['title']}': {e}")
 
 
             # Step 3: Filter based on normalized data
