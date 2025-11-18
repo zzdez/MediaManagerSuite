@@ -14,6 +14,8 @@ from app.utils.tmdb_client import TheMovieDBClient
 from app.utils.arr_client import get_sonarr_series_by_guid, get_radarr_movie_by_guid
 # Import mapping manager to check pending torrents
 from app.utils.mapping_manager import get_all_torrent_hashes
+# Import the new status manager
+from app.utils.status_manager import get_media_statuses
 
 # Define paths for our state files
 DASHBOARD_STATE_FILE = os.path.join('instance', 'dashboard_state.json')
@@ -189,8 +191,13 @@ def refresh_torrents():
                         torrent['overview'] = details.get('overview')
                         torrent['poster_url'] = details.get('poster') # Corrected key
 
-            # Step 5: Check if media is already managed
-            torrent['is_managed'] = is_media_managed(torrent, pending_hashes)
+            # Step 5: Get media statuses from the new centralized manager
+            torrent['statuses'] = get_media_statuses(torrent['tmdbId'], torrent['type'])
+
+            # The old 'is_managed' is now implicitly handled by the statuses.
+            # We can decide if we still need it for the 'disabled' button logic.
+            # For now, let's consider it managed if it has any status other than 'ID Manquant'.
+            torrent['is_managed'] = any(status != "ID Manquant" for status in torrent['statuses'])
 
             final_torrents.append(torrent)
 
@@ -223,6 +230,13 @@ def _normalize_torrent(raw_torrent):
         except ValueError:
             current_app.logger.warning(f"Could not parse date for torrent '{raw_torrent.get('title')}': {publish_date_str}")
 
+    # Robust category name extraction
+    category_name = raw_torrent.get('categoryDescription')
+    if not category_name:
+        categories_list = raw_torrent.get('categories', [])
+        if categories_list and isinstance(categories_list, list) and len(categories_list) > 0:
+            category_name = categories_list[0].get('name') # Prowlarr often puts the most relevant category first
+
     return {
         'hash': str(unique_id), # Ensure the ID is always a string for consistency
         'title': raw_torrent.get('title'),
@@ -236,40 +250,15 @@ def _normalize_torrent(raw_torrent):
         'downloadUrl': raw_torrent.get('guid'), # Use guid for the download link
         'detailsUrl': raw_torrent.get('infoUrl'), # Use infoUrl for the details page
         'publishDate': publish_date,
-        'category': raw_torrent.get('categoryDescription'),
+        'category': category_name,
+        'indexer': raw_torrent.get('indexer'),
         # Fields to be added during enrichment
         'tvdbId': None,
         'overview': '',
         'poster_url': '',
         'is_managed': False,
+        'statuses': [],
     }
-
-def is_media_managed(torrent_info, pending_hashes):
-    """
-    Checks if a given torrent corresponds to media already managed by Sonarr/Radarr
-    or is pending in the mapping manager.
-    """
-    # 1. Check if the torrent hash is already being processed
-    if torrent_info.get('hash') in pending_hashes:
-        return True
-
-    media_type = torrent_info.get('type')
-    tmdb_id = torrent_info.get('tmdbId')
-    tvdb_id = torrent_info.get('tvdbId') # This was added during enrichment
-
-    # 2. Check Sonarr for TV shows
-    if media_type == 'tv' and tvdb_id:
-        plex_guid = f'tvdb://{tvdb_id}'
-        if get_sonarr_series_by_guid(plex_guid):
-            return True
-
-    # 3. Check Radarr for movies
-    if media_type == 'movie' and tmdb_id:
-        plex_guid = f'tmdb://{tmdb_id}'
-        if get_radarr_movie_by_guid(plex_guid):
-            return True
-
-    return False
 
 @dashboard_bp.route('/dashboard/api/ignore', methods=['POST'])
 def ignore_torrent():

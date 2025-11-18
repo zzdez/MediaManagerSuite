@@ -170,3 +170,8 @@ body {
 .spin {
     animation: spin 1s linear infinite;
 }
+
+/* Custom badge color for Plex status */
+.bg-purple {
+    background-color: #6f42c1 !important; /* A standard purple color, similar to Bootstrap's own custom colors */
+}

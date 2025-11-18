@@ -104,6 +104,19 @@ class PlexClient:
             current_app.logger.error(f"PlexClient: Erreur lors de la récupération de l'historique pour le film '{plex_movie_obj.title}': {e}")
             return None
 
+    def find_media_by_guid(self, guid):
+        """
+        Retrieves a media object from Plex using its GUID (e.g., 'tmdb://12345').
+        Uses the admin account for a server-wide search.
+        """
+        try:
+            # Use the admin_plex instance for a server-wide search, as user accounts might not have full library access.
+            return self.admin_plex.library.fetchItem(guid)
+        except Exception as e:
+            # This will raise a NotFound exception if not found, which is normal.
+            current_app.logger.debug(f"PlexClient: Media with GUID {guid} not found: {e}")
+            return None
+
 # --- Fonctions de compatibilité pour l'ancien code ---
 
 def get_plex_admin_server():
@@ -159,3 +172,14 @@ def find_plex_media_by_external_id(media_type, external_id):
         current_app.logger.error(f"Erreur lors de la recherche Plex par GUID {guid_str}: {e}")
 
     return None
+
+def find_plex_media_by_guid_global(guid):
+    """
+    Global helper function to find a media item by GUID without needing to manage the PlexClient instance.
+    """
+    try:
+        plex_client = PlexClient()
+        return plex_client.find_media_by_guid(guid)
+    except Exception as e:
+        current_app.logger.error(f"Failed to instantiate PlexClient for GUID search {guid}: {e}")
+        return None
