@@ -44,8 +44,8 @@ $(document).ready(function() {
 
         torrents.forEach(torrent => {
             const sizeInGB = (torrent.size / (1024 * 1024 * 1024)).toFixed(2);
-            const managedBadge = torrent.is_managed ? '<span class="badge badge-success ml-2">Déjà géré</span>' : '';
-            const newBadge = torrent.is_new ? '<span class="badge badge-info ml-2">Nouveau</span>' : '';
+            const managedBadge = torrent.is_managed ? '<span class="badge bg-success ms-2">Déjà géré</span>' : '';
+            const newBadge = torrent.is_new ? '<span class="badge bg-info ms-2">Nouveau</span>' : '';
             const yearMatch = torrent.title.match(/\b(19[89]\d|20\d{2})\b/);
             const year = yearMatch ? yearMatch[1] : null;
 
