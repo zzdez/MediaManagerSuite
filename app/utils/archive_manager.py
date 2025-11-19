@@ -225,6 +225,13 @@ def find_archived_media_by_id(media_type, external_id):
     database = _load_database()
     return database.get(db_key)
 
+def get_archived_media_by_id(archive_id):
+    """
+    Récupère un média archivé directement par sa clé de base de données (ex: 'tv_12345').
+    """
+    database = _load_database()
+    return database.get(archive_id)
+
 def find_archived_media_by_title(title):
     """
     Recherche des médias archivés dont le titre correspond (insensible à la casse).

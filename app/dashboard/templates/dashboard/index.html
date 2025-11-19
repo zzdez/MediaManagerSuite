@@ -29,44 +29,69 @@
 <script>
 $(document).ready(function() {
 
+    // --- Data passed from backend ---
+    const initialTorrents = {{ torrents|tojson }};
+
     // --- Function to render torrents ---
     function renderTorrents(torrents) {
         const container = $('#torrents-container');
         container.empty();
 
         if (torrents.length === 0) {
-            container.html('<div class="alert alert-info">Aucune nouvelle publication trouvée.</div>');
-            return;
+            // No need to display a message on initial load if the list is empty.
+            // The user will click refresh to populate it.
+        }
+
+        // --- Function to generate status badges ---
+        function generateStatusBadges(statuses) {
+            if (!statuses || statuses.length === 0) return '';
+
+            const statusMap = {
+                'SONARR_MONITORED': { text: 'Sonarr', class: 'bg-primary' },
+                'SONARR_OBTAINED': { text: 'Sonarr', class: 'bg-primary' },
+                'RADARR_MONITORED': { text: 'Radarr', class: 'bg-warning text-dark' },
+                'RADARR_OBTAINED': { text: 'Radarr', class: 'bg-warning text-dark' },
+                'PLEX_PRESENT': { text: 'Plex', class: 'bg-purple' },
+                'ARCHIVED': { text: 'Archivé', class: 'bg-orange' },
+                'UNKNOWN_ID': { text: 'Inconnu', class: 'bg-secondary' }
+            };
+
+            // Using a Set to ensure unique badges (e.g., Sonarr obtained implies monitored)
+            const badgesHtml = new Set();
+            statuses.forEach(status => {
+                const badgeInfo = statusMap[status];
+                if (badgeInfo) {
+                    badgesHtml.add(`<span class="badge ${badgeInfo.class} ms-1">${badgeInfo.text}</span>`);
+                }
+            });
+
+            return Array.from(badgesHtml).join('');
         }
 
         torrents.forEach(torrent => {
             const sizeInGB = (torrent.size / (1024 * 1024 * 1024)).toFixed(2);
-            const managedBadge = torrent.is_managed ? '<span class="badge badge-success ml-2">Déjà géré</span>' : '';
+            const newBadge = torrent.is_new ? '<span class="badge bg-info ms-2">Nouveau</span>' : '';
+            const statusBadges = generateStatusBadges(torrent.statuses);
+            const isManaged = torrent.statuses && torrent.statuses.length > 0 && !torrent.statuses.includes('UNKNOWN_ID');
+
             const yearMatch = torrent.title.match(/\b(19[89]\d|20\d{2})\b/);
             const year = yearMatch ? yearMatch[1] : null;
 
-            // Conditionally create the details button
             const detailsButtonHtml = torrent.detailsUrl
                 ? `<button class="btn btn-info btn-sm details-btn" data-url="${torrent.detailsUrl}">Détails</button>`
                 : `<button class="btn btn-info btn-sm" disabled>Détails</button>`;
 
-            // --- Badge Logic ---
             const indexerBadge = torrent.indexer ? `<span class="badge bg-secondary me-1">${torrent.indexer}</span>` : '';
-
-            let categoryBadgeClass = 'bg-dark'; // Default color
-            if (torrent.type === 'movie') {
-                categoryBadgeClass = 'bg-primary';
-            } else if (torrent.type === 'tv') {
-                categoryBadgeClass = 'bg-success';
-            }
-            const categoryBadge = torrent.category ? `<span class="badge ${categoryBadgeClass}">${torrent.category}</span>` : '';
-
+            const categoryBadge = torrent.category ? `<span class="badge bg-dark">${torrent.category}</span>` : '';
 
             const torrentCard = `
                 <div class="card mb-3" id="torrent-card-${torrent.hash}">
                     <div class="card-body">
-                        <h5 class="card-title">${torrent.title} ${managedBadge}</h5>
+                        <h5 class="card-title">${torrent.title} ${newBadge}</h5>
                         <div>
+                            ${statusBadges}
+                        </div>
+                        <div class="mt-2">
                             ${indexerBadge}
                             ${categoryBadge}
                         </div>
@@ -86,7 +111,7 @@ $(document).ready(function() {
                                 data-tmdb-id="${torrent.tmdbId || ''}"
                                 data-tvdb-id="${torrent.tvdbId || ''}"
                                 data-year="${year || ''}"
-                                ${torrent.is_managed ? 'disabled' : ''}>
+                                ${isManaged ? 'disabled' : ''}>
                             <i class="fas fa-download"></i> & Mapper
                         </button>
                         <button class="btn btn-secondary btn-sm" data-action="ignore" data-hash="${torrent.hash}">
@@ -98,6 +123,9 @@ $(document).ready(function() {
             container.append(torrentCard);
         });
     }
+
+    // --- Initial render on page load ---
+    renderTorrents(initialTorrents);
 
     // --- Event handler for the refresh button ---
     $('#refresh-btn').on('click', function() {
