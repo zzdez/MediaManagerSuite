@@ -47,9 +47,9 @@ $(document).ready(function() {
             if (!statuses || statuses.length === 0) return '';
 
             const statusMap = {
-                'SONARR_MONITORED': { text: 'Sonarr', class: 'bg-primary' },
+                'SONARR_MONITORED': { text: 'Sonarr (Surveillé)', class: 'bg-primary' },
                 'SONARR_OBTAINED': { text: 'Sonarr', class: 'bg-primary' },
-                'RADARR_MONITORED': { text: 'Radarr', class: 'bg-warning text-dark' },
+                'RADARR_MONITORED': { text: 'Radarr (Surveillé)', class: 'bg-warning text-dark' },
                 'RADARR_OBTAINED': { text: 'Radarr', class: 'bg-warning text-dark' },
                 'PLEX_PRESENT': { text: 'Plex', class: 'bg-purple' },
                 'ARCHIVED': { text: 'Archivé', class: 'bg-orange' },
@@ -73,7 +73,6 @@ $(document).ready(function() {
             const sizeInGB = (torrent.size / (1024 * 1024 * 1024)).toFixed(2);
             const newBadge = torrent.is_new ? '<span class="badge bg-info ms-2">Nouveau</span>' : '';
             const statusBadges = generateStatusBadges(torrent.statuses);
-            const isManaged = torrent.statuses && torrent.statuses.length > 0 && !torrent.statuses.includes('UNKNOWN_ID');
 
             const yearMatch = torrent.title.match(/\b(19[89]\d|20\d{2})\b/);
             const year = yearMatch ? yearMatch[1] : null;
@@ -118,8 +117,7 @@ $(document).ready(function() {
                                 data-media-type="${torrent.type}"
                                 data-tmdb-id="${torrent.tmdbId || ''}"
                                 data-tvdb-id="${torrent.tvdbId || ''}"
-                                data-year="${year || ''}"
-                                ${isManaged ? 'disabled' : ''}>
+                                data-year="${year || ''}">
                             <i class="fas fa-download"></i> & Mapper
                         </button>
                         <button class="btn btn-secondary btn-sm" data-action="ignore" data-hash="${torrent.hash}">
