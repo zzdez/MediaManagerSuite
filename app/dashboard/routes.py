@@ -10,8 +10,8 @@ import requests
 from app.utils.prowlarr_client import get_latest_from_prowlarr, get_prowlarr_applications
 # Import TMDB client for ID conversion
 from app.utils.tmdb_client import TheMovieDBClient
-# Import Arr client for checking existing media
-from app.utils.arr_client import get_sonarr_series_by_guid, get_radarr_movie_by_guid
+# Import Arr client for checking existing media and parsing names
+from app.utils.arr_client import get_sonarr_series_by_guid, get_radarr_movie_by_guid, parse_media_name
 # Import mapping manager to check pending torrents
 from app.utils.mapping_manager import get_all_torrent_hashes
 
@@ -262,19 +262,56 @@ def _determine_media_type(raw_torrent, sonarr_cat_ids, radarr_cat_ids):
     return raw_torrent.get('type')
 
 def _enrich_torrent_details(torrent, tmdb_client):
-    """Enriches a torrent with details from TMDB (overview, poster, etc.)."""
-    if not torrent.get('tmdbId'):
-        return
-
+    """Enriches a torrent with details from TMDB (overview, poster, etc.), finding the ID if missing."""
     media_type = torrent.get('type')
+
+    # --- Fallback logic to find TMDB ID if it's missing ---
+    if not torrent.get('tmdbId'):
+        parsed_info = parse_media_name(torrent['title'])
+        if parsed_info and parsed_info.get('title'):
+            found_id = None
+            search_title = parsed_info['title']
+            search_year = parsed_info.get('year')
+
+            current_app.logger.info(f"Torrent '{torrent['title']}' is missing TMDB ID. Trying to find it with title='{search_title}', year='{search_year}'")
+
+            search_results = []
+            if media_type == 'movie':
+                search_results = tmdb_client.search_movie(search_title)
+            elif media_type == 'tv':
+                search_results = tmdb_client.search_series(search_title)
+
+            if search_results:
+                best_match = None
+                # Try to find a match with the correct year
+                if search_year:
+                    for res in search_results:
+                        # TMDb year can be a string, so compare loosely
+                        if str(res.get('year', '')) == str(search_year):
+                            best_match = res
+                            break
+                # If no year match or no year to search for, take the first result
+                if not best_match:
+                    best_match = search_results[0]
+
+                if best_match:
+                    found_id = best_match.get('id')
+                    torrent['tmdbId'] = found_id
+                    current_app.logger.info(f"Found TMDB ID {found_id} for '{torrent['title']}'")
+
+    # --- Proceed with enrichment if we have an ID ---
+    if not torrent.get('tmdbId'):
+        return # Could not find ID, cannot enrich further
+
+    tmdb_id = torrent['tmdbId']
     if media_type == 'tv':
-        details = tmdb_client.get_series_details(torrent['tmdbId'])
+        details = tmdb_client.get_series_details(tmdb_id)
         if details:
             torrent['tvdbId'] = details.get('tvdb_id')
             torrent['overview'] = details.get('overview')
             torrent['poster_url'] = details.get('poster')
     elif media_type == 'movie':
-        details = tmdb_client.get_movie_details(torrent['tmdbId'])
+        details = tmdb_client.get_movie_details(tmdb_id)
         if details:
             torrent['overview'] = details.get('overview')
             torrent['poster_url'] = details.get('poster')
