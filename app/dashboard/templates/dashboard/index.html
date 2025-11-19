@@ -2,21 +2,71 @@
 
 {% block content %}
 <div class="container-fluid">
-    <h1 class="mt-4">Tableau de Bord des Nouveautés</h1>
-    <p>Cliquez sur le bouton pour rechercher les nouvelles publications depuis votre dernière visite.</p>
-    <button id="refresh-btn" class="btn btn-primary mb-4">
-        <i class="fas fa-sync-alt"></i> Rafraîchir les nouveautés
-    </button>
+    <div class="row">
+        <!-- Colonne des filtres (fixe) -->
+        <div class="col-md-3" style="position: sticky; top: 1rem; height: 95vh; overflow-y: auto;">
+            <div class="filters-container p-3 rounded bg-dark">
+                <h4><i class="fas fa-filter"></i> Filtres</h4>
+                <button id="reset-filters-btn" class="btn btn-secondary btn-sm mb-3">Réinitialiser les filtres</button>
 
-    <div id="loading-spinner" style="display: none;" class="text-center">
-        <div class="spinner-border text-primary" role="status">
-            <span class="sr-only">Chargement...</span>
+                <!-- Filtre par Titre -->
+                <div class="mb-3">
+                    <label for="filter-title" class="form-label">Titre</label>
+                    <input type="text" class="form-control" id="filter-title" placeholder="Rechercher par titre...">
+                </div>
+
+                <!-- Filtre par Année -->
+                <div class="mb-3">
+                    <label for="filter-year" class="form-label">Année (plus récent que)</label>
+                    <input type="number" class="form-control" id="filter-year" placeholder="Ex: 2023">
+                </div>
+
+                <!-- Filtre par Catégorie -->
+                <div class="mb-3">
+                    <label for="filter-category" class="form-label">Catégorie</label>
+                    <select class="form-select" id="filter-category">
+                        <option value="">Toutes</option>
+                    </select>
+                </div>
+
+                <!-- Filtre par Statut -->
+                <div class="mb-3">
+                    <label for="filter-status" class="form-label">Statut</label>
+                    <select class="form-select" id="filter-status">
+                        <option value="">Tous</option>
+                    </select>
+                </div>
+
+                <!-- Filtre par Indexeur -->
+                <div class="mb-3">
+                    <label for="filter-indexer" class="form-label">Indexeur</label>
+                    <select class="form-select" id="filter-indexer">
+                        <option value="">Tous</option>
+                    </select>
+                </div>
+
+            </div>
         </div>
-        <p>Recherche en cours...</p>
-    </div>
 
-    <div id="torrents-container">
-        <!-- Les résultats seront injectés ici -->
+        <!-- Colonne des résultats (scrollable) -->
+        <div class="col-md-9">
+            <h1 class="mt-4">Tableau de Bord des Nouveautés</h1>
+            <p>Cliquez sur le bouton pour rechercher les nouvelles publications depuis votre dernière visite.</p>
+            <button id="refresh-btn" class="btn btn-primary mb-4">
+                <i class="fas fa-sync-alt"></i> Rafraîchir les nouveautés
+            </button>
+
+            <div id="loading-spinner" style="display: none;" class="text-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="sr-only">Chargement...</span>
+                </div>
+                <p>Recherche en cours...</p>
+            </div>
+
+            <div id="torrents-container">
+                <!-- Les résultats seront injectés ici -->
+            </div>
+        </div>
     </div>
 </div>
 
@@ -29,44 +79,79 @@
 <script>
 $(document).ready(function() {
 
-    // --- Function to render torrents ---
-    function renderTorrents(torrents) {
-        const container = $('#torrents-container');
-        container.empty();
+    // --- Global state ---
+    let allTorrents = {{ torrents|tojson }};
 
-        if (torrents.length === 0) {
-            container.html('<div class="alert alert-info">Aucune nouvelle publication trouvée.</div>');
+    // --- DOM Elements ---
+    const container = $('#torrents-container');
+    const filterTitle = $('#filter-title');
+    const filterYear = $('#filter-year');
+    const filterCategory = $('#filter-category');
+    const filterStatus = $('#filter-status');
+    const filterIndexer = $('#filter-indexer');
+
+    // --- Badge Generation Logic ---
+    const statusMap = {
+        'SONARR_MONITORED': { text: 'Sonarr (Surveillé)', class: 'bg-primary', group: 'Sonarr' },
+        'SONARR_OBTAINED': { text: 'Sonarr (Obtenu)', class: 'bg-success', group: 'Sonarr' },
+        'RADARR_MONITORED': { text: 'Radarr (Surveillé)', class: 'bg-warning text-dark', group: 'Radarr' },
+        'RADARR_OBTAINED': { text: 'Radarr (Obtenu)', class: 'bg-warning text-dark', group: 'Radarr' },
+        'PLEX_PRESENT': { text: 'Plex', class: 'bg-purple', group: 'Plex' },
+        'ARCHIVED': { text: 'Archivé', class: 'bg-orange', group: 'Archivé' },
+        'UNKNOWN_ID': { text: 'Inconnu', class: 'bg-secondary', group: 'Inconnu' },
+        'NOT_MANAGED': { text: 'Non Géré', class: 'bg-secondary', group: 'Non Géré' }
+    };
+
+    function generateStatusBadges(statuses) {
+        if (!statuses || statuses.length === 0) return '';
+        let badgesHtml = '';
+        statuses.forEach(status => {
+            const badgeInfo = statusMap[status];
+            if (badgeInfo) {
+                badgesHtml += `<span class="badge ${badgeInfo.class} ms-1">${badgeInfo.text}</span>`;
+            }
+        });
+        return badgesHtml;
+    }
+
+    // --- Core Rendering and Filtering Logic ---
+    function renderTorrents(torrentsToRender) {
+        container.empty();
+        if (torrentsToRender.length === 0) {
+            container.html('<div class="alert alert-info">Aucun torrent ne correspond à vos filtres.</div>');
             return;
         }
 
-        torrents.forEach(torrent => {
+        // Sort: New items first, then by publish date
+        torrentsToRender.sort((a, b) => {
+            if (a.is_new && !b.is_new) return -1;
+            if (!a.is_new && b.is_new) return 1;
+            // Both are new or both are old, sort by date
+            return new Date(b.publishDate) - new Date(a.publishDate);
+        });
+
+        torrentsToRender.forEach(torrent => {
             const sizeInGB = (torrent.size / (1024 * 1024 * 1024)).toFixed(2);
-            const managedBadge = torrent.is_managed ? '<span class="badge badge-success ml-2">Déjà géré</span>' : '';
+            const newBadge = torrent.is_new ? '<span class="badge bg-info ms-2">Nouveau</span>' : '';
+            const statusBadges = generateStatusBadges(torrent.statuses);
+
             const yearMatch = torrent.title.match(/\b(19[89]\d|20\d{2})\b/);
             const year = yearMatch ? yearMatch[1] : null;
 
-            // Conditionally create the details button
-            const detailsButtonHtml = torrent.detailsUrl
-                ? `<button class="btn btn-info btn-sm details-btn" data-url="${torrent.detailsUrl}">Détails</button>`
-                : `<button class="btn btn-info btn-sm" disabled>Détails</button>`;
-
-            // --- Badge Logic ---
+            const detailsButtonHtml = torrent.detailsUrl ? `<button class="btn btn-info btn-sm details-btn" data-url="${torrent.detailsUrl}">Détails</button>` : `<button class="btn btn-info btn-sm" disabled>Détails</button>`;
             const indexerBadge = torrent.indexer ? `<span class="badge bg-secondary me-1">${torrent.indexer}</span>` : '';
 
-            let categoryBadgeClass = 'bg-dark'; // Default color
-            if (torrent.type === 'movie') {
-                categoryBadgeClass = 'bg-primary';
-            } else if (torrent.type === 'tv') {
-                categoryBadgeClass = 'bg-success';
-            }
+            let categoryBadgeClass = 'bg-dark';
+            if (torrent.type === 'movie') categoryBadgeClass = 'bg-primary';
+            else if (torrent.type === 'tv') categoryBadgeClass = 'bg-success';
             const categoryBadge = torrent.category ? `<span class="badge ${categoryBadgeClass}">${torrent.category}</span>` : '';
-
 
             const torrentCard = `
                 <div class="card mb-3" id="torrent-card-${torrent.hash}">
                     <div class="card-body">
-                        <h5 class="card-title">${torrent.title} ${managedBadge}</h5>
-                        <div>
+                        <h5 class="card-title">${torrent.title} ${newBadge}</h5>
+                        <div>${statusBadges}</div>
+                        <div class="mt-2">
                             ${indexerBadge}
                             ${categoryBadge}
                         </div>
@@ -77,16 +162,10 @@ $(document).ready(function() {
                         </h6>
                         ${detailsButtonHtml}
                         <button class="btn btn-primary btn-sm download-and-map-btn"
-                                data-hash="${torrent.hash}"
-                                data-guid="${torrent.guid}"
-                                data-title="${torrent.title}"
-                                data-download-link="${torrent.downloadUrl}"
-                                data-indexer-id="${torrent.indexerId}"
-                                data-media-type="${torrent.type}"
-                                data-tmdb-id="${torrent.tmdbId || ''}"
-                                data-tvdb-id="${torrent.tvdbId || ''}"
-                                data-year="${year || ''}"
-                                ${torrent.is_managed ? 'disabled' : ''}>
+                                data-hash="${torrent.hash}" data-guid="${torrent.guid}" data-title="${torrent.title}"
+                                data-download-link="${torrent.downloadUrl}" data-indexer-id="${torrent.indexerId}"
+                                data-media-type="${torrent.type}" data-tmdb-id="${torrent.tmdbId || ''}"
+                                data-tvdb-id="${torrent.tvdbId || ''}" data-year="${year || ''}">
                             <i class="fas fa-download"></i> & Mapper
                         </button>
                         <button class="btn btn-secondary btn-sm" data-action="ignore" data-hash="${torrent.hash}">
@@ -99,7 +178,89 @@ $(document).ready(function() {
         });
     }
 
-    // --- Event handler for the refresh button ---
+    function applyFilters() {
+        const titleFilter = filterTitle.val().toLowerCase();
+        const yearFilter = parseInt(filterYear.val(), 10) || 0;
+        const categoryFilter = filterCategory.val();
+        const statusFilter = filterStatus.val();
+        const indexerFilter = filterIndexer.val();
+
+        const filteredTorrents = allTorrents.filter(torrent => {
+            // Title Filter
+            if (titleFilter && !torrent.title.toLowerCase().includes(titleFilter)) return false;
+
+            // Year Filter
+            const yearMatch = torrent.title.match(/\b(19\d{2}|20\d{2})\b/);
+            const year = yearMatch ? parseInt(yearMatch[1], 10) : 0;
+            if (yearFilter && (!year || year < yearFilter)) return false;
+
+            // Category Filter
+            if (categoryFilter && torrent.category !== categoryFilter) return false;
+
+            // Indexer Filter
+            if (indexerFilter && torrent.indexer !== indexerFilter) return false;
+
+            // Status Filter
+            if (statusFilter) {
+                const hasStatus = torrent.statuses.some(s => {
+                    const statusInfo = statusMap[s];
+                    return statusInfo && statusInfo.group === statusFilter;
+                });
+                if (!hasStatus) return false;
+            }
+
+            return true;
+        });
+
+        renderTorrents(filteredTorrents);
+    }
+
+    function populateFilters() {
+        const categories = new Set();
+        const statuses = new Set();
+        const indexers = new Set();
+
+        allTorrents.forEach(torrent => {
+            if (torrent.category) categories.add(torrent.category);
+            if (torrent.indexer) indexers.add(torrent.indexer);
+            torrent.statuses.forEach(s => {
+                const statusInfo = statusMap[s];
+                if (statusInfo) statuses.add(statusInfo.group);
+            });
+        });
+
+        const populateSelect = (select, items) => {
+            const currentVal = select.val();
+            select.html('<option value="">Tous</option>');
+            items.forEach(item => {
+                select.append(new Option(item, item));
+            });
+            select.val(currentVal);
+        };
+
+        populateSelect(filterCategory, [...categories].sort());
+        populateSelect(filterStatus, [...statuses].sort());
+        populateSelect(filterIndexer, [...indexers].sort());
+    }
+
+    // --- Event Handlers ---
+    $('#filter-title, #filter-year').on('input', applyFilters);
+    $('#filter-category, #filter-status, #filter-indexer').on('change', applyFilters);
+
+    $('#reset-filters-btn').on('click', function() {
+        filterTitle.val('');
+        filterYear.val('');
+        filterCategory.val('');
+        filterStatus.val('');
+        filterIndexer.val('');
+        applyFilters();
+    });
+
+    // --- Initial Load ---
+    populateFilters();
+    applyFilters(); // Apply filters on initial load to sort correctly
+
+    // --- Refresh Button Logic ---
     $('#refresh-btn').on('click', function() {
         const button = $(this);
         const spinner = $('#loading-spinner');
