@@ -29,19 +29,23 @@
 <script>
 $(document).ready(function() {
 
+    // --- Data passed from backend ---
+    const initialTorrents = {{ torrents|tojson }};
+
     // --- Function to render torrents ---
     function renderTorrents(torrents) {
         const container = $('#torrents-container');
         container.empty();
 
         if (torrents.length === 0) {
-            container.html('<div class="alert alert-info">Aucune nouvelle publication trouvée.</div>');
-            return;
+            // No need to display a message on initial load if the list is empty.
+            // The user will click refresh to populate it.
         }
 
         torrents.forEach(torrent => {
             const sizeInGB = (torrent.size / (1024 * 1024 * 1024)).toFixed(2);
             const managedBadge = torrent.is_managed ? '<span class="badge badge-success ml-2">Déjà géré</span>' : '';
+            const newBadge = torrent.is_new ? '<span class="badge badge-info ml-2">Nouveau</span>' : '';
             const yearMatch = torrent.title.match(/\b(19[89]\d|20\d{2})\b/);
             const year = yearMatch ? yearMatch[1] : null;
 
@@ -65,7 +69,7 @@ $(document).ready(function() {
             const torrentCard = `
                 <div class="card mb-3" id="torrent-card-${torrent.hash}">
                     <div class="card-body">
-                        <h5 class="card-title">${torrent.title} ${managedBadge}</h5>
+                        <h5 class="card-title">${torrent.title} ${newBadge} ${managedBadge}</h5>
                         <div>
                             ${indexerBadge}
                             ${categoryBadge}
@@ -98,6 +102,9 @@ $(document).ready(function() {
             container.append(torrentCard);
         });
     }
+
+    // --- Initial render on page load ---
+    renderTorrents(initialTorrents);
 
     // --- Event handler for the refresh button ---
     $('#refresh-btn').on('click', function() {
