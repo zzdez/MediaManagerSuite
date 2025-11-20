@@ -91,13 +91,15 @@ def dashboard():
         "Release Group": {"type": "simple", "terms": []}
     }
 
-    # New: Process JSON-based language filters
+    # Process JSON-based language filters (priority)
     languages_json = current_app.config.get('SEARCH_FILTER_LANGUAGES')
     if languages_json:
         try:
-            # The structure is {"Français": ["FRENCH", "VFF"], "English": ["ENG"]}
-            # We want to transform it to {"Français": ["FRENCH", "VFF"], "English": ["ENG"]}
-            keyword_filters["Langue"]["terms"] = json.loads(languages_json)
+            lang_terms = json.loads(languages_json)
+            if isinstance(lang_terms, dict):
+                keyword_filters["Langue"]["terms"] = lang_terms
+            else:
+                current_app.logger.warning("SEARCH_FILTER_LANGUAGES is not a valid JSON dictionary.")
         except json.JSONDecodeError:
             current_app.logger.error("Failed to decode SEARCH_FILTER_LANGUAGES JSON.")
 
