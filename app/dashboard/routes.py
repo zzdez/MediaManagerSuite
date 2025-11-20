@@ -10,10 +10,12 @@ import requests
 from app.utils.prowlarr_client import get_latest_from_prowlarr, get_prowlarr_applications
 # Import TMDB client for ID conversion
 from app.utils.tmdb_client import TheMovieDBClient
-# Import Arr client for checking existing media
-from app.utils.arr_client import get_sonarr_series_by_guid, get_radarr_movie_by_guid
+# Import Arr client for checking existing media and parsing names
+from app.utils.arr_client import get_sonarr_series_by_guid, get_radarr_movie_by_guid, parse_media_name
 # Import mapping manager to check pending torrents
 from app.utils.mapping_manager import get_all_torrent_hashes
+# Import the new status manager
+from app.utils.status_manager import get_media_statuses
 
 # Define paths for our state files
 DASHBOARD_STATE_FILE = os.path.join('instance', 'dashboard_state.json')
@@ -67,135 +69,147 @@ def add_ignored_hash(torrent_hash):
 @dashboard_bp.route('/dashboard')
 def dashboard():
     """
-    Dashboard page
+    Dashboard page - loads torrents from our persistent store and prepares keyword filters.
     """
-    return render_template('dashboard/index.html')
+    DASHBOARD_TORRENTS_FILE = os.path.join('instance', 'dashboard_torrents.json')
+
+    torrents = []
+    if os.path.exists(DASHBOARD_TORRENTS_FILE):
+        try:
+            with open(DASHBOARD_TORRENTS_FILE, 'r') as f:
+                torrents = json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            current_app.logger.error(f"Could not read or parse dashboard_torrents.json: {e}")
+            torrents = []
+
+    # --- Prepare keyword filters from environment variables ---
+    keyword_filters = {
+        "Langue": {"type": "alias", "terms": {}},
+        "Qualité": {"type": "simple", "terms": []},
+        "Codec": {"type": "simple", "terms": []},
+        "Source": {"type": "simple", "terms": []},
+        "Release Group": {"type": "simple", "terms": []}
+    }
+
+    # Process alias-based language filters
+    for key, value in current_app.config.items():
+        if key.startswith('SEARCH_FILTER_LANG_'):
+            lang_name = key.replace('SEARCH_FILTER_LANG_', '').upper()
+            if value:
+                keyword_filters["Langue"]["terms"][lang_name] = [term.strip() for term in str(value).split(',')]
+
+    # Process simple list filters
+    simple_filter_map = {
+        'SEARCH_FILTER_QUALITY_LIST': 'Qualité',
+        'SEARCH_FILTER_CODEC_LIST': 'Codec',
+        'SEARCH_FILTER_SOURCE_LIST': 'Source',
+        'SEARCH_FILTER_RELEASE_GROUP_LIST': 'Release Group'
+    }
+    for env_var, group_name in simple_filter_map.items():
+        value = current_app.config.get(env_var)
+        if value:
+            keyword_filters[group_name]["terms"] = [term.strip() for term in str(value).split(',')]
+
+    # Clean up empty filter groups
+    keyword_filters = {k: v for k, v in keyword_filters.items() if v["terms"]}
+
+    return render_template('dashboard/index.html', torrents=torrents, keyword_filters=keyword_filters)
 
 
 @dashboard_bp.route('/dashboard/api/refresh')
 def refresh_torrents():
     """
-    API endpoint to get new torrents since the last refresh.
-    This is the core logic for the dashboard.
+    API endpoint to refresh the torrent list. It fetches the latest from Prowlarr,
+    merges them with the existing list, marks new ones, and saves the updated list.
     """
+    DASHBOARD_TORRENTS_FILE = os.path.join('instance', 'dashboard_torrents.json')
+    MAX_TORRENTS_TO_KEEP = 1000
+
     try:
-        last_refresh_utc = get_last_refresh_time()
+        # Step 1: Load existing torrents
+        existing_torrents = []
+        if os.path.exists(DASHBOARD_TORRENTS_FILE):
+            try:
+                with open(DASHBOARD_TORRENTS_FILE, 'r') as f:
+                    existing_torrents = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                pass  # Start fresh if file is corrupt or unreadable
 
-        # Fetch the latest torrents from Prowlarr
+        # Step 2: Mark all existing torrents as not new and create a lookup map
+        existing_torrents_map = {}
+        for torrent in existing_torrents:
+            torrent['is_new'] = False
+            # The 'publishDate' might be a string, convert it for sorting
+            if isinstance(torrent.get('publishDate'), str):
+                 torrent['publishDate'] = datetime.fromisoformat(torrent['publishDate'].replace('Z', '+00:00'))
+            existing_torrents_map[torrent['hash']] = torrent
+
+        # Step 3: Fetch new torrents from Prowlarr
         prowlarr_categories = current_app.config.get('DASHBOARD_PROWLARR_CATEGORIES', [])
-        raw_torrents = get_latest_from_prowlarr(prowlarr_categories)
+        raw_torrents_from_prowlarr = get_latest_from_prowlarr(prowlarr_categories)
 
-        if raw_torrents is None:
-            # This indicates an API error in the client
-            current_app.logger.error("Failed to fetch data from Prowlarr.")
+        if raw_torrents_from_prowlarr is None:
             return jsonify({"status": "error", "message": "Could not retrieve data from Prowlarr."}), 500
 
-        current_app.logger.info(f"Prowlarr client returned {len(raw_torrents)} processable items.")
-
-        # --- Prepare for filtering and enrichment ---
+        # --- Prepare for filtering and enrichment (reusing existing logic) ---
         ignored_hashes = get_ignored_hashes()
         pending_hashes = get_all_torrent_hashes()
         exclude_keywords = current_app.config.get('DASHBOARD_EXCLUDE_KEYWORDS', [])
         min_movie_year = current_app.config.get('DASHBOARD_MIN_MOVIE_YEAR', 1900)
         tmdb_client = TheMovieDBClient()
-
-        # --- Get Application Categories from Prowlarr for reliable media type detection ---
         apps = get_prowlarr_applications()
-        sonarr_cat_ids = set()
-        radarr_cat_ids = set()
-        if apps:
-            for app in apps:
-                implementation_name = app.get('implementationName', '')
-                app_fields = app.get('fields', [])
-                
-                categories_to_sync = []
-                
-                if implementation_name == 'Sonarr':
-                    for field in app_fields:
-                        if field.get('name') == 'syncCategories' or field.get('name') == 'animeSyncCategories':
-                            if isinstance(field.get('value'), list):
-                                categories_to_sync.extend(field['value'])
-                    sonarr_cat_ids.update(categories_to_sync)
-                
-                elif implementation_name == 'Radarr':
-                    for field in app_fields:
-                        if field.get('name') == 'syncCategories':
-                            if isinstance(field.get('value'), list):
-                                categories_to_sync.extend(field['value'])
-                    radarr_cat_ids.update(categories_to_sync)
+        sonarr_cat_ids, radarr_cat_ids = _get_app_categories(apps)
 
-        current_app.logger.info(f"Found Sonarr categories: {sonarr_cat_ids}")
-        current_app.logger.info(f"Found Radarr categories: {radarr_cat_ids}")
-
-        final_torrents = []
-
-        # --- Process each torrent ---
-        for raw_torrent in raw_torrents:
-            # Step 1: Normalize the raw data. If it's invalid, skip it.
+        # Step 4: Process and merge new torrents
+        for raw_torrent in raw_torrents_from_prowlarr:
             torrent = _normalize_torrent(raw_torrent)
-            if not torrent:
+            if not torrent or torrent['hash'] in ignored_hashes:
                 continue
 
-            # Step 2: Filter based on normalized data
-            if torrent['hash'] in ignored_hashes:
-                continue
+            # If it's a new torrent, process and enrich it
+            if torrent['hash'] not in existing_torrents_map:
+                torrent['is_new'] = True # Mark as new
 
-            # Date filtering
-            if torrent['publishDate'] and last_refresh_utc:
-                if torrent['publishDate'] <= last_refresh_utc:
+                # --- Apply filtering and enrichment (adapted from old logic) ---
+                if any(re.search(kw, torrent['title'], re.IGNORECASE) for kw in exclude_keywords):
                     continue
 
-            # Keyword filtering
-            keyword_match = next((keyword for keyword in exclude_keywords if re.search(keyword, torrent['title'], re.IGNORECASE)), None)
-            if keyword_match:
-                continue
-            
-            # Step 3: Determine media type using Prowlarr App categories
-            media_type = None
-            # The 'categories' key holds a list of dicts, each with an 'id'
-            torrent_cats = raw_torrent.get('categories', [])
-            for cat_obj in torrent_cats:
-                cat_id = cat_obj.get('id')
-                if cat_id in radarr_cat_ids:
-                    media_type = 'movie'
-                    break  # Found a match, no need to check further
-                elif cat_id in sonarr_cat_ids:
-                    media_type = 'tv'
-                    break  # Found a match
+                media_type = _determine_media_type(raw_torrent, sonarr_cat_ids, radarr_cat_ids)
+                torrent['type'] = media_type
 
-            if not media_type:
-                # Fallback to the type provided by Prowlarr if category doesn't match
-                media_type = torrent.get('type')
+                if media_type == 'movie':
+                    year_match = re.search(r'\b(19\d{2}|20\d{2})\b', torrent['title'])
+                    if year_match and int(year_match.group(1)) < min_movie_year:
+                        continue
 
-            torrent['type'] = media_type
+                _enrich_torrent_details(torrent, tmdb_client)
+                torrent['statuses'] = get_media_statuses(
+                    title=torrent.get('title'),
+                    tmdb_id=torrent.get('tmdbId'),
+                    tvdb_id=torrent.get('tvdbId'),
+                    media_type=torrent.get('type')
+                )
 
-            # Year filtering for movies
-            if media_type == 'movie':
-                year_match = re.search(r'\b(19\d{2}|20\d{2})\b', torrent['title'])
-                if year_match and int(year_match.group(1)) < min_movie_year:
-                    continue
+                existing_torrents_map[torrent['hash']] = torrent
 
-            # Step 4: Enrich the normalized data
-            if torrent['tmdbId']:
-                if media_type == 'tv':
-                    details = tmdb_client.get_series_details(torrent['tmdbId'])
-                    if details:
-                        torrent['tvdbId'] = details.get('tvdb_id')
-                        torrent['overview'] = details.get('overview')
-                        torrent['poster_url'] = details.get('poster') # Corrected key
-                elif media_type == 'movie':
-                    details = tmdb_client.get_movie_details(torrent['tmdbId'])
-                    if details:
-                        torrent['overview'] = details.get('overview')
-                        torrent['poster_url'] = details.get('poster') # Corrected key
+        # Step 5: Sort, limit, and save
+        final_torrents = list(existing_torrents_map.values())
 
-            # Step 5: Check if media is already managed
-            torrent['is_managed'] = is_media_managed(torrent, pending_hashes)
+        # Filter out torrents with no publishDate before sorting
+        final_torrents = [t for t in final_torrents if t.get('publishDate')]
 
-            final_torrents.append(torrent)
+        final_torrents.sort(key=lambda x: x['publishDate'], reverse=True)
+        final_torrents = final_torrents[:MAX_TORRENTS_TO_KEEP]
 
-        # Update the refresh timestamp *after* a successful run
-        set_last_refresh_time()
+        # Convert datetime objects back to ISO strings for JSON serialization
+        for torrent in final_torrents:
+            if isinstance(torrent['publishDate'], datetime):
+                torrent['publishDate'] = torrent['publishDate'].isoformat()
+
+        with open(DASHBOARD_TORRENTS_FILE, 'w') as f:
+            json.dump(final_torrents, f, indent=2)
+
+        set_last_refresh_time() # Still useful to know when we last ran it
 
         return jsonify({"status": "success", "torrents": final_torrents})
 
@@ -208,11 +222,8 @@ def _normalize_torrent(raw_torrent):
     Normalizes a torrent dictionary from Prowlarr into a consistent format.
     Returns None if the torrent is invalid (lacks a unique ID).
     """
-    # A torrent is invalid if it lacks a reliable unique identifier.
-    # The best identifier is 'hash', but for general search results, we fall back to 'guid'.
     unique_id = raw_torrent.get('hash') or raw_torrent.get('guid')
     if not unique_id:
-        current_app.logger.warning(f"Skipping torrent with no usable identifier (hash or guid): {raw_torrent.get('title')}")
         return None
 
     publish_date_str = raw_torrent.get('publishDate') or raw_torrent.get('uploaded_at')
@@ -221,63 +232,127 @@ def _normalize_torrent(raw_torrent):
         try:
             publish_date = datetime.fromisoformat(publish_date_str.replace('Z', '+00:00'))
         except ValueError:
-            current_app.logger.warning(f"Could not parse date for torrent '{raw_torrent.get('title')}': {publish_date_str}")
+            pass
 
-    # Robust category name extraction
     category_name = raw_torrent.get('categoryDescription')
-    if not category_name:
-        categories_list = raw_torrent.get('categories', [])
-        if categories_list and isinstance(categories_list, list) and len(categories_list) > 0:
-            category_name = categories_list[0].get('name') # Prowlarr often puts the most relevant category first
+    if not category_name and raw_torrent.get('categories'):
+        category_name = raw_torrent['categories'][0].get('name')
 
     return {
-        'hash': str(unique_id), # Ensure the ID is always a string for consistency
+        'hash': str(unique_id),
         'title': raw_torrent.get('title'),
         'size': raw_torrent.get('size'),
         'seeders': raw_torrent.get('seeders'),
         'leechers': raw_torrent.get('leechers'),
         'indexerId': raw_torrent.get('indexerId'),
         'type': raw_torrent.get('type'),
-        'tmdbId': raw_torrent.get('tmdb_id'),  # snake_case to camelCase
+        'tmdbId': raw_torrent.get('tmdb_id'),
         'guid': raw_torrent.get('guid'),
-        'downloadUrl': raw_torrent.get('guid'), # Use guid for the download link
-        'detailsUrl': raw_torrent.get('infoUrl'), # Use infoUrl for the details page
+        'downloadUrl': raw_torrent.get('guid'),
+        'detailsUrl': raw_torrent.get('infoUrl'),
         'publishDate': publish_date,
         'category': category_name,
         'indexer': raw_torrent.get('indexer'),
-        # Fields to be added during enrichment
         'tvdbId': None,
         'overview': '',
         'poster_url': '',
-        'is_managed': False,
+        'statuses': [],
+        'is_new': False, # Default state for the 'new' badge
     }
 
-def is_media_managed(torrent_info, pending_hashes):
-    """
-    Checks if a given torrent corresponds to media already managed by Sonarr/Radarr
-    or is pending in the mapping manager.
-    """
-    # 1. Check if the torrent hash is already being processed
-    if torrent_info.get('hash') in pending_hashes:
-        return True
+def _get_app_categories(apps):
+    """Extracts Sonarr and Radarr category IDs from Prowlarr application data."""
+    sonarr_cat_ids = set()
+    radarr_cat_ids = set()
+    if not apps:
+        return sonarr_cat_ids, radarr_cat_ids
 
-    media_type = torrent_info.get('type')
-    tmdb_id = torrent_info.get('tmdbId')
-    tvdb_id = torrent_info.get('tvdbId') # This was added during enrichment
+    for app in apps:
+        implementation_name = app.get('implementationName', '')
+        app_fields = app.get('fields', [])
 
-    # 2. Check Sonarr for TV shows
-    if media_type == 'tv' and tvdb_id:
-        plex_guid = f'tvdb://{tvdb_id}'
-        if get_sonarr_series_by_guid(plex_guid):
-            return True
+        categories_to_sync = []
 
-    # 3. Check Radarr for movies
-    if media_type == 'movie' and tmdb_id:
-        plex_guid = f'tmdb://{tmdb_id}'
-        if get_radarr_movie_by_guid(plex_guid):
-            return True
+        if implementation_name == 'Sonarr':
+            for field in app_fields:
+                if field.get('name') in ['syncCategories', 'animeSyncCategories'] and isinstance(field.get('value'), list):
+                    categories_to_sync.extend(field['value'])
+            sonarr_cat_ids.update(categories_to_sync)
 
-    return False
+        elif implementation_name == 'Radarr':
+            for field in app_fields:
+                if field.get('name') == 'syncCategories' and isinstance(field.get('value'), list):
+                    categories_to_sync.extend(field['value'])
+            radarr_cat_ids.update(categories_to_sync)
+
+    return sonarr_cat_ids, radarr_cat_ids
+
+def _determine_media_type(raw_torrent, sonarr_cat_ids, radarr_cat_ids):
+    """Determines the media type ('movie' or 'tv') based on Prowlarr categories."""
+    torrent_cats = raw_torrent.get('categories', [])
+    for cat_obj in torrent_cats:
+        cat_id = cat_obj.get('id')
+        if cat_id in radarr_cat_ids:
+            return 'movie'
+        elif cat_id in sonarr_cat_ids:
+            return 'tv'
+    # Fallback to the type provided by Prowlarr if category doesn't match
+    return raw_torrent.get('type')
+
+def _enrich_torrent_details(torrent, tmdb_client):
+    """Enriches a torrent with details from TMDB (overview, poster, etc.), finding the ID if missing."""
+    media_type = torrent.get('type')
+
+    # --- Fallback logic to find TMDB ID if it's missing ---
+    if not torrent.get('tmdbId'):
+        parsed_info = parse_media_name(torrent['title'])
+        if parsed_info and parsed_info.get('title'):
+            found_id = None
+            search_title = parsed_info['title']
+            search_year = parsed_info.get('year')
+
+            current_app.logger.info(f"Torrent '{torrent['title']}' is missing TMDB ID. Trying to find it with title='{search_title}', year='{search_year}'")
+
+            search_results = []
+            if media_type == 'movie':
+                search_results = tmdb_client.search_movie(search_title)
+            elif media_type == 'tv':
+                search_results = tmdb_client.search_series(search_title)
+
+            if search_results:
+                best_match = None
+                # Try to find a match with the correct year
+                if search_year:
+                    for res in search_results:
+                        # TMDb year can be a string, so compare loosely
+                        if str(res.get('year', '')) == str(search_year):
+                            best_match = res
+                            break
+                # If no year match or no year to search for, take the first result
+                if not best_match:
+                    best_match = search_results[0]
+
+                if best_match:
+                    found_id = best_match.get('id')
+                    torrent['tmdbId'] = found_id
+                    current_app.logger.info(f"Found TMDB ID {found_id} for '{torrent['title']}'")
+
+    # --- Proceed with enrichment if we have an ID ---
+    if not torrent.get('tmdbId'):
+        return # Could not find ID, cannot enrich further
+
+    tmdb_id = torrent['tmdbId']
+    if media_type == 'tv':
+        details = tmdb_client.get_series_details(tmdb_id)
+        if details:
+            torrent['tvdbId'] = details.get('tvdb_id')
+            torrent['overview'] = details.get('overview')
+            torrent['poster_url'] = details.get('poster')
+    elif media_type == 'movie':
+        details = tmdb_client.get_movie_details(tmdb_id)
+        if details:
+            torrent['overview'] = details.get('overview')
+            torrent['poster_url'] = details.get('poster')
 
 @dashboard_bp.route('/dashboard/api/ignore', methods=['POST'])
 def ignore_torrent():

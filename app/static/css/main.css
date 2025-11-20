@@ -170,3 +170,6 @@ body {
 .spin {
     animation: spin 1s linear infinite;
 }
+
+.bg-purple { background-color: #6f42c1 !important; }
+.bg-orange { background-color: #fd7e14 !important; }
