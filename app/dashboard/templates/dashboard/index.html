@@ -1,10 +1,32 @@
 {% extends "layout.html" %}
 
+{% block title %}MediaManagerSuite - Tableau de Bord{% endblock %}
+
 {% block content %}
 <div class="container-fluid">
     <div class="row">
-        <!-- Colonne des filtres (fixe) -->
-        <div class="col-md-3" style="position: sticky; top: 1rem; height: 95vh; overflow-y: auto;">
+        <!-- Colonne des résultats (principale) -->
+        <div class="col-md-10">
+            <h1 class="mt-4">Tableau de Bord des Nouveautés</h1>
+            <p>Cliquez sur le bouton pour rechercher les nouvelles publications depuis votre dernière visite.</p>
+            <button id="refresh-btn" class="btn btn-primary mb-4">
+                <i class="fas fa-sync-alt"></i> Rafraîchir les nouveautés
+            </button>
+
+            <div id="loading-spinner" style="display: none;" class="text-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="sr-only">Chargement...</span>
+                </div>
+                <p>Recherche en cours...</p>
+            </div>
+
+            <div id="torrents-container">
+                <!-- Les résultats seront injectés ici -->
+            </div>
+        </div>
+
+        <!-- Colonne des filtres (latérale droite) -->
+        <div class="col-md-2" style="position: sticky; top: 1rem; height: 95vh; overflow-y: auto;">
             <div class="filters-container p-3 rounded bg-dark">
                 <h4><i class="fas fa-filter"></i> Filtres</h4>
                 <button id="reset-filters-btn" class="btn btn-secondary btn-sm mb-3">Réinitialiser les filtres</button>
@@ -45,26 +67,6 @@
                     </select>
                 </div>
 
-            </div>
-        </div>
-
-        <!-- Colonne des résultats (scrollable) -->
-        <div class="col-md-9">
-            <h1 class="mt-4">Tableau de Bord des Nouveautés</h1>
-            <p>Cliquez sur le bouton pour rechercher les nouvelles publications depuis votre dernière visite.</p>
-            <button id="refresh-btn" class="btn btn-primary mb-4">
-                <i class="fas fa-sync-alt"></i> Rafraîchir les nouveautés
-            </button>
-
-            <div id="loading-spinner" style="display: none;" class="text-center">
-                <div class="spinner-border text-primary" role="status">
-                    <span class="sr-only">Chargement...</span>
-                </div>
-                <p>Recherche en cours...</p>
-            </div>
-
-            <div id="torrents-container">
-                <!-- Les résultats seront injectés ici -->
             </div>
         </div>
     </div>
