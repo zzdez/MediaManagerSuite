@@ -91,14 +91,17 @@ def dashboard():
         "Release Group": {"type": "simple", "terms": []}
     }
 
-    # Process alias-based language filters
-    for key, value in current_app.config.items():
-        if key.startswith('SEARCH_FILTER_LANG_'):
-            lang_name = key.replace('SEARCH_FILTER_LANG_', '').upper()
-            if value:
-                keyword_filters["Langue"]["terms"][lang_name] = [term.strip() for term in str(value).split(',')]
+    # New: Process JSON-based language filters
+    languages_json = current_app.config.get('SEARCH_FILTER_LANGUAGES')
+    if languages_json:
+        try:
+            # The structure is {"Français": ["FRENCH", "VFF"], "English": ["ENG"]}
+            # We want to transform it to {"Français": ["FRENCH", "VFF"], "English": ["ENG"]}
+            keyword_filters["Langue"]["terms"] = json.loads(languages_json)
+        except json.JSONDecodeError:
+            current_app.logger.error("Failed to decode SEARCH_FILTER_LANGUAGES JSON.")
 
-    # Process simple list filters
+    # Process simple list filters (for other categories)
     simple_filter_map = {
         'SEARCH_FILTER_QUALITY_LIST': 'Qualité',
         'SEARCH_FILTER_CODEC_LIST': 'Codec',

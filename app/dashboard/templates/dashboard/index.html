@@ -90,6 +90,7 @@
                                         </div>
                                         {% endfor %}
                                     {% elif group_data.type == 'alias' %}
+                                        {# This is the new logic for languages from JSON config #}
                                         {% for display_name, aliases in group_data.terms.items() %}
                                         <div class="form-check">
                                             <input class="form-check-input keyword-filter-checkbox" type="checkbox" value="{{ display_name }}" id="filter-{{ group_name|lower }}-{{ display_name }}" data-group="{{ group_name }}" data-aliases="{{ aliases|join(',') }}">
@@ -235,15 +236,15 @@ $(document).ready(function() {
             if (!activeKeywordFilters[group]) {
                 activeKeywordFilters[group] = [];
             }
-            // For alias types (like language), add all aliases. Otherwise, just add the term.
-            const aliases = $(this).data('aliases');
-            if (aliases) {
-                // Split, trim whitespace from each alias, and filter out any empty strings
-                const aliasList = aliases.split(',').map(a => a.trim()).filter(a => a);
-                if (aliasList.length > 0) {
-                    activeKeywordFilters[group].push(...aliasList);
+            // For alias types (like language), we store the aliases directly
+            if (keywordFiltersData[group] && keywordFiltersData[group].type === 'alias') {
+                const displayName = $(this).val(); // e.g., "Français"
+                const aliases = keywordFiltersData[group].terms[displayName];
+                if (aliases) {
+                    activeKeywordFilters[group].push(...aliases);
                 }
             } else {
+                // For simple types, just add the value
                 activeKeywordFilters[group].push($(this).val());
             }
         });
@@ -268,6 +269,7 @@ $(document).ready(function() {
             for (const group in activeKeywordFilters) {
                 const terms = activeKeywordFilters[group];
                 if (terms.length > 0) {
+                     // The logic is: does the title contain ANY of the terms for this group?
                     const match = terms.some(term => torrent.title.toLowerCase().includes(term.toLowerCase()));
                     if (!match) return false; // Must match at least one term in this group
                 }

@@ -111,6 +111,7 @@ class Config:
     _dashboard_prowlarr_categories_str = os.getenv('DASHBOARD_PROWLARR_CATEGORIES', '2000,5000') # Movie, TV
     DASHBOARD_PROWLARR_CATEGORIES = [int(cat.strip()) for cat in _dashboard_prowlarr_categories_str.split(',') if cat.strip()]
 
+
     # --- Anciennes variables (à supprimer/migrer après vérification que plus rien ne les utilise) ---
     PENDING_TORRENTS_MAP_FILE = os.getenv(
         'PENDING_TORRENTS_MAP_FILE',
@@ -122,12 +123,6 @@ class Config:
 
 # --- FIN DE LA CLASSE CONFIG ---
 
-# --- CHARGEMENT DYNAMIQUE DES FILTRES DE RECHERCHE ---
-# Parcourt toutes les variables d'environnement après la définition de la classe
-# et ajoute dynamiquement celles correspondant aux filtres.
-for key, value in os.environ.items():
-    if key.startswith('SEARCH_FILTER_'):
-        setattr(Config, key, value.split('#')[0].strip())
 
 # --- Section de vérification et d'avertissements (exécutée une seule fois au démarrage) ---
 def check_and_print_startup_info():
