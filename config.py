@@ -124,6 +124,13 @@ class Config:
 # --- FIN DE LA CLASSE CONFIG ---
 
 
+# --- CHARGEMENT DYNAMIQUE DES FILTRES DE RECHERCHE ---
+# Parcourt toutes les variables d'environnement après la définition de la classe
+# et ajoute dynamiquement celles correspondant aux filtres.
+for key, value in os.environ.items():
+    if key.startswith('SEARCH_FILTER_'):
+        setattr(Config, key, value.split('#')[0].strip())
+
 # --- Section de vérification et d'avertissements (exécutée une seule fois au démarrage) ---
 def check_and_print_startup_info():
     if not Config.APP_PASSWORD:
