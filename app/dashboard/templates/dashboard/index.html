@@ -238,7 +238,11 @@ $(document).ready(function() {
             // For alias types (like language), add all aliases. Otherwise, just add the term.
             const aliases = $(this).data('aliases');
             if (aliases) {
-                activeKeywordFilters[group].push(...aliases.split(','));
+                // Split, trim whitespace from each alias, and filter out any empty strings
+                const aliasList = aliases.split(',').map(a => a.trim()).filter(a => a);
+                if (aliasList.length > 0) {
+                    activeKeywordFilters[group].push(...aliasList);
+                }
             } else {
                 activeKeywordFilters[group].push($(this).val());
             }
