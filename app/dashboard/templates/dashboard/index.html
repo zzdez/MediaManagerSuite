@@ -265,12 +265,26 @@ $(document).ready(function() {
                 if (!hasStatus) return false;
             }
 
-            // Keyword filters (AND between groups, OR within a group)
+            // Keyword filters based on parsed data (AND between groups, OR within a group)
+            const parsed = torrent.parsed_data || {};
             for (const group in activeKeywordFilters) {
                 const terms = activeKeywordFilters[group];
                 if (terms.length > 0) {
-                     // The logic is: does the title contain ANY of the terms for this group?
-                    const match = terms.some(term => torrent.title.toLowerCase().includes(term.toLowerCase()));
+                    let match = false;
+                    const lowerCaseTerms = terms.map(t => t.toLowerCase());
+
+                    if (group === 'Langue' && parsed.language) {
+                        match = lowerCaseTerms.some(term => parsed.language.toLowerCase().includes(term));
+                    } else if (group === 'Qualité' && parsed.quality) {
+                        match = lowerCaseTerms.includes(parsed.quality.toLowerCase());
+                    } else if (group === 'Codec' && parsed.codec) {
+                        match = lowerCaseTerms.includes(parsed.codec.toLowerCase());
+                    } else if (group === 'Source' && parsed.source) {
+                        match = lowerCaseTerms.includes(parsed.source.toLowerCase());
+                    } else if (group === 'Release Group' && parsed.release_group) {
+                        match = lowerCaseTerms.includes(parsed.release_group.toLowerCase());
+                    }
+
                     if (!match) return false; // Must match at least one term in this group
                 }
             }

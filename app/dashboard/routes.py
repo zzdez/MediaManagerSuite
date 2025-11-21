@@ -16,6 +16,8 @@ from app.utils.arr_client import get_sonarr_series_by_guid, get_radarr_movie_by_
 from app.utils.mapping_manager import get_all_torrent_hashes
 # Import the new status manager
 from app.utils.status_manager import get_media_statuses
+# Import the release parser
+from app.utils.release_parser import parse_release_data
 
 # Define paths for our state files
 DASHBOARD_STATE_FILE = os.path.join('instance', 'dashboard_state.json')
@@ -188,6 +190,10 @@ def refresh_torrents():
                         continue
 
                 _enrich_torrent_details(torrent, tmdb_client)
+
+                # Add parsed release data
+                torrent['parsed_data'] = parse_release_data(torrent['title'])
+
                 torrent['statuses'] = get_media_statuses(
                     title=torrent.get('title'),
                     tmdb_id=torrent.get('tmdbId'),
@@ -263,6 +269,7 @@ def _normalize_torrent(raw_torrent):
         'poster_url': '',
         'statuses': [],
         'is_new': False, # Default state for the 'new' badge
+        'parsed_data': {},
     }
 
 def _get_app_categories(apps):
