@@ -8,6 +8,7 @@
         <!-- Colonne des résultats (principale) -->
         <div class="col-md-10">
             <h1 class="mt-4">Tableau de Bord des Nouveautés</h1>
+            <h4 id="results-counter" class="text-muted mb-3"></h4>
             <p>Cliquez sur le bouton pour rechercher les nouvelles publications depuis votre dernière visite.</p>
             <button id="refresh-btn" class="btn btn-primary mb-4">
                 <i class="fas fa-sync-alt"></i> Rafraîchir les nouveautés
@@ -269,6 +270,14 @@ $(document).ready(function() {
         });
 
         renderTorrents(filteredTorrents);
+
+        // Update results counter
+        const counterElement = $('#results-counter');
+        if (allTorrents.length > 0) {
+            counterElement.text(`Résultats (${filteredTorrents.length} / ${allTorrents.length})`);
+        } else {
+            counterElement.text(''); // Hide if no torrents at all
+        }
     }
 
     function populateStandardFilters() {
