@@ -98,21 +98,31 @@ def search_prowlarr(query, categories=None, lang=None):
         current_app.logger.warning(f"Prowlarr search for query '{query}' did not return a list.")
         return []
 
-def get_latest_from_prowlarr(categories, limit=200):
+def get_latest_from_prowlarr(categories, min_date=None):
     """
-    Fetches the latest releases from Prowlarr for given categories.
-    Prowlarr's default sort is by publish date descending, so no query
-    and a limit should give us the most recent items.
+    Fetches the latest releases from Prowlarr.
+    - If min_date is provided, it fetches all releases since that date.
+    - Otherwise, it fetches the latest 1000 releases.
     """
     params = {
         'type': 'search',
-        'limit': limit,
         'offset': 0
     }
 
+    if min_date:
+        # The correct Prowlarr API parameter to filter by date is 'minDate'.
+        # It expects an ISO 8601 formatted string.
+        params['minDate'] = min_date.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+        current_app.logger.info(f"Prowlarr latest fetch: Using minDate {params['minDate']}")
+    else:
+        # If no date, fall back to a high limit.
+        params['limit'] = 1000
+        current_app.logger.info(f"Prowlarr latest fetch: No min_date, using limit {params['limit']}")
+
+
     if categories and isinstance(categories, list) and len(categories) > 0:
         params['categories'] = categories
-        current_app.logger.info(f"Prowlarr latest fetch: Using categories {params['categories']} with limit {limit}")
+        current_app.logger.info(f"Prowlarr latest fetch: Using categories {params['categories']}")
 
     response_data = _make_prowlarr_request('search', params)
 

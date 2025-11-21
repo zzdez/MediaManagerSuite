@@ -10,9 +10,18 @@
             <h1 class="mt-4">Tableau de Bord des Nouveautés</h1>
             <h4 id="results-counter" class="text-muted mb-3"></h4>
             <p>Cliquez sur le bouton pour rechercher les nouvelles publications depuis votre dernière visite.</p>
-            <button id="refresh-btn" class="btn btn-primary mb-4">
-                <i class="fas fa-sync-alt"></i> Rafraîchir les nouveautés
-            </button>
+            <div class="d-flex align-items-center mb-4">
+                <button id="refresh-btn" class="btn btn-primary">
+                    <i class="fas fa-sync-alt"></i> Rafraîchir les nouveautés
+                </button>
+                <div class="ms-4 d-flex align-items-center">
+                    <label for="cleanup-days" class="form-label me-2 mb-0">Garder (jours):</label>
+                    <input type="number" id="cleanup-days" class="form-control" value="7" min="0" max="30" style="width: 80px;">
+                    <button id="cleanup-btn" class="btn btn-secondary ms-2">
+                        <i class="fas fa-broom"></i> Nettoyer
+                    </button>
+                </div>
+            </div>
 
             <div id="loading-spinner" style="display: none;" class="text-center">
                 <div class="spinner-border text-primary" role="status">
@@ -457,6 +466,33 @@ $(document).ready(function() {
         });
     });
 
+    // --- Cleanup Button Logic ---
+    $('#cleanup-btn').on('click', function() {
+        const daysToKeep = $('#cleanup-days').val();
+        if (daysToKeep === '' || parseInt(daysToKeep) < 0 || parseInt(daysToKeep) > 30) {
+            alert('Veuillez entrer un nombre de jours valide entre 0 et 30.');
+            return;
+        }
+
+        if (!confirm(`Êtes-vous sûr de vouloir supprimer les torrents de plus de ${daysToKeep} jours ?`)) {
+            return;
+        }
+
+        $.ajax({
+            url: "{{ url_for('dashboard_bp.cleanup_torrents') }}",
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ days: daysToKeep }),
+            success: function(response) {
+                alert(response.message || 'Nettoyage terminé !');
+                location.reload(); // Reload the page to show the cleaned list
+            },
+            error: function(xhr) {
+                const errorMsg = xhr.responseJSON ? xhr.responseJSON.message : 'Une erreur est survenue.';
+                alert('Erreur lors du nettoyage: ' + errorMsg);
+            }
+        });
+    });
     // --- Intelligent Details Button Handler ---
     $('#torrents-container').on('click', '.details-btn', function() {
         const url = $(this).data('url');

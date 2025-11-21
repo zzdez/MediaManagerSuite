@@ -2,7 +2,7 @@ from flask import render_template, jsonify, current_app, request
 from app.dashboard import dashboard_bp
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import re
 import requests
 
@@ -22,6 +22,7 @@ from app.utils.release_parser import parse_release_data
 # Define paths for our state files
 DASHBOARD_STATE_FILE = os.path.join('instance', 'dashboard_state.json')
 DASHBOARD_IGNORED_FILE = os.path.join('instance', 'dashboard_ignored.json')
+DASHBOARD_TORRENTS_FILE = os.path.join('instance', 'dashboard_torrents.json')
 
 # --- Helper functions for state management ---
 
@@ -73,8 +74,6 @@ def dashboard():
     """
     Dashboard page - loads torrents from our persistent store and prepares keyword filters.
     """
-    DASHBOARD_TORRENTS_FILE = os.path.join('instance', 'dashboard_torrents.json')
-
     torrents = []
     if os.path.exists(DASHBOARD_TORRENTS_FILE):
         try:
@@ -98,9 +97,6 @@ def refresh_torrents():
     API endpoint to refresh the torrent list. It fetches the latest from Prowlarr,
     merges them with the existing list, marks new ones, and saves the updated list.
     """
-    DASHBOARD_TORRENTS_FILE = os.path.join('instance', 'dashboard_torrents.json')
-    MAX_TORRENTS_TO_KEEP = 1000
-
     try:
         # Step 1: Load existing torrents
         existing_torrents = []
@@ -121,8 +117,12 @@ def refresh_torrents():
             existing_torrents_map[torrent['hash']] = torrent
 
         # Step 3: Fetch new torrents from Prowlarr
+        last_refresh = get_last_refresh_time()
         prowlarr_categories = current_app.config.get('DASHBOARD_PROWLARR_CATEGORIES', [])
-        raw_torrents_from_prowlarr = get_latest_from_prowlarr(prowlarr_categories)
+        raw_torrents_from_prowlarr = get_latest_from_prowlarr(
+            categories=prowlarr_categories,
+            min_date=last_refresh
+        )
 
         if raw_torrents_from_prowlarr is None:
             return jsonify({"status": "error", "message": "Could not retrieve data from Prowlarr."}), 500
@@ -179,7 +179,6 @@ def refresh_torrents():
         final_torrents = [t for t in final_torrents if t.get('publishDate')]
 
         final_torrents.sort(key=lambda x: x['publishDate'], reverse=True)
-        final_torrents = final_torrents[:MAX_TORRENTS_TO_KEEP]
 
         # Convert datetime objects back to ISO strings for JSON serialization
         for torrent in final_torrents:
@@ -371,3 +370,56 @@ def proxy_request():
     except requests.exceptions.RequestException as e:
         current_app.logger.error(f"Proxy request to {url} failed: {e}")
         return jsonify({"error": f"Failed to fetch URL: {e}"}), 502
+
+@dashboard_bp.route('/dashboard/api/cleanup', methods=['POST'])
+def cleanup_torrents():
+    """
+    API endpoint to clean up old torrents from the dashboard's persistent store.
+    """
+    data = request.get_json()
+    days_to_keep = data.get('days')
+
+    if days_to_keep is None:
+        return jsonify({"status": "error", "message": "Number of days not provided."}), 400
+
+    try:
+        days_to_keep = int(days_to_keep)
+        if days_to_keep < 0 or days_to_keep > 30:
+            raise ValueError("Days must be between 0 and 30.")
+    except (ValueError, TypeError):
+        return jsonify({"status": "error", "message": "Invalid number of days. Must be an integer between 0 and 30."}), 400
+
+    if not os.path.exists(DASHBOARD_TORRENTS_FILE):
+        return jsonify({"status": "success", "message": "No torrents to clean up.", "cleaned_count": 0})
+
+    try:
+        with open(DASHBOARD_TORRENTS_FILE, 'r') as f:
+            all_torrents = json.load(f)
+
+        original_count = len(all_torrents)
+
+        if days_to_keep == 0:
+            cleaned_torrents = []
+            current_app.logger.info("Cleanup: Removing all torrents as requested (0 days).")
+        else:
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_to_keep)
+            cleaned_torrents = [
+                t for t in all_torrents
+                if datetime.fromisoformat(t['publishDate'].replace('Z', '+00:00')) >= cutoff_date
+            ]
+            current_app.logger.info(f"Cleanup: Keeping torrents from the last {days_to_keep} days.")
+
+        cleaned_count = original_count - len(cleaned_torrents)
+
+        with open(DASHBOARD_TORRENTS_FILE, 'w') as f:
+            json.dump(cleaned_torrents, f, indent=2)
+
+        return jsonify({
+            "status": "success",
+            "message": f"{cleaned_count} old torrent(s) removed.",
+            "cleaned_count": cleaned_count
+        })
+
+    except (json.JSONDecodeError, IOError, KeyError) as e:
+        current_app.logger.error(f"Error during torrent cleanup: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": "Failed to process the torrent file."}), 500
