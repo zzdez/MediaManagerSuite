@@ -84,43 +84,12 @@ def dashboard():
             current_app.logger.error(f"Could not read or parse dashboard_torrents.json: {e}")
             torrents = []
 
-    # --- Prepare keyword filters from environment variables ---
-    keyword_filters = {
-        "Langue": {"type": "alias", "terms": {}},
-        "Qualité": {"type": "simple", "terms": []},
-        "Codec": {"type": "simple", "terms": []},
-        "Source": {"type": "simple", "terms": []},
-        "Release Group": {"type": "simple", "terms": []}
-    }
+    # Ensure all torrents have parsed_data for backward compatibility
+    for torrent in torrents:
+        if 'parsed_data' not in torrent or not torrent['parsed_data']:
+            torrent['parsed_data'] = parse_release_data(torrent['title'])
 
-    # Process JSON-based language filters (priority)
-    languages_json = current_app.config.get('SEARCH_FILTER_LANGUAGES')
-    if languages_json:
-        try:
-            lang_terms = json.loads(languages_json)
-            if isinstance(lang_terms, dict):
-                keyword_filters["Langue"]["terms"] = lang_terms
-            else:
-                current_app.logger.warning("SEARCH_FILTER_LANGUAGES is not a valid JSON dictionary.")
-        except json.JSONDecodeError:
-            current_app.logger.error("Failed to decode SEARCH_FILTER_LANGUAGES JSON.")
-
-    # Process simple list filters (for other categories)
-    simple_filter_map = {
-        'SEARCH_FILTER_QUALITY_LIST': 'Qualité',
-        'SEARCH_FILTER_CODEC_LIST': 'Codec',
-        'SEARCH_FILTER_SOURCE_LIST': 'Source',
-        'SEARCH_FILTER_RELEASE_GROUP_LIST': 'Release Group'
-    }
-    for env_var, group_name in simple_filter_map.items():
-        value = current_app.config.get(env_var)
-        if value:
-            keyword_filters[group_name]["terms"] = [term.strip() for term in str(value).split(',')]
-
-    # Clean up empty filter groups
-    keyword_filters = {k: v for k, v in keyword_filters.items() if v["terms"]}
-
-    return render_template('dashboard/index.html', torrents=torrents, keyword_filters=keyword_filters)
+    return render_template('dashboard/index.html', torrents=torrents)
 
 
 @dashboard_bp.route('/dashboard/api/refresh')

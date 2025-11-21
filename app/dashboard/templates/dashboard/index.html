@@ -70,41 +70,9 @@
                 <hr>
 
                 <!-- Filtres par mots-clés (dynamiques) -->
-                {% if keyword_filters %}
                 <div id="keyword-filters-container" class="accordion">
-                    {% for group_name, group_data in keyword_filters.items() %}
-                    <div class="accordion-item bg-dark">
-                        <h2 class="accordion-header" id="heading-{{ loop.index }}">
-                            <button class="accordion-button bg-secondary text-white collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-{{ loop.index }}" aria-expanded="false" aria-controls="collapse-{{ loop.index }}">
-                                {{ group_name }}
-                            </button>
-                        </h2>
-                        <div id="collapse-{{ loop.index }}" class="accordion-collapse collapse" aria-labelledby="heading-{{ loop.index }}">
-                            <div class="accordion-body">
-                                <div class="btn-group-vertical w-100" role="group" aria-label="{{ group_name }}">
-                                    {% if group_data.type == 'simple' %}
-                                        {% for term in group_data.terms %}
-                                        <div class="form-check">
-                                            <input class="form-check-input keyword-filter-checkbox" type="checkbox" value="{{ term }}" id="filter-{{ group_name|lower|replace(' ', '-') }}-{{ term }}" data-group="{{ group_name }}">
-                                            <label class="form-check-label" for="filter-{{ group_name|lower|replace(' ', '-') }}-{{ term }}">{{ term }}</label>
-                                        </div>
-                                        {% endfor %}
-                                    {% elif group_data.type == 'alias' %}
-                                        {# This is the new logic for languages from JSON config #}
-                                        {% for display_name, aliases in group_data.terms.items() %}
-                                        <div class="form-check">
-                                            <input class="form-check-input keyword-filter-checkbox" type="checkbox" value="{{ display_name }}" id="filter-{{ group_name|lower }}-{{ display_name }}" data-group="{{ group_name }}" data-aliases="{{ aliases|join(',') }}">
-                                            <label class="form-check-label" for="filter-{{ group_name|lower }}-{{ display_name }}">{{ display_name }}</label>
-                                        </div>
-                                        {% endfor %}
-                                    {% endif %}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    {% endfor %}
+                    <!-- Le contenu sera généré dynamiquement par JavaScript -->
                 </div>
-                {% endif %}
 
             </div>
         </div>
@@ -122,7 +90,6 @@ $(document).ready(function() {
 
     // --- Global state ---
     let allTorrents = {{ torrents|tojson }};
-    const keywordFiltersData = {{ keyword_filters|tojson if keyword_filters is defined else '{}' }};
     const KEYWORD_FILTER_STORAGE_KEY = 'dashboardKeywordFilterState';
 
     // --- DOM Elements ---
@@ -132,7 +99,7 @@ $(document).ready(function() {
     const filterCategory = $('#filter-category');
     const filterStatus = $('#filter-status');
     const filterIndexer = $('#filter-indexer');
-    const keywordCheckboxes = $('.keyword-filter-checkbox');
+    // Keyword checkboxes will be selected dynamically after they are created
 
     // --- Badge Generation Logic ---
     const statusMap = {
@@ -222,35 +189,22 @@ $(document).ready(function() {
     }
 
     function applyFilters() {
-        // --- Get standard filter values ---
         const titleFilter = filterTitle.val().toLowerCase();
         const yearFilter = parseInt(filterYear.val(), 10) || 0;
         const categoryFilter = filterCategory.val();
         const statusFilter = filterStatus.val();
         const indexerFilter = filterIndexer.val();
 
-        // --- Get keyword filter values ---
         const activeKeywordFilters = {};
-        keywordCheckboxes.filter(':checked').each(function() {
+        $('.keyword-filter-checkbox:checked').each(function() {
             const group = $(this).data('group');
             if (!activeKeywordFilters[group]) {
                 activeKeywordFilters[group] = [];
             }
-            // For alias types (like language), we store the aliases directly
-            if (keywordFiltersData[group] && keywordFiltersData[group].type === 'alias') {
-                const displayName = $(this).val(); // e.g., "Français"
-                const aliases = keywordFiltersData[group].terms[displayName];
-                if (aliases) {
-                    activeKeywordFilters[group].push(...aliases);
-                }
-            } else {
-                // For simple types, just add the value
-                activeKeywordFilters[group].push($(this).val());
-            }
+            activeKeywordFilters[group].push($(this).val().toLowerCase());
         });
 
         const filteredTorrents = allTorrents.filter(torrent => {
-            // Standard filters
             if (titleFilter && !torrent.title.toLowerCase().includes(titleFilter)) return false;
 
             const yearMatch = torrent.title.match(/\b(19\d{2}|20\d{2})\b/);
@@ -265,27 +219,20 @@ $(document).ready(function() {
                 if (!hasStatus) return false;
             }
 
-            // Keyword filters based on parsed data (AND between groups, OR within a group)
             const parsed = torrent.parsed_data || {};
             for (const group in activeKeywordFilters) {
                 const terms = activeKeywordFilters[group];
                 if (terms.length > 0) {
-                    let match = false;
-                    const lowerCaseTerms = terms.map(t => t.toLowerCase());
-
-                    if (group === 'Langue' && parsed.language) {
-                        match = lowerCaseTerms.some(term => parsed.language.toLowerCase().includes(term));
-                    } else if (group === 'Qualité' && parsed.quality) {
-                        match = lowerCaseTerms.includes(parsed.quality.toLowerCase());
-                    } else if (group === 'Codec' && parsed.codec) {
-                        match = lowerCaseTerms.includes(parsed.codec.toLowerCase());
-                    } else if (group === 'Source' && parsed.source) {
-                        match = lowerCaseTerms.includes(parsed.source.toLowerCase());
-                    } else if (group === 'Release Group' && parsed.release_group) {
-                        match = lowerCaseTerms.includes(parsed.release_group.toLowerCase());
+                    let fieldValue = '';
+                    switch (group) {
+                        case 'Langue': fieldValue = (parsed.language || '').toUpperCase(); break;
+                        case 'Qualité': fieldValue = parsed.quality || ''; break;
+                        case 'Codec': fieldValue = parsed.codec || ''; break;
+                        case 'Source': fieldValue = parsed.source || ''; break;
                     }
-
-                    if (!match) return false; // Must match at least one term in this group
+                    if (!terms.includes(fieldValue.toLowerCase())) {
+                        return false;
+                    }
                 }
             }
 
@@ -295,7 +242,7 @@ $(document).ready(function() {
         renderTorrents(filteredTorrents);
     }
 
-    function populateFilters() {
+    function populateStandardFilters() {
         const categories = new Set();
         const statuses = new Set();
         const indexers = new Set();
@@ -321,10 +268,61 @@ $(document).ready(function() {
         populateSelect(filterIndexer, indexers);
     }
 
-    // --- Keyword Filter Persistence ---
+    function populateKeywordFilters() {
+        const keywordFiltersContainer = $('#keyword-filters-container');
+        keywordFiltersContainer.empty();
+
+        const filterValues = {
+            'Langue': new Set(),
+            'Qualité': new Set(),
+            'Codec': new Set(),
+            'Source': new Set()
+        };
+
+        allTorrents.forEach(torrent => {
+            const parsed = torrent.parsed_data || {};
+            if (parsed.language) filterValues['Langue'].add(parsed.language.toUpperCase());
+            if (parsed.quality) filterValues['Qualité'].add(parsed.quality);
+            if (parsed.codec) filterValues['Codec'].add(parsed.codec);
+            if (parsed.source) filterValues['Source'].add(parsed.source);
+        });
+
+        Object.keys(filterValues).forEach((groupName, index) => {
+            const values = [...filterValues[groupName]].sort();
+            if (values.length === 0) return;
+
+            const collapseId = `collapse-kw-${index}`;
+            const headerId = `heading-kw-${index}`;
+            let checkboxesHtml = '';
+            values.forEach(value => {
+                const checkboxId = `filter-${groupName.toLowerCase().replace(' ', '-')}-${value.toLowerCase()}`;
+                checkboxesHtml += `
+                    <div class="form-check">
+                        <input class="form-check-input keyword-filter-checkbox" type="checkbox" value="${value}" id="${checkboxId}" data-group="${groupName}">
+                        <label class="form-check-label" for="${checkboxId}">${value}</label>
+                    </div>
+                `;
+            });
+
+            const accordionItemHtml = `
+                <div class="accordion-item bg-dark">
+                    <h2 class="accordion-header" id="${headerId}">
+                        <button class="accordion-button bg-secondary text-white collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="false" aria-controls="${collapseId}">
+                            ${groupName}
+                        </button>
+                    </h2>
+                    <div id="${collapseId}" class="accordion-collapse collapse" aria-labelledby="${headerId}">
+                        <div class="accordion-body">${checkboxesHtml}</div>
+                    </div>
+                </div>
+            `;
+            keywordFiltersContainer.append(accordionItemHtml);
+        });
+    }
+
     function saveKeywordFilterState() {
         const state = {};
-        keywordCheckboxes.each(function() {
+        $('.keyword-filter-checkbox').each(function() {
             state[this.id] = this.checked;
         });
         localStorage.setItem(KEYWORD_FILTER_STORAGE_KEY, JSON.stringify(state));
@@ -334,19 +332,17 @@ $(document).ready(function() {
         const savedState = localStorage.getItem(KEYWORD_FILTER_STORAGE_KEY);
         if (savedState) {
             const state = JSON.parse(savedState);
-            keywordCheckboxes.each(function() {
-                this.checked = state[this.id] !== false; // Default to true if not found
+            $('.keyword-filter-checkbox').each(function() {
+                this.checked = state[this.id] !== false;
             });
         } else {
-            // Default state: all checked
-            keywordCheckboxes.prop('checked', true);
+            $('.keyword-filter-checkbox').prop('checked', true);
         }
     }
 
-    // --- Event Handlers ---
     $('#filter-title, #filter-year').on('input', applyFilters);
     $('#filter-category, #filter-status, #filter-indexer').on('change', applyFilters);
-    keywordCheckboxes.on('change', function() {
+    $('#keyword-filters-container').on('change', '.keyword-filter-checkbox', function() {
         saveKeywordFilterState();
         applyFilters();
     });
@@ -357,13 +353,14 @@ $(document).ready(function() {
         filterCategory.val('');
         filterStatus.val('');
         filterIndexer.val('');
-        keywordCheckboxes.prop('checked', true); // Reset checkboxes to all checked
+        $('.keyword-filter-checkbox').prop('checked', true);
         saveKeywordFilterState();
         applyFilters();
     });
 
     // --- Initial Load ---
-    populateFilters();
+    populateStandardFilters();
+    populateKeywordFilters();
     loadKeywordFilterState();
     applyFilters();
 
