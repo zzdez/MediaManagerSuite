@@ -405,6 +405,40 @@ def get_sonarr_series_by_id(series_id):
     """Fetches a single series from Sonarr by its internal ID."""
     return _sonarr_api_request('GET', f'series/{series_id}')
 
+def get_sonarr_series_details_by_tvdbid(tvdb_id):
+    """
+    Fetches comprehensive series details from Sonarr, including all episodes, using a TVDB ID.
+    Returns a dictionary with series details and an 'episodes' key, or None if not found.
+    """
+    if not tvdb_id:
+        return None
+
+    # This is inefficient but aligns with the existing get_sonarr_series_by_guid.
+    # A better approach would be to use Sonarr's lookup endpoint if available.
+    all_series = _sonarr_api_request('GET', 'series')
+    series_details = None
+    if all_series:
+        for series in all_series:
+            if series.get('tvdbId') and str(series.get('tvdbId')) == str(tvdb_id):
+                series_details = series
+                break
+
+    if not series_details:
+        current_app.logger.info(f"Sonarr: Series with TVDB ID {tvdb_id} not found in library.")
+        return None
+
+    sonarr_series_id = series_details.get('id')
+    if not sonarr_series_id:
+        current_app.logger.error(f"Sonarr: Found series for TVDB ID {tvdb_id} but it's missing an internal Sonarr ID.")
+        return None # Should not happen
+
+    episodes = get_sonarr_episodes_by_series_id(sonarr_series_id)
+
+    # Combine the two results
+    series_details['episodes'] = episodes if episodes else []
+
+    return series_details
+
 def update_sonarr_series(series_data):
     """Updates a series in Sonarr using its full data object."""
     # Sonarr's PUT endpoint for a single series includes the ID in the URL.

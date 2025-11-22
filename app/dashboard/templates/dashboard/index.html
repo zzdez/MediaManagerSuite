@@ -111,27 +111,64 @@ $(document).ready(function() {
     const filterIndexer = $('#filter-indexer');
     // Keyword checkboxes will be selected dynamically after they are created
 
-    // --- Badge Generation Logic ---
-    const statusMap = {
-        'SONARR_MONITORED': { text: 'Sonarr (Surveillé)', class: 'bg-primary', group: 'Sonarr' },
-        'SONARR_OBTAINED': { text: 'Sonarr (Obtenu)', class: 'bg-success', group: 'Sonarr' },
-        'RADARR_MONITORED': { text: 'Radarr (Surveillé)', class: 'bg-warning text-dark', group: 'Radarr' },
-        'RADARR_OBTAINED': { text: 'Radarr (Obtenu)', class: 'bg-warning text-dark', group: 'Radarr' },
-        'PLEX_PRESENT': { text: 'Plex', class: 'bg-purple', group: 'Plex' },
-        'ARCHIVED': { text: 'Archivé', class: 'bg-orange', group: 'Archivé' },
-        'UNKNOWN_ID': { text: 'Inconnu', class: 'bg-secondary', group: 'Inconnu' },
-        'NOT_MANAGED': { text: 'Non Géré', class: 'bg-secondary', group: 'Non Géré' }
-    };
-
     function generateStatusBadges(statuses) {
-        if (!statuses || statuses.length === 0) return '';
+        if (!statuses) return '<span class="badge bg-secondary ms-1">Inconnu</span>';
+
         let badgesHtml = '';
-        statuses.forEach(status => {
-            const badgeInfo = statusMap[status];
-            if (badgeInfo) {
-                badgesHtml += `<span class="badge ${badgeInfo.class} ms-1">${badgeInfo.text}</span>`;
+
+        // Badge Radarr (simple)
+        if (statuses.radarr) {
+            const isObtained = statuses.radarr.status === 'OBTAINED';
+            badgesHtml += `<span class="badge bg-warning text-dark ms-1">Radarr (${isObtained ? 'Obtenu' : 'Surveillé'})</span>`;
+        }
+
+        // Badges Sonarr (détaillés)
+        if (statuses.sonarr) {
+            badgesHtml += `<span class="badge bg-primary ms-1">Sonarr (Surveillé)</span>`;
+
+            const s = statuses.sonarr;
+            // 1. Statut de l'épisode
+            if (s.episode_status === 'OBTAINED') {
+                badgesHtml += `<span class="badge bg-success ms-1">Épisode Obtenu</span>`;
             }
-        });
+
+            // 2. Statut de la saison
+            if (s.season_status) {
+                const ss = s.season_status;
+                const seasonClass = ss.is_complete ? 'bg-success' : 'bg-info';
+                badgesHtml += `<span class="badge ${seasonClass} ms-1">Saison ${ss.season_number} (${ss.files_count}/${ss.total_episodes})</span>`;
+            }
+
+            // 3. Statut de la série
+            if (s.series_status) {
+                 const ser = s.series_status;
+                 if (ser.total_seasons > 0) { // N'afficher que si l'info est pertinente
+                    const seriesClass = ser.complete_seasons === ser.total_seasons ? 'bg-success' : 'bg-info';
+                    badgesHtml += `<span class="badge ${seriesClass} ms-1">Série (${ser.complete_seasons}/${ser.total_seasons})</span>`;
+                 }
+            }
+        }
+
+        // Badge Plex
+        if (statuses.plex) {
+            badgesHtml += `<span class="badge bg-purple ms-1">Plex</span>`;
+        }
+
+        // Badge Archive
+        if (statuses.archive) {
+            badgesHtml += `<span class="badge bg-orange ms-1">Archivé</span>`;
+        }
+
+        // Fallback si aucun autre badge n'a été généré
+        if (badgesHtml === '') {
+            const summaryMap = {
+                'NOT_MANAGED': { text: 'Non Géré', class: 'bg-secondary' },
+                'UNKNOWN': { text: 'Inconnu', class: 'bg-dark' }
+            };
+            const summaryInfo = summaryMap[statuses.summary] || summaryMap['UNKNOWN'];
+            badgesHtml = `<span class="badge ${summaryInfo.class} ms-1">${summaryInfo.text}</span>`;
+        }
+
         return badgesHtml;
     }
 
@@ -254,8 +291,16 @@ $(document).ready(function() {
             if (indexerFilter && torrent.indexer !== indexerFilter) return false;
 
             if (statusFilter) {
-                const hasStatus = torrent.statuses.some(s => statusMap[s] && statusMap[s].group === statusFilter);
-                if (!hasStatus) return false;
+                // Nouvelle logique de filtrage basée sur le résumé du statut
+                const summary = torrent.statuses.summary;
+                const statusGroupMap = {
+                    'OBTAINED': 'Obtenu',
+                    'MONITORED': 'Surveillé',
+                    'ARCHIVED': 'Archivé',
+                    'NOT_MANAGED': 'Non Géré',
+                    'UNKNOWN': 'Inconnu'
+                };
+                if (statusGroupMap[summary] !== statusFilter) return false;
             }
 
             const parsed = torrent.parsed_data || {};
@@ -297,10 +342,17 @@ $(document).ready(function() {
         allTorrents.forEach(torrent => {
             if (torrent.category) categories.add(torrent.category);
             if (torrent.indexer) indexers.add(torrent.indexer);
-            torrent.statuses.forEach(s => {
-                const statusInfo = statusMap[s];
-                if (statusInfo) statuses.add(statusInfo.group);
-            });
+            if (torrent.statuses && torrent.statuses.summary) {
+                const summary = torrent.statuses.summary;
+                const statusGroupMap = {
+                    'OBTAINED': 'Obtenu',
+                    'MONITORED': 'Surveillé',
+                    'ARCHIVED': 'Archivé',
+                    'NOT_MANAGED': 'Non Géré',
+                    'UNKNOWN': 'Inconnu'
+                };
+                if (statusGroupMap[summary]) statuses.add(statusGroupMap[summary]);
+            }
         });
 
         const populateSelect = (select, items) => {
