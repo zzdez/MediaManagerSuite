@@ -933,6 +933,23 @@ $(document).ready(function() {
                 lookupContent.html(modalHtml);
                 // La réponse contient le résultat unique qui sera marqué comme "best_match" par le backend
                 displayResults(data.results, mediaType);
+
+                // --- NOUVEAU: Ajout du sélecteur de type si ouvert depuis le Dashboard ---
+                if (button.data('media-type')) { // Indique qu'on vient du dashboard ou d'un contexte avec type prédéfini
+                    const typeSelectorHtml = `
+                        <div class="mb-3 border-bottom pb-3">
+                            <small class="text-muted">Type de média détecté. Changez si incorrect :</small>
+                            <div class="form-check form-check-inline ms-2">
+                                <input class="form-check-input" type="radio" name="modal_media_type" id="modal_media_type_tv" value="tv" ${mediaType === 'tv' ? 'checked' : ''}>
+                                <label class="form-check-label" for="modal_media_type_tv">Série (Sonarr)</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="radio" name="modal_media_type" id="modal_media_type_movie" value="movie" ${mediaType === 'movie' ? 'checked' : ''}>
+                                <label class="form-check-label" for="modal_media_type_movie">Film (Radarr)</label>
+                            </div>
+                        </div>`;
+                    lookupContent.prepend(typeSelectorHtml);
+                }
             })
             .catch(error => {
                 console.error("Erreur lors du lookup pré-mappé:", error);
@@ -942,8 +959,14 @@ $(document).ready(function() {
         } else {
             console.log("FLUX CLASSIQUE : Aucun contexte, lancement du lookup.");
             const button = $(this); // Assurer que 'button' est bien défini dans ce scope
-            const mediaType = button.data('media-type'); // LIRE LE TYPE DEPUIS LE BOUTON
-            
+            // --- NOUVELLE LOGIQUE UNIVERSELLE POUR DÉTERMINER LE TYPE DE MÉDIA ---
+            let mediaType = button.data('media-type'); // Priorité 1: Attribut sur le bouton (Dashboard, Recherche par Média)
+            if (!mediaType) {
+                // Priorité 2: Bouton radio sur la page (Recherche Libre)
+                mediaType = $('input[name="search_type"]:checked').val() === 'sonarr' ? 'tv' : 'movie';
+            }
+            // --- FIN DE LA NOUVELLE LOGIQUE ---
+
             modalBody.find('#add-item-options-container').addClass('d-none');
             modalEl.find('#confirm-add-and-map-btn').addClass('d-none');
             const lookupContent = modalBody.find('#initial-lookup-content').removeClass('d-none').show();
@@ -973,6 +996,34 @@ $(document).ready(function() {
                 displayResults(data.results, mediaType);
             });
         }
+    });
+
+    // --- NOUVEAU: Gère le changement de type de média DANS la modale ---
+    $('body').on('change', 'input[name="modal_media_type"]', function() {
+        const newMediaType = $(this).val();
+        const releaseDetails = modalEl.data('release-details');
+        const resultsContainer = $('#lookup-results-container');
+
+        if (!releaseDetails || !releaseDetails.title) return;
+
+        resultsContainer.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div><p class="mt-2">Recherche des correspondances...</p></div>');
+
+        // Relancer la recherche de correspondance avec le nouveau type
+        fetch('/search/api/search/lookup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ term: releaseDetails.title, media_type: newMediaType })
+        })
+        .then(response => response.json())
+        .then(data => {
+            // Mettre à jour le data-media-type du conteneur parent pour que les actions suivantes (ex: "Voir les détails") aient le bon contexte
+            resultsContainer.closest('[data-media-type]').attr('data-media-type', newMediaType);
+            displayResults(data.results, newMediaType);
+        })
+        .catch(error => {
+            console.error("Erreur lors du changement de type de média:", error);
+            resultsContainer.html('<div class="alert alert-danger">Erreur lors de la recherche.</div>');
+        });
     });
 
     $('body').on('click', '#sonarrRadarrSearchModal .add-and-enrich-btn', function() {

@@ -147,9 +147,15 @@ body {
     content: '\25BC'; /* Flèche vers le bas */
 }
 
-/* Assure que la modale de recherche ET la modale de lecture de BA s'affichent au-dessus */
-#trailer-search-modal,
-#trailer-modal {
+/*
+  Correction universelle du Z-index pour les modales superposées.
+  On s'assure que la modale de recherche de BA (#trailer-search-modal) et la modale
+  de lecture (#trailer-modal) s'affichent TOUJOURS au-dessus de la modale de mapping
+  (#sonarrRadarrSearchModal), qui est à z-index: 1050.
+  On cible .modal.show pour augmenter la spécificité et éviter les surcharges.
+*/
+.modal.show#trailer-search-modal,
+.modal.show#trailer-modal {
     z-index: 1060 !important;
 }
 
