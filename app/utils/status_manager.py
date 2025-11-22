@@ -34,9 +34,14 @@ def get_media_statuses(title=None, tmdb_id=None, tvdb_id=None, media_type=None):
     sonarr_status = statuses.get('sonarr')
     radarr_status = statuses.get('radarr')
 
-    if (sonarr_status and sonarr_status.get('episode_status') == 'OBTAINED') or \
-       (sonarr_status and sonarr_status.get('season_status', {}).get('is_complete')) or \
-       (radarr_status and radarr_status.get('status') == 'OBTAINED'):
+    # CORRECTION : On vérifie que sonarr_status n'est pas None avant d'accéder à ses clés
+    is_sonarr_obtained = sonarr_status and (
+        sonarr_status.get('episode_status') == 'OBTAINED' or
+        (sonarr_status.get('season_status') and sonarr_status['season_status'].get('is_complete'))
+    )
+    is_radarr_obtained = radarr_status and radarr_status.get('status') == 'OBTAINED'
+
+    if is_sonarr_obtained or is_radarr_obtained:
         statuses['plex'] = {"status": "PRESENT"}
         statuses['summary'] = "OBTAINED"
     elif sonarr_status or radarr_status:

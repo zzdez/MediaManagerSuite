@@ -20,6 +20,8 @@ def parse_media_name(item_name: str) -> dict:
     logger.debug(f"parse_media_name: Called with item_name='{item_name}'")
     # Regex patterns for TV shows
     tv_patterns = [
+        # Patterns for multi-season packs (integrale/complete) should have high priority
+        re.compile(r"^(?P<title>.+?)(?:[._\s](?P<year>(?:19|20)\d{2}))?[._\s](?:iNTEGRALE|COMPLETE)", re.IGNORECASE),
         # More specific patterns first
         re.compile(r"^(?P<title>.+?)[._\s](?P<year>(?:19|20)\d{2})[._\s]S(?P<season>\d{1,2})[._\s]?[E.]?(?P<episode>\d{1,3})", re.IGNORECASE), # Title.Year.S01.E01
         re.compile(r"^(?P<title>.+?)[._\s]S(?P<season>\d{1,2})[._\s]?[E.]?(?P<episode>\d{1,3})[._\s](?P<year>(?:19|20)\d{2})", re.IGNORECASE), # Title.S01.E01.Year
