@@ -225,7 +225,7 @@ def _normalize_torrent(raw_torrent):
         'leechers': raw_torrent.get('leechers'),
         'indexerId': raw_torrent.get('indexerId'),
         'type': raw_torrent.get('type'),
-        'tmdbId': raw_torrent.get('tmdb_id'),
+        'tmdbId': raw_torrent.get('tmdbId') or raw_torrent.get('tmdb_id'),
         'guid': raw_torrent.get('guid'),
         'downloadUrl': raw_torrent.get('guid'),
         'detailsUrl': raw_torrent.get('infoUrl'),

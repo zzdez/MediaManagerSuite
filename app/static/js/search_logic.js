@@ -1284,6 +1284,30 @@ $(document).ready(function() {
         updateBatchActions();
     });
 
+    // =================================================================
+    // ### BLOC 5 : RÉINITIALISATION DE LA MODALE & MAPPER ###
+    // =================================================================
+
+    modalEl.on('hidden.bs.modal', function () {
+        // 1. Vider le contenu dynamique
+        modalBody.find('#initial-lookup-content').empty();
+        modalBody.find('#add-item-options-container').addClass('d-none').find('#new-media-details-container').empty();
+        modalBody.find('#lookup-results-container').empty();
+
+        // 2. Réinitialiser le titre de la modale
+        modalEl.find('.modal-title').text('Mapper');
+
+        // 3. Cacher et réinitialiser les boutons du pied de page
+        modalEl.find('#confirm-add-and-map-btn').addClass('d-none').prop('disabled', false).text('Ajouter, Télécharger & Mapper');
+
+        // 4. Nettoyer les données stockées sur l'élément de la modale
+        modalEl.removeData('release-details');
+        modalEl.removeData('release-details-batch');
+
+        // 5. Réinitialiser le contexte global si nécessaire
+        window.currentMediaContext = null;
+    });
+
     // Écouteur pour le bouton de mappage de lot
     $('#search-results-container').on('click', '#batch-map-btn', function() {
         const selectedItems = [];

@@ -147,7 +147,8 @@ body {
     content: '\25BC'; /* Flèche vers le bas */
 }
 
-/* Assure que la modale du lecteur de bande-annonce s'affiche toujours au-dessus des autres modales */
+/* Assure que la modale de recherche ET la modale de lecture de BA s'affichent au-dessus */
+#trailerSearchModal,
 #trailer-modal {
     z-index: 1060 !important;
 }
