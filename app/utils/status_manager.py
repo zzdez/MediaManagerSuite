@@ -1,7 +1,7 @@
 # app/utils/status_manager.py
 
 from flask import current_app
-from app.utils.arr_client import get_sonarr_series_by_guid, get_radarr_movie_by_guid, check_sonarr_episode_exists, parse_media_name
+from app.utils.arr_client import get_sonarr_series_by_guid, get_radarr_movie_by_guid, check_sonarr_episode_exists, parse_media_name, get_sonarr_episodes_by_series_id
 from app.utils.archive_manager import get_archived_media_by_id
 
 def get_media_statuses(title=None, tmdb_id=None, tvdb_id=None, media_type=None):
@@ -49,10 +49,28 @@ def _check_arr_status(title, tmdb_id, tvdb_id, media_type):
             episode_number = parsed_info.get('episode')
 
             if season_number is not None:
-                # check_sonarr_episode_exists needs the series title, not the parsed one
                 series_title = series.get('title')
-                if check_sonarr_episode_exists(series_title, season_number, episode_number):
-                    statuses.append('SONARR_OBTAINED')
+                # Si c'est un pack de saison (pas d'épisode), on utilise la nouvelle logique
+                if episode_number is None:
+                    series_id = series.get('id')
+                    all_episodes = get_sonarr_episodes_by_series_id(series_id)
+                    if all_episodes:
+                        season_episodes = [ep for ep in all_episodes if ep.get('seasonNumber') == season_number]
+
+                        # Compter uniquement les épisodes qui ne sont PAS des "spéciaux" (souvent non numérotés)
+                        relevant_episodes = [ep for ep in season_episodes if ep.get('episodeNumber', 0) > 0]
+
+                        if relevant_episodes: # S'il y a des épisodes numérotés dans la saison
+                            files_count = sum(1 for ep in relevant_episodes if ep.get('hasFile', False))
+
+                            # Si tous les épisodes pertinents ont un fichier, la saison est "obtenue"
+                            if files_count >= len(relevant_episodes):
+                                statuses.append('SONARR_OBTAINED')
+
+                # Sinon, on utilise l'ancienne logique pour les épisodes individuels
+                else:
+                    if check_sonarr_episode_exists(series_title, season_number, episode_number):
+                        statuses.append('SONARR_OBTAINED')
 
     elif media_type == 'movie' and tmdb_id:
         plex_guid = f'tmdb://{tmdb_id}'

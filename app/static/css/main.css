@@ -148,7 +148,7 @@ body {
 }
 
 /* Assure que la modale de recherche ET la modale de lecture de BA s'affichent au-dessus */
-#trailerSearchModal,
+#trailer-search-modal,
 #trailer-modal {
     z-index: 1060 !important;
 }
