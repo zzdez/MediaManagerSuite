@@ -114,6 +114,31 @@ $(document).ready(function() {
     function generateStatusBadges(statuses) {
         if (!statuses) return '<span class="badge bg-secondary ms-1">Inconnu</span>';
 
+        // --- NOUVEAU : Logique de rétrocompatibilité ---
+        // Si 'statuses' est un tableau, c'est l'ancien format.
+        if (Array.isArray(statuses)) {
+            const legacyStatusMap = {
+                'SONARR_MONITORED': { text: 'Sonarr (Surveillé)', class: 'bg-primary' },
+                'SONARR_OBTAINED': { text: 'Sonarr (Obtenu)', class: 'bg-success' },
+                'RADARR_MONITORED': { text: 'Radarr (Surveillé)', class: 'bg-warning text-dark' },
+                'RADARR_OBTAINED': { text: 'Radarr (Obtenu)', class: 'bg-warning text-dark' },
+                'PLEX_PRESENT': { text: 'Plex', class: 'bg-purple' },
+                'ARCHIVED': { text: 'Archivé', class: 'bg-orange' },
+                'UNKNOWN_ID': { text: 'Inconnu', class: 'bg-secondary' },
+                'NOT_MANAGED': { text: 'Non Géré', class: 'bg-secondary' }
+            };
+            let badgesHtml = '';
+            statuses.forEach(status => {
+                const badgeInfo = legacyStatusMap[status];
+                if (badgeInfo) {
+                    badgesHtml += `<span class="badge ${badgeInfo.class} ms-1">${badgeInfo.text}</span>`;
+                }
+            });
+            return badgesHtml || '<span class="badge bg-dark ms-1">Inconnu</span>';
+        }
+        // --- Fin de la logique de rétrocompatibilité ---
+
+        // Si ce n'est pas un tableau, c'est le nouvel objet structuré.
         let badgesHtml = '';
 
         // Badge Radarr (simple)
@@ -291,16 +316,26 @@ $(document).ready(function() {
             if (indexerFilter && torrent.indexer !== indexerFilter) return false;
 
             if (statusFilter) {
-                // Nouvelle logique de filtrage basée sur le résumé du statut
-                const summary = torrent.statuses.summary;
-                const statusGroupMap = {
-                    'OBTAINED': 'Obtenu',
-                    'MONITORED': 'Surveillé',
-                    'ARCHIVED': 'Archivé',
-                    'NOT_MANAGED': 'Non Géré',
-                    'UNKNOWN': 'Inconnu'
-                };
-                if (statusGroupMap[summary] !== statusFilter) return false;
+                if (Array.isArray(torrent.statuses)) {
+                    // Logique "legacy" pour l'ancien format
+                    const legacyStatusMap = {
+                        'SONARR_MONITORED': 'Surveillé', 'SONARR_OBTAINED': 'Obtenu',
+                        'RADARR_MONITORED': 'Surveillé', 'RADARR_OBTAINED': 'Obtenu',
+                        'PLEX_PRESENT': 'Plex', 'ARCHIVED': 'Archivé',
+                        'UNKNOWN_ID': 'Inconnu', 'NOT_MANAGED': 'Non Géré'
+                    };
+                    const hasStatus = torrent.statuses.some(s => legacyStatusMap[s] === statusFilter);
+                    if (!hasStatus) return false;
+                } else {
+                    // Nouvelle logique pour le nouveau format
+                    const summary = torrent.statuses.summary;
+                    const statusGroupMap = {
+                        'OBTAINED': 'Obtenu', 'MONITORED': 'Surveillé',
+                        'ARCHIVED': 'Archivé', 'NOT_MANAGED': 'Non Géré',
+                        'UNKNOWN': 'Inconnu'
+                    };
+                    if (statusGroupMap[summary] !== statusFilter) return false;
+                }
             }
 
             const parsed = torrent.parsed_data || {};
@@ -342,13 +377,24 @@ $(document).ready(function() {
         allTorrents.forEach(torrent => {
             if (torrent.category) categories.add(torrent.category);
             if (torrent.indexer) indexers.add(torrent.indexer);
-            if (torrent.statuses && torrent.statuses.summary) {
+
+            if (Array.isArray(torrent.statuses)) {
+                // Logique "legacy"
+                const legacyStatusMap = {
+                    'SONARR_MONITORED': 'Surveillé', 'SONARR_OBTAINED': 'Obtenu',
+                    'RADARR_MONITORED': 'Surveillé', 'RADARR_OBTAINED': 'Obtenu',
+                    'PLEX_PRESENT': 'Plex', 'ARCHIVED': 'Archivé',
+                    'UNKNOWN_ID': 'Inconnu', 'NOT_MANAGED': 'Non Géré'
+                };
+                torrent.statuses.forEach(s => {
+                    if (legacyStatusMap[s]) statuses.add(legacyStatusMap[s]);
+                });
+            } else if (torrent.statuses && torrent.statuses.summary) {
+                // Nouvelle logique
                 const summary = torrent.statuses.summary;
                 const statusGroupMap = {
-                    'OBTAINED': 'Obtenu',
-                    'MONITORED': 'Surveillé',
-                    'ARCHIVED': 'Archivé',
-                    'NOT_MANAGED': 'Non Géré',
+                    'OBTAINED': 'Obtenu', 'MONITORED': 'Surveillé',
+                    'ARCHIVED': 'Archivé', 'NOT_MANAGED': 'Non Géré',
                     'UNKNOWN': 'Inconnu'
                 };
                 if (statusGroupMap[summary]) statuses.add(statusGroupMap[summary]);
