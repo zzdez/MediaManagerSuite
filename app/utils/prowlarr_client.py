@@ -100,40 +100,57 @@ def search_prowlarr(query, categories=None, lang=None):
 
 def get_latest_from_prowlarr(categories, min_date=None):
     """
-    Fetches the latest releases from Prowlarr.
-    - If min_date is provided, it fetches all releases since that date.
-    - Otherwise, it fetches the latest 1000 releases.
+    Fetches ALL latest releases from Prowlarr since a given date using pagination.
+    This bypasses the indexer's hard limit by making successive requests.
     """
-    params = {
-        'type': 'search',
-        'offset': 0,
-        'limit': 1000  # Set a high limit for all requests to override Prowlarr's default
-    }
+    all_releases = []
+    offset = 0
+    # Set the limit to 100, which matches the observed per-page limit of the indexers.
+    limit = 100
 
-    if min_date:
-        # The correct Prowlarr API parameter to filter by date is 'minDate'.
-        # It expects an ISO 8601 formatted string.
-        params['minDate'] = min_date.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
-        current_app.logger.info(f"Prowlarr latest fetch: Using minDate {params['minDate']} and limit {params['limit']}")
-    else:
-        # Log that we are using the default high limit without a date filter.
-        current_app.logger.info(f"Prowlarr latest fetch: No min_date, using default limit {params['limit']}")
+    while True:
+        params = {
+            'type': 'search',
+            'offset': offset,
+            'limit': limit
+        }
 
+        if min_date:
+            params['minDate'] = min_date.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
 
-    if categories and isinstance(categories, list) and len(categories) > 0:
-        params['categories'] = categories
-        current_app.logger.info(f"Prowlarr latest fetch: Using categories {params['categories']}")
+        if categories and isinstance(categories, list) and len(categories) > 0:
+            params['cat'] = ','.join(map(str, categories))
 
-    response_data = _make_prowlarr_request('search', params)
+        current_app.logger.info(f"Prowlarr fetch: Getting page with offset {offset}, limit {limit}, minDate {params.get('minDate')}")
 
-    # Contrairement à une recherche par query, une recherche générale peut retourner
-    # un objet avec des détails supplémentaires. On s'assure de retourner la liste.
-    # Dans ce cas, l'API retourne une liste directement, donc on garde la cohérence.
-    if isinstance(response_data, list):
-        return response_data
-    else:
-        current_app.logger.warning("Prowlarr latest fetch did not return a list.")
-        return []
+        response_data = _make_prowlarr_request('search', params)
+
+        if response_data is None:
+            current_app.logger.error("Prowlarr request failed. Aborting pagination.")
+            return None # Propagate the error
+
+        if isinstance(response_data, list):
+            if not response_data:
+                # No more results, break the loop
+                current_app.logger.info("Prowlarr fetch: Received an empty list, ending pagination.")
+                break
+
+            all_releases.extend(response_data)
+
+            # If the number of results returned is less than the limit,
+            # we have reached the last page.
+            if len(response_data) < limit:
+                current_app.logger.info(f"Prowlarr fetch: Received {len(response_data)} results (less than limit), ending pagination.")
+                break
+
+            # Otherwise, prepare for the next page
+            offset += limit
+        else:
+            current_app.logger.warning("Prowlarr fetch did not return a list, stopping pagination.")
+            break
+
+    current_app.logger.info(f"Prowlarr fetch: Successfully retrieved a total of {len(all_releases)} releases.")
+    return all_releases
 
 def get_prowlarr_applications():
     """

@@ -27,7 +27,7 @@
                 <div class="spinner-border text-primary" role="status">
                     <span class="sr-only">Chargement...</span>
                 </div>
-                <p>Recherche en cours...</p>
+                <p>Rafraîchissement des données en cours... Cette opération peut prendre un moment.</p>
             </div>
 
             <div id="torrents-container">
@@ -524,13 +524,20 @@ $(document).ready(function() {
             type: 'GET',
             success: function(response) {
                 if (response.status === 'success') {
-                    renderTorrents(response.torrents);
+                    // Update the global torrent list
+                    allTorrents = response.torrents;
+                    // Repopulate filters with potentially new data and apply them
+                    populateStandardFilters();
+                    populateKeywordFilters();
+                    loadFilterState(); // Re-apply user's last filter state
+                    applyFilters();
                 } else {
-                    container.html(`<div class="alert alert-danger">Erreur: ${response.message || 'Une erreur est survenue.'}</div>`);
+                    container.html(`<div class="alert alert-danger"><strong>Erreur lors du rafraîchissement :</strong> ${response.message || 'Une erreur inattendue est survenue.'}</div>`);
                 }
             },
-            error: function() {
-                container.html('<div class="alert alert-danger">Erreur de communication avec le serveur.</div>');
+            error: function(xhr) {
+                const errorMsg = xhr.responseJSON ? xhr.responseJSON.message : 'Erreur de communication avec le serveur.';
+                container.html(`<div class="alert alert-danger"><strong>Erreur critique :</strong> ${errorMsg} Veuillez vérifier les logs de l'application.</div>`);
             },
             complete: function() {
                 button.prop('disabled', false);
