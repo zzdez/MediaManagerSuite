@@ -124,7 +124,12 @@ def refresh_torrents():
 
         # --- Prepare for enrichment ---
         ignored_hashes = get_ignored_hashes()
-        tmdb_client = TheMovieDBClient()
+        # Make the TMDB client initialization conditional on the API key's existence
+        tmdb_api_key = current_app.config.get('TMDB_API_KEY')
+        tmdb_client = TheMovieDBClient() if tmdb_api_key else None
+        if not tmdb_client:
+            current_app.logger.warning("TMDB_API_KEY not set. Skipping enrichment and status checks.")
+
         apps = get_prowlarr_applications()
         sonarr_cat_ids, radarr_cat_ids = _get_app_categories(apps)
         exclude_keywords = current_app.config.get('DASHBOARD_EXCLUDE_KEYWORDS', [])
@@ -162,19 +167,21 @@ def refresh_torrents():
                 raw_info = next((t for t in raw_torrents_from_prowlarr if (_normalize_torrent(t) or {}).get('hash') == torrent_hash), None)
                 torrent['type'] = _determine_media_type(raw_info, sonarr_cat_ids, radarr_cat_ids) if raw_info else 'movie'
 
-            # Enrich details (finds missing IDs, gets poster, etc.)
-            _enrich_torrent_details(torrent, tmdb_client)
+            # Only perform enrichment and status checks if the TMDB client is available
+            if tmdb_client:
+                # Enrich details (finds missing IDs, gets poster, etc.)
+                _enrich_torrent_details(torrent, tmdb_client)
 
-            # Add parsed release data
+                # Get the latest status
+                torrent['statuses'] = get_media_statuses(
+                    title=torrent.get('title'),
+                    tmdb_id=torrent.get('tmdbId'),
+                    tvdb_id=torrent.get('tvdbId'),
+                    media_type=torrent.get('type')
+                )
+
+            # Add parsed release data (this can be done even without TMDB)
             torrent['parsed_data'] = parse_release_data(torrent['title'])
-
-            # Get the latest status
-            torrent['statuses'] = get_media_statuses(
-                title=torrent.get('title'),
-                tmdb_id=torrent.get('tmdbId'),
-                tvdb_id=torrent.get('tvdbId'),
-                media_type=torrent.get('type')
-            )
 
         # Step 5: Sort, and save the complete, updated list
         final_torrents = list(existing_torrents_map.values())

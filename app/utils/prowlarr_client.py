@@ -106,18 +106,18 @@ def get_latest_from_prowlarr(categories, min_date=None):
     """
     params = {
         'type': 'search',
-        'offset': 0
+        'offset': 0,
+        'limit': 1000  # Set a high limit for all requests to override Prowlarr's default
     }
 
     if min_date:
         # The correct Prowlarr API parameter to filter by date is 'minDate'.
         # It expects an ISO 8601 formatted string.
         params['minDate'] = min_date.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
-        current_app.logger.info(f"Prowlarr latest fetch: Using minDate {params['minDate']}")
+        current_app.logger.info(f"Prowlarr latest fetch: Using minDate {params['minDate']} and limit {params['limit']}")
     else:
-        # If no date, fall back to a high limit.
-        params['limit'] = 1000
-        current_app.logger.info(f"Prowlarr latest fetch: No min_date, using limit {params['limit']}")
+        # Log that we are using the default high limit without a date filter.
+        current_app.logger.info(f"Prowlarr latest fetch: No min_date, using default limit {params['limit']}")
 
 
     if categories and isinstance(categories, list) and len(categories) > 0:

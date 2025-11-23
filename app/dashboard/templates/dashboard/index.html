@@ -431,11 +431,13 @@ $(document).ready(function() {
             const headerId = `heading-kw-${index}`;
             let checkboxesHtml = '';
             values.forEach(value => {
-                const checkboxId = `filter-${groupName.toLowerCase().replace(' ', '-')}-${value.toLowerCase()}`;
+                // Ensure value is a string before calling toLowerCase() to prevent errors with numbers (e.g., quality 1080p)
+                const safeValue = String(value);
+                const checkboxId = `filter-${groupName.toLowerCase().replace(' ', '-')}-${safeValue.toLowerCase()}`;
                 checkboxesHtml += `
                     <div class="form-check">
-                        <input class="form-check-input keyword-filter-checkbox" type="checkbox" value="${value}" id="${checkboxId}" data-group="${groupName}">
-                        <label class="form-check-label" for="${checkboxId}">${value}</label>
+                        <input class="form-check-input keyword-filter-checkbox" type="checkbox" value="${safeValue}" id="${checkboxId}" data-group="${groupName}">
+                        <label class="form-check-label" for="${checkboxId}">${safeValue}</label>
                     </div>`;
             });
 
