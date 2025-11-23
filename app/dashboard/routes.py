@@ -95,28 +95,23 @@ def dashboard():
 def refresh_torrents():
     """
     API endpoint to refresh the torrent list. It fetches the latest from Prowlarr,
-    merges them with the existing list, marks new ones, and saves the updated list.
+    merges them with the existing list, and re-evaluates the status of ALL torrents.
     """
     try:
-        # Step 1: Load existing torrents
-        existing_torrents = []
+        # Step 1: Load existing torrents and create a lookup map
+        existing_torrents_map = {}
         if os.path.exists(DASHBOARD_TORRENTS_FILE):
             try:
                 with open(DASHBOARD_TORRENTS_FILE, 'r') as f:
-                    existing_torrents = json.load(f)
+                    for torrent in json.load(f):
+                        torrent['is_new'] = False
+                        if isinstance(torrent.get('publishDate'), str):
+                            torrent['publishDate'] = datetime.fromisoformat(torrent['publishDate'].replace('Z', '+00:00'))
+                        existing_torrents_map[torrent['hash']] = torrent
             except (json.JSONDecodeError, IOError):
-                pass  # Start fresh if file is corrupt or unreadable
+                pass  # Start fresh if file is corrupt
 
-        # Step 2: Mark all existing torrents as not new and create a lookup map
-        existing_torrents_map = {}
-        for torrent in existing_torrents:
-            torrent['is_new'] = False
-            # The 'publishDate' might be a string, convert it for sorting
-            if isinstance(torrent.get('publishDate'), str):
-                 torrent['publishDate'] = datetime.fromisoformat(torrent['publishDate'].replace('Z', '+00:00'))
-            existing_torrents_map[torrent['hash']] = torrent
-
-        # Step 3: Fetch new torrents from Prowlarr
+        # Step 2: Fetch new torrents from Prowlarr
         last_refresh = get_last_refresh_time()
         prowlarr_categories = current_app.config.get('DASHBOARD_PROWLARR_CATEGORIES', [])
         raw_torrents_from_prowlarr = get_latest_from_prowlarr(
@@ -127,26 +122,24 @@ def refresh_torrents():
         if raw_torrents_from_prowlarr is None:
             return jsonify({"status": "error", "message": "Could not retrieve data from Prowlarr."}), 500
 
-        # --- Prepare for filtering and enrichment (reusing existing logic) ---
+        # --- Prepare for enrichment ---
         ignored_hashes = get_ignored_hashes()
-        pending_hashes = get_all_torrent_hashes()
-        exclude_keywords = current_app.config.get('DASHBOARD_EXCLUDE_KEYWORDS', [])
-        min_movie_year = current_app.config.get('DASHBOARD_MIN_MOVIE_YEAR', 1900)
         tmdb_client = TheMovieDBClient()
         apps = get_prowlarr_applications()
         sonarr_cat_ids, radarr_cat_ids = _get_app_categories(apps)
+        exclude_keywords = current_app.config.get('DASHBOARD_EXCLUDE_KEYWORDS', [])
+        min_movie_year = current_app.config.get('DASHBOARD_MIN_MOVIE_YEAR', 1900)
 
-        # Step 4: Process and merge new torrents
+        # Step 3: Process and merge new torrents into the main map
         for raw_torrent in raw_torrents_from_prowlarr:
             torrent = _normalize_torrent(raw_torrent)
             if not torrent or torrent['hash'] in ignored_hashes:
                 continue
 
-            # If it's a new torrent, process and enrich it
+            # If it's a new torrent, mark it and perform basic enrichment
             if torrent['hash'] not in existing_torrents_map:
-                torrent['is_new'] = True # Mark as new
+                torrent['is_new'] = True
 
-                # --- Apply filtering and enrichment (adapted from old logic) ---
                 if any(re.search(kw, torrent['title'], re.IGNORECASE) for kw in exclude_keywords):
                     continue
 
@@ -158,29 +151,36 @@ def refresh_torrents():
                     if year_match and int(year_match.group(1)) < min_movie_year:
                         continue
 
-                _enrich_torrent_details(torrent, tmdb_client)
-
-                # Add parsed release data
-                torrent['parsed_data'] = parse_release_data(torrent['title'])
-
-                torrent['statuses'] = get_media_statuses(
-                    title=torrent.get('title'),
-                    tmdb_id=torrent.get('tmdbId'),
-                    tvdb_id=torrent.get('tvdbId'),
-                    media_type=torrent.get('type')
-                )
-
+                # Add to the map to be processed in the next step
                 existing_torrents_map[torrent['hash']] = torrent
 
-        # Step 5: Sort, limit, and save
+        # Step 4: Re-evaluate status and enrich ALL torrents in the map
+        for torrent_hash, torrent in existing_torrents_map.items():
+            # Ensure essential data is present, especially for older torrents
+            if 'type' not in torrent:
+                 # Find the original raw torrent to determine media type if possible
+                raw_info = next((t for t in raw_torrents_from_prowlarr if (_normalize_torrent(t) or {}).get('hash') == torrent_hash), None)
+                torrent['type'] = _determine_media_type(raw_info, sonarr_cat_ids, radarr_cat_ids) if raw_info else 'movie'
+
+            # Enrich details (finds missing IDs, gets poster, etc.)
+            _enrich_torrent_details(torrent, tmdb_client)
+
+            # Add parsed release data
+            torrent['parsed_data'] = parse_release_data(torrent['title'])
+
+            # Get the latest status
+            torrent['statuses'] = get_media_statuses(
+                title=torrent.get('title'),
+                tmdb_id=torrent.get('tmdbId'),
+                tvdb_id=torrent.get('tvdbId'),
+                media_type=torrent.get('type')
+            )
+
+        # Step 5: Sort, and save the complete, updated list
         final_torrents = list(existing_torrents_map.values())
-
-        # Filter out torrents with no publishDate before sorting
         final_torrents = [t for t in final_torrents if t.get('publishDate')]
-
         final_torrents.sort(key=lambda x: x['publishDate'], reverse=True)
 
-        # Convert datetime objects back to ISO strings for JSON serialization
         for torrent in final_torrents:
             if isinstance(torrent['publishDate'], datetime):
                 torrent['publishDate'] = torrent['publishDate'].isoformat()
@@ -188,7 +188,7 @@ def refresh_torrents():
         with open(DASHBOARD_TORRENTS_FILE, 'w') as f:
             json.dump(final_torrents, f, indent=2)
 
-        set_last_refresh_time() # Still useful to know when we last ran it
+        set_last_refresh_time()
 
         return jsonify({"status": "success", "torrents": final_torrents})
 
@@ -199,7 +199,7 @@ def refresh_torrents():
 def _normalize_torrent(raw_torrent):
     """
     Normalizes a torrent dictionary from Prowlarr into a consistent format.
-    Returns None if the torrent is invalid (lacks a unique ID).
+    Ensures TMDB ID is an integer. Returns None if the torrent is invalid.
     """
     unique_id = raw_torrent.get('hash') or raw_torrent.get('guid')
     if not unique_id:
@@ -217,6 +217,15 @@ def _normalize_torrent(raw_torrent):
     if not category_name and raw_torrent.get('categories'):
         category_name = raw_torrent['categories'][0].get('name')
 
+    tmdb_id_raw = raw_torrent.get('tmdbId') or raw_torrent.get('tmdb_id')
+    tmdb_id_int = None
+    if tmdb_id_raw:
+        try:
+            # Ensure the ID is a valid integer
+            tmdb_id_int = int(tmdb_id_raw)
+        except (ValueError, TypeError):
+            tmdb_id_int = None # Discard if not a valid number
+
     return {
         'hash': str(unique_id),
         'title': raw_torrent.get('title'),
@@ -225,7 +234,7 @@ def _normalize_torrent(raw_torrent):
         'leechers': raw_torrent.get('leechers'),
         'indexerId': raw_torrent.get('indexerId'),
         'type': raw_torrent.get('type'),
-        'tmdbId': raw_torrent.get('tmdbId') or raw_torrent.get('tmdb_id'),
+        'tmdbId': tmdb_id_int,
         'guid': raw_torrent.get('guid'),
         'downloadUrl': raw_torrent.get('guid'),
         'detailsUrl': raw_torrent.get('infoUrl'),
@@ -236,7 +245,7 @@ def _normalize_torrent(raw_torrent):
         'overview': '',
         'poster_url': '',
         'statuses': [],
-        'is_new': False, # Default state for the 'new' badge
+        'is_new': False,
         'parsed_data': {},
     }
 

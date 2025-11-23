@@ -379,7 +379,6 @@ $(document).ready(function() {
             if (torrent.indexer) indexers.add(torrent.indexer);
 
             if (Array.isArray(torrent.statuses)) {
-                // Logique "legacy"
                 const legacyStatusMap = {
                     'SONARR_MONITORED': 'Surveillé', 'SONARR_OBTAINED': 'Obtenu',
                     'RADARR_MONITORED': 'Surveillé', 'RADARR_OBTAINED': 'Obtenu',
@@ -390,7 +389,6 @@ $(document).ready(function() {
                     if (legacyStatusMap[s]) statuses.add(legacyStatusMap[s]);
                 });
             } else if (torrent.statuses && torrent.statuses.summary) {
-                // Nouvelle logique
                 const summary = torrent.statuses.summary;
                 const statusGroupMap = {
                     'OBTAINED': 'Obtenu', 'MONITORED': 'Surveillé',
@@ -402,10 +400,8 @@ $(document).ready(function() {
         });
 
         const populateSelect = (select, items) => {
-            const currentVal = select.val();
             select.html('<option value="">Tous</option>');
             [...items].sort().forEach(item => select.append(new Option(item, item)));
-            select.val(currentVal);
         };
 
         populateSelect(filterCategory, categories);
@@ -417,12 +413,7 @@ $(document).ready(function() {
         const keywordFiltersContainer = $('#keyword-filters-container');
         keywordFiltersContainer.empty();
 
-        const filterValues = {
-            'Langue': new Set(),
-            'Qualité': new Set(),
-            'Codec': new Set(),
-            'Source': new Set()
-        };
+        const filterValues = { 'Langue': new Set(), 'Qualité': new Set(), 'Codec': new Set(), 'Source': new Set() };
 
         allTorrents.forEach(torrent => {
             const parsed = torrent.parsed_data || {};
@@ -445,52 +436,57 @@ $(document).ready(function() {
                     <div class="form-check">
                         <input class="form-check-input keyword-filter-checkbox" type="checkbox" value="${value}" id="${checkboxId}" data-group="${groupName}">
                         <label class="form-check-label" for="${checkboxId}">${value}</label>
-                    </div>
-                `;
+                    </div>`;
             });
 
-            const accordionItemHtml = `
+            keywordFiltersContainer.append(`
                 <div class="accordion-item bg-dark">
                     <h2 class="accordion-header" id="${headerId}">
-                        <button class="accordion-button bg-secondary text-white collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="false" aria-controls="${collapseId}">
-                            ${groupName}
-                        </button>
+                        <button class="accordion-button bg-secondary text-white collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}">${groupName}</button>
                     </h2>
-                    <div id="${collapseId}" class="accordion-collapse collapse" aria-labelledby="${headerId}">
-                        <div class="accordion-body">${checkboxesHtml}</div>
-                    </div>
-                </div>
-            `;
-            keywordFiltersContainer.append(accordionItemHtml);
+                    <div id="${collapseId}" class="accordion-collapse collapse"><div class="accordion-body">${checkboxesHtml}</div></div>
+                </div>`);
         });
     }
 
-    function saveKeywordFilterState() {
-        const state = {};
-        $('.keyword-filter-checkbox').each(function() {
-            state[this.id] = this.checked;
-        });
-        localStorage.setItem(KEYWORD_FILTER_STORAGE_KEY, JSON.stringify(state));
+    const FILTER_STORAGE_KEY = 'dashboardFilterState';
+
+    function saveFilterState() {
+        const state = {
+            title: filterTitle.val(),
+            year: filterYear.val(),
+            category: filterCategory.val(),
+            status: filterStatus.val(),
+            indexer: filterIndexer.val(),
+            keywords: {}
+        };
+        $('.keyword-filter-checkbox').each(function() { state.keywords[this.id] = this.checked; });
+        localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(state));
     }
 
-    function loadKeywordFilterState() {
-        const savedState = localStorage.getItem(KEYWORD_FILTER_STORAGE_KEY);
-        if (savedState) {
-            const state = JSON.parse(savedState);
-            $('.keyword-filter-checkbox').each(function() {
-                this.checked = state[this.id] !== false;
-            });
+    function loadFilterState() {
+        const savedStateJSON = localStorage.getItem(FILTER_STORAGE_KEY);
+        if (savedStateJSON) {
+            const state = JSON.parse(savedStateJSON);
+            filterTitle.val(state.title || '');
+            filterYear.val(state.year || '');
+            filterCategory.val(state.category || '');
+            filterStatus.val(state.status || '');
+            filterIndexer.val(state.indexer || '');
+            if (state.keywords) {
+                $('.keyword-filter-checkbox').each(function() { this.checked = state.keywords[this.id] !== false; });
+            } else {
+                $('.keyword-filter-checkbox').prop('checked', true);
+            }
         } else {
             $('.keyword-filter-checkbox').prop('checked', true);
         }
     }
 
-    $('#filter-title, #filter-year').on('input', applyFilters);
-    $('#filter-category, #filter-status, #filter-indexer').on('change', applyFilters);
-    $('#keyword-filters-container').on('change', '.keyword-filter-checkbox', function() {
-        saveKeywordFilterState();
-        applyFilters();
-    });
+    // --- Event Handlers & Initial Load ---
+    $('#filter-title, #filter-year').on('input', () => { saveFilterState(); applyFilters(); });
+    $('#filter-category, #filter-status, #filter-indexer').on('change', () => { saveFilterState(); applyFilters(); });
+    $('#keyword-filters-container').on('change', '.keyword-filter-checkbox', () => { saveFilterState(); applyFilters(); });
 
     $('#reset-filters-btn').on('click', function() {
         filterTitle.val('');
@@ -499,14 +495,14 @@ $(document).ready(function() {
         filterStatus.val('');
         filterIndexer.val('');
         $('.keyword-filter-checkbox').prop('checked', true);
-        saveKeywordFilterState();
+        saveFilterState();
         applyFilters();
     });
 
-    // --- Initial Load ---
+    // --- New Initial Load Sequence ---
     populateStandardFilters();
     populateKeywordFilters();
-    loadKeywordFilterState();
+    loadFilterState();
     applyFilters();
 
     // --- Refresh Button Logic ---
