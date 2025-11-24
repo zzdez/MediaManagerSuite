@@ -312,10 +312,10 @@ $(document).ready(function() {
             const year = yearMatch ? parseInt(yearMatch[1], 10) : 0;
             if (yearFilter && (!year || year < yearFilter)) return false;
 
-            if (categoryFilter !== "" && torrent.category !== categoryFilter) return false;
-            if (indexerFilter !== "" && torrent.indexer !== indexerFilter) return false;
+            if (categoryFilter && categoryFilter.length > 0 && torrent.category !== categoryFilter) return false;
+            if (indexerFilter && indexerFilter.length > 0 && torrent.indexer !== indexerFilter) return false;
 
-            if (statusFilter !== "") {
+            if (statusFilter && statusFilter.length > 0) {
                 if (Array.isArray(torrent.statuses)) {
                     // Logique "legacy" pour l'ancien format
                     const legacyStatusMap = {
@@ -476,12 +476,10 @@ $(document).ready(function() {
             filterStatus.val(state.status || '');
             filterIndexer.val(state.indexer || '');
             if (state.keywords) {
-                $('.keyword-filter-checkbox').each(function() { this.checked = state.keywords[this.id] !== false; });
-            } else {
-                $('.keyword-filter-checkbox').prop('checked', true);
+                $('.keyword-filter-checkbox').each(function() { this.checked = state.keywords[this.id] || false; });
             }
-        } else {
-            $('.keyword-filter-checkbox').prop('checked', true);
+            // By default, if 'keywords' is not in the state, or if there's no state at all,
+            // the checkboxes will remain in their default unchecked state, which is the correct behavior.
         }
     }
 
@@ -496,7 +494,7 @@ $(document).ready(function() {
         filterCategory.val('');
         filterStatus.val('');
         filterIndexer.val('');
-        $('.keyword-filter-checkbox').prop('checked', true);
+        $('.keyword-filter-checkbox').prop('checked', false);
         saveFilterState();
         applyFilters();
     });
