@@ -312,10 +312,10 @@ $(document).ready(function() {
             const year = yearMatch ? parseInt(yearMatch[1], 10) : 0;
             if (yearFilter && (!year || year < yearFilter)) return false;
 
-            if (categoryFilter && torrent.category !== categoryFilter) return false;
-            if (indexerFilter && torrent.indexer !== indexerFilter) return false;
+            if (categoryFilter !== "" && torrent.category !== categoryFilter) return false;
+            if (indexerFilter !== "" && torrent.indexer !== indexerFilter) return false;
 
-            if (statusFilter) {
+            if (statusFilter !== "") {
                 if (Array.isArray(torrent.statuses)) {
                     // Logique "legacy" pour l'ancien format
                     const legacyStatusMap = {
