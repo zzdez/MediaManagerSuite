@@ -122,6 +122,19 @@ def refresh_torrents():
         if raw_torrents_from_prowlarr is None:
             return jsonify({"status": "error", "message": "Could not retrieve data from Prowlarr."}), 500
 
+        # Step 2.5: Post-filter results by category because Prowlarr API ignores 'cat' on general searches
+        if prowlarr_categories:
+            initial_count = len(raw_torrents_from_prowlarr)
+            allowed_cat_ids = set(prowlarr_categories)
+
+            filtered_torrents = [
+                torrent for torrent in raw_torrents_from_prowlarr
+                if any(cat.get('id') in allowed_cat_ids for cat in torrent.get('categories', []))
+            ]
+            raw_torrents_from_prowlarr = filtered_torrents
+            final_count = len(raw_torrents_from_prowlarr)
+            current_app.logger.info(f"Filtered Prowlarr results by configured categories. Kept {final_count} of {initial_count} torrents.")
+
         # --- Prepare for enrichment ---
         ignored_hashes = get_ignored_hashes()
         # Make the TMDB client initialization conditional on the API key's existence
