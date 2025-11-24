@@ -160,8 +160,11 @@ $(document).ready(function() {
             // 2. Statut de la saison
             if (s.season_status) {
                 const ss = s.season_status;
-                const seasonClass = ss.is_complete ? 'bg-success' : 'bg-info';
-                badgesHtml += `<span class="badge ${seasonClass} ms-1">Saison ${ss.season_number} (${ss.files_count}/${ss.total_episodes})</span>`;
+                if (ss.is_complete) {
+                    badgesHtml += `<span class="badge bg-success ms-1">Saison ${ss.season_number} Obtenue</span>`;
+                } else {
+                    badgesHtml += `<span class="badge bg-info ms-1">Saison ${ss.season_number} (${ss.files_count}/${ss.total_episodes})</span>`;
+                }
             }
 
             // 3. Statut de la série

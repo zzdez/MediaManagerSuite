@@ -185,16 +185,23 @@ def refresh_torrents():
                 # Enrich details (finds missing IDs, gets poster, etc.)
                 _enrich_torrent_details(torrent, tmdb_client)
 
-                # Get the latest status
+                # The release data must be parsed BEFORE checking status
+                # so we can identify season packs.
+                if 'parsed_data' not in torrent or not torrent['parsed_data']:
+                    torrent['parsed_data'] = parse_release_data(torrent['title'])
+
+                # Get the latest status, passing the parsed data
                 torrent['statuses'] = get_media_statuses(
                     title=torrent.get('title'),
                     tmdb_id=torrent.get('tmdbId'),
                     tvdb_id=torrent.get('tvdbId'),
-                    media_type=torrent.get('type')
+                    media_type=torrent.get('type'),
+                    parsed_data=torrent['parsed_data']
                 )
-
-            # Add parsed release data (this can be done even without TMDB)
-            torrent['parsed_data'] = parse_release_data(torrent['title'])
+            elif 'parsed_data' not in torrent or not torrent['parsed_data']:
+                 # Even if TMDB isn't configured, we should still parse the release data
+                 # for the frontend filters to work.
+                 torrent['parsed_data'] = parse_release_data(torrent['title'])
 
         # Step 5: Sort, and save the complete, updated list
         final_torrents = list(existing_torrents_map.values())

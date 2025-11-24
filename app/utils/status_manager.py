@@ -4,9 +4,10 @@ from flask import current_app
 from app.utils.arr_client import get_radarr_movie_by_guid, parse_media_name, get_sonarr_series_details_by_tvdbid
 from app.utils.archive_manager import get_archived_media_by_id
 
-def get_media_statuses(title=None, tmdb_id=None, tvdb_id=None, media_type=None):
+def get_media_statuses(title=None, tmdb_id=None, tvdb_id=None, media_type=None, parsed_data=None):
     """
     Orchestrates checking media status across all services and returns a structured object.
+    Now accepts pre-parsed data to handle season packs correctly.
     """
     statuses = {
         "sonarr": None,
@@ -21,7 +22,11 @@ def get_media_statuses(title=None, tmdb_id=None, tvdb_id=None, media_type=None):
 
     # --- Check Sonarr/Radarr Status ---
     if media_type == 'tv' and tvdb_id:
-        statuses['sonarr'] = _check_sonarr_status(title, tvdb_id)
+        # If parsed_data is not provided, parse the title as a fallback.
+        # This maintains backward compatibility.
+        if parsed_data is None:
+            parsed_data = parse_media_name(title)
+        statuses['sonarr'] = _check_sonarr_status(parsed_data, tvdb_id)
     elif media_type == 'movie' and tmdb_id:
         statuses['radarr'] = _check_radarr_status(tmdb_id)
 
@@ -53,24 +58,26 @@ def get_media_statuses(title=None, tmdb_id=None, tvdb_id=None, media_type=None):
 
     return statuses
 
-def _check_sonarr_status(release_title, tvdb_id):
+def _check_sonarr_status(parsed_data, tvdb_id):
     """
     Checks Sonarr for a series and calculates detailed status for episode, season, and series.
-    Returns a structured dictionary or None.
+    Now uses pre-parsed data to correctly identify and check season packs.
     """
     series_details = get_sonarr_series_details_by_tvdbid(tvdb_id)
     if not series_details:
         return None
 
-    parsed_info = parse_media_name(release_title)
-    season_number_from_release = parsed_info.get('season')
-    episode_number_from_release = parsed_info.get('episode')
+    # Use the pre-parsed data passed into the function
+    season_number_from_release = parsed_data.get('season')
+    episode_number_from_release = parsed_data.get('episode')
+    is_season_pack = parsed_data.get('is_season_pack', False)
 
     all_episodes = series_details.get('episodes', [])
 
     # --- Calculate Episode Status (if applicable) ---
+    # This logic is only relevant for single episode releases, not for season packs
     episode_status = "NOT_APPLICABLE"
-    if episode_number_from_release and season_number_from_release:
+    if not is_season_pack and episode_number_from_release and season_number_from_release:
         episode_status = "MISSING"
         for ep in all_episodes:
             if ep.get('seasonNumber') == season_number_from_release and ep.get('episodeNumber') == episode_number_from_release and ep.get('hasFile'):
