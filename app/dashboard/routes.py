@@ -94,11 +94,13 @@ def dashboard():
         initial_count = len(torrents)
         allowed_cat_ids = set(prowlarr_categories)
 
-        # Filter the loaded torrents. This relies on 'category_ids' being present.
-        # Old torrents without this key will be filtered out, thus cleaning the data over time.
+        # Filter the loaded torrents for consistency. A torrent is kept if:
+        # 1. It has no category_ids (for backward compatibility).
+        # 2. Or, its category_ids list intersects with the allowed categories.
+        # This correctly handles cases where category_ids is missing, None, or an empty list.
         torrents = [
             torrent for torrent in torrents
-            if any(cat_id in allowed_cat_ids for cat_id in torrent.get('category_ids', []))
+            if not torrent.get('category_ids') or set(torrent.get('category_ids')).intersection(allowed_cat_ids)
         ]
         current_app.logger.info(f"Filtered torrents on dashboard load. Kept {len(torrents)} of {initial_count} torrents.")
 
@@ -447,14 +449,14 @@ def refresh_statuses():
             # Return the unmodified list if TMDB isn't available
             return jsonify({"status": "success", "torrents": existing_torrents})
 
+        # Preserve the 'is_new' status before re-evaluating
+        is_new_status_map = {t['hash']: t.get('is_new', False) for t in existing_torrents}
+
         # Re-evaluate status for ALL torrents in the list
         for torrent in existing_torrents:
             # Ensure parsed_data is present for status checking
             if 'parsed_data' not in torrent or not torrent['parsed_data']:
                 torrent['parsed_data'] = parse_release_data(torrent['title'])
-
-            # The 'is_new' flag is irrelevant here, but we set it to false for consistency
-            torrent['is_new'] = False
 
             # Get the latest status
             torrent['statuses'] = get_media_statuses(
@@ -464,6 +466,19 @@ def refresh_statuses():
                 media_type=torrent.get('type'),
                 parsed_data=torrent['parsed_data']
             )
+            # Restore the original 'is_new' flag
+            torrent['is_new'] = is_new_status_map.get(torrent['hash'], False)
+
+        # --- NEW: Apply the same server-side filter for consistency ---
+        prowlarr_categories = current_app.config.get('DASHBOARD_PROWLARR_CATEGORIES', [])
+        if prowlarr_categories:
+            initial_count = len(existing_torrents)
+            allowed_cat_ids = set(prowlarr_categories)
+            existing_torrents = [
+                torrent for torrent in existing_torrents
+                if not torrent.get('category_ids') or set(torrent.get('category_ids')).intersection(allowed_cat_ids)
+            ]
+            current_app.logger.info(f"Filtered torrents on status refresh. Kept {len(existing_torrents)} of {initial_count} torrents.")
 
         # Save the complete, updated list
         with open(DASHBOARD_TORRENTS_FILE, 'w') as f:
