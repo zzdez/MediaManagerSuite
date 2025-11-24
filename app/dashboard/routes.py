@@ -88,6 +88,20 @@ def dashboard():
         if 'parsed_data' not in torrent or not torrent['parsed_data']:
             torrent['parsed_data'] = parse_release_data(torrent['title'])
 
+    # --- NEW: Server-side filter on page load to ensure UI consistency ---
+    prowlarr_categories = current_app.config.get('DASHBOARD_PROWLARR_CATEGORIES', [])
+    if prowlarr_categories:
+        initial_count = len(torrents)
+        allowed_cat_ids = set(prowlarr_categories)
+
+        # Filter the loaded torrents. This relies on 'category_ids' being present.
+        # Old torrents without this key will be filtered out, thus cleaning the data over time.
+        torrents = [
+            torrent for torrent in torrents
+            if any(cat_id in allowed_cat_ids for cat_id in torrent.get('category_ids', []))
+        ]
+        current_app.logger.info(f"Filtered torrents on dashboard load. Kept {len(torrents)} of {initial_count} torrents.")
+
     return render_template('dashboard/index.html', torrents=torrents)
 
 
@@ -244,6 +258,9 @@ def _normalize_torrent(raw_torrent):
     if not category_name and raw_torrent.get('categories'):
         category_name = raw_torrent['categories'][0].get('name')
 
+    # Also extract the raw category IDs for server-side filtering
+    category_ids = [cat.get('id') for cat in raw_torrent.get('categories', []) if cat.get('id') is not None]
+
     tmdb_id_raw = raw_torrent.get('tmdbId') or raw_torrent.get('tmdb_id')
     tmdb_id_int = None
     if tmdb_id_raw:
@@ -267,6 +284,7 @@ def _normalize_torrent(raw_torrent):
         'detailsUrl': raw_torrent.get('infoUrl'),
         'publishDate': publish_date,
         'category': category_name,
+        'category_ids': category_ids,
         'indexer': raw_torrent.get('indexer'),
         'tvdbId': None,
         'overview': '',
@@ -406,6 +424,56 @@ def proxy_request():
     except requests.exceptions.RequestException as e:
         current_app.logger.error(f"Proxy request to {url} failed: {e}")
         return jsonify({"error": f"Failed to fetch URL: {e}"}), 502
+
+@dashboard_bp.route('/dashboard/api/refresh-statuses')
+def refresh_statuses():
+    """
+    API endpoint to refresh just the statuses of the existing torrent list
+    without fetching new ones from Prowlarr.
+    """
+    try:
+        if not os.path.exists(DASHBOARD_TORRENTS_FILE):
+            return jsonify({"status": "success", "torrents": []})
+
+        existing_torrents = []
+        with open(DASHBOARD_TORRENTS_FILE, 'r') as f:
+            existing_torrents = json.load(f)
+
+        # Get the TMDB client
+        tmdb_api_key = current_app.config.get('TMDB_API_KEY')
+        tmdb_client = TheMovieDBClient() if tmdb_api_key else None
+        if not tmdb_client:
+            current_app.logger.warning("TMDB_API_KEY not set. Skipping status refresh.")
+            # Return the unmodified list if TMDB isn't available
+            return jsonify({"status": "success", "torrents": existing_torrents})
+
+        # Re-evaluate status for ALL torrents in the list
+        for torrent in existing_torrents:
+            # Ensure parsed_data is present for status checking
+            if 'parsed_data' not in torrent or not torrent['parsed_data']:
+                torrent['parsed_data'] = parse_release_data(torrent['title'])
+
+            # The 'is_new' flag is irrelevant here, but we set it to false for consistency
+            torrent['is_new'] = False
+
+            # Get the latest status
+            torrent['statuses'] = get_media_statuses(
+                title=torrent.get('title'),
+                tmdb_id=torrent.get('tmdbId'),
+                tvdb_id=torrent.get('tvdbId'),
+                media_type=torrent.get('type'),
+                parsed_data=torrent['parsed_data']
+            )
+
+        # Save the complete, updated list
+        with open(DASHBOARD_TORRENTS_FILE, 'w') as f:
+            json.dump(existing_torrents, f, indent=2)
+
+        return jsonify({"status": "success", "torrents": existing_torrents})
+
+    except Exception as e:
+        current_app.logger.error(f"Error in refresh_statuses: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": "An unexpected error occurred during status refresh."}), 500
 
 @dashboard_bp.route('/dashboard/api/cleanup', methods=['POST'])
 def cleanup_torrents():

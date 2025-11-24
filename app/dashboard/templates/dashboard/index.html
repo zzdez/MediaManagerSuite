@@ -14,6 +14,9 @@
                 <button id="refresh-btn" class="btn btn-primary">
                     <i class="fas fa-sync-alt"></i> Rafraîchir les nouveautés
                 </button>
+                <button id="refresh-statuses-btn" class="btn btn-info ms-2">
+                    <i class="fas fa-tags"></i> Rafraîchir les statuts
+                </button>
                 <div class="ms-4 d-flex align-items-center">
                     <label for="cleanup-days" class="form-label me-2 mb-0">Garder (jours):</label>
                     <input type="number" id="cleanup-days" class="form-control" value="7" min="0" max="30" style="width: 80px;">
@@ -516,6 +519,50 @@ $(document).ready(function() {
         $('.keyword-filter-checkbox').prop('checked', false);
         saveFilterState();
         applyFilters();
+    });
+
+    // --- Refresh Statuses Button Logic ---
+    $('#refresh-statuses-btn').on('click', function() {
+        const button = $(this);
+        const spinner = $('#loading-spinner');
+        const container = $('#torrents-container');
+
+        button.prop('disabled', true);
+        spinner.show();
+        // Don't empty the container, we're just updating in place
+
+        $.ajax({
+            url: "{{ url_for('dashboard_bp.refresh_statuses') }}",
+            type: 'GET',
+            success: function(response) {
+                if (response.status === 'success') {
+                    // Update the global torrent list with new statuses
+                    allTorrents = response.torrents;
+                    // Repopulate filters and re-apply them to refresh the view
+                    populateStandardFilters();
+                    populateKeywordFilters();
+                    loadFilterState();
+                    applyFilters();
+                } else {
+                    // Show an alert on top of the existing content
+                    container.prepend(`<div class="alert alert-danger alert-dismissible fade show" role="alert">
+                        <strong>Erreur lors du rafraîchissement des statuts:</strong> ${response.message || 'Une erreur inattendue est survenue.'}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>`);
+                }
+            },
+            error: function(xhr) {
+                const errorMsg = xhr.responseJSON ? xhr.responseJSON.message : 'Erreur de communication avec le serveur.';
+                 container.prepend(`<div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <strong>Erreur critique:</strong> ${errorMsg} Veuillez vérifier les logs de l'application.
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>`);
+            },
+            complete: function() {
+                button.prop('disabled', false);
+                spinner.hide();
+            }
+        });
     });
 
     // --- New Initial Load Sequence ---
