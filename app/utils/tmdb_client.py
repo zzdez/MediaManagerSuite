@@ -141,6 +141,39 @@ class TheMovieDBClient:
             self.tmdb.language = original_lang
 
     @robust_request()
+    def search_series(self, title, lang='fr-FR'):
+        """
+        Recherche une série par titre sur TMDb.
+        """
+        if not self.api_key:
+            logger.error("La clé API TMDb n'est pas disponible.")
+            return []
+        original_lang = self.tmdb.language
+        try:
+            self.tmdb.language = lang
+            search = Search()
+            results = search.tv_shows(term=title)
+            formatted_results = []
+            for res in results:
+                first_air_date = str(getattr(res, 'first_air_date', ''))
+                formatted_results.append({
+                    'id': getattr(res, 'id', None),
+                    'name': str(getattr(res, 'name', 'Titre non disponible')),
+                    'original_name': str(getattr(res, 'original_name', '')),
+                    'overview': str(getattr(res, 'overview', '')),
+                    'poster_path': str(getattr(res, 'poster_path', '')),
+                    'first_air_date': first_air_date,
+                    'year': first_air_date.split('-')[0] if first_air_date else 'N/A',
+                    'poster_url': f"https://image.tmdb.org/t/p/w500{getattr(res, 'poster_path', '')}" if getattr(res, 'poster_path', None) else ''
+                })
+            return formatted_results
+        except Exception as e:
+            logger.error(f"Erreur lors de la recherche de série TMDb pour '{title}': {e}", exc_info=True)
+            return []
+        finally:
+            self.tmdb.language = original_lang
+
+    @robust_request()
     def get_series_details(self, tmdb_id, lang='fr-FR'):
         """
         Récupère les détails d'une série depuis TMDb, y compris son TVDB ID.
