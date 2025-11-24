@@ -342,15 +342,31 @@ $(document).ready(function() {
             for (const group in activeKeywordFilters) {
                 const terms = activeKeywordFilters[group];
                 if (terms.length > 0) {
-                    let fieldValue = '';
+                    let valueToTest;
                     switch (group) {
-                        case 'Langue': fieldValue = (parsed.language || '').toUpperCase(); break;
-                        case 'Qualité': fieldValue = parsed.quality || ''; break;
-                        case 'Codec': fieldValue = parsed.codec || ''; break;
-                        case 'Source': fieldValue = parsed.source || ''; break;
+                        case 'Langue': valueToTest = (parsed.language || '').toUpperCase(); break;
+                        case 'Qualité': valueToTest = parsed.quality; break;
+                        case 'Codec': valueToTest = parsed.codec; break;
+                        case 'Source': valueToTest = parsed.source; break;
                     }
-                    if (!terms.includes(fieldValue.toLowerCase())) {
+
+                    // If the data for this filter group doesn't exist for the torrent, it's not a match.
+                    if (!valueToTest) {
                         return false;
+                    }
+
+                    let matchFound = false;
+                    if (Array.isArray(valueToTest)) {
+                        // For arrays (like 'Source'), check if any item in the torrent's data array
+                        // matches any of the selected filter terms.
+                        matchFound = valueToTest.some(item => terms.includes(String(item).toLowerCase()));
+                    } else {
+                        // For strings/numbers, check if the torrent's data value is in the selected terms.
+                        matchFound = terms.includes(String(valueToTest).toLowerCase());
+                    }
+
+                    if (!matchFound) {
+                        return false; // If no match was found for this group, the torrent fails the filter.
                     }
                 }
             }
