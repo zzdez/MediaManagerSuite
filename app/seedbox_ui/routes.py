@@ -3252,7 +3252,7 @@ def rtorrent_batch_action():
     # --- Action de Suppression ---
     if action == 'delete':
         delete_data = options.get('delete_data', False)
-        for h in hashes:
+        for h in hashes[:]:
             try:
                 success, _ = rtorrent_delete_torrent_api(h, delete_data)
                 if success: success_count += 1
