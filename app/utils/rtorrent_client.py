@@ -659,9 +659,23 @@ def delete_torrent(torrent_hash, delete_data=False):
     else:
         logger.info(f"Performing full deletion for hash {torrent_hash} via SFTP.")
 
-        data_path, error_path = _send_xmlrpc_request("d.base_path", [torrent_hash])
-        if error_path or not data_path:
-            return False, f"Could not retrieve data path from rTorrent: {error_path}"
+        # Construction fiable du chemin en remplaçant d.base_path
+        torrent_details_raw, error_details = _send_xmlrpc_request("d.multicall2", ["", torrent_hash, "d.is_multi_file=", "d.directory=", "d.name="])
+        if error_details or not torrent_details_raw or not torrent_details_raw[0]:
+            return False, f"Could not retrieve torrent details to build path: {error_details or 'Empty response'}"
+
+        details = torrent_details_raw[0]
+        is_multi_file, directory, name = details[0], details[1], details[2]
+
+        if is_multi_file:
+            data_path = directory
+        else:
+            data_path = str(Path(directory) / name)
+
+        if not data_path:
+            return False, "Could not construct data path from torrent details."
+
+        logger.info(f"Reliably constructed data path: {data_path}")
 
         sftp_host = current_app.config.get('SEEDBOX_SFTP_HOST')
         sftp_port = int(current_app.config.get('SEEDBOX_SFTP_PORT', 22))
