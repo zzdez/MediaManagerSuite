@@ -1100,7 +1100,26 @@ def get_media_items():
                 item.poster_url = target_plex_server.url(thumb_path, includeToken=True) if thumb_path else None
 
                 # Enrichissement avec l'ID externe pour la recherche de bande-annonce
-                item.external_source, item.external_id = _parse_main_external_id(item.guids, item.type)
+                if item.type == 'movie':
+                    radarr_movie = None
+                    # Itérer sur les guids pour trouver le film dans Radarr
+                    for guid_obj in item.guids:
+                        radarr_movie = get_radarr_movie_by_guid(guid_obj.id)
+                        if radarr_movie:
+                            break  # Arrêter dès qu'on a trouvé une correspondance
+
+                    if radarr_movie and radarr_movie.get('tmdbId'):
+                        current_app.logger.debug(f"Found movie '{item.title}' in Radarr. Using Radarr's TMDB ID: {radarr_movie.get('tmdbId')}")
+                        item.external_source = 'tmdb'
+                        item.external_id = radarr_movie.get('tmdbId')
+                    else:
+                        current_app.logger.debug(f"Movie '{item.title}' not found in Radarr. Falling back to Plex GUID parsing.")
+                        # Fallback: utiliser l'ancienne méthode si non trouvé dans Radarr
+                        item.external_source, item.external_id = _parse_main_external_id(item.guids, item.type)
+                else:
+                    # Pour les séries, la logique existante est conservée
+                    item.external_source, item.external_id = _parse_main_external_id(item.guids, item.type)
+
                 # Correction du type pour correspondre à l'API du trailer_manager ('movie' ou 'tv')
                 item.media_type_for_trailer = 'tv' if item.type == 'show' else 'movie'
 
