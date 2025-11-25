@@ -5,6 +5,7 @@ import paramiko
 from pathlib import Path
 import stat
 from flask import current_app
+from pathlib import Path
 import json
 import time
 import xmlrpc.client
@@ -659,13 +660,20 @@ def delete_torrent(torrent_hash, delete_data=False):
     else:
         logger.info(f"Performing full deletion for hash {torrent_hash} via SFTP.")
 
-        # Construction fiable du chemin en remplaçant d.base_path
-        torrent_details_raw, error_details = _send_xmlrpc_request("d.multicall2", ["", torrent_hash, "d.is_multi_file=", "d.directory=", "d.name="])
-        if error_details or not torrent_details_raw or not torrent_details_raw[0]:
-            return False, f"Could not retrieve torrent details to build path: {error_details or 'Empty response'}"
+        # Fiabilisation de la récupération du chemin
+        is_multi_file_raw, err = _send_xmlrpc_request("d.is_multi_file", [torrent_hash])
+        if err or is_multi_file_raw is None:
+            return False, f"Could not retrieve is_multi_file: {err or 'Empty response'}"
 
-        details = torrent_details_raw[0]
-        is_multi_file, directory, name = details[0], details[1], details[2]
+        directory, err = _send_xmlrpc_request("d.directory", [torrent_hash])
+        if err or directory is None:
+            return False, f"Could not retrieve directory: {err or 'Empty response'}"
+
+        name, err = _send_xmlrpc_request("d.name", [torrent_hash])
+        if err or name is None:
+            return False, f"Could not retrieve name: {err or 'Empty response'}"
+
+        is_multi_file = bool(is_multi_file_raw)
 
         if is_multi_file:
             data_path = directory
