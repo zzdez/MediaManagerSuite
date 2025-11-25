@@ -3252,13 +3252,18 @@ def rtorrent_batch_action():
     # --- Action de Suppression ---
     if action == 'delete':
         delete_data = options.get('delete_data', False)
-        for h in hashes:
+        for h in hashes[:]:
+            logger.info(f"--- BATCH DELETE: Tentative de suppression du hash {h} ---")
             try:
-                success, _ = rtorrent_delete_torrent_api(h, delete_data)
-                if success: success_count += 1
-                else: fail_count += 1
+                success, message = rtorrent_delete_torrent_api(h, delete_data)
+                if success:
+                    success_count += 1
+                    logger.info(f"--- BATCH DELETE: Succès pour le hash {h} ---")
+                else:
+                    fail_count += 1
+                    logger.error(f"--- BATCH DELETE: Échec pour le hash {h}. Message: {message} ---")
             except Exception as e:
-                logger.error(f"Erreur lors de la suppression du torrent {h}: {e}", exc_info=True)
+                logger.error(f"--- BATCH DELETE: Exception lors de la suppression du torrent {h}: {e} ---", exc_info=True)
                 fail_count += 1
     # --- Action "Marquer comme traité" ---
     elif action == 'mark_processed':
