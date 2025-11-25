@@ -5,7 +5,6 @@ import paramiko
 from pathlib import Path
 import stat
 from flask import current_app
-from pathlib import Path
 import json
 import time
 import xmlrpc.client
@@ -678,7 +677,7 @@ def delete_torrent(torrent_hash, delete_data=False):
         if is_multi_file:
             data_path = directory
         else:
-            data_path = str(Path(directory) / name)
+            data_path = (Path(directory) / name).as_posix()
 
         if not data_path:
             return False, "Could not construct data path from torrent details."
