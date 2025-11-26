@@ -10,6 +10,21 @@ import paramiko
 
 from app.utils import rtorrent_client as rt_client
 
+def _apply_path_mapping(original_path):
+    """Applies the remote path mapping from config if it exists."""
+    mapping_str = current_app.config.get('SEEDBOX_SFTP_REMOTE_PATH_MAPPING')
+    if mapping_str:
+        parts = mapping_str.split(',')
+        if len(parts) == 2:
+            to_remove = parts[0].strip()
+            to_add = parts[1].strip()
+            if original_path.startswith(to_remove):
+                # Replace only the first occurrence
+                new_path = original_path.replace(to_remove, to_add, 1)
+                current_app.logger.info(f"Path mapping applied: '{original_path}' -> '{new_path}'")
+                return new_path
+    return original_path
+
 class SeedboxCleaner:
     """
     Agent intelligent pour le nettoyage automatique de la seedbox.
@@ -196,8 +211,11 @@ class SeedboxCleaner:
             self.logger.warning(f"Impossible de récupérer le chemin de téléchargement par défaut de rTorrent ({error}). Utilisation du chemin de secours.")
             path = self.config.get('SEEDBOX_CLEANER_SPACE_CHECK_PATH', '/')
 
+        # Appliquer le mappage de chemin
+        path = _apply_path_mapping(path)
+
         self.logger.info(f"Vérification de l'espace disque pour le chemin : {path}")
-        command = f"df -h {path}"
+        command = f"df -h \"{path}\"" # Mettre le chemin entre guillemets pour gérer les espaces
 
         sftp_host = self.config.get('SEEDBOX_SFTP_HOST')
         sftp_port = self.config.get('SEEDBOX_SFTP_PORT')
@@ -208,15 +226,27 @@ class SeedboxCleaner:
         try:
             client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            client.connect(sftp_host, port=sftp_port, username=sftp_user, password=sftp_password)
+            client.connect(sftp_host, port=sftp_port, username=sftp_user, password=sftp_password, timeout=15)
 
-            stdin, stdout, stderr = client.exec_command(command)
+            stdin, stdout, stderr = client.exec_command(command, timeout=15)
             stdout_str = stdout.read().decode('utf-8')
             stderr_str = stderr.read().decode('utf-8')
 
             if stderr_str:
                 self.logger.error(f"Erreur lors de l'exécution de la commande '{command}': {stderr_str}")
-                return None, None
+                # Essayer avec le parent du chemin comme solution de secours
+                parent_path = os.path.dirname(path)
+                if parent_path != path:
+                    self.logger.warning(f"Échec pour '{path}'. Tentative avec le dossier parent '{parent_path}'.")
+                    command = f"df -h \"{parent_path}\""
+                    stdin, stdout, stderr = client.exec_command(command, timeout=15)
+                    stdout_str = stdout.read().decode('utf-8')
+                    stderr_str = stderr.read().decode('utf-8')
+                    if stderr_str:
+                        self.logger.error(f"Erreur également pour le chemin parent '{parent_path}': {stderr_str}")
+                        return None, None
+                else:
+                    return None, None
 
             lines = stdout_str.strip().split('\n')
             if len(lines) < 2:
