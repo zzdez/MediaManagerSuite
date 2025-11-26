@@ -16,6 +16,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from app.utils.sftp_scanner import scan_and_map_torrents
 from app.utils.staging_processor import process_pending_staging_items
 from app.utils.trailer_manager import clean_stale_entries
+from app.utils.seedbox_cleaner import run_seedbox_cleaner_task
 import atexit
 import threading
 
@@ -250,6 +251,26 @@ def create_app(config_class=Config):
 
         # Ensure scheduler shuts down cleanly when the app exits
         atexit.register(lambda: scheduler.shutdown() if scheduler and scheduler.running else None)
+
+        # --- Seedbox Cleaner Job ---
+        if app.config.get('SEEDBOX_CLEANER_ENABLED'):
+            cleaner_interval_hours = app.config.get('SEEDBOX_CLEANER_SCHEDULE_HOURS', 24)
+            def scheduled_seedbox_cleaner_job():
+                with app.app_context():
+                    current_app.logger.info(f"Scheduler: Triggering Seedbox Cleaner job. Interval: {cleaner_interval_hours} hours.")
+                    run_seedbox_cleaner_task()
+
+            scheduler.add_job(
+                func=scheduled_seedbox_cleaner_job,
+                trigger='interval',
+                hours=cleaner_interval_hours,
+                id='seedbox_cleaner_job',
+                next_run_time=datetime.datetime.now() + datetime.timedelta(minutes=1), # Run 1 min after startup
+                replace_existing=True
+            )
+            app.logger.info(f"Seedbox Cleaner job scheduled every {cleaner_interval_hours} hours.")
+        else:
+            app.logger.info("Seedbox Cleaner is disabled. Job not scheduled.")
 
         # --- Backup Job ---
         try:

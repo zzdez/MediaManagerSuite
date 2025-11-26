@@ -659,9 +659,30 @@ def delete_torrent(torrent_hash, delete_data=False):
     else:
         logger.info(f"Performing full deletion for hash {torrent_hash} via SFTP.")
 
-        data_path, error_path = _send_xmlrpc_request("d.base_path", [torrent_hash])
-        if error_path or not data_path:
-            return False, f"Could not retrieve data path from rTorrent: {error_path}"
+        # Fiabilisation de la récupération du chemin
+        is_multi_file_raw, err = _send_xmlrpc_request("d.is_multi_file", [torrent_hash])
+        if err or is_multi_file_raw is None:
+            return False, f"Could not retrieve is_multi_file: {err or 'Empty response'}"
+
+        directory, err = _send_xmlrpc_request("d.directory", [torrent_hash])
+        if err or directory is None:
+            return False, f"Could not retrieve directory: {err or 'Empty response'}"
+
+        name, err = _send_xmlrpc_request("d.name", [torrent_hash])
+        if err or name is None:
+            return False, f"Could not retrieve name: {err or 'Empty response'}"
+
+        is_multi_file = bool(is_multi_file_raw)
+
+        if is_multi_file:
+            data_path = directory
+        else:
+            data_path = (Path(directory) / name).as_posix()
+
+        if not data_path:
+            return False, "Could not construct data path from torrent details."
+
+        logger.info(f"Reliably constructed data path: {data_path}")
 
         sftp_host = current_app.config.get('SEEDBOX_SFTP_HOST')
         sftp_port = int(current_app.config.get('SEEDBOX_SFTP_PORT', 22))
@@ -697,3 +718,36 @@ def delete_torrent(torrent_hash, delete_data=False):
             return False, f"Data was deleted, but failed to remove torrent from list: {error_erase}"
 
         return True, "Torrent and its data were successfully deleted."
+
+def get_disk_space_info():
+    """
+    Récupère les informations d'espace disque en se basant sur le quota défini par l'utilisateur.
+    - L'espace total est lu depuis la configuration (SEEDBOX_QUOTA_SIZE_GB).
+    - L'espace utilisé est calculé en additionnant la taille de tous les torrents.
+    Retourne (used_space_bytes, total_space_bytes, error_message)
+    """
+    logger = current_app.logger
+    logger.info("Récupération des infos d'espace disque via la configuration manuelle et la somme des torrents.")
+
+    # 1. Récupérer l'espace total depuis la configuration.
+    total_space_gb = current_app.config.get('SEEDBOX_QUOTA_SIZE_GB', 0)
+    if total_space_gb <= 0:
+        err_msg = "La taille du quota de la seedbox (SEEDBOX_QUOTA_SIZE_GB) n'est pas configurée ou est invalide. Le calcul de l'espace disque est désactivé."
+        logger.warning(err_msg)
+        # On retourne une erreur pour que le cleaner s'arrête proprement.
+        return None, None, err_msg
+
+    total_space_bytes = total_space_gb * (1024**3)
+
+    # 2. Calculer l'espace utilisé en additionnant la taille de tous les torrents.
+    torrents_data, error = _send_xmlrpc_request(method_name="d.multicall2", params=["", "main", "d.size_bytes="])
+    if error:
+        err_msg = f"Erreur XML-RPC lors de la récupération de la taille des torrents : {error}"
+        logger.error(err_msg)
+        return None, None, err_msg
+
+    used_space_bytes = sum(item[0] for item in torrents_data if item and isinstance(item[0], int))
+
+    logger.info(f"Infos Espace Quota (configuré): Utilisé={used_space_bytes}, Total={total_space_bytes}")
+
+    return used_space_bytes, total_space_bytes, None
