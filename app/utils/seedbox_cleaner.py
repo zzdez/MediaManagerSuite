@@ -59,14 +59,14 @@ class SeedboxCleaner:
         self.results['space_before'] = space_before_str
         self.logger.info(f"Utilisation actuelle de l'espace disque : {used_percent}%")
 
+
         # 2. Décider du mode et récupérer les candidats
         emergency_threshold = self.config.get('SEEDBOX_CLEANER_EMERGENCY_THRESHOLD_PERCENT', 90)
-        torrents_to_delete = []
 
-        all_torrents = self._get_all_torrents()
-        if all_torrents is None:
+        all_torrents, error = rt_client.list_torrents()
+        if error:
             self.results['errors'].append("Impossible de récupérer la liste des torrents. Annulation.")
-            self.logger.error("Impossible de récupérer la liste des torrents. Annulation.")
+            self.logger.error(f"Impossible de récupérer la liste des torrents: {error}. Annulation.")
             self._save_status()
             return
 
@@ -187,10 +187,16 @@ class SeedboxCleaner:
 
     def _check_disk_space(self):
         """
-        Vérifie l'espace disque sur le serveur distant via SFTP.
+        Vérifie l'espace disque sur le serveur distant via SSH.
         Retourne le pourcentage d'utilisation et une chaîne formatée.
         """
-        path = self.config.get('SEEDBOX_CLEANER_SPACE_CHECK_PATH', '/')
+        # Tenter de récupérer le chemin automatiquement
+        path, error = rt_client.get_default_download_directory()
+        if error or not path:
+            self.logger.warning(f"Impossible de récupérer le chemin de téléchargement par défaut de rTorrent ({error}). Utilisation du chemin de secours.")
+            path = self.config.get('SEEDBOX_CLEANER_SPACE_CHECK_PATH', '/')
+
+        self.logger.info(f"Vérification de l'espace disque pour le chemin : {path}")
         command = f"df -h {path}"
 
         sftp_host = self.config.get('SEEDBOX_SFTP_HOST')
@@ -198,14 +204,13 @@ class SeedboxCleaner:
         sftp_user = self.config.get('SEEDBOX_SFTP_USER')
         sftp_password = self.config.get('SEEDBOX_SFTP_PASSWORD')
 
-        transport = None
-        sftp = None
+        client = None
         try:
-            transport = paramiko.Transport((sftp_host, sftp_port))
-            transport.connect(username=sftp_user, password=sftp_password)
-            sftp = paramiko.SFTPClient.from_transport(transport)
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(sftp_host, port=sftp_port, username=sftp_user, password=sftp_password)
 
-            stdin, stdout, stderr = sftp.get_channel().exec_command(command)
+            stdin, stdout, stderr = client.exec_command(command)
             stdout_str = stdout.read().decode('utf-8')
             stderr_str = stderr.read().decode('utf-8')
 
@@ -235,10 +240,8 @@ class SeedboxCleaner:
             self.logger.error(f"Exception lors de la vérification de l'espace disque: {e}", exc_info=True)
             return None, None
         finally:
-            if sftp:
-                sftp.close()
-            if transport:
-                transport.close()
+            if client:
+                client.close()
 
     def _save_status(self):
         """

@@ -718,3 +718,23 @@ def delete_torrent(torrent_hash, delete_data=False):
             return False, f"Data was deleted, but failed to remove torrent from list: {error_erase}"
 
         return True, "Torrent and its data were successfully deleted."
+
+def get_default_download_directory():
+    """
+    Retrieves the default download directory from rTorrent.
+    """
+    logger = current_app.logger
+    logger.info("Fetching default download directory from rTorrent.")
+
+    result, error = _send_xmlrpc_request(method_name="directory.default", params=[])
+
+    if error:
+        logger.error(f"XML-RPC error calling directory.default: {error}")
+        return None, error
+
+    if isinstance(result, str):
+        logger.info(f"Default download directory found: {result}")
+        return result, None
+    else:
+        logger.error(f"Unexpected result for directory.default: {result}")
+        return None, "Unexpected result from rTorrent for default directory."
