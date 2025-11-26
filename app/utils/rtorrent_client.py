@@ -659,9 +659,30 @@ def delete_torrent(torrent_hash, delete_data=False):
     else:
         logger.info(f"Performing full deletion for hash {torrent_hash} via SFTP.")
 
-        data_path, error_path = _send_xmlrpc_request("d.base_path", [torrent_hash])
-        if error_path or not data_path:
-            return False, f"Could not retrieve data path from rTorrent: {error_path}"
+        # Fiabilisation de la récupération du chemin
+        is_multi_file_raw, err = _send_xmlrpc_request("d.is_multi_file", [torrent_hash])
+        if err or is_multi_file_raw is None:
+            return False, f"Could not retrieve is_multi_file: {err or 'Empty response'}"
+
+        directory, err = _send_xmlrpc_request("d.directory", [torrent_hash])
+        if err or directory is None:
+            return False, f"Could not retrieve directory: {err or 'Empty response'}"
+
+        name, err = _send_xmlrpc_request("d.name", [torrent_hash])
+        if err or name is None:
+            return False, f"Could not retrieve name: {err or 'Empty response'}"
+
+        is_multi_file = bool(is_multi_file_raw)
+
+        if is_multi_file:
+            data_path = directory
+        else:
+            data_path = (Path(directory) / name).as_posix()
+
+        if not data_path:
+            return False, "Could not construct data path from torrent details."
+
+        logger.info(f"Reliably constructed data path: {data_path}")
 
         sftp_host = current_app.config.get('SEEDBOX_SFTP_HOST')
         sftp_port = int(current_app.config.get('SEEDBOX_SFTP_PORT', 22))
@@ -697,3 +718,63 @@ def delete_torrent(torrent_hash, delete_data=False):
             return False, f"Data was deleted, but failed to remove torrent from list: {error_erase}"
 
         return True, "Torrent and its data were successfully deleted."
+
+def get_default_download_directory():
+    """
+    Retrieves the default download directory from rTorrent.
+    """
+    logger = current_app.logger
+    logger.info("Fetching default download directory from rTorrent.")
+
+    result, error = _send_xmlrpc_request(method_name="directory.default", params=[])
+
+    if error:
+        logger.error(f"XML-RPC error calling directory.default: {error}")
+        return None, error
+
+    if isinstance(result, str):
+        logger.info(f"Default download directory found: {result}")
+        return result, None
+    else:
+        logger.error(f"Unexpected result for directory.default: {result}")
+        return None, "Unexpected result from rTorrent for default directory."
+
+def get_disk_space_info():
+    """
+    Récupère les informations d'espace disque de rTorrent en utilisant les commandes
+    personnalisées du plugin 'diskspace' de ruTorrent (get_used_space, get_free_space).
+    Cette méthode est plus fiable pour obtenir le quota réel de l'utilisateur.
+    Retourne (used_space_bytes, total_space_bytes, error_message)
+    """
+    logger = current_app.logger
+    logger.info("Récupération des informations d'espace disque via get_used_space et get_free_space.")
+
+    # 1. Récupérer l'espace utilisé
+    used_space_bytes, error_used = _send_xmlrpc_request(method_name="get_used_space", params=[])
+    if error_used:
+        err_msg = f"Erreur XML-RPC lors de l'appel à 'get_used_space': {error_used}. Le plugin 'diskspace' de ruTorrent est-il installé et configuré ?"
+        logger.error(err_msg)
+        return None, None, err_msg
+
+    # 2. Récupérer l'espace libre
+    free_space_bytes, error_free = _send_xmlrpc_request(method_name="get_free_space", params=[])
+    if error_free:
+        err_msg = f"Erreur XML-RPC lors de l'appel à 'get_free_space': {error_free}. Le plugin 'diskspace' de ruTorrent est-il installé et configuré ?"
+        logger.error(err_msg)
+        return None, None, err_msg
+
+    # 3. S'assurer que les valeurs sont des entiers et calculer le total
+    try:
+        used_space_bytes = int(used_space_bytes)
+        free_space_bytes = int(free_space_bytes)
+    except (ValueError, TypeError) as e:
+        err_msg = f"Impossible de convertir les valeurs d'espace disque en entiers. Utilisé: {used_space_bytes}, Libre: {free_space_bytes}. Erreur: {e}"
+        logger.error(err_msg)
+        return None, None, err_msg
+
+    # 4. Calculer l'espace total en se basant sur le quota de l'utilisateur
+    total_space_bytes = used_space_bytes + free_space_bytes
+
+    logger.info(f"Infos espace disque (depuis plugin): Utilisé={used_space_bytes}, Libre={free_space_bytes}, Total (calculé)={total_space_bytes}")
+
+    return used_space_bytes, total_space_bytes, None
