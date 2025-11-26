@@ -719,62 +719,64 @@ def delete_torrent(torrent_hash, delete_data=False):
 
         return True, "Torrent and its data were successfully deleted."
 
-def get_default_download_directory():
-    """
-    Retrieves the default download directory from rTorrent.
-    """
-    logger = current_app.logger
-    logger.info("Fetching default download directory from rTorrent.")
-
-    result, error = _send_xmlrpc_request(method_name="directory.default", params=[])
-
-    if error:
-        logger.error(f"XML-RPC error calling directory.default: {error}")
-        return None, error
-
-    if isinstance(result, str):
-        logger.info(f"Default download directory found: {result}")
-        return result, None
-    else:
-        logger.error(f"Unexpected result for directory.default: {result}")
-        return None, "Unexpected result from rTorrent for default directory."
-
 def get_disk_space_info():
     """
-    Récupère les informations d'espace disque de rTorrent en utilisant les commandes
-    personnalisées du plugin 'diskspace' de ruTorrent (get_used_space, get_free_space).
-    Cette méthode est plus fiable pour obtenir le quota réel de l'utilisateur.
+    Récupère les informations d'espace disque de rTorrent de manière fiable.
+    - L'espace utilisé est calculé en additionnant la taille de tous les torrents.
+    - L'espace libre est récupéré via une commande nécessitant un hash de torrent.
+    - L'espace total est la somme des deux.
     Retourne (used_space_bytes, total_space_bytes, error_message)
     """
     logger = current_app.logger
-    logger.info("Récupération des informations d'espace disque via get_used_space et get_free_space.")
+    logger.info("Récupération des informations d'espace disque via d.multicall2 et d.free_diskspace.")
 
-    # 1. Récupérer l'espace utilisé
-    used_space_bytes, error_used = _send_xmlrpc_request(method_name="get_used_space", params=[])
-    if error_used:
-        err_msg = f"Erreur XML-RPC lors de l'appel à 'get_used_space': {error_used}. Le plugin 'diskspace' de ruTorrent est-il installé et configuré ?"
+    # 1. Récupérer la taille de tous les torrents pour calculer l'espace utilisé
+    torrents_data, error = _send_xmlrpc_request(method_name="d.multicall2", params=["", "main", "d.size_bytes="])
+    if error:
+        err_msg = f"Erreur XML-RPC lors de la récupération de la taille des torrents : {error}"
         logger.error(err_msg)
         return None, None, err_msg
 
-    # 2. Récupérer l'espace libre
-    free_space_bytes, error_free = _send_xmlrpc_request(method_name="get_free_space", params=[])
+    used_space_bytes = sum(item[0] for item in torrents_data if item and isinstance(item[0], int))
+
+    # 2. Récupérer l'espace libre. Cela nécessite le hash d'un torrent.
+    # On récupère la liste complète pour avoir un hash.
+    all_torrents, error_list = list_torrents()
+    if error_list:
+        err_msg = f"Impossible de lister les torrents pour obtenir un hash pour d.free_diskspace : {error_list}"
+        logger.error(err_msg)
+        return None, None, err_msg
+
+    if not all_torrents:
+        # S'il n'y a aucun torrent, l'espace utilisé est 0. On ne peut pas connaître l'espace total.
+        logger.warning("Aucun torrent dans rTorrent, impossible de déterminer l'espace libre/total.")
+        # On suppose que l'espace utilisé est 0 et on ne peut pas déterminer le total.
+        # On retourne 0 pour les deux pour éviter une erreur, mais le nettoyeur ne fera rien.
+        return 0, 0, None
+
+    # On utilise le hash du premier torrent pour l'appel
+    first_torrent_hash = all_torrents[0].get('hash')
+    if not first_torrent_hash:
+        err_msg = "Impossible de trouver un hash de torrent valide pour l'appel d.free_diskspace."
+        logger.error(err_msg)
+        return None, None, err_msg
+
+    free_space_bytes, error_free = _send_xmlrpc_request(method_name="d.free_diskspace", params=[first_torrent_hash])
     if error_free:
-        err_msg = f"Erreur XML-RPC lors de l'appel à 'get_free_space': {error_free}. Le plugin 'diskspace' de ruTorrent est-il installé et configuré ?"
+        err_msg = f"Erreur XML-RPC lors de l'appel à 'd.free_diskspace': {error_free}."
         logger.error(err_msg)
         return None, None, err_msg
 
-    # 3. S'assurer que les valeurs sont des entiers et calculer le total
     try:
-        used_space_bytes = int(used_space_bytes)
         free_space_bytes = int(free_space_bytes)
-    except (ValueError, TypeError) as e:
-        err_msg = f"Impossible de convertir les valeurs d'espace disque en entiers. Utilisé: {used_space_bytes}, Libre: {free_space_bytes}. Erreur: {e}"
+    except (ValueError, TypeError):
+        err_msg = f"Valeur d'espace libre non numérique reçue de rTorrent: {free_space_bytes}"
         logger.error(err_msg)
         return None, None, err_msg
 
-    # 4. Calculer l'espace total en se basant sur le quota de l'utilisateur
+    # 3. Calculer l'espace total
     total_space_bytes = used_space_bytes + free_space_bytes
 
-    logger.info(f"Infos espace disque (depuis plugin): Utilisé={used_space_bytes}, Libre={free_space_bytes}, Total (calculé)={total_space_bytes}")
+    logger.info(f"Infos espace disque (calculé): Utilisé={used_space_bytes}, Libre={free_space_bytes}, Total={total_space_bytes}")
 
     return used_space_bytes, total_space_bytes, None
