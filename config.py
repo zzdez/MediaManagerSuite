@@ -15,6 +15,9 @@ else:
     print("           Les variables d'environnement pourraient ne pas être chargées.")
 
 class Config:
+    # --- CHEMINS DE BASE ---
+    INSTANCE_FOLDER_PATH = INSTANCE_FOLDER_PATH
+
     # --- FLASK CORE ---
     FLASK_APP = os.getenv('FLASK_APP', 'run.py').split('#')[0].strip()
     SECRET_KEY = os.getenv('SECRET_KEY', 'une-cle-secrete-tres-forte-et-aleatoire-a-definir-absolument')
