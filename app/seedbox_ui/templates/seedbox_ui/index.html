@@ -204,6 +204,24 @@
 
             <div class="card mt-3">
                 <div class="card-header">
+                    <h5 class="mb-0">Agent de Nettoyage de la Seedbox</h5>
+                </div>
+                <div class="card-body">
+                    <p class="card-text">Gérer et surveiller l'agent de nettoyage automatique de la seedbox.</p>
+                    <button class="btn btn-primary" id="trigger-cleanup-btn" type="button">
+                        <i class="bi bi-play-circle"></i> Lancer le Nettoyage Maintenant
+                    </button>
+                    <div id="cleanup-status-container" class="mt-3">
+                        <div class="text-center" id="cleanup-loader">
+                            <div class="spinner-border text-primary" role="status"><span class="visually-hidden">Chargement...</span></div>
+                            <p class="mt-2">Chargement du statut...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mt-3">
+                <div class="card-header">
                     <h5 class="mb-0">Gestion des Files d'Attente *Arr</h5>
                 </div>
                 <div class="card-body">
@@ -603,9 +621,91 @@
         loadDynamicContent('load-sonarr-workdir-btn', 'workdir-container', 'workdir-loader', "{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='sonarr_working') }}", 'sonarr');
         loadDynamicContent('load-radarr-workdir-btn', 'workdir-container', 'workdir-loader', "{{ url_for('seedbox_ui.remote_seedbox_view', app_type_target='radarr_working') }}", 'radarr');
 
-        // --- Logique pour l'onglet Maintenance (Écouteurs Délégués) ---
+        // --- Logique pour l'onglet Maintenance (Écouteurs Délégués et Nettoyeur de Seedbox) ---
         const maintenanceContainer = document.getElementById('maintenance-content');
         if (maintenanceContainer) {
+            // --- Logique de l'Agent de Nettoyage de la Seedbox ---
+            const maintenanceTab = document.getElementById('maintenance-tab');
+            const cleanupLoader = document.getElementById('cleanup-loader');
+            const cleanupStatusContainer = document.getElementById('cleanup-status-container');
+            const triggerCleanupBtn = document.getElementById('trigger-cleanup-btn');
+
+            function formatCleanupStatus(data) {
+                if (!data || data.status === 'never_run') {
+                    return `<div class="alert alert-info">${data.message || "L'agent n'a jamais été exécuté."}</div>`;
+                }
+
+                let html = `<ul class="list-group">`;
+                html += `<li class="list-group-item"><strong>Dernière exécution :</strong> ${new Date(data.timestamp).toLocaleString()}</li>`;
+                html += `<li class="list-group-item"><strong>Mode :</strong> ${data.mode} ${data.dry_run ? '<span class="badge bg-warning text-dark">Simulation</span>' : ''}</li>`;
+                html += `<li class="list-group-item"><strong>Espace disque avant :</strong> ${data.space_before}</li>`;
+                html += `<li class="list-group-item"><strong>Espace disque après :</strong> ${data.space_after}</li>`;
+                html += `<li class="list-group-item"><strong>Torrents supprimés :</strong> ${data.deleted_count}</li>`;
+
+                if (data.errors && data.errors.length > 0) {
+                    html += `<li class="list-group-item list-group-item-danger"><strong>Erreurs :</strong> ${data.errors.join(', ')}</li>`;
+                }
+                html += `</ul>`;
+
+                if (data.deleted_torrents && data.deleted_torrents.length > 0) {
+                    html += `<h6 class="mt-3">Détails des torrents supprimés :</h6><ul class="list-group" style="font-size: 0.8rem;">`;
+                    data.deleted_torrents.forEach(t => {
+                        html += `<li class="list-group-item">${t.name} (${t.status})</li>`;
+                    });
+                    html += `</ul>`;
+                }
+                return html;
+            }
+
+            function loadCleanupStatus() {
+                cleanupLoader.style.display = 'block';
+                fetch("{{ url_for('seedbox_ui.get_cleanup_status') }}")
+                    .then(response => response.json())
+                    .then(data => {
+                        cleanupStatusContainer.innerHTML = formatCleanupStatus(data);
+                    })
+                    .catch(error => {
+                        cleanupStatusContainer.innerHTML = `<div class="alert alert-danger">Erreur de chargement du statut : ${error}</div>`;
+                    })
+                    .finally(() => {
+                        cleanupLoader.style.display = 'none';
+                    });
+            }
+
+            if (maintenanceTab) {
+                maintenanceTab.addEventListener('shown.bs.tab', function(event) {
+                    loadCleanupStatus();
+                });
+                // Charger si l'onglet est déjà actif au chargement de la page
+                if (maintenanceTab.classList.contains('active')) {
+                    loadCleanupStatus();
+                }
+            }
+
+            if (triggerCleanupBtn) {
+                triggerCleanupBtn.addEventListener('click', function() {
+                    if (confirm("Voulez-vous vraiment lancer un cycle de nettoyage de la seedbox maintenant ?")) {
+                        this.disabled = true;
+                        this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Lancement...';
+
+                        fetch("{{ url_for('seedbox_ui.trigger_cleanup_manually') }}", { method: 'POST' })
+                            .then(response => response.json())
+                            .then(data => {
+                                alert(data.message);
+                                // Recharger le statut après un court délai pour laisser le temps au process de démarrer
+                                setTimeout(loadCleanupStatus, 5000);
+                            })
+                            .catch(error => {
+                                alert("Erreur lors du déclenchement du nettoyage : " + error);
+                            })
+                            .finally(() => {
+                                this.disabled = false;
+                                this.innerHTML = '<i class="bi bi-play-circle"></i> Lancer le Nettoyage Maintenant';
+                            });
+                    }
+                });
+            }
+
             maintenanceContainer.addEventListener('submit', function(event) {
                 if (event.target.id === 'sonarrQueueForm' || event.target.id === 'radarrQueueForm') {
                     event.preventDefault();

@@ -111,6 +111,14 @@ class Config:
     _dashboard_prowlarr_categories_str = os.getenv('DASHBOARD_PROWLARR_CATEGORIES', '2000,5000') # Movie, TV
     DASHBOARD_PROWLARR_CATEGORIES = [int(cat.strip()) for cat in _dashboard_prowlarr_categories_str.split(',') if cat.strip()]
 
+    # --- SEEDBOX CLEANER ---
+    SEEDBOX_CLEANER_ENABLED = os.getenv('SEEDBOX_CLEANER_ENABLED', 'False').split('#')[0].strip().lower() in ('true', '1', 't')
+    SEEDBOX_CLEANER_SCHEDULE_HOURS = int(os.getenv('SEEDBOX_CLEANER_SCHEDULE_HOURS', '24').split('#')[0].strip())
+    SEEDBOX_CLEANER_DRY_RUN = os.getenv('SEEDBOX_CLEANER_DRY_RUN', 'True').split('#')[0].strip().lower() in ('true', '1', 't')
+    SEEDBOX_CLEANER_SPACE_CHECK_PATH = os.getenv('SEEDBOX_CLEANER_SPACE_CHECK_PATH', '/').split('#')[0].strip()
+    SEEDBOX_CLEANER_EMERGENCY_THRESHOLD_PERCENT = int(os.getenv('SEEDBOX_CLEANER_EMERGENCY_THRESHOLD_PERCENT', '90').split('#')[0].strip())
+    SEEDBOX_CLEANER_ROUTINE_MIN_RATIO = float(os.getenv('SEEDBOX_CLEANER_ROUTINE_MIN_RATIO', '1.0').split('#')[0].strip())
+    SEEDBOX_CLEANER_ROUTINE_MIN_SEED_DAYS = int(os.getenv('SEEDBOX_CLEANER_ROUTINE_MIN_SEED_DAYS', '14').split('#')[0].strip())
 
     # --- Anciennes variables (à supprimer/migrer après vérification que plus rien ne les utilise) ---
     PENDING_TORRENTS_MAP_FILE = os.getenv(

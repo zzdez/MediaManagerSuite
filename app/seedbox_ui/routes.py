@@ -4730,3 +4730,53 @@ def run_staging_processor_endpoint():
     except Exception as e:
         current_app.logger.error(f"Error running staging processor endpoint: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+# ==============================================================================
+# --- ROUTES POUR L'AGENT DE NETTOYAGE DE LA SEEDBOX ---
+# ==============================================================================
+from app.utils.seedbox_cleaner import SeedboxCleaner
+
+@seedbox_ui_bp.route('/api/cleanup-status', methods=['GET'])
+@login_required
+def get_cleanup_status():
+    """
+    Récupère le statut de la dernière exécution de l'agent de nettoyage.
+    """
+    logger = current_app.logger
+    status_file = os.path.join(current_app.config.get('INSTANCE_FOLDER_PATH'), 'cleanup_status.json')
+
+    if not os.path.exists(status_file):
+        logger.info("Le fichier de statut du nettoyeur de seedbox n'existe pas encore.")
+        return jsonify({"status": "never_run", "message": "L'agent de nettoyage n'a encore jamais été exécuté."})
+
+    try:
+        with open(status_file, 'r', encoding='utf-8') as f:
+            status_data = json.load(f)
+        return jsonify(status_data)
+    except Exception as e:
+        logger.error(f"Erreur lors de la lecture du fichier de statut du nettoyeur: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": "Impossible de lire le fichier de statut."}), 500
+
+@seedbox_ui_bp.route('/api/trigger-cleanup', methods=['POST'])
+@login_required
+def trigger_cleanup_manually():
+    """
+    Déclenche manuellement une exécution de l'agent de nettoyage en arrière-plan.
+    """
+    logger = current_app.logger
+    logger.info("Déclenchement manuel de l'agent de nettoyage de la seedbox.")
+
+    def run_cleaner_in_thread(app):
+        with app.app_context():
+            # Pour un déclenchement manuel, on ne force pas le dry_run, on respecte la conf.
+            # Si on voulait le forcer, on passerait dry_run_override=True/False
+            cleaner = SeedboxCleaner()
+            cleaner.run()
+
+    # Créer une nouvelle instance de l'application pour le thread
+    app = current_app._get_current_object()
+    thread = Thread(target=run_cleaner_in_thread, args=[app])
+    thread.daemon = True
+    thread.start()
+
+    return jsonify({"status": "triggered", "message": "L'agent de nettoyage de la seedbox a été démarré en arrière-plan. Les résultats seront disponibles dans quelques minutes."})
