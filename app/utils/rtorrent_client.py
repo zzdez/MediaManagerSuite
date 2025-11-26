@@ -721,16 +721,17 @@ def delete_torrent(torrent_hash, delete_data=False):
 
 def get_disk_space_info():
     """
-    Récupère les informations d'espace disque de rTorrent de manière fiable.
-    - L'espace utilisé est calculé en additionnant la taille de tous les torrents.
-    - L'espace libre est récupéré via une commande nécessitant un hash de torrent.
-    - L'espace total est la somme des deux.
+    Récupère les informations d'espace disque de rTorrent de manière fiable pour un quota utilisateur.
+    - L'espace utilisé est calculé en additionnant la taille de tous les torrents (d.multicall2).
+    - L'espace libre est récupéré via la commande 'get_free_space' du plugin 'diskspace'.
+    - L'espace total est la somme des deux, représentant le quota total de l'utilisateur.
     Retourne (used_space_bytes, total_space_bytes, error_message)
     """
     logger = current_app.logger
-    logger.info("Récupération des informations d'espace disque via d.multicall2 et d.free_diskspace.")
+    logger.info("Récupération des infos d'espace disque (méthode mixte: somme des torrents + get_free_space).")
 
-    # 1. Récupérer la taille de tous les torrents pour calculer l'espace utilisé
+    # 1. Calculer l'espace utilisé en additionnant la taille de tous les torrents.
+    # C'est la méthode la plus fiable pour connaître l'espace réellement occupé par les données gérées par rTorrent.
     torrents_data, error = _send_xmlrpc_request(method_name="d.multicall2", params=["", "main", "d.size_bytes="])
     if error:
         err_msg = f"Erreur XML-RPC lors de la récupération de la taille des torrents : {error}"
@@ -739,44 +740,24 @@ def get_disk_space_info():
 
     used_space_bytes = sum(item[0] for item in torrents_data if item and isinstance(item[0], int))
 
-    # 2. Récupérer l'espace libre. Cela nécessite le hash d'un torrent.
-    # On récupère la liste complète pour avoir un hash.
-    all_torrents, error_list = list_torrents()
-    if error_list:
-        err_msg = f"Impossible de lister les torrents pour obtenir un hash pour d.free_diskspace : {error_list}"
-        logger.error(err_msg)
-        return None, None, err_msg
-
-    if not all_torrents:
-        # S'il n'y a aucun torrent, l'espace utilisé est 0. On ne peut pas connaître l'espace total.
-        logger.warning("Aucun torrent dans rTorrent, impossible de déterminer l'espace libre/total.")
-        # On suppose que l'espace utilisé est 0 et on ne peut pas déterminer le total.
-        # On retourne 0 pour les deux pour éviter une erreur, mais le nettoyeur ne fera rien.
-        return 0, 0, None
-
-    # On utilise le hash du premier torrent pour l'appel
-    first_torrent_hash = all_torrents[0].get('hash')
-    if not first_torrent_hash:
-        err_msg = "Impossible de trouver un hash de torrent valide pour l'appel d.free_diskspace."
-        logger.error(err_msg)
-        return None, None, err_msg
-
-    free_space_bytes, error_free = _send_xmlrpc_request(method_name="d.free_diskspace", params=[first_torrent_hash])
+    # 2. Récupérer l'espace libre via la commande du plugin 'diskspace'.
+    # On part du principe que cette commande est consciente du quota de l'utilisateur.
+    free_space_bytes, error_free = _send_xmlrpc_request(method_name="get_free_space", params=[])
     if error_free:
-        err_msg = f"Erreur XML-RPC lors de l'appel à 'd.free_diskspace': {error_free}."
+        err_msg = f"Erreur XML-RPC lors de l'appel à 'get_free_space': {error_free}. Le plugin 'diskspace' de ruTorrent est probablement requis."
         logger.error(err_msg)
         return None, None, err_msg
 
     try:
         free_space_bytes = int(free_space_bytes)
     except (ValueError, TypeError):
-        err_msg = f"Valeur d'espace libre non numérique reçue de rTorrent: {free_space_bytes}"
+        err_msg = f"Valeur d'espace libre non numérique reçue de rTorrent via 'get_free_space': {free_space_bytes}"
         logger.error(err_msg)
         return None, None, err_msg
 
-    # 3. Calculer l'espace total
+    # 3. Calculer l'espace total du quota en additionnant l'utilisé et le libre.
     total_space_bytes = used_space_bytes + free_space_bytes
 
-    logger.info(f"Infos espace disque (calculé): Utilisé={used_space_bytes}, Libre={free_space_bytes}, Total={total_space_bytes}")
+    logger.info(f"Infos Espace Quota (calculé): Utilisé={used_space_bytes}, Libre={free_space_bytes}, Total={total_space_bytes}")
 
     return used_space_bytes, total_space_bytes, None
