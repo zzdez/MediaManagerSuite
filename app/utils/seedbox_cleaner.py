@@ -200,78 +200,37 @@ class SeedboxCleaner:
             # Petite pause pour ne pas surcharger le serveur rTorrent
             time.sleep(1)
 
+    def _format_bytes(self, size_bytes):
+        if size_bytes is None:
+            return "N/A"
+        if size_bytes == 0:
+            return "0 B"
+        size_name = ("B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB")
+        i = 0
+        while size_bytes >= 1024 and i < len(size_name) - 1:
+            size_bytes /= 1024.0
+            i += 1
+        return f"{size_bytes:.2f} {size_name[i]}"
+
     def _check_disk_space(self):
         """
-        Vérifie l'espace disque sur le serveur distant via SSH.
+        Vérifie l'espace disque en utilisant les commandes XML-RPC de rTorrent.
         Retourne le pourcentage d'utilisation et une chaîne formatée.
         """
-        # Tenter de récupérer le chemin automatiquement
-        path, error = rt_client.get_default_download_directory()
-        if error or not path:
-            self.logger.warning(f"Impossible de récupérer le chemin de téléchargement par défaut de rTorrent ({error}). Utilisation du chemin de secours.")
-            path = self.config.get('SEEDBOX_CLEANER_SPACE_CHECK_PATH', '/')
+        used_bytes, total_bytes, error = rt_client.get_disk_space_info()
 
-        # Appliquer le mappage de chemin
-        path = _apply_path_mapping(path)
-
-        self.logger.info(f"Vérification de l'espace disque pour le chemin : {path}")
-        command = f"df -h \"{path}\"" # Mettre le chemin entre guillemets pour gérer les espaces
-
-        sftp_host = self.config.get('SEEDBOX_SFTP_HOST')
-        sftp_port = self.config.get('SEEDBOX_SFTP_PORT')
-        sftp_user = self.config.get('SEEDBOX_SFTP_USER')
-        sftp_password = self.config.get('SEEDBOX_SFTP_PASSWORD')
-
-        client = None
-        try:
-            client = paramiko.SSHClient()
-            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            client.connect(sftp_host, port=sftp_port, username=sftp_user, password=sftp_password, timeout=15)
-
-            stdin, stdout, stderr = client.exec_command(command, timeout=15)
-            stdout_str = stdout.read().decode('utf-8')
-            stderr_str = stderr.read().decode('utf-8')
-
-            if stderr_str:
-                self.logger.error(f"Erreur lors de l'exécution de la commande '{command}': {stderr_str}")
-                # Essayer avec le parent du chemin comme solution de secours
-                parent_path = os.path.dirname(path)
-                if parent_path != path:
-                    self.logger.warning(f"Échec pour '{path}'. Tentative avec le dossier parent '{parent_path}'.")
-                    command = f"df -h \"{parent_path}\""
-                    stdin, stdout, stderr = client.exec_command(command, timeout=15)
-                    stdout_str = stdout.read().decode('utf-8')
-                    stderr_str = stderr.read().decode('utf-8')
-                    if stderr_str:
-                        self.logger.error(f"Erreur également pour le chemin parent '{parent_path}': {stderr_str}")
-                        return None, None
-                else:
-                    return None, None
-
-            lines = stdout_str.strip().split('\n')
-            if len(lines) < 2:
-                self.logger.error(f"Output inattendu de la commande df: {stdout_str}")
-                return None, None
-
-            parts = lines[1].split()
-            if len(parts) >= 5 and '%' in parts[4]:
-                used_percent_str = parts[4].replace('%', '')
-                used_percent = int(used_percent_str)
-
-                size, used, avail = parts[1], parts[2], parts[3]
-                status_str = f"{used} / {size} ({used_percent}%)"
-
-                return used_percent, status_str
-            else:
-                self.logger.error(f"Impossible de parser l'output de df: {lines[1]}")
-                return None, None
-
-        except Exception as e:
-            self.logger.error(f"Exception lors de la vérification de l'espace disque: {e}", exc_info=True)
+        if error:
+            self.logger.error(f"Impossible d'obtenir les informations d'espace disque de rTorrent: {error}")
             return None, None
-        finally:
-            if client:
-                client.close()
+
+        if total_bytes is None or total_bytes == 0:
+            self.logger.warning("L'espace disque total retourné par rTorrent est 0. Impossible de calculer le pourcentage.")
+            return 0, f"{self._format_bytes(used_bytes)} / {self._format_bytes(total_bytes)} (0%)"
+
+        used_percent = int((used_bytes / total_bytes) * 100)
+        status_str = f"{self._format_bytes(used_bytes)} / {self._format_bytes(total_bytes)} ({used_percent}%)"
+
+        return used_percent, status_str
 
     def _save_status(self):
         """

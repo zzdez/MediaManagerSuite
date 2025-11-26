@@ -738,3 +738,44 @@ def get_default_download_directory():
     else:
         logger.error(f"Unexpected result for directory.default: {result}")
         return None, "Unexpected result from rTorrent for default directory."
+
+def get_disk_space_info():
+    """
+    Retrieves disk space information from rTorrent.
+    Returns (used_space, total_space, error_message)
+    """
+    logger = current_app.logger
+    logger.info("Fetching disk space info from rTorrent.")
+
+    # 1. Get total size of all torrents (used space)
+    used_space_bytes, error = _send_xmlrpc_request(method_name="pieces.stats.total_size", params=[])
+    if error:
+        logger.error(f"XML-RPC error calling pieces.stats.total_size: {error}")
+        return None, None, error
+
+    # 2. Get free disk space. We need a torrent hash for this.
+    # We'll fetch the first torrent from the list.
+    torrents, error = list_torrents()
+    if error:
+        logger.error(f"Could not list torrents to get a hash for free_diskspace check: {error}")
+        return None, None, error
+
+    if not torrents:
+        # If there are no torrents, we can't get free space this way.
+        # We can try to get the default directory and check that, but for now let's return.
+        logger.warning("No torrents in client, cannot determine free disk space.")
+        # Used space is 0, but total is unknown.
+        return 0, 0, "No torrents in client to determine disk space from."
+
+    first_torrent_hash = torrents[0].get('hash')
+    free_space_bytes, error = _send_xmlrpc_request(method_name="d.free_diskspace", params=[first_torrent_hash])
+    if error:
+        logger.error(f"XML-RPC error calling d.free_diskspace: {error}")
+        return None, None, error
+
+    # 3. Calculate total space
+    total_space_bytes = used_space_bytes + free_space_bytes
+
+    logger.info(f"Disk space info: Used={used_space_bytes}, Free={free_space_bytes}, Total={total_space_bytes}")
+
+    return used_space_bytes, total_space_bytes, None
