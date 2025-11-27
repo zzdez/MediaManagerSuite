@@ -274,6 +274,5 @@ def migrate_database_keys():
         _save_database(new_database)
         logger.info("Migration des clés de la base de données d'archives terminée.")
 
-# Ligne pour déclencher la migration au démarrage de l'application.
-# Cela garantit que la BDD est cohérente avant toute opération.
-migrate_database_keys()
+# La migration sera désormais appelée explicitement depuis app/__init__.py
+# pour s'assurer qu'elle s'exécute dans le bon contexte applicatif.

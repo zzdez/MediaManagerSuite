@@ -542,3 +542,69 @@ def cleanup_torrents():
     except (json.JSONDecodeError, IOError, KeyError) as e:
         current_app.logger.error(f"Error during torrent cleanup: {e}", exc_info=True)
         return jsonify({"status": "error", "message": "Failed to process the torrent file."}), 500
+
+@dashboard_bp.route('/dashboard/api/mark-all-as-seen', methods=['POST'])
+def mark_all_as_seen():
+    """
+    API endpoint to mark all torrents as 'not new'.
+    """
+    if not os.path.exists(DASHBOARD_TORRENTS_FILE):
+        return jsonify({"status": "success", "message": "No torrents to update."})
+
+    try:
+        with open(DASHBOARD_TORRENTS_FILE, 'r') as f:
+            torrents = json.load(f)
+
+        updated_count = 0
+        for torrent in torrents:
+            if torrent.get('is_new', False):
+                torrent['is_new'] = False
+                updated_count += 1
+
+        with open(DASHBOARD_TORRENTS_FILE, 'w') as f:
+            json.dump(torrents, f, indent=2)
+
+        current_app.logger.info(f"Marked all {updated_count} new torrents as seen.")
+        return jsonify({"status": "success", "message": f"{updated_count} torrent(s) marked as seen."})
+
+    except (json.JSONDecodeError, IOError) as e:
+        current_app.logger.error(f"Error in mark_all_as_seen: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": "Failed to process the torrent file."}), 500
+
+@dashboard_bp.route('/dashboard/api/mark-as-seen', methods=['POST'])
+def mark_as_seen():
+    """
+    API endpoint to mark a single torrent as 'not new'.
+    """
+    data = request.get_json()
+    torrent_hash = data.get('hash')
+
+    if not torrent_hash:
+        return jsonify({"status": "error", "message": "No torrent hash provided."}), 400
+
+    if not os.path.exists(DASHBOARD_TORRENTS_FILE):
+        return jsonify({"status": "error", "message": "Torrent file not found."}), 404
+
+    try:
+        with open(DASHBOARD_TORRENTS_FILE, 'r') as f:
+            torrents = json.load(f)
+
+        found = False
+        for torrent in torrents:
+            if torrent.get('hash') == torrent_hash:
+                torrent['is_new'] = False
+                found = True
+                break
+
+        if not found:
+            return jsonify({"status": "error", "message": "Torrent not found."}), 404
+
+        with open(DASHBOARD_TORRENTS_FILE, 'w') as f:
+            json.dump(torrents, f, indent=2)
+
+        current_app.logger.info(f"Marked torrent with hash {torrent_hash} as seen.")
+        return jsonify({"status": "success", "message": "Torrent marked as seen."})
+
+    except (json.JSONDecodeError, IOError) as e:
+        current_app.logger.error(f"Error in mark_as_seen: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": "Failed to process the torrent file."}), 500

@@ -17,6 +17,9 @@
                 <button id="refresh-statuses-btn" class="btn btn-info ms-2">
                     <i class="fas fa-tags"></i> Rafraîchir les statuts
                 </button>
+                <button id="mark-all-seen-btn" class="btn btn-success ms-2">
+                    <i class="fas fa-check-double"></i> Tout marquer comme vu
+                </button>
                 <div class="ms-4 d-flex align-items-center">
                     <label for="cleanup-days" class="form-label me-2 mb-0">Garder (jours):</label>
                     <input type="number" id="cleanup-days" class="form-control" value="7" min="0" max="30" style="width: 80px;">
@@ -288,6 +291,11 @@ $(document).ready(function() {
                         <button class="btn btn-secondary btn-sm" data-action="ignore" data-hash="${torrent.hash}">
                             <i class="fas fa-eye-slash"></i> Ignorer
                         </button>
+                        ${torrent.is_new ? `
+                        <button class="btn btn-outline-success btn-sm ms-2" data-action="mark-seen" data-hash="${torrent.hash}">
+                            <i class="fas fa-check"></i> Marquer comme vu
+                        </button>
+                        ` : ''}
                     </div>
                 </div>
             `;
@@ -572,8 +580,9 @@ $(document).ready(function() {
     applyFilters();
 
     // --- Refresh Button Logic ---
-    $('#refresh-btn').on('click', function() {
-        const button = $(this);
+    // --- New Refresh Logic ---
+    function performRefresh(markAsSeenFirst) {
+        const button = $('#refresh-btn');
         const spinner = $('#loading-spinner');
         const container = $('#torrents-container');
 
@@ -583,34 +592,101 @@ $(document).ready(function() {
 
         window.currentMediaContext = null;
 
-        $.ajax({
-            url: "{{ url_for('dashboard_bp.refresh_torrents') }}",
-            type: 'GET',
-            success: function(response) {
-                if (response.status === 'success') {
-                    // Update the global torrent list
-                    allTorrents = response.torrents;
-                    // Repopulate filters with potentially new data and apply them
-                    populateStandardFilters();
-                    populateKeywordFilters();
-                    loadFilterState(); // Re-apply user's last filter state
-                    applyFilters();
-                } else {
-                    container.html(`<div class="alert alert-danger"><strong>Erreur lors du rafraîchissement :</strong> ${response.message || 'Une erreur inattendue est survenue.'}</div>`);
+        const executeRefresh = () => {
+            $.ajax({
+                url: "{{ url_for('dashboard_bp.refresh_torrents') }}",
+                type: 'GET',
+                success: function(response) {
+                    if (response.status === 'success') {
+                        allTorrents = response.torrents;
+                        populateStandardFilters();
+                        populateKeywordFilters();
+                        loadFilterState();
+                        applyFilters();
+                    } else {
+                        container.html(`<div class="alert alert-danger"><strong>Erreur :</strong> ${response.message || 'Erreur inattendue.'}</div>`);
+                    }
+                },
+                error: function(xhr) {
+                    const errorMsg = xhr.responseJSON ? xhr.responseJSON.message : 'Erreur serveur.';
+                    container.html(`<div class="alert alert-danger"><strong>Erreur critique :</strong> ${errorMsg}</div>`);
+                },
+                complete: function() {
+                    button.prop('disabled', false);
+                    spinner.hide();
                 }
+            });
+        };
+
+        if (markAsSeenFirst) {
+            $.ajax({
+                url: "{{ url_for('dashboard_bp.mark_all_as_seen') }}",
+                type: 'POST',
+                success: function() {
+                    executeRefresh();
+                },
+                error: function() {
+                    alert('Erreur lors du marquage des torrents comme vus. Le rafraîchissement continue...');
+                    executeRefresh();
+                }
+            });
+        } else {
+            executeRefresh();
+        }
+    }
+
+    $('#refresh-btn').on('click', function() {
+        if (confirm("Voulez-vous marquer tous les éléments actuels comme vus avant de rafraîchir ?")) {
+            performRefresh(true);
+        } else {
+            performRefresh(false);
+        }
+    });
+
+    // --- Event delegation for action buttons ---
+    $('#mark-all-seen-btn').on('click', function() {
+        if (!confirm("Êtes-vous sûr de vouloir marquer tous les torrents 'Nouveau' comme vus ?")) {
+            return;
+        }
+        $.ajax({
+            url: "{{ url_for('dashboard_bp.mark_all_as_seen') }}",
+            type: 'POST',
+            success: function(response) {
+                allTorrents.forEach(t => { t.is_new = false; });
+                applyFilters(); // Re-render to remove badges and buttons
+                alert(response.message || "Opération réussie !");
             },
             error: function(xhr) {
-                const errorMsg = xhr.responseJSON ? xhr.responseJSON.message : 'Erreur de communication avec le serveur.';
-                container.html(`<div class="alert alert-danger"><strong>Erreur critique :</strong> ${errorMsg} Veuillez vérifier les logs de l'application.</div>`);
-            },
-            complete: function() {
-                button.prop('disabled', false);
-                spinner.hide();
+                alert('Erreur : ' + (xhr.responseJSON ? xhr.responseJSON.message : 'Erreur serveur.'));
             }
         });
     });
 
-    // --- Event delegation for action buttons ---
+    $('#torrents-container').on('click', 'button[data-action="mark-seen"]', function() {
+        const torrentHash = $(this).data('hash');
+        const button = $(this);
+
+        $.ajax({
+            url: "{{ url_for('dashboard_bp.mark_as_seen') }}",
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ hash: torrentHash }),
+            success: function(response) {
+                const torrent = allTorrents.find(t => t.hash === torrentHash);
+                if (torrent) {
+                    torrent.is_new = false;
+                }
+                // Visually remove the 'Nouveau' badge and the button itself
+                const cardBody = button.closest('.card-body');
+                cardBody.find('.badge.bg-info').remove(); // Removes 'Nouveau' badge
+                button.remove(); // Removes the button
+            },
+            error: function(xhr) {
+                alert('Erreur : ' + (xhr.responseJSON ? xhr.responseJSON.message : 'Erreur serveur.'));
+            }
+        });
+    });
+
     $('#torrents-container').on('click', 'button[data-action="ignore"]', function() {
         const torrentId = $(this).data('hash'); // 'hash' data attribute holds the unique ID (hash or guid)
         const cardElement = $(this).closest('.card');
