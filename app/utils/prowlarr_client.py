@@ -1,6 +1,7 @@
 import requests
 from flask import current_app
-import logging # Ajout de logging pour une meilleure visibilité
+import logging
+from datetime import datetime, timezone
 
 def _make_prowlarr_request(endpoint, params=None):
     """Makes a request to Prowlarr's internal JSON API."""
@@ -30,7 +31,6 @@ def get_prowlarr_categories():
     'capabilities' objects, including the nested 'subCategories', to build the
     complete and definitive category list.
     """
-    # ... CETTE FONCTION RESTE INCHANGÉE ET FONCTIONNELLE ...
     try:
         current_app.logger.info("Prowlarr: Fetching all indexers to correctly parse capabilities...")
         indexers = _make_prowlarr_request('indexer')
@@ -79,100 +79,106 @@ def search_prowlarr(query, categories=None, lang=None):
         'query': query,
         'type': 'search'
     }
-
-    # Si des catégories sont fournies, les ajouter à la requête.
-    # Le paramètre API correct est 'cat' et il attend une chaîne de caractères séparée par des virgules.
     if categories and isinstance(categories, list) and len(categories) > 0:
         params['cat'] = ','.join(map(str, categories))
         current_app.logger.info(f"Prowlarr search: Using categories {params['cat']}")
-
-    # La gestion de la langue est retirée ici, car elle sera gérée par le filtrage guessit.
-
     response_data = _make_prowlarr_request('search', params)
-
-    # L'API de recherche retourne une liste d'objets torrents directement.
-    # Il est bon de s'assurer que nous retournons bien une liste.
     if isinstance(response_data, list):
         return response_data
     else:
         current_app.logger.warning(f"Prowlarr search for query '{query}' did not return a list.")
         return []
 
-from datetime import datetime, timezone
-
 def get_latest_from_prowlarr(categories, min_date=None):
     """
-    Fetches ALL latest releases from Prowlarr since a given date using pagination.
-    This version uses page/pageSize and stops fetching when releases are older than min_date.
+    [DEBUG VERSION] Fetches latest releases from Prowlarr using pagination with a HARD LIMIT.
+    This version logs extensively to help diagnose missing results.
     """
+    logging.info(f"--- Starting Prowlarr Fetch ---")
+    logging.info(f"Fetching new releases since: {min_date}")
+
     all_releases = []
     page = 1
     pageSize = 100
-    max_pages = 10 # Hard limit to prevent infinite loops
+    max_pages = 10  # Hard limit to prevent infinite loops
 
     while page <= max_pages:
         params = {
             'type': 'search',
             'page': page,
             'pageSize': pageSize,
-            'sort': 'publishDate', # Ensure results are sorted by date
+            'sort': 'publishDate',
             'order': 'desc'
         }
 
         if categories and isinstance(categories, list) and len(categories) > 0:
             params['cat'] = ','.join(map(str, categories))
 
+        logging.info(f"Requesting Prowlarr Page: {page}/{max_pages}...")
         response_data = _make_prowlarr_request('search', params)
 
         if response_data is None:
-            current_app.logger.error(f"Prowlarr request failed for page {page}. Returning partial results.")
-            return all_releases # Return what we have so far
+            logging.error(f"Prowlarr request failed for page {page}. Stopping.")
+            break
 
         if isinstance(response_data, list):
             num_results = len(response_data)
-            current_app.logger.info(f"Prowlarr Pagination: Page {page} returned {num_results} results.")
+            logging.info(f"  -> Page {page} returned {num_results} results.")
 
             if not response_data:
-                current_app.logger.info(f"Prowlarr: Stopping pagination on page {page} because no more results were returned.")
+                logging.info(f"  -> Page {page} is empty. Stopping pagination.")
                 break
 
             all_releases.extend(response_data)
-            current_app.logger.info(f"Prowlarr Pagination: Total results so far: {len(all_releases)}")
-
+            logging.info(f"  -> Total results so far: {len(all_releases)}")
             page += 1
         else:
-            current_app.logger.warning(f"Prowlarr fetch for page {page} did not return a list. Stopping pagination.")
+            logging.warning(f"Prowlarr fetch for page {page} did not return a list. Stopping.")
             break
 
-    # Final filtering of the aggregated results
+    logging.info(f"--- Prowlarr Fetch Complete ---")
+    logging.info(f"Total items fetched from Prowlarr before date filtering: {len(all_releases)}")
+
     if min_date:
         filtered_releases = []
         for r in all_releases:
             try:
-                publish_date = datetime.fromisoformat(r['publishDate'].replace('Z', '+00:00'))
+                # Prowlarr dates can be in ISO format with 'Z' or timezone info
+                publish_date_str = r.get('publishDate')
+                if not publish_date_str:
+                    logging.warning(f"Skipping torrent with missing publishDate: {r.get('title', 'N/A')}")
+                    continue
+
+                # More robust date parsing
+                if publish_date_str.endswith('Z'):
+                    publish_date = datetime.fromisoformat(publish_date_str.replace('Z', '+00:00'))
+                else:
+                    publish_date = datetime.fromisoformat(publish_date_str)
+
+                # Ensure our min_date is also timezone-aware for correct comparison
+                if min_date.tzinfo is None:
+                    min_date = min_date.replace(tzinfo=timezone.utc)
+
                 if publish_date > min_date:
                     filtered_releases.append(r)
             except (ValueError, TypeError) as e:
-                current_app.logger.warning(f"Could not parse date for torrent '{r.get('title', 'N/A')}'. Skipping date filter. Error: {e}")
-                # Optionally, you could decide to include torrents with bad dates.
-                # For now, we will exclude them if a min_date is set.
+                logging.warning(f"Could not parse date '{r.get('publishDate')}' for torrent '{r.get('title', 'N/A')}'. Skipping. Error: {e}")
                 pass
+
+        logging.info(f"Total items after filtering for dates > {min_date}: {len(filtered_releases)}")
         return filtered_releases
 
+    logging.info(f"No min_date provided. Returning all {len(all_releases)} fetched items.")
     return all_releases
 
 def get_prowlarr_applications():
     """
     Fetches the applications (Sonarr, Radarr, etc.) configured in Prowlarr.
-    This is useful for getting the category IDs associated with each app.
     """
     response_data = _make_prowlarr_request('applications')
-    
-    # The response is a list of application objects.
     if isinstance(response_data, list):
         current_app.logger.info(f"Prowlarr: Successfully fetched {len(response_data)} applications.")
         return response_data
     else:
         current_app.logger.error("Prowlarr: Failed to fetch applications or the response was not a list.")
         return None
-    
