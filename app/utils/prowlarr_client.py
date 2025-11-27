@@ -127,26 +127,16 @@ def get_latest_from_prowlarr(categories, min_date=None):
             current_app.logger.error(f"Prowlarr request failed for page {page}. Returning partial results.")
             return all_releases # Return what we have so far
 
-        if isinstance(response_data, list) and response_data:
-            all_releases.extend(response_data)
-
-            # --- Intelligent stop condition ---
-            # Get the publish date of the OLDEST item in the current page
-            oldest_item_date_str = response_data[-1].get('publishDate')
-            if oldest_item_date_str:
-                oldest_item_date = datetime.fromisoformat(oldest_item_date_str.replace('Z', '+00:00'))
-                if min_date and oldest_item_date < min_date:
-                    # current_app.logger.info(f"Prowlarr: Stopping pagination on page {page} because oldest item ({oldest_item_date}) is older than min_date ({min_date}).")
-                    break
-            # ---
-
-            if len(response_data) < pageSize:
-                # current_app.logger.info(f"Prowlarr: Stopping pagination on page {page} because received less than a full page.")
+        if isinstance(response_data, list):
+            if not response_data:
+                current_app.logger.info(f"Prowlarr: Stopping pagination on page {page} because no more results were returned.")
                 break
+
+            all_releases.extend(response_data)
 
             page += 1
         else:
-            # current_app.logger.info(f"Prowlarr: Stopping pagination on page {page} because no more results were returned.")
+            current_app.logger.warning(f"Prowlarr fetch for page {page} did not return a list. Stopping pagination.")
             break
 
     # Final filtering of the aggregated results
