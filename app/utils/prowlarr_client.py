@@ -101,25 +101,17 @@ def search_prowlarr(query, categories=None, lang=None):
 def get_latest_from_prowlarr(categories, min_date=None):
     """
     Fetches ALL latest releases from Prowlarr since a given date using pagination.
-    This bypasses the indexer's hard limit by making successive requests.
+    This version uses page and pageSize parameters, which is a common pattern in *Arr APIs.
     """
     all_releases = []
-    offset = 0
-    # Set the limit to 100, which matches the observed per-page limit of the indexers.
-    limit = 100
-
-    # --- Enhanced Logging ---
-    min_date_str = min_date.strftime('%Y-%m-%dT%H:%M:%S Z') if min_date else "None"
-    current_app.logger.info(f"--- Starting Prowlarr Paginated Fetch ---")
-    current_app.logger.info(f"Target Categories: {categories}")
-    current_app.logger.info(f"Minimum Date: {min_date_str}")
-    # ---
+    page = 1
+    pageSize = 100
 
     while True:
         params = {
             'type': 'search',
-            'offset': offset,
-            'limit': limit
+            'page': page,
+            'pageSize': pageSize
         }
 
         if min_date:
@@ -128,38 +120,32 @@ def get_latest_from_prowlarr(categories, min_date=None):
         if categories and isinstance(categories, list) and len(categories) > 0:
             params['cat'] = ','.join(map(str, categories))
 
-        current_app.logger.info(f"Prowlarr Fetch (Page {offset // limit + 1}): Requesting with params: {params}")
-
         response_data = _make_prowlarr_request('search', params)
 
         if response_data is None:
-            current_app.logger.error(f"Prowlarr Fetch (Page {offset // limit + 1}): Request failed. Aborting pagination.")
-            # We return the releases found so far, instead of None, to avoid losing everything on a single page failure.
-            # The user might get a partial list, which is better than nothing.
-            break
+            current_app.logger.error(f"Prowlarr request failed for page {page}. Aborting pagination.")
+            return None # Propagate the error
 
         if isinstance(response_data, list):
-            page_results_count = len(response_data)
-            current_app.logger.info(f"Prowlarr Fetch (Page {offset // limit + 1}): Received {page_results_count} results.")
+            num_results = len(response_data)
+            current_app.logger.info(f"Prowlarr Pagination: Page {page} returned {num_results} results.")
 
             if not response_data:
-                current_app.logger.info("Prowlarr Fetch: Page was empty. Ending pagination.")
+                # No more results, break the loop
                 break
 
             all_releases.extend(response_data)
-            current_app.logger.info(f"Prowlarr Fetch: Total results so far: {len(all_releases)}")
+            current_app.logger.info(f"Prowlarr Pagination: Total results so far: {len(all_releases)}")
 
-            if page_results_count < limit:
-                current_app.logger.info(f"Prowlarr Fetch: Received less than limit ({page_results_count} < {limit}). Ending pagination.")
+            if num_results < pageSize:
+                # Last page reached
                 break
 
-            offset += limit
+            page += 1
         else:
-            current_app.logger.warning(f"Prowlarr Fetch (Page {offset // limit + 1}): Response was not a list. Stopping pagination.")
+            current_app.logger.warning(f"Prowlarr fetch for page {page} did not return a list. Stopping pagination.")
             break
 
-    current_app.logger.info(f"--- Prowlarr Paginated Fetch Finished ---")
-    current_app.logger.info(f"Total releases retrieved: {len(all_releases)}")
     return all_releases
 
 def get_prowlarr_applications():
