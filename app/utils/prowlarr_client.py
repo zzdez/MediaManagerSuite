@@ -146,10 +146,18 @@ def get_latest_from_prowlarr(categories, min_date=None):
 
     # Final filtering of the aggregated results
     if min_date:
-        all_releases = [
-            r for r in all_releases
-            if datetime.fromisoformat(r['publishDate'].replace('Z', '+00:00')) > min_date
-        ]
+        filtered_releases = []
+        for r in all_releases:
+            try:
+                publish_date = datetime.fromisoformat(r['publishDate'].replace('Z', '+00:00'))
+                if publish_date > min_date:
+                    filtered_releases.append(r)
+            except (ValueError, TypeError) as e:
+                current_app.logger.warning(f"Could not parse date for torrent '{r.get('title', 'N/A')}'. Skipping date filter. Error: {e}")
+                # Optionally, you could decide to include torrents with bad dates.
+                # For now, we will exclude them if a min_date is set.
+                pass
+        return filtered_releases
 
     return all_releases
 

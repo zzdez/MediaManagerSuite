@@ -252,8 +252,21 @@ def _normalize_torrent(raw_torrent):
     publish_date = None
     if publish_date_str:
         try:
-            publish_date = datetime.fromisoformat(publish_date_str.replace('Z', '+00:00'))
-        except ValueError:
+            # Handle various ISO 8601 formats, including those with 'Z' or timezone offsets
+            if 'Z' in publish_date_str.upper():
+                publish_date_str = publish_date_str.upper().replace('Z', '+00:00')
+
+            # Truncate microseconds if they are longer than 6 digits, which fromisoformat dislikes
+            if '.' in publish_date_str:
+                parts = publish_date_str.split('.')
+                microseconds = parts[1].split('+')[0]
+                if len(microseconds) > 6:
+                    parts[1] = microseconds[:6] + '+' + parts[1].split('+')[1]
+                    publish_date_str = '.'.join(parts)
+
+            publish_date = datetime.fromisoformat(publish_date_str)
+        except (ValueError, TypeError) as e:
+            current_app.logger.warning(f"Could not parse date string '{publish_date_str}' for torrent '{raw_torrent.get('title', 'N/A')}'. Error: {e}")
             pass
 
     category_name = raw_torrent.get('categoryDescription')
