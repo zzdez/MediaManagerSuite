@@ -640,9 +640,10 @@ def _sftp_delete_recursive(sftp_client, remote_path, logger):
         logger.error(f"SFTP Deletion failed for {remote_path}: {e}", exc_info=True)
         raise
 
-def delete_torrent(torrent_hash, delete_data=False):
+def delete_torrent(torrent_hash, delete_data=False, sftp_client=None):
     """
-    Deletes a torrent from rTorrent, using SFTP to delete data if requested.
+    Deletes a torrent from rTorrent. If delete_data is True, it also deletes the torrent's data from the seedbox via SFTP.
+    Can use a pre-existing SFTP client connection to avoid reconnecting for batch operations.
     """
     if not torrent_hash:
         return False, "Torrent hash cannot be empty."
@@ -650,50 +651,98 @@ def delete_torrent(torrent_hash, delete_data=False):
     logger = current_app.logger
     logger.info(f"Attempting to delete torrent {torrent_hash}. Delete data: {delete_data}")
 
+    # If not deleting data, just erase from rTorrent client. This is the simplest case.
     if not delete_data:
         result, error = _send_xmlrpc_request(method_name="d.erase", params=[torrent_hash])
         if error:
+            logger.error(f"Failed to erase torrent {torrent_hash} from rTorrent: {error}")
             return False, f"XML-RPC Error: {error}"
+        logger.info(f"Torrent {torrent_hash} successfully erased from rTorrent client.")
         return True, "Torrent removed from rTorrent client."
 
+    # --- Full Deletion (with data) ---
+    logger.info(f"Performing full deletion for hash {torrent_hash}.")
+
+    # Step 1: Get required torrent details from rTorrent for path construction.
+    # This is a more robust way to get the path than using 'd.base_path'.
+    directory, err_dir = _send_xmlrpc_request("d.directory", [torrent_hash])
+    is_multi, err_multi = _send_xmlrpc_request("d.is_multi_file", [torrent_hash])
+    name, err_name = _send_xmlrpc_request("d.name", [torrent_hash])
+    label, err_label = _send_xmlrpc_request("d.custom1", [torrent_hash])
+
+    if err_dir or err_multi or err_name or err_label:
+        error_details = f"dir_err={err_dir}, multi_err={err_multi}, name_err={err_name}, label_err={err_label}"
+        logger.error(f"Failed to get torrent details for hash {torrent_hash}: {error_details}")
+        return False, f"Failed to get torrent details for path construction: {error_details}"
+
+    # Construct the base path based on whether it's a multi-file or single-file torrent.
+    if is_multi:
+        data_path = directory
     else:
-        logger.info(f"Performing full deletion for hash {torrent_hash} via SFTP.")
+        # For single-file torrents, the path is the directory plus the filename.
+        data_path = (Path(directory) / name).as_posix()
 
-        data_path, error_path = _send_xmlrpc_request("d.base_path", [torrent_hash])
-        if error_path or not data_path:
-            return False, f"Could not retrieve data path from rTorrent: {error_path}"
+    if not data_path:
+        logger.error(f"Could not determine a valid data path for torrent {torrent_hash}.")
+        return False, "Could not determine data path from rTorrent."
 
-        sftp_host = current_app.config.get('SEEDBOX_SFTP_HOST')
-        sftp_port = int(current_app.config.get('SEEDBOX_SFTP_PORT', 22))
-        sftp_user = current_app.config.get('SEEDBOX_SFTP_USER')
-        sftp_password = current_app.config.get('SEEDBOX_SFTP_PASSWORD')
+    # Step 2: Determine the 'app_type' from the torrent's label to correctly translate the path.
+    app_type = None
+    if label == current_app.config.get('RTORRENT_LABEL_SONARR'):
+        app_type = 'sonarr'
+    elif label == current_app.config.get('RTORRENT_LABEL_RADARR'):
+        app_type = 'radarr'
+    else:
+        logger.warning(f"Could not determine app type from label '{label}' for torrent {torrent_hash}. "
+                       f"Path translation might be incorrect. Defaulting to 'sonarr'.")
+        app_type = 'sonarr'  # Default fallback to maintain previous behavior
 
-        transport = None
-        try:
+    # Step 3: Handle SFTP connection and file deletion.
+    sftp = None
+    transport = None
+    # This flag determines if we are responsible for closing the SFTP connection.
+    should_close_connection = False
+
+    try:
+        if sftp_client:
+            sftp = sftp_client
+            logger.debug(f"Using provided SFTP client for torrent {torrent_hash}.")
+        else:
+            logger.debug(f"No SFTP client provided, creating a new connection for torrent {torrent_hash}.")
+            should_close_connection = True
+            sftp_host = current_app.config.get('SEEDBOX_SFTP_HOST')
+            sftp_port = int(current_app.config.get('SEEDBOX_SFTP_PORT', 22))
+            sftp_user = current_app.config.get('SEEDBOX_SFTP_USER')
+            sftp_password = current_app.config.get('SEEDBOX_SFTP_PASSWORD')
             transport = paramiko.Transport((sftp_host, sftp_port))
             transport.connect(username=sftp_user, password=sftp_password)
             sftp = paramiko.SFTPClient.from_transport(transport)
 
-            # On doit traduire le chemin rTorrent en chemin SFTP
-            from app.seedbox_ui.routes import _translate_rtorrent_path_to_sftp_path
-            app_type = 'sonarr' # On doit deviner le type, pour l'instant on suppose sonarr
-            # TODO: Améliorer la détection du type
-            sftp_path = _translate_rtorrent_path_to_sftp_path(data_path, app_type)
-            if not sftp_path:
-                raise Exception(f"Path translation failed for {data_path}")
+        # This import is here to avoid circular dependencies at the top level.
+        from app.seedbox_ui.routes import _translate_rtorrent_path_to_sftp_path
+        sftp_path = _translate_rtorrent_path_to_sftp_path(data_path, app_type)
 
-            logger.info(f"SFTP connected. Deleting data at translated path: {sftp_path}")
-            _sftp_delete_recursive(sftp, sftp_path, logger)
+        if not sftp_path:
+            raise Exception(f"SFTP path translation failed for rTorrent path: '{data_path}'")
 
-        except Exception as e:
-            logger.error(f"SFTP deletion failed for path '{data_path}': {e}", exc_info=True)
-            return False, f"Failed to delete data via SFTP: {e}"
-        finally:
-            if transport:
-                transport.close()
+        logger.info(f"Attempting SFTP deletion of data at translated path: {sftp_path}")
+        _sftp_delete_recursive(sftp, sftp_path, logger)
 
-        result, error_erase = _send_xmlrpc_request("d.erase", [torrent_hash])
-        if error_erase:
-            return False, f"Data was deleted, but failed to remove torrent from list: {error_erase}"
+    except Exception as e:
+        logger.error(f"SFTP deletion failed for rTorrent path '{data_path}' (translated to '{sftp_path if 'sftp_path' in locals() else 'N/A'}'): {e}", exc_info=True)
+        return False, f"Failed to delete data via SFTP: {e}"
+    finally:
+        # Only close the connection if it was opened within this function call.
+        if should_close_connection:
+            if sftp: sftp.close()
+            if transport: transport.close()
+            logger.debug(f"Closed self-initiated SFTP connection for torrent {torrent_hash}.")
 
-        return True, "Torrent and its data were successfully deleted."
+    # Step 4: After successfully deleting the data, erase the torrent from the rTorrent client.
+    result, error_erase = _send_xmlrpc_request("d.erase", [torrent_hash])
+    if error_erase:
+        logger.error(f"Data for torrent {torrent_hash} was deleted, but failed to erase torrent from rTorrent client: {error_erase}")
+        return False, f"Data deleted, but failed to remove torrent from client: {error_erase}"
+
+    logger.info(f"Torrent {torrent_hash} and its data were successfully deleted.")
+    return True, "Torrent and its data were successfully deleted."

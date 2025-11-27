@@ -3252,14 +3252,42 @@ def rtorrent_batch_action():
     # --- Action de Suppression ---
     if action == 'delete':
         delete_data = options.get('delete_data', False)
-        for h in hashes:
-            try:
-                success, _ = rtorrent_delete_torrent_api(h, delete_data)
-                if success: success_count += 1
-                else: fail_count += 1
+
+        # Si nous devons supprimer des données, nous gérons la connexion SFTP ici
+        sftp_client = None
+        transport = None
+        if delete_data:
+            try {
+                sftp_host = current_app.config.get('SEEDBOX_SFTP_HOST')
+                sftp_port = int(current_app.config.get('SEEDBOX_SFTP_PORT', 22))
+                sftp_user = current_app.config.get('SEEDBOX_SFTP_USER')
+                sftp_password = current_app.config.get('SEEDBOX_SFTP_PASSWORD')
+                transport = paramiko.Transport((sftp_host, sftp_port))
+                transport.connect(username=sftp_user, password=sftp_password)
+                sftp_client = paramiko.SFTPClient.from_transport(transport)
             except Exception as e:
-                logger.error(f"Erreur lors de la suppression du torrent {h}: {e}", exc_info=True)
-                fail_count += 1
+                logger.error(f"Échec de la connexion SFTP pour la suppression par lots: {e}", exc_info=True)
+                return jsonify({'status': 'error', 'message': f"Échec de la connexion SFTP: {e}"}), 500
+
+        try:
+            # Itérer sur une copie de la liste pour permettre une suppression sûre
+            for h in hashes[:]:
+                try:
+                    # Passer le client SFTP si les données doivent être supprimées
+                    success, _ = rtorrent_delete_torrent_api(h, delete_data, sftp_client=sftp_client)
+                    if success:
+                        success_count += 1
+                    else:
+                        fail_count += 1
+                except Exception as e:
+                    logger.error(f"Erreur lors de la suppression du torrent {h}: {e}", exc_info=True)
+                    fail_count += 1
+        finally:
+            # S'assurer que la connexion SFTP est fermée si elle a été ouverte
+            if sftp_client:
+                sftp_client.close()
+            if transport:
+                transport.close()
     # --- Action "Marquer comme traité" ---
     elif action == 'mark_processed':
         for h in hashes:
