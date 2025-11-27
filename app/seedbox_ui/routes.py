@@ -3257,7 +3257,7 @@ def rtorrent_batch_action():
         sftp_client = None
         transport = None
         if delete_data:
-            try {
+            try:
                 sftp_host = current_app.config.get('SEEDBOX_SFTP_HOST')
                 sftp_port = int(current_app.config.get('SEEDBOX_SFTP_PORT', 22))
                 sftp_user = current_app.config.get('SEEDBOX_SFTP_USER')
