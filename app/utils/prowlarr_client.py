@@ -98,58 +98,67 @@ def search_prowlarr(query, categories=None, lang=None):
         current_app.logger.warning(f"Prowlarr search for query '{query}' did not return a list.")
         return []
 
+from datetime import datetime, timezone
+
 def get_latest_from_prowlarr(categories, min_date=None):
     """
     Fetches ALL latest releases from Prowlarr since a given date using pagination.
-    This bypasses the indexer's hard limit by making successive requests.
+    This version uses page/pageSize and stops fetching when releases are older than min_date.
     """
     all_releases = []
-    offset = 0
-    # Set the limit to 100, which matches the observed per-page limit of the indexers.
-    limit = 100
+    page = 1
+    pageSize = 100
+    max_pages = 10 # Hard limit to prevent infinite loops
 
-    while True:
+    while page <= max_pages:
         params = {
             'type': 'search',
-            'offset': offset,
-            'limit': limit
+            'page': page,
+            'pageSize': pageSize,
+            'sort': 'publishDate', # Ensure results are sorted by date
+            'order': 'desc'
         }
-
-        if min_date:
-            params['minDate'] = min_date.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
 
         if categories and isinstance(categories, list) and len(categories) > 0:
             params['cat'] = ','.join(map(str, categories))
 
-        current_app.logger.info(f"Prowlarr fetch: Getting page with offset {offset}, limit {limit}, minDate {params.get('minDate')}")
-
         response_data = _make_prowlarr_request('search', params)
 
         if response_data is None:
-            current_app.logger.error("Prowlarr request failed. Aborting pagination.")
-            return None # Propagate the error
+            current_app.logger.error(f"Prowlarr request failed for page {page}. Returning partial results.")
+            return all_releases # Return what we have so far
 
         if isinstance(response_data, list):
+            num_results = len(response_data)
+            current_app.logger.info(f"Prowlarr Pagination: Page {page} returned {num_results} results.")
+
             if not response_data:
-                # No more results, break the loop
-                current_app.logger.info("Prowlarr fetch: Received an empty list, ending pagination.")
+                current_app.logger.info(f"Prowlarr: Stopping pagination on page {page} because no more results were returned.")
                 break
 
             all_releases.extend(response_data)
+            current_app.logger.info(f"Prowlarr Pagination: Total results so far: {len(all_releases)}")
 
-            # If the number of results returned is less than the limit,
-            # we have reached the last page.
-            if len(response_data) < limit:
-                current_app.logger.info(f"Prowlarr fetch: Received {len(response_data)} results (less than limit), ending pagination.")
-                break
-
-            # Otherwise, prepare for the next page
-            offset += limit
+            page += 1
         else:
-            current_app.logger.warning("Prowlarr fetch did not return a list, stopping pagination.")
+            current_app.logger.warning(f"Prowlarr fetch for page {page} did not return a list. Stopping pagination.")
             break
 
-    current_app.logger.info(f"Prowlarr fetch: Successfully retrieved a total of {len(all_releases)} releases.")
+    # Final filtering of the aggregated results
+    if min_date:
+        filtered_releases = []
+        for r in all_releases:
+            try:
+                publish_date = datetime.fromisoformat(r['publishDate'].replace('Z', '+00:00'))
+                if publish_date > min_date:
+                    filtered_releases.append(r)
+            except (ValueError, TypeError) as e:
+                current_app.logger.warning(f"Could not parse date for torrent '{r.get('title', 'N/A')}'. Skipping date filter. Error: {e}")
+                # Optionally, you could decide to include torrents with bad dates.
+                # For now, we will exclude them if a min_date is set.
+                pass
+        return filtered_releases
+
     return all_releases
 
 def get_prowlarr_applications():

@@ -113,6 +113,7 @@ class Config:
     DASHBOARD_MIN_MOVIE_YEAR = int(os.getenv('DASHBOARD_MIN_MOVIE_YEAR', '2020').split('#')[0].strip())
     _dashboard_prowlarr_categories_str = os.getenv('DASHBOARD_PROWLARR_CATEGORIES', '2000,5000') # Movie, TV
     DASHBOARD_PROWLARR_CATEGORIES = [int(cat.strip()) for cat in _dashboard_prowlarr_categories_str.split(',') if cat.strip()]
+    DASHBOARD_REFRESH_INTERVAL_HOURS = int(os.getenv('DASHBOARD_REFRESH_INTERVAL_HOURS', '0').split('#')[0].strip())
 
     # --- SEEDBOX CLEANER ---
     SEEDBOX_CLEANER_ENABLED = os.getenv('SEEDBOX_CLEANER_ENABLED', 'False').split('#')[0].strip().lower() in ('true', '1', 't')
