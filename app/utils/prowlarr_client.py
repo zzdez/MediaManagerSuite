@@ -108,8 +108,9 @@ def get_latest_from_prowlarr(categories, min_date=None):
     all_releases = []
     page = 1
     pageSize = 100
+    max_pages = 10 # Hard limit to prevent infinite loops
 
-    while True:
+    while page <= max_pages:
         params = {
             'type': 'search',
             'page': page,
@@ -128,11 +129,15 @@ def get_latest_from_prowlarr(categories, min_date=None):
             return all_releases # Return what we have so far
 
         if isinstance(response_data, list):
+            num_results = len(response_data)
+            current_app.logger.info(f"Prowlarr Pagination: Page {page} returned {num_results} results.")
+
             if not response_data:
                 current_app.logger.info(f"Prowlarr: Stopping pagination on page {page} because no more results were returned.")
                 break
 
             all_releases.extend(response_data)
+            current_app.logger.info(f"Prowlarr Pagination: Total results so far: {len(all_releases)}")
 
             page += 1
         else:
