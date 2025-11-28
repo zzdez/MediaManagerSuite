@@ -18,6 +18,8 @@ from app.utils.mapping_manager import get_all_torrent_hashes
 from app.utils.status_manager import get_media_statuses
 # Import the release parser
 from app.utils.release_parser import parse_release_data
+# Import the unified refresh logic
+from app.utils.dashboard_scheduler import scheduled_dashboard_refresh
 
 # Define paths for our state files
 DASHBOARD_STATE_FILE = os.path.join('instance', 'dashboard_state.json')
@@ -110,134 +112,18 @@ def dashboard():
 @dashboard_bp.route('/dashboard/api/refresh')
 def refresh_torrents():
     """
-    API endpoint to refresh the torrent list. It fetches the latest from Prowlarr,
-    merges them with the existing list, and re-evaluates the status of ALL torrents.
+    API endpoint to refresh the torrent list by calling the unified scheduler logic.
     """
-    try:
-        # Step 1: Load existing torrents and create a lookup map
-        existing_torrents_map = {}
-        if os.path.exists(DASHBOARD_TORRENTS_FILE):
-            try:
-                with open(DASHBOARD_TORRENTS_FILE, 'r') as f:
-                    for torrent in json.load(f):
-                        torrent['is_new'] = False
-                        if isinstance(torrent.get('publishDate'), str):
-                            torrent['publishDate'] = datetime.fromisoformat(torrent['publishDate'].replace('Z', '+00:00'))
-                        existing_torrents_map[torrent['hash']] = torrent
-            except (json.JSONDecodeError, IOError):
-                pass  # Start fresh if file is corrupt
+    current_app.logger.info("Manual Refresh: Triggered via API endpoint.")
+    # Call the exact same function the scheduler uses
+    refreshed_torrents = scheduled_dashboard_refresh()
 
-        # Step 2: Fetch new torrents from Prowlarr
-        last_refresh = get_last_refresh_time()
-        prowlarr_categories = current_app.config.get('DASHBOARD_PROWLARR_CATEGORIES', [])
-        raw_torrents_from_prowlarr = get_latest_from_prowlarr(
-            categories=prowlarr_categories,
-            min_date=last_refresh
-        )
-
-        if raw_torrents_from_prowlarr is None:
-            return jsonify({"status": "error", "message": "Could not retrieve data from Prowlarr."}), 500
-
-        # Step 2.5: Post-filter results by category because Prowlarr API ignores 'cat' on general searches
-        if prowlarr_categories:
-            initial_count = len(raw_torrents_from_prowlarr)
-            allowed_cat_ids = set(prowlarr_categories)
-
-            filtered_torrents = [
-                torrent for torrent in raw_torrents_from_prowlarr
-                if any(cat.get('id') in allowed_cat_ids for cat in torrent.get('categories', []))
-            ]
-            raw_torrents_from_prowlarr = filtered_torrents
-            final_count = len(raw_torrents_from_prowlarr)
-            current_app.logger.info(f"Filtered Prowlarr results by configured categories. Kept {final_count} of {initial_count} torrents.")
-
-        # --- Prepare for enrichment ---
-        ignored_hashes = get_ignored_hashes()
-        # Make the TMDB client initialization conditional on the API key's existence
-        tmdb_api_key = current_app.config.get('TMDB_API_KEY')
-        tmdb_client = TheMovieDBClient() if tmdb_api_key else None
-        if not tmdb_client:
-            current_app.logger.warning("TMDB_API_KEY not set. Skipping enrichment and status checks.")
-
-        apps = get_prowlarr_applications()
-        sonarr_cat_ids, radarr_cat_ids = _get_app_categories(apps)
-        exclude_keywords = current_app.config.get('DASHBOARD_EXCLUDE_KEYWORDS', [])
-        min_movie_year = current_app.config.get('DASHBOARD_MIN_MOVIE_YEAR', 1900)
-
-        # Step 3: Process and merge new torrents into the main map
-        for raw_torrent in raw_torrents_from_prowlarr:
-            torrent = _normalize_torrent(raw_torrent)
-            if not torrent or torrent['hash'] in ignored_hashes:
-                continue
-
-            # If it's a new torrent, mark it and perform basic enrichment
-            if torrent['hash'] not in existing_torrents_map:
-                torrent['is_new'] = True
-
-                if any(re.search(kw, torrent['title'], re.IGNORECASE) for kw in exclude_keywords):
-                    continue
-
-                media_type = _determine_media_type(raw_torrent, sonarr_cat_ids, radarr_cat_ids)
-                torrent['type'] = media_type
-
-                if media_type == 'movie':
-                    year_match = re.search(r'\b(19\d{2}|20\d{2})\b', torrent['title'])
-                    if year_match and int(year_match.group(1)) < min_movie_year:
-                        continue
-
-                # Add to the map to be processed in the next step
-                existing_torrents_map[torrent['hash']] = torrent
-
-        # Step 4: Re-evaluate status and enrich ALL torrents in the map
-        for torrent_hash, torrent in existing_torrents_map.items():
-            # Ensure essential data is present, especially for older torrents
-            if 'type' not in torrent:
-                 # Find the original raw torrent to determine media type if possible
-                raw_info = next((t for t in raw_torrents_from_prowlarr if (_normalize_torrent(t) or {}).get('hash') == torrent_hash), None)
-                torrent['type'] = _determine_media_type(raw_info, sonarr_cat_ids, radarr_cat_ids) if raw_info else 'movie'
-
-            # Only perform enrichment and status checks if the TMDB client is available
-            if tmdb_client:
-                # Enrich details (finds missing IDs, gets poster, etc.)
-                _enrich_torrent_details(torrent, tmdb_client)
-
-                # The release data must be parsed BEFORE checking status
-                # so we can identify season packs.
-                if 'parsed_data' not in torrent or not torrent['parsed_data']:
-                    torrent['parsed_data'] = parse_release_data(torrent['title'])
-
-                # Get the latest status, passing the parsed data
-                torrent['statuses'] = get_media_statuses(
-                    title=torrent.get('title'),
-                    tmdb_id=torrent.get('tmdbId'),
-                    tvdb_id=torrent.get('tvdbId'),
-                    media_type=torrent.get('type'),
-                    parsed_data=torrent['parsed_data']
-                )
-            elif 'parsed_data' not in torrent or not torrent['parsed_data']:
-                 # Even if TMDB isn't configured, we should still parse the release data
-                 # for the frontend filters to work.
-                 torrent['parsed_data'] = parse_release_data(torrent['title'])
-
-        # Step 5: Sort, and save the complete, updated list
-        final_torrents = list(existing_torrents_map.values())
-        final_torrents = [t for t in final_torrents if t.get('publishDate')]
-        final_torrents.sort(key=lambda x: x['publishDate'], reverse=True)
-
-        for torrent in final_torrents:
-            if isinstance(torrent['publishDate'], datetime):
-                torrent['publishDate'] = torrent['publishDate'].isoformat()
-
-        with open(DASHBOARD_TORRENTS_FILE, 'w') as f:
-            json.dump(final_torrents, f, indent=2)
-
-        set_last_refresh_time()
-
-        return jsonify({"status": "success", "torrents": final_torrents})
-
-    except Exception as e:
-        current_app.logger.error(f"Error in refresh_torrents: {e}", exc_info=True)
-        return jsonify({"status": "error", "message": "An unexpected error occurred."}), 500
+    if refreshed_torrents is not None:
+        current_app.logger.info("Manual Refresh: Successfully completed.")
+        return jsonify({"status": "success", "torrents": refreshed_torrents})
+    else:
+        current_app.logger.error("Manual Refresh: The refresh process failed.")
+        return jsonify({"status": "error", "message": "An unexpected error occurred during the refresh."}), 500
 
 def _normalize_torrent(raw_torrent):
     """

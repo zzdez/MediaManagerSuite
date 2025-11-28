@@ -598,11 +598,16 @@ $(document).ready(function() {
                 type: 'GET',
                 success: function(response) {
                     if (response.status === 'success') {
+                        // Vider explicitement la liste pour assurer un état propre
+                        allTorrents = [];
+                        // Réassigner avec les nouvelles données
                         allTorrents = response.torrents;
+
+                        // Mettre à jour les filtres et ré-appliquer le rendu
                         populateStandardFilters();
                         populateKeywordFilters();
-                        loadFilterState();
-                        applyFilters();
+                        loadFilterState(); // Recharger l'état des filtres sauvegardé
+                        applyFilters(); // Appliquer les filtres et redessiner l'UI
                     } else {
                         container.html(`<div class="alert alert-danger"><strong>Erreur :</strong> ${response.message || 'Erreur inattendue.'}</div>`);
                     }
