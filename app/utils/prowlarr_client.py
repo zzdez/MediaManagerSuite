@@ -91,27 +91,23 @@ def search_prowlarr(query, categories=None, lang=None):
 
 def get_latest_from_prowlarr(categories, min_date=None):
     """
-    [DEBUG VERSION] Fetches latest releases from Prowlarr using pagination with a HARD LIMIT.
-    This version logs extensively to help diagnose missing results.
+    Fetches all new releases from Prowlarr since a given date using robust pagination.
+    It stops only when an entire page of results is older than the target date.
     """
-    logging.info(f"--- Starting Prowlarr Fetch ---")
+    logging.info(f"--- Starting Prowlarr Fetch (Robust Pagination) ---")
     logging.info(f"Fetching new releases since: {min_date}")
 
     all_releases = []
     page = 1
     pageSize = 100
-    max_pages = 10  # Hard limit to prevent infinite loops
+    max_pages = 50  # Safety limit to prevent any theoretical infinite loop
 
     while page <= max_pages:
         params = {
-            'type': 'search',
-            'page': page,
-            'pageSize': pageSize,
-            'sort': 'publishDate',
-            'order': 'desc'
+            'type': 'search', 'page': page, 'pageSize': pageSize,
+            'sort': 'publishDate', 'order': 'desc'
         }
-
-        if categories and isinstance(categories, list) and len(categories) > 0:
+        if categories:
             params['cat'] = ','.join(map(str, categories))
 
         logging.info(f"Requesting Prowlarr Page: {page}/{max_pages}...")
@@ -120,55 +116,55 @@ def get_latest_from_prowlarr(categories, min_date=None):
         if response_data is None:
             logging.error(f"Prowlarr request failed for page {page}. Stopping.")
             break
-
-        if isinstance(response_data, list):
-            num_results = len(response_data)
-            logging.info(f"  -> Page {page} returned {num_results} results.")
-
-            if not response_data:
-                logging.info(f"  -> Page {page} is empty. Stopping pagination.")
-                break
-
-            all_releases.extend(response_data)
-            logging.info(f"  -> Total results so far: {len(all_releases)}")
-            page += 1
-        else:
-            logging.warning(f"Prowlarr fetch for page {page} did not return a list. Stopping.")
+        if not isinstance(response_data, list) or not response_data:
+            logging.info(f"Page {page} is empty or invalid. Stopping pagination.")
             break
 
-    logging.info(f"--- Prowlarr Fetch Complete ---")
-    logging.info(f"Total items fetched from Prowlarr before date filtering: {len(all_releases)}")
+        logging.info(f"  -> Page {page} returned {len(response_data)} results.")
+        all_releases.extend(response_data)
 
-    if min_date:
-        filtered_releases = []
-        for r in all_releases:
+        # Robust Stop Condition: Check if ALL items on the current page are older than min_date
+        if min_date:
             try:
-                # Prowlarr dates can be in ISO format with 'Z' or timezone info
-                publish_date_str = r.get('publishDate')
-                if not publish_date_str:
-                    logging.warning(f"Skipping torrent with missing publishDate: {r.get('title', 'N/A')}")
-                    continue
-
-                # More robust date parsing
-                if publish_date_str.endswith('Z'):
-                    publish_date = datetime.fromisoformat(publish_date_str.replace('Z', '+00:00'))
-                else:
-                    publish_date = datetime.fromisoformat(publish_date_str)
-
-                # Ensure our min_date is also timezone-aware for correct comparison
+                # Ensure min_date is timezone-aware for correct comparison
                 if min_date.tzinfo is None:
                     min_date = min_date.replace(tzinfo=timezone.utc)
 
-                if publish_date > min_date:
-                    filtered_releases.append(r)
-            except (ValueError, TypeError) as e:
-                logging.warning(f"Could not parse date '{r.get('publishDate')}' for torrent '{r.get('title', 'N/A')}'. Skipping. Error: {e}")
-                pass
+                # Convert all publish dates on the page to datetime objects
+                page_dates = []
+                for r in response_data:
+                    date_str = r.get('publishDate')
+                    if date_str:
+                        if date_str.endswith('Z'):
+                            page_dates.append(datetime.fromisoformat(date_str.replace('Z', '+00:00')))
+                        else:
+                            page_dates.append(datetime.fromisoformat(date_str))
 
-        logging.info(f"Total items after filtering for dates > {min_date}: {len(filtered_releases)}")
+                # If all dates on this page are older than our target, we can safely stop.
+                if page_dates and all(d < min_date for d in page_dates):
+                    logging.info(f"  -> All items on page {page} are older than {min_date}. Stopping pagination.")
+                    break
+            except (ValueError, TypeError) as e:
+                logging.error(f"Date parsing error on page {page}. Stopping pagination to be safe. Error: {e}")
+                break
+
+        page += 1
+
+    if page > max_pages:
+        logging.warning(f"Reached max page limit of {max_pages}. Results may be incomplete.")
+
+    logging.info(f"--- Prowlarr Fetch Complete ---")
+    logging.info(f"Total items fetched from Prowlarr before final filtering: {len(all_releases)}")
+
+    # Final, definitive filtering in memory
+    if min_date:
+        filtered_releases = [
+            r for r in all_releases
+            if r.get('publishDate') and datetime.fromisoformat(r['publishDate'].replace('Z', '+00:00')) > min_date
+        ]
+        logging.info(f"Total items after final filtering for dates > {min_date}: {len(filtered_releases)}")
         return filtered_releases
 
-    logging.info(f"No min_date provided. Returning all {len(all_releases)} fetched items.")
     return all_releases
 
 def get_prowlarr_applications():
