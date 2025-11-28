@@ -53,6 +53,9 @@ def parse_release_data(release_name):
     # --- Logique de Release Group Améliorée (Nettoyage) ---
     if 'release_group' in guess:
         raw_group = guess['release_group']
+        # Handle cases where guessit returns a list
+        if isinstance(raw_group, list):
+            raw_group = raw_group[0]
         # Nettoie les informations additionnelles (ex: "TFA (Compte a rebours)")
         clean_group = raw_group.split('(')[0].strip()
         parsed_data['release_group'] = clean_group

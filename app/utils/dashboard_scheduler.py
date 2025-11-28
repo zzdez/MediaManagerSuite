@@ -56,6 +56,8 @@ def scheduled_dashboard_refresh():
                 current_app.logger.error("Scheduler: Could not read or parse dashboard_torrents.json, starting fresh.")
                 pass
 
+        current_app.logger.info(f"DIAGNOSTIC: Loaded {len(existing_torrents_map)} existing torrents from disk.")
+
         # Step 2: Fetch new torrents from Prowlarr
         last_refresh = get_last_refresh_time()
         prowlarr_categories = current_app.config.get('DASHBOARD_PROWLARR_CATEGORIES', [])
@@ -68,13 +70,18 @@ def scheduled_dashboard_refresh():
             current_app.logger.error("Scheduler: Could not retrieve data from Prowlarr. Aborting job.")
             return
 
-        # Step 2.5: Post-filter by category
+        # Post-filter results by category because Prowlarr API can be unreliable
         if prowlarr_categories:
+            initial_count = len(raw_torrents_from_prowlarr)
             allowed_cat_ids = set(prowlarr_categories)
-            raw_torrents_from_prowlarr = [
-                t for t in raw_torrents_from_prowlarr
-                if any(cat.get('id') in allowed_cat_ids for cat in t.get('categories', []))
+
+            filtered_torrents = [
+                torrent for torrent in raw_torrents_from_prowlarr
+                if any(cat.get('id') in allowed_cat_ids for cat in torrent.get('categories', []))
             ]
+            raw_torrents_from_prowlarr = filtered_torrents
+            final_count = len(raw_torrents_from_prowlarr)
+            current_app.logger.info(f"Filtered Prowlarr results by configured categories. Kept {final_count} of {initial_count} torrents.")
 
         # --- Prepare for enrichment ---
         tmdb_api_key = current_app.config.get('TMDB_API_KEY')
@@ -113,12 +120,14 @@ def scheduled_dashboard_refresh():
 
         current_app.logger.info(f"Scheduler: Found {new_torrents_found} new torrents from Prowlarr.")
 
+        current_app.logger.info(f"DIAGNOSTIC: Total torrents after adding new ones: {len(existing_torrents_map)}.")
+
         # Step 4: Re-evaluate status and enrich ALL torrents
         if tmdb_client:
             for torrent in existing_torrents_map.values():
                 if 'type' not in torrent:
                      raw_info = next((t for t in raw_torrents_from_prowlarr if (_normalize_torrent(t) or {}).get('hash') == torrent['hash']), None)
-                     torrent['type'] = _determine_media_type(raw_info, sonarr_cat_ids, radarr_cat_ids) if raw_info else 'movie'
+                     torrent['type'] = _determine_media_type(raw_info, sonarr_cat_ids, radarr_cat_ids) if raw_info else 'unknown'
 
                 _enrich_torrent_details(torrent, tmdb_client)
 
@@ -135,21 +144,27 @@ def scheduled_dashboard_refresh():
 
         # Step 5: Sort and save
         final_torrents = list(existing_torrents_map.values())
-        final_torrents = [t for t in final_torrents if t.get('publishDate')]
-        final_torrents.sort(key=lambda x: x['publishDate'], reverse=True)
+
+        # Sort robustly, placing items with no date at the end.
+        now = datetime.now(timezone.utc)
+        final_torrents.sort(key=lambda x: x.get('publishDate') or now, reverse=True)
 
         for torrent in final_torrents:
-            if isinstance(torrent['publishDate'], datetime):
+            if isinstance(torrent.get('publishDate'), datetime):
                 torrent['publishDate'] = torrent['publishDate'].isoformat()
+
+        current_app.logger.info(f"DIAGNOSTIC: Total torrents after enrichment, before saving: {len(final_torrents)}.")
 
         with open(DASHBOARD_TORRENTS_FILE, 'w') as f:
             json.dump(final_torrents, f, indent=2)
 
         set_last_refresh_time()
         current_app.logger.info("Scheduler: Dashboard refresh job finished successfully.")
+        return final_torrents
 
     except Exception as e:
         current_app.logger.error(f"Scheduler: Error in scheduled_dashboard_refresh: {e}", exc_info=True)
+        return None
 
 # Helper functions adapted from dashboard/routes.py
 
@@ -189,11 +204,11 @@ def _get_app_categories(apps):
     return sonarr_cat_ids, radarr_cat_ids
 
 def _determine_media_type(raw_torrent, sonarr_cat_ids, radarr_cat_ids):
-    if not raw_torrent: return 'movie'
+    if not raw_torrent: return 'unknown'
     cat_ids = {cat.get('id') for cat in raw_torrent.get('categories', [])}
     if cat_ids.intersection(radarr_cat_ids): return 'movie'
     if cat_ids.intersection(sonarr_cat_ids): return 'tv'
-    return raw_torrent.get('type', 'movie')
+    return raw_torrent.get('type', 'unknown')
 
 def _enrich_torrent_details(torrent, tmdb_client):
     media_type = torrent.get('type')
