@@ -97,6 +97,26 @@
 
 <!-- La modale de mapping est définie dans layout.html, nous n'avons pas besoin de la redéfinir ici -->
 
+    <!-- Modal pour le statut du rafraîchissement -->
+    <div class="modal fade" id="refreshStatusModal" tabindex="-1" aria-labelledby="refreshStatusModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="refreshStatusModalLabel">Rafraîchissement en cours</h5>
+          </div>
+          <div class="modal-body">
+            <div class="text-center">
+              <div class="spinner-border" role="status">
+                <span class="visually-hidden">Chargement...</span>
+              </div>
+              <p class="mt-3">Veuillez patienter pendant que nous récupérons les nouvelles publications. Cela peut prendre un certain temps...</p>
+              <div id="refresh-error-message" class="alert alert-danger" style="display: none;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -579,59 +599,85 @@ $(document).ready(function() {
     loadFilterState();
     applyFilters();
 
-    // --- Refresh Button Logic ---
-    // --- New Refresh Logic ---
-    function performRefresh(markAsSeenFirst) {
-        const button = $('#refresh-btn');
-        const spinner = $('#loading-spinner');
-        const container = $('#torrents-container');
+    // --- New Asynchronous Refresh Logic ---
+    let pollingInterval;
 
-        button.prop('disabled', true);
-        spinner.show();
-        container.empty();
-
-        window.currentMediaContext = null;
-
-        const executeRefresh = () => {
+    function pollTaskStatus(taskId) {
+        pollingInterval = setInterval(function() {
             $.ajax({
-                url: "{{ url_for('dashboard_bp.refresh_torrents') }}",
+                url: `/dashboard/api/task_status/${taskId}`,
                 type: 'GET',
                 success: function(response) {
-                    if (response.status === 'success') {
-                        allTorrents = response.torrents;
-                        populateStandardFilters();
-                        populateKeywordFilters();
-                        loadFilterState();
-                        applyFilters();
-                    } else {
-                        container.html(`<div class="alert alert-danger"><strong>Erreur :</strong> ${response.message || 'Erreur inattendue.'}</div>`);
+                    if (response.status === 'complete') {
+                        clearInterval(pollingInterval);
+                        $('#refreshStatusModal').modal('hide');
+                        location.reload();
+                    } else if (response.status === 'error') {
+                        clearInterval(pollingInterval);
+                        $('#refresh-error-message').text(response.message || 'Une erreur inattendue est survenue.').show();
+                        // Optionnel: Changer le titre et masquer le spinner
+                        $('#refreshStatusModalLabel').text('Erreur');
+                        $('#refreshStatusModal .spinner-border').hide();
                     }
+                    // Si le statut est 'running' ou 'pending', on ne fait rien et on attend le prochain poll.
                 },
-                error: function(xhr) {
-                    const errorMsg = xhr.responseJSON ? xhr.responseJSON.message : 'Erreur serveur.';
-                    container.html(`<div class="alert alert-danger"><strong>Erreur critique :</strong> ${errorMsg}</div>`);
-                },
-                complete: function() {
-                    button.prop('disabled', false);
-                    spinner.hide();
+                error: function() {
+                    clearInterval(pollingInterval);
+                    $('#refresh-error-message').text('Erreur de communication avec le serveur. Impossible de vérifier le statut.').show();
+                    $('#refreshStatusModalLabel').text('Erreur');
+                    $('#refreshStatusModal .spinner-border').hide();
                 }
             });
-        };
+        }, 2000); // Poll every 2 seconds
+    }
 
+    function startRefreshProcess() {
+        // Reset and show the modal
+        $('#refreshStatusModalLabel').text('Rafraîchissement en cours');
+        $('#refreshStatusModal .spinner-border').show();
+        $('#refresh-error-message').hide().text('');
+        const refreshModal = new bootstrap.Modal(document.getElementById('refreshStatusModal'));
+        refreshModal.show();
+
+        $.ajax({
+            url: "{{ url_for('dashboard_bp.refresh_torrents') }}",
+            type: 'GET',
+            success: function(response) {
+                if (response.status === 'pending' && response.task_id) {
+                    pollTaskStatus(response.task_id);
+                } else {
+                    // This case handles immediate errors, like if a refresh is already locked
+                    clearInterval(pollingInterval);
+                    $('#refresh-error-message').text(response.message || 'Impossible de démarrer la tâche de rafraîchissement.').show();
+                    $('#refreshStatusModalLabel').text('Erreur');
+                    $('#refreshStatusModal .spinner-border').hide();
+                }
+            },
+            error: function(xhr) {
+                clearInterval(pollingInterval);
+                const errorMsg = xhr.responseJSON ? xhr.responseJSON.message : 'Erreur serveur.';
+                $('#refresh-error-message').text(errorMsg).show();
+                $('#refreshStatusModalLabel').text('Erreur');
+                $('#refreshStatusModal .spinner-border').hide();
+            }
+        });
+    }
+
+    function performRefresh(markAsSeenFirst) {
         if (markAsSeenFirst) {
             $.ajax({
                 url: "{{ url_for('dashboard_bp.mark_all_as_seen') }}",
                 type: 'POST',
                 success: function() {
-                    executeRefresh();
+                    startRefreshProcess();
                 },
                 error: function() {
                     alert('Erreur lors du marquage des torrents comme vus. Le rafraîchissement continue...');
-                    executeRefresh();
+                    startRefreshProcess();
                 }
             });
         } else {
-            executeRefresh();
+            startRefreshProcess();
         }
     }
 
