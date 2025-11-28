@@ -68,14 +68,6 @@ def scheduled_dashboard_refresh():
             current_app.logger.error("Scheduler: Could not retrieve data from Prowlarr. Aborting job.")
             return
 
-        # Step 2.5: Post-filter by category
-        if prowlarr_categories:
-            allowed_cat_ids = set(prowlarr_categories)
-            raw_torrents_from_prowlarr = [
-                t for t in raw_torrents_from_prowlarr
-                if any(cat.get('id') in allowed_cat_ids for cat in t.get('categories', []))
-            ]
-
         # --- Prepare for enrichment ---
         tmdb_api_key = current_app.config.get('TMDB_API_KEY')
         tmdb_client = TheMovieDBClient() if tmdb_api_key else None
@@ -118,7 +110,7 @@ def scheduled_dashboard_refresh():
             for torrent in existing_torrents_map.values():
                 if 'type' not in torrent:
                      raw_info = next((t for t in raw_torrents_from_prowlarr if (_normalize_torrent(t) or {}).get('hash') == torrent['hash']), None)
-                     torrent['type'] = _determine_media_type(raw_info, sonarr_cat_ids, radarr_cat_ids) if raw_info else 'movie'
+                     torrent['type'] = _determine_media_type(raw_info, sonarr_cat_ids, radarr_cat_ids) if raw_info else 'unknown'
 
                 _enrich_torrent_details(torrent, tmdb_client)
 
@@ -189,11 +181,11 @@ def _get_app_categories(apps):
     return sonarr_cat_ids, radarr_cat_ids
 
 def _determine_media_type(raw_torrent, sonarr_cat_ids, radarr_cat_ids):
-    if not raw_torrent: return 'movie'
+    if not raw_torrent: return 'unknown'
     cat_ids = {cat.get('id') for cat in raw_torrent.get('categories', [])}
     if cat_ids.intersection(radarr_cat_ids): return 'movie'
     if cat_ids.intersection(sonarr_cat_ids): return 'tv'
-    return raw_torrent.get('type', 'movie')
+    return raw_torrent.get('type', 'unknown')
 
 def _enrich_torrent_details(torrent, tmdb_client):
     media_type = torrent.get('type')
