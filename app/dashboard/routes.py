@@ -259,15 +259,21 @@ def _normalize_torrent(raw_torrent):
             # Truncate microseconds if they are longer than 6 digits, which fromisoformat dislikes
             if '.' in publish_date_str:
                 parts = publish_date_str.split('.')
-                microseconds = parts[1].split('+')[0]
-                if len(microseconds) > 6:
-                    parts[1] = microseconds[:6] + '+' + parts[1].split('+')[1]
+                microseconds_part = parts[1].split('+')[0].split('-')[0]
+                if len(microseconds_part) > 6:
+                    timezone_part = ''
+                    if '+' in parts[1]:
+                        timezone_part = '+' + parts[1].split('+')[-1]
+                    elif '-' in parts[1]:
+                         timezone_part = '-' + parts[1].split('-')[-1]
+
+                    parts[1] = microseconds_part[:6] + timezone_part
                     publish_date_str = '.'.join(parts)
 
             publish_date = datetime.fromisoformat(publish_date_str)
         except (ValueError, TypeError) as e:
-            current_app.logger.warning(f"Could not parse date string '{publish_date_str}' for torrent '{raw_torrent.get('title', 'N/A')}'. Error: {e}")
-            pass
+            current_app.logger.warning(f"Could not parse date string '{publish_date_str}' for torrent '{raw_torrent.get('title', 'N/A')}'. Skipping torrent. Error: {e}")
+            return None # Skip torrent if date is invalid, preventing crashes
 
     category_name = raw_torrent.get('categoryDescription')
     if not category_name and raw_torrent.get('categories'):
@@ -337,16 +343,19 @@ def _get_app_categories(apps):
     return sonarr_cat_ids, radarr_cat_ids
 
 def _determine_media_type(raw_torrent, sonarr_cat_ids, radarr_cat_ids):
-    """Determines the media type ('movie' or 'tv') based on Prowlarr categories."""
-    torrent_cats = raw_torrent.get('categories', [])
-    for cat_obj in torrent_cats:
-        cat_id = cat_obj.get('id')
-        if cat_id in radarr_cat_ids:
-            return 'movie'
-        elif cat_id in sonarr_cat_ids:
-            return 'tv'
-    # Fallback to the type provided by Prowlarr if category doesn't match
-    return raw_torrent.get('type')
+    """Determines the media type ('movie', 'tv', or 'unknown') based on Prowlarr categories."""
+    if raw_torrent:
+        torrent_cats = raw_torrent.get('categories', [])
+        for cat_obj in torrent_cats:
+            cat_id = cat_obj.get('id')
+            if cat_id in radarr_cat_ids:
+                return 'movie'
+            elif cat_id in sonarr_cat_ids:
+                return 'tv'
+        prowlarr_type = raw_torrent.get('type')
+        if prowlarr_type in ['movie', 'tv']:
+            return prowlarr_type
+    return 'unknown'
 
 def _enrich_torrent_details(torrent, tmdb_client):
     """Enriches a torrent with details from TMDB (overview, poster, etc.), finding the ID if missing."""
