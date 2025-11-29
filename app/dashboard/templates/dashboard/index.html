@@ -250,11 +250,11 @@ $(document).ready(function() {
         });
 
         torrentsToRender.forEach(torrent => {
-            const sizeInGB = (torrent.size / (1024 * 1024 * 1024)).toFixed(2);
+            const sizeInGB = ((torrent.size || 0) / (1024 * 1024 * 1024)).toFixed(2);
             const newBadge = torrent.is_new ? '<span class="badge bg-info ms-2">Nouveau</span>' : '';
             const statusBadges = generateStatusBadges(torrent.statuses);
 
-            const yearMatch = torrent.title.match(/\b(19[89]\d|20\d{2})\b/);
+            const yearMatch = (torrent.title || '').match(/\b(19[89]\d|20\d{2})\b/);
             const year = yearMatch ? yearMatch[1] : null;
 
             const detailsButtonHtml = torrent.detailsUrl ? `<button class="btn btn-info btn-sm details-btn" data-url="${torrent.detailsUrl}">Détails</button>` : `<button class="btn btn-info btn-sm" disabled>Détails</button>`;
@@ -268,7 +268,7 @@ $(document).ready(function() {
             const torrentCard = `
                 <div class="card mb-3" id="torrent-card-${torrent.hash}">
                     <div class="card-body">
-                        <h5 class="card-title">${torrent.title} ${newBadge}</h5>
+                        <h5 class="card-title">${torrent.title || 'Titre Inconnu'} ${newBadge}</h5>
                         <div>${statusBadges}</div>
                         <div class="mt-2">
                             ${indexerBadge}
@@ -320,7 +320,7 @@ $(document).ready(function() {
         });
 
         const filteredTorrents = allTorrents.filter(torrent => {
-            if (titleFilter && !torrent.title.toLowerCase().includes(titleFilter)) return false;
+            if (titleFilter && !(torrent.title || '').toLowerCase().includes(titleFilter)) return false;
 
             const yearMatch = torrent.title.match(/\b(19\d{2}|20\d{2})\b/);
             const year = yearMatch ? parseInt(yearMatch[1], 10) : 0;
@@ -450,7 +450,13 @@ $(document).ready(function() {
             if (parsed.language) filterValues['Langue'].add(parsed.language.toUpperCase());
             if (parsed.quality) filterValues['Qualité'].add(parsed.quality);
             if (parsed.codec) filterValues['Codec'].add(parsed.codec);
-            if (parsed.source) filterValues['Source'].add(parsed.source);
+            if (parsed.source) {
+                if (Array.isArray(parsed.source)) {
+                    parsed.source.forEach(s => filterValues['Source'].add(s));
+                } else {
+                    filterValues['Source'].add(parsed.source);
+                }
+            }
         });
 
         Object.keys(filterValues).forEach((groupName, index) => {
