@@ -320,7 +320,8 @@ $(document).ready(function() {
         });
 
         const filteredTorrents = allTorrents.filter(torrent => {
-            if (titleFilter && !torrent.title.toLowerCase().includes(titleFilter)) return false;
+            console.log("Filtering torrent:", torrent); // Diagnostic log
+            if (titleFilter && !(torrent.title || '').toLowerCase().includes(titleFilter)) return false;
 
             const yearMatch = torrent.title.match(/\b(19\d{2}|20\d{2})\b/);
             const year = yearMatch ? parseInt(yearMatch[1], 10) : 0;
