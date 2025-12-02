@@ -206,6 +206,11 @@ $(document).ready(function() {
         return badgesHtml;
     }
 
+    function isUnknown(torrent) {
+        // Un torrent est "Inconnu" s'il n'a ni tmdbId ni tvdbId.
+        return !torrent.tmdbId && !torrent.tvdbId;
+    }
+
     // --- Date Formatting Helper ---
     function formatDynamicDate(isoString) {
         if (!isoString) return "";
@@ -252,7 +257,16 @@ $(document).ready(function() {
         torrentsToRender.forEach(torrent => {
             const sizeInGB = ((torrent.size || 0) / (1024 * 1024 * 1024)).toFixed(2);
             const newBadge = torrent.is_new ? '<span class="badge bg-info ms-2">Nouveau</span>' : '';
-            const statusBadges = generateStatusBadges(torrent.statuses);
+            let statusBadges = generateStatusBadges(torrent.statuses);
+
+            // Add 'Inconnu' badge if IDs are missing and no other status is dominant
+            if (isUnknown(torrent)) {
+                // Check if we already have an "Inconnu" or "Non Géré" badge to avoid duplication, though usually generateStatusBadges handles it.
+                // But specifically for the "Missing IDs" definition of unknown:
+                if (!statusBadges.includes('Inconnu') && !statusBadges.includes('Non Géré')) {
+                     statusBadges += '<span class="badge bg-secondary ms-1">Inconnu (ID Manquant)</span>';
+                }
+            }
 
             const yearMatch = (torrent.title || '').match(/\b(19[89]\d|20\d{2})\b/);
             const year = yearMatch ? yearMatch[1] : null;
@@ -348,7 +362,13 @@ $(document).ready(function() {
                         'ARCHIVED': 'Archivé', 'NOT_MANAGED': 'Non Géré',
                         'UNKNOWN': 'Inconnu'
                     };
-                    if (statusGroupMap[summary] !== statusFilter) return false;
+
+                    if (statusFilter === 'Inconnu') {
+                         // Special case: matches if explicitly 'Inconnu' status OR if IDs are missing
+                         if (!isUnknown(torrent) && statusGroupMap[summary] !== 'Inconnu') return false;
+                    } else {
+                         if (statusGroupMap[summary] !== statusFilter) return false;
+                    }
                 }
             }
 
@@ -426,6 +446,11 @@ $(document).ready(function() {
                     'UNKNOWN': 'Inconnu'
                 };
                 if (statusGroupMap[summary]) statuses.add(statusGroupMap[summary]);
+
+                // Add 'Inconnu' to the filter list if we have items with missing IDs
+                if (isUnknown(torrent)) {
+                    statuses.add('Inconnu');
+                }
             }
         });
 

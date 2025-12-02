@@ -31,7 +31,6 @@ def get_prowlarr_categories():
     'capabilities' objects, including the nested 'subCategories', to build the
     complete and definitive category list.
     """
-    # ... CETTE FONCTION RESTE INCHANGÉE ET FONCTIONNELLE ...
     try:
         current_app.logger.info("Prowlarr: Fetching all indexers to correctly parse capabilities...")
         indexers = _make_prowlarr_request('indexer')
@@ -72,7 +71,7 @@ def get_prowlarr_categories():
         current_app.logger.error(f"Prowlarr category processing failed with CORRECT parsing strategy: {e}", exc_info=True)
         return []
 
-def search_prowlarr(query, categories=None, lang=None):
+def search_prowlarr(query, categories=None, lang=None, **kwargs):
     """
     Recherche des releases sur Prowlarr, avec support optionnel pour les catégories.
     """
@@ -81,18 +80,16 @@ def search_prowlarr(query, categories=None, lang=None):
         'type': 'search'
     }
 
-    # Si des catégories sont fournies, les ajouter à la requête.
-    # Le paramètre API correct est 'cat' et il attend une chaîne de caractères séparée par des virgules.
     if categories and isinstance(categories, list) and len(categories) > 0:
         params['cat'] = ','.join(map(str, categories))
         current_app.logger.info(f"Prowlarr search: Using categories {params['cat']}")
 
-    # La gestion de la langue est retirée ici, car elle sera gérée par le filtrage guessit.
+    # Add any extra arguments (like page, pageSize, offset, limit) to params
+    if kwargs:
+        params.update(kwargs)
 
     response_data = _make_prowlarr_request('search', params)
 
-    # L'API de recherche retourne une liste d'objets torrents directement.
-    # Il est bon de s'assurer que nous retournons bien une liste.
     if isinstance(response_data, list):
         return response_data
     else:
@@ -110,19 +107,22 @@ def get_latest_from_prowlarr(categories, min_date=None):
     all_releases = []
     page = 1
     pageSize = 100
-    # Use a configurable max_pages, defaulting to 50 if not set
     max_pages = current_app.config.get('PROWLARR_MAX_PAGES', 50)
 
     while page <= max_pages:
-        params = {
-            'type': 'search', 'page': page, 'pageSize': pageSize,
-            'sort': 'publishDate', 'order': 'desc'
-        }
-        if categories:
-            params['cat'] = ','.join(map(str, categories))
-
         logging.info(f"Requesting Prowlarr Page: {page}/{max_pages}...")
-        response_data = _make_prowlarr_request('search', params)
+
+        # Use standard Prowlarr API pagination parameters.
+        # query='*' ensures we are in a search context that supports pagination.
+        # sortKey/sortDir are the correct parameter names for Prowlarr v1.
+        response_data = search_prowlarr(
+            query="*",
+            categories=categories,
+            page=page,
+            pageSize=pageSize,
+            sortKey='publishDate',
+            sortDir='desc'
+        )
 
         if response_data is None:
             logging.error(f"Prowlarr request failed for page {page}. Stopping.")
@@ -131,7 +131,16 @@ def get_latest_from_prowlarr(categories, min_date=None):
             logging.info(f"Page {page} is empty or invalid. Stopping pagination.")
             break
 
-        logging.info(f"  -> Page {page} returned {len(response_data)} results.")
+        # Extract dates for logging debugging
+        first_date = "N/A"
+        last_date = "N/A"
+        if response_data:
+             d1 = response_data[0].get('publishDate')
+             d2 = response_data[-1].get('publishDate')
+             if d1: first_date = d1
+             if d2: last_date = d2
+
+        logging.info(f"  -> Page {page} returned {len(response_data)} results. First item date: {first_date}, Last item date: {last_date}")
         all_releases.extend(response_data)
 
         if min_date:
@@ -181,7 +190,6 @@ def get_prowlarr_applications():
     """
     response_data = _make_prowlarr_request('applications')
 
-    # The response is a list of application objects.
     if isinstance(response_data, list):
         current_app.logger.info(f"Prowlarr: Successfully fetched {len(response_data)} applications.")
         return response_data
