@@ -145,7 +145,8 @@ def refresh_torrents():
                             torrent['publishDate'] = datetime.fromisoformat(torrent['publishDate'].replace('Z', '+00:00'))
                         # Use 'guid' as the primary key for the map
                         if 'guid' in torrent and torrent['guid']:
-                            existing_torrents_map[torrent['guid']] = torrent
+                            key = f"{torrent['guid']}_{torrent.get('title', '')}"
+                            existing_torrents_map[key] = torrent
             except (json.JSONDecodeError, IOError):
                 pass  # Start fresh if file is corrupt
 
@@ -193,8 +194,10 @@ def refresh_torrents():
             if not torrent or torrent['guid'] in ignored_hashes:
                 continue
 
+            composite_key = f"{torrent['guid']}_{torrent.get('title', '')}"
+
             # If it's a new torrent, mark it and perform basic enrichment
-            if torrent['guid'] not in existing_torrents_map:
+            if composite_key not in existing_torrents_map:
                 torrent['is_new'] = True
 
                 if any(re.search(kw, torrent['title'], re.IGNORECASE) for kw in exclude_keywords):
@@ -208,15 +211,16 @@ def refresh_torrents():
                     if year_match and int(year_match.group(1)) < min_movie_year:
                         continue
 
-                # Add to the map to be processed in the next step, using guid as the key
-                existing_torrents_map[torrent['guid']] = torrent
+                # Add to the map to be processed in the next step, using composite key
+                existing_torrents_map[composite_key] = torrent
 
         # Step 4: Re-evaluate status and enrich ALL torrents in the map
-        for torrent_guid, torrent in existing_torrents_map.items():
+        for composite_key, torrent in existing_torrents_map.items():
             # Ensure essential data is present, especially for older torrents
             if 'type' not in torrent:
                  # Find the original raw torrent to determine media type if possible
-                raw_info = next((t for t in raw_torrents_from_prowlarr if (_normalize_torrent(t) or {}).get('guid') == torrent_guid), None)
+                 # Fallback to checking guid match on raw list
+                raw_info = next((t for t in raw_torrents_from_prowlarr if (_normalize_torrent(t) or {}).get('guid') == torrent.get('guid')), None)
                 torrent['type'] = _determine_media_type(raw_info, sonarr_cat_ids, radarr_cat_ids) if raw_info else 'movie'
 
             # Only perform enrichment and status checks if the TMDB client is available
