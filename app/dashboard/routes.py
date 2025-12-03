@@ -26,25 +26,44 @@ DASHBOARD_TORRENTS_FILE = os.path.join('instance', 'dashboard_torrents.json')
 
 # --- Helper functions for state management ---
 
-def get_last_refresh_time():
-    """Reads the timestamp of the last refresh from the state file."""
+def get_last_refresh_times():
+    """Reads the timestamps of the last refreshes from the state file."""
+    default_times = {'prowlarr': None, 'status': None}
     if not os.path.exists(DASHBOARD_STATE_FILE):
-        return None
+        return default_times
     try:
         with open(DASHBOARD_STATE_FILE, 'r') as f:
             data = json.load(f)
-            # Timestamps are stored in ISO 8601 format, make it timezone-aware
-            iso_ts = data.get('last_refresh_utc')
-            return datetime.fromisoformat(iso_ts).replace(tzinfo=timezone.utc) if iso_ts else None
-    except (json.JSONDecodeError, IOError):
-        return None
 
-def set_last_refresh_time():
-    """Saves the current UTC time as the last refresh timestamp."""
+            # Return raw strings if they exist, as the Jinja template 'date_format' filter expects strings
+            default_times['prowlarr'] = data.get('last_refresh_utc')
+            default_times['status'] = data.get('last_status_refresh_utc')
+
+            return default_times
+    except (json.JSONDecodeError, IOError):
+        return default_times
+
+def set_last_refresh_time(key='last_refresh_utc'):
+    """
+    Saves the current UTC time as a timestamp for the given key.
+    key options: 'last_refresh_utc' (Prowlarr) or 'last_status_refresh_utc' (Status)
+    """
     os.makedirs(os.path.dirname(DASHBOARD_STATE_FILE), exist_ok=True)
     now_utc = datetime.now(timezone.utc)
+
+    # Load existing state to preserve other keys
+    state = {}
+    if os.path.exists(DASHBOARD_STATE_FILE):
+        try:
+            with open(DASHBOARD_STATE_FILE, 'r') as f:
+                state = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            pass
+
+    state[key] = now_utc.isoformat()
+
     with open(DASHBOARD_STATE_FILE, 'w') as f:
-        json.dump({'last_refresh_utc': now_utc.isoformat()}, f)
+        json.dump(state, f)
     return now_utc
 
 def get_ignored_hashes():
@@ -124,7 +143,8 @@ def dashboard():
         ]
         current_app.logger.info(f"Filtered torrents on dashboard load. Kept {len(torrents)} of {initial_count} torrents.")
 
-    return render_template('dashboard/index.html', torrents=torrents)
+    refresh_times = get_last_refresh_times()
+    return render_template('dashboard/index.html', torrents=torrents, refresh_times=refresh_times)
 
 
 @dashboard_bp.route('/dashboard/api/refresh')
@@ -151,7 +171,15 @@ def refresh_torrents():
                 pass  # Start fresh if file is corrupt
 
         # Step 2: Fetch new torrents from Prowlarr
-        last_refresh = get_last_refresh_time()
+        refresh_times = get_last_refresh_times()
+        last_refresh_str = refresh_times['prowlarr']
+        last_refresh = None
+        if last_refresh_str:
+            try:
+                last_refresh = datetime.fromisoformat(last_refresh_str).replace(tzinfo=timezone.utc)
+            except ValueError:
+                pass # Treat as None if invalid
+
         prowlarr_categories = get_dashboard_categories()
         raw_torrents_from_prowlarr = get_latest_from_prowlarr(
             categories=prowlarr_categories,
@@ -258,9 +286,13 @@ def refresh_torrents():
         with open(DASHBOARD_TORRENTS_FILE, 'w') as f:
             json.dump(final_torrents, f, indent=2)
 
-        set_last_refresh_time()
+        new_time = set_last_refresh_time('last_refresh_utc')
 
-        return jsonify({"status": "success", "torrents": final_torrents})
+        return jsonify({
+            "status": "success",
+            "torrents": final_torrents,
+            "last_refresh_date": new_time.isoformat()
+        })
 
     except Exception as e:
         current_app.logger.error(f"Error in refresh_torrents: {e}", exc_info=True)
@@ -536,7 +568,13 @@ def refresh_statuses():
         with open(DASHBOARD_TORRENTS_FILE, 'w') as f:
             json.dump(existing_torrents, f, indent=2)
 
-        return jsonify({"status": "success", "torrents": existing_torrents})
+        new_time = set_last_refresh_time('last_status_refresh_utc')
+
+        return jsonify({
+            "status": "success",
+            "torrents": existing_torrents,
+            "last_refresh_date": new_time.isoformat()
+        })
 
     except Exception as e:
         current_app.logger.error(f"Error in refresh_statuses: {e}", exc_info=True)
