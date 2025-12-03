@@ -96,31 +96,57 @@ def get_latest_from_prowlarr(categories, min_date=None):
     """
     Fetches all new releases from Prowlarr since a given date using robust pagination.
     It stops only when an entire page of results is older than the target date.
+
+    IMPORTANT: Uses 'offset' and 'limit' instead of 'page'/'pageSize' to prevent
+    infinite loops on indexers that ignore 'page' for RSS feeds.
     """
     logging.info(f"--- Starting Prowlarr Fetch (Robust Pagination) ---")
     logging.info(f"Fetching new releases since: {min_date}")
 
     all_releases = []
-    page = 1
-    pageSize = 100
-    max_pages = current_app.config.get('PROWLARR_MAX_PAGES', 50)
 
-    while page <= max_pages:
+    # Configuration limits
+    max_pages = current_app.config.get('PROWLARR_MAX_PAGES', 50)
+    limit = 100
+    max_offset = max_pages * limit
+    offset = 0
+
+    # Generic search query (wildcard) from config to allow user override if needed.
+    # Default is empty string (""), which triggers RSS mode for most indexers.
+    # If the user sets this to "*", it triggers Search mode.
+    search_query = current_app.config.get('PROWLARR_SEARCH_QUERY', "")
+
+    while offset < max_offset:
+        current_page_num = (offset // limit) + 1
+
+        # We use 'sortKey' and 'sortDir' which are the standard Arr API parameters for sorting.
+        # We use 'offset' and 'limit' to guarantee correct pagination.
         params = {
-            'type': 'search', 'page': page, 'pageSize': pageSize,
-            'sort': 'publishDate', 'order': 'desc'
+            'type': 'search',
+            'offset': offset,
+            'limit': limit,
+            'sortKey': 'publishDate',
+            'sortDir': 'desc'
         }
+
+        # IMPORTANT: Only add 'query' if it's strictly NOT empty.
+        # Prowlarr treats an empty string query ("") same as None (RSS mode),
+        # BUT explicitly sending query="" might cause issues with some indexers.
+        # If the user provides "*", we send it.
+        if search_query:
+            params['query'] = search_query
+
         if categories:
             params['cat'] = ','.join(map(str, categories))
 
-        logging.info(f"Requesting Prowlarr Page: {page}/{max_pages}...")
+        logging.info(f"Requesting Prowlarr Offset: {offset} (Page equivalent: {current_page_num}/{max_pages})...")
         response_data = _make_prowlarr_request('search', params)
 
         if response_data is None:
-            logging.error(f"Prowlarr request failed for page {page}. Stopping.")
+            logging.error(f"Prowlarr request failed for offset {offset}. Stopping.")
             break
         if not isinstance(response_data, list) or not response_data:
-            logging.info(f"Page {page} is empty or invalid. Stopping pagination.")
+            logging.info(f"Offset {offset} (Page {current_page_num}) is empty or invalid. Stopping pagination.")
             break
 
         # Extract dates for logging debugging
@@ -132,7 +158,7 @@ def get_latest_from_prowlarr(categories, min_date=None):
              if d1: first_date = d1
              if d2: last_date = d2
 
-        logging.info(f"  -> Page {page} returned {len(response_data)} results. First item date: {first_date}, Last item date: {last_date}")
+        logging.info(f"  -> Offset {offset} returned {len(response_data)} results. First item date: {first_date}, Last item date: {last_date}")
         all_releases.extend(response_data)
 
         if min_date:
@@ -149,17 +175,26 @@ def get_latest_from_prowlarr(categories, min_date=None):
                         else:
                             page_dates.append(datetime.fromisoformat(date_str))
 
+                # Check if all items on this page are older than min_date
                 if page_dates and all(d < min_date for d in page_dates):
-                    logging.info(f"  -> All items on page {page} are older than {min_date}. Stopping pagination.")
-                    break
+                    # SAFETY CHECK: If this is the FIRST page (offset 0), checking "all older" is dangerous
+                    # if Prowlarr returned cached/stale data or if the local state is ahead (future timestamp).
+
+                    if offset == 0:
+                         logging.warning(f"  [Time Gap Detected] The newest item from Prowlarr ({page_dates[0]}) is OLDER than your last local refresh ({min_date}). This implies Prowlarr returned stale cached data or the local state is invalid. IGNORING date filter for this run to force data recovery.")
+                         # Disable the min_date filter for the rest of this run to ensure we capture the available data.
+                         min_date = None
+                    else:
+                        logging.info(f"  -> All items on offset {offset} are older than {min_date}. Stopping pagination.")
+                        break
             except (ValueError, TypeError) as e:
-                logging.error(f"Date parsing error on page {page}. Stopping pagination to be safe. Error: {e}")
+                logging.error(f"Date parsing error on offset {offset}. Stopping pagination to be safe. Error: {e}")
                 break
 
-        page += 1
+        offset += limit
 
-    if page > max_pages:
-        logging.warning(f"Reached max page limit of {max_pages}. This can be configured with PROWLARR_MAX_PAGES. Results may be incomplete.")
+    if offset >= max_offset:
+        logging.warning(f"Reached max offset limit of {max_offset} ({max_pages} pages). This can be configured with PROWLARR_MAX_PAGES. Results may be incomplete.")
 
     logging.info(f"--- Prowlarr Fetch Complete ---")
     logging.info(f"Total items fetched from Prowlarr before final filtering: {len(all_releases)}")
