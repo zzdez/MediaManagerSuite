@@ -59,35 +59,11 @@
                     <input type="number" class="form-control" id="filter-year" placeholder="Ex: 2023">
                 </div>
 
-                <!-- Filtre par Catégorie -->
-                <div class="mb-3">
-                    <label for="filter-category" class="form-label">Catégorie</label>
-                    <select class="form-select" id="filter-category">
-                        <option value="">Toutes</option>
-                    </select>
-                </div>
-
-                <!-- Filtre par Statut -->
-                <div class="mb-3">
-                    <label for="filter-status" class="form-label">Statut</label>
-                    <select class="form-select" id="filter-status">
-                        <option value="">Tous</option>
-                    </select>
-                </div>
-
-                <!-- Filtre par Indexeur -->
-                <div class="mb-3">
-                    <label for="filter-indexer" class="form-label">Indexeur</label>
-                    <select class="form-select" id="filter-indexer">
-                        <option value="">Tous</option>
-                    </select>
-                </div>
-
                 <hr>
 
-                <!-- Filtres par mots-clés (dynamiques) -->
-                <div id="keyword-filters-container" class="accordion">
-                    <!-- Le contenu sera généré dynamiquement par JavaScript -->
+                <!-- Filtres Unifiés (Checkboxes) -->
+                <div id="unified-filters-container" class="accordion">
+                    <!-- Les groupes de filtres (Catégorie, Statut, Indexeur, Langue, etc.) seront générés ici -->
                 </div>
 
             </div>
@@ -112,10 +88,7 @@ $(document).ready(function() {
     const container = $('#torrents-container');
     const filterTitle = $('#filter-title');
     const filterYear = $('#filter-year');
-    const filterCategory = $('#filter-category');
-    const filterStatus = $('#filter-status');
-    const filterIndexer = $('#filter-indexer');
-    // Keyword checkboxes will be selected dynamically after they are created
+    // Other filters are now dynamic checkboxes
 
     function generateStatusBadges(statuses) {
         if (!statuses) return '<span class="badge bg-secondary ms-1">Inconnu</span>';
@@ -320,89 +293,94 @@ $(document).ready(function() {
     function applyFilters() {
         const titleFilter = filterTitle.val().toLowerCase();
         const yearFilter = parseInt(filterYear.val(), 10) || 0;
-        const categoryFilter = filterCategory.val();
-        const statusFilter = filterStatus.val();
-        const indexerFilter = filterIndexer.val();
 
-        const activeKeywordFilters = {};
-        $('.keyword-filter-checkbox:checked').each(function() {
+        // Collect all active checkbox filters
+        const activeFilters = {};
+        $('.filter-checkbox:checked').each(function() {
             const group = $(this).data('group');
-            if (!activeKeywordFilters[group]) {
-                activeKeywordFilters[group] = [];
+            if (!activeFilters[group]) {
+                activeFilters[group] = [];
             }
-            activeKeywordFilters[group].push($(this).val().toLowerCase());
+            activeFilters[group].push($(this).val().toLowerCase()); // Use lowercase for comparison
         });
 
         const filteredTorrents = allTorrents.filter(torrent => {
+            // 1. Text Filters
             if (titleFilter && !(torrent.title || '').toLowerCase().includes(titleFilter)) return false;
 
             const yearMatch = torrent.title.match(/\b(19\d{2}|20\d{2})\b/);
             const year = yearMatch ? parseInt(yearMatch[1], 10) : 0;
             if (yearFilter && (!year || year < yearFilter)) return false;
 
-            if (categoryFilter && categoryFilter.length > 0 && torrent.category !== categoryFilter) return false;
-            if (indexerFilter && indexerFilter.length > 0 && torrent.indexer !== indexerFilter) return false;
+            // 2. Checkbox Filters
+            for (const group in activeFilters) {
+                const checkedValues = activeFilters[group];
+                if (checkedValues.length === 0) continue; // Skip empty groups
 
-            if (statusFilter && statusFilter.length > 0) {
-                if (Array.isArray(torrent.statuses)) {
-                    // Logique "legacy" pour l'ancien format
-                    const legacyStatusMap = {
-                        'SONARR_MONITORED': 'Surveillé', 'SONARR_OBTAINED': 'Obtenu',
-                        'RADARR_MONITORED': 'Surveillé', 'RADARR_OBTAINED': 'Obtenu',
-                        'PLEX_PRESENT': 'Plex', 'ARCHIVED': 'Archivé',
-                        'UNKNOWN_ID': 'Inconnu', 'NOT_MANAGED': 'Non Géré'
-                    };
-                    const hasStatus = torrent.statuses.some(s => legacyStatusMap[s] === statusFilter);
-                    if (!hasStatus) return false;
-                } else {
-                    // Nouvelle logique pour le nouveau format
-                    const summary = torrent.statuses.summary;
-                    const statusGroupMap = {
-                        'OBTAINED': 'Obtenu', 'MONITORED': 'Surveillé',
-                        'ARCHIVED': 'Archivé', 'NOT_MANAGED': 'Non Géré',
-                        'UNKNOWN': 'Inconnu'
-                    };
+                let isMatch = false;
+                let valueToTest = null;
 
-                    if (statusFilter === 'Inconnu') {
-                         // Special case: matches if explicitly 'Inconnu' status OR if IDs are missing
-                         if (!isUnknown(torrent) && statusGroupMap[summary] !== 'Inconnu') return false;
+                // Map data sources based on group name
+                if (group === 'Catégorie') valueToTest = torrent.category;
+                else if (group === 'Indexeur') valueToTest = torrent.indexer;
+                else if (group === 'Statut') {
+                    // Special complex handling for Status
+                    if (Array.isArray(torrent.statuses)) {
+                        const legacyStatusMap = {
+                            'SONARR_MONITORED': 'Surveillé', 'SONARR_OBTAINED': 'Obtenu',
+                            'RADARR_MONITORED': 'Surveillé', 'RADARR_OBTAINED': 'Obtenu',
+                            'PLEX_PRESENT': 'Plex', 'ARCHIVED': 'Archivé',
+                            'UNKNOWN_ID': 'Inconnu', 'NOT_MANAGED': 'Non Géré'
+                        };
+                        isMatch = torrent.statuses.some(s => checkedValues.includes((legacyStatusMap[s] || '').toLowerCase()));
                     } else {
-                         if (statusGroupMap[summary] !== statusFilter) return false;
-                    }
-                }
-            }
+                        const summary = torrent.statuses.summary;
+                        const statusGroupMap = {
+                            'OBTAINED': 'Obtenu', 'MONITORED': 'Surveillé',
+                            'ARCHIVED': 'Archivé', 'NOT_MANAGED': 'Non Géré',
+                            'UNKNOWN': 'Inconnu'
+                        };
+                        let mappedStatus = statusGroupMap[summary];
 
-            const parsed = torrent.parsed_data || {};
-            for (const group in activeKeywordFilters) {
-                const terms = activeKeywordFilters[group];
-                if (terms.length > 0) {
-                    let valueToTest;
+                        // Handle "Inconnu" specially: explicit status OR missing IDs
+                        if (isUnknown(torrent) && mappedStatus !== 'Inconnu') {
+                             mappedStatus = 'Inconnu'; // Treat missing IDs as Inconnu for filtering
+                        }
+
+                        isMatch = checkedValues.includes((mappedStatus || '').toLowerCase());
+                    }
+                    if (!isMatch) return false; // Fail immediately if status doesn't match
+                    continue; // Continue to next group if status matched
+                }
+                else {
+                    // Keyword filters (Langue, Codec, etc.) from parsed_data
+                    const parsed = torrent.parsed_data || {};
                     switch (group) {
                         case 'Langue': valueToTest = (parsed.language || '').toUpperCase(); break;
                         case 'Qualité': valueToTest = parsed.quality; break;
                         case 'Codec': valueToTest = parsed.codec; break;
                         case 'Source': valueToTest = parsed.source; break;
                     }
+                }
 
-                    // If the data for this filter group doesn't exist for the torrent, it's not a match.
-                    if (!valueToTest) {
+                // If filter is active but data is missing
+                if (!valueToTest && group !== 'Statut') {
+                    // Match if "non détecté" is checked
+                    if (checkedValues.includes('non détecté')) {
+                        isMatch = true;
+                    } else {
                         return false;
                     }
-
-                    let matchFound = false;
+                } else if (valueToTest) {
+                    // Generic array/string matching logic
                     if (Array.isArray(valueToTest)) {
-                        // For arrays (like 'Source'), check if any item in the torrent's data array
-                        // matches any of the selected filter terms.
-                        matchFound = valueToTest.some(item => terms.includes(String(item).toLowerCase()));
+                        isMatch = valueToTest.some(item => checkedValues.includes(String(item).toLowerCase()));
                     } else {
-                        // For strings/numbers, check if the torrent's data value is in the selected terms.
-                        matchFound = terms.includes(String(valueToTest).toLowerCase());
-                    }
-
-                    if (!matchFound) {
-                        return false; // If no match was found for this group, the torrent fails the filter.
+                        isMatch = checkedValues.includes(String(valueToTest).toLowerCase());
                     }
                 }
+
+                if (!isMatch) return false;
             }
 
             return true;
@@ -415,19 +393,37 @@ $(document).ready(function() {
         if (allTorrents.length > 0) {
             counterElement.text(`Résultats (${filteredTorrents.length} / ${allTorrents.length})`);
         } else {
-            counterElement.text(''); // Hide if no torrents at all
+            counterElement.text('');
         }
     }
 
-    function populateStandardFilters() {
-        const categories = new Set();
-        const statuses = new Set();
-        const indexers = new Set();
+    function populateAllFilters() {
+        const container = $('#unified-filters-container');
+        container.empty();
+
+        // 1. Data Collection
+        const filterData = {
+            'Catégorie': new Set(),
+            'Statut': new Set(),
+            'Indexeur': new Set(),
+            'Langue': new Set(),
+            'Qualité': new Set(),
+            'Codec': new Set(),
+            'Source': new Set()
+        };
+
+        // Track presence of missing data to optionally add "Non détecté"
+        const hasMissing = {
+            'Catégorie': false, 'Statut': false, 'Indexeur': false,
+            'Langue': false, 'Qualité': false, 'Codec': false, 'Source': false
+        };
 
         allTorrents.forEach(torrent => {
-            if (torrent.category) categories.add(torrent.category);
-            if (torrent.indexer) indexers.add(torrent.indexer);
+            // Standard fields
+            if (torrent.category) filterData['Catégorie'].add(torrent.category); else hasMissing['Catégorie'] = true;
+            if (torrent.indexer) filterData['Indexeur'].add(torrent.indexer); else hasMissing['Indexeur'] = true;
 
+            // Status field
             if (Array.isArray(torrent.statuses)) {
                 const legacyStatusMap = {
                     'SONARR_MONITORED': 'Surveillé', 'SONARR_OBTAINED': 'Obtenu',
@@ -435,9 +431,7 @@ $(document).ready(function() {
                     'PLEX_PRESENT': 'Plex', 'ARCHIVED': 'Archivé',
                     'UNKNOWN_ID': 'Inconnu', 'NOT_MANAGED': 'Non Géré'
                 };
-                torrent.statuses.forEach(s => {
-                    if (legacyStatusMap[s]) statuses.add(legacyStatusMap[s]);
-                });
+                torrent.statuses.forEach(s => { if (legacyStatusMap[s]) filterData['Statut'].add(legacyStatusMap[s]); });
             } else if (torrent.statuses && torrent.statuses.summary) {
                 const summary = torrent.statuses.summary;
                 const statusGroupMap = {
@@ -445,117 +439,129 @@ $(document).ready(function() {
                     'ARCHIVED': 'Archivé', 'NOT_MANAGED': 'Non Géré',
                     'UNKNOWN': 'Inconnu'
                 };
-                if (statusGroupMap[summary]) statuses.add(statusGroupMap[summary]);
-
-                // Add 'Inconnu' to the filter list if we have items with missing IDs
-                if (isUnknown(torrent)) {
-                    statuses.add('Inconnu');
-                }
+                if (statusGroupMap[summary]) filterData['Statut'].add(statusGroupMap[summary]);
+                if (isUnknown(torrent)) filterData['Statut'].add('Inconnu');
             }
-        });
 
-        const populateSelect = (select, items) => {
-            select.html('<option value="">Tous</option>');
-            [...items].sort().forEach(item => select.append(new Option(item, item)));
-        };
-
-        populateSelect(filterCategory, categories);
-        populateSelect(filterStatus, statuses);
-        populateSelect(filterIndexer, indexers);
-    }
-
-    function populateKeywordFilters() {
-        const keywordFiltersContainer = $('#keyword-filters-container');
-        keywordFiltersContainer.empty();
-
-        const filterValues = { 'Langue': new Set(), 'Qualité': new Set(), 'Codec': new Set(), 'Source': new Set() };
-
-        allTorrents.forEach(torrent => {
+            // Keyword fields
             const parsed = torrent.parsed_data || {};
-            if (parsed.language) filterValues['Langue'].add(parsed.language.toUpperCase());
-            if (parsed.quality) filterValues['Qualité'].add(parsed.quality);
-            if (parsed.codec) filterValues['Codec'].add(parsed.codec);
+            if (parsed.language) filterData['Langue'].add(parsed.language.toUpperCase()); else hasMissing['Langue'] = true;
+            if (parsed.quality) filterData['Qualité'].add(parsed.quality); else hasMissing['Qualité'] = true;
+            if (parsed.codec) filterData['Codec'].add(parsed.codec); else hasMissing['Codec'] = true;
             if (parsed.source) {
-                if (Array.isArray(parsed.source)) {
-                    parsed.source.forEach(s => filterValues['Source'].add(s));
-                } else {
-                    filterValues['Source'].add(parsed.source);
-                }
-            }
+                if (Array.isArray(parsed.source)) parsed.source.forEach(s => filterData['Source'].add(s));
+                else filterData['Source'].add(parsed.source);
+            } else hasMissing['Source'] = true;
         });
 
-        Object.keys(filterValues).forEach((groupName, index) => {
-            const values = [...filterValues[groupName]].sort();
+        // 2. Render Checkboxes
+        let accordionHtml = '';
+        let index = 0;
+
+        // Order of appearance in the sidebar
+        const groups = ['Catégorie', 'Statut', 'Indexeur', 'Langue', 'Qualité', 'Codec', 'Source'];
+
+        groups.forEach(groupName => {
+            const values = [...filterData[groupName]].sort();
+
+            // Add "Non détecté" option if applicable for this group
+            // (Skipping for Status as "Inconnu" handles it, and usually everything has a status)
+            if (hasMissing[groupName] && groupName !== 'Statut') {
+                values.push('Non détecté');
+            }
+
             if (values.length === 0) return;
 
-            const collapseId = `collapse-kw-${index}`;
-            const headerId = `heading-kw-${index}`;
+            const collapseId = `collapse-filter-${index}`;
+            const headerId = `heading-filter-${index}`;
+
             let checkboxesHtml = '';
             values.forEach(value => {
-                // Ensure value is a string before calling toLowerCase() to prevent errors with numbers (e.g., quality 1080p)
                 const safeValue = String(value);
-                const checkboxId = `filter-${groupName.toLowerCase().replace(' ', '-')}-${safeValue.toLowerCase()}`;
+                const safeId = `filter-${groupName.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${safeValue.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${index}`;
                 checkboxesHtml += `
                     <div class="form-check">
-                        <input class="form-check-input keyword-filter-checkbox" type="checkbox" value="${safeValue}" id="${checkboxId}" data-group="${groupName}">
-                        <label class="form-check-label" for="${checkboxId}">${safeValue}</label>
+                        <input class="form-check-input filter-checkbox" type="checkbox" value="${safeValue}" id="${safeId}" data-group="${groupName}">
+                        <label class="form-check-label" for="${safeId}">${safeValue}</label>
                     </div>`;
             });
 
-            keywordFiltersContainer.append(`
-                <div class="accordion-item bg-dark">
+            // Open the first few groups by default if desired, or keep all closed
+            // Let's keep them closed by default to save space, user preference handles state.
+            accordionHtml += `
+                <div class="accordion-item bg-dark border-secondary">
                     <h2 class="accordion-header" id="${headerId}">
-                        <button class="accordion-button bg-secondary text-white collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}">${groupName}</button>
+                        <button class="accordion-button bg-secondary text-white collapsed p-2" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}">
+                            ${groupName}
+                        </button>
                     </h2>
-                    <div id="${collapseId}" class="accordion-collapse collapse"><div class="accordion-body">${checkboxesHtml}</div></div>
-                </div>`);
+                    <div id="${collapseId}" class="accordion-collapse collapse" data-bs-parent="#unified-filters-container">
+                        <div class="accordion-body p-2 text-white">${checkboxesHtml}</div>
+                    </div>
+                </div>`;
+            index++;
         });
+
+        container.html(accordionHtml);
     }
 
-    const FILTER_STORAGE_KEY = 'dashboardFilterState';
+    const FILTER_STORAGE_KEY = 'dashboardFilterState_v2'; // Changed key to force reset on update
 
     function saveFilterState() {
         const state = {
             title: filterTitle.val(),
             year: filterYear.val(),
-            category: filterCategory.val(),
-            status: filterStatus.val(),
-            indexer: filterIndexer.val(),
-            keywords: {}
+            checkboxes: {}
         };
-        $('.keyword-filter-checkbox').each(function() { state.keywords[this.id] = this.checked; });
+        // Store checkbox state by Value and Group, not just ID (which can change)
+        $('.filter-checkbox').each(function() {
+            const group = $(this).data('group');
+            const val = $(this).val();
+            const key = `${group}|${val}`;
+            if (this.checked) {
+                state.checkboxes[key] = true;
+            }
+        });
         localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(state));
     }
 
     function loadFilterState() {
         const savedStateJSON = localStorage.getItem(FILTER_STORAGE_KEY);
         if (savedStateJSON) {
-            const state = JSON.parse(savedStateJSON);
-            filterTitle.val(state.title || '');
-            filterYear.val(state.year || '');
-            filterCategory.val(state.category || '');
-            filterStatus.val(state.status || '');
-            filterIndexer.val(state.indexer || '');
-            if (state.keywords) {
-                $('.keyword-filter-checkbox').each(function() { this.checked = state.keywords[this.id] || false; });
+            try {
+                const state = JSON.parse(savedStateJSON);
+                filterTitle.val(state.title || '');
+                filterYear.val(state.year || '');
+
+                if (state.checkboxes) {
+                    $('.filter-checkbox').each(function() {
+                        const group = $(this).data('group');
+                        const val = $(this).val();
+                        const key = `${group}|${val}`;
+                        if (state.checkboxes[key]) {
+                            this.checked = true;
+                            // Also open the accordion if a child is checked
+                            $(this).closest('.accordion-collapse').addClass('show');
+                            $(this).closest('.accordion-item').find('.accordion-button').removeClass('collapsed');
+                        }
+                    });
+                }
+            } catch (e) {
+                console.error("Failed to load filter state:", e);
+                localStorage.removeItem(FILTER_STORAGE_KEY);
             }
-            // By default, if 'keywords' is not in the state, or if there's no state at all,
-            // the checkboxes will remain in their default unchecked state, which is the correct behavior.
         }
     }
 
     // --- Event Handlers & Initial Load ---
     $('#filter-title, #filter-year').on('input', () => { saveFilterState(); applyFilters(); });
-    $('#filter-category, #filter-status, #filter-indexer').on('change', () => { saveFilterState(); applyFilters(); });
-    $('#keyword-filters-container').on('change', '.keyword-filter-checkbox', () => { saveFilterState(); applyFilters(); });
+    // Use delegation for dynamic content
+    $('#unified-filters-container').on('change', '.filter-checkbox', () => { saveFilterState(); applyFilters(); });
 
     $('#reset-filters-btn').on('click', function() {
         filterTitle.val('');
         filterYear.val('');
-        filterCategory.val('');
-        filterStatus.val('');
-        filterIndexer.val('');
-        $('.keyword-filter-checkbox').prop('checked', false);
+        $('.filter-checkbox').prop('checked', false);
         saveFilterState();
         applyFilters();
     });
@@ -578,8 +584,7 @@ $(document).ready(function() {
                     // Update the global torrent list with new statuses
                     allTorrents = response.torrents;
                     // Repopulate filters and re-apply them to refresh the view
-                    populateStandardFilters();
-                    populateKeywordFilters();
+                    populateAllFilters();
                     loadFilterState();
                     applyFilters();
                 } else {
@@ -605,8 +610,7 @@ $(document).ready(function() {
     });
 
     // --- New Initial Load Sequence ---
-    populateStandardFilters();
-    populateKeywordFilters();
+    populateAllFilters();
     loadFilterState();
     applyFilters();
 
@@ -630,8 +634,7 @@ $(document).ready(function() {
                 success: function(response) {
                     if (response.status === 'success') {
                         allTorrents = response.torrents;
-                        populateStandardFilters();
-                        populateKeywordFilters();
+                        populateAllFilters();
                         loadFilterState();
                         applyFilters();
                     } else {
