@@ -882,79 +882,117 @@ $(document).ready(function() {
         modalEl.find('.modal-title').text(`Mapper : ${releaseDetails.title}`);
         new bootstrap.Modal(modalEl[0]).show();
 
-        if (window.currentMediaContext) {
-            // NOUVEAU FLUX PRÉ-MAPPING : Utilise le contexte pour rechercher par ID mais affiche TOUJOURS la modale pour confirmation.
-            const context = window.currentMediaContext;
-            console.log("FLUX PRÉ-MAPPING (Corrigé) : Contexte trouvé. Lancement du lookup par ID.", context);
-
-            const mediaType = context.media_type;
-            modalBody.find('#add-item-options-container').addClass('d-none');
-            modalEl.find('#confirm-add-and-map-btn').addClass('d-none');
-            const lookupContent = modalBody.find('#initial-lookup-content').removeClass('d-none').show();
-            lookupContent.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div><p class="mt-2">Recherche de la correspondance exacte...</p></div>');
-
-            fetch('/search/api/search/lookup', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                // Envoi de l'ID du média pour un résultat ciblé
-                body: JSON.stringify({ media_id: context.id, media_type: mediaType })
-            })
-            .then(response => response.json())
-            .then(data => {
-                const idPlaceholder = mediaType === 'tv' ? 'ID TVDB...' : 'ID TMDb...';
-                // On réutilise le même template que la recherche manuelle pour la cohérence
-                const modalHtml = `
-                    <div data-media-type="${mediaType}">
-                        <p class="text-muted small">Le média correspondant a été pré-sélectionné. Confirmez ou effectuez une recherche manuelle.</p>
-                        <h6>Recherche manuelle par Titre</h6>
-                        <div class="input-group mb-2"><input type="text" id="manual-search-input" class="form-control" value="${context.title}"></div>
-                        <div class="text-center text-muted my-2 small">OU</div>
-                        <h6>Recherche manuelle par ID</h6>
-                        <div class="input-group mb-3"><input type="number" id="manual-id-input" class="form-control" placeholder="${idPlaceholder}"></div>
-                        <button id="unified-search-button" class="btn btn-primary w-100 mb-3">Rechercher manuellement</button>
-                        <hr>
-                        <div id="lookup-results-container"></div>
-                    </div>`;
-                lookupContent.html(modalHtml);
-                // La réponse contient le résultat unique qui sera marqué comme "best_match" par le backend
-                displayResults(data.results, mediaType);
-            })
-            .catch(error => {
-                console.error("Erreur lors du lookup pré-mappé:", error);
-                lookupContent.html('<div class="alert alert-danger">Erreur lors de la récupération des détails du média.</div>');
-            });
-
-        } else {
-            console.log("FLUX CLASSIQUE : Aucun contexte, lancement du lookup.");
-            const mediaType = $('input[name="search_type"]:checked').val() === 'sonarr' ? 'tv' : 'movie';
-            modalBody.find('#add-item-options-container').addClass('d-none');
-            modalEl.find('#confirm-add-and-map-btn').addClass('d-none');
-            const lookupContent = modalBody.find('#initial-lookup-content').removeClass('d-none').show();
-            lookupContent.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div><p class="mt-2">Recherche des correspondances...</p></div>');
-            fetch('/search/api/search/lookup', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ term: releaseDetails.title, media_type: mediaType })
-            })
-            .then(response => response.json())
-            .then(data => {
-                const idPlaceholder = mediaType === 'tv' ? 'ID TVDB...' : 'ID TMDb...';
-                const modalHtml = `
-                    <div data-media-type="${mediaType}">
-                        <p class="text-muted small">Le meilleur résultat est surligné. Si ce n'est pas le bon, utilisez la recherche manuelle.</p>
-                        <h6>Recherche manuelle par Titre</h6>
-                        <div class="input-group mb-2"><input type="text" id="manual-search-input" class="form-control" value="${data.cleaned_query}"></div>
-                        <div class="text-center text-muted my-2 small">OU</div>
-                        <h6>Recherche manuelle par ID</h6>
-                        <div class="input-group mb-3"><input type="number" id="manual-id-input" class="form-control" placeholder="${idPlaceholder}"></div>
-                        <button id="unified-search-button" class="btn btn-primary w-100 mb-3">Rechercher manuellement</button>
-                        <hr>
-                        <div id="lookup-results-container"></div>
-                    </div>`;
-                lookupContent.html(modalHtml);
-                displayResults(data.results, mediaType);
-            });
+        // --- NOUVELLE LOGIQUE UNIVERSELLE DE CONTEXTE ---
+        // On essaie de construire le contexte à partir du bouton lui-même,
+        // ce qui le rend autonome et utilisable depuis le tableau de bord.
+        if (!window.currentMediaContext && (button.data('tmdb-id') || button.data('tvdb-id'))) {
+            const mediaType = button.data('media-type');
+            window.currentMediaContext = {
+                id: mediaType === 'tv' ? button.data('tvdb-id') : button.data('tmdb-id'),
+                media_type: mediaType,
+                title: button.data('title'),
+                year: button.data('year')
+            };
+            console.log("Contexte créé à partir du bouton:", window.currentMediaContext);
         }
+        // --- FIN DE LA NOUVELLE LOGIQUE ---
+
+        // --- NOUVELLE LOGIQUE DE MODALE UNIVERSELLE ---
+
+        // 1. Déterminer le type de média (logique déjà corrigée)
+        let mediaType = button.data('media-type');
+        if (!mediaType) {
+            mediaType = $('input[name="search_type"]:checked').val() === 'sonarr' ? 'tv' : 'movie';
+        }
+
+        // 2. Préparer la modale
+        modalBody.find('#add-item-options-container').addClass('d-none');
+        modalEl.find('#confirm-add-and-map-btn').addClass('d-none');
+        const lookupContent = modalBody.find('#initial-lookup-content').removeClass('d-none').show();
+
+        // 3. Construire le HTML de base de la modale, qui sera utilisé dans tous les cas
+        const idPlaceholder = mediaType === 'tv' ? 'ID TVDB...' : 'ID TMDb...';
+        const searchTitle = window.currentMediaContext ? window.currentMediaContext.title : releaseDetails.title;
+        let modalHtml = `
+            <div data-media-type="${mediaType}">
+                <p class="text-muted small">Le système a tenté une recherche automatique. Confirmez ou changez le type de média ci-dessous.</p>
+                <h6>Recherche manuelle par Titre</h6>
+                <div class="input-group mb-2"><input type="text" id="manual-search-input" class="form-control" value="${searchTitle}"></div>
+                <div class="text-center text-muted my-2 small">OU</div>
+                <h6>Recherche manuelle par ID</h6>
+                <div class="input-group mb-3"><input type="number" id="manual-id-input" class="form-control" placeholder="${idPlaceholder}"></div>
+                <button id="unified-search-button" class="btn btn-primary w-100 mb-3">Rechercher manuellement</button>
+                <hr>
+                <div id="lookup-results-container"><div class="text-center p-4"><div class="spinner-border text-primary"></div></div></div>
+            </div>`;
+        lookupContent.html(modalHtml);
+
+        // 4. Si on vient du tableau de bord, on injecte TOUJOURS les boutons radio
+        if (button.data('media-type')) {
+            const typeSelectorHtml = `
+                <div class="mb-3 border-bottom pb-3">
+                    <small class="text-muted">Type de média :</small>
+                    <div class="form-check form-check-inline ms-2">
+                        <input class="form-check-input" type="radio" name="modal_media_type" id="modal_media_type_tv" value="tv" ${mediaType === 'tv' ? 'checked' : ''}>
+                        <label class="form-check-label" for="modal_media_type_tv">Série (Sonarr)</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="modal_media_type" id="modal_media_type_movie" value="movie" ${mediaType === 'movie' ? 'checked' : ''}>
+                        <label class="form-check-label" for="modal_media_type_movie">Film (Radarr)</label>
+                    </div>
+                </div>`;
+            lookupContent.prepend(typeSelectorHtml);
+        }
+
+        // 5. Lancer la recherche (lookup)
+        let payload = { media_type: mediaType };
+        if (window.currentMediaContext && window.currentMediaContext.id) {
+            payload.media_id = window.currentMediaContext.id;
+        } else {
+            payload.term = releaseDetails.title;
+        }
+
+        fetch('/search/api/search/lookup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(response => response.json())
+        .then(data => {
+            displayResults(data.results, mediaType);
+        })
+        .catch(error => {
+            console.error("Erreur lors du lookup initial:", error);
+            $('#lookup-results-container').html('<div class="alert alert-danger">Erreur lors de la récupération des détails.</div>');
+        });
+    });
+
+    // --- NOUVEAU: Gère le changement de type de média DANS la modale ---
+    $('body').on('change', 'input[name="modal_media_type"]', function() {
+        const newMediaType = $(this).val();
+        const releaseDetails = modalEl.data('release-details');
+        const resultsContainer = $('#lookup-results-container');
+
+        if (!releaseDetails || !releaseDetails.title) return;
+
+        resultsContainer.html('<div class="text-center p-4"><div class="spinner-border text-primary"></div><p class="mt-2">Recherche des correspondances...</p></div>');
+
+        // Relancer la recherche de correspondance avec le nouveau type
+        fetch('/search/api/search/lookup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ term: releaseDetails.title, media_type: newMediaType })
+        })
+        .then(response => response.json())
+        .then(data => {
+            // Mettre à jour le data-media-type du conteneur parent pour que les actions suivantes (ex: "Voir les détails") aient le bon contexte
+            resultsContainer.closest('[data-media-type]').attr('data-media-type', newMediaType);
+            displayResults(data.results, newMediaType);
+        })
+        .catch(error => {
+            console.error("Erreur lors du changement de type de média:", error);
+            resultsContainer.html('<div class="alert alert-danger">Erreur lors de la recherche.</div>');
+        });
     });
 
     $('body').on('click', '#sonarrRadarrSearchModal .add-and-enrich-btn', function() {
@@ -1264,6 +1302,30 @@ $(document).ready(function() {
     // Écouteur pour les changements sur les cases à cocher
     $('#search-results-container').on('change', '.release-checkbox', function() {
         updateBatchActions();
+    });
+
+    // =================================================================
+    // ### BLOC 5 : RÉINITIALISATION DE LA MODALE & MAPPER ###
+    // =================================================================
+
+    modalEl.on('hidden.bs.modal', function () {
+        // 1. Vider le contenu dynamique
+        modalBody.find('#initial-lookup-content').empty();
+        modalBody.find('#add-item-options-container').addClass('d-none').find('#new-media-details-container').empty();
+        modalBody.find('#lookup-results-container').empty();
+
+        // 2. Réinitialiser le titre de la modale
+        modalEl.find('.modal-title').text('Mapper');
+
+        // 3. Cacher et réinitialiser les boutons du pied de page
+        modalEl.find('#confirm-add-and-map-btn').addClass('d-none').prop('disabled', false).text('Ajouter, Télécharger & Mapper');
+
+        // 4. Nettoyer les données stockées sur l'élément de la modale
+        modalEl.removeData('release-details');
+        modalEl.removeData('release-details-batch');
+
+        // 5. Réinitialiser le contexte global si nécessaire
+        window.currentMediaContext = null;
     });
 
     // Écouteur pour le bouton de mappage de lot

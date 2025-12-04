@@ -8,35 +8,50 @@ from tmdbv3api.exceptions import TMDbException
 
 logger = logging.getLogger(__name__)
 
+from requests.exceptions import RequestException
+
 def robust_request(retries=3, delay=10, backoff=2):
     """
     Décorateur pour rendre les appels à l'API TMDb plus robustes avec une politique de retry.
+    Il gère maintenant les erreurs TMDb 429 et les erreurs réseau génériques.
     """
     def decorator_robust_request(func):
         @functools.wraps(func)
         def wrapper_robust_request(*args, **kwargs):
             _retries, _delay = retries, delay
+            last_exception = None
             while _retries > 0:
                 try:
                     return func(*args, **kwargs)
-                except TMDbException as e:
-                    # Spécifiquement pour l'erreur "Too Many Requests" (status code 429)
-                    if 'Too Many Requests' in str(e) or 'status_code: 429' in str(e):
-                        logger.warning(f"TMDb: Erreur 'Too Many Requests' détectée. Attente de {_delay} secondes avant de réessayer...")
-                        time.sleep(_delay)
-                        _retries -= 1
-                        _delay *= backoff
+                except (TMDbException, RequestException) as e:
+                    # Gérer les erreurs de rate limiting de TMDb
+                    if isinstance(e, TMDbException) and ('Too Many Requests' in str(e) or 'status_code: 429' in str(e)):
+                        logger.warning(f"TMDb: Erreur 'Too Many Requests'. Attente de {_delay}s...")
+                    # Gérer les erreurs réseau génériques (timeout, connection error, etc.)
+                    elif isinstance(e, RequestException):
+                        logger.warning(f"TMDb: Erreur réseau détectée ({type(e).__name__}). Attente de {_delay}s...")
+                    # Si c'est une autre erreur TMDb, on ne réessaie pas.
                     else:
-                        # Pour les autres erreurs TMDb, on ne réessaie pas.
                         logger.error(f"TMDb: Erreur API non gérée par retry : {e}", exc_info=True)
-                        raise  # On relève l'exception
+                        raise
+
+                    last_exception = e
+                    time.sleep(_delay)
+                    _retries -= 1
+                    _delay *= backoff
+
                 except Exception as e:
-                    logger.error(f"TMDb: Erreur inattendue non-TMDb : {e}", exc_info=True)
-                    raise
-            logger.error(f"TMDb: Échec de l'appel à la fonction '{func.__name__}' après {retries} tentatives.")
-            # Si toutes les tentatives échouent, on peut soit retourner None, soit relever l'exception finale.
-            # Relever l'exception est souvent mieux pour que l'appelant sache qu'il y a eu un problème persistant.
-            raise TMDbException(f"Échec final de l'appel à '{func.__name__}' après plusieurs tentatives.")
+                    logger.error(f"TMDb: Erreur inattendue non-TMDb/non-réseau : {e}", exc_info=True)
+                    raise # Pour les erreurs vraiment inattendues, on arrête tout.
+
+            logger.error(f"TMDb: Échec final de l'appel à '{func.__name__}' après {retries} tentatives.")
+            # Relever la dernière exception capturée pour un contexte clair
+            if last_exception:
+                raise last_exception
+            else:
+                # Fallback si la boucle se termine sans exception (ne devrait pas arriver)
+                raise TMDbException(f"Échec inexpliqué de l'appel à '{func.__name__}'.")
+
         return wrapper_robust_request
     return decorator_robust_request
 
@@ -138,6 +153,39 @@ class TheMovieDBClient:
             return []
         finally:
             # 4. Restaurer la langue originale, quoi qu'il arrive
+            self.tmdb.language = original_lang
+
+    @robust_request()
+    def search_series(self, title, lang='fr-FR'):
+        """
+        Recherche une série par titre sur TMDb.
+        """
+        if not self.api_key:
+            logger.error("La clé API TMDb n'est pas disponible.")
+            return []
+        original_lang = self.tmdb.language
+        try:
+            self.tmdb.language = lang
+            search = Search()
+            results = search.tv_shows(term=title)
+            formatted_results = []
+            for res in results:
+                first_air_date = str(getattr(res, 'first_air_date', ''))
+                formatted_results.append({
+                    'id': getattr(res, 'id', None),
+                    'name': str(getattr(res, 'name', 'Titre non disponible')),
+                    'original_name': str(getattr(res, 'original_name', '')),
+                    'overview': str(getattr(res, 'overview', '')),
+                    'poster_path': str(getattr(res, 'poster_path', '')),
+                    'first_air_date': first_air_date,
+                    'year': first_air_date.split('-')[0] if first_air_date else 'N/A',
+                    'poster_url': f"https://image.tmdb.org/t/p/w500{getattr(res, 'poster_path', '')}" if getattr(res, 'poster_path', None) else ''
+                })
+            return formatted_results
+        except Exception as e:
+            logger.error(f"Erreur lors de la recherche de série TMDb pour '{title}': {e}", exc_info=True)
+            return []
+        finally:
             self.tmdb.language = original_lang
 
     @robust_request()

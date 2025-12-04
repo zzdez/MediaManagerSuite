@@ -1,0 +1,838 @@
+{% extends "layout.html" %}
+
+{% block title %}MediaManagerSuite - Tableau de Bord{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <!-- Colonne des résultats (principale) -->
+        <div class="col-md-10">
+            <h1 class="mt-4">Tableau de Bord des Nouveautés</h1>
+            <div class="d-flex justify-content-between align-items-end mb-3">
+                <h4 id="results-counter" class="text-muted mb-0"></h4>
+                <div class="text-end text-muted small">
+                    <div id="prowlarr-refresh-info">
+                        Dernier scan Prowlarr : <span id="last-prowlarr-refresh-date">{{ refresh_times.prowlarr | date_format if refresh_times.prowlarr else 'Jamais' }}</span>
+                    </div>
+                    <div id="status-refresh-info">
+                        Dernière MAJ statuts : <span id="last-status-refresh-date">{{ refresh_times.status | date_format if refresh_times.status else 'Jamais' }}</span>
+                    </div>
+                </div>
+            </div>
+            <p>Cliquez sur le bouton pour rechercher les nouvelles publications depuis votre dernière visite.</p>
+            <div class="d-flex align-items-center mb-4">
+                <button id="refresh-btn" class="btn btn-primary">
+                    <i class="fas fa-sync-alt"></i> Rafraîchir les nouveautés
+                </button>
+                <button id="refresh-statuses-btn" class="btn btn-info ms-2">
+                    <i class="fas fa-tags"></i> Rafraîchir les statuts
+                </button>
+                <button id="mark-all-seen-btn" class="btn btn-success ms-2">
+                    <i class="fas fa-check-double"></i> Tout marquer comme vu
+                </button>
+                <div class="ms-4 d-flex align-items-center">
+                    <label for="cleanup-days" class="form-label me-2 mb-0">Garder (jours):</label>
+                    <input type="number" id="cleanup-days" class="form-control" value="7" min="0" max="30" style="width: 80px;">
+                    <button id="cleanup-btn" class="btn btn-secondary ms-2">
+                        <i class="fas fa-broom"></i> Nettoyer
+                    </button>
+                </div>
+            </div>
+
+            <div id="loading-spinner" style="display: none;" class="text-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="sr-only">Chargement...</span>
+                </div>
+                <p>Rafraîchissement des données en cours... Cette opération peut prendre un moment.</p>
+            </div>
+
+            <div id="torrents-container">
+                <!-- Les résultats seront injectés ici -->
+            </div>
+        </div>
+
+        <!-- Colonne des filtres (latérale droite) -->
+        <div class="col-md-2" style="position: sticky; top: 1rem; height: 95vh; overflow-y: auto;">
+            <div class="filters-container p-3 rounded bg-dark">
+                <h4><i class="fas fa-filter"></i> Filtres</h4>
+                <button id="reset-filters-btn" class="btn btn-secondary btn-sm mb-3">Réinitialiser les filtres</button>
+
+                <!-- Filtre par Titre -->
+                <div class="mb-3">
+                    <label for="filter-title" class="form-label">Titre</label>
+                    <input type="text" class="form-control" id="filter-title" placeholder="Rechercher par titre...">
+                </div>
+
+                <!-- Filtre par Année -->
+                <div class="mb-3">
+                    <label for="filter-year" class="form-label">Année (plus récent que)</label>
+                    <input type="number" class="form-control" id="filter-year" placeholder="Ex: 2023">
+                </div>
+
+                <hr>
+
+                <!-- Filtres Unifiés (Checkboxes) -->
+                <div id="unified-filters-container" class="accordion">
+                    <!-- Les groupes de filtres (Catégorie, Statut, Indexeur, Langue, etc.) seront générés ici -->
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- La modale de mapping est définie dans layout.html, nous n'avons pas besoin de la redéfinir ici -->
+
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+$(document).ready(function() {
+
+    // --- Global state ---
+    let allTorrents = {{ torrents|tojson }};
+    const KEYWORD_FILTER_STORAGE_KEY = 'dashboardKeywordFilterState';
+
+    // --- DOM Elements ---
+    const container = $('#torrents-container');
+    const filterTitle = $('#filter-title');
+    const filterYear = $('#filter-year');
+    // Other filters are now dynamic checkboxes
+
+    function generateStatusBadges(statuses) {
+        if (!statuses) return '<span class="badge bg-secondary ms-1">Inconnu</span>';
+
+        // --- NOUVEAU : Logique de rétrocompatibilité ---
+        // Si 'statuses' est un tableau, c'est l'ancien format.
+        if (Array.isArray(statuses)) {
+            const legacyStatusMap = {
+                'SONARR_MONITORED': { text: 'Sonarr (Surveillé)', class: 'bg-primary' },
+                'SONARR_OBTAINED': { text: 'Sonarr (Obtenu)', class: 'bg-success' },
+                'RADARR_MONITORED': { text: 'Radarr (Surveillé)', class: 'bg-warning text-dark' },
+                'RADARR_OBTAINED': { text: 'Radarr (Obtenu)', class: 'bg-warning text-dark' },
+                'PLEX_PRESENT': { text: 'Plex', class: 'bg-purple' },
+                'ARCHIVED': { text: 'Archivé', class: 'bg-orange' },
+                'UNKNOWN_ID': { text: 'Inconnu', class: 'bg-secondary' },
+                'NOT_MANAGED': { text: 'Non Géré', class: 'bg-secondary' }
+            };
+            let badgesHtml = '';
+            statuses.forEach(status => {
+                const badgeInfo = legacyStatusMap[status];
+                if (badgeInfo) {
+                    badgesHtml += `<span class="badge ${badgeInfo.class} ms-1">${badgeInfo.text}</span>`;
+                }
+            });
+            return badgesHtml || '<span class="badge bg-dark ms-1">Inconnu</span>';
+        }
+        // --- Fin de la logique de rétrocompatibilité ---
+
+        // Si ce n'est pas un tableau, c'est le nouvel objet structuré.
+        let badgesHtml = '';
+
+        // Badge Radarr (simple)
+        if (statuses.radarr) {
+            const isObtained = statuses.radarr.status === 'OBTAINED';
+            badgesHtml += `<span class="badge bg-warning text-dark ms-1">Radarr (${isObtained ? 'Obtenu' : 'Surveillé'})</span>`;
+        }
+
+        // Badges Sonarr (détaillés)
+        if (statuses.sonarr) {
+            badgesHtml += `<span class="badge bg-primary ms-1">Sonarr (Surveillé)</span>`;
+
+            const s = statuses.sonarr;
+            // 1. Statut de l'épisode
+            if (s.episode_status === 'OBTAINED') {
+                badgesHtml += `<span class="badge bg-success ms-1">Épisode Obtenu</span>`;
+            }
+
+            // 2. Statut de la saison
+            if (s.season_status) {
+                const ss = s.season_status;
+                if (ss.is_complete) {
+                    badgesHtml += `<span class="badge bg-success ms-1">Saison ${ss.season_number} Obtenue</span>`;
+                } else {
+                    badgesHtml += `<span class="badge bg-info ms-1">Saison ${ss.season_number} (${ss.files_count}/${ss.total_episodes})</span>`;
+                }
+            }
+
+            // 3. Statut de la série
+            if (s.series_status) {
+                 const ser = s.series_status;
+                 if (ser.total_seasons > 0) { // N'afficher que si l'info est pertinente
+                    const seriesClass = ser.complete_seasons === ser.total_seasons ? 'bg-success' : 'bg-info';
+                    badgesHtml += `<span class="badge ${seriesClass} ms-1">Série (${ser.complete_seasons}/${ser.total_seasons})</span>`;
+                 }
+            }
+        }
+
+        // Badge Plex
+        if (statuses.plex) {
+            badgesHtml += `<span class="badge bg-purple ms-1">Plex</span>`;
+        }
+
+        // Badge Archive
+        if (statuses.archive) {
+            badgesHtml += `<span class="badge bg-orange ms-1">Archivé</span>`;
+        }
+
+        // Fallback si aucun autre badge n'a été généré
+        if (badgesHtml === '') {
+            const summaryMap = {
+                'NOT_MANAGED': { text: 'Non Géré', class: 'bg-secondary' },
+                'UNKNOWN': { text: 'Inconnu', class: 'bg-dark' }
+            };
+            const summaryInfo = summaryMap[statuses.summary] || summaryMap['UNKNOWN'];
+            badgesHtml = `<span class="badge ${summaryInfo.class} ms-1">${summaryInfo.text}</span>`;
+        }
+
+        return badgesHtml;
+    }
+
+    function isUnknown(torrent) {
+        // Un torrent est "Inconnu" s'il n'a ni tmdbId ni tvdbId.
+        return !torrent.tmdbId && !torrent.tvdbId;
+    }
+
+    // --- Date Formatting Helper ---
+    function formatDynamicDate(isoString) {
+        if (!isoString) return "";
+        try {
+            const dtObject = new Date(isoString);
+            const now = new Date();
+            const difference = now - dtObject;
+
+            if (difference < 24 * 3600 * 1000) { // Less than 24 hours
+                const hours = Math.floor(difference / 3600000);
+                const minutes = Math.floor((difference % 3600000) / 60000);
+                if (hours > 0) return `Il y a ${hours}h`;
+                if (minutes > 0) return `Il y a ${minutes}min`;
+                return "À l'instant";
+            } else {
+                return dtObject.toLocaleDateString('fr-FR', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            }
+        } catch (e) {
+            return "Date invalide";
+        }
+    }
+
+    // --- Core Rendering and Filtering Logic ---
+    function renderTorrents(torrentsToRender) {
+        container.empty();
+        if (torrentsToRender.length === 0) {
+            container.html('<div class="alert alert-info">Aucun torrent ne correspond à vos filtres.</div>');
+            return;
+        }
+
+        // Sort: New items first, then by publish date
+        torrentsToRender.sort((a, b) => {
+            if (a.is_new && !b.is_new) return -1;
+            if (!a.is_new && b.is_new) return 1;
+            return new Date(b.publishDate) - new Date(a.publishDate);
+        });
+
+        torrentsToRender.forEach(torrent => {
+            const sizeInGB = ((torrent.size || 0) / (1024 * 1024 * 1024)).toFixed(2);
+            const newBadge = torrent.is_new ? '<span class="badge bg-info ms-2">Nouveau</span>' : '';
+            let statusBadges = generateStatusBadges(torrent.statuses);
+
+            // Add 'Inconnu' badge if IDs are missing and no other status is dominant
+            if (isUnknown(torrent)) {
+                // Check if we already have an "Inconnu" or "Non Géré" badge to avoid duplication, though usually generateStatusBadges handles it.
+                // But specifically for the "Missing IDs" definition of unknown:
+                if (!statusBadges.includes('Inconnu') && !statusBadges.includes('Non Géré')) {
+                     statusBadges += '<span class="badge bg-secondary ms-1">Inconnu (ID Manquant)</span>';
+                }
+            }
+
+            const yearMatch = (torrent.title || '').match(/\b(19[89]\d|20\d{2})\b/);
+            const year = yearMatch ? yearMatch[1] : null;
+
+            const detailsButtonHtml = torrent.detailsUrl ? `<button class="btn btn-info btn-sm details-btn" data-url="${torrent.detailsUrl}">Détails</button>` : `<button class="btn btn-info btn-sm" disabled>Détails</button>`;
+            const indexerBadge = torrent.indexer ? `<span class="badge bg-secondary me-1">${torrent.indexer}</span>` : '';
+
+            let categoryBadgeClass = 'bg-dark';
+            if (torrent.type === 'movie') categoryBadgeClass = 'bg-primary';
+            else if (torrent.type === 'tv') categoryBadgeClass = 'bg-success';
+            const categoryBadge = torrent.category ? `<span class="badge ${categoryBadgeClass}">${torrent.category}</span>` : '';
+
+            const torrentCard = `
+                <div class="card mb-3" id="torrent-card-${torrent.guid}">
+                    <div class="card-body">
+                        <h5 class="card-title">${torrent.title || 'Titre Inconnu'} ${newBadge}</h5>
+                        <div>${statusBadges}</div>
+                        <div class="mt-2">
+                            ${indexerBadge}
+                            ${categoryBadge}
+                        </div>
+                        <h6 class="card-subtitle mb-2 mt-2 text-muted">
+                            <i class="fas fa-database"></i> ${sizeInGB} GB |
+                            <i class="fas fa-arrow-up text-success"></i> ${torrent.seeders} |
+                            <i class="fas fa-arrow-down text-danger"></i> ${torrent.leechers} |
+                            <i class="fas fa-calendar-alt"></i> ${formatDynamicDate(torrent.publishDate)}
+                        </h6>
+                        ${detailsButtonHtml}
+                        <button class="btn btn-primary btn-sm download-and-map-btn"
+                                data-hash="${torrent.hash}" data-guid="${torrent.guid}" data-title="${torrent.title}"
+                                data-download-link="${torrent.downloadUrl}" data-indexer-id="${torrent.indexerId}"
+                                data-media-type="${torrent.type}" data-tmdb-id="${torrent.tmdbId || ''}"
+                                data-tvdb-id="${torrent.tvdbId || ''}" data-year="${year || ''}">
+                            <i class="fas fa-download"></i> & Mapper
+                        </button>
+                        <button class="btn btn-secondary btn-sm" data-action="ignore" data-guid="${torrent.guid}">
+                            <i class="fas fa-eye-slash"></i> Ignorer
+                        </button>
+                        ${torrent.is_new ? `
+                        <button class="btn btn-outline-success btn-sm ms-2" data-action="mark-seen" data-guid="${torrent.guid}">
+                            <i class="fas fa-check"></i> Marquer comme vu
+                        </button>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+            container.append(torrentCard);
+        });
+    }
+
+    function applyFilters() {
+        const titleFilter = filterTitle.val().toLowerCase();
+        const yearFilter = parseInt(filterYear.val(), 10) || 0;
+
+        // Collect all active checkbox filters
+        const activeFilters = {};
+        $('.filter-checkbox:checked').each(function() {
+            const group = $(this).data('group');
+            if (!activeFilters[group]) {
+                activeFilters[group] = [];
+            }
+            activeFilters[group].push($(this).val().toLowerCase()); // Use lowercase for comparison
+        });
+
+        const filteredTorrents = allTorrents.filter(torrent => {
+            // 1. Text Filters
+            if (titleFilter && !(torrent.title || '').toLowerCase().includes(titleFilter)) return false;
+
+            const yearMatch = torrent.title.match(/\b(19\d{2}|20\d{2})\b/);
+            const year = yearMatch ? parseInt(yearMatch[1], 10) : 0;
+            if (yearFilter && (!year || year < yearFilter)) return false;
+
+            // 2. Checkbox Filters
+            for (const group in activeFilters) {
+                const checkedValues = activeFilters[group];
+                if (checkedValues.length === 0) continue; // Skip empty groups
+
+                let isMatch = false;
+                let valueToTest = null;
+
+                // Map data sources based on group name
+                if (group === 'Catégorie') valueToTest = torrent.category;
+                else if (group === 'Indexeur') valueToTest = torrent.indexer;
+                else if (group === 'Statut') {
+                    // Special complex handling for Status
+                    if (Array.isArray(torrent.statuses)) {
+                        const legacyStatusMap = {
+                            'SONARR_MONITORED': 'Surveillé', 'SONARR_OBTAINED': 'Obtenu',
+                            'RADARR_MONITORED': 'Surveillé', 'RADARR_OBTAINED': 'Obtenu',
+                            'PLEX_PRESENT': 'Plex', 'ARCHIVED': 'Archivé',
+                            'UNKNOWN_ID': 'Inconnu', 'NOT_MANAGED': 'Non Géré'
+                        };
+                        isMatch = torrent.statuses.some(s => checkedValues.includes((legacyStatusMap[s] || '').toLowerCase()));
+                    } else {
+                        const summary = torrent.statuses.summary;
+                        const statusGroupMap = {
+                            'OBTAINED': 'Obtenu', 'MONITORED': 'Surveillé',
+                            'ARCHIVED': 'Archivé', 'NOT_MANAGED': 'Non Géré',
+                            'UNKNOWN': 'Inconnu'
+                        };
+                        let mappedStatus = statusGroupMap[summary];
+
+                        // Handle "Inconnu" specially: explicit status OR missing IDs
+                        if (isUnknown(torrent) && mappedStatus !== 'Inconnu') {
+                             mappedStatus = 'Inconnu'; // Treat missing IDs as Inconnu for filtering
+                        }
+
+                        isMatch = checkedValues.includes((mappedStatus || '').toLowerCase());
+                    }
+                    if (!isMatch) return false; // Fail immediately if status doesn't match
+                    continue; // Continue to next group if status matched
+                }
+                else {
+                    // Keyword filters (Langue, Codec, etc.) from parsed_data
+                    const parsed = torrent.parsed_data || {};
+                    switch (group) {
+                        case 'Langue': valueToTest = (parsed.language || '').toUpperCase(); break;
+                        case 'Qualité': valueToTest = parsed.quality; break;
+                        case 'Codec': valueToTest = parsed.codec; break;
+                        case 'Source': valueToTest = parsed.source; break;
+                    }
+                }
+
+                // If filter is active but data is missing
+                if (!valueToTest && group !== 'Statut') {
+                    // Match if "non détecté" is checked
+                    if (checkedValues.includes('non détecté')) {
+                        isMatch = true;
+                    } else {
+                        return false;
+                    }
+                } else if (valueToTest) {
+                    // Generic array/string matching logic
+                    if (Array.isArray(valueToTest)) {
+                        isMatch = valueToTest.some(item => checkedValues.includes(String(item).toLowerCase()));
+                    } else {
+                        isMatch = checkedValues.includes(String(valueToTest).toLowerCase());
+                    }
+                }
+
+                if (!isMatch) return false;
+            }
+
+            return true;
+        });
+
+        renderTorrents(filteredTorrents);
+
+        // Update results counter
+        const counterElement = $('#results-counter');
+        if (allTorrents.length > 0) {
+            counterElement.text(`Résultats (${filteredTorrents.length} / ${allTorrents.length})`);
+        } else {
+            counterElement.text('');
+        }
+    }
+
+    function populateAllFilters() {
+        const container = $('#unified-filters-container');
+        container.empty();
+
+        // 1. Data Collection
+        const filterData = {
+            'Catégorie': new Set(),
+            'Statut': new Set(),
+            'Indexeur': new Set(),
+            'Langue': new Set(),
+            'Qualité': new Set(),
+            'Codec': new Set(),
+            'Source': new Set()
+        };
+
+        // Track presence of missing data to optionally add "Non détecté"
+        const hasMissing = {
+            'Catégorie': false, 'Statut': false, 'Indexeur': false,
+            'Langue': false, 'Qualité': false, 'Codec': false, 'Source': false
+        };
+
+        allTorrents.forEach(torrent => {
+            // Standard fields
+            if (torrent.category) filterData['Catégorie'].add(torrent.category); else hasMissing['Catégorie'] = true;
+            if (torrent.indexer) filterData['Indexeur'].add(torrent.indexer); else hasMissing['Indexeur'] = true;
+
+            // Status field
+            if (Array.isArray(torrent.statuses)) {
+                const legacyStatusMap = {
+                    'SONARR_MONITORED': 'Surveillé', 'SONARR_OBTAINED': 'Obtenu',
+                    'RADARR_MONITORED': 'Surveillé', 'RADARR_OBTAINED': 'Obtenu',
+                    'PLEX_PRESENT': 'Plex', 'ARCHIVED': 'Archivé',
+                    'UNKNOWN_ID': 'Inconnu', 'NOT_MANAGED': 'Non Géré'
+                };
+                torrent.statuses.forEach(s => { if (legacyStatusMap[s]) filterData['Statut'].add(legacyStatusMap[s]); });
+            } else if (torrent.statuses && torrent.statuses.summary) {
+                const summary = torrent.statuses.summary;
+                const statusGroupMap = {
+                    'OBTAINED': 'Obtenu', 'MONITORED': 'Surveillé',
+                    'ARCHIVED': 'Archivé', 'NOT_MANAGED': 'Non Géré',
+                    'UNKNOWN': 'Inconnu'
+                };
+                if (statusGroupMap[summary]) filterData['Statut'].add(statusGroupMap[summary]);
+                if (isUnknown(torrent)) filterData['Statut'].add('Inconnu');
+            }
+
+            // Keyword fields
+            const parsed = torrent.parsed_data || {};
+            if (parsed.language) filterData['Langue'].add(parsed.language.toUpperCase()); else hasMissing['Langue'] = true;
+            if (parsed.quality) filterData['Qualité'].add(parsed.quality); else hasMissing['Qualité'] = true;
+            if (parsed.codec) filterData['Codec'].add(parsed.codec); else hasMissing['Codec'] = true;
+            if (parsed.source) {
+                if (Array.isArray(parsed.source)) parsed.source.forEach(s => filterData['Source'].add(s));
+                else filterData['Source'].add(parsed.source);
+            } else hasMissing['Source'] = true;
+        });
+
+        // 2. Render Checkboxes
+        let accordionHtml = '';
+        let index = 0;
+
+        // Order of appearance in the sidebar
+        const groups = ['Catégorie', 'Statut', 'Indexeur', 'Langue', 'Qualité', 'Codec', 'Source'];
+
+        groups.forEach(groupName => {
+            const values = [...filterData[groupName]].sort();
+
+            // Add "Non détecté" option if applicable for this group
+            // (Skipping for Status as "Inconnu" handles it, and usually everything has a status)
+            if (hasMissing[groupName] && groupName !== 'Statut') {
+                values.push('Non détecté');
+            }
+
+            if (values.length === 0) return;
+
+            const collapseId = `collapse-filter-${index}`;
+            const headerId = `heading-filter-${index}`;
+
+            let checkboxesHtml = '';
+            values.forEach(value => {
+                const safeValue = String(value);
+                const safeId = `filter-${groupName.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${safeValue.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${index}`;
+                checkboxesHtml += `
+                    <div class="form-check">
+                        <input class="form-check-input filter-checkbox" type="checkbox" value="${safeValue}" id="${safeId}" data-group="${groupName}">
+                        <label class="form-check-label" for="${safeId}">${safeValue}</label>
+                    </div>`;
+            });
+
+            // Open the first few groups by default if desired, or keep all closed
+            // Let's keep them closed by default to save space, user preference handles state.
+            accordionHtml += `
+                <div class="accordion-item bg-dark border-secondary">
+                    <h2 class="accordion-header" id="${headerId}">
+                        <button class="accordion-button bg-secondary text-white collapsed p-2" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}">
+                            ${groupName}
+                        </button>
+                    </h2>
+                    <div id="${collapseId}" class="accordion-collapse collapse" data-bs-parent="#unified-filters-container">
+                        <div class="accordion-body p-2 text-white">${checkboxesHtml}</div>
+                    </div>
+                </div>`;
+            index++;
+        });
+
+        container.html(accordionHtml);
+    }
+
+    const FILTER_STORAGE_KEY = 'dashboardFilterState_v2'; // Changed key to force reset on update
+
+    function saveFilterState() {
+        const state = {
+            title: filterTitle.val(),
+            year: filterYear.val(),
+            checkboxes: {}
+        };
+        // Store checkbox state by Value and Group, not just ID (which can change)
+        $('.filter-checkbox').each(function() {
+            const group = $(this).data('group');
+            const val = $(this).val();
+            const key = `${group}|${val}`;
+            if (this.checked) {
+                state.checkboxes[key] = true;
+            }
+        });
+        localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(state));
+    }
+
+    function loadFilterState() {
+        const savedStateJSON = localStorage.getItem(FILTER_STORAGE_KEY);
+        if (savedStateJSON) {
+            try {
+                const state = JSON.parse(savedStateJSON);
+                filterTitle.val(state.title || '');
+                filterYear.val(state.year || '');
+
+                if (state.checkboxes) {
+                    $('.filter-checkbox').each(function() {
+                        const group = $(this).data('group');
+                        const val = $(this).val();
+                        const key = `${group}|${val}`;
+                        if (state.checkboxes[key]) {
+                            this.checked = true;
+                            // Also open the accordion if a child is checked
+                            $(this).closest('.accordion-collapse').addClass('show');
+                            $(this).closest('.accordion-item').find('.accordion-button').removeClass('collapsed');
+                        }
+                    });
+                }
+            } catch (e) {
+                console.error("Failed to load filter state:", e);
+                localStorage.removeItem(FILTER_STORAGE_KEY);
+            }
+        }
+    }
+
+    // --- Event Handlers & Initial Load ---
+    $('#filter-title, #filter-year').on('input', () => { saveFilterState(); applyFilters(); });
+    // Use delegation for dynamic content
+    $('#unified-filters-container').on('change', '.filter-checkbox', () => { saveFilterState(); applyFilters(); });
+
+    $('#reset-filters-btn').on('click', function() {
+        filterTitle.val('');
+        filterYear.val('');
+        $('.filter-checkbox').prop('checked', false);
+        saveFilterState();
+        applyFilters();
+    });
+
+    // --- Refresh Statuses Button Logic ---
+    $('#refresh-statuses-btn').on('click', function() {
+        const button = $(this);
+        const spinner = $('#loading-spinner');
+        const container = $('#torrents-container');
+
+        button.prop('disabled', true);
+        spinner.show();
+        // Don't empty the container, we're just updating in place
+
+        $.ajax({
+            url: "{{ url_for('dashboard_bp.refresh_statuses') }}",
+            type: 'GET',
+            success: function(response) {
+                if (response.status === 'success') {
+                    // Update the global torrent list with new statuses
+                    allTorrents = response.torrents;
+
+                    // Update the timestamp display if provided
+                    if (response.last_refresh_date) {
+                        $('#last-status-refresh-date').text(formatDynamicDate(response.last_refresh_date));
+                    }
+
+                    // Repopulate filters and re-apply them to refresh the view
+                    populateAllFilters();
+                    loadFilterState();
+                    applyFilters();
+                } else {
+                    // Show an alert on top of the existing content
+                    container.prepend(`<div class="alert alert-danger alert-dismissible fade show" role="alert">
+                        <strong>Erreur lors du rafraîchissement des statuts:</strong> ${response.message || 'Une erreur inattendue est survenue.'}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>`);
+                }
+            },
+            error: function(xhr) {
+                const errorMsg = xhr.responseJSON ? xhr.responseJSON.message : 'Erreur de communication avec le serveur.';
+                 container.prepend(`<div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <strong>Erreur critique:</strong> ${errorMsg} Veuillez vérifier les logs de l'application.
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>`);
+            },
+            complete: function() {
+                button.prop('disabled', false);
+                spinner.hide();
+            }
+        });
+    });
+
+    // --- New Initial Load Sequence ---
+    populateAllFilters();
+    loadFilterState();
+    applyFilters();
+
+    // --- Refresh Button Logic ---
+    // --- New Refresh Logic ---
+    function performRefresh(markAsSeenFirst) {
+        const button = $('#refresh-btn');
+        const spinner = $('#loading-spinner');
+        const container = $('#torrents-container');
+
+        button.prop('disabled', true);
+        spinner.show();
+        container.empty();
+
+        window.currentMediaContext = null;
+
+        const executeRefresh = () => {
+            $.ajax({
+                url: "{{ url_for('dashboard_bp.refresh_torrents') }}",
+                type: 'GET',
+                success: function(response) {
+                    if (response.status === 'success') {
+                        allTorrents = response.torrents;
+
+                        // Update the timestamp display if provided
+                        if (response.last_refresh_date) {
+                            $('#last-prowlarr-refresh-date').text(formatDynamicDate(response.last_refresh_date));
+                        }
+
+                        populateAllFilters();
+                        loadFilterState();
+                        applyFilters();
+                    } else {
+                        container.html(`<div class="alert alert-danger"><strong>Erreur :</strong> ${response.message || 'Erreur inattendue.'}</div>`);
+                    }
+                },
+                error: function(xhr) {
+                    const errorMsg = xhr.responseJSON ? xhr.responseJSON.message : 'Erreur serveur.';
+                    container.html(`<div class="alert alert-danger"><strong>Erreur critique :</strong> ${errorMsg}</div>`);
+                },
+                complete: function() {
+                    button.prop('disabled', false);
+                    spinner.hide();
+                }
+            });
+        };
+
+        if (markAsSeenFirst) {
+            $.ajax({
+                url: "{{ url_for('dashboard_bp.mark_all_as_seen') }}",
+                type: 'POST',
+                success: function() {
+                    executeRefresh();
+                },
+                error: function() {
+                    alert('Erreur lors du marquage des torrents comme vus. Le rafraîchissement continue...');
+                    executeRefresh();
+                }
+            });
+        } else {
+            executeRefresh();
+        }
+    }
+
+    $('#refresh-btn').on('click', function() {
+        if (confirm("Voulez-vous marquer tous les éléments actuels comme vus avant de rafraîchir ?")) {
+            performRefresh(true);
+        } else {
+            performRefresh(false);
+        }
+    });
+
+    // --- Event delegation for action buttons ---
+    $('#mark-all-seen-btn').on('click', function() {
+        if (!confirm("Êtes-vous sûr de vouloir marquer tous les torrents 'Nouveau' comme vus ?")) {
+            return;
+        }
+        $.ajax({
+            url: "{{ url_for('dashboard_bp.mark_all_as_seen') }}",
+            type: 'POST',
+            success: function(response) {
+                allTorrents.forEach(t => { t.is_new = false; });
+                applyFilters(); // Re-render to remove badges and buttons
+                alert(response.message || "Opération réussie !");
+            },
+            error: function(xhr) {
+                alert('Erreur : ' + (xhr.responseJSON ? xhr.responseJSON.message : 'Erreur serveur.'));
+            }
+        });
+    });
+
+    $('#torrents-container').on('click', 'button[data-action="mark-seen"]', function() {
+        const torrentGuid = $(this).data('guid');
+        const button = $(this);
+
+        $.ajax({
+            url: "{{ url_for('dashboard_bp.mark_as_seen') }}",
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ hash: torrentGuid }),
+            success: function(response) {
+                const torrent = allTorrents.find(t => t.guid === torrentGuid);
+                if (torrent) {
+                    torrent.is_new = false;
+                }
+                // Visually remove the 'Nouveau' badge and the button itself
+                const cardBody = button.closest('.card-body');
+                cardBody.find('.badge.bg-info').remove(); // Removes 'Nouveau' badge
+                button.remove(); // Removes the button
+            },
+            error: function(xhr) {
+                alert('Erreur : ' + (xhr.responseJSON ? xhr.responseJSON.message : 'Erreur serveur.'));
+            }
+        });
+    });
+
+    $('#torrents-container').on('click', 'button[data-action="ignore"]', function() {
+        const torrentGuid = $(this).data('guid');
+        const cardElement = $(this).closest('.card');
+
+        $.ajax({
+            url: "/dashboard/api/ignore",
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ id: torrentId }),
+            success: function(response) {
+                if (response.status === 'success') {
+                    cardElement.fadeOut(500, function() { $(this).remove(); });
+                } else {
+                    alert('Erreur lors de l_ignorance du torrent: ' + response.message);
+                }
+            },
+            error: function() {
+                alert('Erreur de communication avec le serveur.');
+            }
+        });
+    });
+
+    // --- Cleanup Button Logic ---
+    $('#cleanup-btn').on('click', function() {
+        const daysToKeep = $('#cleanup-days').val();
+        if (daysToKeep === '' || parseInt(daysToKeep) < 0 || parseInt(daysToKeep) > 30) {
+            alert('Veuillez entrer un nombre de jours valide entre 0 et 30.');
+            return;
+        }
+
+        if (!confirm(`Êtes-vous sûr de vouloir supprimer les torrents de plus de ${daysToKeep} jours ?`)) {
+            return;
+        }
+
+        $.ajax({
+            url: "{{ url_for('dashboard_bp.cleanup_torrents') }}",
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ days: daysToKeep }),
+            success: function(response) {
+                alert(response.message || 'Nettoyage terminé !');
+                location.reload(); // Reload the page to show the cleaned list
+            },
+            error: function(xhr) {
+                const errorMsg = xhr.responseJSON ? xhr.responseJSON.message : 'Une erreur est survenue.';
+                alert('Erreur lors du nettoyage: ' + errorMsg);
+            }
+        });
+    });
+    // --- Intelligent Details Button Handler ---
+    $('#torrents-container').on('click', '.details-btn', function() {
+        const url = $(this).data('url');
+        if (!url) return;
+
+        // --- Calculate window position for centering ---
+        const windowWidth = 1200;
+        const windowHeight = 800;
+        const left = (screen.width / 2) - (windowWidth / 2);
+        const top = (screen.height / 2) - (windowHeight / 2);
+        const windowFeatures = `width=${windowWidth},height=${windowHeight},top=${top},left=${left},resizable=yes,scrollbars=yes`;
+
+        // Special handling for YGG API URLs via our backend proxy
+        if (url.includes('yggapi.eu')) {
+            const proxyUrl = `/dashboard/api/proxy?url=${encodeURIComponent(url)}`;
+            fetch(proxyUrl)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Proxy network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data && data.link) {
+                        window.open(data.link, 'MMS_Details_Window', windowFeatures);
+                    } else {
+                        // Fallback to opening the original URL if parsing fails
+                        window.open(url, 'MMS_Details_Window', windowFeatures);
+                    }
+                })
+                .catch(error => {
+                    console.error('Failed to fetch YGG details via proxy:', error);
+                    // Fallback to opening the original URL on error
+                    window.open(url, 'MMS_Details_Window', windowFeatures);
+                });
+        } else {
+            // Standard behavior for all other indexers
+            window.open(url, 'MMS_Details_Window', windowFeatures);
+        }
+    });
+
+});
+</script>
+{% endblock %}

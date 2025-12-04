@@ -225,6 +225,13 @@ def find_archived_media_by_id(media_type, external_id):
     database = _load_database()
     return database.get(db_key)
 
+def get_archived_media_by_id(archive_id):
+    """
+    Récupère un média archivé directement par sa clé de base de données (ex: 'tv_12345').
+    """
+    database = _load_database()
+    return database.get(archive_id)
+
 def find_archived_media_by_title(title):
     """
     Recherche des médias archivés dont le titre correspond (insensible à la casse).
@@ -267,6 +274,5 @@ def migrate_database_keys():
         _save_database(new_database)
         logger.info("Migration des clés de la base de données d'archives terminée.")
 
-# Ligne pour déclencher la migration au démarrage de l'application.
-# Cela garantit que la BDD est cohérente avant toute opération.
-migrate_database_keys()
+# La migration sera désormais appelée explicitement depuis app/__init__.py
+# pour s'assurer qu'elle s'exécute dans le bon contexte applicatif.

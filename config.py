@@ -15,6 +15,9 @@ else:
     print("           Les variables d'environnement pourraient ne pas être chargées.")
 
 class Config:
+    # --- CHEMINS DE BASE ---
+    INSTANCE_FOLDER_PATH = INSTANCE_FOLDER_PATH
+
     # --- FLASK CORE ---
     FLASK_APP = os.getenv('FLASK_APP', 'run.py').split('#')[0].strip()
     SECRET_KEY = os.getenv('SECRET_KEY', 'une-cle-secrete-tres-forte-et-aleatoire-a-definir-absolument')
@@ -104,6 +107,24 @@ class Config:
     MMS_API_PROCESS_STAGING_URL = os.getenv('MMS_API_PROCESS_STAGING_URL', f"http://127.0.0.1:{os.getenv('FLASK_RUN_PORT', '5001').split('#')[0].strip()}/seedbox/process-staging-item")
     SFTP_SCANNER_GUARDFRAIL_ENABLED = os.getenv('SFTP_SCANNER_GUARDFRAIL_ENABLED', 'True').split('#')[0].strip().lower() in ('true', '1', 't')
 
+    # --- DASHBOARD ---
+    _dashboard_exclude_keywords_str = os.getenv('DASHBOARD_EXCLUDE_KEYWORDS', 'VFQ,VOSTFR,VOST')
+    DASHBOARD_EXCLUDE_KEYWORDS = [keyword.strip().lower() for keyword in _dashboard_exclude_keywords_str.split(',') if keyword.strip()]
+    DASHBOARD_MIN_MOVIE_YEAR = int(os.getenv('DASHBOARD_MIN_MOVIE_YEAR', '2020').split('#')[0].strip())
+    _dashboard_prowlarr_categories_str = os.getenv('DASHBOARD_PROWLARR_CATEGORIES', '2000,5000') # Movie, TV
+    DASHBOARD_PROWLARR_CATEGORIES = [int(cat.strip()) for cat in _dashboard_prowlarr_categories_str.split(',') if cat.strip()]
+    DASHBOARD_REFRESH_INTERVAL_HOURS = int(os.getenv('DASHBOARD_REFRESH_INTERVAL_HOURS', '0').split('#')[0].strip())
+    PROWLARR_MAX_PAGES = int(os.getenv('PROWLARR_MAX_PAGES', '100').split('#')[0].strip())
+    PROWLARR_SEARCH_QUERY = os.getenv('PROWLARR_SEARCH_QUERY', '')
+
+    # --- SEEDBOX CLEANER ---
+    SEEDBOX_CLEANER_ENABLED = os.getenv('SEEDBOX_CLEANER_ENABLED', 'False').split('#')[0].strip().lower() in ('true', '1', 't')
+    SEEDBOX_CLEANER_SCHEDULE_HOURS = int(os.getenv('SEEDBOX_CLEANER_SCHEDULE_HOURS', '24').split('#')[0].strip())
+    SEEDBOX_CLEANER_DRY_RUN = os.getenv('SEEDBOX_CLEANER_DRY_RUN', 'True').split('#')[0].strip().lower() in ('true', '1', 't')
+    SEEDBOX_CLEANER_EMERGENCY_THRESHOLD_PERCENT = int(os.getenv('SEEDBOX_CLEANER_EMERGENCY_THRESHOLD_PERCENT', '90').split('#')[0].strip())
+    SEEDBOX_CLEANER_ROUTINE_MIN_RATIO = float(os.getenv('SEEDBOX_CLEANER_ROUTINE_MIN_RATIO', '1.0').split('#')[0].strip())
+    SEEDBOX_CLEANER_ROUTINE_MIN_SEED_DAYS = int(os.getenv('SEEDBOX_CLEANER_ROUTINE_MIN_SEED_DAYS', '14').split('#')[0].strip())
+    SEEDBOX_QUOTA_SIZE_GB = int(os.getenv('SEEDBOX_QUOTA_SIZE_GB', '0').split('#')[0].strip())
 
     # --- Anciennes variables (à supprimer/migrer après vérification que plus rien ne les utilise) ---
     PENDING_TORRENTS_MAP_FILE = os.getenv(
@@ -116,6 +137,13 @@ class Config:
 
 # --- FIN DE LA CLASSE CONFIG ---
 
+
+# --- CHARGEMENT DYNAMIQUE DES FILTRES DE RECHERCHE ---
+# Parcourt toutes les variables d'environnement après la définition de la classe
+# et ajoute dynamiquement celles correspondant aux filtres.
+for key, value in os.environ.items():
+    if key.startswith('SEARCH_FILTER_'):
+        setattr(Config, key, value.split('#')[0].strip())
 
 # --- Section de vérification et d'avertissements (exécutée une seule fois au démarrage) ---
 def check_and_print_startup_info():

@@ -16,6 +16,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from app.utils.sftp_scanner import scan_and_map_torrents
 from app.utils.staging_processor import process_pending_staging_items
 from app.utils.trailer_manager import clean_stale_entries
+from app.utils.seedbox_cleaner import run_seedbox_cleaner_task
+from app.utils.dashboard_scheduler import scheduled_dashboard_refresh
 import atexit
 import threading
 
@@ -55,6 +57,11 @@ def create_app(config_class=Config):
         logging.basicConfig(level=logging.INFO,
                             format='[%(asctime)s] %(levelname)s in %(module)s: %(message)s')
         logger.info('MediaManagerSuite startup in debug/development mode')
+
+    # --- Run startup tasks within app context ---
+    with app.app_context():
+        from app.utils.archive_manager import migrate_database_keys
+        migrate_database_keys()
 
     # Initialisation de Google Gemini (une seule fois au démarrage)
     gemini_api_key = app.config.get('GEMINI_API_KEY')
@@ -141,14 +148,16 @@ def create_app(config_class=Config):
     app.register_blueprint(debug_tools_bp, url_prefix='/debug')
     logger.info("Blueprint 'debug_tools' enregistré avec succès.")
 
+    from app.dashboard import dashboard_bp
+    app.register_blueprint(dashboard_bp)
+    logger.info("Blueprint 'dashboard' enregistré avec succès.")
+
     # Route pour la page d'accueil/portail
     @app.route('/')
     @login_required
     def home():
-        current_year = datetime.datetime.now(datetime.timezone.utc).year
-        return render_template('home_portal.html',
-                               title="Portail Media Manager Suite",
-                               current_year=current_year)
+        # Redirige l'utilisateur vers le nouveau tableau de bord
+        return redirect(url_for('dashboard_bp.dashboard'))
 
     @app.route('/login', methods=['GET', 'POST'])
     def login():
@@ -248,6 +257,46 @@ def create_app(config_class=Config):
 
         # Ensure scheduler shuts down cleanly when the app exits
         atexit.register(lambda: scheduler.shutdown() if scheduler and scheduler.running else None)
+
+        # --- Seedbox Cleaner Job ---
+        if app.config.get('SEEDBOX_CLEANER_ENABLED'):
+            cleaner_interval_hours = app.config.get('SEEDBOX_CLEANER_SCHEDULE_HOURS', 24)
+            def scheduled_seedbox_cleaner_job():
+                with app.app_context():
+                    current_app.logger.info(f"Scheduler: Triggering Seedbox Cleaner job. Interval: {cleaner_interval_hours} hours.")
+                    run_seedbox_cleaner_task()
+
+            scheduler.add_job(
+                func=scheduled_seedbox_cleaner_job,
+                trigger='interval',
+                hours=cleaner_interval_hours,
+                id='seedbox_cleaner_job',
+                next_run_time=datetime.datetime.now() + datetime.timedelta(minutes=1), # Run 1 min after startup
+                replace_existing=True
+            )
+            app.logger.info(f"Seedbox Cleaner job scheduled every {cleaner_interval_hours} hours.")
+        else:
+            app.logger.info("Seedbox Cleaner is disabled. Job not scheduled.")
+
+        # --- Dashboard Refresh Job ---
+        dashboard_refresh_interval_hours = app.config.get('DASHBOARD_REFRESH_INTERVAL_HOURS')
+        if dashboard_refresh_interval_hours and dashboard_refresh_interval_hours > 0:
+            def scheduled_dashboard_job():
+                with app.app_context():
+                    current_app.logger.info(f"Scheduler: Triggering Dashboard Refresh job. Interval: {dashboard_refresh_interval_hours} hours.")
+                    scheduled_dashboard_refresh()
+
+            scheduler.add_job(
+                func=scheduled_dashboard_job,
+                trigger='interval',
+                hours=dashboard_refresh_interval_hours,
+                id='dashboard_refresh_job',
+                next_run_time=datetime.datetime.now() + datetime.timedelta(minutes=2), # Run 2 mins after startup
+                replace_existing=True
+            )
+            app.logger.info(f"Dashboard Refresh job scheduled every {dashboard_refresh_interval_hours} hours.")
+        else:
+            app.logger.info("Dashboard Refresh scheduler is disabled (DASHBOARD_REFRESH_INTERVAL_HOURS not set or is 0). Job not scheduled.")
 
         # --- Backup Job ---
         try:
