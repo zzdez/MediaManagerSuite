@@ -44,6 +44,29 @@
                     <span id="ygg-cookie-status-badge" class="badge rounded-pill bg-secondary ms-1">Chargement...</span>
                 </span>
             </li>
+
+            <!-- Disk Usage Stats -->
+            {% if disk_usage_stats %}
+            <li class="nav-item mt-3 mb-2 px-3">
+                <h6 class="text-muted text-uppercase small mb-2"><i class="bi bi-hdd-fill"></i> Stockage</h6>
+                {% for disk in disk_usage_stats %}
+                <div class="mb-2" style="font-size: 0.85rem;"
+                     title="Sonarr: {{ disk.sonarr_folders|join(', ') }}&#013;Radarr: {{ disk.radarr_folders|join(', ') }}">
+                    <div class="d-flex justify-content-between mb-1">
+                        <span>{{ disk.display_name }}</span>
+                        <span class="text-muted">{{ disk.percent_used }}%</span>
+                    </div>
+                    <div class="progress" style="height: 6px;">
+                        <div class="progress-bar {{ disk.css_class }}" role="progressbar"
+                             style="width: {{ disk.percent_used }}%"
+                             aria-valuenow="{{ disk.percent_used }}" aria-valuemin="0" aria-valuemax="100"></div>
+                    </div>
+                    <div class="text-end text-muted" style="font-size: 0.7rem;">Libre: {{ disk.free_fmt }}</div>
+                </div>
+                {% endfor %}
+            </li>
+            {% endif %}
+
             <!-- Indicateur de progression pour les tâches de fond -->
             <li class="nav-item" id="bulk-move-status-indicator" style="display: none;">
                 <div class="nav-link d-flex align-items-center justify-content-between p-2 rounded bg-light">

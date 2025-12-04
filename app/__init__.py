@@ -193,6 +193,17 @@ def create_app(config_class=Config):
         logger.error(f"Erreur interne du serveur (500): {error}", exc_info=True)
         return render_template('500.html', title="Erreur Interne du Serveur"), 500
 
+    # --- Context Processor for Disk Usage ---
+    @app.context_processor
+    def inject_disk_usage():
+        try:
+            from app.utils.disk_manager import DiskManager
+            stats = DiskManager.get_disk_usage()
+            return dict(disk_usage_stats=stats)
+        except Exception as e:
+            logger.error(f"Context Processor Error (DiskManager): {e}")
+            return dict(disk_usage_stats=[])
+
     logger.info("Application MediaManagerSuite créée et configurée.")
 
     # Initialize and start the scheduler
