@@ -265,36 +265,60 @@ $(document).ready(function() {
             const categoryBadge = torrent.category ? `<span class="badge ${categoryBadgeClass}">${torrent.category}</span>` : '';
 
             const torrentCard = `
-                <div class="card mb-3" id="torrent-card-${torrent.guid}">
-                    <div class="card-body">
-                        <h5 class="card-title">${torrent.title || 'Titre Inconnu'} ${newBadge}</h5>
-                        <div>${statusBadges}</div>
-                        <div class="mt-2">
-                            ${indexerBadge}
-                            ${categoryBadge}
+                <div class="card mb-2" id="torrent-card-${torrent.guid}">
+                    <div class="card-body p-2">
+                        <!-- Line 1: Title and Date -->
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <div class="fw-bold text-truncate d-flex align-items-center gap-2" style="font-size: 1rem; max-width: 85%;" title="${torrent.title || 'Titre Inconnu'}">
+                                <span class="text-truncate">${torrent.title || 'Titre Inconnu'}</span> ${newBadge}
+                            </div>
+                            <div class="text-muted small text-nowrap" style="font-size: 0.8rem;">
+                                <i class="fas fa-calendar-alt"></i> ${formatDynamicDate(torrent.publishDate)}
+                            </div>
                         </div>
-                        <h6 class="card-subtitle mb-2 mt-2 text-muted">
-                            <i class="fas fa-database"></i> ${sizeInGB} GB |
-                            <i class="fas fa-arrow-up text-success"></i> ${torrent.seeders} |
-                            <i class="fas fa-arrow-down text-danger"></i> ${torrent.leechers} |
-                            <i class="fas fa-calendar-alt"></i> ${formatDynamicDate(torrent.publishDate)}
-                        </h6>
-                        ${detailsButtonHtml}
-                        <button class="btn btn-primary btn-sm download-and-map-btn"
-                                data-hash="${torrent.hash}" data-guid="${torrent.guid}" data-title="${torrent.title}"
-                                data-download-link="${torrent.downloadUrl}" data-indexer-id="${torrent.indexerId}"
-                                data-media-type="${torrent.type}" data-tmdb-id="${torrent.tmdbId || ''}"
-                                data-tvdb-id="${torrent.tvdbId || ''}" data-year="${year || ''}">
-                            <i class="fas fa-download"></i> & Mapper
-                        </button>
-                        <button class="btn btn-secondary btn-sm" data-action="ignore" data-guid="${torrent.guid}">
-                            <i class="fas fa-eye-slash"></i> Ignorer
-                        </button>
-                        ${torrent.is_new ? `
-                        <button class="btn btn-outline-success btn-sm ms-2" data-action="mark-seen" data-guid="${torrent.guid}">
-                            <i class="fas fa-check"></i> Marquer comme vu
-                        </button>
-                        ` : ''}
+
+                        <!-- Line 2: Badges, Stats, Buttons (All inline) -->
+                        <div class="d-flex flex-wrap align-items-center gap-2" style="font-size: 0.85rem;">
+                            <!-- Badges -->
+                            <div class="d-flex flex-wrap gap-1 align-items-center">
+                                ${statusBadges}
+                                ${indexerBadge}
+                                ${categoryBadge}
+                            </div>
+
+                            <!-- Vertical Divider (visible on larger screens) -->
+                            <div class="vr text-muted d-none d-md-block" style="height: 1.2em;"></div>
+
+                            <!-- Stats -->
+                            <div class="d-flex align-items-center gap-2 text-muted small">
+                                <span class="text-nowrap"><i class="fas fa-database"></i> ${sizeInGB} GB</span>
+                                <span class="text-nowrap"><i class="fas fa-arrow-up text-success"></i> ${torrent.seeders}</span>
+                                <span class="text-nowrap"><i class="fas fa-arrow-down text-danger"></i> ${torrent.leechers}</span>
+                            </div>
+
+                            <!-- Spacer to push buttons to right -->
+                            <div class="ms-auto"></div>
+
+                            <!-- Buttons -->
+                            <div class="d-flex gap-1">
+                                ${detailsButtonHtml}
+                                <button class="btn btn-primary btn-sm download-and-map-btn py-0 px-2" style="font-size: 0.8rem;"
+                                        data-hash="${torrent.hash}" data-guid="${torrent.guid}" data-title="${torrent.title}"
+                                        data-download-link="${torrent.downloadUrl}" data-indexer-id="${torrent.indexerId}"
+                                        data-media-type="${torrent.type}" data-tmdb-id="${torrent.tmdbId || ''}"
+                                        data-tvdb-id="${torrent.tvdbId || ''}" data-year="${year || ''}">
+                                    <i class="fas fa-download"></i>
+                                </button>
+                                <button class="btn btn-secondary btn-sm py-0 px-2" style="font-size: 0.8rem;" data-action="ignore" data-guid="${torrent.guid}">
+                                    <i class="fas fa-eye-slash"></i>
+                                </button>
+                                ${torrent.is_new ? `
+                                <button class="btn btn-outline-success btn-sm py-0 px-2" style="font-size: 0.8rem;" data-action="mark-seen" data-guid="${torrent.guid}">
+                                    <i class="fas fa-check"></i>
+                                </button>
+                                ` : ''}
+                            </div>
+                        </div>
                     </div>
                 </div>
             `;
