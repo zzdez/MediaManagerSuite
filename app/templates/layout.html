@@ -50,18 +50,55 @@
             <li class="nav-item mt-3 mb-2 px-3">
                 <h6 class="text-muted text-uppercase small mb-2"><i class="bi bi-hdd-fill"></i> Stockage</h6>
                 {% for disk in disk_usage_stats %}
-                <div class="mb-2" style="font-size: 0.85rem;"
-                     title="Sonarr: {{ disk.sonarr_folders|join(', ') }}&#013;Radarr: {{ disk.radarr_folders|join(', ') }}">
-                    <div class="d-flex justify-content-between mb-1">
-                        <span>{{ disk.display_name }}</span>
-                        <span class="text-muted">{{ disk.percent_used }}%</span>
+                <!-- Disk Item -->
+                <div class="mb-3">
+                    <!-- Clickable Header for Collapse -->
+                    <div class="d-flex flex-column" style="cursor: pointer;" data-bs-toggle="collapse"
+                         data-bs-target="#collapseDisk{{ loop.index }}" aria-expanded="false" aria-controls="collapseDisk{{ loop.index }}">
+
+                        <div class="d-flex justify-content-between mb-1" style="font-size: 0.85rem;">
+                            <span>{{ disk.display_name }}</span>
+                            <span class="text-muted">{{ disk.percent_used }}%</span>
+                        </div>
+
+                        <div class="progress" style="height: 6px;">
+                            <div class="progress-bar {{ disk.css_class }}" role="progressbar"
+                                 style="width: {{ disk.percent_used }}%"
+                                 aria-valuenow="{{ disk.percent_used }}" aria-valuemin="0" aria-valuemax="100"></div>
+                        </div>
+
+                        <div class="d-flex justify-content-between align-items-center mt-1">
+                            <span class="text-muted" style="font-size: 0.7rem;">Libre: {{ disk.free_fmt }}</span>
+                            <i class="bi bi-chevron-down text-muted" style="font-size: 0.7rem;"></i>
+                        </div>
                     </div>
-                    <div class="progress" style="height: 6px;">
-                        <div class="progress-bar {{ disk.css_class }}" role="progressbar"
-                             style="width: {{ disk.percent_used }}%"
-                             aria-valuenow="{{ disk.percent_used }}" aria-valuemin="0" aria-valuemax="100"></div>
+
+                    <!-- Collapsible Details -->
+                    <div class="collapse mt-2 ps-2 border-start border-secondary" id="collapseDisk{{ loop.index }}">
+                        <div style="font-size: 0.75rem;">
+                            {% if disk.sonarr_folders %}
+                            <div class="mb-1">
+                                <strong class="text-info">Sonarr:</strong>
+                                <ul class="list-unstyled mb-0 ps-2 text-muted">
+                                    {% for folder in disk.sonarr_folders %}
+                                    <li>{{ folder }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                            {% endif %}
+
+                            {% if disk.radarr_folders %}
+                            <div>
+                                <strong class="text-warning">Radarr:</strong>
+                                <ul class="list-unstyled mb-0 ps-2 text-muted">
+                                    {% for folder in disk.radarr_folders %}
+                                    <li>{{ folder }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                            {% endif %}
+                        </div>
                     </div>
-                    <div class="text-end text-muted" style="font-size: 0.7rem;">Libre: {{ disk.free_fmt }}</div>
                 </div>
                 {% endfor %}
             </li>
