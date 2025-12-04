@@ -48,11 +48,11 @@
 
             <!-- Disk Usage Stats -->
             {% if disk_usage_stats %}
-            <li class="nav-item mt-3 mb-2 px-3">
-                <h6 class="text-muted text-uppercase small mb-2"><i class="bi bi-hdd-fill"></i> Stockage</h6>
+            <li class="nav-item mt-2 mb-1 px-3">
+                <h6 class="text-muted text-uppercase small mb-1" style="font-size: 0.75rem;"><i class="bi bi-hdd-fill"></i> Stockage</h6>
                 {% for disk in disk_usage_stats %}
                 <!-- Disk Item -->
-                <div class="mb-3">
+                <div class="mb-2">
                     <!-- Clickable Header for Collapse -->
                     <div class="d-flex flex-column" style="cursor: pointer;" data-bs-toggle="collapse"
                          data-bs-target="#collapseDisk{{ loop.index }}" aria-expanded="false" aria-controls="collapseDisk{{ loop.index }}">

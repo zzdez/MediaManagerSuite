@@ -40,8 +40,8 @@ body {
 
 .sidebar .nav-link {
     color: var(--sidebar-text-color);
-    font-size: 1.1rem;
-    padding: 12px 25px;
+    font-size: 1rem;
+    padding: 8px 20px;
     transition: all 0.2s ease-in-out;
     border-left: 3px solid transparent;
 }
@@ -201,3 +201,20 @@ body {
 
 .bg-purple { background-color: #6f42c1 !important; }
 .bg-orange { background-color: #fd7e14 !important; }
+
+/* Sticky Header for Dashboard */
+.dashboard-sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 1020;
+    background-color: var(--main-bg-color);
+    padding-top: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #30363d;
+    margin-bottom: 1rem;
+    /* Ensure it covers the full width of its container minus padding */
+    margin-left: -12px; /* Compensate for col-md-10 padding if needed, but safer to just background */
+    margin-right: -12px;
+    padding-left: 12px;
+    padding-right: 12px;
+}

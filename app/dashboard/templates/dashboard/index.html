@@ -7,35 +7,37 @@
     <div class="row">
         <!-- Colonne des résultats (principale) -->
         <div class="col-md-10">
-            <h1 class="mt-4">Tableau de Bord des Nouveautés</h1>
-            <div class="d-flex justify-content-between align-items-end mb-3">
-                <h4 id="results-counter" class="text-muted mb-0"></h4>
-                <div class="text-end text-muted small">
-                    <div id="prowlarr-refresh-info">
-                        Dernier scan Prowlarr : <span id="last-prowlarr-refresh-date">{{ refresh_times.prowlarr | date_format if refresh_times.prowlarr else 'Jamais' }}</span>
-                    </div>
-                    <div id="status-refresh-info">
-                        Dernière MAJ statuts : <span id="last-status-refresh-date">{{ refresh_times.status | date_format if refresh_times.status else 'Jamais' }}</span>
+            <div class="dashboard-sticky-header">
+                <h1 class="mt-0">Tableau de Bord des Nouveautés</h1>
+                <div class="d-flex justify-content-between align-items-end mb-3">
+                    <h4 id="results-counter" class="text-muted mb-0"></h4>
+                    <div class="text-end text-muted small">
+                        <div id="prowlarr-refresh-info">
+                            Dernier scan Prowlarr : <span id="last-prowlarr-refresh-date">{{ refresh_times.prowlarr | date_format if refresh_times.prowlarr else 'Jamais' }}</span>
+                        </div>
+                        <div id="status-refresh-info">
+                            Dernière MAJ statuts : <span id="last-status-refresh-date">{{ refresh_times.status | date_format if refresh_times.status else 'Jamais' }}</span>
+                        </div>
                     </div>
                 </div>
-            </div>
-            <p>Cliquez sur le bouton pour rechercher les nouvelles publications depuis votre dernière visite.</p>
-            <div class="d-flex align-items-center mb-4">
-                <button id="refresh-btn" class="btn btn-primary">
-                    <i class="fas fa-sync-alt"></i> Rafraîchir les nouveautés
-                </button>
-                <button id="refresh-statuses-btn" class="btn btn-info ms-2">
-                    <i class="fas fa-tags"></i> Rafraîchir les statuts
-                </button>
-                <button id="mark-all-seen-btn" class="btn btn-success ms-2">
-                    <i class="fas fa-check-double"></i> Tout marquer comme vu
-                </button>
-                <div class="ms-4 d-flex align-items-center">
-                    <label for="cleanup-days" class="form-label me-2 mb-0">Garder (jours):</label>
-                    <input type="number" id="cleanup-days" class="form-control" value="7" min="0" max="30" style="width: 80px;">
-                    <button id="cleanup-btn" class="btn btn-secondary ms-2">
-                        <i class="fas fa-broom"></i> Nettoyer
+                <p>Cliquez sur le bouton pour rechercher les nouvelles publications depuis votre dernière visite.</p>
+                <div class="d-flex align-items-center mb-0">
+                    <button id="refresh-btn" class="btn btn-primary">
+                        <i class="fas fa-sync-alt"></i> Rafraîchir les nouveautés
                     </button>
+                    <button id="refresh-statuses-btn" class="btn btn-info ms-2">
+                        <i class="fas fa-tags"></i> Rafraîchir les statuts
+                    </button>
+                    <button id="mark-all-seen-btn" class="btn btn-success ms-2">
+                        <i class="fas fa-check-double"></i> Tout marquer comme vu
+                    </button>
+                    <div class="ms-4 d-flex align-items-center">
+                        <label for="cleanup-days" class="form-label me-2 mb-0">Garder (jours):</label>
+                        <input type="number" id="cleanup-days" class="form-control" value="7" min="0" max="30" style="width: 80px;">
+                        <button id="cleanup-btn" class="btn btn-secondary ms-2">
+                            <i class="fas fa-broom"></i> Nettoyer
+                        </button>
+                    </div>
                 </div>
             </div>
 
