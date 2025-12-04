@@ -60,7 +60,27 @@ body {
     border-left-color: #3b82f6;
 }
 
-.sidebar-footer { margin-top: auto; padding-bottom: 20px; }
+/* Allow the navigation list to grow and scroll if needed */
+.sidebar ul.nav {
+    flex-grow: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    margin-bottom: 10px; /* Space before footer */
+}
+
+/* Custom scrollbar for the sidebar navigation */
+.sidebar ul.nav::-webkit-scrollbar {
+    width: 6px;
+}
+.sidebar ul.nav::-webkit-scrollbar-track {
+    background: transparent;
+}
+.sidebar ul.nav::-webkit-scrollbar-thumb {
+    background-color: #495057;
+    border-radius: 3px;
+}
+
+.sidebar-footer { margin-top: auto; padding-bottom: 20px; flex-shrink: 0; }
 
 .main-content {
     margin-left: var(--sidebar-width);
