@@ -267,39 +267,19 @@ $(document).ready(function() {
             const torrentCard = `
                 <div class="card mb-2" id="torrent-card-${torrent.guid}">
                     <div class="card-body p-2">
-                        <!-- Line 1: Title and Date -->
-                        <div class="d-flex justify-content-between align-items-center mb-1">
-                            <div class="fw-bold text-truncate d-flex align-items-center gap-2" style="font-size: 1rem; max-width: 85%;" title="${torrent.title || 'Titre Inconnu'}">
-                                <span class="text-truncate">${torrent.title || 'Titre Inconnu'}</span> ${newBadge}
-                            </div>
-                            <div class="text-muted small text-nowrap" style="font-size: 0.8rem;">
+                        <!-- Line 1: Date and Title -->
+                        <div class="d-flex align-items-center mb-1 gap-2">
+                            <div class="text-muted small text-nowrap" style="font-size: 0.8rem; min-width: fit-content;">
                                 <i class="fas fa-calendar-alt"></i> ${formatDynamicDate(torrent.publishDate)}
+                            </div>
+                            <div class="fw-bold text-truncate d-flex align-items-center gap-2 flex-grow-1" style="font-size: 1rem;" title="${torrent.title || 'Titre Inconnu'}">
+                                <span class="text-truncate">${torrent.title || 'Titre Inconnu'}</span> ${newBadge}
                             </div>
                         </div>
 
-                        <!-- Line 2: Badges, Stats, Buttons (All inline) -->
+                        <!-- Line 2: Buttons, Badges, Stats (All inline) -->
                         <div class="d-flex flex-wrap align-items-center gap-2" style="font-size: 0.85rem;">
-                            <!-- Badges -->
-                            <div class="d-flex flex-wrap gap-1 align-items-center">
-                                ${statusBadges}
-                                ${indexerBadge}
-                                ${categoryBadge}
-                            </div>
-
-                            <!-- Vertical Divider (visible on larger screens) -->
-                            <div class="vr text-muted d-none d-md-block" style="height: 1.2em;"></div>
-
-                            <!-- Stats -->
-                            <div class="d-flex align-items-center gap-2 text-muted small">
-                                <span class="text-nowrap"><i class="fas fa-database"></i> ${sizeInGB} GB</span>
-                                <span class="text-nowrap"><i class="fas fa-arrow-up text-success"></i> ${torrent.seeders}</span>
-                                <span class="text-nowrap"><i class="fas fa-arrow-down text-danger"></i> ${torrent.leechers}</span>
-                            </div>
-
-                            <!-- Spacer to push buttons to right -->
-                            <div class="ms-auto"></div>
-
-                            <!-- Buttons -->
+                            <!-- Buttons (Left) -->
                             <div class="d-flex gap-1">
                                 ${detailsButtonHtml}
                                 <button class="btn btn-primary btn-sm download-and-map-btn py-0 px-2" style="font-size: 0.8rem;"
@@ -317,6 +297,24 @@ $(document).ready(function() {
                                     <i class="fas fa-check"></i>
                                 </button>
                                 ` : ''}
+                            </div>
+
+                            <!-- Spacer or Divider -->
+                            <div class="vr text-muted d-none d-md-block" style="height: 1.2em;"></div>
+
+                            <!-- Badges -->
+                            <div class="d-flex flex-wrap gap-1 align-items-center">
+                                ${statusBadges}
+                                ${indexerBadge}
+                                ${categoryBadge}
+                            </div>
+
+                            <!-- Stats (pushed right? or just inline?) User just said buttons left. -->
+                            <!-- Let's keep stats inline after badges -->
+                            <div class="d-flex align-items-center gap-2 text-muted small ms-auto">
+                                <span class="text-nowrap"><i class="fas fa-database"></i> ${sizeInGB} GB</span>
+                                <span class="text-nowrap"><i class="fas fa-arrow-up text-success"></i> ${torrent.seeders}</span>
+                                <span class="text-nowrap"><i class="fas fa-arrow-down text-danger"></i> ${torrent.leechers}</span>
                             </div>
                         </div>
                     </div>
