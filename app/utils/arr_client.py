@@ -1465,6 +1465,11 @@ def get_sonarr_root_folders():
             folder['freeSpace_formatted'] = _format_bytes(free_space)
     return folders
 
+def get_sonarr_diskspace():
+    """Fetches disk space information from Sonarr."""
+    logger.info("Sonarr: Fetching disk space.")
+    return _sonarr_api_request('GET', 'diskspace')
+
 def get_sonarr_queue():
     """Fetches the current activity queue from Sonarr."""
     logger.info("Sonarr: Fetching activity queue.")
@@ -1482,6 +1487,11 @@ def get_radarr_queue():
         return queue_response['records']
     logger.warning(f"Radarr: Could not retrieve queue or queue is empty. Response: {queue_response}")
     return []
+
+def get_radarr_diskspace():
+    """Fetches disk space information from Radarr."""
+    logger.info("Radarr: Fetching disk space.")
+    return _radarr_api_request('GET', 'diskspace')
 
 def get_radarr_root_folders():
     """Fetches all root folders from Radarr and adds formatted free space."""
