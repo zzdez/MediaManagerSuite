@@ -16,10 +16,11 @@
         <a href="{{ url_for('dashboard_bp.dashboard') }}" class="sidebar-header-link">
             <h3 class="sidebar-header">MMS</h3>
         </a>
-        <ul class="nav flex-column">
-            <li class="nav-item">
-                <a class="nav-link" href="{{ url_for('dashboard_bp.dashboard') }}"><i class="bi bi-grid-1x2-fill"></i> Tableau de Bord</a>
-            </li>
+        <div class="sidebar-nav-container">
+            <ul class="nav flex-column">
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('dashboard_bp.dashboard') }}"><i class="bi bi-grid-1x2-fill"></i> Tableau de Bord</a>
+                </li>
             <li class="nav-item">
                 <a class="nav-link" href="{{ url_for('search_ui.search_page') }}"><i class="bi bi-search"></i> Recherche</a>
             </li>
@@ -104,19 +105,20 @@
             </li>
             {% endif %}
 
-            <!-- Indicateur de progression pour les tâches de fond -->
-            <li class="nav-item" id="bulk-move-status-indicator" style="display: none;">
-                <div class="nav-link d-flex align-items-center justify-content-between p-2 rounded bg-light">
-                    <div class="d-flex align-items-center text-dark">
-                        <span id="bulk-move-status-spinner" class="me-2">
-                            <!-- Le spinner ou l'icône sera injecté ici -->
-                        </span>
-                        <small id="bulk-move-status-text" style="line-height: 1.2;">Tâche en cours...</small>
+                <!-- Indicateur de progression pour les tâches de fond -->
+                <li class="nav-item" id="bulk-move-status-indicator" style="display: none;">
+                    <div class="nav-link d-flex align-items-center justify-content-between p-2 rounded bg-light">
+                        <div class="d-flex align-items-center text-dark">
+                            <span id="bulk-move-status-spinner" class="me-2">
+                                <!-- Le spinner ou l'icône sera injecté ici -->
+                            </span>
+                            <small id="bulk-move-status-text" style="line-height: 1.2;">Tâche en cours...</small>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="bulk-move-status-close-btn" style="display: none;">OK</button>
                     </div>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" id="bulk-move-status-close-btn" style="display: none;">OK</button>
-                </div>
-            </li>
-        </ul>
+                </li>
+            </ul>
+        </div>
         <div class="sidebar-footer">
             <!-- Vérifier si la route 'main.logout' existe, sinon l'adapter -->
             <a class="nav-link" href="{{ url_for('logout') }}"><i class="bi bi-box-arrow-left"></i> Déconnexion</a>
