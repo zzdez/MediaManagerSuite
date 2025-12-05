@@ -235,10 +235,8 @@ $(document).ready(function() {
             return;
         }
 
-        // Sort: New items first, then by publish date
+        // Sort: Purely by publish date (descending), ignoring "is_new" status for order
         torrentsToRender.sort((a, b) => {
-            if (a.is_new && !b.is_new) return -1;
-            if (!a.is_new && b.is_new) return 1;
             return new Date(b.publishDate) - new Date(a.publishDate);
         });
 

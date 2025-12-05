@@ -254,7 +254,7 @@ def create_app(config_class=Config):
             trigger='interval',
             minutes=rtorrent_scan_interval,
             id='rtorrent_scan_job',
-            start_date=datetime.datetime.now() + datetime.timedelta(seconds=20),
+            start_date=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=20),
             replace_existing=True
         )
 
@@ -264,7 +264,7 @@ def create_app(config_class=Config):
             trigger='interval',
             minutes=1,
             id='staging_processor_job',
-            start_date=datetime.datetime.now() + datetime.timedelta(seconds=10),
+            start_date=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=10),
             replace_existing=True
         )
 
@@ -274,7 +274,7 @@ def create_app(config_class=Config):
             trigger='interval',
             hours=24,
             id='trailer_cleanup_job',
-            start_date=datetime.datetime.now() + datetime.timedelta(minutes=5), # Run 5 mins after startup
+            start_date=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=5), # Run 5 mins after startup
             replace_existing=True
         )
 
@@ -297,7 +297,7 @@ def create_app(config_class=Config):
                 trigger='interval',
                 hours=cleaner_interval_hours,
                 id='seedbox_cleaner_job',
-                start_date=datetime.datetime.now() + datetime.timedelta(minutes=1), # Run 1 min after startup
+                start_date=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=1), # Run 1 min after startup
                 replace_existing=True
             )
             app.logger.info(f"Seedbox Cleaner job scheduled every {cleaner_interval_hours} hours.")
@@ -317,7 +317,7 @@ def create_app(config_class=Config):
                 trigger='interval',
                 hours=dashboard_refresh_interval_hours,
                 id='dashboard_refresh_job',
-                start_date=datetime.datetime.now() + datetime.timedelta(minutes=2), # Run 2 mins after startup
+                start_date=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=2), # Run 2 mins after startup
                 replace_existing=True
             )
             app.logger.info(f"Dashboard Refresh job scheduled every {dashboard_refresh_interval_hours} hours.")
