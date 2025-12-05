@@ -87,18 +87,21 @@ def create_app(config_class=Config):
             if '.' in iso_string:
                 core_string = iso_string.split('.')[0] # Remove microseconds
 
-            if iso_string.endswith('Z'):
-                core_string = core_string.rstrip('Z')
-                dt = datetime.datetime.strptime(core_string, '%Y-%m-%dT%H:%M:%S')
-                # Assume Z means UTC
-                dt = dt.replace(tzinfo=datetime.timezone.utc)
-            else:
-                # If no Z, try parsing. If naive, assume UTC or Server Time?
-                # Prowlarr usually returns UTC.
-                dt = datetime.datetime.strptime(core_string, '%Y-%m-%dT%H:%M:%S')
-                # If naive, make it UTC aware
-                if dt.tzinfo is None:
+            # Try to parse using fromisoformat first (handles offsets like +00:00)
+            try:
+                dt = datetime.datetime.fromisoformat(core_string.replace('Z', '+00:00'))
+            except ValueError:
+                # Fallback for older python or specific formats without offsets
+                if iso_string.endswith('Z'):
+                    core_string = core_string.rstrip('Z')
+                    dt = datetime.datetime.strptime(core_string, '%Y-%m-%dT%H:%M:%S')
                     dt = dt.replace(tzinfo=datetime.timezone.utc)
+                else:
+                    dt = datetime.datetime.strptime(core_string, '%Y-%m-%dT%H:%M:%S')
+
+            # Ensure it is timezone aware (assume UTC if naive)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=datetime.timezone.utc)
 
             # Convert to Paris
             paris_tz = pytz.timezone('Europe/Paris')
