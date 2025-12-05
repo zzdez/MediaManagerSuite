@@ -848,7 +848,7 @@ def add_new_series_to_sonarr(tvdb_id: int, title: str, quality_profile_id: int, 
         return None
 
 
-def add_new_movie_to_radarr(tmdb_id: int, title: str, quality_profile_id: int, root_folder_path: str, minimum_availability: str = "announced", monitored: bool = True, search_for_movie: bool = False):
+def add_new_movie_to_radarr(tmdb_id: int, title: str, quality_profile_id: int, root_folder_path: str, minimum_availability: str = "announced", monitored: bool = False, search_for_movie: bool = False):
     """
     Adds a new movie to Radarr.
     Returns the new movie object from Radarr API if successful, else None.
@@ -1135,8 +1135,9 @@ def add_movie_by_title_to_radarr(movie_title: str, movie_year: int = None):
         tmdb_id=tmdb_id,
         title=best_match.get('title'), # Use title from Radarr's lookup result
         quality_profile_id=default_quality_profile_id,
-        root_folder_path=default_root_folder
-        # minimum_availability, monitored, search_for_movie use defaults from add_new_movie_to_radarr
+        root_folder_path=default_root_folder,
+        monitored=False # Explicitly disable monitoring for automated additions
+        # minimum_availability, search_for_movie use defaults from add_new_movie_to_radarr
     )
 
     if not added_movie_details or not added_movie_details.get('id'):
