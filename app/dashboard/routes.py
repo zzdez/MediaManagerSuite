@@ -144,6 +144,16 @@ def dashboard():
         current_app.logger.info(f"Filtered torrents on dashboard load. Kept {len(torrents)} of {initial_count} torrents.")
 
     refresh_times = get_last_refresh_times()
+
+    # Get next refresh time from scheduler
+    next_run_time = None
+    if hasattr(current_app, 'scheduler') and current_app.scheduler:
+        job = current_app.scheduler.get_job('dashboard_refresh_job')
+        if job and job.next_run_time:
+            next_run_time = job.next_run_time.isoformat()
+
+    refresh_times['next_run'] = next_run_time
+
     return render_template('dashboard/index.html', torrents=torrents, refresh_times=refresh_times)
 
 
@@ -287,8 +297,7 @@ def refresh_torrents():
             json.dump(final_torrents, f, indent=2)
 
         # Update both Prowlarr and Status refresh times since this is a full refresh
-        new_time = set_last_refresh_time('last_refresh_utc')
-        set_last_refresh_time('last_status_refresh_utc')
+        new_time = set_last_refresh_time()
 
         return jsonify({
             "status": "success",
@@ -570,6 +579,7 @@ def refresh_statuses():
         with open(DASHBOARD_TORRENTS_FILE, 'w') as f:
             json.dump(existing_torrents, f, indent=2)
 
+        # Update ONLY the status refresh time
         new_time = set_last_refresh_time('last_status_refresh_utc')
 
         return jsonify({

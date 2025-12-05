@@ -353,5 +353,7 @@ def create_app(config_class=Config):
         except ImportError:
             app.logger.warning("Module de sauvegarde non trouvé, la tâche de sauvegarde n'a pas été planifiée.")
 
+    # Attach the scheduler to the app so it can be accessed in blueprints
+    app.scheduler = scheduler
 
     return app

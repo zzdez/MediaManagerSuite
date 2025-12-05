@@ -26,15 +26,31 @@ def get_last_refresh_time():
     except (json.JSONDecodeError, IOError):
         return None
 
-def set_last_refresh_time():
-    """Saves the current UTC time as the last refresh timestamp for both Prowlarr and Statuses."""
+def set_last_refresh_time(key=None):
+    """
+    Saves the current UTC time as the last refresh timestamp.
+    If key is None, updates both 'last_refresh_utc' and 'last_status_refresh_utc' (Full Refresh).
+    If key is provided, updates only that specific key (e.g., 'last_status_refresh_utc').
+    """
     os.makedirs(os.path.dirname(DASHBOARD_STATE_FILE), exist_ok=True)
     now_utc = datetime.now(timezone.utc)
-    # Update both keys because a Prowlarr fetch also refreshes statuses
-    state = {
-        'last_refresh_utc': now_utc.isoformat(),
-        'last_status_refresh_utc': now_utc.isoformat()
-    }
+
+    # Load existing state to preserve keys when doing partial update
+    state = {}
+    if os.path.exists(DASHBOARD_STATE_FILE):
+        try:
+            with open(DASHBOARD_STATE_FILE, 'r') as f:
+                state = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            pass
+
+    if key:
+        state[key] = now_utc.isoformat()
+    else:
+        # Full refresh updates both
+        state['last_refresh_utc'] = now_utc.isoformat()
+        state['last_status_refresh_utc'] = now_utc.isoformat()
+
     with open(DASHBOARD_STATE_FILE, 'w') as f:
         json.dump(state, f)
     return now_utc

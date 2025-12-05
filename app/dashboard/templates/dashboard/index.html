@@ -18,6 +18,9 @@
                         <div id="status-refresh-info">
                             Dernière MAJ statuts : <span id="last-status-refresh-date">{{ refresh_times.status | date_format if refresh_times.status else 'Jamais' }}</span>
                         </div>
+                        <div id="next-refresh-info">
+                            Prochain scan : <span id="next-refresh-date">{{ refresh_times.next_run | date_format if refresh_times.next_run else 'Inconnu' }}</span>
+                        </div>
                     </div>
                 </div>
                 <p>Cliquez sur le bouton pour rechercher les nouvelles publications depuis votre dernière visite.</p>
