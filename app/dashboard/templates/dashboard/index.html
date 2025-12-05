@@ -425,7 +425,8 @@ $(document).ready(function() {
         // Update results counter
         const counterElement = $('#results-counter');
         if (allTorrents.length > 0) {
-            counterElement.text(`Résultats (${filteredTorrents.length} / ${allTorrents.length})`);
+            const newCount = filteredTorrents.filter(t => t.is_new).length;
+            counterElement.html(`Résultats (${filteredTorrents.length} / ${allTorrents.length}) <span class="badge bg-info ms-2">${newCount} Nouveaux</span>`);
         } else {
             counterElement.text('');
         }
@@ -756,10 +757,8 @@ $(document).ready(function() {
                 if (torrent) {
                     torrent.is_new = false;
                 }
-                // Visually remove the 'Nouveau' badge and the button itself
-                const cardBody = button.closest('.card-body');
-                cardBody.find('.badge.bg-info').remove(); // Removes 'Nouveau' badge
-                button.remove(); // Removes the button
+                // Re-apply filters to update the view and the counter
+                applyFilters();
             },
             error: function(xhr) {
                 alert('Erreur : ' + (xhr.responseJSON ? xhr.responseJSON.message : 'Erreur serveur.'));

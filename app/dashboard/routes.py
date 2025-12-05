@@ -286,7 +286,9 @@ def refresh_torrents():
         with open(DASHBOARD_TORRENTS_FILE, 'w') as f:
             json.dump(final_torrents, f, indent=2)
 
+        # Update both Prowlarr and Status refresh times since this is a full refresh
         new_time = set_last_refresh_time('last_refresh_utc')
+        set_last_refresh_time('last_status_refresh_utc')
 
         return jsonify({
             "status": "success",
