@@ -648,10 +648,25 @@ def cleanup_torrents():
 @dashboard_bp.route('/dashboard/api/mark-all-as-seen', methods=['POST'])
 def mark_all_as_seen():
     """
-    API endpoint to mark all torrents as 'not new'.
+    API endpoint to mark specified torrents (or all if no list provided) as 'not new'.
+    Expects JSON: { "seen_hashes": ["hash1", "hash2", ...] }
     """
     if not os.path.exists(DASHBOARD_TORRENTS_FILE):
         return jsonify({"status": "success", "message": "No torrents to update."})
+
+    data = request.get_json() or {}
+    seen_hashes = set(data.get('seen_hashes', []))
+
+    # If a specific list is provided, only mark those.
+    # If no list is provided (backward compatibility or full reset intended),
+    # we used to mark ALL. However, to prevent the bug where background items
+    # are incorrectly marked, we should require the list or default to doing nothing
+    # if the intention is ambiguous.
+    # Given the user's issue, we will default to doing NOTHING if list is empty,
+    # unless a flag 'force_all' is present (unlikely used by frontend).
+
+    if not seen_hashes and not data.get('force_all'):
+        return jsonify({"status": "success", "message": "No items specified to mark as seen."})
 
     try:
         with open(DASHBOARD_TORRENTS_FILE, 'r') as f:
@@ -660,13 +675,19 @@ def mark_all_as_seen():
         updated_count = 0
         for torrent in torrents:
             if torrent.get('is_new', False):
-                torrent['is_new'] = False
-                updated_count += 1
+                # If we have a target list, check against it.
+                if seen_hashes:
+                    if torrent.get('hash') in seen_hashes:
+                        torrent['is_new'] = False
+                        updated_count += 1
+                elif data.get('force_all'):
+                    torrent['is_new'] = False
+                    updated_count += 1
 
         with open(DASHBOARD_TORRENTS_FILE, 'w') as f:
             json.dump(torrents, f, indent=2)
 
-        current_app.logger.info(f"Marked all {updated_count} new torrents as seen.")
+        current_app.logger.info(f"Marked {updated_count} torrents as seen.")
         return jsonify({"status": "success", "message": f"{updated_count} torrent(s) marked as seen."})
 
     except (json.JSONDecodeError, IOError) as e:

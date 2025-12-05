@@ -729,14 +729,30 @@ $(document).ready(function() {
 
     // --- Event delegation for action buttons ---
     $('#mark-all-seen-btn').on('click', function() {
-        if (!confirm("Êtes-vous sûr de vouloir marquer tous les torrents 'Nouveau' comme vus ?")) {
+        if (!confirm("Êtes-vous sûr de vouloir marquer tous les torrents 'Nouveau' affichés comme vus ?")) {
             return;
         }
+
+        // Collecter les hash des items "Nouveaux" actuellement chargés dans le frontend
+        const seenHashes = allTorrents.filter(t => t.is_new).map(t => t.hash);
+
+        if (seenHashes.length === 0) {
+            alert("Aucun élément nouveau à marquer comme vu.");
+            return;
+        }
+
         $.ajax({
             url: "{{ url_for('dashboard_bp.mark_all_as_seen') }}",
             type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ seen_hashes: seenHashes }),
             success: function(response) {
-                allTorrents.forEach(t => { t.is_new = false; });
+                // Update local state only for the items we sent
+                allTorrents.forEach(t => {
+                    if (seenHashes.includes(t.hash)) {
+                        t.is_new = false;
+                    }
+                });
                 applyFilters(); // Re-render to remove badges and buttons
                 alert(response.message || "Opération réussie !");
             },
