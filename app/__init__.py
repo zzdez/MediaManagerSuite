@@ -227,7 +227,7 @@ def create_app(config_class=Config):
     # Initialize and start the scheduler
     global scheduler
     if scheduler is None or not scheduler.running:
-        scheduler = BackgroundScheduler(daemon=True)
+        scheduler = BackgroundScheduler(daemon=True, timezone=datetime.timezone.utc)
 
         # Get interval from config for the rTorrent scanner
         rtorrent_scan_interval = app.config.get('SCHEDULER_SFTP_SCAN_INTERVAL_MINUTES', 15)
