@@ -2074,7 +2074,8 @@ def add_arr_item_and_get_id():
                                 # Mais elle pourrait être utile pour des logs ou validations futures.
     root_folder_path = data.get('root_folder_path')
     quality_profile_id_str = data.get('quality_profile_id')
-    monitored = data.get('monitored', True) # booléen
+    monitored_default = True if app_type == 'sonarr' else False
+    monitored = data.get('monitored', monitored_default) # booléen, default depends on app_type
 
     logger.info(f"API Add *Arr Item: Tentative d'ajout pour '{title}' (ID externe: {external_id}) à {app_type}. Options: Root='{root_folder_path}', QP ID='{quality_profile_id_str}', Monitored='{monitored}'")
 
@@ -4544,7 +4545,7 @@ def sftp_add_and_import_arr_item_action():
             quality_profile_id=int(user_choices['qualityProfileId']),
             root_folder_path=user_choices['rootFolderPath'],
             minimum_availability=user_choices.get('minimumAvailability', 'announced'),
-            monitored=user_choices.get('monitored', True),
+            monitored=user_choices.get('monitored', False),
             search_for_movie=user_choices.get('addOptions', {}).get('searchForMovie', False)
         )
     else:
