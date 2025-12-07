@@ -1150,10 +1150,23 @@ def get_media_items():
                             if sonarr_series:
                                 full_sonarr_series = get_sonarr_series_by_id(sonarr_series['id'])
                                 if full_sonarr_series:
+                                    # Calcul affiné basé sur les saisons surveillées
+                                    monitored_file_count = 0
+                                    monitored_total_count = 0
+
+                                    for season in full_sonarr_series.get('seasons', []):
+                                        if season.get('monitored'):
+                                            s_stats = season.get('statistics', {})
+                                            monitored_file_count += s_stats.get('episodeFileCount', 0)
+                                            monitored_total_count += s_stats.get('episodeCount', 0)
+
+                                    # On soustrait les futurs épisodes globaux du total surveillé
+                                    # (Hypothèse: les futurs épisodes sont généralement dans les saisons surveillées)
                                     stats = full_sonarr_series.get('statistics', {})
-                                    file_count = stats.get('episodeFileCount', 0)
-                                    total_aired_count = stats.get('episodeCount', 0) - stats.get('futureEpisodeCount', 0)
-                                    if file_count < total_aired_count:
+                                    future_count = stats.get('futureEpisodeCount', 0)
+                                    estimated_monitored_aired = monitored_total_count - future_count
+
+                                    if monitored_file_count < estimated_monitored_aired:
                                         is_incomplete_status = True
 
                                     sonarr_status = full_sonarr_series.get('status')
