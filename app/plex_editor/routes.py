@@ -529,12 +529,13 @@ def get_user_libraries(user_id):
         libraries = target_plex_server.library.sections()
 
         # **NOUVELLE LOGIQUE DE FILTRAGE**
-        ignored_library_names = current_app.config.get('PLEX_LIBRARIES_TO_IGNORE', [])
+        ignored_library_names = current_app.config.get('PLEX_LIBRARIES_TO_IGNORE') or []
 
         filtered_libraries = []
         for lib in libraries:
             # Condition 1: La bibliothèque n'est pas dans la liste des noms à ignorer
-            is_ignored = lib.title in ignored_library_names
+            # On vérifie que le titre n'est pas None par sécurité
+            is_ignored = lib.title and (lib.title in ignored_library_names)
 
             # Condition 2: La bibliothèque est de type 'movie' ou 'show'
             is_valid_type = lib.type in ['movie', 'show']
@@ -587,6 +588,7 @@ def get_genres_for_libraries():
         return jsonify(error=str(e)), 500
         
 @plex_editor_bp.route('/api/collections', methods=['POST'])
+@login_required
 def get_collections_for_libraries():
     data = request.json
     user_id = data.get('userId')
@@ -610,6 +612,7 @@ def get_collections_for_libraries():
         return jsonify(error=str(e)), 500
 
 @plex_editor_bp.route('/api/resolutions', methods=['POST'])
+@login_required
 def get_resolutions_for_libraries():
     data = request.json
     user_id = data.get('userId')
@@ -637,6 +640,7 @@ def get_resolutions_for_libraries():
         return jsonify(error=str(e)), 500
 
 @plex_editor_bp.route('/api/studios', methods=['POST'])
+@login_required
 def get_studios_for_libraries():
     data = request.json
     user_id = data.get('userId')
@@ -2476,7 +2480,7 @@ def get_media_details_for_modal(rating_key): # Renommé pour clarté, bien que l
         # Adapter les noms des attributs aux vrais noms de l'API Plex via plexapi.
         details = {
             'title': getattr(item, 'title', 'Titre inconnu'),
-            'originalTitle': getattr(item, 'originalTitle', None), # <-- AJOUTE CETTE LIGNE
+            'originalTitle': getattr(item, 'originalTitle', None),
             'year': getattr(item, 'year', ''),
             'summary': getattr(item, 'summary', 'Aucun résumé disponible.'),
             'tagline': getattr(item, 'tagline', ''), # Souvent appelé 'tagline' dans Plex
@@ -2489,7 +2493,9 @@ def get_media_details_for_modal(rating_key): # Renommé pour clarté, bien que l
 
         # Convertir la durée en format lisible (HH:MM:SS ou MM:SS)
         duration_ms = details.get('duration_ms')
+
         # S'assurer que duration_ms est un entier valide (traiter None comme 0)
+        # La valeur retournée par Plex peut être None si inconnue
         if duration_ms is None:
             duration_ms = 0
 
