@@ -3161,6 +3161,227 @@ def rename_series_files_endpoint():
     else:
         return jsonify({'status': 'error', 'message': 'Échec de l\'envoi de la commande à Sonarr.'}), 500
 
+@plex_editor_bp.route('/api/metadata_search', methods=['POST'])
+@login_required
+def metadata_search():
+    """
+    Recherche des métadonnées sur TMDB (Films) ou TVDB (Séries).
+    Retourne une liste normalisée de candidats.
+    """
+    data = request.json
+    query = data.get('query')
+    media_type = data.get('media_type') # 'movie' ou 'show'
+
+    if not query or not media_type:
+        return jsonify({'error': 'Query and media_type are required.'}), 400
+
+    results = []
+    try:
+        if media_type == 'movie':
+            tmdb_client = TheMovieDBClient()
+            tmdb_results = tmdb_client.search_movie(query, lang='fr-FR')
+            # Normaliser les résultats TMDB
+            for item in tmdb_results:
+                results.append({
+                    'id': item.get('id'),
+                    'title': item.get('title'),
+                    'original_title': item.get('original_title'),
+                    'year': item.get('year'),
+                    'overview': item.get('overview'),
+                    'poster_url': item.get('poster_url'),
+                    'provider': 'tmdb'
+                })
+        elif media_type == 'show':
+            tvdb_client = CustomTVDBClient()
+            # Utiliser la recherche optimisée qui gère la traduction
+            tvdb_results = tvdb_client.search_and_translate_series(query, lang='fra')
+            # Normaliser les résultats TVDB
+            for item in tvdb_results:
+                results.append({
+                    'id': item.get('tvdb_id'),
+                    'title': item.get('name'),
+                    'original_title': item.get('original_name'),
+                    'year': item.get('year'),
+                    'overview': item.get('overview'),
+                    'poster_url': item.get('poster_url'),
+                    'provider': 'tvdb'
+                })
+        else:
+            return jsonify({'error': 'Invalid media_type. Must be "movie" or "show".'}), 400
+
+        return jsonify({'results': results})
+
+    except Exception as e:
+        current_app.logger.error(f"Error in metadata_search: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+@plex_editor_bp.route('/api/metadata_apply', methods=['POST'])
+@login_required
+def metadata_apply():
+    """
+    Applique les métadonnées à un item Plex.
+    Action 'match' : Tente une association (Fix Match).
+    Action 'inject' : Écrase manuellement les champs (Title, Summary, Poster...).
+    """
+    data = request.json
+    rating_key = data.get('ratingKey')
+    action = data.get('action') # 'match' ou 'inject'
+    external_id = data.get('external_id')
+    provider = data.get('provider') # 'tmdb' ou 'tvdb'
+    user_id = data.get('userId')
+
+    if not all([rating_key, action, external_id, provider, user_id]):
+        return jsonify({'error': 'Missing required parameters.'}), 400
+
+    try:
+        # 1. Connexion au serveur Plex (Admin pour écriture)
+        admin_plex = get_plex_admin_server()
+        if not admin_plex:
+            return jsonify({'error': 'Failed to connect to Plex Server.'}), 500
+
+        item = admin_plex.fetchItem(int(rating_key))
+        if not item:
+            return jsonify({'error': 'Item not found.'}), 404
+
+        # 2. Logique selon l'action
+        if action == 'inject':
+            # --- MODE INJECTION MANUELLE ---
+            details = {}
+
+            if provider == 'tmdb':
+                tmdb_client = TheMovieDBClient()
+                # On utilise get_movie_details pour avoir toutes les infos
+                raw_details = tmdb_client.get_movie_details(external_id, lang='fr-FR')
+                if raw_details:
+                    details = {
+                        'title': raw_details.get('title'),
+                        'originalTitle': raw_details.get('original_title'),
+                        'year': int(raw_details.get('year')) if raw_details.get('year') and raw_details.get('year').isdigit() else None,
+                        'summary': raw_details.get('overview'),
+                        'originallyAvailableAt': raw_details.get('release_date'),
+                        'poster_url': raw_details.get('poster')
+                    }
+
+            elif provider == 'tvdb':
+                tvdb_client = CustomTVDBClient()
+                # On utilise get_series_details_by_id pour avoir toutes les infos
+                raw_details = tvdb_client.get_series_details_by_id(external_id, lang='fra')
+                if raw_details:
+                    # Note: get_series_details_by_id retourne déjà un dict simplifié, mais on mappe explicitement
+                    details = {
+                        'title': raw_details.get('name'),
+                        'summary': raw_details.get('overview'),
+                        'year': int(raw_details.get('year')) if raw_details.get('year') and str(raw_details.get('year')).isdigit() else None,
+                        'poster_url': raw_details.get('image')
+                    }
+
+            if not details:
+                return jsonify({'error': 'Failed to fetch details from provider.'}), 500
+
+            # Préparer les champs pour l'édition Plex
+            edits = {}
+            if details.get('title'):
+                edits['title.value'] = details['title']
+                edits['title.locked'] = 1
+                # On met aussi à jour le titre de tri par défaut
+                edits['titleSort.value'] = details['title']
+                edits['titleSort.locked'] = 1
+
+            if details.get('originalTitle'):
+                edits['originalTitle.value'] = details['originalTitle']
+                edits['originalTitle.locked'] = 1
+
+            if details.get('summary'):
+                edits['summary.value'] = details['summary']
+                edits['summary.locked'] = 1
+
+            if details.get('year'):
+                edits['year.value'] = details['year']
+                edits['year.locked'] = 1
+
+            if details.get('originallyAvailableAt'):
+                edits['originallyAvailableAt.value'] = details['originallyAvailableAt']
+                edits['originallyAvailableAt.locked'] = 1
+
+            # Appliquer les modifications textuelles
+            if edits:
+                current_app.logger.info(f"Injecting metadata for {rating_key}: {edits}")
+                item.edit(**edits)
+
+            # Appliquer le poster via URL (si dispo)
+            if details.get('poster_url'):
+                current_app.logger.info(f"Uploading poster for {rating_key}: {details['poster_url']}")
+                item.uploadPoster(url=details['poster_url'])
+
+            return jsonify({'success': True, 'message': 'Metadata injected successfully.'})
+
+        elif action == 'match':
+            # --- MODE ASSOCIATION (FIX MATCH) ---
+            # Pour faire un Fix Match, on doit d'abord rechercher via l'agent Plex pour obtenir un résultat "matchable".
+            # On ne peut pas juste injecter un GUID brut arbitraire.
+
+            # Recherche de candidats via Plex
+            # On utilise le titre et l'année fournis par le front (qui viennent de TMDB/TVDB)
+            # Mais attention, le front n'envoie que external_id. Il faut donc récupérer les infos minimales.
+
+            search_title = None
+            search_year = None
+
+            if provider == 'tmdb':
+                client = TheMovieDBClient()
+                info = client.get_movie_details(external_id)
+                if info:
+                    search_title = info.get('title')
+                    search_year = info.get('year')
+            elif provider == 'tvdb':
+                client = CustomTVDBClient()
+                info = client.get_series_details_by_id(external_id)
+                if info:
+                    search_title = info.get('name')
+                    search_year = info.get('year')
+
+            if not search_title:
+                 return jsonify({'error': 'Could not retrieve title for matching.'}), 500
+
+            # Lancer la recherche "matches" sur l'item Plex
+            # Cette méthode demande à l'agent actuel de chercher des correspondances
+            matches = item.matches(title=search_title, year=search_year)
+
+            if not matches:
+                return jsonify({'error': 'No matches found by Plex Agent. Try Manual Injection.'}), 404
+
+            # Tenter de trouver le bon candidat dans la liste retournée par Plex
+            # On cherche une correspondance soit sur le GUID (si possible), soit sur le titre/année
+            best_match = None
+
+            # Strategie : On regarde si l'un des résultats Plex contient notre external_id
+            for candidate in matches:
+                # guid format: 'com.plexapp.agents.themoviedb://12345?lang=fr' or 'tmdb://12345'
+                if str(external_id) in candidate.guid:
+                    best_match = candidate
+                    break
+
+            # Si pas de correspondance d'ID stricte, on prend le premier résultat si le score est élevé
+            if not best_match and matches:
+                # On pourrait être plus laxiste ici, ou demander à l'utilisateur de choisir
+                # Pour l'instant, on prend le premier si score > 80
+                if matches[0].score > 80:
+                    best_match = matches[0]
+
+            if best_match:
+                current_app.logger.info(f"Applying match: {best_match.name} (GUID: {best_match.guid})")
+                item.fixMatch(searchResult=best_match)
+                return jsonify({'success': True, 'message': f'Matched with {best_match.name}.'})
+            else:
+                return jsonify({'error': 'Correct match not found in Plex results. Use Manual Injection.'}), 404
+
+        else:
+            return jsonify({'error': 'Invalid action.'}), 400
+
+    except Exception as e:
+        current_app.logger.error(f"Error in metadata_apply: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
 # --- Gestionnaires d'erreur ---
 #@app.errorhandler(404)
 #def page_not_found(e):
