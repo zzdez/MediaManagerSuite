@@ -3345,10 +3345,18 @@ def metadata_apply():
 
             # Lancer la recherche "matches" sur l'item Plex
             # Cette méthode demande à l'agent actuel de chercher des correspondances
-            matches = item.matches(title=search_title, year=search_year)
+            try:
+                matches = item.matches(title=search_title, year=search_year)
+            except Exception as e_matches:
+                current_app.logger.warning(f"Plex Agent search failed for {search_title}: {e_matches}")
+                matches = [] # Traiter comme une absence de résultats
 
             if not matches:
-                return jsonify({'error': 'No matches found by Plex Agent. Try Manual Injection.'}), 404
+                # Retourner une erreur spécifique 404 avec un code d'erreur personnalisé
+                return jsonify({
+                    'error': 'NO_MATCH_FOUND',
+                    'message': 'Aucune correspondance trouvée dans la base Plex. Cet item n\'existe probablement pas chez Plex. Veuillez utiliser l\'option "Écraser (Manuel)".'
+                }), 404
 
             # Tenter de trouver le bon candidat dans la liste retournée par Plex
             # On cherche une correspondance soit sur le GUID (si possible), soit sur le titre/année

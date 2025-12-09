@@ -513,7 +513,23 @@ $(document).ready(function() {
                                 userId: userId
                             })
                         })
-                        .then(res => res.json())
+                        .then(res => {
+                            // On traite la réponse brute pour gérer les codes HTTP
+                            return res.json().then(data => {
+                                if (!res.ok) {
+                                    // Si on a un code d'erreur spécifique renvoyé par le backend
+                                    if (res.status === 404 && data.error === 'NO_MATCH_FOUND') {
+                                        // Afficher le message d'erreur spécifique de manière conviviale
+                                        alert(data.message);
+                                    } else {
+                                        // Erreur générique
+                                        alert('Erreur : ' + (data.error || 'Une erreur est survenue.'));
+                                    }
+                                    throw new Error(data.error || 'Server Error');
+                                }
+                                return data;
+                            });
+                        })
                         .then(data => {
                             if (data.success) {
                                 alert(data.message);
@@ -521,17 +537,13 @@ $(document).ready(function() {
                                 bootstrap.Modal.getInstance(modalElement).hide();
                                 // Rafraîchir la liste principale (simule un clic sur 'Appliquer les filtres')
                                 $('#apply-filters-btn').click();
-                            } else {
-                                alert('Erreur : ' + data.error);
-                                // Réactiver les boutons
-                                $allBtns.prop('disabled', false);
-                                $btn.html(action === 'inject' ? '<i class="bi bi-pencil-square"></i> Écraser (Manuel)' : '<i class="bi bi-link"></i> Associer (Fix Match)');
                             }
                         })
                         .catch(err => {
-                            console.error(err);
-                            alert('Erreur technique lors de l\'application.');
+                            console.error("Erreur Application Metadonnées:", err);
+                            // Réactiver les boutons en cas d'erreur
                             $allBtns.prop('disabled', false);
+                            $btn.html(action === 'inject' ? '<i class="bi bi-pencil-square"></i> Écraser (Manuel)' : '<i class="bi bi-link"></i> Associer (Fix Match)');
                         });
                     }
                 })
