@@ -2488,7 +2488,11 @@ def get_media_details_for_modal(rating_key): # Renommé pour clarté, bien que l
         }
 
         # Convertir la durée en format lisible (HH:MM:SS ou MM:SS)
-        duration_ms = details.get('duration_ms', 0)
+        duration_ms = details.get('duration_ms')
+        # S'assurer que duration_ms est un entier valide (traiter None comme 0)
+        if duration_ms is None:
+            duration_ms = 0
+
         if duration_ms > 0:
             seconds_total = int(duration_ms / 1000)
             hours = seconds_total // 3600
