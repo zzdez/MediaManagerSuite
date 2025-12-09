@@ -369,9 +369,171 @@ $(document).ready(function() {
                                 <p><strong>Genres:</strong> ${data.genres && data.genres.length > 0 ? data.genres.join(', ') : 'Non spécifiés'}</p>
                                 ${ratingHtml}
                                 ${durationHtml}
+                                <hr>
+                                <button class="btn btn-primary w-100 mt-2" id="identify-fix-btn"
+                                        data-rating-key="${ratingKey}"
+                                        data-title="${data.title || ''}"
+                                        data-year="${data.year || ''}">
+                                    <i class="bi bi-magic"></i> Identifier / Corriger
+                                </button>
                             </div>
                         </div>
+                        <div id="identify-search-container" class="mt-3" style="display:none; border-top: 1px solid #444; padding-top: 15px;">
+                            <h5>Rechercher une correspondance</h5>
+                            <div class="input-group mb-3">
+                                <input type="text" class="form-control" id="identify-search-input" placeholder="Titre...">
+                                <button class="btn btn-outline-light" type="button" id="identify-search-submit">Rechercher</button>
+                            </div>
+                            <div id="identify-results-area"></div>
+                        </div>
                     `;
+
+                    // Gestionnaire pour le bouton "Identifier / Corriger"
+                    // Utilisation de jQuery pour garantir la compatibilité si modalBody est un objet jQuery
+                    const $modalBody = $(modalBody);
+                    const $identifyBtn = $modalBody.find('#identify-fix-btn');
+                    const $searchContainer = $modalBody.find('#identify-search-container');
+                    const $searchInput = $modalBody.find('#identify-search-input');
+                    const $searchSubmit = $modalBody.find('#identify-search-submit');
+                    const $resultsArea = $modalBody.find('#identify-results-area');
+
+                    $identifyBtn.on('click', function() {
+                        $searchContainer.show();
+                        $searchInput.val($(this).data('title'));
+                        $identifyBtn.hide(); // Masquer le bouton principal
+                    });
+
+                    // Gestionnaire pour la recherche
+                    $searchSubmit.on('click', function() {
+                        const query = $searchInput.val();
+                        if (!query) return;
+
+                        $resultsArea.html('<div class="text-center"><div class="spinner-border spinner-border-sm" role="status"></div> Recherche...</div>');
+
+                        // Déterminer le type de média (pas idéal, on déduit du contexte global ou de l'item)
+                        // On peut récupérer le type depuis l'attribut data de la ligne du tableau qui a ouvert la modale
+                        const row = $(`.item-title-link[data-rating-key='${ratingKey}']`).closest('tr');
+                        // media_type_from_mapping est 'sonarr' (show) ou 'radarr' (movie)
+                        // Mais attention, plex_editor_ui utilise 'media-type-from-mapping'
+                        // On va simplifier : si 'sonarr' -> show, sinon movie (par défaut)
+                        let mediaType = 'movie';
+                        if (row.data('media-type-from-mapping') === 'sonarr' || row.data('custom-media-type') === 'SÉRIE') {
+                            mediaType = 'show';
+                        }
+
+                        fetch('/plex/api/metadata_search', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ query: query, media_type: mediaType })
+                        })
+                        .then(res => res.json())
+                        .then(resData => {
+                            if (resData.error) {
+                                $resultsArea.html(`<div class="alert alert-danger">${resData.error}</div>`);
+                                return;
+                            }
+
+                            if (!resData.results || resData.results.length === 0) {
+                                $resultsArea.html('<p class="text-muted">Aucun résultat trouvé.</p>');
+                                return;
+                            }
+
+                            let html = '<div class="list-group">';
+                            resData.results.forEach(result => {
+                                const yearStr = result.year ? `(${result.year})` : '';
+                                const overviewShort = result.overview ? (result.overview.substring(0, 100) + '...') : 'Pas de description';
+                                const providerBadge = result.provider === 'tmdb' ? '<span class="badge bg-primary">TMDB</span>' : '<span class="badge bg-success">TVDB</span>';
+
+                                html += `
+                                    <div class="list-group-item list-group-item-action bg-dark text-white border-secondary">
+                                        <div class="d-flex w-100 justify-content-between">
+                                            <h6 class="mb-1">${result.title} ${yearStr} ${providerBadge}</h6>
+                                            <small>ID: ${result.id}</small>
+                                        </div>
+                                        <p class="mb-1 small">${overviewShort}</p>
+                                        <div class="mt-2">
+                                            <button class="btn btn-sm btn-warning apply-metadata-btn"
+                                                    data-action="inject"
+                                                    data-id="${result.id}"
+                                                    data-provider="${result.provider}"
+                                                    data-rating-key="${ratingKey}">
+                                                <i class="bi bi-pencil-square"></i> Écraser (Manuel)
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-info apply-metadata-btn ms-2"
+                                                    data-action="match"
+                                                    data-id="${result.id}"
+                                                    data-provider="${result.provider}"
+                                                    data-rating-key="${ratingKey}">
+                                                <i class="bi bi-link"></i> Associer (Fix Match)
+                                            </button>
+                                        </div>
+                                    </div>
+                                `;
+                            });
+                            html += '</div>';
+                            $resultsArea.html(html);
+
+                            // Attacher les écouteurs aux nouveaux boutons avec jQuery (délégation locale ou directe)
+                            $resultsArea.find('.apply-metadata-btn').on('click', function() {
+                                handleApplyMetadata($(this));
+                            });
+                        })
+                        .catch(err => {
+                            console.error(err);
+                            $resultsArea.html('<div class="alert alert-danger">Erreur de communication.</div>');
+                        });
+                    });
+
+                    function handleApplyMetadata($btn) {
+                        const action = $btn.data('action');
+                        const externalId = $btn.data('id');
+                        const provider = $btn.data('provider');
+                        const rKey = $btn.data('rating-key');
+                        const userId = $('#user-select').val();
+
+                        if (!confirm(action === 'inject' ?
+                            "Attention : Cela va ÉCRASER et VERROUILLER les métadonnées (Titre, Résumé, etc.) dans Plex avec les données de " + provider.toUpperCase() + ". Continuer ?" :
+                            "Tenter d'associer cet item via l'agent Plex ?")) {
+                            return;
+                        }
+
+                        // Désactiver tous les boutons
+                        const $allBtns = $modalBody.find('.apply-metadata-btn');
+                        $allBtns.prop('disabled', true);
+                        $btn.html('<span class="spinner-border spinner-border-sm"></span> Traitement...');
+
+                        fetch('/plex/api/metadata_apply', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                ratingKey: rKey,
+                                action: action,
+                                external_id: externalId,
+                                provider: provider,
+                                userId: userId
+                            })
+                        })
+                        .then(res => res.json())
+                        .then(data => {
+                            if (data.success) {
+                                alert(data.message);
+                                // Fermer la modale
+                                bootstrap.Modal.getInstance(modalElement).hide();
+                                // Rafraîchir la liste principale (simule un clic sur 'Appliquer les filtres')
+                                $('#apply-filters-btn').click();
+                            } else {
+                                alert('Erreur : ' + data.error);
+                                // Réactiver les boutons
+                                $allBtns.prop('disabled', false);
+                                $btn.html(action === 'inject' ? '<i class="bi bi-pencil-square"></i> Écraser (Manuel)' : '<i class="bi bi-link"></i> Associer (Fix Match)');
+                            }
+                        })
+                        .catch(err => {
+                            console.error(err);
+                            alert('Erreur technique lors de l\'application.');
+                            $allBtns.prop('disabled', false);
+                        });
+                    }
                 })
                 .catch(error => {
                     modalTitle.textContent = 'Erreur';
