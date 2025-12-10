@@ -3395,25 +3395,32 @@ def metadata_apply():
 
             # Préparer les champs pour l'édition Plex
             edits = {}
-            if details.get('title'):
+            # On utilise 'in' pour permettre l'envoi de chaînes vides (effacement)
+            if 'title' in details:
                 edits['title.value'] = details['title']
                 edits['title.locked'] = 1
-                edits['titleSort.value'] = details['title']
-                edits['titleSort.locked'] = 1
+                if details['title']: # On ne définit le tri que si le titre n'est pas vide
+                    edits['titleSort.value'] = details['title']
+                    edits['titleSort.locked'] = 1
 
-            if details.get('originalTitle'):
+            if 'originalTitle' in details:
                 edits['originalTitle.value'] = details['originalTitle']
                 edits['originalTitle.locked'] = 1
 
-            if details.get('summary'):
+            if 'summary' in details:
                 edits['summary.value'] = details['summary']
                 edits['summary.locked'] = 1
 
-            if details.get('year'):
-                edits['year.value'] = details['year']
-                edits['year.locked'] = 1
+            if 'year' in details:
+                # Si l'année est fournie (non vide), on tente de convertir
+                if details['year']:
+                    try:
+                        edits['year.value'] = int(details['year'])
+                        edits['year.locked'] = 1
+                    except (ValueError, TypeError):
+                        pass
 
-            if details.get('originallyAvailableAt'):
+            if 'originallyAvailableAt' in details:
                 edits['originallyAvailableAt.value'] = details['originallyAvailableAt']
                 edits['originallyAvailableAt.locked'] = 1
 
