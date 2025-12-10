@@ -3425,7 +3425,24 @@ def metadata_apply():
             # Appliquer le poster
             if poster_file:
                 current_app.logger.info(f"Uploading local poster file for {rating_key}")
-                item.uploadPoster(content=poster_file.read())
+                import tempfile
+
+                # Créer un fichier temporaire pour l'upload car plexapi attend un filepath
+                # On utilise delete=False pour pouvoir fermer le fichier avant de le passer à plexapi (compatibilité Windows)
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+                    # poster_file est un FileStorage de Werkzeug
+                    poster_file.save(tmp.name)
+                    tmp_path = tmp.name
+
+                try:
+                    item.uploadPoster(filepath=tmp_path)
+                except Exception as e:
+                    current_app.logger.error(f"Erreur upload poster local: {e}", exc_info=True)
+                    # On continue pour ne pas bloquer les autres modifs
+                finally:
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+
             elif details.get('poster_url'):
                 current_app.logger.info(f"Uploading poster URL for {rating_key}: {details['poster_url']}")
                 item.uploadPoster(url=details['poster_url'])
