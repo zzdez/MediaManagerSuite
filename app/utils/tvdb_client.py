@@ -101,7 +101,7 @@ class CustomTVDBClient:
             return None
 
     @robust_request_tvdb()
-    def search_series(self, title, lang='fra'):
+    def search_series(self, title, lang='fra', year=None):
         """
         Recherche une série par son titre, en priorisant une langue.
         """
@@ -109,12 +109,32 @@ class CustomTVDBClient:
             logger.error("Client TVDB non initialisé, recherche impossible.")
             return []
         try:
-            logger.info(f"Recherche TVDB pour le titre : '{title}' en langue '{lang}'")
-            # La librairie tvdb_v4_official permet de passer des kwargs qui sont ajoutés aux paramètres de la requête
-            results = self.client.search(query=title, lang=lang)
+            logger.info(f"Recherche TVDB pour le titre : '{title}' en langue '{lang}' (Année: {year})")
+            kwargs = {'query': title, 'lang': lang, 'type': 'series'}
+            if year:
+                kwargs['year'] = year
+            results = self.client.search(**kwargs)
             return results if results else []
         except Exception as e:
             logger.error(f"Erreur lors de la recherche TVDB pour '{title}': {e}", exc_info=True)
+            return []
+
+    @robust_request_tvdb()
+    def search_movie(self, title, lang='fra', year=None):
+        """
+        Recherche un film par son titre sur TVDB.
+        """
+        if not self.client:
+            return []
+        try:
+            logger.info(f"Recherche TVDB pour le film : '{title}' en langue '{lang}' (Année: {year})")
+            kwargs = {'query': title, 'lang': lang, 'type': 'movie'}
+            if year:
+                kwargs['year'] = year
+            results = self.client.search(**kwargs)
+            return results if results else []
+        except Exception as e:
+            logger.error(f"Erreur lors de la recherche film TVDB pour '{title}': {e}", exc_info=True)
             return []
 
     @robust_request_tvdb(retries=3, delay=60) # Délai plus long car cette fonction peut faire plusieurs appels

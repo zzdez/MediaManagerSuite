@@ -3195,49 +3195,103 @@ def rename_series_files_endpoint():
 @login_required
 def metadata_search():
     """
-    Recherche des métadonnées sur TMDB (Films) ou TVDB (Séries).
-    Retourne une liste normalisée de candidats.
+    Recherche des métadonnées sur TMDB ou TVDB.
+    Supporte la sélection du fournisseur et le filtrage par année.
     """
     data = request.json
     query = data.get('query')
     media_type = data.get('media_type') # 'movie' ou 'show'
+    provider = data.get('provider', 'auto') # 'tmdb', 'tvdb', 'auto'
+    year = data.get('year')
 
     if not query or not media_type:
         return jsonify({'error': 'Query and media_type are required.'}), 400
 
+    # Déterminer le fournisseur cible
+    target_provider = provider
+    if provider == 'auto':
+        target_provider = 'tmdb' if media_type == 'movie' else 'tvdb'
+
     results = []
     try:
-        if media_type == 'movie':
+        if target_provider == 'tmdb':
             tmdb_client = TheMovieDBClient()
-            tmdb_results = tmdb_client.search_movie(query, lang='fr-FR')
+            raw_results = []
+
+            # TMDB supporte les deux types
+            if media_type == 'movie':
+                raw_results = tmdb_client.search_movie(query, lang='fr-FR')
+            else:
+                raw_results = tmdb_client.search_series(query, lang='fr-FR')
+
             # Normaliser les résultats TMDB
-            for item in tmdb_results:
+            for item in raw_results:
+                item_year = item.get('year')
+                # Filtrage optionnel par année (tolérance de +/- 1 an ?)
+                # Pour l'instant, on inclut tout, le tri côté client peut aider
+
+                # Adaptation des champs selon le type (movie/series) retourné par le client
+                title = item.get('title') or item.get('name')
+                original_title = item.get('original_title') or item.get('original_name')
+
                 results.append({
                     'id': item.get('id'),
-                    'title': item.get('title'),
-                    'original_title': item.get('original_title'),
-                    'year': item.get('year'),
+                    'title': title,
+                    'original_title': original_title,
+                    'year': item_year,
                     'overview': item.get('overview'),
                     'poster_url': item.get('poster_url'),
                     'provider': 'tmdb'
                 })
-        elif media_type == 'show':
+
+        elif target_provider == 'tvdb':
             tvdb_client = CustomTVDBClient()
-            # Utiliser la recherche optimisée qui gère la traduction
-            tvdb_results = tvdb_client.search_and_translate_series(query, lang='fra')
-            # Normaliser les résultats TVDB
-            for item in tvdb_results:
+            raw_results = []
+
+            if media_type == 'movie':
+                # Utiliser la nouvelle méthode search_movie avec année optionnelle
+                raw_results = tvdb_client.search_movie(query, lang='fra', year=year)
+            else:
+                # Pour les séries, search_series supporte maintenant l'année
+                # On utilise search_series plutôt que search_and_translate pour avoir plus de contrôle si l'année est fournie
+                # Mais search_and_translate est meilleure pour la traduction...
+                # On va utiliser search_series qui est plus générique si l'année est précisée
+                raw_results = tvdb_client.search_series(query, lang='fra', year=year)
+
+            # Normaliser les résultats TVDB (format brut de search)
+            for item in raw_results:
+                # item est un dict retourné par la lib tvdb_v4_official
+                # Clés usuelles: tvdb_id, name, year, image_url...
+                # Attention, la structure retournée par search() est différente de search_and_translate()
+
+                # Adaptation : l'objet retourné par search() a des attributs ou est un dict
+                # La lib retourne des objets généralement, ou des dicts selon la version.
+                # Mon wrapper search_series retourne "results if results else []".
+                # D'après le code de tvdb_v4_official, search retourne une liste de dicts.
+
+                r_id = item.get('tvdb_id')
+                r_title = item.get('name') or item.get('translations', {}).get('fra') # Tentative
+                r_year = item.get('year')
+                r_overview = item.get('overview')
+                r_image = item.get('image_url')
+
                 results.append({
-                    'id': item.get('tvdb_id'),
-                    'title': item.get('name'),
-                    'original_title': item.get('original_name'),
-                    'year': item.get('year'),
-                    'overview': item.get('overview'),
-                    'poster_url': item.get('poster_url'),
+                    'id': r_id,
+                    'title': r_title,
+                    'original_title': item.get('name'), # Souvent le nom original
+                    'year': r_year,
+                    'overview': r_overview,
+                    'poster_url': r_image,
                     'provider': 'tvdb'
                 })
-        else:
-            return jsonify({'error': 'Invalid media_type. Must be "movie" or "show".'}), 400
+
+        # Filtrage post-traitement par année pour TMDB (qui ne le supporte pas en param)
+        if year and target_provider == 'tmdb':
+            try:
+                target_year = int(year)
+                results = [r for r in results if r['year'] and abs(int(r['year']) - target_year) <= 1]
+            except (ValueError, TypeError):
+                pass
 
         return jsonify({'results': results})
 
@@ -3251,16 +3305,18 @@ def metadata_apply():
     """
     Applique les métadonnées à un item Plex.
     Action 'match' : Tente une association (Fix Match).
-    Action 'inject' : Écrase manuellement les champs (Title, Summary, Poster...).
+    Action 'inject' : Écrase manuellement les champs (Titre, Résumé, Poster...).
+                      Accepte soit un ID fournisseur, soit des données manuelles directes.
     """
     data = request.json
     rating_key = data.get('ratingKey')
     action = data.get('action') # 'match' ou 'inject'
     external_id = data.get('external_id')
-    provider = data.get('provider') # 'tmdb' ou 'tvdb'
+    provider = data.get('provider') # 'tmdb', 'tvdb', ou 'manual'
     user_id = data.get('userId')
+    manual_data = data.get('manual_data') # Données manuelles optionnelles
 
-    if not all([rating_key, action, external_id, provider, user_id]):
+    if not all([rating_key, action, user_id]):
         return jsonify({'error': 'Missing required parameters.'}), 400
 
     try:
@@ -3275,29 +3331,45 @@ def metadata_apply():
 
         # 2. Logique selon l'action
         if action == 'inject':
-            # --- MODE INJECTION MANUELLE ---
+            # --- MODE INJECTION ---
             details = {}
 
-            if provider == 'tmdb':
+            if manual_data:
+                # Injection manuelle directe
+                current_app.logger.info(f"Injection manuelle de données pour {rating_key}: {manual_data}")
+                details = manual_data
+            elif provider == 'tmdb' and external_id:
                 tmdb_client = TheMovieDBClient()
-                # On utilise get_movie_details pour avoir toutes les infos
-                raw_details = tmdb_client.get_movie_details(external_id, lang='fr-FR')
-                if raw_details:
-                    details = {
-                        'title': raw_details.get('title'),
-                        'originalTitle': raw_details.get('original_title'),
-                        'year': int(raw_details.get('year')) if raw_details.get('year') and raw_details.get('year').isdigit() else None,
-                        'summary': raw_details.get('overview'),
-                        'originallyAvailableAt': raw_details.get('release_date'),
-                        'poster_url': raw_details.get('poster')
-                    }
+                # On doit distinguer film/série pour le détail
+                # Par défaut on tente movie, mais si item.type == 'show', series
+                # Attention: si on force TMDB pour une série, il faut utiliser get_series_details
+                is_show = item.type == 'show'
 
-            elif provider == 'tvdb':
+                if is_show:
+                    raw_details = tmdb_client.get_series_details(external_id, lang='fr-FR')
+                    if raw_details:
+                        details = {
+                            'title': raw_details.get('name'),
+                            'summary': raw_details.get('overview'),
+                            'year': int(raw_details.get('year')) if raw_details.get('year') and raw_details.get('year').isdigit() else None,
+                            'poster_url': raw_details.get('poster')
+                        }
+                else:
+                    raw_details = tmdb_client.get_movie_details(external_id, lang='fr-FR')
+                    if raw_details:
+                        details = {
+                            'title': raw_details.get('title'),
+                            'originalTitle': raw_details.get('original_title'),
+                            'year': int(raw_details.get('year')) if raw_details.get('year') and raw_details.get('year').isdigit() else None,
+                            'summary': raw_details.get('overview'),
+                            'originallyAvailableAt': raw_details.get('release_date'),
+                            'poster_url': raw_details.get('poster')
+                        }
+
+            elif provider == 'tvdb' and external_id:
                 tvdb_client = CustomTVDBClient()
-                # On utilise get_series_details_by_id pour avoir toutes les infos
                 raw_details = tvdb_client.get_series_details_by_id(external_id, lang='fra')
                 if raw_details:
-                    # Note: get_series_details_by_id retourne déjà un dict simplifié, mais on mappe explicitement
                     details = {
                         'title': raw_details.get('name'),
                         'summary': raw_details.get('overview'),
@@ -3306,7 +3378,7 @@ def metadata_apply():
                     }
 
             if not details:
-                return jsonify({'error': 'Failed to fetch details from provider.'}), 500
+                return jsonify({'error': 'Failed to fetch details or no manual data provided.'}), 500
 
             # Préparer les champs pour l'édition Plex
             edits = {}

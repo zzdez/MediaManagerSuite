@@ -410,44 +410,168 @@ $(document).ready(function() {
                                 </button>
                             </div>
                         </div>
+
                         <div id="identify-search-container" class="mt-3" style="display:none; border-top: 1px solid #444; padding-top: 15px;">
-                            <h5>Rechercher une correspondance</h5>
-                            <div class="input-group mb-3">
-                                <input type="text" class="form-control" id="identify-search-input" placeholder="Titre...">
-                                <button class="btn btn-outline-light" type="button" id="identify-search-submit">Rechercher</button>
+                            <h5>Identifier / Rechercher</h5>
+                            <div class="row g-2 mb-2">
+                                <div class="col-md-3">
+                                    <select class="form-select form-select-sm" id="identify-provider-select">
+                                        <option value="auto">Auto</option>
+                                        <option value="tmdb">TMDB</option>
+                                        <option value="tvdb">TVDB</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <input type="number" class="form-control form-control-sm" id="identify-year-input" placeholder="Année">
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="input-group input-group-sm">
+                                        <input type="text" class="form-control" id="identify-search-input" placeholder="Titre...">
+                                        <button class="btn btn-primary" type="button" id="identify-search-submit">Chercher</button>
+                                    </div>
+                                </div>
                             </div>
+
+                            <div class="d-flex justify-content-end mb-2">
+                                <button class="btn btn-sm btn-outline-secondary" id="toggle-manual-edit-btn">
+                                    <i class="bi bi-pencil"></i> Édition Manuelle
+                                </button>
+                            </div>
+
+                            <!-- Manual Edit Form (Hidden) -->
+                            <div id="manual-edit-form" class="card card-body bg-dark border-secondary mb-3" style="display:none;">
+                                <h6>Édition Manuelle</h6>
+                                <div class="mb-2">
+                                    <label class="form-label small">Titre</label>
+                                    <input type="text" class="form-control form-control-sm" id="manual-title">
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label small">Titre Original</label>
+                                    <input type="text" class="form-control form-control-sm" id="manual-original-title">
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label small">Année</label>
+                                    <input type="number" class="form-control form-control-sm" id="manual-year">
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label small">Résumé</label>
+                                    <textarea class="form-control form-control-sm" id="manual-summary" rows="3"></textarea>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label small">URL Poster</label>
+                                    <input type="text" class="form-control form-control-sm" id="manual-poster" placeholder="http://...">
+                                </div>
+                                <div class="text-end">
+                                    <button class="btn btn-sm btn-secondary me-2" id="cancel-manual-edit-btn">Annuler</button>
+                                    <button class="btn btn-sm btn-success" id="save-manual-edit-btn">Enregistrer</button>
+                                </div>
+                            </div>
+
                             <div id="identify-results-area"></div>
                         </div>
                     `;
 
-                    // Gestionnaire pour le bouton "Identifier / Corriger"
-                    // Utilisation de jQuery pour garantir la compatibilité si modalBody est un objet jQuery
+                    // Initialisation des éléments jQuery
                     const $modalBody = $(modalBody);
                     const $identifyBtn = $modalBody.find('#identify-fix-btn');
                     const $searchContainer = $modalBody.find('#identify-search-container');
                     const $searchInput = $modalBody.find('#identify-search-input');
+                    const $yearInput = $modalBody.find('#identify-year-input');
+                    const $providerSelect = $modalBody.find('#identify-provider-select');
                     const $searchSubmit = $modalBody.find('#identify-search-submit');
                     const $resultsArea = $modalBody.find('#identify-results-area');
 
+                    const $manualEditBtn = $modalBody.find('#toggle-manual-edit-btn');
+                    const $manualForm = $modalBody.find('#manual-edit-form');
+                    const $saveManualBtn = $modalBody.find('#save-manual-edit-btn');
+                    const $cancelManualBtn = $modalBody.find('#cancel-manual-edit-btn');
+
+                    // Ouvrir le panneau "Identifier"
                     $identifyBtn.on('click', function() {
                         $searchContainer.show();
                         $searchInput.val($(this).data('title'));
-                        $identifyBtn.hide(); // Masquer le bouton principal
+                        $yearInput.val($(this).data('year'));
+                        $identifyBtn.hide();
                     });
 
-                    // Gestionnaire pour la recherche
+                    // Ouvrir/Pré-remplir le formulaire manuel
+                    $manualEditBtn.on('click', function() {
+                        $manualForm.show();
+                        $resultsArea.hide(); // Masquer les résultats de recherche pour clarté
+                        // Pré-remplissage
+                        $('#manual-title').val(data.title || '');
+                        $('#manual-original-title').val(data.originalTitle || '');
+                        $('#manual-year').val(data.year || '');
+                        $('#manual-summary').val(data.summary || '');
+                        // On ne pré-remplit pas le poster car c'est souvent une URL interne Plex inutile pour l'upload
+                        $('#manual-poster').val('');
+                    });
+
+                    $cancelManualBtn.on('click', function() {
+                        $manualForm.hide();
+                        $resultsArea.show();
+                    });
+
+                    // Enregistrer l'édition manuelle
+                    $saveManualBtn.on('click', function() {
+                        const manualData = {
+                            title: $('#manual-title').val(),
+                            originalTitle: $('#manual-original-title').val(),
+                            year: $('#manual-year').val(),
+                            summary: $('#manual-summary').val(),
+                            poster_url: $('#manual-poster').val()
+                        };
+
+                        if (!manualData.title) { alert("Le titre est obligatoire."); return; }
+
+                        if (!confirm("Voulez-vous écraser les données de cet item avec votre saisie manuelle ?")) return;
+
+                        const btn = $(this);
+                        btn.prop('disabled', true).text('Enregistrement...');
+
+                        const userId = $('#user-select').val();
+
+                        fetch('/plex/api/metadata_apply', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                ratingKey: ratingKey,
+                                action: 'inject',
+                                userId: userId,
+                                manual_data: manualData
+                            })
+                        })
+                        .then(res => res.json())
+                        .then(respData => {
+                            if (respData.success || respData.status === 'success') { // Gérer formats de réponse variables
+                                alert("Modifications enregistrées !");
+                                bootstrap.Modal.getInstance(modalElement).hide();
+                                $('#apply-filters-btn').click();
+                            } else {
+                                alert("Erreur: " + (respData.error || respData.message));
+                                btn.prop('disabled', false).text('Enregistrer');
+                            }
+                        })
+                        .catch(err => {
+                            console.error(err);
+                            alert("Erreur de communication.");
+                            btn.prop('disabled', false).text('Enregistrer');
+                        });
+                    });
+
+                    // Recherche
                     $searchSubmit.on('click', function() {
                         const query = $searchInput.val();
+                        const year = $yearInput.val();
+                        const provider = $providerSelect.val();
+
                         if (!query) return;
 
                         $resultsArea.html('<div class="text-center"><div class="spinner-border spinner-border-sm" role="status"></div> Recherche...</div>');
+                        $resultsArea.show();
+                        $manualForm.hide(); // Masquer le formulaire manuel
 
-                        // Déterminer le type de média (pas idéal, on déduit du contexte global ou de l'item)
-                        // On peut récupérer le type depuis l'attribut data de la ligne du tableau qui a ouvert la modale
                         const row = $(`.item-title-link[data-rating-key='${ratingKey}']`).closest('tr');
-                        // media_type_from_mapping est 'sonarr' (show) ou 'radarr' (movie)
-                        // Mais attention, plex_editor_ui utilise 'media-type-from-mapping'
-                        // On va simplifier : si 'sonarr' -> show, sinon movie (par défaut)
                         let mediaType = 'movie';
                         if (row.data('media-type-from-mapping') === 'sonarr' || row.data('custom-media-type') === 'SÉRIE') {
                             mediaType = 'show';
@@ -456,7 +580,12 @@ $(document).ready(function() {
                         fetch('/plex/api/metadata_search', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ query: query, media_type: mediaType })
+                            body: JSON.stringify({
+                                query: query,
+                                media_type: mediaType,
+                                provider: provider,
+                                year: year
+                            })
                         })
                         .then(res => res.json())
                         .then(resData => {
@@ -474,7 +603,8 @@ $(document).ready(function() {
                             resData.results.forEach(result => {
                                 const yearStr = result.year ? `(${result.year})` : '';
                                 const overviewShort = result.overview ? (result.overview.substring(0, 100) + '...') : 'Pas de description';
-                                const providerBadge = result.provider === 'tmdb' ? '<span class="badge bg-primary">TMDB</span>' : '<span class="badge bg-success">TVDB</span>';
+                                const prov = (result.provider || '').toUpperCase();
+                                const providerBadge = `<span class="badge bg-${prov === 'TMDB' ? 'primary' : 'success'}">${prov}</span>`;
 
                                 html += `
                                     <div class="list-group-item list-group-item-action bg-dark text-white border-secondary">
@@ -505,7 +635,6 @@ $(document).ready(function() {
                             html += '</div>';
                             $resultsArea.html(html);
 
-                            // Attacher les écouteurs aux nouveaux boutons avec jQuery (délégation locale ou directe)
                             $resultsArea.find('.apply-metadata-btn').on('click', function() {
                                 handleApplyMetadata($(this));
                             });
