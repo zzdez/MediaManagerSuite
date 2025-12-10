@@ -3307,20 +3307,36 @@ def metadata_apply():
     Action 'match' : Tente une association (Fix Match).
     Action 'inject' : Écrase manuellement les champs (Titre, Résumé, Poster...).
                       Accepte soit un ID fournisseur, soit des données manuelles directes.
+                      Supporte l'upload de fichier local pour le poster.
     """
-    data = request.json
-    rating_key = data.get('ratingKey')
-    action = data.get('action') # 'match' ou 'inject'
-    external_id = data.get('external_id')
-    provider = data.get('provider') # 'tmdb', 'tvdb', ou 'manual'
-    user_id = data.get('userId')
-    manual_data = data.get('manual_data') # Données manuelles optionnelles
+    import json
+
+    # 1. Extraction des données (Compatible JSON et Multipart/Form-data)
+    poster_file = None
+
+    if request.content_type and 'multipart/form-data' in request.content_type:
+        rating_key = request.form.get('ratingKey')
+        action = request.form.get('action')
+        external_id = request.form.get('external_id')
+        provider = request.form.get('provider')
+        user_id = request.form.get('userId')
+        manual_data_str = request.form.get('manual_data')
+        manual_data = json.loads(manual_data_str) if manual_data_str else None
+        poster_file = request.files.get('poster_file')
+    else:
+        data = request.json
+        rating_key = data.get('ratingKey')
+        action = data.get('action')
+        external_id = data.get('external_id')
+        provider = data.get('provider')
+        user_id = data.get('userId')
+        manual_data = data.get('manual_data')
 
     if not all([rating_key, action, user_id]):
         return jsonify({'error': 'Missing required parameters.'}), 400
 
     try:
-        # 1. Connexion au serveur Plex (Admin pour écriture)
+        # 2. Connexion au serveur Plex (Admin pour écriture)
         admin_plex = get_plex_admin_server()
         if not admin_plex:
             return jsonify({'error': 'Failed to connect to Plex Server.'}), 500
@@ -3329,7 +3345,7 @@ def metadata_apply():
         if not item:
             return jsonify({'error': 'Item not found.'}), 404
 
-        # 2. Logique selon l'action
+        # 3. Logique selon l'action
         if action == 'inject':
             # --- MODE INJECTION ---
             details = {}
@@ -3340,9 +3356,6 @@ def metadata_apply():
                 details = manual_data
             elif provider == 'tmdb' and external_id:
                 tmdb_client = TheMovieDBClient()
-                # On doit distinguer film/série pour le détail
-                # Par défaut on tente movie, mais si item.type == 'show', series
-                # Attention: si on force TMDB pour une série, il faut utiliser get_series_details
                 is_show = item.type == 'show'
 
                 if is_show:
@@ -3377,7 +3390,7 @@ def metadata_apply():
                         'poster_url': raw_details.get('image')
                     }
 
-            if not details:
+            if not details and not poster_file:
                 return jsonify({'error': 'Failed to fetch details or no manual data provided.'}), 500
 
             # Préparer les champs pour l'édition Plex
@@ -3385,7 +3398,6 @@ def metadata_apply():
             if details.get('title'):
                 edits['title.value'] = details['title']
                 edits['title.locked'] = 1
-                # On met aussi à jour le titre de tri par défaut
                 edits['titleSort.value'] = details['title']
                 edits['titleSort.locked'] = 1
 
@@ -3410,9 +3422,12 @@ def metadata_apply():
                 current_app.logger.info(f"Injecting metadata for {rating_key}: {edits}")
                 item.edit(**edits)
 
-            # Appliquer le poster via URL (si dispo)
-            if details.get('poster_url'):
-                current_app.logger.info(f"Uploading poster for {rating_key}: {details['poster_url']}")
+            # Appliquer le poster
+            if poster_file:
+                current_app.logger.info(f"Uploading local poster file for {rating_key}")
+                item.uploadPoster(content=poster_file.read())
+            elif details.get('poster_url'):
+                current_app.logger.info(f"Uploading poster URL for {rating_key}: {details['poster_url']}")
                 item.uploadPoster(url=details['poster_url'])
 
             return jsonify({'success': True, 'message': 'Metadata injected successfully.'})

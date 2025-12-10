@@ -461,6 +461,10 @@ $(document).ready(function() {
                                     <label class="form-label small">URL Poster</label>
                                     <input type="text" class="form-control form-control-sm" id="manual-poster" placeholder="http://...">
                                 </div>
+                                <div class="mb-2">
+                                    <label class="form-label small">Poster Local (Prioritaire)</label>
+                                    <input type="file" class="form-control form-control-sm" id="manual-poster-file" accept="image/*">
+                                </div>
                                 <div class="text-end">
                                     <button class="btn btn-sm btn-secondary me-2" id="cancel-manual-edit-btn">Annuler</button>
                                     <button class="btn btn-sm btn-success" id="save-manual-edit-btn">Enregistrer</button>
@@ -522,6 +526,9 @@ $(document).ready(function() {
                             poster_url: $('#manual-poster').val()
                         };
 
+                        const posterFileInput = $('#manual-poster-file')[0];
+                        const posterFile = posterFileInput ? posterFileInput.files[0] : null;
+
                         if (!manualData.title) { alert("Le titre est obligatoire."); return; }
 
                         if (!confirm("Voulez-vous écraser les données de cet item avec votre saisie manuelle ?")) return;
@@ -531,15 +538,19 @@ $(document).ready(function() {
 
                         const userId = $('#user-select').val();
 
+                        const formData = new FormData();
+                        formData.append('ratingKey', ratingKey);
+                        formData.append('action', 'inject');
+                        formData.append('userId', userId);
+                        formData.append('manual_data', JSON.stringify(manualData));
+
+                        if (posterFile) {
+                            formData.append('poster_file', posterFile);
+                        }
+
                         fetch('/plex/api/metadata_apply', {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                ratingKey: ratingKey,
-                                action: 'inject',
-                                userId: userId,
-                                manual_data: manualData
-                            })
+                            body: formData
                         })
                         .then(res => res.json())
                         .then(respData => {
