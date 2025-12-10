@@ -1257,26 +1257,57 @@ def get_media_items():
 @plex_editor_bp.route('/api/media_item/<int:rating_key>', methods=['DELETE'])
 @login_required
 def delete_media_item_api(rating_key): # Renommé pour éviter conflit avec la non-API delete_item
-    """Supprime un média en utilisant sa ratingKey (via API)."""
+    """Supprime un média en utilisant sa ratingKey (via API) et nettoie les fichiers."""
     try:
         admin_plex_server = get_plex_admin_server()
         if not admin_plex_server:
             current_app.logger.error(f"API delete_media_item: Impossible d'obtenir une connexion admin Plex.")
             return jsonify({'status': 'error', 'message': 'Connexion au serveur Plex admin échouée.'}), 500
 
+        # --- RÉCUPÉRATION DYNAMIQUE DES RACINES ET GARDE-FOUS ---
+        active_plex_library_roots = []
+        deduced_base_paths_guards = []
+        try:
+            library_sections = admin_plex_server.library.sections()
+            temp_roots = set()
+            temp_guards = set()
+            for lib_sec in library_sections:
+                if hasattr(lib_sec, 'locations') and lib_sec.locations:
+                    for loc_path in lib_sec.locations:
+                        norm_loc_path = os.path.normpath(loc_path)
+                        temp_roots.add(norm_loc_path)
+                        drive, _ = os.path.splitdrive(norm_loc_path)
+                        if drive: temp_guards.add(drive + os.sep)
+                        else:
+                            path_components = [c for c in norm_loc_path.split(os.sep) if c]
+                            if path_components: temp_guards.add(os.sep + path_components[0])
+                            elif norm_loc_path == os.sep: temp_guards.add(os.sep)
+
+            active_plex_library_roots = list(temp_roots)
+            deduced_base_paths_guards = list(temp_guards) if temp_guards else [os.path.normpath(os.path.abspath(os.sep))]
+        except Exception as e_get_paths:
+             current_app.logger.warning(f"API delete_media_item: Erreur récupération racines: {e_get_paths}")
+        # --- FIN RÉCUPÉRATION DYNAMIQUE ---
+
         item_to_delete = admin_plex_server.fetchItem(rating_key)
 
         if item_to_delete:
             item_title = item_to_delete.title
-            current_app.logger.info(f"API delete_media_item: Tentative de suppression du média '{item_title}' (ratingKey: {rating_key}).")
+            media_filepath_to_cleanup = get_media_filepath(item_to_delete)
+
+            current_app.logger.info(f"API delete_media_item: Suppression Plex de '{item_title}' (ratingKey: {rating_key}).")
             item_to_delete.delete()
-            # La suppression des fichiers du disque est omise ici pour la version API.
-            # cleanup_parent_directory_recursively etc. ne sont pas appelés.
-            current_app.logger.info(f"API delete_media_item: Média '{item_title}' (ratingKey: {rating_key}) supprimé de Plex.")
-            return jsonify({'status': 'success', 'message': f"'{item_title}' a été supprimé de Plex."})
+
+            if media_filepath_to_cleanup:
+                current_app.logger.info(f"API delete_media_item: Nettoyage fichiers pour: {media_filepath_to_cleanup}")
+                cleanup_parent_directory_recursively(
+                    media_filepath_to_cleanup,
+                    dynamic_plex_library_roots=active_plex_library_roots,
+                    base_paths_guards=deduced_base_paths_guards
+                )
+
+            return jsonify({'status': 'success', 'message': f"'{item_title}' a été supprimé de Plex et du disque."})
         else:
-            # Ce cas est techniquement couvert par l'exception NotFound ci-dessous, mais une vérification explicite est possible.
-            current_app.logger.warning(f"API delete_media_item: Média avec ratingKey {rating_key} non trouvé (avant exception).")
             return jsonify({'status': 'error', 'message': f'Média avec ratingKey {rating_key} non trouvé.'}), 404
 
     except NotFound:
@@ -1285,7 +1316,7 @@ def delete_media_item_api(rating_key): # Renommé pour éviter conflit avec la n
     except Unauthorized:
         current_app.logger.error(f"API delete_media_item: Autorisation refusée pour supprimer {rating_key}. Token admin invalide ?")
         return jsonify({'status': 'error', 'message': 'Autorisation refusée par le serveur Plex.'}), 401
-    except BadRequest: # Au cas où l'item ne peut pas être supprimé pour une raison de requête
+    except BadRequest:
         current_app.logger.error(f"API delete_media_item: Requête incorrecte pour la suppression de {rating_key}.", exc_info=True)
         return jsonify({'status': 'error', 'message': 'Requête de suppression incorrecte vers Plex.'}), 400
     except Exception as e:
@@ -1895,36 +1926,23 @@ def delete_item(rating_key):
 @plex_editor_bp.route('/bulk_delete_items', methods=['POST'])
 @login_required
 def bulk_delete_items():
-    # --- Début des logs de débogage initiaux ---
-    print("--- PRINT: FONCTION bulk_delete_items APPELÉE ---")
-    print(f"--- PRINT: Contenu du formulaire bulk_delete_items: {request.form}")
-    current_app.logger.info("--- LOG: FONCTION bulk_delete_items APPELÉE ---")
-    current_app.logger.debug(f"LOG: Contenu du formulaire bulk_delete_items: {request.form}")
-    # --- Fin des logs de débogage initiaux ---
-
     if 'plex_user_id' not in session:
-        flash("Session expirée. Veuillez vous reconnecter.", "danger")
-        return redirect(url_for('plex_editor.index')) # (### MODIFICATION ICI ###) - Pointeur vers 'index'
+        return jsonify({'status': 'error', 'message': "Session expirée."}), 401
 
     selected_keys_str_list = request.form.getlist('selected_item_keys')
-    current_library_name = request.form.get('current_library_name')
-    redirect_url = request.referrer or url_for('plex_editor.list_libraries') # (### MODIFICATION ICI ###) - Fallback plus logique
 
     if not selected_keys_str_list:
-        flash("Aucun élément sélectionné pour suppression.", "warning")
-        return redirect(redirect_url)
+        return jsonify({'status': 'warning', 'message': "Aucun élément sélectionné."}), 400
 
     selected_rating_keys = [int(k_str) for k_str in selected_keys_str_list if k_str.isdigit()]
     if not selected_rating_keys:
-        flash("Aucune clé d'élément valide sélectionnée après filtrage.", "warning")
-        return redirect(redirect_url)
+        return jsonify({'status': 'warning', 'message': "Aucune clé d'élément valide."}), 400
 
     plex_url = current_app.config.get('PLEX_URL')
     admin_token = current_app.config.get('PLEX_TOKEN')
 
     if not plex_url or not admin_token:
-        flash("Configuration Plex admin manquante. Suppression groupée impossible.", "danger")
-        return redirect(redirect_url)
+        return jsonify({'status': 'error', 'message': "Configuration Plex admin manquante."}), 500
 
     success_count = 0
     fail_count = 0
@@ -1961,7 +1979,8 @@ def bulk_delete_items():
             current_app.logger.info(f"bulk_delete_items: Garde-fous de base déduits: {deduced_base_paths_guards}")
         except Exception as e_get_paths:
             current_app.logger.error(f"bulk_delete_items: Erreur récupération racines/garde-fous: {e_get_paths}. Nettoyage plus risqué.", exc_info=True)
-            flash("Avertissement: Récupération des chemins Plex échouée. Nettoyage de dossier plus risqué.", "warning")
+            # Pas de flash, juste log
+
         # --- FIN RÉCUPÉRATION DYNAMIQUE ---
 
         for r_key in selected_rating_keys:
@@ -2002,23 +2021,24 @@ def bulk_delete_items():
                 failed_items_info.append(f"'{title_err}' (erreur: {type(e_item_del).__name__})")
                 current_app.logger.error(f"Échec suppression (groupe) pour '{title_err}': {e_item_del}", exc_info=True)
 
-        # Messages Flash après la boucle
+        message = ""
+        status = "success"
         if success_count > 0:
-            flash(f"{success_count} élément(s) supprimé(s) de Plex.", "success")
+            message += f"{success_count} élément(s) supprimé(s) de Plex. "
         if fail_count > 0:
+            status = "warning" if success_count > 0 else "error"
             summary = ", ".join(failed_items_info[:3])
             if len(failed_items_info) > 3:
                 summary += f", et {len(failed_items_info) - 3} autre(s)..."
-            flash(f"Échec de suppression pour {fail_count} élément(s). Détails: {summary}.", "danger")
+            message += f"Échec pour {fail_count} élément(s). {summary}"
+
+        return jsonify({'status': status, 'message': message.strip()})
 
     except Unauthorized:
-        flash("Autorisation refusée (token admin). Suppression groupée échouée.", "danger")
-        current_app.logger.error("Unauthorized pour suppression groupée.")
+        return jsonify({'status': 'error', 'message': "Autorisation refusée (token admin)."}), 401
     except Exception as e_bulk:
-        flash(f"Erreur majeure suppression groupée: {e_bulk}", "danger")
         current_app.logger.error(f"Erreur majeure suppression groupée: {e_bulk}", exc_info=True)
-
-    return redirect(redirect_url)
+        return jsonify({'status': 'error', 'message': f"Erreur majeure: {str(e_bulk)}"}), 500
 
 # (### SUPPRESSION ICI ###) - La ligne d'import qui était ici a été supprimée car elle est déjà en haut du fichier.
 

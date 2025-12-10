@@ -316,6 +316,38 @@ $(document).ready(function() {
             $('#confirmRejectShowBtn').data('ratingKey', ratingKey);
         }
 
+        // --- ACTION : SUPPRESSION D'UN ITEM (SINGULIER) ---
+        const deleteItemBtn = target.closest('.delete-item-btn');
+        if (deleteItemBtn) {
+            const ratingKey = $(deleteItemBtn).data('rating-key');
+            const itemTitle = $(deleteItemBtn).data('item-title');
+
+            if (confirm(`Êtes-vous sûr de vouloir supprimer "${itemTitle}" de Plex et du disque ?`)) {
+                // Feedback visuel
+                $(deleteItemBtn).prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+                fetch(`/plex/api/media_item/${ratingKey}`, {
+                    method: 'DELETE'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        // Supprimer la ligne du tableau
+                        $(deleteItemBtn).closest('tr').fadeOut(500, function() { $(this).remove(); });
+                        alert(data.message);
+                    } else {
+                        alert('Erreur: ' + data.message);
+                        $(deleteItemBtn).prop('disabled', false).html('<i class="bi bi-trash-fill"></i>');
+                    }
+                })
+                .catch(error => {
+                    console.error('Erreur suppression:', error);
+                    alert('Erreur de communication.');
+                    $(deleteItemBtn).prop('disabled', false).html('<i class="bi bi-trash-fill"></i>');
+                });
+            }
+        }
+
 // --- ACTION : COPIER LE CHEMIN DU FICHIER ---
         const copyPathBtn = event.target.closest('.copy-path-btn');
         if (copyPathBtn) {
