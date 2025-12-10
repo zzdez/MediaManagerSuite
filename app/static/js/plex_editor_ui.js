@@ -318,7 +318,7 @@ $(document).ready(function() {
 
         // --- ACTION : SUPPRESSION D'UN ITEM (SINGULIER) ---
         const deleteItemBtn = target.closest('.delete-item-btn');
-        if (deleteItemBtn) {
+        if (deleteItemBtn.length > 0) {
             const ratingKey = $(deleteItemBtn).data('rating-key');
             const itemTitle = $(deleteItemBtn).data('item-title');
 
