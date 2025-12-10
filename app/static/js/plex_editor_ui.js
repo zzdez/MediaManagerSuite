@@ -1276,14 +1276,15 @@ $('#confirmArchiveMovieBtn').on('click', function() {
         }
 
         if (confirm(`Êtes-vous sûr de vouloir supprimer ${selectedItemKeys.length} élément(s) ? Cette action est irréversible.`)) {
+            const params = new URLSearchParams();
+            selectedItemKeys.forEach(key => params.append('selected_item_keys', key));
+
             fetch('/plex/bulk_delete_items', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
                 },
-                body: new URLSearchParams({
-                    'selected_item_keys': selectedItemKeys
-                })
+                body: params
             })
             .then(response => {
                 if (response.ok) {
