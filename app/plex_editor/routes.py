@@ -3432,10 +3432,12 @@ def metadata_apply():
                 item.edit(**edits)
 
             # Gestion du RESET (Déverrouillage)
+            refresh_needed = False
             if details.get('reset_poster'):
                 current_app.logger.info(f"Resetting poster for {rating_key} (unlocking 'thumb')")
                 try:
                     item.unlock(field='thumb')
+                    refresh_needed = True
                 except Exception as e:
                     current_app.logger.warning(f"Failed to unlock poster: {e}")
 
@@ -3443,8 +3445,13 @@ def metadata_apply():
                 current_app.logger.info(f"Resetting background for {rating_key} (unlocking 'art')")
                 try:
                     item.unlock(field='art')
+                    refresh_needed = True
                 except Exception as e:
                     current_app.logger.warning(f"Failed to unlock background: {e}")
+
+            if refresh_needed:
+                current_app.logger.info(f"Refreshing metadata for {rating_key} to apply reset")
+                item.refresh()
 
             # Appliquer le poster
             if poster_file:
