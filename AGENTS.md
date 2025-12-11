@@ -166,3 +166,34 @@ La modale d'ajout de torrent (`addTorrentModal`) présente des défis uniques en
   - **Note importante** : Les modifications apportées au `BACKUP_SCHEDULE` via l'interface utilisateur ne prennent effet qu'après un redémarrage de l'application, car le planificateur de tâches est initialisé au démarrage.
 
 - **État Actuel** : La fonctionnalité est entièrement implémentée, testée et fonctionnelle.
+
+### Gestion Avancée des Métadonnées et Images Plex (Juin 2025)
+
+- **Objectif** : Améliorer l'interface "Plex Editor" pour permettre l'injection manuelle de métadonnées et, surtout, offrir un moyen de changer facilement les posters et fonds d'écran, palliant l'absence de suppression dans l'API Plex.
+
+- **Réalisations Clés** :
+  - **Injection Manuelle des Métadonnées** :
+    - Ajout d'un formulaire complet ("Édition Manuelle") dans la modale de détails.
+    - Permet de modifier le Titre, Titre Original, Année et Résumé.
+    - Support de l'upload local de fichiers (Poster et Background) via un stockage temporaire (`tempfile`) avant envoi à l'API Plex.
+    - Implémentation du verrouillage (`lock`) des champs modifiés pour éviter l'écrasement par les agents Plex.
+
+  - **Recherche de Métadonnées (TMDB/TVDB)** :
+    - Ajout d'une fonctionnalité "Identifier / Rechercher" permettant de choisir explicitement le fournisseur (TMDB, TVDB) et l'année.
+    - Création de la route `/api/metadata_search` pour servir ces résultats.
+    - Action "Associer (Fix Match)" qui utilise l'ID externe pour forcer une association correcte via l'agent Plex.
+
+  - **Sélecteur Visuel d'Assets (Visual Asset Selector)** :
+    - **Contexte** : La suppression d'un poster uploadé n'est pas possible via l'API `plexapi` actuelle.
+    - **Solution** : Création d'une interface à onglets ("Général", "Affiches", "Fonds d'écran").
+    - Les onglets "Affiches" et "Fonds d'écran" chargent une grille visuelle de tous les assets disponibles (fournis par les agents ou uploadés).
+    - Un clic sur une image la définit comme active (`item.setPoster()` / `item.setArt()`), permettant de changer facilement de visuel sans avoir besoin de supprimer l'ancien.
+    - Nouvelle route backend `/api/media_assets/<rating_key>` pour lister ces assets avec des URLs authentifiées.
+
+- **Points Techniques Importants** :
+  - **Refresh** : Lors d'un "Reset" (déverrouillage) d'un champ, l'appel `item.refresh()` est désormais systématiquement fait pour forcer la mise à jour immédiate côté Plex.
+  - **Upload** : L'upload de fichier utilise `multipart/form-data`. Le backend sauve le fichier temporairement sur disque car `plexapi.uploadPoster` requiert un chemin fichier (ou une URL), pas un flux binaire.
+  - **URLs Signées** : Pour afficher les images dans le frontend, les URLs retournées par l'API Plex (`/library/metadata/...`) doivent être signées avec le token (`includeToken=True`).
+
+- **Limitations Connues** :
+  - **Suppression d'images** : Il n'y a toujours pas de bouton "Supprimer" pour les images uploadées manuellement, car l'API ne l'expose pas. Le sélecteur visuel est le contournement officiel.
