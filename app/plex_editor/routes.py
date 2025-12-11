@@ -38,6 +38,7 @@ from app.utils.tmdb_client import TheMovieDBClient
 from app.utils.tvdb_client import CustomTVDBClient
 from app.utils.cache_manager import SimpleCache, get_pending_lock, remove_pending_lock
 from app.utils import trailer_manager # Import du nouveau manager
+from app.utils.ai_client import get_metadata_from_ai # Import du nouveau client IA
 from app.agent.services import _search_and_score_trailers
 from thefuzz import fuzz
 
@@ -3190,6 +3191,30 @@ def rename_series_files_endpoint():
         return jsonify({'status': 'success', 'message': message})
     else:
         return jsonify({'status': 'error', 'message': 'Échec de l\'envoi de la commande à Sonarr.'}), 500
+
+@plex_editor_bp.route('/api/ai_metadata_search', methods=['POST'])
+@login_required
+def ai_metadata_search():
+    """
+    Recherche des métadonnées intelligentes via l'IA (Gemini).
+    """
+    data = request.json
+    query = data.get('query')
+
+    if not query:
+        return jsonify({'error': 'La requête est vide.'}), 400
+
+    try:
+        result = get_metadata_from_ai(query)
+
+        if "error" in result:
+            return jsonify(result), 500
+
+        return jsonify({'success': True, 'data': result})
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur route AI search: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
 
 @plex_editor_bp.route('/api/metadata_search', methods=['POST'])
 @login_required

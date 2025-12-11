@@ -454,6 +454,11 @@ $(document).ready(function() {
                                 <div class="tab-content" id="manual-edit-content">
                                     <!-- TAB 1: GENERAL -->
                                     <div class="tab-pane fade show active" id="general-tab-pane" role="tabpanel">
+                                        <div class="d-grid gap-2 mb-3">
+                                            <button class="btn btn-sm btn-outline-info" id="ai-autofill-btn" type="button">
+                                                <i class="bi bi-stars"></i> ✨ Remplissage Auto (IA)
+                                            </button>
+                                        </div>
                                         <div class="mb-2">
                                             <label class="form-label small">Titre</label>
                                             <input type="text" class="form-control form-control-sm" id="manual-title">
@@ -542,6 +547,53 @@ $(document).ready(function() {
                     const $cancelManualBtn = $modalBody.find('#cancel-manual-edit-btn');
                     const $uploadPosterBtn = $modalBody.find('#upload-poster-btn');
                     const $uploadBackgroundBtn = $modalBody.find('#upload-background-btn');
+                    const $aiAutofillBtn = $modalBody.find('#ai-autofill-btn');
+
+                    // Gestion du bouton IA
+                    $aiAutofillBtn.on('click', function() {
+                        const currentTitle = $('#manual-title').val();
+                        let searchQuery = prompt("Que voulez-vous rechercher ? (Titre, lien, etc.)", currentTitle);
+
+                        if (!searchQuery) return;
+
+                        const btn = $(this);
+                        const originalHtml = btn.html();
+                        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Recherche IA...');
+
+                        fetch('/plex/api/ai_metadata_search', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ query: searchQuery })
+                        })
+                        .then(r => r.json())
+                        .then(resp => {
+                            if (resp.success && resp.data) {
+                                const d = resp.data;
+                                if (d.title) $('#manual-title').val(d.title);
+                                if (d.original_title) $('#manual-original-title').val(d.original_title);
+                                if (d.year) $('#manual-year').val(d.year);
+                                if (d.summary) $('#manual-summary').val(d.summary);
+
+                                if (d.poster_url) {
+                                    $('#manual-poster').val(d.poster_url);
+                                    // Switch to posters tab to show user we found one?
+                                    // $modalBody.find('#posters-tab').click();
+                                    alert("Données trouvées ! Une URL de poster a aussi été ajoutée dans l'onglet 'Affiches'.");
+                                } else {
+                                    alert("Données textuelles trouvées et remplies.");
+                                }
+                            } else {
+                                alert("Erreur IA: " + (resp.error || "Aucune donnée trouvée."));
+                            }
+                        })
+                        .catch(e => {
+                            console.error(e);
+                            alert("Erreur de communication avec l'IA.");
+                        })
+                        .finally(() => {
+                            btn.prop('disabled', false).html(originalHtml);
+                        });
+                    });
 
                     // Ouvrir le panneau "Identifier"
                     $identifyBtn.on('click', function() {
