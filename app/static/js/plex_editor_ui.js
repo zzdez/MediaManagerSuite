@@ -457,13 +457,38 @@ $(document).ready(function() {
                                     <label class="form-label small">Résumé</label>
                                     <textarea class="form-control form-control-sm" id="manual-summary" rows="3"></textarea>
                                 </div>
-                                <div class="mb-2">
-                                    <label class="form-label small">URL Poster</label>
-                                    <input type="text" class="form-control form-control-sm" id="manual-poster" placeholder="http://...">
+                                <div class="row mb-2">
+                                    <div class="col-md-6">
+                                        <label class="form-label small">URL Poster</label>
+                                        <input type="text" class="form-control form-control-sm" id="manual-poster" placeholder="http://...">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label small">Poster Local</label>
+                                        <input type="file" class="form-control form-control-sm" id="manual-poster-file" accept="image/*">
+                                    </div>
+                                    <div class="col-12 mt-1">
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" id="manual-reset-poster">
+                                            <label class="form-check-label small" for="manual-reset-poster">Réinitialiser le Poster (Retirer custom)</label>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div class="mb-2">
-                                    <label class="form-label small">Poster Local (Prioritaire)</label>
-                                    <input type="file" class="form-control form-control-sm" id="manual-poster-file" accept="image/*">
+
+                                <div class="row mb-2">
+                                    <div class="col-md-6">
+                                        <label class="form-label small">URL Fond d'écran</label>
+                                        <input type="text" class="form-control form-control-sm" id="manual-background" placeholder="http://...">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label small">Fond d'écran Local</label>
+                                        <input type="file" class="form-control form-control-sm" id="manual-background-file" accept="image/*">
+                                    </div>
+                                    <div class="col-12 mt-1">
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" id="manual-reset-background">
+                                            <label class="form-check-label small" for="manual-reset-background">Réinitialiser le Fond d'écran</label>
+                                        </div>
+                                    </div>
                                 </div>
                                 <div class="text-end">
                                     <button class="btn btn-sm btn-secondary me-2" id="cancel-manual-edit-btn">Annuler</button>
@@ -523,15 +548,21 @@ $(document).ready(function() {
                             originalTitle: $('#manual-original-title').val(),
                             year: $('#manual-year').val(),
                             summary: $('#manual-summary').val(),
-                            poster_url: $('#manual-poster').val()
+                            poster_url: $('#manual-poster').val(),
+                            background_url: $('#manual-background').val(),
+                            reset_poster: $('#manual-reset-poster').is(':checked'),
+                            reset_background: $('#manual-reset-background').is(':checked')
                         };
 
                         const posterFileInput = $('#manual-poster-file')[0];
                         const posterFile = posterFileInput ? posterFileInput.files[0] : null;
 
+                        const backgroundFileInput = $('#manual-background-file')[0];
+                        const backgroundFile = backgroundFileInput ? backgroundFileInput.files[0] : null;
+
                         if (!manualData.title) { alert("Le titre est obligatoire."); return; }
 
-                        if (!confirm("Voulez-vous écraser les données de cet item avec votre saisie manuelle ?")) return;
+                        if (!confirm("Voulez-vous appliquer ces modifications manuelles ?")) return;
 
                         const btn = $(this);
                         btn.prop('disabled', true).text('Enregistrement...');
@@ -546,6 +577,9 @@ $(document).ready(function() {
 
                         if (posterFile) {
                             formData.append('poster_file', posterFile);
+                        }
+                        if (backgroundFile) {
+                            formData.append('background_file', backgroundFile);
                         }
 
                         fetch('/plex/api/metadata_apply', {

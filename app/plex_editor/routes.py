@@ -3313,6 +3313,7 @@ def metadata_apply():
 
     # 1. Extraction des données (Compatible JSON et Multipart/Form-data)
     poster_file = None
+    background_file = None
 
     if request.content_type and 'multipart/form-data' in request.content_type:
         rating_key = request.form.get('ratingKey')
@@ -3323,6 +3324,7 @@ def metadata_apply():
         manual_data_str = request.form.get('manual_data')
         manual_data = json.loads(manual_data_str) if manual_data_str else None
         poster_file = request.files.get('poster_file')
+        background_file = request.files.get('background_file')
     else:
         data = request.json
         rating_key = data.get('ratingKey')
@@ -3429,15 +3431,27 @@ def metadata_apply():
                 current_app.logger.info(f"Injecting metadata for {rating_key}: {edits}")
                 item.edit(**edits)
 
+            # Gestion du RESET (Déverrouillage)
+            if details.get('reset_poster'):
+                current_app.logger.info(f"Resetting poster for {rating_key} (unlocking 'thumb')")
+                try:
+                    item.unlock(field='thumb')
+                except Exception as e:
+                    current_app.logger.warning(f"Failed to unlock poster: {e}")
+
+            if details.get('reset_background'):
+                current_app.logger.info(f"Resetting background for {rating_key} (unlocking 'art')")
+                try:
+                    item.unlock(field='art')
+                except Exception as e:
+                    current_app.logger.warning(f"Failed to unlock background: {e}")
+
             # Appliquer le poster
             if poster_file:
                 current_app.logger.info(f"Uploading local poster file for {rating_key}")
                 import tempfile
 
-                # Créer un fichier temporaire pour l'upload car plexapi attend un filepath
-                # On utilise delete=False pour pouvoir fermer le fichier avant de le passer à plexapi (compatibilité Windows)
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
-                    # poster_file est un FileStorage de Werkzeug
                     poster_file.save(tmp.name)
                     tmp_path = tmp.name
 
@@ -3445,7 +3459,6 @@ def metadata_apply():
                     item.uploadPoster(filepath=tmp_path)
                 except Exception as e:
                     current_app.logger.error(f"Erreur upload poster local: {e}", exc_info=True)
-                    # On continue pour ne pas bloquer les autres modifs
                 finally:
                     if os.path.exists(tmp_path):
                         os.remove(tmp_path)
@@ -3453,6 +3466,27 @@ def metadata_apply():
             elif details.get('poster_url'):
                 current_app.logger.info(f"Uploading poster URL for {rating_key}: {details['poster_url']}")
                 item.uploadPoster(url=details['poster_url'])
+
+            # Appliquer le fond d'écran (Art)
+            if background_file:
+                current_app.logger.info(f"Uploading local background file for {rating_key}")
+                import tempfile
+
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+                    background_file.save(tmp.name)
+                    tmp_path = tmp.name
+
+                try:
+                    item.uploadArt(filepath=tmp_path)
+                except Exception as e:
+                    current_app.logger.error(f"Erreur upload background local: {e}", exc_info=True)
+                finally:
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+
+            elif details.get('background_url'):
+                current_app.logger.info(f"Uploading background URL for {rating_key}: {details['background_url']}")
+                item.uploadArt(url=details['background_url'])
 
             return jsonify({'success': True, 'message': 'Metadata injected successfully.'})
 
