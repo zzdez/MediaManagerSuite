@@ -3299,6 +3299,53 @@ def metadata_search():
         current_app.logger.error(f"Error in metadata_search: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
+@plex_editor_bp.route('/api/media_assets/<int:rating_key>', methods=['GET'])
+@login_required
+def get_media_assets(rating_key):
+    """Retrieves available posters and backgrounds for an item."""
+    asset_type = request.args.get('type', 'poster') # 'poster' or 'art'
+
+    try:
+        admin_plex = get_plex_admin_server()
+        if not admin_plex:
+            return jsonify({'error': 'Failed to connect to Plex Server.'}), 500
+
+        item = admin_plex.fetchItem(rating_key)
+        if not item:
+            return jsonify({'error': 'Item not found.'}), 404
+
+        assets = []
+        if asset_type == 'poster':
+            plex_assets = item.posters()
+        elif asset_type == 'art':
+            plex_assets = item.arts()
+        else:
+            return jsonify({'error': 'Invalid asset type.'}), 400
+
+        for asset in plex_assets:
+            # Construct a safe object
+            # asset.key is the API path to set it
+            # asset.ratingKey is effectively the same or part of it
+            # asset.thumb is the path to view it
+            # asset.provider tells us source (e.g., 'local', 'com.plexapp.agents.themoviedb')
+
+            # Using authenticated URL for display
+            display_url = admin_plex.url(asset.thumb, includeToken=True)
+
+            assets.append({
+                'key': asset.ratingKey, # Use ratingKey as the unique ID for selection
+                'provider': asset.provider,
+                'selected': asset.selected,
+                'thumb_url': display_url
+            })
+
+        return jsonify({'assets': assets})
+
+    except Exception as e:
+        current_app.logger.error(f"Error fetching assets for {rating_key}: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
 @plex_editor_bp.route('/api/metadata_apply', methods=['POST'])
 @login_required
 def metadata_apply():
@@ -3308,12 +3355,14 @@ def metadata_apply():
     Action 'inject' : Écrase manuellement les champs (Titre, Résumé, Poster...).
                       Accepte soit un ID fournisseur, soit des données manuelles directes.
                       Supporte l'upload de fichier local pour le poster.
+    Action 'select_poster' / 'select_background' : Sélectionne un visuel existant.
     """
     import json
 
     # 1. Extraction des données (Compatible JSON et Multipart/Form-data)
     poster_file = None
     background_file = None
+    asset_key = None
 
     if request.content_type and 'multipart/form-data' in request.content_type:
         rating_key = request.form.get('ratingKey')
@@ -3325,6 +3374,7 @@ def metadata_apply():
         manual_data = json.loads(manual_data_str) if manual_data_str else None
         poster_file = request.files.get('poster_file')
         background_file = request.files.get('background_file')
+        asset_key = request.form.get('asset_key')
     else:
         data = request.json
         rating_key = data.get('ratingKey')
@@ -3333,6 +3383,7 @@ def metadata_apply():
         provider = data.get('provider')
         user_id = data.get('userId')
         manual_data = data.get('manual_data')
+        asset_key = data.get('asset_key')
 
     if not all([rating_key, action, user_id]):
         return jsonify({'error': 'Missing required parameters.'}), 400
@@ -3348,7 +3399,34 @@ def metadata_apply():
             return jsonify({'error': 'Item not found.'}), 404
 
         # 3. Logique selon l'action
-        if action == 'inject':
+        if action == 'select_poster':
+            if not asset_key: return jsonify({'error': 'Missing asset_key.'}), 400
+
+            # Find the poster object
+            posters = item.posters()
+            target = next((p for p in posters if p.ratingKey == asset_key), None)
+
+            if target:
+                item.setPoster(target)
+                # item.unlock('thumb') # Optional: ensure it's not locked to something else?
+                # Actually setPoster usually locks it or sets it as user selected.
+                return jsonify({'success': True, 'message': 'Poster updated.'})
+            else:
+                return jsonify({'error': 'Poster not found.'}), 404
+
+        elif action == 'select_background':
+            if not asset_key: return jsonify({'error': 'Missing asset_key.'}), 400
+
+            arts = item.arts()
+            target = next((a for a in arts if a.ratingKey == asset_key), None)
+
+            if target:
+                item.setArt(target)
+                return jsonify({'success': True, 'message': 'Background updated.'})
+            else:
+                return jsonify({'error': 'Background not found.'}), 404
+
+        elif action == 'inject':
             # --- MODE INJECTION ---
             details = {}
 

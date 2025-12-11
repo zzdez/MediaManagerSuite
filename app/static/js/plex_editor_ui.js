@@ -440,59 +440,85 @@ $(document).ready(function() {
 
                             <!-- Manual Edit Form (Hidden) -->
                             <div id="manual-edit-form" class="card card-body bg-dark border-secondary mb-3" style="display:none;">
-                                <h6>Édition Manuelle</h6>
-                                <div class="mb-2">
-                                    <label class="form-label small">Titre</label>
-                                    <input type="text" class="form-control form-control-sm" id="manual-title">
-                                </div>
-                                <div class="mb-2">
-                                    <label class="form-label small">Titre Original</label>
-                                    <input type="text" class="form-control form-control-sm" id="manual-original-title">
-                                </div>
-                                <div class="mb-2">
-                                    <label class="form-label small">Année</label>
-                                    <input type="number" class="form-control form-control-sm" id="manual-year">
-                                </div>
-                                <div class="mb-2">
-                                    <label class="form-label small">Résumé</label>
-                                    <textarea class="form-control form-control-sm" id="manual-summary" rows="3"></textarea>
-                                </div>
-                                <div class="row mb-2">
-                                    <div class="col-md-6">
-                                        <label class="form-label small">URL Poster</label>
-                                        <input type="text" class="form-control form-control-sm" id="manual-poster" placeholder="http://...">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label small">Poster Local</label>
-                                        <input type="file" class="form-control form-control-sm" id="manual-poster-file" accept="image/*">
-                                    </div>
-                                    <div class="col-12 mt-1">
-                                        <div class="form-check form-switch">
-                                            <input class="form-check-input" type="checkbox" id="manual-reset-poster">
-                                            <label class="form-check-label small" for="manual-reset-poster">Réinitialiser le Poster (Retirer custom)</label>
+                                <ul class="nav nav-tabs mb-3" id="manual-edit-tabs" role="tablist">
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link active" id="general-tab" data-bs-toggle="tab" data-bs-target="#general-tab-pane" type="button" role="tab">Général</button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link" id="posters-tab" data-bs-toggle="tab" data-bs-target="#posters-tab-pane" type="button" role="tab">Affiches</button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link" id="backgrounds-tab" data-bs-toggle="tab" data-bs-target="#backgrounds-tab-pane" type="button" role="tab">Fonds d'écran</button>
+                                    </li>
+                                </ul>
+                                <div class="tab-content" id="manual-edit-content">
+                                    <!-- TAB 1: GENERAL -->
+                                    <div class="tab-pane fade show active" id="general-tab-pane" role="tabpanel">
+                                        <div class="mb-2">
+                                            <label class="form-label small">Titre</label>
+                                            <input type="text" class="form-control form-control-sm" id="manual-title">
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label small">Titre Original</label>
+                                            <input type="text" class="form-control form-control-sm" id="manual-original-title">
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label small">Année</label>
+                                            <input type="number" class="form-control form-control-sm" id="manual-year">
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label small">Résumé</label>
+                                            <textarea class="form-control form-control-sm" id="manual-summary" rows="3"></textarea>
+                                        </div>
+                                        <div class="text-end mt-3">
+                                            <button class="btn btn-sm btn-secondary me-2" id="cancel-manual-edit-btn">Annuler</button>
+                                            <button class="btn btn-sm btn-success" id="save-manual-edit-btn">Enregistrer les modifications</button>
                                         </div>
                                     </div>
-                                </div>
 
-                                <div class="row mb-2">
-                                    <div class="col-md-6">
-                                        <label class="form-label small">URL Fond d'écran</label>
-                                        <input type="text" class="form-control form-control-sm" id="manual-background" placeholder="http://...">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label small">Fond d'écran Local</label>
-                                        <input type="file" class="form-control form-control-sm" id="manual-background-file" accept="image/*">
-                                    </div>
-                                    <div class="col-12 mt-1">
-                                        <div class="form-check form-switch">
-                                            <input class="form-check-input" type="checkbox" id="manual-reset-background">
-                                            <label class="form-check-label small" for="manual-reset-background">Réinitialiser le Fond d'écran</label>
+                                    <!-- TAB 2: POSTERS -->
+                                    <div class="tab-pane fade" id="posters-tab-pane" role="tabpanel">
+                                        <div id="posters-grid" class="d-flex flex-wrap gap-2 justify-content-center mb-3" style="max-height: 400px; overflow-y: auto;">
+                                            <div class="text-center w-100 py-3"><div class="spinner-border spinner-border-sm"></div> Chargement...</div>
+                                        </div>
+                                        <hr>
+                                        <h6>Ajouter une affiche</h6>
+                                        <div class="row mb-2">
+                                            <div class="col-md-6">
+                                                <label class="form-label small">URL Poster</label>
+                                                <input type="text" class="form-control form-control-sm" id="manual-poster" placeholder="http://...">
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label small">Poster Local</label>
+                                                <input type="file" class="form-control form-control-sm" id="manual-poster-file" accept="image/*">
+                                            </div>
+                                        </div>
+                                        <div class="text-end">
+                                            <button class="btn btn-sm btn-primary" id="upload-poster-btn">Uploader</button>
                                         </div>
                                     </div>
-                                </div>
-                                <div class="text-end">
-                                    <button class="btn btn-sm btn-secondary me-2" id="cancel-manual-edit-btn">Annuler</button>
-                                    <button class="btn btn-sm btn-success" id="save-manual-edit-btn">Enregistrer</button>
+
+                                    <!-- TAB 3: BACKGROUNDS -->
+                                    <div class="tab-pane fade" id="backgrounds-tab-pane" role="tabpanel">
+                                        <div id="backgrounds-grid" class="d-flex flex-wrap gap-2 justify-content-center mb-3" style="max-height: 400px; overflow-y: auto;">
+                                            <div class="text-center w-100 py-3"><div class="spinner-border spinner-border-sm"></div> Chargement...</div>
+                                        </div>
+                                        <hr>
+                                        <h6>Ajouter un fond d'écran</h6>
+                                        <div class="row mb-2">
+                                            <div class="col-md-6">
+                                                <label class="form-label small">URL Fond d'écran</label>
+                                                <input type="text" class="form-control form-control-sm" id="manual-background" placeholder="http://...">
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label small">Fond d'écran Local</label>
+                                                <input type="file" class="form-control form-control-sm" id="manual-background-file" accept="image/*">
+                                            </div>
+                                        </div>
+                                        <div class="text-end">
+                                            <button class="btn btn-sm btn-primary" id="upload-background-btn">Uploader</button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
@@ -514,6 +540,8 @@ $(document).ready(function() {
                     const $manualForm = $modalBody.find('#manual-edit-form');
                     const $saveManualBtn = $modalBody.find('#save-manual-edit-btn');
                     const $cancelManualBtn = $modalBody.find('#cancel-manual-edit-btn');
+                    const $uploadPosterBtn = $modalBody.find('#upload-poster-btn');
+                    const $uploadBackgroundBtn = $modalBody.find('#upload-background-btn');
 
                     // Ouvrir le panneau "Identifier"
                     $identifyBtn.on('click', function() {
@@ -523,17 +551,108 @@ $(document).ready(function() {
                         $identifyBtn.hide();
                     });
 
+                    // Variables pour charger les assets une seule fois
+                    let postersLoaded = false;
+                    let backgroundsLoaded = false;
+
+                    // Gestion des onglets pour charger les images à la demande
+                    $modalBody.find('#posters-tab').on('shown.bs.tab', function() {
+                        if (!postersLoaded) {
+                            loadAssets('poster', '#posters-grid');
+                            postersLoaded = true;
+                        }
+                    });
+
+                    $modalBody.find('#backgrounds-tab').on('shown.bs.tab', function() {
+                        if (!backgroundsLoaded) {
+                            loadAssets('art', '#backgrounds-grid');
+                            backgroundsLoaded = true;
+                        }
+                    });
+
+                    function loadAssets(type, containerId) {
+                        fetch(`/plex/api/media_assets/${ratingKey}?type=${type}`)
+                            .then(r => r.json())
+                            .then(data => {
+                                const container = $modalBody.find(containerId);
+                                container.empty();
+                                if (data.assets && data.assets.length > 0) {
+                                    data.assets.forEach(asset => {
+                                        const isSelected = asset.selected;
+                                        const borderClass = isSelected ? 'border-success border-4' : 'border-secondary';
+                                        const selectedBadge = isSelected ? '<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-success"><i class="bi bi-check"></i></span>' : '';
+
+                                        const html = `
+                                            <div class="position-relative asset-item" style="width: 120px; cursor: pointer;" data-key="${asset.key}">
+                                                <img src="${asset.thumb_url}" class="img-thumbnail ${borderClass}" style="width: 100%; height: auto;">
+                                                ${selectedBadge}
+                                            </div>
+                                        `;
+                                        container.append(html);
+                                    });
+
+                                    // Click handler for selection
+                                    container.find('.asset-item').on('click', function() {
+                                        const key = $(this).data('key');
+                                        selectAsset(type, key);
+                                    });
+                                } else {
+                                    container.html('<p class="text-muted">Aucune image trouvée.</p>');
+                                }
+                            })
+                            .catch(err => {
+                                console.error(err);
+                                $modalBody.find(containerId).html('<p class="text-danger">Erreur de chargement.</p>');
+                            });
+                    }
+
+                    function selectAsset(type, key) {
+                        const userId = $('#user-select').val();
+                        const action = type === 'poster' ? 'select_poster' : 'select_background';
+
+                        if(!confirm("Définir cette image comme active ?")) return;
+
+                        // Show loader overlay or similar? For now, simplistic.
+
+                        const formData = new FormData();
+                        formData.append('ratingKey', ratingKey);
+                        formData.append('action', action);
+                        formData.append('userId', userId);
+                        formData.append('asset_key', key);
+
+                        fetch('/plex/api/metadata_apply', { method: 'POST', body: formData })
+                            .then(r => r.json())
+                            .then(d => {
+                                if(d.success) {
+                                    alert("Image mise à jour !");
+                                    // Reload assets to show new selection state
+                                    if (type === 'poster') {
+                                        loadAssets('poster', '#posters-grid');
+                                        // Update main modal poster preview too?
+                                        // Complex to update main view without reload, but let's try reloading the table
+                                        $('#apply-filters-btn').click();
+                                    } else {
+                                        loadAssets('art', '#backgrounds-grid');
+                                    }
+                                } else {
+                                    alert("Erreur: " + d.error);
+                                }
+                            })
+                            .catch(e => alert("Erreur réseau."));
+                    }
+
                     // Ouvrir/Pré-remplir le formulaire manuel
                     $manualEditBtn.on('click', function() {
                         $manualForm.show();
                         $resultsArea.hide(); // Masquer les résultats de recherche pour clarté
-                        // Pré-remplissage
+                        // Pré-remplissage des champs texte uniquement
                         $('#manual-title').val(data.title || '');
                         $('#manual-original-title').val(data.originalTitle || '');
                         $('#manual-year').val(data.year || '');
                         $('#manual-summary').val(data.summary || '');
-                        // On ne pré-remplit pas le poster car c'est souvent une URL interne Plex inutile pour l'upload
-                        $('#manual-poster').val('');
+
+                        // Activer l'onglet Général par défaut
+                        $modalBody.find('#general-tab').click();
                     });
 
                     $cancelManualBtn.on('click', function() {
@@ -541,28 +660,98 @@ $(document).ready(function() {
                         $resultsArea.show();
                     });
 
-                    // Enregistrer l'édition manuelle
+                    // Handler pour Uploader un Poster (depuis l'onglet Affiches)
+                    $uploadPosterBtn.on('click', function() {
+                        handleUpload('poster');
+                    });
+
+                    // Handler pour Uploader un Background (depuis l'onglet Fonds d'écran)
+                    $uploadBackgroundBtn.on('click', function() {
+                        handleUpload('background');
+                    });
+
+                    function handleUpload(type) {
+                        const urlInputId = type === 'poster' ? '#manual-poster' : '#manual-background';
+                        const fileInputId = type === 'poster' ? '#manual-poster-file' : '#manual-background-file';
+
+                        const urlVal = $(urlInputId).val();
+                        const fileInput = $(fileInputId)[0];
+                        const fileVal = fileInput ? fileInput.files[0] : null;
+
+                        if (!urlVal && !fileVal) {
+                            alert("Veuillez fournir une URL ou un fichier.");
+                            return;
+                        }
+
+                        if (!confirm("Uploader cette image ?")) return;
+
+                        const btn = (type === 'poster') ? $uploadPosterBtn : $uploadBackgroundBtn;
+                        btn.prop('disabled', true).text('Upload...');
+
+                        const userId = $('#user-select').val();
+                        const formData = new FormData();
+                        formData.append('ratingKey', ratingKey);
+                        formData.append('action', 'inject'); // Reuse inject for upload
+                        formData.append('userId', userId);
+
+                        // We send empty manual_data for text fields to avoid overwriting them
+                        // The backend 'inject' logic handles partial updates if we are careful.
+                        // Wait, backend logic for 'inject' applies edits if keys exist in 'details'.
+                        // If we don't send manual_data, details is empty.
+                        // But we need to ensure we don't accidentally clear title/summary.
+                        // Actually, my backend code checks `if 'title' in details`.
+                        // If `manual_data` is empty/null, `details` will be empty (or fetched from provider if ext_id provided, but here we don't provide ext_id).
+                        // So sending empty manual_data is safe for just uploading images.
+
+                        // However, we need to pass the image data
+                        if (urlVal) {
+                            const key = type === 'poster' ? 'poster_url' : 'background_url';
+                            formData.append('manual_data', JSON.stringify({ [key]: urlVal }));
+                        } else {
+                            // If file, we just append file, backend handles it if present
+                            formData.append('manual_data', JSON.stringify({}));
+                        }
+
+                        if (type === 'poster' && fileVal) formData.append('poster_file', fileVal);
+                        if (type === 'background' && fileVal) formData.append('background_file', fileVal);
+
+                        fetch('/plex/api/metadata_apply', { method: 'POST', body: formData })
+                            .then(r => r.json())
+                            .then(d => {
+                                if (d.success) {
+                                    alert("Upload réussi !");
+                                    // Reload the grid to show new image
+                                    if (type === 'poster') {
+                                        loadAssets('poster', '#posters-grid');
+                                        // Clear inputs
+                                        $(urlInputId).val('');
+                                        $(fileInputId).val('');
+                                    } else {
+                                        loadAssets('art', '#backgrounds-grid');
+                                        $(urlInputId).val('');
+                                        $(fileInputId).val('');
+                                    }
+                                } else {
+                                    alert("Erreur upload: " + d.error);
+                                }
+                            })
+                            .catch(e => alert("Erreur réseau."))
+                            .finally(() => btn.prop('disabled', false).text('Uploader'));
+                    }
+
+                    // Enregistrer l'édition manuelle (Texte uniquement maintenant, ou tout si on veut)
+                    // Pour simplifier, ce bouton ne sauvegarde que les champs texte de l'onglet Général
                     $saveManualBtn.on('click', function() {
                         const manualData = {
                             title: $('#manual-title').val(),
                             originalTitle: $('#manual-original-title').val(),
                             year: $('#manual-year').val(),
-                            summary: $('#manual-summary').val(),
-                            poster_url: $('#manual-poster').val(),
-                            background_url: $('#manual-background').val(),
-                            reset_poster: $('#manual-reset-poster').is(':checked'),
-                            reset_background: $('#manual-reset-background').is(':checked')
+                            summary: $('#manual-summary').val()
                         };
-
-                        const posterFileInput = $('#manual-poster-file')[0];
-                        const posterFile = posterFileInput ? posterFileInput.files[0] : null;
-
-                        const backgroundFileInput = $('#manual-background-file')[0];
-                        const backgroundFile = backgroundFileInput ? backgroundFileInput.files[0] : null;
 
                         if (!manualData.title) { alert("Le titre est obligatoire."); return; }
 
-                        if (!confirm("Voulez-vous appliquer ces modifications manuelles ?")) return;
+                        if (!confirm("Voulez-vous appliquer ces modifications textuelles ?")) return;
 
                         const btn = $(this);
                         btn.prop('disabled', true).text('Enregistrement...');
@@ -575,32 +764,25 @@ $(document).ready(function() {
                         formData.append('userId', userId);
                         formData.append('manual_data', JSON.stringify(manualData));
 
-                        if (posterFile) {
-                            formData.append('poster_file', posterFile);
-                        }
-                        if (backgroundFile) {
-                            formData.append('background_file', backgroundFile);
-                        }
-
                         fetch('/plex/api/metadata_apply', {
                             method: 'POST',
                             body: formData
                         })
                         .then(res => res.json())
                         .then(respData => {
-                            if (respData.success || respData.status === 'success') { // Gérer formats de réponse variables
+                            if (respData.success || respData.status === 'success') {
                                 alert("Modifications enregistrées !");
                                 bootstrap.Modal.getInstance(modalElement).hide();
                                 $('#apply-filters-btn').click();
                             } else {
                                 alert("Erreur: " + (respData.error || respData.message));
-                                btn.prop('disabled', false).text('Enregistrer');
+                                btn.prop('disabled', false).text('Enregistrer les modifications');
                             }
                         })
                         .catch(err => {
                             console.error(err);
                             alert("Erreur de communication.");
-                            btn.prop('disabled', false).text('Enregistrer');
+                            btn.prop('disabled', false).text('Enregistrer les modifications');
                         });
                     });
 
