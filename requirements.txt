@@ -108,3 +108,4 @@ pytest
 thefuzz
 python-Levenshtein
 beautifulsoup4
+Pillow

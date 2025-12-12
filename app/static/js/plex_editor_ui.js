@@ -574,14 +574,61 @@ $(document).ready(function() {
                                 if (d.year) $('#manual-year').val(d.year);
                                 if (d.summary) $('#manual-summary').val(d.summary);
 
-                                if (d.poster_url) {
-                                    $('#manual-poster').val(d.poster_url);
-                                    // Switch to posters tab to show user we found one?
-                                    // $modalBody.find('#posters-tab').click();
-                                    alert("Données trouvées ! Une URL de poster a aussi été ajoutée dans l'onglet 'Affiches'.");
-                                } else {
-                                    alert("Données textuelles trouvées et remplies.");
+                                let imageMsg = "";
+                                let candidatesFound = false;
+
+                                // --- Injection des candidats POSTERS ---
+                                if (d.poster_candidates && d.poster_candidates.length > 0) {
+                                    const posterContainer = $modalBody.find('#posters-grid');
+                                    // On ajoute les candidats IA en haut de la liste
+                                    d.poster_candidates.forEach(url => {
+                                        const html = `
+                                            <div class="position-relative ai-candidate-poster" style="width: 120px; cursor: pointer;" data-url="${url}">
+                                                <img src="${url}" class="img-thumbnail border-info border-2" style="width: 100%; height: auto;">
+                                                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-info">✨ IA</span>
+                                            </div>
+                                        `;
+                                        posterContainer.prepend(html);
+                                    });
+
+                                    // Handler clic spécifique pour ces nouveaux éléments
+                                    posterContainer.find('.ai-candidate-poster').on('click', function() {
+                                        const url = $(this).data('url');
+                                        $('#manual-poster').val(url);
+                                        // Feedback visuel
+                                        $(this).siblings().find('img').removeClass('border-success border-4').addClass('border-info border-2');
+                                        $(this).find('img').removeClass('border-info border-2').addClass('border-success border-4');
+                                    });
+                                    candidatesFound = true;
                                 }
+
+                                // --- Injection des candidats BACKGROUNDS ---
+                                if (d.background_candidates && d.background_candidates.length > 0) {
+                                    const bgContainer = $modalBody.find('#backgrounds-grid');
+                                    d.background_candidates.forEach(url => {
+                                        const html = `
+                                            <div class="position-relative ai-candidate-bg" style="width: 200px; cursor: pointer;" data-url="${url}">
+                                                <img src="${url}" class="img-thumbnail border-info border-2" style="width: 100%; height: auto;">
+                                                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-info">✨ IA</span>
+                                            </div>
+                                        `;
+                                        bgContainer.prepend(html);
+                                    });
+
+                                    bgContainer.find('.ai-candidate-bg').on('click', function() {
+                                        const url = $(this).data('url');
+                                        $('#manual-background').val(url);
+                                        $(this).siblings().find('img').removeClass('border-success border-4').addClass('border-info border-2');
+                                        $(this).find('img').removeClass('border-info border-2').addClass('border-success border-4');
+                                    });
+                                    candidatesFound = true;
+                                }
+
+                                if (candidatesFound) {
+                                    imageMsg = " Des images candidates ont été ajoutées dans les onglets 'Affiches' et 'Fonds d'écran' (marquées ✨ IA). Cliquez dessus pour les sélectionner.";
+                                }
+
+                                alert("Données textuelles trouvées !" + imageMsg);
                             } else {
                                 alert("Erreur IA: " + (resp.error || "Aucune donnée trouvée."));
                             }
