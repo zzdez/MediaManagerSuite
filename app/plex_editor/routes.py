@@ -3586,8 +3586,36 @@ def metadata_apply():
                         os.remove(tmp_path)
 
             elif details.get('poster_url'):
-                current_app.logger.info(f"Uploading poster URL for {rating_key}: {details['poster_url']}")
-                item.uploadPoster(url=details['poster_url'])
+                url = details['poster_url']
+                current_app.logger.info(f"Uploading poster from URL for {rating_key}: {url}")
+
+                # Téléchargement local de l'image (proxy)
+                import requests
+                import tempfile
+
+                try:
+                    # User-agent standard pour contourner les protections basiques
+                    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+                    response = requests.get(url, headers=headers, stream=True, timeout=10)
+                    response.raise_for_status()
+
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            tmp.write(chunk)
+                        tmp_path = tmp.name
+
+                    item.uploadPoster(filepath=tmp_path)
+
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+
+                except Exception as e_dl:
+                    current_app.logger.error(f"Erreur téléchargement/upload poster depuis URL: {e_dl}", exc_info=True)
+                    # Fallback sur la méthode standard Plex si le proxy échoue
+                    try:
+                        item.uploadPoster(url=url)
+                    except Exception as e_fallback:
+                        current_app.logger.error(f"Erreur fallback uploadPoster Plex: {e_fallback}")
 
             # Appliquer le fond d'écran (Art)
             if background_file:
@@ -3607,8 +3635,34 @@ def metadata_apply():
                         os.remove(tmp_path)
 
             elif details.get('background_url'):
-                current_app.logger.info(f"Uploading background URL for {rating_key}: {details['background_url']}")
-                item.uploadArt(url=details['background_url'])
+                url = details['background_url']
+                current_app.logger.info(f"Uploading background from URL for {rating_key}: {url}")
+
+                # Téléchargement local de l'image (proxy)
+                import requests
+                import tempfile
+
+                try:
+                    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+                    response = requests.get(url, headers=headers, stream=True, timeout=10)
+                    response.raise_for_status()
+
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            tmp.write(chunk)
+                        tmp_path = tmp.name
+
+                    item.uploadArt(filepath=tmp_path)
+
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+
+                except Exception as e_dl:
+                    current_app.logger.error(f"Erreur téléchargement/upload background depuis URL: {e_dl}", exc_info=True)
+                    try:
+                        item.uploadArt(url=url)
+                    except Exception as e_fallback:
+                        current_app.logger.error(f"Erreur fallback uploadArt Plex: {e_fallback}")
 
             return jsonify({'success': True, 'message': 'Metadata injected successfully.'})
 
