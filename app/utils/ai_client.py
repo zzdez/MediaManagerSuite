@@ -3,56 +3,10 @@ import json
 import logging
 import requests
 from bs4 import BeautifulSoup
-from PIL import Image
-from io import BytesIO
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 logger = logging.getLogger(__name__)
-
-def validate_image_candidate(url, target_ratio_type="poster"):
-    """
-    Vérifie si une image candidate est valide (téléchargeable, taille, ratio).
-    target_ratio_type: 'poster' (approx 0.66) ou 'background' (approx 1.77)
-    """
-    if not url or not url.startswith('http'):
-        return False
-
-    try:
-        # HEAD ou GET partiel pour éviter de tout télécharger si possible,
-        # mais PIL a besoin de quelques octets. On télécharge tout pour simplifier (images web < 5MB).
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        response = requests.get(url, headers=headers, timeout=5, stream=True)
-
-        if response.status_code != 200:
-            return False
-
-        # Limite de taille simple
-        if len(response.content) < 1000: # Trop petit pour une image
-            return False
-
-        img = Image.open(BytesIO(response.content))
-        width, height = img.size
-
-        if width < 300 or height < 300: # Trop petite résolution
-            return False
-
-        ratio = width / height
-
-        if target_ratio_type == "poster":
-            # Poster vertical : width < height. Ratio idéal ~0.66 (2/3). Acceptons 0.5 à 0.8
-            if 0.5 <= ratio <= 0.85:
-                return True
-        elif target_ratio_type == "background":
-            # Fond horizontal : width > height. Ratio idéal ~1.77 (16/9). Acceptons 1.3 à 2.0
-            if 1.3 <= ratio <= 2.2:
-                return True
-
-        return False # Ratio incorrect
-
-    except Exception as e:
-        logger.warning(f"Validation image échouée pour {url}: {e}")
-        return False
 
 def extract_opengraph_image(url):
     """
@@ -94,13 +48,12 @@ def get_metadata_from_ai(query):
     # Prompt system/user combiné
     prompt = f"""
     Tu es un expert en métadonnées de cinéma et de télévision.
-    Ta mission est de trouver les informations détaillées pour le média suivant : "{query}".
+    Ta mission est de trouver les informations textuelles détaillées pour le média suivant : "{query}".
 
     Instructions :
-    1. Utilise tes outils de recherche (Google Images, Web) pour trouver non seulement les infos, mais aussi plusieurs images candidates pertinentes.
-    2. Pour les images (posters et backgrounds), cherche des liens directs (jpg/png/webp) sur des sites fiables (TheMovieDB, Fanart.tv, Amazon, sites de chaînes TV...).
-    3. Ne te limite pas à une seule image, fournis une liste de candidats.
-    4. Réponds UNIQUEMENT avec un objet JSON valide.
+    1. Utilise tes outils de recherche (Google Search) pour trouver les informations exactes (surtout pour les programmes TV récents ou documentaires).
+    2. Concentre-toi sur le texte : Titre exact, année, résumé, studio.
+    3. Réponds UNIQUEMENT avec un objet JSON valide.
 
     Structure du JSON attendu :
     {{
@@ -109,16 +62,7 @@ def get_metadata_from_ai(query):
         "year": 2024,
         "summary": "Résumé complet en français (2-3 phrases).",
         "studio": "Studio de production ou Chaîne de diffusion principale",
-        "source_url": "L'URL de la page web officielle ou la plus pertinente (ex: arte.tv, allocine...)",
-        "poster_candidates": [
-            "https://url_image_1.jpg",
-            "https://url_image_2.jpg",
-            "..."
-        ],
-        "background_candidates": [
-            "https://url_fond_1.jpg",
-            "https://url_fond_2.jpg"
-        ]
+        "source_url": "L'URL de la page web officielle ou la plus pertinente (ex: arte.tv, allocine...)"
     }}
 
     Si tu ne trouves rien de pertinent, renvoie un objet JSON vide {{}}.
@@ -205,44 +149,17 @@ def get_metadata_from_ai(query):
                     try:
                         data = json.loads(raw_text)
 
-                        # --- TRAITEMENT DES CANDIDATS IMAGES ---
-                        # On valide et filtre les listes fournies par l'IA
-
-                        valid_posters = []
-                        raw_posters = data.get('poster_candidates', [])
-                        if isinstance(raw_posters, list):
-                            for url in raw_posters[:5]: # Limiter aux 5 premiers pour la perf
-                                if validate_image_candidate(url, "poster"):
-                                    valid_posters.append(url)
-
-                        valid_backgrounds = []
-                        raw_backgrounds = data.get('background_candidates', [])
-                        if isinstance(raw_backgrounds, list):
-                            for url in raw_backgrounds[:5]:
-                                if validate_image_candidate(url, "background"):
-                                    valid_backgrounds.append(url)
-
-                        # --- FALLBACK OPENGRAPH ---
-                        # Si aucun poster valide trouvé, on essaie l'OpenGraph de la source
-                        if not valid_posters and data.get('source_url'):
-                            logger.info(f"Aucun poster IA valide. Tentative extraction OpenGraph depuis {data['source_url']}")
+                        # --- ENRICHISSEMENT AVEC IMAGE OPENGRAPH (Simple Bonus) ---
+                        # On continue de chercher une image OpenGraph pour l'ajouter comme candidat unique
+                        # au cas où c'est une bonne image (ex: arte.tv)
+                        if data.get('source_url'):
+                            logger.info(f"Tentative extraction image OpenGraph depuis {data['source_url']}")
                             og_img = extract_opengraph_image(data['source_url'])
                             if og_img:
-                                # On ne sait pas si c'est vertical ou horizontal, mais on l'ajoute
-                                # Souvent OpenGraph est horizontal (1200x630), donc on peut le mettre dans backgrounds aussi
-                                # ou le tenter en poster. Mettons-le dans les deux pour laisser le choix.
-                                if validate_image_candidate(og_img, "poster"):
-                                    valid_posters.append(og_img)
-                                else:
-                                    # Si pas ratio poster, c'est probablement un background
-                                    valid_backgrounds.append(og_img)
-
-                        # Mise à jour du JSON final
-                        data['poster_candidates'] = valid_posters
-                        data['background_candidates'] = valid_backgrounds
-
-                        # On retire les anciens champs simples pour éviter la confusion
-                        if 'poster_url' in data: del data['poster_url']
+                                # On l'ajoute comme seul candidat poster pour le moment
+                                # Le front pourra l'afficher si présent
+                                data['poster_candidates'] = [og_img]
+                                logger.info("Image OpenGraph trouvée.")
 
                         return data
                     except json.JSONDecodeError:

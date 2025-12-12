@@ -487,7 +487,12 @@ $(document).ready(function() {
                                             <div class="text-center w-100 py-3"><div class="spinner-border spinner-border-sm"></div> Chargement...</div>
                                         </div>
                                         <hr>
-                                        <h6>Ajouter une affiche</h6>
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <h6 class="mb-0">Ajouter une affiche</h6>
+                                            <button class="btn btn-sm btn-outline-warning" id="google-search-poster-btn" type="button">
+                                                <i class="bi bi-google"></i> Google Images
+                                            </button>
+                                        </div>
                                         <div class="row mb-2">
                                             <div class="col-md-6">
                                                 <label class="form-label small">URL Poster</label>
@@ -509,7 +514,12 @@ $(document).ready(function() {
                                             <div class="text-center w-100 py-3"><div class="spinner-border spinner-border-sm"></div> Chargement...</div>
                                         </div>
                                         <hr>
-                                        <h6>Ajouter un fond d'écran</h6>
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <h6 class="mb-0">Ajouter un fond d'écran</h6>
+                                            <button class="btn btn-sm btn-outline-warning" id="google-search-bg-btn" type="button">
+                                                <i class="bi bi-google"></i> Google Images
+                                            </button>
+                                        </div>
                                         <div class="row mb-2">
                                             <div class="col-md-6">
                                                 <label class="form-label small">URL Fond d'écran</label>
@@ -548,6 +558,32 @@ $(document).ready(function() {
                     const $uploadPosterBtn = $modalBody.find('#upload-poster-btn');
                     const $uploadBackgroundBtn = $modalBody.find('#upload-background-btn');
                     const $aiAutofillBtn = $modalBody.find('#ai-autofill-btn');
+
+                    const $googlePosterBtn = $modalBody.find('#google-search-poster-btn');
+                    const $googleBgBtn = $modalBody.find('#google-search-bg-btn');
+
+                    // Helper pour ouvrir Google Images en popup
+                    function openGoogleImagePopup(query, suffix) {
+                        const q = encodeURIComponent(query + " " + suffix);
+                        const url = `https://www.google.com/search?tbm=isch&q=${q}`;
+                        const w = 1000;
+                        const h = 800;
+                        const left = (screen.width / 2) - (w / 2);
+                        const top = (screen.height / 2) - (h / 2);
+                        window.open(url, 'GoogleImageSearch', `width=${w},height=${h},top=${top},left=${left},scrollbars=yes,resizable=yes`);
+                    }
+
+                    $googlePosterBtn.on('click', function() {
+                        const title = $('#manual-title').val() || data.title;
+                        if(title) openGoogleImagePopup(title, "poster");
+                        else alert("Veuillez d'abord remplir le titre.");
+                    });
+
+                    $googleBgBtn.on('click', function() {
+                        const title = $('#manual-title').val() || data.title;
+                        if(title) openGoogleImagePopup(title, "wallpaper background");
+                        else alert("Veuillez d'abord remplir le titre.");
+                    });
 
                     // Gestion du bouton IA
                     $aiAutofillBtn.on('click', function() {
