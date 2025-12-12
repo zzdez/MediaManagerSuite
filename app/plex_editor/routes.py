@@ -38,6 +38,7 @@ from app.utils.tmdb_client import TheMovieDBClient
 from app.utils.tvdb_client import CustomTVDBClient
 from app.utils.cache_manager import SimpleCache, get_pending_lock, remove_pending_lock
 from app.utils import trailer_manager # Import du nouveau manager
+from app.utils.ai_client import get_metadata_from_ai, list_available_models # Import du nouveau client IA
 from app.agent.services import _search_and_score_trailers
 from thefuzz import fuzz
 
@@ -3191,6 +3192,42 @@ def rename_series_files_endpoint():
     else:
         return jsonify({'status': 'error', 'message': 'Échec de l\'envoi de la commande à Sonarr.'}), 500
 
+@plex_editor_bp.route('/api/ai_metadata_search', methods=['POST'])
+@login_required
+def ai_metadata_search():
+    """
+    Recherche des métadonnées intelligentes via l'IA (Gemini).
+    """
+    data = request.json
+    query = data.get('query')
+
+    if not query:
+        return jsonify({'error': 'La requête est vide.'}), 400
+
+    try:
+        result = get_metadata_from_ai(query)
+
+        if "error" in result:
+            return jsonify(result), 500
+
+        return jsonify({'success': True, 'data': result})
+
+    except Exception as e:
+        current_app.logger.error(f"Erreur route AI search: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+@plex_editor_bp.route('/api/ai_debug_models', methods=['GET'])
+@login_required
+def ai_debug_models():
+    """
+    Liste les modèles d'IA disponibles pour le débogage.
+    """
+    try:
+        result = list_available_models()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @plex_editor_bp.route('/api/metadata_search', methods=['POST'])
 @login_required
 def metadata_search():
@@ -3549,8 +3586,36 @@ def metadata_apply():
                         os.remove(tmp_path)
 
             elif details.get('poster_url'):
-                current_app.logger.info(f"Uploading poster URL for {rating_key}: {details['poster_url']}")
-                item.uploadPoster(url=details['poster_url'])
+                url = details['poster_url']
+                current_app.logger.info(f"Uploading poster from URL for {rating_key}: {url}")
+
+                # Téléchargement local de l'image (proxy)
+                import requests
+                import tempfile
+
+                try:
+                    # User-agent standard pour contourner les protections basiques
+                    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+                    response = requests.get(url, headers=headers, stream=True, timeout=10)
+                    response.raise_for_status()
+
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            tmp.write(chunk)
+                        tmp_path = tmp.name
+
+                    item.uploadPoster(filepath=tmp_path)
+
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+
+                except Exception as e_dl:
+                    current_app.logger.error(f"Erreur téléchargement/upload poster depuis URL: {e_dl}", exc_info=True)
+                    # Fallback sur la méthode standard Plex si le proxy échoue
+                    try:
+                        item.uploadPoster(url=url)
+                    except Exception as e_fallback:
+                        current_app.logger.error(f"Erreur fallback uploadPoster Plex: {e_fallback}")
 
             # Appliquer le fond d'écran (Art)
             if background_file:
@@ -3570,8 +3635,34 @@ def metadata_apply():
                         os.remove(tmp_path)
 
             elif details.get('background_url'):
-                current_app.logger.info(f"Uploading background URL for {rating_key}: {details['background_url']}")
-                item.uploadArt(url=details['background_url'])
+                url = details['background_url']
+                current_app.logger.info(f"Uploading background from URL for {rating_key}: {url}")
+
+                # Téléchargement local de l'image (proxy)
+                import requests
+                import tempfile
+
+                try:
+                    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+                    response = requests.get(url, headers=headers, stream=True, timeout=10)
+                    response.raise_for_status()
+
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            tmp.write(chunk)
+                        tmp_path = tmp.name
+
+                    item.uploadArt(filepath=tmp_path)
+
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+
+                except Exception as e_dl:
+                    current_app.logger.error(f"Erreur téléchargement/upload background depuis URL: {e_dl}", exc_info=True)
+                    try:
+                        item.uploadArt(url=url)
+                    except Exception as e_fallback:
+                        current_app.logger.error(f"Erreur fallback uploadArt Plex: {e_fallback}")
 
             return jsonify({'success': True, 'message': 'Metadata injected successfully.'})
 

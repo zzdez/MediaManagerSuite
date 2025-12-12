@@ -454,6 +454,11 @@ $(document).ready(function() {
                                 <div class="tab-content" id="manual-edit-content">
                                     <!-- TAB 1: GENERAL -->
                                     <div class="tab-pane fade show active" id="general-tab-pane" role="tabpanel">
+                                        <div class="d-grid gap-2 mb-3">
+                                            <button class="btn btn-sm btn-outline-info" id="ai-autofill-btn" type="button">
+                                                <i class="bi bi-stars"></i> ✨ Remplissage Auto (IA)
+                                            </button>
+                                        </div>
                                         <div class="mb-2">
                                             <label class="form-label small">Titre</label>
                                             <input type="text" class="form-control form-control-sm" id="manual-title">
@@ -482,7 +487,12 @@ $(document).ready(function() {
                                             <div class="text-center w-100 py-3"><div class="spinner-border spinner-border-sm"></div> Chargement...</div>
                                         </div>
                                         <hr>
-                                        <h6>Ajouter une affiche</h6>
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <h6 class="mb-0">Ajouter une affiche</h6>
+                                            <button class="btn btn-sm btn-outline-warning" id="google-search-poster-btn" type="button">
+                                                <i class="bi bi-google"></i> Google Images
+                                            </button>
+                                        </div>
                                         <div class="row mb-2">
                                             <div class="col-md-6">
                                                 <label class="form-label small">URL Poster</label>
@@ -504,7 +514,12 @@ $(document).ready(function() {
                                             <div class="text-center w-100 py-3"><div class="spinner-border spinner-border-sm"></div> Chargement...</div>
                                         </div>
                                         <hr>
-                                        <h6>Ajouter un fond d'écran</h6>
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <h6 class="mb-0">Ajouter un fond d'écran</h6>
+                                            <button class="btn btn-sm btn-outline-warning" id="google-search-bg-btn" type="button">
+                                                <i class="bi bi-google"></i> Google Images
+                                            </button>
+                                        </div>
                                         <div class="row mb-2">
                                             <div class="col-md-6">
                                                 <label class="form-label small">URL Fond d'écran</label>
@@ -542,6 +557,126 @@ $(document).ready(function() {
                     const $cancelManualBtn = $modalBody.find('#cancel-manual-edit-btn');
                     const $uploadPosterBtn = $modalBody.find('#upload-poster-btn');
                     const $uploadBackgroundBtn = $modalBody.find('#upload-background-btn');
+                    const $aiAutofillBtn = $modalBody.find('#ai-autofill-btn');
+
+                    const $googlePosterBtn = $modalBody.find('#google-search-poster-btn');
+                    const $googleBgBtn = $modalBody.find('#google-search-bg-btn');
+
+                    // Helper pour ouvrir Google Images en popup
+                    function openGoogleImagePopup(query, suffix) {
+                        const q = encodeURIComponent(query + " " + suffix);
+                        const url = `https://www.google.com/search?tbm=isch&q=${q}`;
+                        const w = 1000;
+                        const h = 800;
+                        const left = (screen.width / 2) - (w / 2);
+                        const top = (screen.height / 2) - (h / 2);
+                        window.open(url, 'GoogleImageSearch', `width=${w},height=${h},top=${top},left=${left},scrollbars=yes,resizable=yes`);
+                    }
+
+                    $googlePosterBtn.on('click', function() {
+                        const title = $('#manual-title').val() || data.title;
+                        if(title) openGoogleImagePopup(title, "poster");
+                        else alert("Veuillez d'abord remplir le titre.");
+                    });
+
+                    $googleBgBtn.on('click', function() {
+                        const title = $('#manual-title').val() || data.title;
+                        if(title) openGoogleImagePopup(title, "wallpaper background");
+                        else alert("Veuillez d'abord remplir le titre.");
+                    });
+
+                    // Gestion du bouton IA
+                    $aiAutofillBtn.on('click', function() {
+                        const currentTitle = $('#manual-title').val();
+                        let searchQuery = prompt("Que voulez-vous rechercher ? (Titre, lien, etc.)", currentTitle);
+
+                        if (!searchQuery) return;
+
+                        const btn = $(this);
+                        const originalHtml = btn.html();
+                        btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Recherche IA...');
+
+                        fetch('/plex/api/ai_metadata_search', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ query: searchQuery })
+                        })
+                        .then(r => r.json())
+                        .then(resp => {
+                            if (resp.success && resp.data) {
+                                const d = resp.data;
+                                if (d.title) $('#manual-title').val(d.title);
+                                if (d.original_title) $('#manual-original-title').val(d.original_title);
+                                if (d.year) $('#manual-year').val(d.year);
+                                if (d.summary) $('#manual-summary').val(d.summary);
+
+                                let imageMsg = "";
+                                let candidatesFound = false;
+
+                                // --- Injection des candidats POSTERS ---
+                                if (d.poster_candidates && d.poster_candidates.length > 0) {
+                                    const posterContainer = $modalBody.find('#posters-grid');
+                                    // On ajoute les candidats IA en haut de la liste
+                                    d.poster_candidates.forEach(url => {
+                                        const html = `
+                                            <div class="position-relative ai-candidate-poster" style="width: 120px; cursor: pointer;" data-url="${url}">
+                                                <img src="${url}" class="img-thumbnail border-info border-2" style="width: 100%; height: auto;">
+                                                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-info">✨ IA</span>
+                                            </div>
+                                        `;
+                                        posterContainer.prepend(html);
+                                    });
+
+                                    // Handler clic spécifique pour ces nouveaux éléments
+                                    posterContainer.find('.ai-candidate-poster').on('click', function() {
+                                        const url = $(this).data('url');
+                                        $('#manual-poster').val(url);
+                                        // Feedback visuel
+                                        $(this).siblings().find('img').removeClass('border-success border-4').addClass('border-info border-2');
+                                        $(this).find('img').removeClass('border-info border-2').addClass('border-success border-4');
+                                    });
+                                    candidatesFound = true;
+                                }
+
+                                // --- Injection des candidats BACKGROUNDS ---
+                                if (d.background_candidates && d.background_candidates.length > 0) {
+                                    const bgContainer = $modalBody.find('#backgrounds-grid');
+                                    d.background_candidates.forEach(url => {
+                                        const html = `
+                                            <div class="position-relative ai-candidate-bg" style="width: 200px; cursor: pointer;" data-url="${url}">
+                                                <img src="${url}" class="img-thumbnail border-info border-2" style="width: 100%; height: auto;">
+                                                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-info">✨ IA</span>
+                                            </div>
+                                        `;
+                                        bgContainer.prepend(html);
+                                    });
+
+                                    bgContainer.find('.ai-candidate-bg').on('click', function() {
+                                        const url = $(this).data('url');
+                                        $('#manual-background').val(url);
+                                        $(this).siblings().find('img').removeClass('border-success border-4').addClass('border-info border-2');
+                                        $(this).find('img').removeClass('border-info border-2').addClass('border-success border-4');
+                                    });
+                                    candidatesFound = true;
+                                }
+
+                                if (candidatesFound) {
+                                    imageMsg = " Des images candidates ont été ajoutées dans les onglets 'Affiches' et 'Fonds d'écran' (marquées ✨ IA). Cliquez dessus pour les sélectionner.";
+                                }
+
+                                alert("Données textuelles trouvées !" + imageMsg);
+                            } else {
+                                alert("Erreur IA: " + (resp.error || "Aucune donnée trouvée."));
+                            }
+                        })
+                        .catch(e => {
+                            console.error(e);
+                            alert("Erreur de communication avec l'IA.");
+                        })
+                        .finally(() => {
+                            btn.prop('disabled', false).html(originalHtml);
+                        });
+                    });
 
                     // Ouvrir le panneau "Identifier"
                     $identifyBtn.on('click', function() {
