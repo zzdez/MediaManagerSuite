@@ -21,15 +21,20 @@ def get_metadata_from_ai(query):
         genai.configure(api_key=api_key)
 
         # Configuration du modèle
-        # On utilise gemini-1.5-flash pour la rapidité et le coût, ou pro si dispo
-        model_name = "gemini-1.5-flash"
+        # On utilise gemini-1.5-flash-latest pour éviter les erreurs 404 sur l'alias court
+        model_name = "gemini-1.5-flash-latest"
 
         # Configuration des outils (Google Search Grounding)
         # Note: La syntaxe peut varier selon la version de la lib.
         # Pour google-generativeai v0.8.x, 'google_search_retrieval' est souvent le mot clé pour le grounding
         tools = ['google_search_retrieval']
 
-        model = genai.GenerativeModel(model_name)
+        try:
+            model = genai.GenerativeModel(model_name)
+        except Exception:
+            # Fallback si le modèle flash n'est pas trouvé
+            logger.warning(f"Modèle {model_name} non trouvé, tentative avec gemini-pro")
+            model = genai.GenerativeModel("gemini-pro")
 
         # Prompt system/user combiné
         prompt = f"""
