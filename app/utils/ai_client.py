@@ -53,7 +53,8 @@ def get_metadata_from_ai(query):
     Instructions :
     1. Si possible, utilise tes outils de recherche pour trouver les informations exactes (surtout pour les programmes TV récents).
     2. Sinon, utilise tes connaissances internes.
-    3. Réponds UNIQUEMENT avec un objet JSON valide (pas de markdown ```json ... ```, juste le JSON).
+    3. IMPORTANT : Pour le champ 'poster_url', fournis UNIQUEMENT une URL d'image directe (jpg/png) si tu es CERTAIN qu'elle est accessible publiquement. Si tu as un doute ou si le lien risque d'être expiré/protégé, laisse ce champ à null. Je préfère utiliser la 'source_url' pour l'extraire moi-même.
+    4. Réponds UNIQUEMENT avec un objet JSON valide (pas de markdown ```json ... ```, juste le JSON).
 
     Structure du JSON attendu :
     {{
@@ -150,9 +151,26 @@ def get_metadata_from_ai(query):
                     try:
                         data = json.loads(raw_text)
 
-                        # --- ENRICHISSEMENT AVEC IMAGE OPENGRAPH ---
-                        # Si l'IA a trouvé une source mais pas d'image (ou pour tenter d'en trouver une meilleure)
-                        if data.get('source_url') and not data.get('poster_url'):
+                        # --- VALIDATION ET ENRICHISSEMENT D'IMAGE ---
+                        poster_url = data.get('poster_url')
+                        valid_poster = False
+
+                        # 1. Vérifier si le poster fourni par l'IA est valide
+                        if poster_url:
+                            try:
+                                # HEAD request avec un timeout court pour vérifier l'existence
+                                h_check = requests.head(poster_url, timeout=3, allow_redirects=True, headers={'User-Agent': 'Mozilla/5.0'})
+                                if h_check.status_code == 200 and 'image' in h_check.headers.get('Content-Type', ''):
+                                    valid_poster = True
+                                else:
+                                    logger.warning(f"Lien poster IA invalide ({h_check.status_code}): {poster_url}")
+                                    data['poster_url'] = None # Invalider pour forcer le fallback
+                            except Exception as e_check:
+                                logger.warning(f"Erreur vérification lien poster IA: {e_check}")
+                                data['poster_url'] = None
+
+                        # 2. Fallback OpenGraph (si pas de poster ou poster invalide)
+                        if not valid_poster and data.get('source_url'):
                             logger.info(f"Tentative extraction image OpenGraph depuis {data['source_url']}")
                             og_img = extract_opengraph_image(data['source_url'])
                             if og_img:
