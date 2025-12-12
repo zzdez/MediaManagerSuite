@@ -38,7 +38,7 @@ from app.utils.tmdb_client import TheMovieDBClient
 from app.utils.tvdb_client import CustomTVDBClient
 from app.utils.cache_manager import SimpleCache, get_pending_lock, remove_pending_lock
 from app.utils import trailer_manager # Import du nouveau manager
-from app.utils.ai_client import get_metadata_from_ai # Import du nouveau client IA
+from app.utils.ai_client import get_metadata_from_ai, list_available_models # Import du nouveau client IA
 from app.agent.services import _search_and_score_trailers
 from thefuzz import fuzz
 
@@ -3214,6 +3214,18 @@ def ai_metadata_search():
 
     except Exception as e:
         current_app.logger.error(f"Erreur route AI search: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+@plex_editor_bp.route('/api/ai_debug_models', methods=['GET'])
+@login_required
+def ai_debug_models():
+    """
+    Liste les modèles d'IA disponibles pour le débogage.
+    """
+    try:
+        result = list_available_models()
+        return jsonify(result)
+    except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 @plex_editor_bp.route('/api/metadata_search', methods=['POST'])
