@@ -107,3 +107,4 @@ pytest
 
 thefuzz
 python-Levenshtein
+beautifulsoup4
