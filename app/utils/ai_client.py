@@ -1,10 +1,34 @@
 import os
 import json
 import logging
+import requests
+from bs4 import BeautifulSoup
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 logger = logging.getLogger(__name__)
+
+def extract_opengraph_image(url):
+    """
+    Tente d'extraire l'image OpenGraph (og:image) d'une page Web.
+    Utilisé pour récupérer un poster de haute qualité depuis une source officielle.
+    """
+    if not url or not url.startswith('http'):
+        return None
+
+    try:
+        # User-Agent standard pour ne pas être bloqué
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        response = requests.get(url, headers=headers, timeout=5)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, 'html.parser')
+            og_image = soup.find("meta", property="og:image")
+            if og_image and og_image.get("content"):
+                return og_image["content"]
+    except Exception as e:
+        logger.warning(f"Échec extraction OpenGraph pour {url}: {e}")
+
+    return None
 
 def get_metadata_from_ai(query):
     """
@@ -38,7 +62,8 @@ def get_metadata_from_ai(query):
         "year": 2024,
         "summary": "Résumé complet en français (2-3 phrases).",
         "studio": "Studio de production ou Chaîne de diffusion principale",
-        "poster_url": "URL valide d'une image d'affiche (si trouvée, sinon null)"
+        "poster_url": "URL valide d'une image d'affiche (si trouvée, sinon null)",
+        "source_url": "L'URL de la page web officielle ou la plus pertinente utilisée pour trouver ces infos (ex: arte.tv, france.tv, allocine...)"
     }}
 
     Si tu ne trouves rien de pertinent, renvoie un objet JSON vide {{}}.
@@ -124,6 +149,16 @@ def get_metadata_from_ai(query):
 
                     try:
                         data = json.loads(raw_text)
+
+                        # --- ENRICHISSEMENT AVEC IMAGE OPENGRAPH ---
+                        # Si l'IA a trouvé une source mais pas d'image (ou pour tenter d'en trouver une meilleure)
+                        if data.get('source_url') and not data.get('poster_url'):
+                            logger.info(f"Tentative extraction image OpenGraph depuis {data['source_url']}")
+                            og_img = extract_opengraph_image(data['source_url'])
+                            if og_img:
+                                data['poster_url'] = og_img
+                                logger.info("Image OpenGraph trouvée et injectée.")
+
                         return data
                     except json.JSONDecodeError:
                         logger.error(f"Erreur de décodage JSON IA ({model_name}): {raw_text}")
