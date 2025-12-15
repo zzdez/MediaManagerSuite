@@ -65,7 +65,8 @@ def get_ygg_cookie_status():
         return {**default_status, "status_message": msg}
 
     # 1c. Vérifier la validité
-    essential_cookies_info = {'cf_clearance': None, 'ygg_': None}
+    # 'cf_clearance' retiré des essentiels car YGG ne l'utilise plus systématiquement ou le plugin ne le capture pas.
+    essential_cookies_info = {'ygg_': None}
     all_cookies_map = {cookie['name']: cookie for cookie in cookies_data}
 
     for name in essential_cookies_info:
