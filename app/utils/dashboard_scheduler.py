@@ -93,9 +93,9 @@ def scheduled_dashboard_refresh():
                         torrent['is_new'] = torrent.get('is_new', False) # Explicitly keep existing is_new status
                         if isinstance(torrent.get('publishDate'), str):
                             torrent['publishDate'] = datetime.fromisoformat(torrent['publishDate'].replace('Z', '+00:00'))
-                        # Use composite key (GUID + Title) as the primary key to prevent deduplication of different qualities with same GUID
+                        # Use GUID as the primary key. GUID is unique per release per indexer.
                         if 'guid' in torrent and torrent['guid']:
-                            key = f"{torrent['guid']}_{torrent.get('title', '')}"
+                            key = torrent['guid']
                             existing_torrents_map[key] = torrent
             except (json.JSONDecodeError, IOError):
                 current_app.logger.error("Scheduler: Could not read or parse dashboard_torrents.json, starting fresh.")
@@ -145,10 +145,12 @@ def scheduled_dashboard_refresh():
 
         # Step 3: Process and merge new torrents
         new_torrents_found = 0
+        updated_torrents_count = 0
         rejected_by_keyword = 0
         rejected_by_year = 0
-        rejected_by_duplicate = 0
-        duplicate_log_counter = 0
+
+        # Track GUIDs processed in this batch to avoid internal duplicates within the fetch
+        processed_guids_in_batch = set()
 
         for raw_torrent in raw_torrents_from_prowlarr:
             torrent = _normalize_torrent(raw_torrent)
@@ -157,18 +159,28 @@ def scheduled_dashboard_refresh():
             if not torrent:
                 continue
 
-            # Use composite key to check for duplicates
-            composite_key = f"{torrent['guid']}_{torrent.get('title', '')}"
+            guid = torrent['guid']
 
-            if composite_key in existing_torrents_map:
-                rejected_by_duplicate += 1
-                duplicate_log_counter += 1
-                # Log a sample every 100 duplicates to debug Prowlarr behavior without flooding
-                if duplicate_log_counter % 100 == 0:
-                    current_app.logger.warning(f"Scheduler: Sample duplicate encountered (count {duplicate_log_counter}): '{torrent.get('title')}' (GUID: {torrent['guid']}). This item is skipped. Reason: Already in DB or Duplicate in current fetch batch.")
+            if guid in processed_guids_in_batch:
+                continue # Skip internal duplicates in the same Prowlarr response
+            processed_guids_in_batch.add(guid)
+
+            # Check if this torrent already exists in our DB
+            if guid in existing_torrents_map:
+                # UPDATE EXISTING: We update dynamic fields (seeders, peers) but PRESERVE 'is_new'
+                existing_torrent = existing_torrents_map[guid]
+
+                # Update fields that might change
+                existing_torrent['seeders'] = torrent['seeders']
+                existing_torrent['leechers'] = torrent['leechers']
+                existing_torrent['title'] = torrent['title'] # Update title in case of correction
+                existing_torrent['size'] = torrent['size']
+
+                # Important: Do NOT set 'is_new' to True. Keep the existing value.
+                updated_torrents_count += 1
                 continue
 
-            # This is a genuinely new torrent, but might be filtered out
+            # This is a potentially new torrent. Apply filters.
 
             if any(re.search(kw, torrent['title'], re.IGNORECASE) for kw in exclude_keywords):
                 rejected_by_keyword += 1
@@ -183,19 +195,20 @@ def scheduled_dashboard_refresh():
                     rejected_by_year += 1
                     continue
 
-            # If we reach here, the torrent is accepted
+            # If we reach here, the torrent is accepted as NEW
             new_torrents_found += 1
             torrent['is_new'] = True
-            existing_torrents_map[composite_key] = torrent
+            existing_torrents_map[guid] = torrent
 
         current_app.logger.info(
-            f"Scheduler: Found {new_torrents_found} new torrents from Prowlarr. "
-            f"Skipped: {rejected_by_keyword} (keywords), {rejected_by_year} (year), {rejected_by_duplicate} (Duplicate GUID in current batch or DB)."
+            f"Scheduler: Processed Prowlarr results. "
+            f"New: {new_torrents_found}, Updated: {updated_torrents_count}, "
+            f"Skipped: {rejected_by_keyword} (keywords), {rejected_by_year} (year)."
         )
 
         # Step 4: Re-evaluate status and enrich ALL torrents
         if tmdb_client:
-            for composite_key, torrent in existing_torrents_map.items():
+            for guid, torrent in existing_torrents_map.items():
                 if 'type' not in torrent:
                      # Find the original raw torrent to determine media type if possible.
                      # Note: This lookup is tricky with composite keys. We fallback to matching just GUID if possible, or skip.

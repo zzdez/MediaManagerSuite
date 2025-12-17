@@ -1,7 +1,7 @@
 import os
 import json
 import time
-import glob
+import re
 import logging
 from flask import current_app
 
@@ -31,12 +31,15 @@ def get_ygg_cookie_status():
             logger.error(msg)
             return {**default_status, "status_message": msg}
 
-        # Scan flexible pour trouver tous les fichiers de cookie potentiels
+        # Scan flexible (Regex) pour trouver tous les fichiers YGG quel que soit le domaine (.top, .org, etc.)
+        # Pattern: www.yggtorrent.[n'importe quoi]_cookies[optionnel].json
+        pattern = re.compile(r'^www\.yggtorrent\..+_cookies.*\.json$', re.IGNORECASE)
+
         all_files = os.listdir(download_path)
         cookie_files = [
             os.path.join(download_path, f)
             for f in all_files
-            if f.startswith('www.yggtorrent.top_cookies') and f.endswith('.json')
+            if pattern.match(f)
         ]
 
         if not cookie_files:
@@ -62,7 +65,8 @@ def get_ygg_cookie_status():
         return {**default_status, "status_message": msg}
 
     # 1c. Vérifier la validité
-    essential_cookies_info = {'cf_clearance': None, 'ygg_': None}
+    # 'cf_clearance' retiré des essentiels car YGG ne l'utilise plus systématiquement ou le plugin ne le capture pas.
+    essential_cookies_info = {'ygg_': None}
     all_cookies_map = {cookie['name']: cookie for cookie in cookies_data}
 
     for name in essential_cookies_info:
