@@ -13,11 +13,15 @@ from app.utils.tmdb_client import TheMovieDBClient
 # Import Arr client for checking existing media and parsing names
 from app.utils.arr_client import get_sonarr_series_by_guid, get_radarr_movie_by_guid, parse_media_name
 # Import mapping manager to check pending torrents
-from app.utils.mapping_manager import get_all_torrent_hashes
+from app.utils.mapping_manager import get_all_torrent_hashes, add_or_update_torrent_in_map
 # Import the new status manager
 from app.utils.status_manager import get_media_statuses
 # Import the release parser
 from app.utils.release_parser import parse_release_data
+# Import rTorrent client
+from app.utils.rtorrent_client import add_torrent_to_rtorrent
+# Import AI client
+from app.utils.ai_client import guess_media_type_and_title
 
 # Define paths for our state files
 DASHBOARD_STATE_FILE = os.path.join('instance', 'dashboard_state.json')
@@ -731,3 +735,71 @@ def mark_as_seen():
     except (json.JSONDecodeError, IOError) as e:
         current_app.logger.error(f"Error in mark_as_seen: {e}", exc_info=True)
         return jsonify({"status": "error", "message": "Failed to process the torrent file."}), 500
+
+@dashboard_bp.route('/dashboard/api/add_manual_import', methods=['POST'])
+def add_manual_import():
+    """
+    Adds a torrent with a virtual MMS-ID for manual processing (bypassing Sonarr/Radarr validation).
+    """
+    data = request.get_json()
+    torrent_url = data.get('downloadUrl')
+    title = data.get('title') # User validated title
+    media_type = data.get('media_type') # 'movie' or 'tv'
+    original_torrent_title = data.get('original_title') # From indexer
+
+    if not all([torrent_url, title, media_type]):
+        return jsonify({"status": "error", "message": "Missing parameters."}), 400
+
+    # 1. Generate MMS-ID
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    mms_id = f"mms_{media_type}_{timestamp}"
+
+    # 2. Add to rTorrent
+    success, result_msg_or_hash = add_torrent_to_rtorrent(torrent_url)
+
+    if success:
+        torrent_hash = result_msg_or_hash
+
+        # 3. Create Mapping
+        # Note: 'folder_name' is set to the Title. The Staging Processor will need to handle this
+        # to create the destination folder.
+        add_or_update_torrent_in_map(
+            release_name=original_torrent_title, # Important for matching download
+            torrent_hash=torrent_hash,
+            status="pending_download", # Standard flow
+            seedbox_download_path=f"/{original_torrent_title}", # Placeholder, updated later by rtorrent monitor
+            folder_name=title, # Destination folder name
+            app_type="manual", # SPECIAL FLAG
+            target_id=mms_id,
+            label="manual-mms",
+            original_torrent_name=original_torrent_title
+        )
+
+        current_app.logger.info(f"Manual import started for '{title}' (ID: {mms_id}, Hash: {torrent_hash})")
+        return jsonify({"status": "success", "message": f"Téléchargement lancé. ID interne: {mms_id}"})
+    else:
+        current_app.logger.error(f"Failed to add manual torrent: {result_msg_or_hash}")
+        return jsonify({"status": "error", "message": f"Erreur rTorrent: {result_msg_or_hash}"}), 500
+
+@dashboard_bp.route('/dashboard/api/guess-type-and-title', methods=['POST'])
+def guess_type_and_title():
+    """
+    Calls the AI client to guess a clean title and media type from a raw torrent name.
+    """
+    data = request.get_json()
+    raw_title = data.get('title')
+
+    if not raw_title:
+        return jsonify({"error": "Title required"}), 400
+
+    result = guess_media_type_and_title(raw_title)
+
+    # Simple fallback if AI fails completely or returns error
+    if not result or 'error' in result:
+        # Defaults
+        return jsonify({
+            "title": raw_title,
+            "type": "movie"
+        })
+
+    return jsonify(result)

@@ -30,57 +30,13 @@ def extract_opengraph_image(url):
 
     return None
 
-def get_metadata_from_ai(query):
+def _get_configured_models(api_key):
     """
-    Interroge l'API Gemini pour trouver des métadonnées sur un média.
-    Tente d'abord une recherche avec 'grounding' (Google Search).
-    En cas d'échec (modèle incompatible), retente SANS les outils.
-    Retourne un dictionnaire JSON structuré.
+    Découvre et trie les modèles Gemini disponibles.
+    Retourne une liste de noms de modèles à essayer.
     """
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        logger.error("Clé API Gemini manquante (GEMINI_API_KEY).")
-        return {"error": "Clé API manquante"}
-
-    # Configuration des outils (Google Search Grounding)
-    tools_with_search = ['google_search_retrieval']
-
-    # Prompt system/user combiné
-    prompt = f"""
-    Tu es un expert en métadonnées de cinéma et de télévision.
-    Ta mission est de trouver les informations textuelles détaillées pour le média suivant : "{query}".
-
-    Instructions :
-    1. Utilise tes outils de recherche (Google Search) pour trouver les informations exactes (surtout pour les programmes TV récents ou documentaires).
-    2. Concentre-toi sur le texte : Titre exact, année, résumé, studio.
-    3. Réponds UNIQUEMENT avec un objet JSON valide.
-
-    Structure du JSON attendu :
-    {{
-        "title": "Titre français officiel",
-        "original_title": "Titre original (si différent)",
-        "year": 2024,
-        "summary": "Résumé complet en français (2-3 phrases).",
-        "studio": "Studio de production ou Chaîne de diffusion principale",
-        "source_url": "L'URL de la page web officielle ou la plus pertinente (ex: arte.tv, allocine...)"
-    }}
-
-    Si tu ne trouves rien de pertinent, renvoie un objet JSON vide {{}}.
-    """
-
-    # Paramètres de sécurité
-    safety_settings = {
-        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-    }
-
     try:
         genai.configure(api_key=api_key)
-
-        # 1. Découverte dynamique des modèles
-        # On ne se fie plus aux noms codés en dur, on demande à l'API ce qui est dispo
         available_model_names = []
         try:
             for m in genai.list_models():
@@ -89,7 +45,6 @@ def get_metadata_from_ai(query):
         except Exception as e_list:
             logger.warning(f"Impossible de lister les modèles, utilisation des valeurs par défaut: {e_list}")
 
-        # 2. Construction de la liste de priorité
         models_to_try = []
 
         # Priorité A: Variable d'env
@@ -97,109 +52,148 @@ def get_metadata_from_ai(query):
         if env_model: models_to_try.append(env_model)
 
         # Priorité B: Modèles découverts dynamiquement (Flash puis Pro)
-        # On cherche ceux qui contiennent 'flash' puis ceux qui contiennent 'pro'
         flash_models = [m for m in available_model_names if 'flash' in m]
-        pro_models = [m for m in available_model_names if 'pro' in m and 'vision' not in m] # Eviter les modèles vision-only si possible
+        pro_models = [m for m in available_model_names if 'pro' in m and 'vision' not in m]
 
-        # On trie pour avoir les plus récents (souvent numéro de version plus élevé ou 'latest')
         flash_models.sort(reverse=True)
         pro_models.sort(reverse=True)
 
         models_to_try.extend(flash_models)
         models_to_try.extend(pro_models)
 
-        # Priorité C: Fallbacks codés en dur (au cas où list_models échoue)
+        # Priorité C: Fallbacks
         defaults = ["models/gemini-1.5-flash", "models/gemini-1.5-pro", "gemini-pro"]
         for d in defaults:
             if d not in models_to_try:
                 models_to_try.append(d)
 
-        # 3. Boucle d'essai
-        last_exception = None
-
-        for model_name in models_to_try:
-            try:
-                logger.info(f"Tentative IA avec le modèle : {model_name}")
-                model = genai.GenerativeModel(model_name)
-
-                # --- Essai 1 : AVEC OUTILS (Recherche Web) ---
-                try:
-                    response = model.generate_content(
-                        prompt,
-                        tools=tools_with_search,
-                        safety_settings=safety_settings
-                    )
-                except Exception as e_tool:
-                    # Si l'erreur est liée aux outils (ex: modèle ne supporte pas search), on réessaie SANS
-                    logger.warning(f"Échec avec outils pour {model_name} ({e_tool}), nouvelle tentative SANS outils.")
-                    response = model.generate_content(
-                        prompt,
-                        # Pas de tools
-                        safety_settings=safety_settings
-                    )
-
-                # Si on arrive ici, l'appel a réussi, on traite la réponse
-                if response.text:
-                    raw_text = response.text.strip()
-                    if raw_text.startswith("```json"): raw_text = raw_text[7:]
-                    if raw_text.startswith("```"): raw_text = raw_text[3:]
-                    if raw_text.endswith("```"): raw_text = raw_text[:-3]
-                    raw_text = raw_text.strip()
-
-                    try:
-                        data = json.loads(raw_text)
-
-                        # --- ENRICHISSEMENT AVEC IMAGE OPENGRAPH (Simple Bonus) ---
-                        # On continue de chercher une image OpenGraph pour l'ajouter comme candidat unique
-                        # au cas où c'est une bonne image (ex: arte.tv)
-                        if data.get('source_url'):
-                            logger.info(f"Tentative extraction image OpenGraph depuis {data['source_url']}")
-                            og_img = extract_opengraph_image(data['source_url'])
-                            if og_img:
-                                # On l'ajoute comme seul candidat poster pour le moment
-                                # Le front pourra l'afficher si présent
-                                data['poster_candidates'] = [og_img]
-                                logger.info("Image OpenGraph trouvée.")
-
-                        return data
-                    except json.JSONDecodeError:
-                        logger.error(f"Erreur de décodage JSON IA ({model_name}): {raw_text}")
-                        return {"error": "L'IA n'a pas renvoyé un format valide."}
-                else:
-                    return {"error": "Aucune réponse de l'IA."}
-
-            except Exception as e:
-                logger.warning(f"Échec complet avec le modèle {model_name}: {str(e)}")
-                last_exception = e
-                continue # Essayer le prochain modèle
-
-        error_msg = f"Tous les modèles ont échoué. Dernier erreur: {str(last_exception)}"
-        logger.error(error_msg)
-        return {"error": error_msg}
-
+        return models_to_try
     except Exception as e:
-        logger.error(f"Erreur critique lors de l'appel à Gemini: {e}", exc_info=True)
-        return {"error": f"Erreur Gemini: {str(e)}"}
+        logger.error(f"Erreur config modèles: {e}")
+        return ["models/gemini-1.5-flash"]
 
-def list_available_models():
+def _call_gemini(prompt, tools=None):
     """
-    Liste les modèles Gemini disponibles pour la clé API configurée.
+    Fonction générique pour appeler Gemini avec gestion des modèles et erreurs.
     """
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         return {"error": "Clé API manquante"}
 
+    safety_settings = {
+        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+    }
+
+    models_to_try = _get_configured_models(api_key)
+    last_exception = None
+
+    for model_name in models_to_try:
+        try:
+            logger.info(f"Appel IA ({model_name})")
+            model = genai.GenerativeModel(model_name)
+
+            # Essai avec outils si fournis
+            if tools:
+                try:
+                    response = model.generate_content(prompt, tools=tools, safety_settings=safety_settings)
+                except Exception as e_tool:
+                    logger.warning(f"Échec outils {model_name}: {e_tool}, retry sans outils.")
+                    response = model.generate_content(prompt, safety_settings=safety_settings)
+            else:
+                response = model.generate_content(prompt, safety_settings=safety_settings)
+
+            if response.text:
+                raw_text = response.text.strip()
+                # Clean markdown
+                if raw_text.startswith("```json"): raw_text = raw_text[7:]
+                if raw_text.startswith("```"): raw_text = raw_text[3:]
+                if raw_text.endswith("```"): raw_text = raw_text[:-3]
+                raw_text = raw_text.strip()
+
+                try:
+                    return json.loads(raw_text)
+                except json.JSONDecodeError:
+                    return {"error": "Format JSON invalide", "raw": raw_text}
+            else:
+                return {"error": "Réponse vide"}
+
+        except Exception as e:
+            logger.warning(f"Modèle {model_name} échoué: {e}")
+            last_exception = e
+            continue
+
+    return {"error": f"Tous les modèles ont échoué: {last_exception}"}
+
+def get_metadata_from_ai(query):
+    """
+    Recherche complète de métadonnées avec Google Search.
+    """
+    prompt = f"""
+    Tu es un expert en métadonnées de cinéma et de télévision.
+    Ta mission est de trouver les informations textuelles détaillées pour le média suivant : "{query}".
+
+    Instructions :
+    1. Utilise tes outils de recherche (Google Search) pour trouver les informations exactes.
+    2. Concentre-toi sur le texte : Titre exact, année, résumé, studio.
+    3. Réponds UNIQUEMENT avec un objet JSON valide.
+
+    Structure du JSON attendu :
+    {{
+        "title": "Titre français officiel",
+        "original_title": "Titre original",
+        "year": 2024,
+        "summary": "Résumé complet en français.",
+        "studio": "Studio de production",
+        "source_url": "URL pertinente"
+    }}
+
+    Si rien n'est trouvé, renvoie {{}}.
+    """
+
+    data = _call_gemini(prompt, tools=['google_search_retrieval'])
+
+    if "error" not in data and data.get("source_url"):
+        og_img = extract_opengraph_image(data['source_url'])
+        if og_img:
+            data['poster_candidates'] = [og_img]
+
+    return data
+
+def guess_media_type_and_title(filename_or_title):
+    """
+    Analyse un nom de fichier/titre de torrent pour deviner le titre propre et le type.
+    N'utilise PAS de recherche web, juste de l'analyse linguistique.
+    """
+    prompt = f"""
+    Analyse la chaîne suivante qui est un nom de fichier ou un titre de release torrent :
+    "{filename_or_title}"
+
+    Ta mission :
+    1. Nettoyer le titre pour avoir un nom de dossier propre (ex: "Le Bureau des Légendes S01" -> "Le Bureau des Légendes").
+    2. Déterminer si c'est un FILM ('movie') ou une SÉRIE ('tv') en te basant sur des indices comme SxxExx, Saison, Integrale, ou le titre lui-même.
+
+    Réponds UNIQUEMENT avec ce JSON :
+    {{
+        "title": "Titre Nettoyé",
+        "type": "movie" ou "tv"
+    }}
+    """
+
+    # Pas d'outils de recherche nécessaire ici, c'est de l'analyse de texte pur
+    return _call_gemini(prompt, tools=None)
+
+def list_available_models():
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key: return {"error": "Clé API manquante"}
     try:
         genai.configure(api_key=api_key)
         models = []
         for m in genai.list_models():
             if 'generateContent' in m.supported_generation_methods:
-                models.append({
-                    "name": m.name,
-                    "display_name": m.display_name,
-                    "version": m.version
-                })
+                models.append({"name": m.name, "display_name": m.display_name})
         return {"models": models}
     except Exception as e:
-        logger.error(f"Erreur lors du listage des modèles: {e}")
         return {"error": str(e)}

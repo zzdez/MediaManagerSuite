@@ -86,7 +86,62 @@
     </div>
 </div>
 
-<!-- La modale de mapping est définie dans layout.html, nous n'avons pas besoin de la redéfinir ici -->
+<!-- Modal d'Import Manuel (IA) -->
+<div class="modal fade" id="manual-import-modal" tabindex="-1" aria-labelledby="manualImportModalLabel" aria-hidden="true" style="z-index: 1060;">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark text-white">
+            <div class="modal-header">
+                <h5 class="modal-title" id="manualImportModalLabel"><i class="fas fa-robot"></i> Import Manuel assisté par IA</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle"></i> <strong>Mode Manuel</strong>
+                    <p class="mb-0 small">Ce mode permet d'importer un média inconnu des bases de données (TMDB/TVDB). Il sera téléchargé mais <strong>non validé</strong> par Sonarr/Radarr. Vous devrez utiliser l'éditeur Plex plus tard pour corriger les métadonnées.</p>
+                </div>
+
+                <div id="manual-import-loading" class="text-center my-3" style="display:none;">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="mt-2">Analyse du titre par l'IA...</p>
+                </div>
+
+                <form id="manual-import-form">
+                    <input type="hidden" id="mi-guid">
+                    <input type="hidden" id="mi-download-url">
+                    <input type="hidden" id="mi-original-title">
+
+                    <div class="mb-3">
+                        <label for="mi-clean-title" class="form-label">Titre nettoyé (Nom du dossier)</label>
+                        <input type="text" class="form-control" id="mi-clean-title" required>
+                        <div class="form-text text-muted">Ce titre sera utilisé pour nommer le dossier final.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Type de Média</label>
+                        <div class="d-flex gap-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="mi-media-type" id="mi-type-movie" value="movie" checked>
+                                <label class="form-check-label" for="mi-type-movie"><i class="fas fa-film"></i> Film</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="mi-media-type" id="mi-type-tv" value="tv">
+                                <label class="form-check-label" for="mi-type-tv"><i class="fas fa-tv"></i> Série</label>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" id="mi-submit-btn">
+                    <i class="fas fa-download"></i> Lancer l'import
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- La modale de mapping standard est définie dans layout.html -->
 
 {% endblock %}
 
@@ -246,7 +301,8 @@ $(document).ready(function() {
             let statusBadges = generateStatusBadges(torrent.statuses);
 
             // Add 'Inconnu' badge if IDs are missing and no other status is dominant
-            if (isUnknown(torrent)) {
+            const unknown = isUnknown(torrent);
+            if (unknown) {
                 // Check if we already have an "Inconnu" or "Non Géré" badge to avoid duplication, though usually generateStatusBadges handles it.
                 // But specifically for the "Missing IDs" definition of unknown:
                 if (!statusBadges.includes('Inconnu') && !statusBadges.includes('Non Géré')) {
@@ -264,6 +320,18 @@ $(document).ready(function() {
             if (torrent.type === 'movie') categoryBadgeClass = 'bg-primary';
             else if (torrent.type === 'tv') categoryBadgeClass = 'bg-success';
             const categoryBadge = torrent.category ? `<span class="badge ${categoryBadgeClass}">${torrent.category}</span>` : '';
+
+            // Conditional rendering for manual import button
+            // Show it for everyone or just unknown? Let's show for all, but highlight utility for unknown.
+            const manualImportBtn = `
+                <button class="btn btn-outline-warning btn-sm py-0 px-2 manual-import-btn" style="font-size: 0.8rem;"
+                    data-guid="${torrent.guid}"
+                    data-title="${torrent.title || ''}"
+                    data-download-link="${torrent.downloadUrl}"
+                    title="Import Manuel (IA) - Pour items non reconnus">
+                    <i class="fas fa-robot"></i>
+                </button>
+            `;
 
             const torrentCard = `
                 <div class="card mb-2" id="torrent-card-${torrent.guid}">
@@ -290,6 +358,7 @@ $(document).ready(function() {
                                         data-tvdb-id="${torrent.tvdbId || ''}" data-year="${year || ''}">
                                     <i class="fas fa-download"></i>
                                 </button>
+                                ${manualImportBtn}
                                 <button class="btn btn-secondary btn-sm py-0 px-2" style="font-size: 0.8rem;" data-action="ignore" data-guid="${torrent.guid}">
                                     <i class="fas fa-eye-slash"></i>
                                 </button>
@@ -791,7 +860,7 @@ $(document).ready(function() {
             url: "/dashboard/api/ignore",
             type: 'POST',
             contentType: 'application/json',
-            data: JSON.stringify({ id: torrentId }),
+            data: JSON.stringify({ id: torrentGuid }),
             success: function(response) {
                 if (response.status === 'success') {
                     cardElement.fadeOut(500, function() { $(this).remove(); });
@@ -871,6 +940,96 @@ $(document).ready(function() {
             // Standard behavior for all other indexers
             window.open(url, 'MMS_Details_Window', windowFeatures);
         }
+    });
+
+    // --- Manual Import Logic (IA) ---
+    const miModal = new bootstrap.Modal(document.getElementById('manual-import-modal'));
+
+    $('#torrents-container').on('click', '.manual-import-btn', function() {
+        const btn = $(this);
+        const guid = btn.data('guid');
+        const originalTitle = btn.data('title');
+        const downloadUrl = btn.data('download-link');
+
+        // Reset form
+        $('#mi-guid').val(guid);
+        $('#mi-download-url').val(downloadUrl);
+        $('#mi-original-title').val(originalTitle);
+        $('#mi-clean-title').val('');
+        $('#mi-type-movie').prop('checked', true);
+
+        // Show loading, hide form inputs initially
+        $('#manual-import-loading').show();
+        $('#manual-import-form').css('opacity', '0.5');
+        $('#mi-submit-btn').prop('disabled', true);
+
+        miModal.show();
+
+        // Ask AI for guess
+        $.ajax({
+            url: "{{ url_for('dashboard_bp.guess_type_and_title') }}", // Requires this new route
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ title: originalTitle }),
+            success: function(response) {
+                if(response.title) {
+                    $('#mi-clean-title').val(response.title);
+                } else {
+                    $('#mi-clean-title').val(originalTitle);
+                }
+
+                if(response.type === 'tv') {
+                    $('#mi-type-tv').prop('checked', true);
+                } else {
+                    $('#mi-type-movie').prop('checked', true);
+                }
+            },
+            error: function() {
+                // Fallback on error
+                $('#mi-clean-title').val(originalTitle);
+            },
+            complete: function() {
+                $('#manual-import-loading').hide();
+                $('#manual-import-form').css('opacity', '1');
+                $('#mi-submit-btn').prop('disabled', false);
+            }
+        });
+    });
+
+    $('#mi-submit-btn').on('click', function() {
+        const btn = $(this);
+        const data = {
+            guid: $('#mi-guid').val(),
+            downloadUrl: $('#mi-download-url').val(),
+            original_title: $('#mi-original-title').val(),
+            title: $('#mi-clean-title').val(),
+            media_type: $('input[name="mi-media-type"]:checked').val()
+        };
+
+        if(!data.title) {
+            alert("Le titre est obligatoire.");
+            return;
+        }
+
+        btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Envoi...');
+
+        $.ajax({
+            url: "{{ url_for('dashboard_bp.add_manual_import') }}",
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(data),
+            success: function(response) {
+                miModal.hide();
+                alert(response.message || "Import manuel lancé avec succès.");
+                // Optionally remove the card or update status
+            },
+            error: function(xhr) {
+                alert('Erreur: ' + (xhr.responseJSON ? xhr.responseJSON.message : 'Erreur inconnue'));
+            },
+            complete: function() {
+                 btn.prop('disabled', false).html('<i class="fas fa-download"></i> Lancer l\'import');
+            }
+        });
     });
 
 });

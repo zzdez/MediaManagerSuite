@@ -186,25 +186,63 @@ def _handle_manual_import(item, folder_name):
     source_path = os.path.normpath(os.path.join(current_app.config['LOCAL_STAGING_PATH'], folder_name))
 
     target_id_from_map = item.get('target_id')
-    media_type = 'tv' if item.get('app_type') == 'sonarr' else 'movie'
-    media_info = None
+    app_type = item.get('app_type')
 
-    if not target_id_from_map:
-        mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', "Aucun ID cible (TVDB/TMDb) trouvé dans le mapping.")
-        return
+    # Détection du type de média
+    media_type = 'movie' # Défaut
+    if app_type == 'sonarr': media_type = 'tv'
+    elif app_type == 'manual':
+        # Pour le type manuel, on déduit du target_id 'mms_movie_...' ou 'mms_tv_...'
+        if 'mms_tv_' in str(target_id_from_map): media_type = 'tv'
+        else: media_type = 'movie'
 
-    if media_type == 'tv':
-        media_info = arr_client.get_sonarr_series_by_id(target_id_from_map)
-    elif media_type == 'movie':
-        media_info = arr_client.get_radarr_movie_by_id(target_id_from_map)
+    destination_base_path = None
+    target_id = None # Pour Sonarr/Radarr uniquement
 
-    target_id = media_info.get('id') if media_info else None
-    destination_base_path = media_info.get('path') if media_info else None
+    # --- LOGIQUE D'AIGUILLAGE ---
+    if str(target_id_from_map).startswith('mms_'):
+        # CAS SPECIAL : Import "Force Import (Inconnu)" via MMS-ID
+        current_app.logger.info(f"Import Force/Inconnu détecté (MMS-ID: {target_id_from_map}). Bypass des API *Arr.")
 
-    if not target_id or not destination_base_path:
-        error_msg = f"Média avec ID '{target_id_from_map}' non trouvé dans {media_type}."
-        mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', error_msg)
-        return
+        # On détermine le dossier racine par défaut en interrogeant Sonarr/Radarr pour avoir leur config
+        # ou en utilisant une config MMS par défaut si on préfère.
+        # Pour rester cohérent avec l'utilisateur, prenons le premier root folder configuré dans Sonarr/Radarr.
+        root_folders = []
+        if media_type == 'tv':
+            root_folders = arr_client.get_sonarr_root_folders()
+        else:
+            root_folders = arr_client.get_radarr_root_folders()
+
+        if root_folders and len(root_folders) > 0:
+            # On prend le premier dossier racine (ex: /media/series/)
+            root_path = root_folders[0]['path']
+            # On construit le chemin final : /media/series/Nom Du Dossier (Année)/
+            # 'folder_name' dans le mapping contient déjà le titre formaté par l'IA lors de l'ajout
+            destination_base_path = os.path.join(root_path, folder_name)
+            current_app.logger.info(f"Destination calculée pour import forcé : {destination_base_path}")
+        else:
+            mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', f"Aucun dossier racine trouvé dans {media_type.capitalize()} pour l'import forcé.")
+            return
+
+    else:
+        # CAS STANDARD : Import via ID Sonarr/Radarr
+        if not target_id_from_map:
+            mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', "Aucun ID cible (TVDB/TMDb) trouvé dans le mapping.")
+            return
+
+        media_info = None
+        if media_type == 'tv':
+            media_info = arr_client.get_sonarr_series_by_id(target_id_from_map)
+        elif media_type == 'movie':
+            media_info = arr_client.get_radarr_movie_by_id(target_id_from_map)
+
+        target_id = media_info.get('id') if media_info else None
+        destination_base_path = media_info.get('path') if media_info else None
+
+        if not target_id or not destination_base_path:
+            error_msg = f"Média avec ID '{target_id_from_map}' non trouvé dans {media_type}."
+            mapping_manager.update_torrent_status_in_map(torrent_hash, 'error_manual_import', error_msg)
+            return
 
     video_extensions = ('.mkv', '.mp4', '.avi', '.mov', '.wmv')
     files_to_copy = []
@@ -269,12 +307,15 @@ def _handle_manual_import(item, folder_name):
 
     mapping_manager.update_torrent_status_in_map(torrent_hash, final_status, final_message)
 
-    # 5. Déclencher un Rescan
-    current_app.logger.info(f"Déclenchement d'un Rescan dans {media_type} pour l'ID {target_id}.")
-    if media_type == 'tv':
-        arr_client.sonarr_post_command({'name': 'RescanSeries', 'seriesId': target_id})
+    # 5. Déclencher un Rescan (Seulement si ID Sonarr/Radarr valide)
+    if target_id:
+        current_app.logger.info(f"Déclenchement d'un Rescan dans {media_type} pour l'ID {target_id}.")
+        if media_type == 'tv':
+            arr_client.sonarr_post_command({'name': 'RescanSeries', 'seriesId': target_id})
+        else:
+            arr_client.radarr_post_command({'name': 'RescanMovie', 'movieId': target_id})
     else:
-        arr_client.radarr_post_command({'name': 'RescanMovie', 'movieId': target_id})
+        current_app.logger.info("Import forcé (MMS-ID) terminé. Pas de Rescan API *Arr (le média n'y est pas encore). Plex détectera le fichier lors de son prochain scan.")
     # --- FIN DE LA LOGIQUE CORRIGÉE ---
 def process_pending_staging_items():
     """ Main function for the staging processor with robust connection handling. """
