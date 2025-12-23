@@ -92,16 +92,21 @@ def search_prowlarr(query, categories=None, lang=None):
         current_app.logger.warning(f"Prowlarr search for query '{query}' did not return a list.")
         return []
 
-def get_latest_from_prowlarr(categories, min_date=None):
+def get_latest_from_prowlarr(categories, min_date=None, search_mode=False):
     """
     Fetches all new releases from Prowlarr since a given date using robust pagination.
     It stops only when an entire page of results is older than the target date.
+
+    Args:
+        categories (list): List of category IDs.
+        min_date (datetime): The cutoff date for fetching items.
+        search_mode (bool): If True, forces a wildcard search query ('*') to bypass RSS caching.
 
     IMPORTANT: Uses 'offset' and 'limit' instead of 'page'/'pageSize' to prevent
     infinite loops on indexers that ignore 'page' for RSS feeds.
     """
     logging.info(f"--- Starting Prowlarr Fetch (Robust Pagination) ---")
-    logging.info(f"Fetching new releases since: {min_date}")
+    logging.info(f"Fetching new releases since: {min_date} (Search Mode: {search_mode})")
 
     all_releases = []
 
@@ -114,7 +119,8 @@ def get_latest_from_prowlarr(categories, min_date=None):
     # Generic search query (wildcard) from config to allow user override if needed.
     # Default is empty string (""), which triggers RSS mode for most indexers.
     # If the user sets this to "*", it triggers Search mode.
-    search_query = current_app.config.get('PROWLARR_SEARCH_QUERY', "")
+    # If search_mode is True (forced retry), we use "*"
+    search_query = "*" if search_mode else current_app.config.get('PROWLARR_SEARCH_QUERY', "")
 
     while offset < max_offset:
         current_page_num = (offset // limit) + 1
@@ -181,9 +187,15 @@ def get_latest_from_prowlarr(categories, min_date=None):
                     # if Prowlarr returned cached/stale data or if the local state is ahead (future timestamp).
 
                     if offset == 0:
-                         logging.warning(f"  [Time Gap Detected] The newest item from Prowlarr ({page_dates[0]}) is OLDER than your last local refresh ({min_date}). This implies Prowlarr returned stale cached data or the local state is invalid. IGNORING date filter for this run to force data recovery.")
-                         # Disable the min_date filter for the rest of this run to ensure we capture the available data.
-                         min_date = None
+                        logging.warning(f"  [Time Gap Detected] The newest item from Prowlarr ({page_dates[0]}) is OLDER than your last local refresh ({min_date}).")
+
+                        if not search_mode:
+                            logging.warning("  -> RSS feed appears stale. Switching to Search Mode ('*') to force fresh results from indexers.")
+                            return get_latest_from_prowlarr(categories, min_date, search_mode=True)
+                        else:
+                            logging.warning("  -> Gap detected even in Search Mode. This implies genuine data gap or misconfigured date. IGNORING date filter for this run to force data recovery.")
+                            # Disable the min_date filter for the rest of this run to ensure we capture the available data.
+                            min_date = None
                     else:
                         logging.info(f"  -> All items on offset {offset} are older than {min_date}. Stopping pagination.")
                         break
