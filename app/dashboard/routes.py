@@ -376,6 +376,7 @@ def _normalize_torrent(raw_torrent):
         'guid': raw_torrent.get('guid'),
         'downloadUrl': raw_torrent.get('guid'),
         'detailsUrl': raw_torrent.get('infoUrl'),
+        'link': raw_torrent.get('link'),
         'publishDate': publish_date,
         'category': category_name,
         'category_ids': category_ids,
