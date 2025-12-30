@@ -290,12 +290,15 @@ $(document).ready(function() {
                                         data-tvdb-id="${torrent.tvdbId || ''}" data-year="${year || ''}">
                                     <i class="fas fa-download"></i>
                                 </button>
-                                <button class="btn btn-secondary btn-sm py-0 px-2" style="font-size: 0.8rem;" data-action="ignore" data-guid="${torrent.guid}">
+                                <button class="btn btn-secondary btn-sm py-0 px-2" style="font-size: 0.8rem;" data-action="blacklist" data-guid="${torrent.guid}" data-title="${torrent.parsed_data ? torrent.parsed_data.title : ''}" title="Exclure définitivement ce titre">
                                     <i class="fas fa-eye-slash"></i>
                                 </button>
                                 ${torrent.is_new ? `
-                                <button class="btn btn-outline-success btn-sm py-0 px-2" style="font-size: 0.8rem;" data-action="mark-seen" data-guid="${torrent.guid}">
+                                <button class="btn btn-outline-success btn-sm py-0 px-2" style="font-size: 0.8rem;" data-action="mark-seen" data-guid="${torrent.guid}" title="Marquer comme vu">
                                     <i class="fas fa-check"></i>
+                                </button>
+                                <button class="btn btn-outline-info btn-sm py-0 px-2" style="font-size: 0.8rem;" data-action="mark-similar-seen" data-guid="${torrent.guid}" title="Tout marquer comme vu (Similaires)">
+                                    <i class="fas fa-check-double"></i>
                                 </button>
                                 ` : ''}
                             </div>
@@ -783,24 +786,111 @@ $(document).ready(function() {
         });
     });
 
-    $('#torrents-container').on('click', 'button[data-action="ignore"]', function() {
+    // --- Mark Similar as Seen Handler ---
+    $('#torrents-container').on('click', 'button[data-action="mark-similar-seen"]', function() {
         const torrentGuid = $(this).data('guid');
-        const cardElement = $(this).closest('.card');
+        const currentTorrent = allTorrents.find(t => t.guid === torrentGuid);
+
+        if (!currentTorrent) return;
+
+        // Find similar torrents based on IDs (primary) or Title (fallback)
+        const similarTorrents = allTorrents.filter(t => {
+            if (!t.is_new) return false; // Only care about new items
+
+            // 1. Strict ID Match
+            if (currentTorrent.tmdbId && t.tmdbId && currentTorrent.tmdbId === t.tmdbId) return true;
+            if (currentTorrent.tvdbId && t.tvdbId && currentTorrent.tvdbId === t.tvdbId) return true;
+
+            // 2. Fallback Title Match (normalized)
+            // Remove dots, special chars, and lowercase for comparison
+            const normalize = (str) => (str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            // Only use title match if IDs are missing on at least one side to prevent false positives
+            if ((!currentTorrent.tmdbId && !currentTorrent.tvdbId) || (!t.tmdbId && !t.tvdbId)) {
+                // Use parsed title if available for better accuracy
+                const titleA = currentTorrent.parsed_data && currentTorrent.parsed_data.title ? currentTorrent.parsed_data.title : currentTorrent.title;
+                const titleB = t.parsed_data && t.parsed_data.title ? t.parsed_data.title : t.title;
+
+                if (normalize(titleA) === normalize(titleB)) return true;
+            }
+
+            return false;
+        });
+
+        const hashesToMark = similarTorrents.map(t => t.hash);
+
+        if (hashesToMark.length === 0) {
+            alert("Aucun élément similaire trouvé.");
+            return;
+        }
+
+        if (!confirm(`Voulez-vous marquer ${hashesToMark.length} éléments similaires comme vus ?\n(Basé sur l'ID ou le titre)`)) {
+            return;
+        }
 
         $.ajax({
-            url: "/dashboard/api/ignore",
+            url: "{{ url_for('dashboard_bp.mark_all_as_seen') }}",
             type: 'POST',
             contentType: 'application/json',
-            data: JSON.stringify({ id: torrentId }),
+            data: JSON.stringify({ seen_hashes: hashesToMark }),
+            success: function(response) {
+                // Update local state
+                allTorrents.forEach(t => {
+                    if (hashesToMark.includes(t.hash)) {
+                        t.is_new = false;
+                    }
+                });
+                applyFilters();
+                alert(response.message || "Opération réussie !");
+            },
+            error: function(xhr) {
+                alert('Erreur : ' + (xhr.responseJSON ? xhr.responseJSON.message : 'Erreur serveur.'));
+            }
+        });
+    });
+
+    // --- Blacklist / Exclude Handler ---
+    $('#torrents-container').on('click', 'button[data-action="blacklist"]', function() {
+        const torrentGuid = $(this).data('guid');
+        // Use parsed title if available, otherwise raw title
+        let titleToBlacklist = $(this).data('title');
+
+        // Fallback to finding the torrent object if data attribute is missing/empty
+        if (!titleToBlacklist) {
+            const t = allTorrents.find(item => item.guid === torrentGuid);
+            if (t) {
+                titleToBlacklist = t.parsed_data && t.parsed_data.title ? t.parsed_data.title : t.title;
+            }
+        }
+
+        if (!titleToBlacklist) {
+            alert("Impossible de déterminer le titre à exclure.");
+            return;
+        }
+
+        if (!confirm(`ATTENTION : Voulez-vous exclure DÉFINITIVEMENT le titre :\n"${titleToBlacklist}" ?\n\nTous les torrents contenant ce titre seront supprimés et les futurs seront bloqués.`)) {
+            return;
+        }
+
+        const button = $(this);
+        button.prop('disabled', true);
+
+        $.ajax({
+            url: "/dashboard/api/blacklist",
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ title: titleToBlacklist }),
             success: function(response) {
                 if (response.status === 'success') {
-                    cardElement.fadeOut(500, function() { $(this).remove(); });
+                    alert(response.message);
+                    location.reload(); // Reload to reflect the cleanup
                 } else {
-                    alert('Erreur lors de l_ignorance du torrent: ' + response.message);
+                    alert('Erreur : ' + response.message);
+                    button.prop('disabled', false);
                 }
             },
             error: function() {
                 alert('Erreur de communication avec le serveur.');
+                button.prop('disabled', false);
             }
         });
     });
