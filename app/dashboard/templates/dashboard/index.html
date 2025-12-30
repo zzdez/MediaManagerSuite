@@ -290,7 +290,7 @@ $(document).ready(function() {
                                         data-tvdb-id="${torrent.tvdbId || ''}" data-year="${year || ''}">
                                     <i class="fas fa-download"></i>
                                 </button>
-                                <button class="btn btn-secondary btn-sm py-0 px-2" style="font-size: 0.8rem;" data-action="blacklist" data-guid="${torrent.guid}" data-title="${torrent.parsed_data ? torrent.parsed_data.title : ''}" title="Exclure définitivement ce titre">
+                                <button class="btn btn-secondary btn-sm py-0 px-2" style="font-size: 0.8rem;" data-action="blacklist" data-guid="${torrent.guid}" data-title="${(torrent.parsed_data && torrent.parsed_data.title) || torrent.title || ''}" title="Exclure définitivement ce titre">
                                     <i class="fas fa-eye-slash"></i>
                                 </button>
                                 ${torrent.is_new ? `
@@ -854,11 +854,17 @@ $(document).ready(function() {
         // Use parsed title if available, otherwise raw title
         let titleToBlacklist = $(this).data('title');
 
+        // Safety check: sometimes data attribute might be literally "undefined" string if template failed
+        if (titleToBlacklist === "undefined" || titleToBlacklist === undefined || titleToBlacklist === "") {
+            titleToBlacklist = null;
+        }
+
         // Fallback to finding the torrent object if data attribute is missing/empty
         if (!titleToBlacklist) {
             const t = allTorrents.find(item => item.guid === torrentGuid);
             if (t) {
-                titleToBlacklist = t.parsed_data && t.parsed_data.title ? t.parsed_data.title : t.title;
+                // Prioritize parsed title, fallback to raw title
+                titleToBlacklist = (t.parsed_data && t.parsed_data.title) ? t.parsed_data.title : t.title;
             }
         }
 
