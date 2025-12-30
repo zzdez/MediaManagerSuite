@@ -74,6 +74,12 @@
                     <input type="number" class="form-control" id="filter-year" placeholder="Ex: 2023">
                 </div>
 
+                <!-- Option de tri -->
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" id="group-new-on-top" checked>
+                    <label class="form-check-label" for="group-new-on-top">Grouper les nouveaux en haut</label>
+                </div>
+
                 <hr>
 
                 <!-- Filtres Unifiés (Checkboxes) -->
@@ -235,8 +241,17 @@ $(document).ready(function() {
             return;
         }
 
-        // Sort: Purely by publish date (descending), ignoring "is_new" status for order
+        const groupNewOnTop = $('#group-new-on-top').is(':checked');
+
+        // Sort: Optional grouping by "is_new", then by publish date (descending)
         torrentsToRender.sort((a, b) => {
+            if (groupNewOnTop) {
+                // If "is_new" status differs, prioritize new items
+                if (a.is_new !== b.is_new) {
+                    return a.is_new ? -1 : 1; // New items come first
+                }
+            }
+            // Secondary sort (or primary if unchecked): Publish Date
             return new Date(b.publishDate) - new Date(a.publishDate);
         });
 
@@ -594,12 +609,14 @@ $(document).ready(function() {
 
     // --- Event Handlers & Initial Load ---
     $('#filter-title, #filter-year').on('input', () => { saveFilterState(); applyFilters(); });
+    $('#group-new-on-top').on('change', () => { applyFilters(); }); // Re-sort immediately
     // Use delegation for dynamic content
     $('#unified-filters-container').on('change', '.filter-checkbox', () => { saveFilterState(); applyFilters(); });
 
     $('#reset-filters-btn').on('click', function() {
         filterTitle.val('');
         filterYear.val('');
+        $('#group-new-on-top').prop('checked', true); // Reset sort to default
         $('.filter-checkbox').prop('checked', false);
         saveFilterState();
         applyFilters();
@@ -823,10 +840,7 @@ $(document).ready(function() {
             return;
         }
 
-        if (!confirm(`Voulez-vous marquer ${hashesToMark.length} éléments similaires comme vus ?\n(Basé sur l'ID ou le titre)`)) {
-            return;
-        }
-
+        // No confirmation dialog as requested
         $.ajax({
             url: "{{ url_for('dashboard_bp.mark_all_as_seen') }}",
             type: 'POST',
@@ -873,7 +887,19 @@ $(document).ready(function() {
             return;
         }
 
-        if (!confirm(`ATTENTION : Voulez-vous exclure DÉFINITIVEMENT le titre :\n"${titleToBlacklist}" ?\n\nTous les torrents contenant ce titre seront supprimés et les futurs seront bloqués.`)) {
+        // Use prompt instead of confirm to allow editing
+        const userTitle = prompt(
+            `Confirmez le titre à exclure DÉFINITIVEMENT.\n\nVous pouvez le modifier pour ne garder que le nom de la série/film :\n(Ex: effacer 'S01E01' pour tout bloquer)`,
+            titleToBlacklist
+        );
+
+        if (userTitle === null) {
+            return; // User cancelled
+        }
+
+        const finalTitle = userTitle.trim();
+        if (!finalTitle) {
+            alert("Le titre ne peut pas être vide.");
             return;
         }
 
@@ -884,7 +910,7 @@ $(document).ready(function() {
             url: "/dashboard/api/blacklist",
             type: 'POST',
             contentType: 'application/json',
-            data: JSON.stringify({ title: titleToBlacklist }),
+            data: JSON.stringify({ title: finalTitle }),
             success: function(response) {
                 if (response.status === 'success') {
                     alert(response.message);
