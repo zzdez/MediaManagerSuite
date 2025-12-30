@@ -22,6 +22,7 @@ from app.utils.release_parser import parse_release_data
 # Define paths for our state files
 DASHBOARD_STATE_FILE = os.path.join('instance', 'dashboard_state.json')
 DASHBOARD_IGNORED_FILE = os.path.join('instance', 'dashboard_ignored.json')
+DASHBOARD_BLACKLIST_FILE = os.path.join('instance', 'dashboard_blacklist.json')
 DASHBOARD_TORRENTS_FILE = os.path.join('instance', 'dashboard_torrents.json')
 
 # --- Helper functions for state management ---
@@ -85,6 +86,27 @@ def add_ignored_hash(torrent_hash):
         # Convert set to list for JSON serialization
         json.dump(list(ignored_hashes), f)
     current_app.logger.info(f"Added hash {torrent_hash} to ignored list.")
+
+def get_blacklisted_terms():
+    """Reads the set of blacklisted title terms."""
+    if not os.path.exists(DASHBOARD_BLACKLIST_FILE):
+        return set()
+    try:
+        with open(DASHBOARD_BLACKLIST_FILE, 'r') as f:
+            return set(json.load(f))
+    except (json.JSONDecodeError, IOError):
+        return set()
+
+def add_blacklisted_term(term):
+    """Adds a term to the blacklist file."""
+    if not term:
+        return
+    terms = get_blacklisted_terms()
+    terms.add(term.lower().strip())
+    os.makedirs(os.path.dirname(DASHBOARD_BLACKLIST_FILE), exist_ok=True)
+    with open(DASHBOARD_BLACKLIST_FILE, 'w') as f:
+        json.dump(list(terms), f)
+    current_app.logger.info(f"Added term '{term}' to blacklist.")
 
 def get_dashboard_categories():
     """Loads and combines Sonarr and Radarr categories from search_settings.json."""
@@ -214,6 +236,8 @@ def refresh_torrents():
 
         # --- Prepare for enrichment ---
         ignored_hashes = get_ignored_hashes()
+        blacklisted_terms = get_blacklisted_terms()
+
         # Make the TMDB client initialization conditional on the API key's existence
         tmdb_api_key = current_app.config.get('TMDB_API_KEY')
         tmdb_client = TheMovieDBClient() if tmdb_api_key else None
@@ -230,6 +254,10 @@ def refresh_torrents():
             torrent = _normalize_torrent(raw_torrent)
             # After normalization, 'guid' is the primary identifier. Check against ignored list.
             if not torrent or torrent['guid'] in ignored_hashes:
+                continue
+
+            # Check blacklist
+            if any(term in (torrent.get('title') or '').lower() for term in blacklisted_terms):
                 continue
 
             composite_key = f"{torrent['guid']}_{torrent.get('title', '')}"
@@ -500,6 +528,50 @@ def ignore_torrent():
     add_ignored_hash(torrent_id)
 
     return jsonify({"status": "success", "message": f"Identifier {torrent_id} ignored."})
+
+@dashboard_bp.route('/dashboard/api/blacklist', methods=['POST'])
+def blacklist_title():
+    """
+    API endpoint to add a TITLE to the blacklist.
+    Removes existing torrents matching this title.
+    """
+    data = request.get_json()
+    title = data.get('title')
+
+    if not title:
+        return jsonify({"status": "error", "message": "No title provided"}), 400
+
+    clean_title = title.strip()
+    add_blacklisted_term(clean_title)
+
+    # Perform cleanup of existing torrents immediately
+    if os.path.exists(DASHBOARD_TORRENTS_FILE):
+        try:
+            with open(DASHBOARD_TORRENTS_FILE, 'r') as f:
+                all_torrents = json.load(f)
+
+            original_count = len(all_torrents)
+            # Filter out items that contain the newly blacklisted term
+            filtered_torrents = [
+                t for t in all_torrents
+                if clean_title.lower() not in (t.get('title') or '').lower()
+            ]
+
+            removed_count = original_count - len(filtered_torrents)
+
+            with open(DASHBOARD_TORRENTS_FILE, 'w') as f:
+                json.dump(filtered_torrents, f, indent=2)
+
+            return jsonify({
+                "status": "success",
+                "message": f"Titre '{clean_title}' blacklisté. {removed_count} élément(s) supprimé(s)."
+            })
+
+        except Exception as e:
+            current_app.logger.error(f"Error filtering torrents after blacklist: {e}")
+            return jsonify({"status": "error", "message": "Blacklist saved but cleanup failed."}), 500
+
+    return jsonify({"status": "success", "message": f"Title '{clean_title}' blacklisted."})
 
 @dashboard_bp.route('/dashboard/api/proxy')
 def proxy_request():

@@ -116,6 +116,12 @@ def get_latest_from_prowlarr(categories, min_date=None):
     # If the user sets this to "*", it triggers Search mode.
     search_query = current_app.config.get('PROWLARR_SEARCH_QUERY', "")
 
+    # Sanitize search_query: if it is explicitly "*", treat it as empty (RSS mode)
+    # to avoid issues with some indexers (like Xthor/TheOldSchool) that return 0 results for "*".
+    if search_query == "*":
+        logging.info("Configured PROWLARR_SEARCH_QUERY is '*'. Treating it as empty (RSS mode) for compatibility.")
+        search_query = ""
+
     while offset < max_offset:
         current_page_num = (offset // limit) + 1
 
@@ -132,7 +138,6 @@ def get_latest_from_prowlarr(categories, min_date=None):
         # IMPORTANT: Only add 'query' if it's strictly NOT empty.
         # Prowlarr treats an empty string query ("") same as None (RSS mode),
         # BUT explicitly sending query="" might cause issues with some indexers.
-        # If the user provides "*", we send it.
         if search_query:
             params['query'] = search_query
 
