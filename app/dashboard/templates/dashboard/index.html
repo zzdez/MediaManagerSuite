@@ -256,6 +256,29 @@ $(document).ready(function() {
         });
 
         torrentsToRender.forEach(torrent => {
+            // Calculate similar count for the badge (only for new items)
+            let similarCount = 0;
+            if (torrent.is_new) {
+                similarCount = allTorrents.filter(t => {
+                    if (!t.is_new) return false;
+
+                    // 1. Strict ID Match
+                    if (torrent.tmdbId && t.tmdbId && torrent.tmdbId === t.tmdbId) return true;
+                    if (torrent.tvdbId && t.tvdbId && torrent.tvdbId === t.tvdbId) return true;
+
+                    // 2. Fallback Title Match (normalized)
+                    // Only use title match if IDs are missing on at least one side to prevent false positives
+                    if ((!torrent.tmdbId && !torrent.tvdbId) || (!t.tmdbId && !t.tvdbId)) {
+                        const normalize = (str) => (str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                        const titleA = torrent.parsed_data && torrent.parsed_data.title ? torrent.parsed_data.title : torrent.title;
+                        const titleB = t.parsed_data && t.parsed_data.title ? t.parsed_data.title : t.title;
+
+                        if (normalize(titleA) === normalize(titleB)) return true;
+                    }
+                    return false;
+                }).length;
+            }
+
             const sizeInGB = ((torrent.size || 0) / (1024 * 1024 * 1024)).toFixed(2);
             const newBadge = torrent.is_new ? '<span class="badge bg-info ms-2">Nouveau</span>' : '';
             let statusBadges = generateStatusBadges(torrent.statuses);
@@ -313,7 +336,7 @@ $(document).ready(function() {
                                     <i class="fas fa-check"></i>
                                 </button>
                                 <button class="btn btn-outline-info btn-sm py-0 px-2" style="font-size: 0.8rem;" data-action="mark-similar-seen" data-guid="${torrent.guid}" title="Tout marquer comme vu (Similaires)">
-                                    <i class="fas fa-check-double"></i>
+                                    <i class="fas fa-check-double"></i> <span class="badge bg-light text-dark ms-1" style="font-size: 0.7rem;">${similarCount}</span>
                                 </button>
                                 ` : ''}
                             </div>
@@ -854,7 +877,7 @@ $(document).ready(function() {
                     }
                 });
                 applyFilters();
-                alert(response.message || "Opération réussie !");
+                // alert(response.message || "Opération réussie !");
             },
             error: function(xhr) {
                 alert('Erreur : ' + (xhr.responseJSON ? xhr.responseJSON.message : 'Erreur serveur.'));
