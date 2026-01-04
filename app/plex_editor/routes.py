@@ -3724,7 +3724,8 @@ def metadata_apply():
             if not best_match and matches:
                 # On pourrait être plus laxiste ici, ou demander à l'utilisateur de choisir
                 # Pour l'instant, on prend le premier si score > 80
-                if matches[0].score > 80:
+                first_match_score = matches[0].score or 0
+                if first_match_score > 80:
                     best_match = matches[0]
 
             if best_match:
