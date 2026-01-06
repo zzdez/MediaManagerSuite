@@ -18,6 +18,8 @@ from app.utils.mapping_manager import get_all_torrent_hashes
 from app.utils.status_manager import get_media_statuses
 # Import the release parser
 from app.utils.release_parser import parse_release_data
+# Import seen manager for persistent history
+from app.utils.seen_manager import add_to_seen_history
 
 # Define paths for our state files
 DASHBOARD_STATE_FILE = os.path.join('instance', 'dashboard_state.json')
@@ -704,6 +706,15 @@ def cleanup_torrents():
 
         cleaned_count = original_count - len(cleaned_torrents)
 
+        # Identify items being removed to add them to seen history
+        # We want to ensure that if they reappear from Prowlarr, they are not marked as new.
+        removed_items = [t for t in all_torrents if t not in cleaned_torrents]
+        removed_guids = [t.get('guid') for t in removed_items if t.get('guid')]
+
+        if removed_guids:
+            add_to_seen_history(removed_guids)
+            current_app.logger.info(f"Cleanup: Added {len(removed_guids)} removed items to seen history.")
+
         with open(DASHBOARD_TORRENTS_FILE, 'w') as f:
             json.dump(cleaned_torrents, f, indent=2)
 
@@ -759,6 +770,19 @@ def mark_all_as_seen():
         with open(DASHBOARD_TORRENTS_FILE, 'w') as f:
             json.dump(torrents, f, indent=2)
 
+        # Update persistent history
+        if seen_hashes:
+            add_to_seen_history(list(seen_hashes))
+        elif data.get('force_all'):
+             # If force_all, we need to gather all hashes that were marked?
+             # Or just all hashes in the file?
+             # For safety, let's just collect the ones we modified above if possible,
+             # but we didn't track them.
+             # Re-iterating to find updated ones is hard without tracking.
+             # But 'force_all' implies everything currently in list is now seen.
+             all_guids = [t.get('guid') for t in torrents if t.get('guid')]
+             add_to_seen_history(all_guids)
+
         current_app.logger.info(f"Marked {updated_count} torrents as seen.")
         return jsonify({"status": "success", "message": f"{updated_count} torrent(s) marked as seen."})
 
@@ -793,6 +817,12 @@ def mark_as_seen():
 
         if not found:
             return jsonify({"status": "error", "message": "Torrent not found."}), 404
+
+        # Add to persistent history using GUID (which is often same as hash here)
+        # We need to find the guid of the item we just marked.
+        # Ideally torrent['guid']
+        target_guid = next((t.get('guid') for t in torrents if t.get('hash') == torrent_hash), torrent_hash)
+        add_to_seen_history([target_guid])
 
         with open(DASHBOARD_TORRENTS_FILE, 'w') as f:
             json.dump(torrents, f, indent=2)

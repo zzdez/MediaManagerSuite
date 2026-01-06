@@ -10,6 +10,7 @@ from app.utils.prowlarr_client import get_latest_from_prowlarr, get_prowlarr_app
 from app.utils.tmdb_client import TheMovieDBClient
 from app.utils.status_manager import get_media_statuses
 from app.utils.release_parser import parse_release_data
+from app.utils.seen_manager import get_seen_history
 
 DASHBOARD_STATE_FILE = os.path.join('instance', 'dashboard_state.json')
 DASHBOARD_TORRENTS_FILE = os.path.join('instance', 'dashboard_torrents.json')
@@ -149,6 +150,9 @@ def scheduled_dashboard_refresh():
         rejected_by_keyword = 0
         rejected_by_year = 0
 
+        # Load seen history to prevent re-marking seen items as new
+        seen_history = get_seen_history()
+
         # Track GUIDs processed in this batch to avoid internal duplicates within the fetch
         processed_guids_in_batch = set()
 
@@ -195,9 +199,15 @@ def scheduled_dashboard_refresh():
                     rejected_by_year += 1
                     continue
 
-            # If we reach here, the torrent is accepted as NEW
-            new_torrents_found += 1
-            torrent['is_new'] = True
+            # If we reach here, the torrent is accepted into the list.
+            # Check if it was previously seen to determine 'is_new' status.
+            if guid in seen_history:
+                torrent['is_new'] = False
+                # We do not increment new_torrents_found
+            else:
+                new_torrents_found += 1
+                torrent['is_new'] = True
+
             existing_torrents_map[guid] = torrent
 
         current_app.logger.info(
