@@ -529,12 +529,13 @@ def get_user_libraries(user_id):
         libraries = target_plex_server.library.sections()
 
         # **NOUVELLE LOGIQUE DE FILTRAGE**
-        ignored_library_names = current_app.config.get('PLEX_LIBRARIES_TO_IGNORE', [])
+        ignored_library_names = current_app.config.get('PLEX_LIBRARIES_TO_IGNORE') or []
 
         filtered_libraries = []
         for lib in libraries:
             # Condition 1: La bibliothèque n'est pas dans la liste des noms à ignorer
-            is_ignored = lib.title in ignored_library_names
+            # On vérifie que le titre n'est pas None par sécurité
+            is_ignored = lib.title and (lib.title in ignored_library_names)
 
             # Condition 2: La bibliothèque est de type 'movie' ou 'show'
             is_valid_type = lib.type in ['movie', 'show']
@@ -587,6 +588,7 @@ def get_genres_for_libraries():
         return jsonify(error=str(e)), 500
         
 @plex_editor_bp.route('/api/collections', methods=['POST'])
+@login_required
 def get_collections_for_libraries():
     data = request.json
     user_id = data.get('userId')
@@ -610,6 +612,7 @@ def get_collections_for_libraries():
         return jsonify(error=str(e)), 500
 
 @plex_editor_bp.route('/api/resolutions', methods=['POST'])
+@login_required
 def get_resolutions_for_libraries():
     data = request.json
     user_id = data.get('userId')
@@ -637,6 +640,7 @@ def get_resolutions_for_libraries():
         return jsonify(error=str(e)), 500
 
 @plex_editor_bp.route('/api/studios', methods=['POST'])
+@login_required
 def get_studios_for_libraries():
     data = request.json
     user_id = data.get('userId')
@@ -1253,26 +1257,57 @@ def get_media_items():
 @plex_editor_bp.route('/api/media_item/<int:rating_key>', methods=['DELETE'])
 @login_required
 def delete_media_item_api(rating_key): # Renommé pour éviter conflit avec la non-API delete_item
-    """Supprime un média en utilisant sa ratingKey (via API)."""
+    """Supprime un média en utilisant sa ratingKey (via API) et nettoie les fichiers."""
     try:
         admin_plex_server = get_plex_admin_server()
         if not admin_plex_server:
             current_app.logger.error(f"API delete_media_item: Impossible d'obtenir une connexion admin Plex.")
             return jsonify({'status': 'error', 'message': 'Connexion au serveur Plex admin échouée.'}), 500
 
+        # --- RÉCUPÉRATION DYNAMIQUE DES RACINES ET GARDE-FOUS ---
+        active_plex_library_roots = []
+        deduced_base_paths_guards = []
+        try:
+            library_sections = admin_plex_server.library.sections()
+            temp_roots = set()
+            temp_guards = set()
+            for lib_sec in library_sections:
+                if hasattr(lib_sec, 'locations') and lib_sec.locations:
+                    for loc_path in lib_sec.locations:
+                        norm_loc_path = os.path.normpath(loc_path)
+                        temp_roots.add(norm_loc_path)
+                        drive, _ = os.path.splitdrive(norm_loc_path)
+                        if drive: temp_guards.add(drive + os.sep)
+                        else:
+                            path_components = [c for c in norm_loc_path.split(os.sep) if c]
+                            if path_components: temp_guards.add(os.sep + path_components[0])
+                            elif norm_loc_path == os.sep: temp_guards.add(os.sep)
+
+            active_plex_library_roots = list(temp_roots)
+            deduced_base_paths_guards = list(temp_guards) if temp_guards else [os.path.normpath(os.path.abspath(os.sep))]
+        except Exception as e_get_paths:
+             current_app.logger.warning(f"API delete_media_item: Erreur récupération racines: {e_get_paths}")
+        # --- FIN RÉCUPÉRATION DYNAMIQUE ---
+
         item_to_delete = admin_plex_server.fetchItem(rating_key)
 
         if item_to_delete:
             item_title = item_to_delete.title
-            current_app.logger.info(f"API delete_media_item: Tentative de suppression du média '{item_title}' (ratingKey: {rating_key}).")
+            media_filepath_to_cleanup = get_media_filepath(item_to_delete)
+
+            current_app.logger.info(f"API delete_media_item: Suppression Plex de '{item_title}' (ratingKey: {rating_key}).")
             item_to_delete.delete()
-            # La suppression des fichiers du disque est omise ici pour la version API.
-            # cleanup_parent_directory_recursively etc. ne sont pas appelés.
-            current_app.logger.info(f"API delete_media_item: Média '{item_title}' (ratingKey: {rating_key}) supprimé de Plex.")
-            return jsonify({'status': 'success', 'message': f"'{item_title}' a été supprimé de Plex."})
+
+            if media_filepath_to_cleanup:
+                current_app.logger.info(f"API delete_media_item: Nettoyage fichiers pour: {media_filepath_to_cleanup}")
+                cleanup_parent_directory_recursively(
+                    media_filepath_to_cleanup,
+                    dynamic_plex_library_roots=active_plex_library_roots,
+                    base_paths_guards=deduced_base_paths_guards
+                )
+
+            return jsonify({'status': 'success', 'message': f"'{item_title}' a été supprimé de Plex et du disque."})
         else:
-            # Ce cas est techniquement couvert par l'exception NotFound ci-dessous, mais une vérification explicite est possible.
-            current_app.logger.warning(f"API delete_media_item: Média avec ratingKey {rating_key} non trouvé (avant exception).")
             return jsonify({'status': 'error', 'message': f'Média avec ratingKey {rating_key} non trouvé.'}), 404
 
     except NotFound:
@@ -1281,7 +1316,7 @@ def delete_media_item_api(rating_key): # Renommé pour éviter conflit avec la n
     except Unauthorized:
         current_app.logger.error(f"API delete_media_item: Autorisation refusée pour supprimer {rating_key}. Token admin invalide ?")
         return jsonify({'status': 'error', 'message': 'Autorisation refusée par le serveur Plex.'}), 401
-    except BadRequest: # Au cas où l'item ne peut pas être supprimé pour une raison de requête
+    except BadRequest:
         current_app.logger.error(f"API delete_media_item: Requête incorrecte pour la suppression de {rating_key}.", exc_info=True)
         return jsonify({'status': 'error', 'message': 'Requête de suppression incorrecte vers Plex.'}), 400
     except Exception as e:
@@ -1891,36 +1926,23 @@ def delete_item(rating_key):
 @plex_editor_bp.route('/bulk_delete_items', methods=['POST'])
 @login_required
 def bulk_delete_items():
-    # --- Début des logs de débogage initiaux ---
-    print("--- PRINT: FONCTION bulk_delete_items APPELÉE ---")
-    print(f"--- PRINT: Contenu du formulaire bulk_delete_items: {request.form}")
-    current_app.logger.info("--- LOG: FONCTION bulk_delete_items APPELÉE ---")
-    current_app.logger.debug(f"LOG: Contenu du formulaire bulk_delete_items: {request.form}")
-    # --- Fin des logs de débogage initiaux ---
-
     if 'plex_user_id' not in session:
-        flash("Session expirée. Veuillez vous reconnecter.", "danger")
-        return redirect(url_for('plex_editor.index')) # (### MODIFICATION ICI ###) - Pointeur vers 'index'
+        return jsonify({'status': 'error', 'message': "Session expirée."}), 401
 
     selected_keys_str_list = request.form.getlist('selected_item_keys')
-    current_library_name = request.form.get('current_library_name')
-    redirect_url = request.referrer or url_for('plex_editor.list_libraries') # (### MODIFICATION ICI ###) - Fallback plus logique
 
     if not selected_keys_str_list:
-        flash("Aucun élément sélectionné pour suppression.", "warning")
-        return redirect(redirect_url)
+        return jsonify({'status': 'warning', 'message': "Aucun élément sélectionné."}), 400
 
     selected_rating_keys = [int(k_str) for k_str in selected_keys_str_list if k_str.isdigit()]
     if not selected_rating_keys:
-        flash("Aucune clé d'élément valide sélectionnée après filtrage.", "warning")
-        return redirect(redirect_url)
+        return jsonify({'status': 'warning', 'message': "Aucune clé d'élément valide."}), 400
 
     plex_url = current_app.config.get('PLEX_URL')
     admin_token = current_app.config.get('PLEX_TOKEN')
 
     if not plex_url or not admin_token:
-        flash("Configuration Plex admin manquante. Suppression groupée impossible.", "danger")
-        return redirect(redirect_url)
+        return jsonify({'status': 'error', 'message': "Configuration Plex admin manquante."}), 500
 
     success_count = 0
     fail_count = 0
@@ -1957,7 +1979,8 @@ def bulk_delete_items():
             current_app.logger.info(f"bulk_delete_items: Garde-fous de base déduits: {deduced_base_paths_guards}")
         except Exception as e_get_paths:
             current_app.logger.error(f"bulk_delete_items: Erreur récupération racines/garde-fous: {e_get_paths}. Nettoyage plus risqué.", exc_info=True)
-            flash("Avertissement: Récupération des chemins Plex échouée. Nettoyage de dossier plus risqué.", "warning")
+            # Pas de flash, juste log
+
         # --- FIN RÉCUPÉRATION DYNAMIQUE ---
 
         for r_key in selected_rating_keys:
@@ -1998,23 +2021,24 @@ def bulk_delete_items():
                 failed_items_info.append(f"'{title_err}' (erreur: {type(e_item_del).__name__})")
                 current_app.logger.error(f"Échec suppression (groupe) pour '{title_err}': {e_item_del}", exc_info=True)
 
-        # Messages Flash après la boucle
+        message = ""
+        status = "success"
         if success_count > 0:
-            flash(f"{success_count} élément(s) supprimé(s) de Plex.", "success")
+            message += f"{success_count} élément(s) supprimé(s) de Plex. "
         if fail_count > 0:
+            status = "warning" if success_count > 0 else "error"
             summary = ", ".join(failed_items_info[:3])
             if len(failed_items_info) > 3:
                 summary += f", et {len(failed_items_info) - 3} autre(s)..."
-            flash(f"Échec de suppression pour {fail_count} élément(s). Détails: {summary}.", "danger")
+            message += f"Échec pour {fail_count} élément(s). {summary}"
+
+        return jsonify({'status': status, 'message': message.strip()})
 
     except Unauthorized:
-        flash("Autorisation refusée (token admin). Suppression groupée échouée.", "danger")
-        current_app.logger.error("Unauthorized pour suppression groupée.")
+        return jsonify({'status': 'error', 'message': "Autorisation refusée (token admin)."}), 401
     except Exception as e_bulk:
-        flash(f"Erreur majeure suppression groupée: {e_bulk}", "danger")
         current_app.logger.error(f"Erreur majeure suppression groupée: {e_bulk}", exc_info=True)
-
-    return redirect(redirect_url)
+        return jsonify({'status': 'error', 'message': f"Erreur majeure: {str(e_bulk)}"}), 500
 
 # (### SUPPRESSION ICI ###) - La ligne d'import qui était ici a été supprimée car elle est déjà en haut du fichier.
 
@@ -2476,7 +2500,7 @@ def get_media_details_for_modal(rating_key): # Renommé pour clarté, bien que l
         # Adapter les noms des attributs aux vrais noms de l'API Plex via plexapi.
         details = {
             'title': getattr(item, 'title', 'Titre inconnu'),
-            'originalTitle': getattr(item, 'originalTitle', None), # <-- AJOUTE CETTE LIGNE
+            'originalTitle': getattr(item, 'originalTitle', None),
             'year': getattr(item, 'year', ''),
             'summary': getattr(item, 'summary', 'Aucun résumé disponible.'),
             'tagline': getattr(item, 'tagline', ''), # Souvent appelé 'tagline' dans Plex
@@ -2488,7 +2512,13 @@ def get_media_details_for_modal(rating_key): # Renommé pour clarté, bien que l
         }
 
         # Convertir la durée en format lisible (HH:MM:SS ou MM:SS)
-        duration_ms = details.get('duration_ms', 0)
+        duration_ms = details.get('duration_ms')
+
+        # S'assurer que duration_ms est un entier valide (traiter None comme 0)
+        # La valeur retournée par Plex peut être None si inconnue
+        if duration_ms is None:
+            duration_ms = 0
+
         if duration_ms > 0:
             seconds_total = int(duration_ms / 1000)
             hours = seconds_total // 3600
@@ -3160,6 +3190,465 @@ def rename_series_files_endpoint():
         return jsonify({'status': 'success', 'message': message})
     else:
         return jsonify({'status': 'error', 'message': 'Échec de l\'envoi de la commande à Sonarr.'}), 500
+
+@plex_editor_bp.route('/api/metadata_search', methods=['POST'])
+@login_required
+def metadata_search():
+    """
+    Recherche des métadonnées sur TMDB ou TVDB.
+    Supporte la sélection du fournisseur et le filtrage par année.
+    """
+    data = request.json
+    query = data.get('query')
+    media_type = data.get('media_type') # 'movie' ou 'show'
+    provider = data.get('provider', 'auto') # 'tmdb', 'tvdb', 'auto'
+    year = data.get('year')
+
+    if not query or not media_type:
+        return jsonify({'error': 'Query and media_type are required.'}), 400
+
+    # Déterminer le fournisseur cible
+    target_provider = provider
+    if provider == 'auto':
+        target_provider = 'tmdb' if media_type == 'movie' else 'tvdb'
+
+    results = []
+    try:
+        if target_provider == 'tmdb':
+            tmdb_client = TheMovieDBClient()
+            raw_results = []
+
+            # TMDB supporte les deux types
+            if media_type == 'movie':
+                raw_results = tmdb_client.search_movie(query, lang='fr-FR')
+            else:
+                raw_results = tmdb_client.search_series(query, lang='fr-FR')
+
+            # Normaliser les résultats TMDB
+            for item in raw_results:
+                item_year = item.get('year')
+                # Filtrage optionnel par année (tolérance de +/- 1 an ?)
+                # Pour l'instant, on inclut tout, le tri côté client peut aider
+
+                # Adaptation des champs selon le type (movie/series) retourné par le client
+                title = item.get('title') or item.get('name')
+                original_title = item.get('original_title') or item.get('original_name')
+
+                results.append({
+                    'id': item.get('id'),
+                    'title': title,
+                    'original_title': original_title,
+                    'year': item_year,
+                    'overview': item.get('overview'),
+                    'poster_url': item.get('poster_url'),
+                    'provider': 'tmdb'
+                })
+
+        elif target_provider == 'tvdb':
+            tvdb_client = CustomTVDBClient()
+            raw_results = []
+
+            if media_type == 'movie':
+                # Utiliser la nouvelle méthode search_movie avec année optionnelle
+                raw_results = tvdb_client.search_movie(query, lang='fra', year=year)
+            else:
+                # Pour les séries, search_series supporte maintenant l'année
+                # On utilise search_series plutôt que search_and_translate pour avoir plus de contrôle si l'année est fournie
+                # Mais search_and_translate est meilleure pour la traduction...
+                # On va utiliser search_series qui est plus générique si l'année est précisée
+                raw_results = tvdb_client.search_series(query, lang='fra', year=year)
+
+            # Normaliser les résultats TVDB (format brut de search)
+            for item in raw_results:
+                # item est un dict retourné par la lib tvdb_v4_official
+                # Clés usuelles: tvdb_id, name, year, image_url...
+                # Attention, la structure retournée par search() est différente de search_and_translate()
+
+                # Adaptation : l'objet retourné par search() a des attributs ou est un dict
+                # La lib retourne des objets généralement, ou des dicts selon la version.
+                # Mon wrapper search_series retourne "results if results else []".
+                # D'après le code de tvdb_v4_official, search retourne une liste de dicts.
+
+                r_id = item.get('tvdb_id')
+                r_title = item.get('name') or item.get('translations', {}).get('fra') # Tentative
+                r_year = item.get('year')
+                r_overview = item.get('overview')
+                r_image = item.get('image_url')
+
+                results.append({
+                    'id': r_id,
+                    'title': r_title,
+                    'original_title': item.get('name'), # Souvent le nom original
+                    'year': r_year,
+                    'overview': r_overview,
+                    'poster_url': r_image,
+                    'provider': 'tvdb'
+                })
+
+        # Filtrage post-traitement par année pour TMDB (qui ne le supporte pas en param)
+        if year and target_provider == 'tmdb':
+            try:
+                target_year = int(year)
+                results = [r for r in results if r['year'] and abs(int(r['year']) - target_year) <= 1]
+            except (ValueError, TypeError):
+                pass
+
+        return jsonify({'results': results})
+
+    except Exception as e:
+        current_app.logger.error(f"Error in metadata_search: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+@plex_editor_bp.route('/api/media_assets/<int:rating_key>', methods=['GET'])
+@login_required
+def get_media_assets(rating_key):
+    """Retrieves available posters and backgrounds for an item."""
+    asset_type = request.args.get('type', 'poster') # 'poster' or 'art'
+
+    try:
+        admin_plex = get_plex_admin_server()
+        if not admin_plex:
+            return jsonify({'error': 'Failed to connect to Plex Server.'}), 500
+
+        item = admin_plex.fetchItem(rating_key)
+        if not item:
+            return jsonify({'error': 'Item not found.'}), 404
+
+        assets = []
+        if asset_type == 'poster':
+            plex_assets = item.posters()
+        elif asset_type == 'art':
+            plex_assets = item.arts()
+        else:
+            return jsonify({'error': 'Invalid asset type.'}), 400
+
+        for asset in plex_assets:
+            # Construct a safe object
+            # asset.key is the API path to set it
+            # asset.ratingKey is effectively the same or part of it
+            # asset.thumb is the path to view it
+            # asset.provider tells us source (e.g., 'local', 'com.plexapp.agents.themoviedb')
+
+            # Using authenticated URL for display
+            display_url = admin_plex.url(asset.thumb, includeToken=True)
+
+            assets.append({
+                'key': asset.ratingKey, # Use ratingKey as the unique ID for selection
+                'provider': asset.provider,
+                'selected': asset.selected,
+                'thumb_url': display_url
+            })
+
+        return jsonify({'assets': assets})
+
+    except Exception as e:
+        current_app.logger.error(f"Error fetching assets for {rating_key}: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@plex_editor_bp.route('/api/metadata_apply', methods=['POST'])
+@login_required
+def metadata_apply():
+    """
+    Applique les métadonnées à un item Plex.
+    Action 'match' : Tente une association (Fix Match).
+    Action 'inject' : Écrase manuellement les champs (Titre, Résumé, Poster...).
+                      Accepte soit un ID fournisseur, soit des données manuelles directes.
+                      Supporte l'upload de fichier local pour le poster.
+    Action 'select_poster' / 'select_background' : Sélectionne un visuel existant.
+    """
+    import json
+
+    # 1. Extraction des données (Compatible JSON et Multipart/Form-data)
+    poster_file = None
+    background_file = None
+    asset_key = None
+
+    if request.content_type and 'multipart/form-data' in request.content_type:
+        rating_key = request.form.get('ratingKey')
+        action = request.form.get('action')
+        external_id = request.form.get('external_id')
+        provider = request.form.get('provider')
+        user_id = request.form.get('userId')
+        manual_data_str = request.form.get('manual_data')
+        manual_data = json.loads(manual_data_str) if manual_data_str else None
+        poster_file = request.files.get('poster_file')
+        background_file = request.files.get('background_file')
+        asset_key = request.form.get('asset_key')
+    else:
+        data = request.json
+        rating_key = data.get('ratingKey')
+        action = data.get('action')
+        external_id = data.get('external_id')
+        provider = data.get('provider')
+        user_id = data.get('userId')
+        manual_data = data.get('manual_data')
+        asset_key = data.get('asset_key')
+
+    if not all([rating_key, action, user_id]):
+        return jsonify({'error': 'Missing required parameters.'}), 400
+
+    try:
+        # 2. Connexion au serveur Plex (Admin pour écriture)
+        admin_plex = get_plex_admin_server()
+        if not admin_plex:
+            return jsonify({'error': 'Failed to connect to Plex Server.'}), 500
+
+        item = admin_plex.fetchItem(int(rating_key))
+        if not item:
+            return jsonify({'error': 'Item not found.'}), 404
+
+        # 3. Logique selon l'action
+        if action == 'select_poster':
+            if not asset_key: return jsonify({'error': 'Missing asset_key.'}), 400
+
+            # Find the poster object
+            posters = item.posters()
+            target = next((p for p in posters if p.ratingKey == asset_key), None)
+
+            if target:
+                item.setPoster(target)
+                # item.unlock('thumb') # Optional: ensure it's not locked to something else?
+                # Actually setPoster usually locks it or sets it as user selected.
+                return jsonify({'success': True, 'message': 'Poster updated.'})
+            else:
+                return jsonify({'error': 'Poster not found.'}), 404
+
+        elif action == 'select_background':
+            if not asset_key: return jsonify({'error': 'Missing asset_key.'}), 400
+
+            arts = item.arts()
+            target = next((a for a in arts if a.ratingKey == asset_key), None)
+
+            if target:
+                item.setArt(target)
+                return jsonify({'success': True, 'message': 'Background updated.'})
+            else:
+                return jsonify({'error': 'Background not found.'}), 404
+
+        elif action == 'inject':
+            # --- MODE INJECTION ---
+            details = {}
+
+            if manual_data:
+                # Injection manuelle directe
+                current_app.logger.info(f"Injection manuelle de données pour {rating_key}: {manual_data}")
+                details = manual_data
+            elif provider == 'tmdb' and external_id:
+                tmdb_client = TheMovieDBClient()
+                is_show = item.type == 'show'
+
+                if is_show:
+                    raw_details = tmdb_client.get_series_details(external_id, lang='fr-FR')
+                    if raw_details:
+                        details = {
+                            'title': raw_details.get('name'),
+                            'summary': raw_details.get('overview'),
+                            'year': int(raw_details.get('year')) if raw_details.get('year') and raw_details.get('year').isdigit() else None,
+                            'poster_url': raw_details.get('poster')
+                        }
+                else:
+                    raw_details = tmdb_client.get_movie_details(external_id, lang='fr-FR')
+                    if raw_details:
+                        details = {
+                            'title': raw_details.get('title'),
+                            'originalTitle': raw_details.get('original_title'),
+                            'year': int(raw_details.get('year')) if raw_details.get('year') and raw_details.get('year').isdigit() else None,
+                            'summary': raw_details.get('overview'),
+                            'originallyAvailableAt': raw_details.get('release_date'),
+                            'poster_url': raw_details.get('poster')
+                        }
+
+            elif provider == 'tvdb' and external_id:
+                tvdb_client = CustomTVDBClient()
+                raw_details = tvdb_client.get_series_details_by_id(external_id, lang='fra')
+                if raw_details:
+                    details = {
+                        'title': raw_details.get('name'),
+                        'summary': raw_details.get('overview'),
+                        'year': int(raw_details.get('year')) if raw_details.get('year') and str(raw_details.get('year')).isdigit() else None,
+                        'poster_url': raw_details.get('image')
+                    }
+
+            if not details and not poster_file:
+                return jsonify({'error': 'Failed to fetch details or no manual data provided.'}), 500
+
+            # Préparer les champs pour l'édition Plex
+            edits = {}
+            # On utilise 'in' pour permettre l'envoi de chaînes vides (effacement)
+            if 'title' in details:
+                edits['title.value'] = details['title']
+                edits['title.locked'] = 1
+                if details['title']: # On ne définit le tri que si le titre n'est pas vide
+                    edits['titleSort.value'] = details['title']
+                    edits['titleSort.locked'] = 1
+
+            if 'originalTitle' in details:
+                edits['originalTitle.value'] = details['originalTitle']
+                edits['originalTitle.locked'] = 1
+
+            if 'summary' in details:
+                edits['summary.value'] = details['summary']
+                edits['summary.locked'] = 1
+
+            if 'year' in details:
+                # Si l'année est fournie (non vide), on tente de convertir
+                if details['year']:
+                    try:
+                        edits['year.value'] = int(details['year'])
+                        edits['year.locked'] = 1
+                    except (ValueError, TypeError):
+                        pass
+
+            if 'originallyAvailableAt' in details:
+                edits['originallyAvailableAt.value'] = details['originallyAvailableAt']
+                edits['originallyAvailableAt.locked'] = 1
+
+            # Appliquer les modifications textuelles
+            if edits:
+                current_app.logger.info(f"Injecting metadata for {rating_key}: {edits}")
+                item.edit(**edits)
+
+            # Gestion du RESET (Déverrouillage)
+            refresh_needed = False
+            if details.get('reset_poster'):
+                current_app.logger.info(f"Resetting poster for {rating_key} (unlocking 'thumb')")
+                try:
+                    item.unlock(field='thumb')
+                    refresh_needed = True
+                except Exception as e:
+                    current_app.logger.warning(f"Failed to unlock poster: {e}")
+
+            if details.get('reset_background'):
+                current_app.logger.info(f"Resetting background for {rating_key} (unlocking 'art')")
+                try:
+                    item.unlock(field='art')
+                    refresh_needed = True
+                except Exception as e:
+                    current_app.logger.warning(f"Failed to unlock background: {e}")
+
+            if refresh_needed:
+                current_app.logger.info(f"Refreshing metadata for {rating_key} to apply reset")
+                item.refresh()
+
+            # Appliquer le poster
+            if poster_file:
+                current_app.logger.info(f"Uploading local poster file for {rating_key}")
+                import tempfile
+
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+                    poster_file.save(tmp.name)
+                    tmp_path = tmp.name
+
+                try:
+                    item.uploadPoster(filepath=tmp_path)
+                except Exception as e:
+                    current_app.logger.error(f"Erreur upload poster local: {e}", exc_info=True)
+                finally:
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+
+            elif details.get('poster_url'):
+                current_app.logger.info(f"Uploading poster URL for {rating_key}: {details['poster_url']}")
+                item.uploadPoster(url=details['poster_url'])
+
+            # Appliquer le fond d'écran (Art)
+            if background_file:
+                current_app.logger.info(f"Uploading local background file for {rating_key}")
+                import tempfile
+
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+                    background_file.save(tmp.name)
+                    tmp_path = tmp.name
+
+                try:
+                    item.uploadArt(filepath=tmp_path)
+                except Exception as e:
+                    current_app.logger.error(f"Erreur upload background local: {e}", exc_info=True)
+                finally:
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+
+            elif details.get('background_url'):
+                current_app.logger.info(f"Uploading background URL for {rating_key}: {details['background_url']}")
+                item.uploadArt(url=details['background_url'])
+
+            return jsonify({'success': True, 'message': 'Metadata injected successfully.'})
+
+        elif action == 'match':
+            # --- MODE ASSOCIATION (FIX MATCH) ---
+            # Pour faire un Fix Match, on doit d'abord rechercher via l'agent Plex pour obtenir un résultat "matchable".
+            # On ne peut pas juste injecter un GUID brut arbitraire.
+
+            # Recherche de candidats via Plex
+            # On utilise le titre et l'année fournis par le front (qui viennent de TMDB/TVDB)
+            # Mais attention, le front n'envoie que external_id. Il faut donc récupérer les infos minimales.
+
+            search_title = None
+            search_year = None
+
+            if provider == 'tmdb':
+                client = TheMovieDBClient()
+                info = client.get_movie_details(external_id)
+                if info:
+                    search_title = info.get('title')
+                    search_year = info.get('year')
+            elif provider == 'tvdb':
+                client = CustomTVDBClient()
+                info = client.get_series_details_by_id(external_id)
+                if info:
+                    search_title = info.get('name')
+                    search_year = info.get('year')
+
+            if not search_title:
+                 return jsonify({'error': 'Could not retrieve title for matching.'}), 500
+
+            # Lancer la recherche "matches" sur l'item Plex
+            # Cette méthode demande à l'agent actuel de chercher des correspondances
+            try:
+                matches = item.matches(title=search_title, year=search_year)
+            except Exception as e_matches:
+                current_app.logger.warning(f"Plex Agent search failed for {search_title}: {e_matches}")
+                matches = [] # Traiter comme une absence de résultats
+
+            if not matches:
+                # Retourner une erreur spécifique 404 avec un code d'erreur personnalisé
+                return jsonify({
+                    'error': 'NO_MATCH_FOUND',
+                    'message': 'Aucune correspondance trouvée dans la base Plex. Cet item n\'existe probablement pas chez Plex. Veuillez utiliser l\'option "Écraser (Manuel)".'
+                }), 404
+
+            # Tenter de trouver le bon candidat dans la liste retournée par Plex
+            # On cherche une correspondance soit sur le GUID (si possible), soit sur le titre/année
+            best_match = None
+
+            # Strategie : On regarde si l'un des résultats Plex contient notre external_id
+            for candidate in matches:
+                # guid format: 'com.plexapp.agents.themoviedb://12345?lang=fr' or 'tmdb://12345'
+                if str(external_id) in candidate.guid:
+                    best_match = candidate
+                    break
+
+            # Si pas de correspondance d'ID stricte, on prend le premier résultat si le score est élevé
+            if not best_match and matches:
+                # On pourrait être plus laxiste ici, ou demander à l'utilisateur de choisir
+                # Pour l'instant, on prend le premier si score > 80
+                if matches[0].score > 80:
+                    best_match = matches[0]
+
+            if best_match:
+                current_app.logger.info(f"Applying match: {best_match.name} (GUID: {best_match.guid})")
+                item.fixMatch(searchResult=best_match)
+                return jsonify({'success': True, 'message': f'Matched with {best_match.name}.'})
+            else:
+                return jsonify({'error': 'Correct match not found in Plex results. Use Manual Injection.'}), 404
+
+        else:
+            return jsonify({'error': 'Invalid action.'}), 400
+
+    except Exception as e:
+        current_app.logger.error(f"Error in metadata_apply: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
 
 # --- Gestionnaires d'erreur ---
 #@app.errorhandler(404)

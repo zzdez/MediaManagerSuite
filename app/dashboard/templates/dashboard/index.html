@@ -257,7 +257,16 @@ $(document).ready(function() {
             const yearMatch = (torrent.title || '').match(/\b(19[89]\d|20\d{2})\b/);
             const year = yearMatch ? yearMatch[1] : null;
 
-            const detailsButtonHtml = torrent.detailsUrl ? `<button class="btn btn-info btn-sm details-btn" data-url="${torrent.detailsUrl}">Détails</button>` : `<button class="btn btn-info btn-sm" disabled>Détails</button>`;
+            // Determine the best URL for the details button
+            // If we have a direct web link ('link'), use it and flag it as direct.
+            // Otherwise, fall back to detailsUrl (which might be an API link).
+            const effectiveUrl = torrent.link || torrent.detailsUrl;
+            const isDirect = !!torrent.link;
+
+            const detailsButtonHtml = effectiveUrl ?
+                `<button class="btn btn-info btn-sm details-btn" data-url="${effectiveUrl}" data-indexer="${torrent.indexer || ''}" data-is-direct="${isDirect}">Détails</button>`
+                : `<button class="btn btn-info btn-sm" disabled>Détails</button>`;
+
             const indexerBadge = torrent.indexer ? `<span class="badge bg-secondary me-1">${torrent.indexer}</span>` : '';
 
             let categoryBadgeClass = 'bg-dark';
@@ -835,6 +844,9 @@ $(document).ready(function() {
     // --- Intelligent Details Button Handler ---
     $('#torrents-container').on('click', '.details-btn', function() {
         const url = $(this).data('url');
+        const indexer = String($(this).data('indexer') || '');
+        const isDirect = $(this).data('is-direct'); // boolean from data attribute logic
+
         if (!url) return;
 
         // --- Calculate window position for centering ---
@@ -844,8 +856,17 @@ $(document).ready(function() {
         const top = (screen.height / 2) - (windowHeight / 2);
         const windowFeatures = `width=${windowWidth},height=${windowHeight},top=${top},left=${left},resizable=yes,scrollbars=yes`;
 
+        // If we already have a direct link (from 'link' field), open it immediately
+        if (isDirect === true) {
+            window.open(url, 'MMS_Details_Window', windowFeatures);
+            return;
+        }
+
         // Special handling for YGG API URLs via our backend proxy
-        if (url.includes('yggapi.eu')) {
+        // Robust check: Trigger if URL matches known API domain OR if indexer is explicitly YGG
+        const isYgg = url.includes('yggapi.eu') || indexer.toLowerCase().includes('ygg');
+
+        if (isYgg) {
             const proxyUrl = `/dashboard/api/proxy?url=${encodeURIComponent(url)}`;
             fetch(proxyUrl)
                 .then(response => {

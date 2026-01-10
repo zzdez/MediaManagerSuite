@@ -316,6 +316,38 @@ $(document).ready(function() {
             $('#confirmRejectShowBtn').data('ratingKey', ratingKey);
         }
 
+        // --- ACTION : SUPPRESSION D'UN ITEM (SINGULIER) ---
+        const deleteItemBtn = target.closest('.delete-item-btn');
+        if (deleteItemBtn.length > 0) {
+            const ratingKey = $(deleteItemBtn).data('rating-key');
+            const itemTitle = $(deleteItemBtn).data('item-title');
+
+            if (confirm(`Êtes-vous sûr de vouloir supprimer "${itemTitle}" de Plex et du disque ?`)) {
+                // Feedback visuel
+                $(deleteItemBtn).prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span>');
+
+                fetch(`/plex/api/media_item/${ratingKey}`, {
+                    method: 'DELETE'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        // Supprimer la ligne du tableau
+                        $(deleteItemBtn).closest('tr').fadeOut(500, function() { $(this).remove(); });
+                        alert(data.message);
+                    } else {
+                        alert('Erreur: ' + data.message);
+                        $(deleteItemBtn).prop('disabled', false).html('<i class="bi bi-trash-fill"></i>');
+                    }
+                })
+                .catch(error => {
+                    console.error('Erreur suppression:', error);
+                    alert('Erreur de communication.');
+                    $(deleteItemBtn).prop('disabled', false).html('<i class="bi bi-trash-fill"></i>');
+                });
+            }
+        }
+
 // --- ACTION : COPIER LE CHEMIN DU FICHIER ---
         const copyPathBtn = event.target.closest('.copy-path-btn');
         if (copyPathBtn) {
@@ -369,9 +401,539 @@ $(document).ready(function() {
                                 <p><strong>Genres:</strong> ${data.genres && data.genres.length > 0 ? data.genres.join(', ') : 'Non spécifiés'}</p>
                                 ${ratingHtml}
                                 ${durationHtml}
+                                <hr>
+                                <button class="btn btn-primary w-100 mt-2" id="identify-fix-btn"
+                                        data-rating-key="${ratingKey}"
+                                        data-title="${data.title || ''}"
+                                        data-year="${data.year || ''}">
+                                    <i class="bi bi-magic"></i> Identifier / Corriger
+                                </button>
                             </div>
                         </div>
+
+                        <div id="identify-search-container" class="mt-3" style="display:none; border-top: 1px solid #444; padding-top: 15px;">
+                            <h5>Identifier / Rechercher</h5>
+                            <div class="row g-2 mb-2">
+                                <div class="col-md-3">
+                                    <select class="form-select form-select-sm" id="identify-provider-select">
+                                        <option value="auto">Auto</option>
+                                        <option value="tmdb">TMDB</option>
+                                        <option value="tvdb">TVDB</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <input type="number" class="form-control form-control-sm" id="identify-year-input" placeholder="Année">
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="input-group input-group-sm">
+                                        <input type="text" class="form-control" id="identify-search-input" placeholder="Titre...">
+                                        <button class="btn btn-primary" type="button" id="identify-search-submit">Chercher</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="d-flex justify-content-end mb-2">
+                                <button class="btn btn-sm btn-outline-secondary" id="toggle-manual-edit-btn">
+                                    <i class="bi bi-pencil"></i> Édition Manuelle
+                                </button>
+                            </div>
+
+                            <!-- Manual Edit Form (Hidden) -->
+                            <div id="manual-edit-form" class="card card-body bg-dark border-secondary mb-3" style="display:none;">
+                                <ul class="nav nav-tabs mb-3" id="manual-edit-tabs" role="tablist">
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link active" id="general-tab" data-bs-toggle="tab" data-bs-target="#general-tab-pane" type="button" role="tab">Général</button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link" id="posters-tab" data-bs-toggle="tab" data-bs-target="#posters-tab-pane" type="button" role="tab">Affiches</button>
+                                    </li>
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link" id="backgrounds-tab" data-bs-toggle="tab" data-bs-target="#backgrounds-tab-pane" type="button" role="tab">Fonds d'écran</button>
+                                    </li>
+                                </ul>
+                                <div class="tab-content" id="manual-edit-content">
+                                    <!-- TAB 1: GENERAL -->
+                                    <div class="tab-pane fade show active" id="general-tab-pane" role="tabpanel">
+                                        <div class="mb-2">
+                                            <label class="form-label small">Titre</label>
+                                            <input type="text" class="form-control form-control-sm" id="manual-title">
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label small">Titre Original</label>
+                                            <input type="text" class="form-control form-control-sm" id="manual-original-title">
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label small">Année</label>
+                                            <input type="number" class="form-control form-control-sm" id="manual-year">
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label small">Résumé</label>
+                                            <textarea class="form-control form-control-sm" id="manual-summary" rows="3"></textarea>
+                                        </div>
+                                        <div class="text-end mt-3">
+                                            <button class="btn btn-sm btn-secondary me-2" id="cancel-manual-edit-btn">Annuler</button>
+                                            <button class="btn btn-sm btn-success" id="save-manual-edit-btn">Enregistrer les modifications</button>
+                                        </div>
+                                    </div>
+
+                                    <!-- TAB 2: POSTERS -->
+                                    <div class="tab-pane fade" id="posters-tab-pane" role="tabpanel">
+                                        <div id="posters-grid" class="d-flex flex-wrap gap-2 justify-content-center mb-3" style="max-height: 400px; overflow-y: auto;">
+                                            <div class="text-center w-100 py-3"><div class="spinner-border spinner-border-sm"></div> Chargement...</div>
+                                        </div>
+                                        <hr>
+                                        <h6>Ajouter une affiche</h6>
+                                        <div class="row mb-2">
+                                            <div class="col-md-6">
+                                                <label class="form-label small">URL Poster</label>
+                                                <input type="text" class="form-control form-control-sm" id="manual-poster" placeholder="http://...">
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label small">Poster Local</label>
+                                                <input type="file" class="form-control form-control-sm" id="manual-poster-file" accept="image/*">
+                                            </div>
+                                        </div>
+                                        <div class="text-end">
+                                            <button class="btn btn-sm btn-primary" id="upload-poster-btn">Uploader</button>
+                                        </div>
+                                    </div>
+
+                                    <!-- TAB 3: BACKGROUNDS -->
+                                    <div class="tab-pane fade" id="backgrounds-tab-pane" role="tabpanel">
+                                        <div id="backgrounds-grid" class="d-flex flex-wrap gap-2 justify-content-center mb-3" style="max-height: 400px; overflow-y: auto;">
+                                            <div class="text-center w-100 py-3"><div class="spinner-border spinner-border-sm"></div> Chargement...</div>
+                                        </div>
+                                        <hr>
+                                        <h6>Ajouter un fond d'écran</h6>
+                                        <div class="row mb-2">
+                                            <div class="col-md-6">
+                                                <label class="form-label small">URL Fond d'écran</label>
+                                                <input type="text" class="form-control form-control-sm" id="manual-background" placeholder="http://...">
+                                            </div>
+                                            <div class="col-md-6">
+                                                <label class="form-label small">Fond d'écran Local</label>
+                                                <input type="file" class="form-control form-control-sm" id="manual-background-file" accept="image/*">
+                                            </div>
+                                        </div>
+                                        <div class="text-end">
+                                            <button class="btn btn-sm btn-primary" id="upload-background-btn">Uploader</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="identify-results-area"></div>
+                        </div>
                     `;
+
+                    // Initialisation des éléments jQuery
+                    const $modalBody = $(modalBody);
+                    const $identifyBtn = $modalBody.find('#identify-fix-btn');
+                    const $searchContainer = $modalBody.find('#identify-search-container');
+                    const $searchInput = $modalBody.find('#identify-search-input');
+                    const $yearInput = $modalBody.find('#identify-year-input');
+                    const $providerSelect = $modalBody.find('#identify-provider-select');
+                    const $searchSubmit = $modalBody.find('#identify-search-submit');
+                    const $resultsArea = $modalBody.find('#identify-results-area');
+
+                    const $manualEditBtn = $modalBody.find('#toggle-manual-edit-btn');
+                    const $manualForm = $modalBody.find('#manual-edit-form');
+                    const $saveManualBtn = $modalBody.find('#save-manual-edit-btn');
+                    const $cancelManualBtn = $modalBody.find('#cancel-manual-edit-btn');
+                    const $uploadPosterBtn = $modalBody.find('#upload-poster-btn');
+                    const $uploadBackgroundBtn = $modalBody.find('#upload-background-btn');
+
+                    // Ouvrir le panneau "Identifier"
+                    $identifyBtn.on('click', function() {
+                        $searchContainer.show();
+                        $searchInput.val($(this).data('title'));
+                        $yearInput.val($(this).data('year'));
+                        $identifyBtn.hide();
+                    });
+
+                    // Variables pour charger les assets une seule fois
+                    let postersLoaded = false;
+                    let backgroundsLoaded = false;
+
+                    // Gestion des onglets pour charger les images à la demande
+                    $modalBody.find('#posters-tab').on('shown.bs.tab', function() {
+                        if (!postersLoaded) {
+                            loadAssets('poster', '#posters-grid');
+                            postersLoaded = true;
+                        }
+                    });
+
+                    $modalBody.find('#backgrounds-tab').on('shown.bs.tab', function() {
+                        if (!backgroundsLoaded) {
+                            loadAssets('art', '#backgrounds-grid');
+                            backgroundsLoaded = true;
+                        }
+                    });
+
+                    function loadAssets(type, containerId) {
+                        fetch(`/plex/api/media_assets/${ratingKey}?type=${type}`)
+                            .then(r => r.json())
+                            .then(data => {
+                                const container = $modalBody.find(containerId);
+                                container.empty();
+                                if (data.assets && data.assets.length > 0) {
+                                    data.assets.forEach(asset => {
+                                        const isSelected = asset.selected;
+                                        const borderClass = isSelected ? 'border-success border-4' : 'border-secondary';
+                                        const selectedBadge = isSelected ? '<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-success"><i class="bi bi-check"></i></span>' : '';
+
+                                        const html = `
+                                            <div class="position-relative asset-item" style="width: 120px; cursor: pointer;" data-key="${asset.key}">
+                                                <img src="${asset.thumb_url}" class="img-thumbnail ${borderClass}" style="width: 100%; height: auto;">
+                                                ${selectedBadge}
+                                            </div>
+                                        `;
+                                        container.append(html);
+                                    });
+
+                                    // Click handler for selection
+                                    container.find('.asset-item').on('click', function() {
+                                        const key = $(this).data('key');
+                                        selectAsset(type, key);
+                                    });
+                                } else {
+                                    container.html('<p class="text-muted">Aucune image trouvée.</p>');
+                                }
+                            })
+                            .catch(err => {
+                                console.error(err);
+                                $modalBody.find(containerId).html('<p class="text-danger">Erreur de chargement.</p>');
+                            });
+                    }
+
+                    function selectAsset(type, key) {
+                        const userId = $('#user-select').val();
+                        const action = type === 'poster' ? 'select_poster' : 'select_background';
+
+                        if(!confirm("Définir cette image comme active ?")) return;
+
+                        // Show loader overlay or similar? For now, simplistic.
+
+                        const formData = new FormData();
+                        formData.append('ratingKey', ratingKey);
+                        formData.append('action', action);
+                        formData.append('userId', userId);
+                        formData.append('asset_key', key);
+
+                        fetch('/plex/api/metadata_apply', { method: 'POST', body: formData })
+                            .then(r => r.json())
+                            .then(d => {
+                                if(d.success) {
+                                    alert("Image mise à jour !");
+                                    // Reload assets to show new selection state
+                                    if (type === 'poster') {
+                                        loadAssets('poster', '#posters-grid');
+                                        // Update main modal poster preview too?
+                                        // Complex to update main view without reload, but let's try reloading the table
+                                        $('#apply-filters-btn').click();
+                                    } else {
+                                        loadAssets('art', '#backgrounds-grid');
+                                    }
+                                } else {
+                                    alert("Erreur: " + d.error);
+                                }
+                            })
+                            .catch(e => alert("Erreur réseau."));
+                    }
+
+                    // Ouvrir/Pré-remplir le formulaire manuel
+                    $manualEditBtn.on('click', function() {
+                        $manualForm.show();
+                        $resultsArea.hide(); // Masquer les résultats de recherche pour clarté
+                        // Pré-remplissage des champs texte uniquement
+                        $('#manual-title').val(data.title || '');
+                        $('#manual-original-title').val(data.originalTitle || '');
+                        $('#manual-year').val(data.year || '');
+                        $('#manual-summary').val(data.summary || '');
+
+                        // Activer l'onglet Général par défaut
+                        $modalBody.find('#general-tab').click();
+                    });
+
+                    $cancelManualBtn.on('click', function() {
+                        $manualForm.hide();
+                        $resultsArea.show();
+                    });
+
+                    // Handler pour Uploader un Poster (depuis l'onglet Affiches)
+                    $uploadPosterBtn.on('click', function() {
+                        handleUpload('poster');
+                    });
+
+                    // Handler pour Uploader un Background (depuis l'onglet Fonds d'écran)
+                    $uploadBackgroundBtn.on('click', function() {
+                        handleUpload('background');
+                    });
+
+                    function handleUpload(type) {
+                        const urlInputId = type === 'poster' ? '#manual-poster' : '#manual-background';
+                        const fileInputId = type === 'poster' ? '#manual-poster-file' : '#manual-background-file';
+
+                        const urlVal = $(urlInputId).val();
+                        const fileInput = $(fileInputId)[0];
+                        const fileVal = fileInput ? fileInput.files[0] : null;
+
+                        if (!urlVal && !fileVal) {
+                            alert("Veuillez fournir une URL ou un fichier.");
+                            return;
+                        }
+
+                        if (!confirm("Uploader cette image ?")) return;
+
+                        const btn = (type === 'poster') ? $uploadPosterBtn : $uploadBackgroundBtn;
+                        btn.prop('disabled', true).text('Upload...');
+
+                        const userId = $('#user-select').val();
+                        const formData = new FormData();
+                        formData.append('ratingKey', ratingKey);
+                        formData.append('action', 'inject'); // Reuse inject for upload
+                        formData.append('userId', userId);
+
+                        // We send empty manual_data for text fields to avoid overwriting them
+                        // The backend 'inject' logic handles partial updates if we are careful.
+                        // Wait, backend logic for 'inject' applies edits if keys exist in 'details'.
+                        // If we don't send manual_data, details is empty.
+                        // But we need to ensure we don't accidentally clear title/summary.
+                        // Actually, my backend code checks `if 'title' in details`.
+                        // If `manual_data` is empty/null, `details` will be empty (or fetched from provider if ext_id provided, but here we don't provide ext_id).
+                        // So sending empty manual_data is safe for just uploading images.
+
+                        // However, we need to pass the image data
+                        if (urlVal) {
+                            const key = type === 'poster' ? 'poster_url' : 'background_url';
+                            formData.append('manual_data', JSON.stringify({ [key]: urlVal }));
+                        } else {
+                            // If file, we just append file, backend handles it if present
+                            formData.append('manual_data', JSON.stringify({}));
+                        }
+
+                        if (type === 'poster' && fileVal) formData.append('poster_file', fileVal);
+                        if (type === 'background' && fileVal) formData.append('background_file', fileVal);
+
+                        fetch('/plex/api/metadata_apply', { method: 'POST', body: formData })
+                            .then(r => r.json())
+                            .then(d => {
+                                if (d.success) {
+                                    alert("Upload réussi !");
+                                    // Reload the grid to show new image
+                                    if (type === 'poster') {
+                                        loadAssets('poster', '#posters-grid');
+                                        // Clear inputs
+                                        $(urlInputId).val('');
+                                        $(fileInputId).val('');
+                                    } else {
+                                        loadAssets('art', '#backgrounds-grid');
+                                        $(urlInputId).val('');
+                                        $(fileInputId).val('');
+                                    }
+                                } else {
+                                    alert("Erreur upload: " + d.error);
+                                }
+                            })
+                            .catch(e => alert("Erreur réseau."))
+                            .finally(() => btn.prop('disabled', false).text('Uploader'));
+                    }
+
+                    // Enregistrer l'édition manuelle (Texte uniquement maintenant, ou tout si on veut)
+                    // Pour simplifier, ce bouton ne sauvegarde que les champs texte de l'onglet Général
+                    $saveManualBtn.on('click', function() {
+                        const manualData = {
+                            title: $('#manual-title').val(),
+                            originalTitle: $('#manual-original-title').val(),
+                            year: $('#manual-year').val(),
+                            summary: $('#manual-summary').val()
+                        };
+
+                        if (!manualData.title) { alert("Le titre est obligatoire."); return; }
+
+                        if (!confirm("Voulez-vous appliquer ces modifications textuelles ?")) return;
+
+                        const btn = $(this);
+                        btn.prop('disabled', true).text('Enregistrement...');
+
+                        const userId = $('#user-select').val();
+
+                        const formData = new FormData();
+                        formData.append('ratingKey', ratingKey);
+                        formData.append('action', 'inject');
+                        formData.append('userId', userId);
+                        formData.append('manual_data', JSON.stringify(manualData));
+
+                        fetch('/plex/api/metadata_apply', {
+                            method: 'POST',
+                            body: formData
+                        })
+                        .then(res => res.json())
+                        .then(respData => {
+                            if (respData.success || respData.status === 'success') {
+                                alert("Modifications enregistrées !");
+                                bootstrap.Modal.getInstance(modalElement).hide();
+                                $('#apply-filters-btn').click();
+                            } else {
+                                alert("Erreur: " + (respData.error || respData.message));
+                                btn.prop('disabled', false).text('Enregistrer les modifications');
+                            }
+                        })
+                        .catch(err => {
+                            console.error(err);
+                            alert("Erreur de communication.");
+                            btn.prop('disabled', false).text('Enregistrer les modifications');
+                        });
+                    });
+
+                    // Recherche
+                    $searchSubmit.on('click', function() {
+                        const query = $searchInput.val();
+                        const year = $yearInput.val();
+                        const provider = $providerSelect.val();
+
+                        if (!query) return;
+
+                        $resultsArea.html('<div class="text-center"><div class="spinner-border spinner-border-sm" role="status"></div> Recherche...</div>');
+                        $resultsArea.show();
+                        $manualForm.hide(); // Masquer le formulaire manuel
+
+                        const row = $(`.item-title-link[data-rating-key='${ratingKey}']`).closest('tr');
+                        let mediaType = 'movie';
+                        if (row.data('media-type-from-mapping') === 'sonarr' || row.data('custom-media-type') === 'SÉRIE') {
+                            mediaType = 'show';
+                        }
+
+                        fetch('/plex/api/metadata_search', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                query: query,
+                                media_type: mediaType,
+                                provider: provider,
+                                year: year
+                            })
+                        })
+                        .then(res => res.json())
+                        .then(resData => {
+                            if (resData.error) {
+                                $resultsArea.html(`<div class="alert alert-danger">${resData.error}</div>`);
+                                return;
+                            }
+
+                            if (!resData.results || resData.results.length === 0) {
+                                $resultsArea.html('<p class="text-muted">Aucun résultat trouvé.</p>');
+                                return;
+                            }
+
+                            let html = '<div class="list-group">';
+                            resData.results.forEach(result => {
+                                const yearStr = result.year ? `(${result.year})` : '';
+                                const overviewShort = result.overview ? (result.overview.substring(0, 100) + '...') : 'Pas de description';
+                                const prov = (result.provider || '').toUpperCase();
+                                const providerBadge = `<span class="badge bg-${prov === 'TMDB' ? 'primary' : 'success'}">${prov}</span>`;
+
+                                html += `
+                                    <div class="list-group-item list-group-item-action bg-dark text-white border-secondary">
+                                        <div class="d-flex w-100 justify-content-between">
+                                            <h6 class="mb-1">${result.title} ${yearStr} ${providerBadge}</h6>
+                                            <small>ID: ${result.id}</small>
+                                        </div>
+                                        <p class="mb-1 small">${overviewShort}</p>
+                                        <div class="mt-2">
+                                            <button class="btn btn-sm btn-warning apply-metadata-btn"
+                                                    data-action="inject"
+                                                    data-id="${result.id}"
+                                                    data-provider="${result.provider}"
+                                                    data-rating-key="${ratingKey}">
+                                                <i class="bi bi-pencil-square"></i> Écraser (Manuel)
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-info apply-metadata-btn ms-2"
+                                                    data-action="match"
+                                                    data-id="${result.id}"
+                                                    data-provider="${result.provider}"
+                                                    data-rating-key="${ratingKey}">
+                                                <i class="bi bi-link"></i> Associer (Fix Match)
+                                            </button>
+                                        </div>
+                                    </div>
+                                `;
+                            });
+                            html += '</div>';
+                            $resultsArea.html(html);
+
+                            $resultsArea.find('.apply-metadata-btn').on('click', function() {
+                                handleApplyMetadata($(this));
+                            });
+                        })
+                        .catch(err => {
+                            console.error(err);
+                            $resultsArea.html('<div class="alert alert-danger">Erreur de communication.</div>');
+                        });
+                    });
+
+                    function handleApplyMetadata($btn) {
+                        const action = $btn.data('action');
+                        const externalId = $btn.data('id');
+                        const provider = $btn.data('provider');
+                        const rKey = $btn.data('rating-key');
+                        const userId = $('#user-select').val();
+
+                        if (!confirm(action === 'inject' ?
+                            "Attention : Cela va ÉCRASER et VERROUILLER les métadonnées (Titre, Résumé, etc.) dans Plex avec les données de " + provider.toUpperCase() + ". Continuer ?" :
+                            "Tenter d'associer cet item via l'agent Plex ?")) {
+                            return;
+                        }
+
+                        // Désactiver tous les boutons
+                        const $allBtns = $modalBody.find('.apply-metadata-btn');
+                        $allBtns.prop('disabled', true);
+                        $btn.html('<span class="spinner-border spinner-border-sm"></span> Traitement...');
+
+                        fetch('/plex/api/metadata_apply', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                ratingKey: rKey,
+                                action: action,
+                                external_id: externalId,
+                                provider: provider,
+                                userId: userId
+                            })
+                        })
+                        .then(res => {
+                            // On traite la réponse brute pour gérer les codes HTTP
+                            return res.json().then(data => {
+                                if (!res.ok) {
+                                    // Si on a un code d'erreur spécifique renvoyé par le backend
+                                    if (res.status === 404 && data.error === 'NO_MATCH_FOUND') {
+                                        // Afficher le message d'erreur spécifique de manière conviviale
+                                        alert(data.message);
+                                    } else {
+                                        // Erreur générique
+                                        alert('Erreur : ' + (data.error || 'Une erreur est survenue.'));
+                                    }
+                                    throw new Error(data.error || 'Server Error');
+                                }
+                                return data;
+                            });
+                        })
+                        .then(data => {
+                            if (data.success) {
+                                alert(data.message);
+                                // Fermer la modale
+                                bootstrap.Modal.getInstance(modalElement).hide();
+                                // Rafraîchir la liste principale (simule un clic sur 'Appliquer les filtres')
+                                $('#apply-filters-btn').click();
+                            }
+                        })
+                        .catch(err => {
+                            console.error("Erreur Application Metadonnées:", err);
+                            // Réactiver les boutons en cas d'erreur
+                            $allBtns.prop('disabled', false);
+                            $btn.html(action === 'inject' ? '<i class="bi bi-pencil-square"></i> Écraser (Manuel)' : '<i class="bi bi-link"></i> Associer (Fix Match)');
+                        });
+                    }
                 })
                 .catch(error => {
                     modalTitle.textContent = 'Erreur';
@@ -1070,14 +1632,15 @@ $('#confirmArchiveMovieBtn').on('click', function() {
         }
 
         if (confirm(`Êtes-vous sûr de vouloir supprimer ${selectedItemKeys.length} élément(s) ? Cette action est irréversible.`)) {
+            const params = new URLSearchParams();
+            selectedItemKeys.forEach(key => params.append('selected_item_keys', key));
+
             fetch('/plex/bulk_delete_items', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
                 },
-                body: new URLSearchParams({
-                    'selected_item_keys': selectedItemKeys
-                })
+                body: params
             })
             .then(response => {
                 if (response.ok) {
